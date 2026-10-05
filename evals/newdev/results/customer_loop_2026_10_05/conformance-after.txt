@@ -1,0 +1,24 @@
+....................................................................................................127.0.0.1 - - [05/Oct/2026 01:09:51] "POST /mcp HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:51] "POST /mcp HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:51] "POST /mcp HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:51] "POST /mcp HTTP/1.1" 200 -
+.127.0.0.1 - - [05/Oct/2026 01:09:51] "GET /api/state HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:51] "POST /api/tasks/start HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:51] "POST /api/tasks/e13cea95bfb5/nodes HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:51] "POST /api/decisions/dd8c7d4d778f/answer HTTP/1.1" 400 -
+127.0.0.1 - - [05/Oct/2026 01:09:51] "POST /api/decisions/dd8c7d4d778f/answer HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:51] "POST /api/decisions/dd8c7d4d778f/followups HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:51] "GET /api/decisions/dd8c7d4d778f HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:51] "GET /api/tasks/e13cea95bfb5/tree HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:51] "POST /api/tasks/e13cea95bfb5/settle HTTP/1.1" 400 -
+........<evaluation>/bridge/graph.py:1065: ResourceWarning: unclosed <socket.socket fd=9, family=2, type=1, proto=0, laddr=('127.0.0.1', 57899)>
+  return self.db.execute(sql, (repo,)).fetchall()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<evaluation>/bridge/graph.py:1065: ResourceWarning: unclosed <socket.socket fd=24, family=2, type=1, proto=0, laddr=('127.0.0.1', 57906)>
+  return self.db.execute(sql, (repo,)).fetchall()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+....
+----------------------------------------------------------------------
+Ran 113 tests in 10.120s
+
+OK

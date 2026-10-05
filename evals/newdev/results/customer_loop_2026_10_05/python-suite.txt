@@ -1,0 +1,7 @@
+
+----------------------------------------------------------------------
+Ran 641 tests in 83.430s
+
+OK (skipped=4)
+Bridge GitHub: sync of acme/platform failed: GitHub 500 on /repos/acme/platform/pulls: boom
+Bridge GitHub: sync of acme/platform failed: GitHub 500 on /repos/acme/platform/pulls: boom

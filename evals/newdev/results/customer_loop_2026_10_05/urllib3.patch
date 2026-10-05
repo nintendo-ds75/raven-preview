@@ -1,0 +1,251 @@
+diff --git a/changelog/5279.feature.rst b/changelog/5279.feature.rst
+new file mode 100644
+index 0000000..31843fb
+--- /dev/null
++++ b/changelog/5279.feature.rst
+@@ -0,0 +1,6 @@
++Added an optional ``retry_after_jitter`` parameter to ``urllib3.util.Retry``, so that a
++fleet of clients does not retry at the same instant. It defaults to ``0.0``, which keeps
++the existing behavior: a ``Retry-After`` wait is exactly as long as the server requested.
++When set, a random number of seconds between zero and ``retry_after_jitter`` is added to
++a positive ``Retry-After`` wait, never shortening it, and the resulting wait is still
++limited by ``retry_after_max``.
+diff --git a/src/urllib3/util/retry.py b/src/urllib3/util/retry.py
+index 868f293..71ebebf 100644
+--- a/src/urllib3/util/retry.py
++++ b/src/urllib3/util/retry.py
+@@ -2,6 +2,7 @@ from __future__ import annotations
+ 
+ import email
+ import logging
++import math
+ import random
+ import re
+ import time
+@@ -193,6 +194,19 @@ class Retry:
+         Retry-After headers. Defaults to :attr:`Retry.DEFAULT_RETRY_AFTER_MAX`.
+         Any Retry-After headers larger than this value will be limited to this
+         value.
++
++    :param float retry_after_jitter:
++        Random jitter amount (in seconds) added to a ``Retry-After`` wait, so
++        that a fleet of clients does not retry at the same instant. Jitter is
++        sampled uniformly from `0` to `retry_after_jitter` and only ever
++        lengthens the wait, so the delay the server asked for is always
++        respected. The jittered wait is still limited by `retry_after_max`.
++
++        By default, this is disabled (set to 0), and `Retry-After` waits are
++        exactly as long as the server requested. Jitter is not applied when
++        there is no usable ``Retry-After`` wait: in that case urllib3 falls
++        back to the exponential backoff (and its own `backoff_jitter`) as
++        before.
+     """
+ 
+     #: Default methods to be used for ``allowed_methods``
+@@ -240,6 +254,7 @@ class Retry:
+         ] = DEFAULT_REMOVE_HEADERS_ON_REDIRECT,
+         backoff_jitter: float = 0.0,
+         retry_after_max: int = DEFAULT_RETRY_AFTER_MAX,
++        retry_after_jitter: float = 0.0,
+     ) -> None:
+         self.total = total
+         self.connect = connect
+@@ -274,6 +289,12 @@ class Retry:
+             h.lower() for h in remove_headers_on_redirect
+         )
+         self.backoff_jitter = backoff_jitter
++        if not math.isfinite(retry_after_jitter) or retry_after_jitter < 0:
++            raise ValueError(
++                "retry_after_jitter must be a finite, non-negative number of "
++                f"seconds, got {retry_after_jitter!r}"
++            )
++        self.retry_after_jitter = retry_after_jitter
+ 
+     def new(self, **kw: typing.Any) -> Self:
+         params = dict(
+@@ -294,6 +315,7 @@ class Retry:
+             remove_headers_on_redirect=self.remove_headers_on_redirect,
+             respect_retry_after_header=self.respect_retry_after_header,
+             backoff_jitter=self.backoff_jitter,
++            retry_after_jitter=self.retry_after_jitter,
+         )
+ 
+         params.update(kw)
+@@ -368,10 +390,23 @@ class Retry:
+ 
+         return self.parse_retry_after(retry_after)
+ 
++    def _jitter_retry_after(self, retry_after: float) -> float:
++        """Add the configured jitter to a server-requested delay.
++
++        Jitter is additive only, so the delay the server asked for is never
++        shortened, and the jittered result is still limited by
++        ``retry_after_max``.
++        """
++        if not self.retry_after_jitter or retry_after <= 0:
++            return retry_after
++
++        retry_after += random.uniform(0, self.retry_after_jitter)
++        return min(retry_after, self.retry_after_max)
++
+     def sleep_for_retry(self, response: BaseHTTPResponse) -> bool:
+         retry_after = self.get_retry_after(response)
+         if retry_after:
+-            time.sleep(retry_after)
++            time.sleep(self._jitter_retry_after(retry_after))
+             return True
+ 
+         return False
+@@ -386,9 +421,11 @@ class Retry:
+         """Sleep between retry attempts.
+ 
+         This method will respect a server's ``Retry-After`` response header
+-        and sleep the duration of the time requested. If that is not present, it
+-        will use an exponential backoff. By default, the backoff factor is 0 and
+-        this method will return immediately.
++        and sleep the duration of the time requested, optionally extended by a
++        random amount of up to ``retry_after_jitter`` seconds (disabled by
++        default) and still limited by ``retry_after_max``. If the header is not
++        present, it will use an exponential backoff. By default, the backoff
++        factor is 0 and this method will return immediately.
+         """
+ 
+         if self.respect_retry_after_header and response:
+diff --git a/test/test_retry.py b/test/test_retry.py
+index 48ca072..90c55a0 100644
+--- a/test/test_retry.py
++++ b/test/test_retry.py
+@@ -456,3 +456,133 @@ class TestRetry:
+                 sleep_mock.assert_called_with(sleep_duration)
+             else:
+                 sleep_mock.assert_not_called()
++
++    def test_retry_after_jitter_defaults_to_disabled(self) -> None:
++        """By default a Retry-After wait is exactly what the server asked for"""
++        retry = Retry()
++        assert retry.retry_after_jitter == 0.0
++
++        response = HTTPResponse(status=503, headers={"Retry-After": "7"})
++        with (
++            mock.patch("time.sleep") as sleep_mock,
++            mock.patch("random.uniform") as uniform_mock,
++        ):
++            retry.sleep(response)
++
++        sleep_mock.assert_called_once_with(7)
++        uniform_mock.assert_not_called()
++
++    def test_retry_after_jitter_only_lengthens_the_wait(self) -> None:
++        """Jitter is sampled from [0, retry_after_jitter] and never shortens"""
++        retry = Retry(retry_after_jitter=2.5)
++        response = HTTPResponse(status=503, headers={"Retry-After": "7"})
++
++        durations = []
++        for _ in range(100):
++            with mock.patch("time.sleep") as sleep_mock:
++                retry.sleep(response)
++            (duration,), _ = sleep_mock.call_args
++            durations.append(duration)
++
++        assert all(7 <= duration <= 9.5 for duration in durations)
++        # The waits are actually spread out, not all identical.
++        assert len(set(durations)) > 1
++
++    def test_retry_after_jitter_bounds(self) -> None:
++        """The sampled jitter spans the whole configured interval"""
++        retry = Retry(retry_after_jitter=2.5)
++        response = HTTPResponse(status=503, headers={"Retry-After": "7"})
++
++        for sampled, expected in ((0.0, 7), (2.5, 9.5)):
++            with (
++                mock.patch("random.uniform", return_value=sampled) as uniform_mock,
++                mock.patch("time.sleep") as sleep_mock,
++            ):
++                retry.sleep(response)
++            uniform_mock.assert_called_once_with(0, 2.5)
++            sleep_mock.assert_called_once_with(expected)
++
++    def test_retry_after_jitter_is_capped_by_retry_after_max(self) -> None:
++        """The jittered wait never exceeds the configured retry_after_max"""
++        retry = Retry(retry_after_max=10, retry_after_jitter=5)
++        response = HTTPResponse(status=503, headers={"Retry-After": "10"})
++
++        with (
++            mock.patch("random.uniform", return_value=5.0),
++            mock.patch("time.sleep") as sleep_mock,
++        ):
++            retry.sleep(response)
++        sleep_mock.assert_called_once_with(10)
++
++        # Below the cap the jitter is applied in full.
++        response = HTTPResponse(status=503, headers={"Retry-After": "6"})
++        with (
++            mock.patch("random.uniform", return_value=3.0),
++            mock.patch("time.sleep") as sleep_mock,
++        ):
++            retry.sleep(response)
++        sleep_mock.assert_called_once_with(9)
++
++    def test_retry_after_jitter_keeps_accessors_deterministic(self) -> None:
++        """parse_retry_after()/get_retry_after() return the server's value"""
++        retry = Retry(retry_after_jitter=5)
++        response = HTTPResponse(status=503, headers={"Retry-After": "7"})
++
++        assert retry.parse_retry_after("7") == 7
++        assert retry.get_retry_after(response) == 7
++
++    def test_retry_after_jitter_does_not_apply_without_retry_after(self) -> None:
++        """Without a usable Retry-After we fall back to exponential backoff"""
++        retry = Retry(total=100, backoff_factor=0.2, retry_after_jitter=5)
++        retry = retry.increment(method="GET")
++        retry = retry.increment(method="GET")
++
++        # No Retry-After header at all.
++        response = HTTPResponse(status=503)
++        with (
++            mock.patch("random.uniform") as uniform_mock,
++            mock.patch("time.sleep") as sleep_mock,
++        ):
++            retry.sleep(response)
++        uniform_mock.assert_not_called()
++        sleep_mock.assert_called_once_with(0.4)
++
++        # Retry-After present but already elapsed.
++        response = HTTPResponse(status=503, headers={"Retry-After": "0"})
++        with (
++            mock.patch("random.uniform") as uniform_mock,
++            mock.patch("time.sleep") as sleep_mock,
++        ):
++            retry.sleep(response)
++        uniform_mock.assert_not_called()
++        sleep_mock.assert_called_once_with(0.4)
++
++    def test_retry_after_jitter_skips_non_positive_waits(self) -> None:
++        """A non-positive delay is never turned into a jitter sleep"""
++        retry = Retry(retry_after_jitter=5)
++
++        with mock.patch("random.uniform") as uniform_mock:
++            assert retry._jitter_retry_after(0) == 0
++            assert retry._jitter_retry_after(-1) == -1
++        uniform_mock.assert_not_called()
++
++    def test_retry_after_jitter_does_not_affect_backoff(self) -> None:
++        """retry_after_jitter leaves the exponential backoff untouched"""
++        retry = Retry(total=100, backoff_factor=0.2, retry_after_jitter=5)
++        retry = retry.increment(method="GET")
++        retry = retry.increment(method="GET")
++        assert retry.get_backoff_time() == 0.4
++
++    def test_retry_after_jitter_survives_new_and_increment(self) -> None:
++        retry = Retry(total=3, retry_after_jitter=1.5)
++        assert retry.new().retry_after_jitter == 1.5
++        assert retry.increment(method="GET").retry_after_jitter == 1.5
++
++    @pytest.mark.parametrize(
++        "retry_after_jitter", [-1, -0.001, float("nan"), float("inf")]
++    )
++    def test_retry_after_jitter_rejects_invalid_values(
++        self, retry_after_jitter: float
++    ) -> None:
++        with pytest.raises(ValueError, match="retry_after_jitter"):
++            Retry(retry_after_jitter=retry_after_jitter)

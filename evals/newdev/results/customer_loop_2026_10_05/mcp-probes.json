@@ -1,0 +1,830 @@
+[
+  {
+    "tool": "bridge_connection_status",
+    "args": null,
+    "result": {
+      "readiness": [
+        {
+          "key": "unreachable",
+          "level": "warning",
+          "what": "1 of 73 people have no Slack id, so messages for them fall back to a channel or fail visibly.",
+          "do": "Refresh Slack contacts. Names with no reliable match are routed through the configured Slack channel."
+        },
+        {
+          "key": "never_synced:urllib3/urllib3",
+          "level": "note",
+          "what": "urllib3/urllib3 has never been synced from GitHub, so approvals come from git trailers and merge commits only.",
+          "do": "Run bridge sync urllib3/urllib3 with a token that can read it."
+        }
+      ],
+      "sources": [
+        {
+          "repo": "urllib3/urllib3",
+          "kind": "git"
+        },
+        {
+          "repo": "urllib3/urllib3",
+          "kind": "git_now"
+        },
+        {
+          "repo": "urllib3/urllib3",
+          "kind": "git_paths"
+        },
+        {
+          "repo": "urllib3/urllib3",
+          "kind": "git_rev"
+        }
+      ],
+      "records": [
+        {
+          "repo": "urllib3/urllib3",
+          "kind": "commit",
+          "count": 5
+        },
+        {
+          "repo": "urllib3/urllib3",
+          "kind": "pr",
+          "count": 248
+        }
+      ],
+      "slack": {
+        "enabled": true,
+        "directory": {
+          "synced_at": "2026-10-05T07:46:17.976843+00:00",
+          "people": 72,
+          "error": ""
+        },
+        "failed": [],
+        "inbound_failed": [],
+        "reply_failures": [],
+        "triage_channel": "CTRIAGE"
+      }
+    },
+    "error": false,
+    "seconds": 0.039
+  },
+  {
+    "tool": "bridge_finish_task",
+    "args": {
+      "task_id": "c29503d2dd11",
+      "checks": "Gate probe only; no code change claimed."
+    },
+    "result": "Refused: 5 nodes still wait on a person: 4c891c655eb2 (waiting on Engineer 001); 892270f8693f (waiting on Engineer 003); b8cae0e4f89a (waiting on Engineer 028); 7e08207b4e8d (waiting on Engineer 035); and 1 more. Each named person answers or signs in the inbox or Slack before the task can finish: every required approver signs, and an answer found in records or memory is evidence, not sign-off, until a person signs it.",
+    "error": true,
+    "seconds": 0.048
+  },
+  {
+    "tool": "bridge_start_task",
+    "args": {
+      "title": "Check existing Retry-After jitter policy",
+      "goal": "Reuse the approved Retry-After jitter policy for a second implementation task; keep default behavior unchanged.",
+      "repo": "urllib3/urllib3",
+      "client_key": "fresh-customer-reuse",
+      "paths": "src/urllib3/util/retry.py"
+    },
+    "result": {
+      "task_id": "20b9aa29c1e1",
+      "title": "Check existing Retry-After jitter policy",
+      "repo": "urllib3/urllib3",
+      "verdict": "engage",
+      "why": "the org already decided something close: \"Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g\u2026\" (Engineer 001); the task speaks of policy, default, in \"Check existing Retry-After jitter policy\", which is a call for Engineer 028, who owns the area (the model would have passed this: Prior decisions already settled the jitter policy (Engineer 001 on parameter reuse, Engineer 028 on defaults, Engineer 035 on application location); this is routine verification work within an established policy, not a new tradeoff requiring judgment.; Bridge engages anyway)",
+      "discovery": {
+        "areas": [
+          {
+            "path": "src/urllib3/util/retry.py",
+            "why": "the agent is working in src/urllib3/util/retry.py",
+            "weight": 1.0
+          }
+        ],
+        "people": [
+          {
+            "name": "Engineer 028",
+            "evidence": [
+              "inferred first contact: authored pr 3788 (Describe Retry backoff_max and backoff_jitter params in docs (#3788)); confirm or refer in Slack"
+            ],
+            "score": 0.3
+          }
+        ],
+        "people_note": "nobody holds a clear share under src/urllib3/: the strongest signal is Illia Volochii with 37% of the recent changes; GitHub not synced for urllib3/urllib3: Bridge knows past reviews only from git trailers and merge commits (bridge sync urllib3/urllib3, or GITHUB_TOKEN with BRIDGE_GITHUB_REPOS on the server)",
+        "listings": [],
+        "prior_decisions": [
+          {
+            "id": "4c891c655eb2",
+            "question": "Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?",
+            "answer": "Use a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.",
+            "answered_by": "Engineer 001",
+            "similarity": 0.68
+          },
+          {
+            "id": "6c78b9e10729",
+            "question": "Should the release note explicitly state that retry_after_jitter defaults to zero, adds seconds only to positive Retry-After waits, and the final wait remains capped?",
+            "answer": "State all three points in the release note: default zero, additive seconds for positive Retry-After waits only, and final wait capped at retry_after_max. Include the new parameter in the Retry API docstring too.",
+            "answered_by": "Engineer 028",
+            "similarity": 0.68
+          },
+          {
+            "id": "7e08207b4e8d",
+            "question": "Where is the jitter applied: inside `parse_retry_after()`/`get_retry_after()`, or only in `sleep_for_retry()` so the accessors keep returning the server's value?",
+            "answer": "Apply jitter only in `sleep_for_retry()`. Keep `parse_retry_after()` and `get_retry_after()` deterministic, returning only the parsed and capped server value.",
+            "answered_by": "Engineer 035",
+            "similarity": 0.55
+          }
+        ],
+        "pending": [],
+        "requester": "Rae Evaluator",
+        "repo": "urllib3/urllib3",
+        "verdict_source": "rules",
+        "named_decisions": [
+          {
+            "question": "What is the approved Retry-After jitter policy that should be reused?",
+            "from": "\"Reuse the approved Retry-After jitter policy\""
+          },
+          {
+            "question": "Which second implementation task should this policy be applied to?",
+            "from": "\"for a second implementation task\""
+          },
+          {
+            "question": "What behavior currently exists that must remain as the default?",
+            "from": "\"keep default behavior unchanged\""
+          }
+        ],
+        "verdict_rules": "engage",
+        "verdict_rules_why": "the org already decided something close: \"Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g\u2026\" (Engineer 001); the task speaks of policy, default, in \"Check existing Retry-After jitter policy\", which is a call for Engineer 028, who owns the area",
+        "verdict_model": "pass",
+        "verdict_model_why": "Prior decisions already settled the jitter policy (Engineer 001 on parameter reuse, Engineer 028 on defaults, Engineer 035 on application location); this is routine verification work within an established policy, not a new tradeoff requiring judgment."
+      },
+      "candidates": [
+        {
+          "question": "What is the approved Retry-After jitter policy that should be reused?",
+          "why": "the task says \"\"Reuse the approved Retry-After jitter policy\"\", and src/urllib3/util/retry.py is the area it lands in",
+          "paths": "src/urllib3/util/retry.py",
+          "owner": "Engineer 028",
+          "source": "the task read closely"
+        },
+        {
+          "question": "Which second implementation task should this policy be applied to?",
+          "why": "the task says \"\"for a second implementation task\"\", and src/urllib3/util/retry.py is the area it lands in",
+          "paths": "src/urllib3/util/retry.py",
+          "owner": "Engineer 028",
+          "source": "the task read closely"
+        },
+        {
+          "question": "What behavior currently exists that must remain as the default?",
+          "why": "the task says \"\"keep default behavior unchanged\"\", and src/urllib3/util/retry.py is the area it lands in",
+          "paths": "src/urllib3/util/retry.py",
+          "owner": "Engineer 028",
+          "source": "the task read closely"
+        },
+        {
+          "question": "What should the default be, and does changing it change anything for existing installs?",
+          "why": "the task says \"default\", in \"Reuse the approved Retry-After jitter policy for a second implementation task; keep default\u2026\", and src/urllib3/util/retry.py is the area it lands in",
+          "paths": "src/urllib3/util/retry.py",
+          "owner": "Engineer 028",
+          "source": "the task's own words"
+        },
+        {
+          "question": "Does the earlier answer still hold here? \"Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?\"",
+          "why": "decision 4c891c655eb2 answered that, Engineer 001",
+          "paths": "src/urllib3/util/retry.py",
+          "owner": "Engineer 001",
+          "source": "a prior decision"
+        },
+        {
+          "question": "Does the earlier answer still hold here? \"Should the release note explicitly state that retry_after_jitter defaults to zero, adds seconds only to positive Retry-After waits, and the final wait remains\u2026\"",
+          "why": "decision 6c78b9e10729 answered that, Engineer 028",
+          "paths": "src/urllib3/util/retry.py",
+          "owner": "Engineer 028",
+          "source": "a prior decision"
+        }
+      ],
+      "next": "write each decision you discover as a node with bridge_add_node (parent_id links it to the decision it grew from); Bridge resolves what it can and routes the rest, most likely to Engineer 028; Bridge sees 6 decisions this task may contain (candidates): write the ones that are real with bridge_add_node and ignore the rest; read bridge_get_tree before an irreversible step; a file you change in an area someone else decides needs a node for them, or a one-line reason at bridge_finish_task (uncovered)",
+      "delivery": {
+        "enabled": true,
+        "channel": "slack",
+        "notice": "People answer in Slack; use bridge_wait and bridge_get_tree. No web account is required."
+      }
+    },
+    "error": false,
+    "seconds": 2.879
+  },
+  {
+    "tool": "bridge_add_node",
+    "args": {
+      "task_id": "20b9aa29c1e1",
+      "question": "Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?",
+      "paths": "src/urllib3/util/retry.py",
+      "client_ref": "same-question",
+      "category": "policy"
+    },
+    "result": {
+      "node_id": "9dfa05761fc6",
+      "task_id": "20b9aa29c1e1",
+      "parent_id": "",
+      "depth": 0,
+      "client_ref": "same-question",
+      "origin": "agent",
+      "question": "Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?",
+      "status": "resolved",
+      "kind": "evidence",
+      "answer": "Use a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.",
+      "prediction": "",
+      "evidence": "Engineer 001 answered this (direct, decision 4c891c655eb2, similarity 1.00, decayed score 1.00)",
+      "owner": "Engineer 028",
+      "owner_evidence": "signs off; inferred first contact: authored pr 3788 (Describe Retry backoff_max and backoff_jitter params in docs (#3788)); confirm or refer in Slack",
+      "answered_by": "Engineer 001",
+      "rationale": "",
+      "signoff": "required",
+      "signed_by": "",
+      "brief": "",
+      "path": "src/urllib3/util/retry.py",
+      "category": "policy",
+      "created_at": "2026-10-05T08:03:35.038263+00:00",
+      "updated_at": "2026-10-05T08:03:37.408656+00:00",
+      "needs_review": false,
+      "review_reason": "",
+      "authorized": false,
+      "blocking": true,
+      "duplicate_of": "",
+      "reusable": false,
+      "rule_conditions": "",
+      "rule_expires": "",
+      "rule_scope": "",
+      "facts": {},
+      "required_signers": [],
+      "signatures": [],
+      "followup_required": false,
+      "partial": false,
+      "options": [],
+      "next": "unconfirmed: evidence, not sign-off. Prepare on this answer, do not ship on it until Engineer 028 signs it in the inbox (bridge_finish_task is refused until then); read bridge_get_tree before an irreversible step",
+      "related": [
+        {
+          "id": "4c891c655eb2",
+          "kind": "derived",
+          "note": "took its answer from this decision"
+        }
+      ],
+      "depends_on": [],
+      "dependents": [],
+      "ranked": [
+        {
+          "owner": "Engineer 028",
+          "evidence": [
+            "inferred first contact: authored pr 3788 (Describe Retry backoff_max and backoff_jitter params in docs (#3788)); confirm or refer in Slack"
+          ],
+          "score": 0.3
+        }
+      ],
+      "delivery": {
+        "enabled": true,
+        "channel": "slack",
+        "notice": "People answer in Slack; use bridge_wait and bridge_get_tree. No web account is required.",
+        "notifications": [
+          {
+            "kind": "signoff",
+            "state": "queued",
+            "person_name": "Engineer 028",
+            "last_error": ""
+          }
+        ]
+      }
+    },
+    "error": false,
+    "seconds": 2.405
+  },
+  {
+    "tool": "bridge_get_decision",
+    "args": {
+      "decision_id": "9dfa05761fc6"
+    },
+    "result": {
+      "id": "9dfa05761fc6",
+      "run_id": "20b9aa29c1e1",
+      "question": "Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?",
+      "context": "Paths: src/urllib3/util/retry.py",
+      "path": "src/urllib3/util/retry.py",
+      "owner_id": "44b365ba2331",
+      "routing_reason": "resolution ladder",
+      "status": "resolved",
+      "prediction": null,
+      "source_id": "4c891c655eb2",
+      "answer": "Use a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.",
+      "rationale": null,
+      "answered_by": "Engineer 001",
+      "created_at": "2026-10-05T08:03:35.038263+00:00",
+      "updated_at": "2026-10-05T08:03:37.408656+00:00",
+      "category": "policy",
+      "source": "memory",
+      "evidence": "Engineer 001 answered this (direct, decision 4c891c655eb2, similarity 1.00, decayed score 1.00)",
+      "owner_evidence": "signs off; inferred first contact: authored pr 3788 (Describe Retry backoff_max and backoff_jitter params in docs (#3788)); confirm or refer in Slack",
+      "superseded_by": "",
+      "supersedes": "",
+      "options": "",
+      "repo": "urllib3/urllib3",
+      "kind": "evidence",
+      "parent_id": "",
+      "client_ref": "same-question",
+      "depth": 0,
+      "origin": "agent",
+      "signoff": "required",
+      "signed_by": "",
+      "brief": "",
+      "source_revision": "2026-10-05T07:58:05.068374+00:00",
+      "needs_review": 0,
+      "review_reason": "",
+      "signed_revision": "",
+      "reusable": 0,
+      "rule_conditions": "",
+      "rule_expires": "",
+      "rule_by": "",
+      "rule_at": "",
+      "rule_scope": "",
+      "rule_ended_at": "",
+      "required_signers": "",
+      "signatures": "",
+      "actor_id": "",
+      "actor_name": "",
+      "actor_basis": "",
+      "facts": "",
+      "applicability": "",
+      "draft": 0,
+      "signed_hash": "",
+      "scope_key": "d71a009b1704a0f654e9",
+      "scope_paths": "[\"src/urllib3/util/retry.py\"]",
+      "followup_required": 0,
+      "rowid": 8,
+      "search_vector": "'0.0':26,38 'accept':51 'alreadi':73 'backoff':9,45,81 'behavior':47 'construct':62 'default':24,36 'e.g':20 'exist':8,44,77 'expir':74 'exponenti':80 'fallback':78 'finit':52 'increment':43 'infinit':59 'jitter':5,10,23,34,46,89 'miss':71 'must':48 'nan':57 'negat':56 'new':15,31,41,88 'nonneg':53 'number':54 'opt':17 'opt-in':16 'paramet':11,19,35 'path':27 'preserv':75 'reject':55 'retri':3,21,32,66 'retry-aft':2,65 'reus':6 'sleep':90 'src/urllib3/util/retry.py':28 'stay':49 'thread':39 'turn':84 'unchang':50 'use':29 'valu':60,68 'zero':70",
+      "owner_name": "Engineer 028",
+      "owner_team": "",
+      "run_title": "Check existing Retry-After jitter policy",
+      "agent": "Docker local MCP agent",
+      "events": [
+        {
+          "id": 75,
+          "decision_id": "9dfa05761fc6",
+          "run_id": "20b9aa29c1e1",
+          "kind": "resolve",
+          "detail": "{\"answered_by\": \"Engineer 001\", \"cited\": \"4c891c655eb2\", \"decision_id\": \"9dfa05761fc6\", \"kind\": \"direct\", \"signed\": true, \"source\": \"memory\", \"task_id\": \"20b9aa29c1e1\"}",
+          "created_at": "2026-10-05T08:03:37.340682+00:00"
+        },
+        {
+          "id": 77,
+          "decision_id": "9dfa05761fc6",
+          "run_id": "20b9aa29c1e1",
+          "kind": "notification_queued",
+          "detail": "{\"decision_id\": \"9dfa05761fc6\", \"destination\": \"dm\", \"error\": \"\", \"kind\": \"signoff\", \"task_id\": \"20b9aa29c1e1\", \"to\": \"Engineer 028\"}",
+          "created_at": "2026-10-05T08:03:37.414486+00:00"
+        },
+        {
+          "id": 78,
+          "decision_id": "9dfa05761fc6",
+          "run_id": "20b9aa29c1e1",
+          "kind": "node_added",
+          "detail": "{\"adopted\": \"\", \"client_ref\": \"same-question\", \"decision_id\": \"9dfa05761fc6\", \"depth\": 0, \"parent_id\": \"\", \"status\": \"resolved\", \"task_id\": \"20b9aa29c1e1\"}",
+          "created_at": "2026-10-05T08:03:37.417645+00:00"
+        }
+      ],
+      "approval_pending": true,
+      "authorized": false,
+      "revision": null
+    },
+    "error": false,
+    "seconds": 0.021
+  },
+  {
+    "tool": "bridge_start_task",
+    "args": {
+      "title": "Check existing Retry-After jitter policy",
+      "goal": "Reuse the approved Retry-After jitter policy for a second implementation task; keep default behavior unchanged.",
+      "repo": "urllib3/urllib3",
+      "client_key": "fresh-customer-reuse-matched",
+      "paths": "src/urllib3/util/retry.py"
+    },
+    "result": {
+      "task_id": "f76ade4ad6a6",
+      "title": "Check existing Retry-After jitter policy",
+      "repo": "urllib3/urllib3",
+      "verdict": "engage",
+      "why": "the org already decided something close: \"Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g\u2026\" (Engineer 001); the task speaks of policy, default, in \"Check existing Retry-After jitter policy\", which is a call for Engineer 028, who owns the area (the model would have passed this: The task is routine verification work to reuse an already-approved policy; Engineer 028 owns the release note decision and can proceed without judgment calls since no tradeoffs or conflicts have emerged.; Bridge engages anyway)",
+      "discovery": {
+        "areas": [
+          {
+            "path": "src/urllib3/util/retry.py",
+            "why": "the agent is working in src/urllib3/util/retry.py",
+            "weight": 1.0
+          }
+        ],
+        "people": [
+          {
+            "name": "Engineer 028",
+            "evidence": [
+              "inferred first contact: authored pr 3788 (Describe Retry backoff_max and backoff_jitter params in docs (#3788)); confirm or refer in Slack"
+            ],
+            "score": 0.3
+          }
+        ],
+        "people_note": "nobody holds a clear share under src/urllib3/: the strongest signal is Illia Volochii with 37% of the recent changes; GitHub not synced for urllib3/urllib3: Bridge knows past reviews only from git trailers and merge commits (bridge sync urllib3/urllib3, or GITHUB_TOKEN with BRIDGE_GITHUB_REPOS on the server)",
+        "listings": [],
+        "prior_decisions": [
+          {
+            "id": "4c891c655eb2",
+            "question": "Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?",
+            "answer": "Use a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.",
+            "answered_by": "Engineer 001",
+            "similarity": 0.68
+          },
+          {
+            "id": "6c78b9e10729",
+            "question": "Should the release note explicitly state that retry_after_jitter defaults to zero, adds seconds only to positive Retry-After waits, and the final wait remains capped?",
+            "answer": "State all three points in the release note: default zero, additive seconds for positive Retry-After waits only, and final wait capped at retry_after_max. Include the new parameter in the Retry API docstring too.",
+            "answered_by": "Engineer 028",
+            "similarity": 0.68
+          },
+          {
+            "id": "7e08207b4e8d",
+            "question": "Where is the jitter applied: inside `parse_retry_after()`/`get_retry_after()`, or only in `sleep_for_retry()` so the accessors keep returning the server's value?",
+            "answer": "Apply jitter only in `sleep_for_retry()`. Keep `parse_retry_after()` and `get_retry_after()` deterministic, returning only the parsed and capped server value.",
+            "answered_by": "Engineer 035",
+            "similarity": 0.55
+          }
+        ],
+        "pending": [],
+        "requester": "Rae Evaluator",
+        "repo": "urllib3/urllib3",
+        "verdict_source": "rules",
+        "named_decisions": [
+          {
+            "question": "What is the approved Retry-After jitter policy that should be reused?",
+            "from": "\"Reuse the approved Retry-After jitter policy\""
+          },
+          {
+            "question": "Which implementation task is this policy being reused for?",
+            "from": "\"for a second implementation task\""
+          }
+        ],
+        "verdict_rules": "engage",
+        "verdict_rules_why": "the org already decided something close: \"Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g\u2026\" (Engineer 001); the task speaks of policy, default, in \"Check existing Retry-After jitter policy\", which is a call for Engineer 028, who owns the area",
+        "verdict_model": "pass",
+        "verdict_model_why": "The task is routine verification work to reuse an already-approved policy; Engineer 028 owns the release note decision and can proceed without judgment calls since no tradeoffs or conflicts have emerged."
+      },
+      "candidates": [
+        {
+          "question": "What is the approved Retry-After jitter policy that should be reused?",
+          "why": "the task says \"\"Reuse the approved Retry-After jitter policy\"\", and src/urllib3/util/retry.py is the area it lands in",
+          "paths": "src/urllib3/util/retry.py",
+          "owner": "Engineer 028",
+          "source": "the task read closely"
+        },
+        {
+          "question": "Which implementation task is this policy being reused for?",
+          "why": "the task says \"\"for a second implementation task\"\", and src/urllib3/util/retry.py is the area it lands in",
+          "paths": "src/urllib3/util/retry.py",
+          "owner": "Engineer 028",
+          "source": "the task read closely"
+        },
+        {
+          "question": "What should the default be, and does changing it change anything for existing installs?",
+          "why": "the task says \"default\", in \"Reuse the approved Retry-After jitter policy for a second implementation task; keep default\u2026\", and src/urllib3/util/retry.py is the area it lands in",
+          "paths": "src/urllib3/util/retry.py",
+          "owner": "Engineer 028",
+          "source": "the task's own words"
+        },
+        {
+          "question": "Does the earlier answer still hold here? \"Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?\"",
+          "why": "decision 4c891c655eb2 answered that, Engineer 001",
+          "paths": "src/urllib3/util/retry.py",
+          "owner": "Engineer 001",
+          "source": "a prior decision"
+        },
+        {
+          "question": "Does the earlier answer still hold here? \"Should the release note explicitly state that retry_after_jitter defaults to zero, adds seconds only to positive Retry-After waits, and the final wait remains\u2026\"",
+          "why": "decision 6c78b9e10729 answered that, Engineer 028",
+          "paths": "src/urllib3/util/retry.py",
+          "owner": "Engineer 028",
+          "source": "a prior decision"
+        }
+      ],
+      "next": "write each decision you discover as a node with bridge_add_node (parent_id links it to the decision it grew from); Bridge resolves what it can and routes the rest, most likely to Engineer 028; Bridge sees 5 decisions this task may contain (candidates): write the ones that are real with bridge_add_node and ignore the rest; read bridge_get_tree before an irreversible step; a file you change in an area someone else decides needs a node for them, or a one-line reason at bridge_finish_task (uncovered)",
+      "delivery": {
+        "enabled": true,
+        "channel": "slack",
+        "notice": "People answer in Slack; use bridge_wait and bridge_get_tree. No web account is required."
+      }
+    },
+    "error": false,
+    "seconds": 2.575
+  },
+  {
+    "tool": "bridge_add_node",
+    "args": {
+      "task_id": "f76ade4ad6a6",
+      "question": "Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?",
+      "paths": "src/urllib3/util/retry.py",
+      "client_ref": "same-question",
+      "category": "policy",
+      "facts": "component=Retry, default_must_be_noop=true"
+    },
+    "result": {
+      "node_id": "55247168942d",
+      "task_id": "f76ade4ad6a6",
+      "parent_id": "",
+      "depth": 0,
+      "client_ref": "same-question",
+      "origin": "agent",
+      "question": "Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?",
+      "status": "resolved",
+      "kind": "evidence",
+      "answer": "Use a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.",
+      "prediction": "",
+      "evidence": "Engineer 001 answered this (direct, decision 4c891c655eb2, similarity 1.00, decayed score 1.00)",
+      "owner": "Engineer 001",
+      "owner_evidence": "signs off; inferred first contact; confirm or refer in Slack; learned first contact: Engineer 001 answered decision 4c891c655eb2; confirm or refer, not permanent authority",
+      "answered_by": "Engineer 001",
+      "rationale": "",
+      "signoff": "required",
+      "signed_by": "",
+      "brief": "",
+      "path": "src/urllib3/util/retry.py",
+      "category": "policy",
+      "created_at": "2026-10-05T08:06:21.620974+00:00",
+      "updated_at": "2026-10-05T08:06:24.145911+00:00",
+      "needs_review": false,
+      "review_reason": "",
+      "authorized": false,
+      "blocking": true,
+      "duplicate_of": "",
+      "reusable": false,
+      "rule_conditions": "",
+      "rule_expires": "",
+      "rule_scope": "",
+      "facts": {
+        "component": "Retry",
+        "default_must_be_noop": "true"
+      },
+      "required_signers": [],
+      "signatures": [],
+      "followup_required": false,
+      "partial": false,
+      "options": [],
+      "next": "unconfirmed: evidence, not sign-off. Prepare on this answer, do not ship on it until Engineer 001 signs it in the inbox (bridge_finish_task is refused until then); read bridge_get_tree before an irreversible step",
+      "related": [
+        {
+          "id": "4c891c655eb2",
+          "kind": "derived",
+          "note": "took its answer from this decision"
+        }
+      ],
+      "depends_on": [],
+      "dependents": [],
+      "ranked": [
+        {
+          "owner": "Engineer 001",
+          "evidence": [
+            "inferred first contact; confirm or refer in Slack",
+            "learned first contact: Engineer 001 answered decision 4c891c655eb2; confirm or refer, not permanent authority"
+          ],
+          "score": 3.0
+        }
+      ],
+      "delivery": {
+        "enabled": true,
+        "channel": "slack",
+        "notice": "People answer in Slack; use bridge_wait and bridge_get_tree. No web account is required.",
+        "notifications": [
+          {
+            "kind": "signoff",
+            "state": "queued",
+            "person_name": "Engineer 001",
+            "last_error": ""
+          }
+        ]
+      }
+    },
+    "error": false,
+    "seconds": 2.57
+  },
+  {
+    "tool": "bridge_get_decision",
+    "args": {
+      "decision_id": "55247168942d"
+    },
+    "result": {
+      "id": "55247168942d",
+      "run_id": "f76ade4ad6a6",
+      "question": "Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?",
+      "context": "Paths: src/urllib3/util/retry.py",
+      "path": "src/urllib3/util/retry.py",
+      "owner_id": "44d0f5100b16",
+      "routing_reason": "resolution ladder",
+      "status": "resolved",
+      "prediction": null,
+      "source_id": "4c891c655eb2",
+      "answer": "Use a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.",
+      "rationale": null,
+      "answered_by": "Engineer 001",
+      "created_at": "2026-10-05T08:06:21.620974+00:00",
+      "updated_at": "2026-10-05T08:06:24.145911+00:00",
+      "category": "policy",
+      "source": "memory",
+      "evidence": "Engineer 001 answered this (direct, decision 4c891c655eb2, similarity 1.00, decayed score 1.00)",
+      "owner_evidence": "signs off; inferred first contact; confirm or refer in Slack; learned first contact: Engineer 001 answered decision 4c891c655eb2; confirm or refer, not permanent authority",
+      "superseded_by": "",
+      "supersedes": "",
+      "options": "",
+      "repo": "urllib3/urllib3",
+      "kind": "evidence",
+      "parent_id": "",
+      "client_ref": "same-question",
+      "depth": 0,
+      "origin": "agent",
+      "signoff": "required",
+      "signed_by": "",
+      "brief": "",
+      "source_revision": "2026-10-05T07:58:05.068374+00:00",
+      "needs_review": 0,
+      "review_reason": "",
+      "signed_revision": "",
+      "reusable": 0,
+      "rule_conditions": "",
+      "rule_expires": "",
+      "rule_by": "",
+      "rule_at": "",
+      "rule_scope": "",
+      "rule_ended_at": "",
+      "required_signers": "",
+      "signatures": "",
+      "actor_id": "",
+      "actor_name": "",
+      "actor_basis": "",
+      "facts": "{\"component\": \"Retry\", \"default_must_be_noop\": \"true\"}",
+      "applicability": "",
+      "draft": 0,
+      "signed_hash": "",
+      "scope_key": "d71a009b1704a0f654e9",
+      "scope_paths": "[\"src/urllib3/util/retry.py\"]",
+      "followup_required": 0,
+      "rowid": 9,
+      "search_vector": "'0.0':26,38 'accept':51 'alreadi':73 'backoff':9,45,81 'behavior':47 'construct':62 'default':24,36 'e.g':20 'exist':8,44,77 'expir':74 'exponenti':80 'fallback':78 'finit':52 'increment':43 'infinit':59 'jitter':5,10,23,34,46,89 'miss':71 'must':48 'nan':57 'negat':56 'new':15,31,41,88 'nonneg':53 'number':54 'opt':17 'opt-in':16 'paramet':11,19,35 'path':27 'preserv':75 'reject':55 'retri':3,21,32,66 'retry-aft':2,65 'reus':6 'sleep':90 'src/urllib3/util/retry.py':28 'stay':49 'thread':39 'turn':84 'unchang':50 'use':29 'valu':60,68 'zero':70",
+      "owner_name": "Engineer 001",
+      "owner_team": "",
+      "run_title": "Check existing Retry-After jitter policy",
+      "agent": "Docker local MCP agent",
+      "events": [
+        {
+          "id": 85,
+          "decision_id": "55247168942d",
+          "run_id": "f76ade4ad6a6",
+          "kind": "resolve",
+          "detail": "{\"answered_by\": \"Engineer 001\", \"cited\": \"4c891c655eb2\", \"decision_id\": \"55247168942d\", \"kind\": \"direct\", \"signed\": true, \"source\": \"memory\", \"task_id\": \"f76ade4ad6a6\"}",
+          "created_at": "2026-10-05T08:06:24.080914+00:00"
+        },
+        {
+          "id": 87,
+          "decision_id": "55247168942d",
+          "run_id": "f76ade4ad6a6",
+          "kind": "notification_queued",
+          "detail": "{\"decision_id\": \"55247168942d\", \"destination\": \"dm\", \"error\": \"\", \"kind\": \"signoff\", \"task_id\": \"f76ade4ad6a6\", \"to\": \"Engineer 001\"}",
+          "created_at": "2026-10-05T08:06:24.153123+00:00"
+        },
+        {
+          "id": 88,
+          "decision_id": "55247168942d",
+          "run_id": "f76ade4ad6a6",
+          "kind": "node_added",
+          "detail": "{\"adopted\": \"\", \"client_ref\": \"same-question\", \"decision_id\": \"55247168942d\", \"depth\": 0, \"parent_id\": \"\", \"status\": \"resolved\", \"task_id\": \"f76ade4ad6a6\"}",
+          "created_at": "2026-10-05T08:06:24.156235+00:00"
+        }
+      ],
+      "approval_pending": true,
+      "authorized": false,
+      "revision": null
+    },
+    "error": false,
+    "seconds": 0.02
+  },
+  {
+    "tool": "bridge_get_tree",
+    "args": {
+      "task_id": "f76ade4ad6a6"
+    },
+    "result": {
+      "task_id": "f76ade4ad6a6",
+      "title": "Check existing Retry-After jitter policy",
+      "goal": "Reuse the approved Retry-After jitter policy for a second implementation task; keep default behavior unchanged.",
+      "repo": "urllib3/urllib3",
+      "requester": "Rae Evaluator",
+      "facts": {},
+      "status": "working",
+      "verdict": "engage",
+      "verdict_why": "the org already decided something close: \"Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g\u2026\" (Engineer 001); the task speaks of policy, default, in \"Check existing Retry-After jitter policy\", which is a call for Engineer 028, who owns the area (the model would have passed this: The task is routine verification work to reuse an already-approved policy; Engineer 028 owns the release note decision and can proceed without judgment calls since no tradeoffs or conflicts have emerged.; Bridge engages anyway)",
+      "counts": {
+        "resolved": 1,
+        "unrouted": 0,
+        "needs_review": 0,
+        "parent_changed_after": 0,
+        "signoff_required": 0,
+        "blocking": 0
+      },
+      "needs_review": false,
+      "nodes": [
+        {
+          "node_id": "55247168942d",
+          "task_id": "f76ade4ad6a6",
+          "parent_id": "",
+          "depth": 0,
+          "client_ref": "same-question",
+          "origin": "agent",
+          "question": "Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?",
+          "status": "resolved",
+          "kind": "evidence",
+          "answer": "Use a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.",
+          "prediction": "",
+          "evidence": "Engineer 001 answered this (direct, decision 4c891c655eb2, similarity 1.00, decayed score 1.00)",
+          "owner": "Engineer 001",
+          "owner_evidence": "signs off; inferred first contact; confirm or refer in Slack; learned first contact: Engineer 001 answered decision 4c891c655eb2; confirm or refer, not permanent authority",
+          "answered_by": "Engineer 001",
+          "rationale": "",
+          "signoff": "signed",
+          "signed_by": "Engineer 001",
+          "brief": "",
+          "path": "src/urllib3/util/retry.py",
+          "category": "policy",
+          "created_at": "2026-10-05T08:06:21.620974+00:00",
+          "updated_at": "2026-10-05T08:19:56.941573+00:00",
+          "needs_review": false,
+          "review_reason": "",
+          "authorized": true,
+          "blocking": false,
+          "duplicate_of": "",
+          "reusable": false,
+          "rule_conditions": "",
+          "rule_expires": "",
+          "rule_scope": "",
+          "facts": {
+            "component": "Retry",
+            "default_must_be_noop": "true"
+          },
+          "required_signers": [],
+          "signatures": [
+            "Engineer 001"
+          ],
+          "followup_required": false,
+          "partial": false,
+          "options": [],
+          "next": "signed by Engineer 001: act on this answer; follow-up questions are children of this node",
+          "related": [
+            {
+              "id": "4c891c655eb2",
+              "kind": "derived",
+              "note": "took its answer from this decision"
+            }
+          ],
+          "depends_on": [],
+          "dependents": [],
+          "parent_changed_after": false,
+          "children": []
+        }
+      ],
+      "followups": [],
+      "observed_at": "2026-10-05T08:19:58.242968+00:00",
+      "notes": [],
+      "next": "no node waits on anyone"
+    },
+    "error": false,
+    "seconds": 0.029
+  },
+  {
+    "tool": "bridge_finish_task",
+    "args": {
+      "task_id": "f76ade4ad6a6",
+      "checks": "Policy reuse probe only; no implementation changes claimed for this sibling task."
+    },
+    "result": {
+      "id": "f76ade4ad6a6",
+      "status": "completed",
+      "counts": {
+        "resolved": 1,
+        "unrouted": 0,
+        "needs_review": 0,
+        "parent_changed_after": 0,
+        "signoff_required": 0,
+        "blocking": 0
+      },
+      "next": "no node waits on anyone",
+      "authorized": [
+        {
+          "node_id": "55247168942d",
+          "question": "Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?",
+          "signed_by": "Engineer 001"
+        }
+      ],
+      "checks": "Policy reuse probe only; no implementation changes claimed for this sibling task.",
+      "follows": [],
+      "unread": [],
+      "uncovered": [],
+      "verified": false,
+      "caveat": "1 decision on this task was authorized by a person. Bridge did not read the diff and does not know whether it follows them; pass `diff` to bridge_finish_task and it will say what it can: what the agent says it ran: Policy reuse probe only; no implementation changes claimed for this sibling task.. Authorized is not verified; code review is still the gate on shipping."
+    },
+    "error": false,
+    "seconds": 0.041
+  }
+]

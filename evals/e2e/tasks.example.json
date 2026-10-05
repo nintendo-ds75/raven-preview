@@ -1,0 +1,53 @@
+{
+  "org": {
+    "repo": "acme/ledger",
+    "people": [
+      {"name": "Priya Natarajan", "email": "priya@acme.example", "slack_id": "UPRI"},
+      {"name": "Wes Chen", "email": "wes@acme.example", "slack_id": "UWES"},
+      {"name": "Marisol Vega", "email": "marisol@acme.example", "slack_id": "UMAR"}
+    ],
+    "authority": [
+      {"scope_kind": "path", "scope": "billing/*", "role": "decides", "person": "Priya Natarajan"},
+      {"scope_kind": "path", "scope": "api/*", "role": "decides", "person": "Marisol Vega"}
+    ],
+    "coordinator": "Wes Chen",
+    "settings": {"auto_rules": true},
+    "prior": [
+      {"question": "Round the overage charge to whole cents?", "context": "Applying the per-unit rate produces fractional cents on the invoice",
+       "answer": "Round half up to whole cents", "rationale": "Matches how invoice totals are shown", "by": "Priya Natarajan",
+       "paths": "billing/rates.py", "rule": {"conditions": "overage", "expires": ""}}
+    ]
+  },
+  "tasks": [
+    {
+      "id": "overage-pricing",
+      "title": "Add usage-based pricing for overage",
+      "requester": "wes@acme.example",
+      "paths": "billing/rates.py",
+      "decisions": [
+        {"ref": "rate", "question": "Which rate applies to Globex usage above the included quota?",
+         "context": "Globex is on the enterprise plan; the contract names no overage rate", "paths": "billing/rates.py",
+         "default": "The list rate",
+         "key": {"owner": "Priya Natarajan", "answer": "The enterprise rate card: 0.02 per unit over quota", "settled": false}},
+        {"ref": "rounding", "question": "Round the overage charge to whole cents?",
+         "context": "Applying the 0.02 rate produces fractional cents on the overage line", "paths": "billing/rates.py",
+         "default": "Round half up to whole cents",
+         "key": {"owner": "Priya Natarajan", "answer": "Round half up to whole cents", "settled": true}}
+      ],
+      "action": {"expected": "The enterprise rate card: 0.02 per unit over quota | Round half up to whole cents"}
+    },
+    {
+      "id": "partner-endpoint",
+      "title": "Add a partner accounts endpoint",
+      "requester": "wes@acme.example",
+      "paths": "api/routes.py",
+      "decisions": [
+        {"ref": "auth", "question": "Should the partner accounts endpoint require an API key?",
+         "context": "Partners are external; the other endpoints use session auth", "paths": "api/routes.py",
+         "default": "No, session auth like the rest",
+         "key": {"owner": "Marisol Vega", "answer": "Yes, an API key; partners are external", "settled": false}}
+      ],
+      "action": {"expected": "Yes, an API key; partners are external"}
+    }
+  ]
+}

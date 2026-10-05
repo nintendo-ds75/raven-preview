@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Start the opt-in host helper; agent terminals start in the chosen working folder.
+set -euo pipefail
+bridge_source=$(cd "$(dirname "$0")" && pwd)
+if [ "$#" -gt 0 ]; then cd "$1"; shift; fi
+command -v python3 >/dev/null || { echo 'Install Python 3 to use the local agent launcher.' >&2; exit 1; }
+export PYTHONPATH="$bridge_source${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m bridge.agent_launcher "$@"

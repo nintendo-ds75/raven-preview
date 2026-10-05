@@ -1,0 +1,83 @@
+{
+  "seconds": 112.71,
+  "result": {
+    "verdict": "unclear",
+    "why": "The diff clearly adds and validates `retry_after_jitter`, threads it through `new()`, preserves `backoff_jitter`, and keeps the zero/missing/expired fallback to exponential backoff intact, but it never touches `increment()` so its threading through that method is unseen in this diff.",
+    "requirements": [
+      {
+        "needs": "Add a new `retry_after_jitter` parameter, defaulting to 0.0",
+        "kind": "must",
+        "found": "honored",
+        "state": "ok",
+        "at": "retry_after_jitter: float = 0.0,"
+      },
+      {
+        "needs": "Thread `retry_after_jitter` through `new()`",
+        "kind": "must",
+        "found": "honored",
+        "state": "ok",
+        "at": "retry_after_jitter=self.retry_after_jitter,"
+      },
+      {
+        "needs": "Thread `retry_after_jitter` through `increment()`",
+        "kind": "must",
+        "found": "unseen",
+        "state": "unclear"
+      },
+      {
+        "needs": "Existing `backoff_jitter` behavior must stay unchanged",
+        "kind": "must_not",
+        "found": "honored",
+        "state": "ok",
+        "at": "self.backoff_jitter = backoff_jitter"
+      },
+      {
+        "needs": "Accept finite nonnegative numbers for retry_after_jitter",
+        "kind": "must",
+        "found": "honored",
+        "state": "ok",
+        "at": "if not math.isfinite(retry_after_jitter) or retry_after_jitter < 0:"
+      },
+      {
+        "needs": "Reject negative values at construction",
+        "kind": "must",
+        "found": "honored",
+        "state": "ok",
+        "at": "if not math.isfinite(retry_after_jitter) or retry_after_jitter < 0:"
+      },
+      {
+        "needs": "Reject NaN values at construction",
+        "kind": "must",
+        "found": "honored",
+        "state": "ok",
+        "at": "if not math.isfinite(retry_after_jitter) or retry_after_jitter < 0:"
+      },
+      {
+        "needs": "Reject infinite values at construction",
+        "kind": "must",
+        "found": "honored",
+        "state": "ok",
+        "at": "if not math.isfinite(retry_after_jitter) or retry_after_jitter < 0:"
+      },
+      {
+        "needs": "If Retry-After is zero, missing, or already expired, preserve the existing fallback to exponential backoff",
+        "kind": "must",
+        "found": "honored",
+        "state": "ok",
+        "at": "if not self.retry_after_jitter or retry_after <= 0:\n            return retry_after",
+        "not_shown": "The remainder of sleep() after the shown docstring, including the call to sleep_for_retry() and the fallback call to self.get_backoff_time()/time.sleep() when sleep_for_retry returns False, is not shown in the diff."
+      },
+      {
+        "needs": "Do not turn a zero/missing/expired Retry-After into a new jitter sleep",
+        "kind": "must_not",
+        "found": "honored",
+        "state": "ok",
+        "at": "if not self.retry_after_jitter or retry_after <= 0:\n            return retry_after",
+        "not_shown": "The remainder of sleep() after the shown docstring, including the call to sleep_for_retry() and the fallback call to self.get_backoff_time()/time.sleep() when sleep_for_retry returns False, is not shown in the diff."
+      }
+    ],
+    "unexamined": [
+      "The remainder of sleep() after the shown docstring, including the call to sleep_for_retry() and the fallback call to self.get_backoff_time()/time.sleep() when sleep_for_retry returns False, is not shown in the diff."
+    ]
+  }
+}

@@ -1,0 +1,1640 @@
+{
+  "task_id": "c29503d2dd11",
+  "title": "Support optional jitter on Retry-After waits",
+  "status": "completed",
+  "events": [
+    {
+      "id": 7,
+      "kind": "run_started",
+      "decision_id": "",
+      "detail": "Support optional jitter on Retry-After waits",
+      "at": "2026-10-05T07:49:47.347599+00:00"
+    },
+    {
+      "id": 8,
+      "kind": "task_started",
+      "decision_id": "",
+      "detail": {
+        "paths": [
+          "src/urllib3/util/retry.py",
+          "test/test_retry.py"
+        ],
+        "requester": "Rae Evaluator",
+        "task_id": "c29503d2dd11",
+        "verdict": "engage",
+        "why": "the task speaks of default, keep existing behavior, policy, in \"Keep existing behavior by default and preserve server-requested delays and configured limits.\", which is a call for Engineer 009, who owns the area (the model would have passed this: This is a well-scoped feature addition with clear\u2026"
+      },
+      "at": "2026-10-05T07:49:51.331603+00:00"
+    },
+    {
+      "id": 10,
+      "kind": "expand",
+      "decision_id": "4c891c655eb2",
+      "detail": {
+        "added_candidates": 8,
+        "decision_id": "4c891c655eb2",
+        "phrases": [
+          "rate limit retry delay",
+          "HTTP 429 handling",
+          "exponential backoff config",
+          "randomized delay spread",
+          "server-specified retry delay",
+          "default parameter value",
+          "API client resilience",
+          "backwards compatible config option"
+        ],
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:50:17.887432+00:00"
+    },
+    {
+      "id": 11,
+      "kind": "ask_drafted",
+      "decision_id": "4c891c655eb2",
+      "detail": {
+        "decision_id": "4c891c655eb2",
+        "owner": "Engineer 028",
+        "score": 0.3,
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:50:20.578551+00:00"
+    },
+    {
+      "id": 12,
+      "kind": "run_complete",
+      "decision_id": "",
+      "detail": {
+        "assumed": 0,
+        "open": 1,
+        "partial": 0,
+        "proposed": 0,
+        "resolved": 0,
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:50:20.578989+00:00"
+    },
+    {
+      "id": 13,
+      "kind": "judgment_requested",
+      "decision_id": "4c891c655eb2",
+      "detail": "Routed from the ownership graph: inferred first contact: authored pr 3788 (Describe Retry backoff_max and backoff_jitter params in docs (#3788)); confirm or refer in Slack",
+      "at": "2026-10-05T07:50:20.595054+00:00"
+    },
+    {
+      "id": 14,
+      "kind": "notification_queued",
+      "decision_id": "4c891c655eb2",
+      "detail": {
+        "decision_id": "4c891c655eb2",
+        "destination": "dm",
+        "error": "",
+        "kind": "ask",
+        "task_id": "c29503d2dd11",
+        "to": "Engineer 028"
+      },
+      "at": "2026-10-05T07:50:24.570336+00:00"
+    },
+    {
+      "id": 15,
+      "kind": "node_added",
+      "decision_id": "4c891c655eb2",
+      "detail": {
+        "adopted": "",
+        "client_ref": "jitter-param",
+        "decision_id": "4c891c655eb2",
+        "depth": 0,
+        "parent_id": "",
+        "status": "pending",
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:50:24.578093+00:00"
+    },
+    {
+      "id": 16,
+      "kind": "notification_sent",
+      "decision_id": "4c891c655eb2",
+      "detail": {
+        "decision_id": "4c891c655eb2",
+        "kind": "ask",
+        "task_id": "c29503d2dd11",
+        "to": "Engineer 028"
+      },
+      "at": "2026-10-05T07:50:26.585862+00:00"
+    },
+    {
+      "id": 17,
+      "kind": "expand",
+      "decision_id": "892270f8693f",
+      "detail": {
+        "added_candidates": 8,
+        "decision_id": "892270f8693f",
+        "phrases": [
+          "exponential backoff algorithm",
+          "full jitter formula",
+          "equal jitter implementation",
+          "retry delay randomization",
+          "backoff cap calculation",
+          "jittered retry policy",
+          "randomized sleep interval",
+          "decorrelated jitter strategy"
+        ],
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:50:34.451942+00:00"
+    },
+    {
+      "id": 18,
+      "kind": "ask_drafted",
+      "decision_id": "892270f8693f",
+      "detail": {
+        "decision_id": "892270f8693f",
+        "owner": "Engineer 003",
+        "score": 0.3,
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:50:37.248866+00:00"
+    },
+    {
+      "id": 19,
+      "kind": "run_complete",
+      "decision_id": "",
+      "detail": {
+        "assumed": 0,
+        "open": 1,
+        "partial": 0,
+        "proposed": 0,
+        "resolved": 0,
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:50:37.249355+00:00"
+    },
+    {
+      "id": 20,
+      "kind": "judgment_requested",
+      "decision_id": "892270f8693f",
+      "detail": "Routed from the ownership graph: inferred first contact: authored pr 4960 (Fix full read with `amt=None` after a partial read (#4960)); confirm or refer in Slack",
+      "at": "2026-10-05T07:50:37.266755+00:00"
+    },
+    {
+      "id": 21,
+      "kind": "brief_withheld",
+      "decision_id": "892270f8693f",
+      "detail": {
+        "decision_id": "892270f8693f",
+        "task_id": "c29503d2dd11",
+        "why": "the brief ties \"Equal jitter\" to what the agent said follows from \"Additive only\": \"Full or equal jitter can shorten the wait below what the server asked for, which risks retrying too soon and violating rate limits, though it does better de-correlate retries across multiple clients\""
+      },
+      "at": "2026-10-05T07:50:39.347966+00:00"
+    },
+    {
+      "id": 22,
+      "kind": "notification_queued",
+      "decision_id": "892270f8693f",
+      "detail": {
+        "decision_id": "892270f8693f",
+        "destination": "dm",
+        "error": "",
+        "kind": "ask",
+        "task_id": "c29503d2dd11",
+        "to": "Engineer 003"
+      },
+      "at": "2026-10-05T07:50:39.381553+00:00"
+    },
+    {
+      "id": 23,
+      "kind": "node_added",
+      "decision_id": "892270f8693f",
+      "detail": {
+        "adopted": "",
+        "client_ref": "jitter-distribution",
+        "decision_id": "892270f8693f",
+        "depth": 1,
+        "parent_id": "4c891c655eb2",
+        "status": "pending",
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:50:39.392613+00:00"
+    },
+    {
+      "id": 24,
+      "kind": "notification_sent",
+      "decision_id": "892270f8693f",
+      "detail": {
+        "decision_id": "892270f8693f",
+        "kind": "ask",
+        "task_id": "c29503d2dd11",
+        "to": "Engineer 003"
+      },
+      "at": "2026-10-05T07:50:40.628868+00:00"
+    },
+    {
+      "id": 25,
+      "kind": "expand",
+      "decision_id": "b8cae0e4f89a",
+      "detail": {
+        "added_candidates": 8,
+        "decision_id": "b8cae0e4f89a",
+        "phrases": [
+          "backoff jitter calculation",
+          "retry-after header parsing",
+          "max delay clamp",
+          "exponential backoff cap",
+          "jitter applied after clamp",
+          "retry delay ceiling",
+          "rate limit backoff logic",
+          "server-provided retry value"
+        ],
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:50:41.322469+00:00"
+    },
+    {
+      "id": 26,
+      "kind": "ask_drafted",
+      "decision_id": "b8cae0e4f89a",
+      "detail": {
+        "decision_id": "b8cae0e4f89a",
+        "owner": "Engineer 028",
+        "score": 0.3,
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:50:43.892330+00:00"
+    },
+    {
+      "id": 27,
+      "kind": "run_complete",
+      "decision_id": "",
+      "detail": {
+        "assumed": 0,
+        "open": 1,
+        "partial": 0,
+        "proposed": 0,
+        "resolved": 0,
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:50:43.893215+00:00"
+    },
+    {
+      "id": 28,
+      "kind": "judgment_requested",
+      "decision_id": "b8cae0e4f89a",
+      "detail": "Routed from the ownership graph: inferred first contact: authored pr 3788 (Describe Retry backoff_max and backoff_jitter params in docs (#3788)); confirm or refer in Slack",
+      "at": "2026-10-05T07:50:43.913615+00:00"
+    },
+    {
+      "id": 29,
+      "kind": "notification_queued",
+      "decision_id": "b8cae0e4f89a",
+      "detail": {
+        "decision_id": "b8cae0e4f89a",
+        "destination": "dm",
+        "error": "",
+        "kind": "ask",
+        "task_id": "c29503d2dd11",
+        "to": "Engineer 028"
+      },
+      "at": "2026-10-05T07:50:46.882441+00:00"
+    },
+    {
+      "id": 30,
+      "kind": "node_added",
+      "decision_id": "b8cae0e4f89a",
+      "detail": {
+        "adopted": "",
+        "client_ref": "jitter-cap",
+        "decision_id": "b8cae0e4f89a",
+        "depth": 1,
+        "parent_id": "4c891c655eb2",
+        "status": "pending",
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:50:46.889702+00:00"
+    },
+    {
+      "id": 31,
+      "kind": "notification_sent",
+      "decision_id": "b8cae0e4f89a",
+      "detail": {
+        "decision_id": "b8cae0e4f89a",
+        "kind": "ask",
+        "task_id": "c29503d2dd11",
+        "to": "Engineer 028"
+      },
+      "at": "2026-10-05T07:50:48.674298+00:00"
+    },
+    {
+      "id": 32,
+      "kind": "expand",
+      "decision_id": "4ded764885e3",
+      "detail": {
+        "added_candidates": 8,
+        "decision_id": "4ded764885e3",
+        "phrases": [
+          "jitter calculation method",
+          "fixed delay vs percentage",
+          "retry backoff formula",
+          "jitter implementation ticket",
+          "randomized delay seconds",
+          "backoff multiplier config",
+          "exponential backoff jitter",
+          "retry delay units"
+        ],
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:51:06.171090+00:00"
+    },
+    {
+      "id": 33,
+      "kind": "ask_drafted",
+      "decision_id": "4ded764885e3",
+      "detail": {
+        "decision_id": "4ded764885e3",
+        "owner": "Engineer 035",
+        "score": 0.3,
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:51:09.878283+00:00"
+    },
+    {
+      "id": 34,
+      "kind": "run_complete",
+      "decision_id": "",
+      "detail": {
+        "assumed": 0,
+        "open": 1,
+        "partial": 0,
+        "proposed": 0,
+        "resolved": 0,
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:51:09.878915+00:00"
+    },
+    {
+      "id": 35,
+      "kind": "judgment_requested",
+      "decision_id": "4ded764885e3",
+      "detail": "Routed from the ownership graph: inferred first contact: authored pr 3743 (Handle massive values in Retry-After when calculating time to sleep for (#3743)); confirm or refer in Slack",
+      "at": "2026-10-05T07:51:09.908406+00:00"
+    },
+    {
+      "id": 36,
+      "kind": "notification_queued",
+      "decision_id": "4ded764885e3",
+      "detail": {
+        "decision_id": "4ded764885e3",
+        "destination": "dm",
+        "error": "",
+        "kind": "ask",
+        "task_id": "c29503d2dd11",
+        "to": "Engineer 035"
+      },
+      "at": "2026-10-05T07:51:13.505394+00:00"
+    },
+    {
+      "id": 37,
+      "kind": "node_added",
+      "decision_id": "4ded764885e3",
+      "detail": {
+        "adopted": "",
+        "client_ref": "jitter-units",
+        "decision_id": "4ded764885e3",
+        "depth": 1,
+        "parent_id": "4c891c655eb2",
+        "status": "pending",
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:51:13.516888+00:00"
+    },
+    {
+      "id": 38,
+      "kind": "notification_sent",
+      "decision_id": "4ded764885e3",
+      "detail": {
+        "decision_id": "4ded764885e3",
+        "kind": "ask",
+        "task_id": "c29503d2dd11",
+        "to": "Engineer 035"
+      },
+      "at": "2026-10-05T07:51:14.755012+00:00"
+    },
+    {
+      "id": 39,
+      "kind": "expand",
+      "decision_id": "7e08207b4e8d",
+      "detail": {
+        "added_candidates": 8,
+        "decision_id": "7e08207b4e8d",
+        "phrases": [
+          "retry-after header parsing",
+          "backoff jitter calculation",
+          "randomized sleep delay",
+          "exponential backoff implementation",
+          "retry delay computation",
+          "rate limit backoff",
+          "sleep interval randomization",
+          "server-specified wait time"
+        ],
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:51:15.398403+00:00"
+    },
+    {
+      "id": 40,
+      "kind": "ask_drafted",
+      "decision_id": "7e08207b4e8d",
+      "detail": {
+        "decision_id": "7e08207b4e8d",
+        "owner": "Engineer 035",
+        "score": 0.3,
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:51:19.116714+00:00"
+    },
+    {
+      "id": 41,
+      "kind": "run_complete",
+      "decision_id": "",
+      "detail": {
+        "assumed": 0,
+        "open": 1,
+        "partial": 0,
+        "proposed": 0,
+        "resolved": 0,
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:51:19.117196+00:00"
+    },
+    {
+      "id": 42,
+      "kind": "judgment_requested",
+      "decision_id": "7e08207b4e8d",
+      "detail": "Routed from the ownership graph: inferred first contact: authored pr 3743 (Handle massive values in Retry-After when calculating time to sleep for (#3743)); confirm or refer in Slack",
+      "at": "2026-10-05T07:51:19.132742+00:00"
+    },
+    {
+      "id": 43,
+      "kind": "notification_queued",
+      "decision_id": "7e08207b4e8d",
+      "detail": {
+        "decision_id": "7e08207b4e8d",
+        "destination": "dm",
+        "error": "",
+        "kind": "ask",
+        "task_id": "c29503d2dd11",
+        "to": "Engineer 035"
+      },
+      "at": "2026-10-05T07:51:23.721637+00:00"
+    },
+    {
+      "id": 44,
+      "kind": "node_added",
+      "decision_id": "7e08207b4e8d",
+      "detail": {
+        "adopted": "",
+        "client_ref": "jitter-where",
+        "decision_id": "7e08207b4e8d",
+        "depth": 1,
+        "parent_id": "4c891c655eb2",
+        "status": "pending",
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:51:23.731905+00:00"
+    },
+    {
+      "id": 45,
+      "kind": "notification_sent",
+      "decision_id": "7e08207b4e8d",
+      "detail": {
+        "decision_id": "7e08207b4e8d",
+        "kind": "ask",
+        "task_id": "c29503d2dd11",
+        "to": "Engineer 035"
+      },
+      "at": "2026-10-05T07:51:24.789378+00:00"
+    },
+    {
+      "id": 47,
+      "kind": "task_note",
+      "decision_id": "",
+      "detail": {
+        "by": "Rae Evaluator",
+        "task_id": "c29503d2dd11",
+        "text": "Please include a short release note explaining that the option defaults to zero and existing users keep the same behavior. This note is context, not approval of any decision."
+      },
+      "at": "2026-10-05T07:53:57.480056+00:00"
+    },
+    {
+      "id": 48,
+      "kind": "owner_changed",
+      "decision_id": "4c891c655eb2",
+      "detail": {
+        "by": "Engineer 028",
+        "decision_id": "4c891c655eb2",
+        "referral": true,
+        "task_id": "c29503d2dd11",
+        "to": "Engineer 001"
+      },
+      "at": "2026-10-05T07:54:09.511721+00:00"
+    },
+    {
+      "id": 49,
+      "kind": "route_learned",
+      "decision_id": "4c891c655eb2",
+      "detail": {
+        "authority_ids": [],
+        "by": "Engineer 028",
+        "decision_id": "4c891c655eb2",
+        "person": "Engineer 001",
+        "scopes": [],
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:54:09.512012+00:00"
+    },
+    {
+      "id": 50,
+      "kind": "notification_queued",
+      "decision_id": "4c891c655eb2",
+      "detail": {
+        "decision_id": "4c891c655eb2",
+        "destination": "dm",
+        "error": "",
+        "kind": "reassigned",
+        "task_id": "c29503d2dd11",
+        "to": "Engineer 001"
+      },
+      "at": "2026-10-05T07:54:09.576607+00:00"
+    },
+    {
+      "id": 51,
+      "kind": "notification_sent",
+      "decision_id": "4c891c655eb2",
+      "detail": {
+        "decision_id": "4c891c655eb2",
+        "kind": "reassigned",
+        "task_id": "c29503d2dd11",
+        "to": "Engineer 001"
+      },
+      "at": "2026-10-05T07:54:11.085852+00:00"
+    },
+    {
+      "id": 52,
+      "kind": "owner_approved",
+      "decision_id": "892270f8693f",
+      "detail": {
+        "answer": "Use additive-only uniform jitter from zero to retry_after_jitter seconds, only for positive Retry-After waits. Never shorten the already-capped server delay. Keep exponential backoff jitter unchanged.",
+        "rationale": "You stated this decision explicitly: additive jitter only, preserving the server-requested delay as a floor, matching the existing backoff_jitter pattern in get_backoff_time().",
+        "owner": "Engineer 003",
+        "actor": "Engineer 003",
+        "basis": "owner",
+        "source": "slack: Engineer 003 (read back and confirmed)",
+        "applicability": {}
+      },
+      "at": "2026-10-05T07:57:00.660108+00:00"
+    },
+    {
+      "id": 54,
+      "kind": "followup_added",
+      "decision_id": "4de3d53e0476",
+      "detail": {
+        "by": "Rae Evaluator",
+        "decision_id": "4de3d53e0476",
+        "parent_id": "4c891c655eb2",
+        "required": true,
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:57:54.963104+00:00"
+    },
+    {
+      "id": 55,
+      "kind": "owner_approved",
+      "decision_id": "4c891c655eb2",
+      "detail": {
+        "answer": "Use a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.",
+        "rationale": "New opt-in parameter avoids silently changing behavior for existing `backoff_jitter` users, aligns with the goal to keep existing behavior by default, and fails early on invalid delays. Preserving fallback to exponential backoff when Retry-After is absent or invalid maintains current behavior.",
+        "owner": "Engineer 001",
+        "actor": "Engineer 001",
+        "basis": "owner",
+        "source": "slack: Engineer 001 (read back and confirmed)",
+        "applicability": {}
+      },
+      "at": "2026-10-05T07:58:05.070493+00:00"
+    },
+    {
+      "id": 56,
+      "kind": "memory_reranked",
+      "decision_id": "6c78b9e10729",
+      "detail": {
+        "decision_id": "6c78b9e10729",
+        "memory": "892270f8693f",
+        "scored": 0.36,
+        "task_id": "c29503d2dd11",
+        "why": "The earlier decision directly answers all three aspects of the new question: it specifies additive jitter (defaults to zero), confirms application only to positive Retry-After waits, and states the final wait remains capped by never shortening it."
+      },
+      "at": "2026-10-05T07:58:05.265259+00:00"
+    },
+    {
+      "id": 57,
+      "kind": "owner_approved",
+      "decision_id": "b8cae0e4f89a",
+      "detail": {
+        "answer": "The final jittered sleep must stay within retry_after_max. Apply the ceiling after adding jitter, because operators rely on it as a hard maximum.",
+        "rationale": "Operators depend on retry_after_max as a hard maximum for configured limits.",
+        "owner": "Engineer 028",
+        "actor": "Engineer 028",
+        "basis": "owner",
+        "source": "slack: Engineer 028 (read back and confirmed)",
+        "applicability": {}
+      },
+      "at": "2026-10-05T07:58:08.749285+00:00"
+    },
+    {
+      "id": 58,
+      "kind": "owner_approved",
+      "decision_id": "4ded764885e3",
+      "detail": {
+        "answer": "Use absolute seconds, consistent with backoff_jitter. Do not interpret the value as a fraction.",
+        "rationale": "Absolute seconds is consistent with the existing `backoff_jitter` API and provides predictable behavior.",
+        "owner": "Engineer 035",
+        "actor": "Engineer 035",
+        "basis": "owner",
+        "source": "slack: Engineer 035 (read back and confirmed)",
+        "applicability": {}
+      },
+      "at": "2026-10-05T07:58:13.202931+00:00"
+    },
+    {
+      "id": 59,
+      "kind": "proposed",
+      "decision_id": "6c78b9e10729",
+      "detail": {
+        "answered_by": "",
+        "cited": "892270f8693f",
+        "decision_id": "6c78b9e10729",
+        "kind": "near match",
+        "signed": false,
+        "source": "memory",
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:58:13.672321+00:00"
+    },
+    {
+      "id": 60,
+      "kind": "run_complete",
+      "decision_id": "",
+      "detail": {
+        "assumed": 0,
+        "open": 0,
+        "partial": 0,
+        "proposed": 1,
+        "resolved": 0,
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:58:13.673153+00:00"
+    },
+    {
+      "id": 61,
+      "kind": "notification_queued",
+      "decision_id": "6c78b9e10729",
+      "detail": {
+        "decision_id": "6c78b9e10729",
+        "destination": "dm",
+        "error": "",
+        "kind": "signoff",
+        "task_id": "c29503d2dd11",
+        "to": "Engineer 028"
+      },
+      "at": "2026-10-05T07:58:13.766429+00:00"
+    },
+    {
+      "id": 62,
+      "kind": "node_added",
+      "decision_id": "6c78b9e10729",
+      "detail": {
+        "adopted": "4de3d53e0476",
+        "client_ref": "release-note",
+        "decision_id": "6c78b9e10729",
+        "depth": 1,
+        "parent_id": "4c891c655eb2",
+        "status": "proposed",
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T07:58:13.773625+00:00"
+    },
+    {
+      "id": 63,
+      "kind": "notification_sent",
+      "decision_id": "6c78b9e10729",
+      "detail": {
+        "decision_id": "6c78b9e10729",
+        "kind": "signoff",
+        "task_id": "c29503d2dd11",
+        "to": "Engineer 028"
+      },
+      "at": "2026-10-05T07:58:14.768941+00:00"
+    },
+    {
+      "id": 64,
+      "kind": "owner_approved",
+      "decision_id": "7e08207b4e8d",
+      "detail": {
+        "answer": "Apply jitter only in `sleep_for_retry()`. Keep `parse_retry_after()` and `get_retry_after()` deterministic, returning only the parsed and capped server value.",
+        "rationale": "Accessors are documented as returning the server's Retry-After value and are called directly by tests expecting deterministic results. Jittering only at sleep time keeps them pure while still applying jitter to both call sites: `connectionpool.py:944` and `Retry.sleep()`.",
+        "owner": "Engineer 035",
+        "actor": "Engineer 035",
+        "basis": "owner",
+        "source": "slack: Engineer 035 (read back and confirmed)",
+        "applicability": {}
+      },
+      "at": "2026-10-05T07:58:17.636186+00:00"
+    },
+    {
+      "id": 66,
+      "kind": "previous_answer",
+      "decision_id": "6c78b9e10729",
+      "detail": {
+        "answer": "The release note can state, per this record, that jitter is added only to positive Retry-After waits as additive-only uniform jitter from zero up to retry_after_jitter seconds, and that the final wait is never shortened below the already-capped server delay, remaining capped. The earlier answer does not establish: What is the default value of retry_after_jitter.",
+        "rationale": null,
+        "owner": "",
+        "applicability": {}
+      },
+      "at": "2026-10-05T07:59:42.143792+00:00"
+    },
+    {
+      "id": 67,
+      "kind": "owner_approved",
+      "decision_id": "6c78b9e10729",
+      "detail": {
+        "answer": "State all three points in the release note: default zero, additive seconds for positive Retry-After waits only, and final wait capped at retry_after_max. Include the new parameter in the Retry API docstring too.",
+        "rationale": "You want the release note to explicitly cover all three mechanics: the default value, the additive-only behavior on positive waits, and the capping constraint.",
+        "owner": "Engineer 028",
+        "actor": "Engineer 028",
+        "basis": "owner",
+        "source": "local operator",
+        "applicability": {}
+      },
+      "at": "2026-10-05T07:59:42.149656+00:00"
+    },
+    {
+      "id": 69,
+      "kind": "run_updated",
+      "decision_id": "",
+      "detail": "completed",
+      "at": "2026-10-05T08:01:30.310902+00:00"
+    },
+    {
+      "id": 70,
+      "kind": "checks_reported",
+      "decision_id": "",
+      "detail": {
+        "checks": "<evaluation>/bin/python -m pytest test/test_retry.py -q -> 76 passed (64 before the change, 12 new).\n<evaluation>/bin/python -m pytest test/test_retry.py test/test_util.py test/test_response.py -q -> 851 passed, 53 skipped.\nNo mypy/lint run: the sandbox refused to launch mypy, so type-checking and flake8/black were not executed. No integration/dummyserver tests run.",
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T08:01:30.316088+00:00"
+    },
+    {
+      "id": 71,
+      "kind": "conformance_started",
+      "decision_id": "",
+      "detail": {
+        "decisions": [
+          "4c891c655eb2",
+          "892270f8693f",
+          "b8cae0e4f89a",
+          "4ded764885e3",
+          "7e08207b4e8d",
+          "6c78b9e10729"
+        ],
+        "diff_hash": "208642b5ab2448de",
+        "review_id": "a2e15420d82a",
+        "revisions": {
+          "4c891c655eb2": "1ec200d35c31984d",
+          "4ded764885e3": "551aded76306c140",
+          "6c78b9e10729": "75b039aced5b4304",
+          "7e08207b4e8d": "f93a8e011e6c9da4",
+          "892270f8693f": "edc9ee2c8283adc5",
+          "b8cae0e4f89a": "7242fe3e588c3d9d"
+        },
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T08:01:30.317878+00:00"
+    },
+    {
+      "id": 72,
+      "kind": "conformance_read",
+      "decision_id": "",
+      "detail": {
+        "diff_hash": "208642b5ab2448de",
+        "follows": [
+          {
+            "node_id": "4c891c655eb2",
+            "question": "Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?",
+            "requirements": [
+              {
+                "at": "retry_after_jitter: float = 0.0,",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Add a new parameter named `retry_after_jitter` (not reuse backoff_jitter)",
+                "state": "ok"
+              },
+              {
+                "at": "retry_after_jitter: float = 0.0,",
+                "found": "honored",
+                "kind": "must",
+                "needs": "`retry_after_jitter` defaults to 0.0",
+                "state": "ok"
+              },
+              {
+                "at": "retry_after_jitter=self.retry_after_jitter,",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Thread `retry_after_jitter` through `new()`",
+                "state": "ok"
+              },
+              {
+                "found": "unseen",
+                "kind": "must",
+                "needs": "Thread `retry_after_jitter` through `increment()`",
+                "state": "unclear"
+              },
+              {
+                "at": "self.backoff_jitter = backoff_jitter",
+                "found": "honored",
+                "kind": "must_not",
+                "needs": "Existing `backoff_jitter` behavior must stay unchanged",
+                "state": "ok"
+              },
+              {
+                "at": "if not math.isfinite(retry_after_jitter) or retry_after_jitter < 0:",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Accept finite nonnegative numbers for retry_after_jitter",
+                "state": "ok"
+              },
+              {
+                "at": "if not math.isfinite(retry_after_jitter) or retry_after_jitter < 0:",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Reject negative values at construction",
+                "state": "ok"
+              },
+              {
+                "at": "if not math.isfinite(retry_after_jitter) or retry_after_jitter < 0:",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Reject NaN values at construction",
+                "state": "ok"
+              },
+              {
+                "at": "if not math.isfinite(retry_after_jitter) or retry_after_jitter < 0:",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Reject infinite values at construction",
+                "state": "ok"
+              },
+              {
+                "at": "if retry_after:",
+                "found": "honored",
+                "kind": "must",
+                "needs": "If Retry-After is zero, missing, or expired, preserve fallback to exponential backoff",
+                "not_shown": "parse_retry_after()'s internal logic for computing retry_after from an HTTP-date Retry-After header, including how it treats an already-past date (e.g. clamping to 0 or returning a negative/falsy value), which determines whether 'already expired' reaches this falsy check",
+                "state": "ok"
+              },
+              {
+                "at": "if retry_after:",
+                "found": "honored",
+                "kind": "must_not",
+                "needs": "Do not turn a zero/missing/expired Retry-After into a new jitter sleep",
+                "not_shown": "parse_retry_after()'s internal logic for computing retry_after from an HTTP-date Retry-After header, including how it treats an already-past date, which determines whether 'already expired' reaches this falsy check",
+                "state": "ok"
+              }
+            ],
+            "unexamined": [
+              "parse_retry_after()'s internal logic for computing retry_after from an HTTP-date Retry-After header, including how it treats an already-past date (e.g. clamping to 0 or returning a negative/falsy value), which determines whether 'already expired' reaches this falsy check",
+              "parse_retry_after()'s internal logic for computing retry_after from an HTTP-date Retry-After header, including how it treats an already-past date, which determines whether 'already expired' reaches this falsy check"
+            ],
+            "verdict": "unclear",
+            "why": "The diff adds the new retry_after_jitter parameter with the right default, validation, and threading through new(), and keeps backoff_jitter and the zero/missing/expired Retry-After fallback untouched, but it never shows any change to increment() so that threading requirement cannot be confirmed from the diff itself."
+          },
+          {
+            "node_id": "892270f8693f",
+            "question": "Must jitter only ever lengthen a Retry-After wait (additive uniform [0, jitter)), or may it shorten it (full/equal jitter)?",
+            "requirements": [
+              {
+                "at": "retry_after += random.uniform(0, self.retry_after_jitter)",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Use additive-only uniform jitter from zero to retry_after_jitter seconds for Retry-After waits",
+                "not_shown": "Whether parse_retry_after()/get_retry_after() (unchanged by this diff) ever returns a non-positive but truthy value (e.g. a negative delay from a past Retry-After date) that would reach sleep_for_retry's `if retry_after:` check and thus get jittered despite not being a positive wait.",
+                "state": "ok"
+              },
+              {
+                "at": "if not self.retry_after_jitter:",
+                "found": "missing",
+                "kind": "must",
+                "needs": "Jitter only applied for positive Retry-After waits",
+                "state": "departs"
+              },
+              {
+                "at": "retry_after += random.uniform(0, self.retry_after_jitter)",
+                "found": "honored",
+                "kind": "must_not",
+                "needs": "Never shorten the already-capped server delay",
+                "not_shown": "The existing parse_retry_after()/get_retry_after() logic (not shown in the diff) that is documented to cap Retry-After values at retry_after_max before this function runs; the no-shortening guarantee depends on that pre-existing cap holding.",
+                "state": "ok"
+              },
+              {
+                "at": "self.backoff_jitter = backoff_jitter",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Keep exponential backoff jitter unchanged",
+                "state": "ok"
+              }
+            ],
+            "unexamined": [
+              "Whether parse_retry_after()/get_retry_after() (unchanged by this diff) ever returns a non-positive but truthy value (e.g. a negative delay from a past Retry-After date) that would reach sleep_for_retry's `if retry_after:` check and thus get jittered despite not being a positive wait.",
+              "The existing parse_retry_after()/get_retry_after() logic (not shown in the diff) that is documented to cap Retry-After values at retry_after_max before this function runs; the no-shortening guarantee depends on that pre-existing cap holding."
+            ],
+            "verdict": "departs",
+            "why": "Read as departing from it on: Jitter only applied for positive Retry-After waits"
+          },
+          {
+            "node_id": "b8cae0e4f89a",
+            "question": "Does `retry_after_max` cap the jittered total, or only the server-parsed value before jitter is added?",
+            "requirements": [
+              {
+                "at": "retry_after += random.uniform(0, self.retry_after_jitter)\n        return min(retry_after, self.retry_after_max)",
+                "found": "honored",
+                "kind": "must",
+                "needs": "final jittered sleep must stay within retry_after_max (apply ceiling after adding jitter)",
+                "state": "ok"
+              }
+            ],
+            "verdict": "follows",
+            "why": "The diff adds jitter and then clamps with min(retry_after, self.retry_after_max) in _jitter_retry_after, applying the cap after jitter as required."
+          },
+          {
+            "node_id": "4ded764885e3",
+            "question": "Is the jitter amount an absolute number of seconds, or a fraction of the server's Retry-After value?",
+            "requirements": [
+              {
+                "at": "retry_after += random.uniform(0, self.retry_after_jitter)",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Jitter amount is interpreted as an absolute number of seconds, consistent with backoff_jitter",
+                "state": "ok"
+              },
+              {
+                "at": "retry_after += random.uniform(0, self.retry_after_jitter)",
+                "found": "honored",
+                "kind": "must_not",
+                "needs": "Do not interpret the retry_after_jitter value as a fraction of the Retry-After value",
+                "state": "ok"
+              }
+            ],
+            "verdict": "follows",
+            "why": "The diff samples jitter as an absolute uniform(0, retry_after_jitter) number of seconds added to retry_after, never treating retry_after_jitter as a fraction of the server value."
+          },
+          {
+            "node_id": "7e08207b4e8d",
+            "question": "Where is the jitter applied: inside `parse_retry_after()`/`get_retry_after()`, or only in `sleep_for_retry()` so the accessors keep returning the server's value?",
+            "requirements": [
+              {
+                "at": "time.sleep(self._jitter_retry_after(retry_after))",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Apply jitter only in sleep_for_retry()",
+                "state": "ok"
+              },
+              {
+                "at": "return self.parse_retry_after(retry_after)",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Keep parse_retry_after() deterministic, returning only parsed and capped server value",
+                "not_shown": "the body of parse_retry_after(), unchanged and not shown in the diff",
+                "state": "ok"
+              },
+              {
+                "at": "return self.parse_retry_after(retry_after)",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Keep get_retry_after() deterministic, returning only parsed and capped server value",
+                "not_shown": "the body of parse_retry_after(), unchanged and not shown in the diff",
+                "state": "ok"
+              }
+            ],
+            "unexamined": [
+              "the body of parse_retry_after(), unchanged and not shown in the diff"
+            ],
+            "verdict": "follows",
+            "why": "The diff introduces a dedicated _jitter_retry_after helper applied only inside sleep_for_retry, while parse_retry_after and get_retry_after remain unchanged and deterministic."
+          },
+          {
+            "node_id": "6c78b9e10729",
+            "question": "Should the release note explicitly state that retry_after_jitter defaults to zero, adds seconds only to positive Retry-After waits, and the final wait remains capped?",
+            "requirements": [
+              {
+                "at": "the existing behavior: a ``Retry-After`` wait is exactly as long as the server requested.",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Release note states retry_after_jitter defaults to zero",
+                "state": "ok"
+              },
+              {
+                "at": "When set, a random number of seconds between zero and ``retry_after_jitter`` is added to",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Release note states jitter adds seconds only to positive Retry-After waits",
+                "not_shown": "parse_retry_after() and get_retry_after() implementations, which determine whether retry_after can ever be negative or how the server value is parsed before jitter is applied",
+                "state": "ok"
+              },
+              {
+                "at": "limited by ``retry_after_max``.",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Release note states the final wait remains capped (by retry_after_max)",
+                "state": "ok"
+              },
+              {
+                "at": ":param float retry_after_jitter:",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Include the new retry_after_jitter parameter in the Retry API docstring",
+                "state": "ok"
+              }
+            ],
+            "unexamined": [
+              "parse_retry_after() and get_retry_after() implementations, which determine whether retry_after can ever be negative or how the server value is parsed before jitter is applied"
+            ],
+            "verdict": "follows",
+            "why": "The changelog entry states all three points (default zero, additive-only for positive waits, capped by retry_after_max) and the Retry docstring documents the new parameter."
+          }
+        ],
+        "read": [
+          {
+            "counterexamples": 0,
+            "node": "4c891c655eb2",
+            "verdict": "unclear"
+          },
+          {
+            "counterexamples": 0,
+            "node": "892270f8693f",
+            "verdict": "departs"
+          },
+          {
+            "counterexamples": 0,
+            "node": "b8cae0e4f89a",
+            "verdict": "follows"
+          },
+          {
+            "counterexamples": 0,
+            "node": "4ded764885e3",
+            "verdict": "follows"
+          },
+          {
+            "counterexamples": 0,
+            "node": "7e08207b4e8d",
+            "verdict": "follows"
+          },
+          {
+            "counterexamples": 0,
+            "node": "6c78b9e10729",
+            "verdict": "follows"
+          }
+        ],
+        "review_id": "a2e15420d82a",
+        "revisions": {
+          "4c891c655eb2": "1ec200d35c31984d",
+          "4ded764885e3": "551aded76306c140",
+          "6c78b9e10729": "75b039aced5b4304",
+          "7e08207b4e8d": "f93a8e011e6c9da4",
+          "892270f8693f": "edc9ee2c8283adc5",
+          "b8cae0e4f89a": "7242fe3e588c3d9d"
+        },
+        "seconds": 98.4,
+        "status": "done",
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T08:03:08.674335+00:00"
+    },
+    {
+      "id": 80,
+      "kind": "run_updated",
+      "decision_id": "",
+      "detail": "completed",
+      "at": "2026-10-05T08:04:04.949814+00:00"
+    },
+    {
+      "id": 81,
+      "kind": "checks_reported",
+      "decision_id": "",
+      "detail": {
+        "checks": "<evaluation>/bin/python -m pytest test/test_retry.py -q -> 77 passed (64 before the change, 13 new).\n<evaluation>/bin/python -m pytest test/test_retry.py test/test_util.py test/test_response.py -q -> 851 passed, 53 skipped (run before the last one-line hardening; test_retry.py re-run after it).\nNo mypy/lint run: the sandbox refused to launch mypy, so type-checking and flake8/black were not executed. No integration/dummyserver tests run.",
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T08:04:04.957108+00:00"
+    },
+    {
+      "id": 82,
+      "kind": "conformance_started",
+      "decision_id": "",
+      "detail": {
+        "decisions": [
+          "4c891c655eb2",
+          "892270f8693f",
+          "b8cae0e4f89a",
+          "4ded764885e3",
+          "7e08207b4e8d",
+          "6c78b9e10729"
+        ],
+        "diff_hash": "f408e9621a5a0116",
+        "review_id": "8807b79cfd13",
+        "revisions": {
+          "4c891c655eb2": "1ec200d35c31984d",
+          "4ded764885e3": "551aded76306c140",
+          "6c78b9e10729": "75b039aced5b4304",
+          "7e08207b4e8d": "f93a8e011e6c9da4",
+          "892270f8693f": "edc9ee2c8283adc5",
+          "b8cae0e4f89a": "7242fe3e588c3d9d"
+        },
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T08:04:04.958227+00:00"
+    },
+    {
+      "id": 90,
+      "kind": "conformance_read",
+      "decision_id": "",
+      "detail": {
+        "diff_hash": "f408e9621a5a0116",
+        "follows": [
+          {
+            "node_id": "4c891c655eb2",
+            "question": "Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?",
+            "requirements": [
+              {
+                "at": "retry_after_jitter: float = 0.0,",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Add new `retry_after_jitter` parameter defaulting to 0.0",
+                "state": "ok"
+              },
+              {
+                "at": "retry_after_jitter=self.retry_after_jitter,",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Thread retry_after_jitter through `new()`",
+                "not_shown": "increment() method body is not shown in the diff; it is assumed to call new() (as exercised by the test) to propagate retry_after_jitter.",
+                "state": "ok"
+              },
+              {
+                "at": "params.update(kw)",
+                "found": "missing",
+                "kind": "must",
+                "needs": "Thread retry_after_jitter through `increment()`",
+                "state": "departs"
+              },
+              {
+                "at": "self.backoff_jitter = backoff_jitter",
+                "found": "honored",
+                "kind": "must_not",
+                "needs": "Existing backoff_jitter behavior must stay unchanged",
+                "state": "ok"
+              },
+              {
+                "at": "if not math.isfinite(retry_after_jitter) or retry_after_jitter < 0:",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Accept finite nonnegative numbers for retry_after_jitter",
+                "state": "ok"
+              },
+              {
+                "at": "raise ValueError(",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Reject negative, NaN and infinite values at construction",
+                "state": "ok"
+              },
+              {
+                "at": "if not self.retry_after_jitter or retry_after <= 0:",
+                "found": "honored",
+                "kind": "must",
+                "needs": "If Retry-After is zero, missing, or expired, preserve fallback to exponential backoff rather than a new jitter sleep",
+                "not_shown": "The rest of the sleep() method body (the call to sleep_for_retry() and the subsequent exponential-backoff fallback via get_backoff_time()/time.sleep()) is not shown in the diff beyond the docstring change and the 'if self.respect_retry_after_header and response:' line.",
+                "state": "ok"
+              }
+            ],
+            "unexamined": [
+              "increment() method body is not shown in the diff; it is assumed to call new() (as exercised by the test) to propagate retry_after_jitter.",
+              "The rest of the sleep() method body (the call to sleep_for_retry() and the subsequent exponential-backoff fallback via get_backoff_time()/time.sleep()) is not shown in the diff beyond the docstring change and the 'if self.respect_retry_after_header and response:' line."
+            ],
+            "verdict": "departs",
+            "why": "The diff honors nearly every requirement of this decision (new parameter, default, validation, fallback preservation, backoff_jitter untouched) but never updates increment()'s params dict to carry retry_after_jitter, so that threading requirement is missing."
+          },
+          {
+            "node_id": "892270f8693f",
+            "question": "Must jitter only ever lengthen a Retry-After wait (additive uniform [0, jitter)), or may it shorten it (full/equal jitter)?",
+            "requirements": [
+              {
+                "at": "retry_after += random.uniform(0, self.retry_after_jitter)",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Use additive uniform jitter from zero to retry_after_jitter seconds for Retry-After waits",
+                "state": "ok"
+              },
+              {
+                "at": "if not self.retry_after_jitter or retry_after <= 0:",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Jitter only applied for positive Retry-After waits",
+                "state": "ok"
+              },
+              {
+                "at": "retry_after += random.uniform(0, self.retry_after_jitter)",
+                "found": "honored",
+                "kind": "must_not",
+                "needs": "Never shorten the already-capped server delay (additive only, not full/equal jitter)",
+                "not_shown": "the implementation of parse_retry_after()/get_retry_after() that caps the server-provided Retry-After value at retry_after_max before _jitter_retry_after is called, which the diff does not show but which requirement 3 ('already-capped server delay') relies on",
+                "state": "ok"
+              },
+              {
+                "at": "self.backoff_jitter = backoff_jitter",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Keep exponential backoff jitter (backoff_jitter) unchanged",
+                "state": "ok"
+              }
+            ],
+            "unexamined": [
+              "the implementation of parse_retry_after()/get_retry_after() that caps the server-provided Retry-After value at retry_after_max before _jitter_retry_after is called, which the diff does not show but which requirement 3 ('already-capped server delay') relies on"
+            ],
+            "verdict": "follows",
+            "why": "Read as doing each thing it requires: Use additive uniform jitter from zero to retry_after_jitter seconds for Retry-After waits; Jitter only applied for positive Retry-After waits; Never shorten the already-capped server delay (additive only, not full/equal jitter); Keep exponential backoff jitter (backoff_jitter) unchanged"
+          },
+          {
+            "node_id": "b8cae0e4f89a",
+            "question": "Does `retry_after_max` cap the jittered total, or only the server-parsed value before jitter is added?",
+            "requirements": [
+              {
+                "at": "retry_after += random.uniform(0, self.retry_after_jitter)\n        return min(retry_after, self.retry_after_max)",
+                "found": "honored",
+                "kind": "must",
+                "needs": "The final jittered sleep must stay within retry_after_max (cap applied after jitter added)",
+                "not_shown": "parse_retry_after()'s existing capping of the raw server value against retry_after_max, not shown changed in this diff",
+                "state": "ok"
+              }
+            ],
+            "unexamined": [
+              "parse_retry_after()'s existing capping of the raw server value against retry_after_max, not shown changed in this diff"
+            ],
+            "verdict": "follows",
+            "why": "The diff applies min(retry_after, self.retry_after_max) after adding the jitter in _jitter_retry_after, ensuring the final jittered sleep is capped by retry_after_max."
+          },
+          {
+            "node_id": "4ded764885e3",
+            "question": "Is the jitter amount an absolute number of seconds, or a fraction of the server's Retry-After value?",
+            "requirements": [
+              {
+                "at": "retry_after += random.uniform(0, self.retry_after_jitter)",
+                "found": "honored",
+                "kind": "must",
+                "needs": "jitter amount must be an absolute number of seconds, consistent with backoff_jitter",
+                "state": "ok"
+              },
+              {
+                "at": "retry_after += random.uniform(0, self.retry_after_jitter)",
+                "found": "honored",
+                "kind": "must_not",
+                "needs": "must not interpret retry_after_jitter as a fraction of the server's Retry-After value",
+                "state": "ok"
+              }
+            ],
+            "verdict": "follows",
+            "why": "The diff samples jitter as random.uniform(0, self.retry_after_jitter) and adds it directly in seconds to retry_after, never multiplying or scaling by the Retry-After value, matching the absolute-seconds decision and avoiding any fractional interpretation."
+          },
+          {
+            "node_id": "7e08207b4e8d",
+            "question": "Where is the jitter applied: inside `parse_retry_after()`/`get_retry_after()`, or only in `sleep_for_retry()` so the accessors keep returning the server's value?",
+            "requirements": [
+              {
+                "at": "time.sleep(self._jitter_retry_after(retry_after))",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Apply jitter only in sleep_for_retry()",
+                "state": "ok"
+              },
+              {
+                "at": "return self.parse_retry_after(retry_after)",
+                "found": "honored",
+                "kind": "must_not",
+                "needs": "Keep parse_retry_after() deterministic, returning only the parsed and capped server value",
+                "state": "ok"
+              },
+              {
+                "at": "return self.parse_retry_after(retry_after)",
+                "found": "honored",
+                "kind": "must_not",
+                "needs": "Keep get_retry_after() deterministic, returning only the parsed and capped server value",
+                "state": "ok"
+              }
+            ],
+            "verdict": "follows",
+            "why": "The diff adds a new _jitter_retry_after helper invoked only inside sleep_for_retry, while get_retry_after and parse_retry_after remain unchanged and deterministic."
+          },
+          {
+            "node_id": "6c78b9e10729",
+            "question": "Should the release note explicitly state that retry_after_jitter defaults to zero, adds seconds only to positive Retry-After waits, and the final wait remains capped?",
+            "requirements": [
+              {
+                "at": "the existing behavior: a ``Retry-After`` wait is exactly as long as the server requested.",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Release note states retry_after_jitter defaults to zero",
+                "state": "ok"
+              },
+              {
+                "at": "a random number of seconds between zero and ``retry_after_jitter`` is added to",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Release note states jitter adds seconds only to positive Retry-After waits",
+                "state": "ok"
+              },
+              {
+                "at": "limited by ``retry_after_max``.",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Release note states final wait remains capped (by retry_after_max)",
+                "state": "ok"
+              },
+              {
+                "at": ":param float retry_after_jitter:",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Include the new retry_after_jitter parameter in the Retry API docstring",
+                "state": "ok"
+              }
+            ],
+            "verdict": "follows",
+            "why": "All three release-note points and the docstring addition are present in the diff."
+          }
+        ],
+        "read": [
+          {
+            "counterexamples": 0,
+            "node": "4c891c655eb2",
+            "verdict": "departs"
+          },
+          {
+            "counterexamples": 0,
+            "node": "892270f8693f",
+            "verdict": "follows"
+          },
+          {
+            "counterexamples": 0,
+            "node": "b8cae0e4f89a",
+            "verdict": "follows"
+          },
+          {
+            "counterexamples": 0,
+            "node": "4ded764885e3",
+            "verdict": "follows"
+          },
+          {
+            "counterexamples": 0,
+            "node": "7e08207b4e8d",
+            "verdict": "follows"
+          },
+          {
+            "counterexamples": 0,
+            "node": "6c78b9e10729",
+            "verdict": "follows"
+          }
+        ],
+        "review_id": "8807b79cfd13",
+        "revisions": {
+          "4c891c655eb2": "1ec200d35c31984d",
+          "4ded764885e3": "551aded76306c140",
+          "6c78b9e10729": "75b039aced5b4304",
+          "7e08207b4e8d": "f93a8e011e6c9da4",
+          "892270f8693f": "edc9ee2c8283adc5",
+          "b8cae0e4f89a": "7242fe3e588c3d9d"
+        },
+        "seconds": 168.9,
+        "status": "done",
+        "task_id": "c29503d2dd11"
+      },
+      "at": "2026-10-05T08:06:53.905566+00:00"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "29289f8973d4",
+      "decision_id": "4c891c655eb2",
+      "kind": "ask",
+      "channel": "slack",
+      "person_name": "Engineer 028",
+      "state": "sent",
+      "attempts": 1,
+      "last_error": "",
+      "created_at": "2026-10-05T07:50:24.567869+00:00",
+      "sent_at": "2026-10-05T07:50:26.585193+00:00"
+    },
+    {
+      "id": "b55c410c1938",
+      "decision_id": "892270f8693f",
+      "kind": "ask",
+      "channel": "slack",
+      "person_name": "Engineer 003",
+      "state": "sent",
+      "attempts": 1,
+      "last_error": "",
+      "created_at": "2026-10-05T07:50:39.380220+00:00",
+      "sent_at": "2026-10-05T07:50:40.628301+00:00"
+    },
+    {
+      "id": "b0de891e8906",
+      "decision_id": "b8cae0e4f89a",
+      "kind": "ask",
+      "channel": "slack",
+      "person_name": "Engineer 028",
+      "state": "sent",
+      "attempts": 1,
+      "last_error": "",
+      "created_at": "2026-10-05T07:50:46.881822+00:00",
+      "sent_at": "2026-10-05T07:50:48.673827+00:00"
+    },
+    {
+      "id": "85ed097954b0",
+      "decision_id": "4ded764885e3",
+      "kind": "ask",
+      "channel": "slack",
+      "person_name": "Engineer 035",
+      "state": "sent",
+      "attempts": 1,
+      "last_error": "",
+      "created_at": "2026-10-05T07:51:13.504469+00:00",
+      "sent_at": "2026-10-05T07:51:14.753851+00:00"
+    },
+    {
+      "id": "eadb5c94692b",
+      "decision_id": "7e08207b4e8d",
+      "kind": "ask",
+      "channel": "slack",
+      "person_name": "Engineer 035",
+      "state": "sent",
+      "attempts": 1,
+      "last_error": "",
+      "created_at": "2026-10-05T07:51:23.721081+00:00",
+      "sent_at": "2026-10-05T07:51:24.788513+00:00"
+    },
+    {
+      "id": "7e80e093e800",
+      "decision_id": "4c891c655eb2",
+      "kind": "reassigned",
+      "channel": "slack",
+      "person_name": "Engineer 001",
+      "state": "sent",
+      "attempts": 1,
+      "last_error": "",
+      "created_at": "2026-10-05T07:54:09.575975+00:00",
+      "sent_at": "2026-10-05T07:54:11.084077+00:00"
+    },
+    {
+      "id": "1aa04c48e314",
+      "decision_id": "6c78b9e10729",
+      "kind": "signoff",
+      "channel": "slack",
+      "person_name": "Engineer 028",
+      "state": "sent",
+      "attempts": 1,
+      "last_error": "",
+      "created_at": "2026-10-05T07:58:13.765749+00:00",
+      "sent_at": "2026-10-05T07:58:14.768007+00:00"
+    }
+  ],
+  "nodes": [
+    {
+      "node_id": "4c891c655eb2",
+      "question": "Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?",
+      "status": "answered",
+      "kind": "new",
+      "authorized": true,
+      "blocking": false,
+      "signoff": "signed",
+      "signed_by": "Engineer 001",
+      "answered_by": "Engineer 001",
+      "required_signers": [],
+      "signatures": [
+        "Engineer 001"
+      ],
+      "needs_review": false,
+      "reusable": false
+    },
+    {
+      "node_id": "892270f8693f",
+      "question": "Must jitter only ever lengthen a Retry-After wait (additive uniform [0, jitter)), or may it shorten it (full/equal jitter)?",
+      "status": "answered",
+      "kind": "new",
+      "authorized": true,
+      "blocking": false,
+      "signoff": "signed",
+      "signed_by": "Engineer 003",
+      "answered_by": "Engineer 003",
+      "required_signers": [],
+      "signatures": [
+        "Engineer 003"
+      ],
+      "needs_review": false,
+      "reusable": false
+    },
+    {
+      "node_id": "b8cae0e4f89a",
+      "question": "Does `retry_after_max` cap the jittered total, or only the server-parsed value before jitter is added?",
+      "status": "answered",
+      "kind": "new",
+      "authorized": true,
+      "blocking": false,
+      "signoff": "signed",
+      "signed_by": "Engineer 028",
+      "answered_by": "Engineer 028",
+      "required_signers": [],
+      "signatures": [
+        "Engineer 028"
+      ],
+      "needs_review": false,
+      "reusable": false
+    },
+    {
+      "node_id": "4ded764885e3",
+      "question": "Is the jitter amount an absolute number of seconds, or a fraction of the server's Retry-After value?",
+      "status": "answered",
+      "kind": "new",
+      "authorized": true,
+      "blocking": false,
+      "signoff": "signed",
+      "signed_by": "Engineer 035",
+      "answered_by": "Engineer 035",
+      "required_signers": [],
+      "signatures": [
+        "Engineer 035"
+      ],
+      "needs_review": false,
+      "reusable": false
+    },
+    {
+      "node_id": "7e08207b4e8d",
+      "question": "Where is the jitter applied: inside `parse_retry_after()`/`get_retry_after()`, or only in `sleep_for_retry()` so the accessors keep returning the server's value?",
+      "status": "answered",
+      "kind": "new",
+      "authorized": true,
+      "blocking": false,
+      "signoff": "signed",
+      "signed_by": "Engineer 035",
+      "answered_by": "Engineer 035",
+      "required_signers": [],
+      "signatures": [
+        "Engineer 035"
+      ],
+      "needs_review": false,
+      "reusable": false
+    },
+    {
+      "node_id": "4de3d53e0476",
+      "question": "Should the release note explicitly state that retry_after_jitter defaults to zero, adds seconds only to positive Retry-After waits, and the final wait remains capped?",
+      "status": "adopted",
+      "kind": "followup",
+      "authorized": false,
+      "blocking": false,
+      "signoff": "",
+      "signed_by": "",
+      "answered_by": "",
+      "required_signers": [],
+      "signatures": [],
+      "needs_review": false,
+      "reusable": false
+    },
+    {
+      "node_id": "6c78b9e10729",
+      "question": "Should the release note explicitly state that retry_after_jitter defaults to zero, adds seconds only to positive Retry-After waits, and the final wait remains capped?",
+      "status": "answered",
+      "kind": "prediction",
+      "authorized": true,
+      "blocking": false,
+      "signoff": "signed",
+      "signed_by": "Engineer 028",
+      "answered_by": "Engineer 028",
+      "required_signers": [],
+      "signatures": [
+        "Engineer 028"
+      ],
+      "needs_review": false,
+      "reusable": false
+    }
+  ],
+  "notes": [
+    {
+      "by": "Rae Evaluator",
+      "text": "Please include a short release note explaining that the option defaults to zero and existing users keep the same behavior. This note is context, not approval of any decision.",
+      "at": "2026-10-05T07:53:57.480056+00:00"
+    }
+  ]
+}

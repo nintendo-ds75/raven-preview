@@ -1,0 +1,35 @@
+.........................................F..........................................................127.0.0.1 - - [05/Oct/2026 01:09:18] "POST /mcp HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:18] "POST /mcp HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:18] "POST /mcp HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:18] "POST /mcp HTTP/1.1" 200 -
+.127.0.0.1 - - [05/Oct/2026 01:09:19] "GET /api/state HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:19] "POST /api/tasks/start HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:19] "POST /api/tasks/d99008c5f2ab/nodes HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:19] "POST /api/decisions/ed134b65ea64/answer HTTP/1.1" 400 -
+127.0.0.1 - - [05/Oct/2026 01:09:19] "POST /api/decisions/ed134b65ea64/answer HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:19] "POST /api/decisions/ed134b65ea64/followups HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:19] "GET /api/decisions/ed134b65ea64 HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:19] "GET /api/tasks/d99008c5f2ab/tree HTTP/1.1" 200 -
+127.0.0.1 - - [05/Oct/2026 01:09:19] "POST /api/tasks/d99008c5f2ab/settle HTTP/1.1" 400 -
+........./opt/homebrew/Cellar/python@3.12/3.12.7/Frameworks/Python.framework/Versions/3.12/lib/python3.12/re/__init__.py:207: ResourceWarning: unclosed <socket.socket fd=8, family=2, type=1, proto=0, laddr=('127.0.0.1', 57811)>
+  return _compile(pattern, flags).split(string, maxsplit)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/opt/homebrew/Cellar/python@3.12/3.12.7/Frameworks/Python.framework/Versions/3.12/lib/python3.12/re/__init__.py:207: ResourceWarning: unclosed <socket.socket fd=23, family=2, type=1, proto=0, laddr=('127.0.0.1', 57816)>
+  return _compile(pattern, flags).split(string, maxsplit)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+...
+======================================================================
+FAIL: test_missing_callable_outside_diff_is_uncertain_not_a_departure (test_canvas.FinishTests.test_missing_callable_outside_diff_is_uncertain_not_a_departure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<evaluation>/tests/test_canvas.py", line 439, in test_missing_callable_outside_diff_is_uncertain_not_a_departure
+    self.assertEqual(read['verdict'],'unclear')
+AssertionError: 'departs' != 'unclear'
+- departs
++ unclear
+
+
+----------------------------------------------------------------------
+Ran 113 tests in 10.314s
+
+FAILED (failures=1)

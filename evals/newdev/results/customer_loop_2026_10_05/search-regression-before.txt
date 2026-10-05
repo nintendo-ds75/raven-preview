@@ -1,0 +1,13 @@
+........F....................
+======================================================================
+FAIL: test_polite_referral_is_not_discarded_when_search_is_available (test_slack_conversation.ConversationTests.test_polite_referral_is_not_discarded_when_search_is_available)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<evaluation>/tests/test_slack_conversation.py", line 146, in test_polite_referral_is_not_discarded_when_search_is_available
+    self.assertIn('Pass this question to Marisol Vega',self.slack.messages[-1]['text'])
+AssertionError: 'Pass this question to Marisol Vega' not found in 'I found relevant Slack context. Tell me in your own words what you want decided or who I should ask; search results cannot authorize an action.'
+
+----------------------------------------------------------------------
+Ran 29 tests in 1.436s
+
+FAILED (failures=1)

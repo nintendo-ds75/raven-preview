@@ -1,0 +1,16 @@
+{
+  "task": "Support optional jitter on Retry-After waits so a fleet does not retry simultaneously. Keep existing behavior by default and preserve server-requested delays and configured limits. Investigate the policy choices, implement the change and add regression tests.",
+  "repo": "urllib3/urllib3",
+  "base": "ed0ed075c6b93f7c515ebd3abe9a7248507ef8c5",
+  "requirements": [
+    "retry_after_jitter defaults to zero and is additive uniform [0,value] only for positive Retry-After delays",
+    "Clamp the final delay to retry_after_max; never shorten the already-capped server delay",
+    "Missing, zero or expired Retry-After keeps existing fallthrough to exponential backoff",
+    "Reject negative, infinite and NaN jitter at construction; accept finite nonnegative numeric values",
+    "new() and increment() carry the setting",
+    "Exponential backoff behavior is unchanged",
+    "Document the option and provide a feature changelog fragment"
+  ],
+  "contacts": 72,
+  "manual_authority_rows": 0
+}

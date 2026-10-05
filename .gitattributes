@@ -1,0 +1,4 @@
+setup text eol=lf
+dev text eol=lf
+*.sh text eol=lf
+*.ps1 text eol=crlf

@@ -1,0 +1,75 @@
+[
+  {
+    "pr": 14910,
+    "kind": "bugfix",
+    "title": "Fix spurious monkeypatch teardown errors after failed mutations",
+    "goal": "MonkeyPatch.delattr, setitem and delitem can fail without changing the target, but teardown then raises a second error from undo. Preserve successful operation behavior.",
+    "paths": [
+      "src/_pytest/monkeypatch.py",
+      "testing/test_monkeypatch.py"
+    ],
+    "questions": [
+      {
+        "question": "Does the existing setattr fix in #14209 establish how failed mutations should interact with monkeypatch undo?",
+        "context": "MonkeyPatch.delattr, setitem and delitem can fail without changing the target, but teardown then raises a second error from undo. Preserve successful operation behavior."
+      },
+      {
+        "question": "Should failed delattr, setitem and delitem operations leave an undo entry when their target remains unchanged?",
+        "context": "MonkeyPatch.delattr, setitem and delitem can fail without changing the target, but teardown then raises a second error from undo. Preserve successful operation behavior."
+      }
+    ],
+    "base": "431f3e1f5fd70b9b0f8afa2d20a10421542e5c6a",
+    "requester": "Engineer 55aabc <engineer-5da7fa@example.invalid>",
+    "source_url": "https://github.com/pytest-dev/pytest/pull/14910"
+  },
+  {
+    "pr": 14954,
+    "kind": "compatibility",
+    "title": "Accept the documented native TOML integer for max_warnings",
+    "goal": "max_warnings = 0 in pytest.toml is rejected as the wrong type, despite documented integer examples. Make native TOML integers work while preserving existing configuration behavior.",
+    "paths": [
+      "src/_pytest/main.py",
+      "src/_pytest/terminal.py",
+      "testing/test_warnings.py"
+    ],
+    "questions": [
+      {
+        "question": "Should max_warnings accept native TOML integers while preserving strings from INI and -o, and the existing unset value?",
+        "context": "max_warnings = 0 in pytest.toml is rejected as the wrong type, despite documented integer examples. Make native TOML integers work while preserving existing configuration behavior."
+      },
+      {
+        "question": "Who should approve the max_warnings configuration compatibility behavior across option registration and terminal reporting?",
+        "context": "max_warnings = 0 in pytest.toml is rejected as the wrong type, despite documented integer examples. Make native TOML integers work while preserving existing configuration behavior."
+      }
+    ],
+    "base": "1f787563f0a174f938ad3415c2ecd90ae35f03e2",
+    "requester": "Engineer f59198",
+    "source_url": "https://github.com/pytest-dev/pytest/pull/14954"
+  },
+  {
+    "pr": 14758,
+    "kind": "cross-area",
+    "title": "Replace internal string node IDs with a structured representation",
+    "goal": "Repeated string splitting of node IDs occurs across collection, caching, reporting and stepwise state. Introduce a structured internal representation while preserving the public string interface used by plugins.",
+    "paths": [
+      "src/_pytest/nodes.py",
+      "src/_pytest/python.py",
+      "src/_pytest/cacheprovider.py",
+      "src/_pytest/reports.py",
+      "src/_pytest/stepwise.py"
+    ],
+    "questions": [
+      {
+        "question": "Should the public nodeid interface remain a string while collection and internal bookkeeping use structured node IDs?",
+        "context": "Repeated string splitting of node IDs occurs across collection, caching, reporting and stepwise state. Introduce a structured internal representation while preserving the public string interface used by plugins."
+      },
+      {
+        "question": "Who should approve the compatibility boundary for node IDs shared by collection, persisted caches, reports and external plugins?",
+        "context": "Repeated string splitting of node IDs occurs across collection, caching, reporting and stepwise state. Introduce a structured internal representation while preserving the public string interface used by plugins."
+      }
+    ],
+    "base": "adc4c54cf3bd5c6c56293bd4e8a2729ce2a5d8d9",
+    "requester": "Engineer d08201 <engineer-bdb8d2@example.invalid>",
+    "source_url": "https://github.com/pytest-dev/pytest/pull/14758"
+  }
+]

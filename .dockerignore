@@ -1,0 +1,12 @@
+.git
+.bridge
+.env
+.env.*
+!.env.example
+__pycache__
+**/__pycache__
+*.pyc
+reviews
+test-results
+backups
+.claude

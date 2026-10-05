@@ -1,0 +1,67 @@
+{
+  "repository": "grafana/grafana",
+  "url": "https://github.com/grafana/grafana.git",
+  "observed_head": "39703a2c01e37d6ef9f91147d1db29dd16c82611",
+  "baseline": "d33bfe43b0ba6ec92b706f80d5e6d4b4d198fb5e",
+  "baseline_time": "2026-09-17T17:07:03Z",
+  "history_limit": 1500,
+  "prior_prs": [132750, 132698, 132782, 130494, 132383, 132265, 132578, 131464],
+  "cases": [
+    {
+      "id": "storage-pagination",
+      "pr": 133017,
+      "title": "Restricted users silently miss resources when listing search-backed storage",
+      "brief": "Some users with restricted resource access stop seeing later resources while paging search-backed LIST results. Investigate and prepare a server-side fix that remains compatible with independently deployed API clients. Preserve existing resource versions and size limits. Include focused regression tests.",
+      "scope": ["pkg/storage/unified/resource"],
+      "export": ["pkg/storage/unified", "pkg/storage/legacysql", "pkg/apimachinery"],
+      "approvers": ["Engineer a3b078"],
+      "author": "RafaelPaulovic",
+      "owner_answer": "For this simulated replay, follow the historical server-side decision: continue after authorization-filtered pages using the last scanned row, not the last returned authorized row. Continue for a full scanned page or a short post-rank page with an inexact total. Preserve limit and byte-cap behavior and resource versions. A genuinely empty scan terminates. If the last scanned row lacks sort fields, warn and return no continuation token. Keep client/server contracts compatible; do not move responsibility to clients in this patch.",
+      "decision_checks": ["cursor derived from scanned rather than authorized rows", "distinguish inexact totals from terminal empty scan", "backwards-compatible server-side rollout"],
+      "followup": "Does this implementation terminate a truly empty scan and avoid issuing an unusable cursor when the last scanned row has no sort fields?",
+      "recovery": "delayed_reply"
+    },
+    {
+      "id": "alerting-database-range",
+      "pr": 133023,
+      "title": "Large missing-series resolution counts cannot be saved",
+      "brief": "Grafana Alerting users cannot persist a missing-series resolution window of 43,200 evaluations on MySQL or PostgreSQL. Investigate the mismatch and prepare a compatible backend fix with regression coverage. Preserve existing saved rules and history.",
+      "scope": ["pkg/services/ngalert/store", "pkg/services/sqlstore/migrations/ualert"],
+      "export": ["pkg/services/ngalert/store", "pkg/services/ngalert/models", "pkg/services/sqlstore/migrations", "pkg/services/sqlstore/migrator"],
+      "approvers": ["aespuna"],
+      "author": "rwwiv",
+      "owner_answer": "For this simulated replay, widen the database column rather than clamp or reject valid int64 values. Add a new additive migration making missing_series_evals_to_resolve nullable BIGINT in both alert_rule and alert_rule_version on MySQL and PostgreSQL. Preserve NULL semantics and existing rows. SQLite does not need that type alteration. Register the migration and update its ID fixture. Add a regression test persisting 43,200 and checking both the active rule and version history.",
+      "decision_checks": ["widen storage rather than clamp valid model values", "cover live and version-history tables while preserving nullability", "migration and cross-database compatibility"],
+      "followup": "Does the regression verify the persisted value in both the active alert rule and its version history, while preserving nullable values?",
+      "recovery": "restart"
+    },
+    {
+      "id": "provisioning-token-status",
+      "pr": 133004,
+      "title": "Git Sync token failures do not give users actionable repository status",
+      "brief": "A Git Sync repository whose installation credentials are no longer usable repeatedly produces errors without useful repository status. Improve the feedback and retry behavior, preserving recovery from temporary provider failures. Prepare a focused backend change and tests.",
+      "scope": ["pkg/registry/apis/provisioning/controller"],
+      "export": ["pkg/registry/apis/provisioning", "apps/provisioning"],
+      "approvers": ["amalavet"],
+      "author": "floriecai",
+      "owner_answer": "For this simulated replay, use the existing user-versus-system error classifier. For user-caused token generation or regeneration failures, persist unhealthy health and Ready=False with AuthenticationFailed, record the token-phase failure exactly once, warn, and return nil so the workqueue does not retry permanent user errors. Preserve retries for system/transient errors and surface status-patch failures. Cover both initial generation and regeneration. Do not expose tokens in status or logs.",
+      "decision_checks": ["differentiate permanent user failures from transient system errors", "status and retry behavior agree across both token paths", "preserve error accounting and failure visibility"],
+      "followup": "Are both initial generation and regeneration covered, with transient failures still retried and the token-phase failure counted exactly once?",
+      "recovery": "referral"
+    },
+    {
+      "id": "annotation-point-timestamps",
+      "pr": 132713,
+      "title": "Normalize point annotation timestamps without breaking old data",
+      "brief": "Point annotations written through the new API have inconsistent end timestamps, complicating efficient time-window queries. Prepare a compatible backend change that makes new writes consistent while preserving range annotations and the ability to roll out with existing data. Add focused tests.",
+      "scope": ["pkg/registry/apps/annotation", "pkg/services/annotations"],
+      "export": ["pkg/registry/apps/annotation", "pkg/services/annotations", "apps/annotation"],
+      "approvers": ["janthoe"],
+      "author": "cbodonnell",
+      "owner_answer": "For this simulated replay, populate TimeEnd with Time when the new API receives no end for a point annotation; preserve explicit ranges. Migration conversion should populate the end using max(epoch_end, epoch). Legacy updates must continue to understand both NULL-ended historical points and equal-ended new points, including when moving their start time. Keep the current point/range UNION query for now. Do not add a NOT NULL constraint or bulk backfill in this change; those require a later rollout after NULL writes stop.",
+      "decision_checks": ["define point versus range timestamp semantics", "preserve old NULL-ended points during legacy updates", "separate write normalization from backfill/constraint/query rollout"],
+      "followup": "Should the backfill, NOT NULL constraint, and removal of the point/range UNION query ship now or wait until NULL writes have stopped?",
+      "recovery": "followup"
+    }
+  ]
+}

@@ -1,0 +1,230 @@
+{
+  "repo": "<evaluation>/repos/urllib3",
+  "seconds": 0.6,
+  "held": 37,
+  "total": 37,
+  "results": [
+    {
+      "step": "Install and ingest: 'build the ownership map from a repository'",
+      "promise": "a fresh install asks for a workspace name before it answers anything",
+      "ok": true,
+      "detail": "The first hour"
+    },
+    {
+      "step": "Install and ingest: 'build the ownership map from a repository'",
+      "promise": "ingest reads a real checkout and says what it found",
+      "ok": true,
+      "detail": "300 commits, 165 files, 44 ownership rows"
+    },
+    {
+      "step": "Before anything else: does Bridge tell me what is not set up?",
+      "promise": "a fresh ingest reports the setup that is still missing",
+      "ok": true,
+      "detail": "reported: ['never_synced:urllib3', 'no_authority', 'no_coordinator', 'no_people', 'no_slack']"
+    },
+    {
+      "step": "Before anything else: does Bridge tell me what is not set up?",
+      "promise": "every finding says what to do about it",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "Before anything else: does Bridge tell me what is not set up?",
+      "promise": "it is in the state the inbox polls, not only in an API nobody calls",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "Set the map up, the way readiness told me to",
+      "promise": "setting the map up clears the blockers",
+      "ok": true,
+      "detail": "still open: ['never_synced:urllib3', 'no_slack']"
+    },
+    {
+      "step": "Point my agent at it: 'agent tools, none of which approves anything'",
+      "promise": "the MCP server starts and offers the protocol",
+      "ok": true,
+      "detail": "bridge_start_task, bridge_add_node, bridge_settle_node, bridge_get_tree, bridge_wait, bridge_finish_task, bridge_get_decision, bridge_search_decisions, bridge_list_owners, bridge_ingest_repo, bridge_import_record, bridge_connection_status"
+    },
+    {
+      "step": "Point my agent at it: 'agent tools, none of which approves anything'",
+      "promise": "its instructions tell an agent what to do first",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "Kick a task off: 'engage or pass, with its reason'",
+      "promise": "a task with a real judgment call in it engages",
+      "ok": true,
+      "detail": "engage: the task speaks of compatibility, drop, default, schema, in \"Drop the legacy compatibility shim\", which is a call for shazow, who owns the area"
+    },
+    {
+      "step": "Kick a task off: 'engage or pass, with its reason'",
+      "promise": "the verdict says why, in terms I can check",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "Kick a task off: 'engage or pass, with its reason'",
+      "promise": "Bridge names decisions the task may contain before I ask it anything",
+      "ok": true,
+      "detail": "Does the existing behaviour have to keep working for current; What happens to whoever depends on this today: is it removed; What should the default be, and does changing it change anyt"
+    },
+    {
+      "step": "Kick a task off: 'engage or pass, with its reason'",
+      "promise": "every candidate says which signal it came from",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "Write the decisions down: 'Bridge resolves what it can and routes the rest'",
+      "promise": "a decision routes to a person, with evidence naming the signal",
+      "ok": true,
+      "detail": "Illia Volochii: verified: Illia Volochii decides for bridge/ (matches bridge/store.py) (config); area: the agent is working in bridge/store.py"
+    },
+    {
+      "step": "Write the decisions down: 'Bridge resolves what it can and routes the rest'",
+      "promise": "the person it names is somebody I put in the map",
+      "ok": true,
+      "detail": "Illia Volochii"
+    },
+    {
+      "step": "Write the decisions down: 'Bridge resolves what it can and routes the rest'",
+      "promise": "a child decision hangs off the one it grew from",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "Write the decisions down: 'Bridge resolves what it can and routes the rest'",
+      "promise": "nothing is authorized yet",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "What the person gets: 'the context to decide', and not eleven messages",
+      "promise": "each decision produced one message, not several",
+      "ok": true,
+      "detail": "2 messages for 2 decisions: *A decision needs you, Illia Volochii.*; *A decision needs you, shazow.*"
+    },
+    {
+      "step": "What the person gets: 'the context to decide', and not eleven messages",
+      "promise": "the message carries the question, the context and how to reply",
+      "ok": true,
+      "detail": "*A decision needs you, Illia Volochii.* *Do existing databases on the old schema have to keep working after the shim goes?* Task: Drop the legacy compatibility "
+    },
+    {
+      "step": "What the person gets: 'the context to decide', and not eleven messages",
+      "promise": "nothing is described as coming from the records unless it did",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "Answer in Slack: 'people reply where they already are'",
+      "promise": "a reply stated as an answer is recorded",
+      "ok": true,
+      "detail": "Recorded as Illia Volochii's answer. The agent sees it on the tree (task 30d28d5d8805; it reads the answer with bridge_get_tree)."
+    },
+    {
+      "step": "Answer in Slack: 'people reply where they already are'",
+      "promise": "the answer is on the decision, attributed to the person who gave it",
+      "ok": true,
+      "detail": "Illia Volochii: migrate on open, one way"
+    },
+    {
+      "step": "Answer in Slack: 'people reply where they already are'",
+      "promise": "a conversational reply is never recorded as a decision",
+      "ok": true,
+      "detail": "Not recorded. To answer, reply `answer: <the decision> because <why>`; to confirm the answer on the table, `sign off`; t"
+    },
+    {
+      "step": "The gate: 'nothing ships on an answer nobody signed'",
+      "promise": "finishing is refused while a decision waits on a person",
+      "ok": true,
+      "detail": "Refused: 1 node still waits on a person: 1099d47d2c67 (waiting on shazow). Each named person answers or signs in the inbox or Slack before the task can finish: "
+    },
+    {
+      "step": "My session dies: 'the same task comes back'",
+      "promise": "the same client_key returns the same task, not a second one",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "My session dies: 'the same task comes back'",
+      "promise": "the answer the person gave is on the tree the new process reads",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "My session dies: 'the same task comes back'",
+      "promise": "the tree says what to do next",
+      "ok": true,
+      "detail": "1 waiting on shazow; 1 node written before their parent was answered: re-read them; bridge_finish_task is refused until every node above is "
+    },
+    {
+      "step": "Finish: 'authorized' is not 'verified'",
+      "promise": "finishing waits until I have read an answer that landed since my last read",
+      "ok": true,
+      "detail": "bridge_finish_task refused: people acted on this task after you last read it, and you have not seen what they said: shazow on \"If we migrate on open, is a one-w"
+    },
+    {
+      "step": "Finish: 'authorized' is not 'verified'",
+      "promise": "the task finishes once every decision is authorized",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "Finish: 'authorized' is not 'verified'",
+      "promise": "finishing says plainly that it did not verify the change",
+      "ok": true,
+      "detail": "2 decisions on this task were authorized by a person. Bridge did not read the diff and does not know whether it follows them; pass `diff` to bridge_finish_task and it will say what"
+    },
+    {
+      "step": "Finish: 'authorized' is not 'verified'",
+      "promise": "what I said I ran is recorded as my claim, not as a result",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "Finish: 'authorized' is not 'verified'",
+      "promise": "it lists who authorized what",
+      "ok": true,
+      "detail": "[{\"node_id\": \"b66b0f03d828\", \"question\": \"Do existing databases on the old schema have to keep working after the shim goes?\", \"signed_by\": \"Illia Volochii\"}, {\""
+    },
+    {
+      "step": "The next task: 'the understanding compounds'",
+      "promise": "the same question asked again reuses the answer a person gave",
+      "ok": true,
+      "detail": "resolved/evidence: Illia Volochii answered this (direct, decision b66b0f03d828, similarity 1.00, decayed score 1.00)"
+    },
+    {
+      "step": "The next task: 'the understanding compounds'",
+      "promise": "the reused answer cites where it came from",
+      "ok": true,
+      "detail": "Illia Volochii answered this (direct, decision b66b0f03d828, similarity 1.00, decayed score 1.00)"
+    },
+    {
+      "step": "The next task: 'the understanding compounds'",
+      "promise": "reuse still wants a person: evidence is not authorization",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "The next task: 'the understanding compounds'",
+      "promise": "whoever it asks is shown the earlier answer and who gave it",
+      "ok": true,
+      "detail": "asks Illia Volochii, citing Illia Volochii: Illia Volochii answered this (direct, decision b66b0f03d828, similarity 1.00, decayed score 1.00)"
+    },
+    {
+      "step": "An area nobody owns: 'unknown ownership is a gap, not a reason to keep quiet'",
+      "promise": "a task in an area nobody owns still engages",
+      "ok": true,
+      "detail": "engage: the task speaks of compatibility, drop, default, schema, in \"Drop the legacy compatibility shim\", which is a call for a person; Bridge does not know who owns th"
+    },
+    {
+      "step": "An area nobody owns: 'unknown ownership is a gap, not a reason to keep quiet'",
+      "promise": "and the reason says nobody is known, rather than that nothing is needed",
+      "ok": true,
+      "detail": "the task speaks of compatibility, drop, default, schema, in \"Drop the legacy compatibility shim\", which is a call for a person; Bridge does not know who owns this: it goes to the unrouted queue for an"
+    }
+  ]
+}
