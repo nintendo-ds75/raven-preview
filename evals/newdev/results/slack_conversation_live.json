@@ -1,0 +1,154 @@
+{
+  "environment": {
+    "repository": "urllib3/urllib3",
+    "revision": "ed0ed075c6b93f7c515ebd3abe9a7248507ef8c5",
+    "commits_ingested": 500,
+    "simulated_contacts": 72,
+    "inference": "Anthropic API, claude-haiku-4-5-20251001",
+    "host": "scripted MCP tool calls",
+    "slack": "simulated, signed HTTP callbacks",
+    "database": "SQLite",
+    "implementation_patch": false
+  },
+  "checks": [
+    {
+      "check": "Initial owner inferred from OSS without a manual map",
+      "passed": true,
+      "detail": "Dr Alex Mitre"
+    },
+    {
+      "check": "Webhook acknowledges before inference: Why do we need a decision here? Wha",
+      "passed": true,
+      "detail": 0.012
+    },
+    {
+      "check": "Context question leaves decision unsigned",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "Webhook acknowledges before inference: I worked on the implementation, but",
+      "passed": true,
+      "detail": 0.002
+    },
+    {
+      "check": "Natural referral is read back first",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "Webhook acknowledges before inference: yes",
+      "passed": true,
+      "detail": 0.003
+    },
+    {
+      "check": "Referred person receives a DM",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "Webhook acknowledges before inference: I'm away today, so I can't make thi",
+      "passed": true,
+      "detail": 0.002
+    },
+    {
+      "check": "Non-answer leaves finish blocked",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "Webhook acknowledges before inference: Keep Retry-After outside the cap. T",
+      "passed": true,
+      "detail": 0.003
+    },
+    {
+      "check": "Natural answer is read back without authorization",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "Webhook acknowledges before inference: Actually, one qualification: zero m",
+      "passed": true,
+      "detail": 0.004
+    },
+    {
+      "check": "Correction retains both requirements",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "Webhook acknowledges before inference: ok",
+      "passed": true,
+      "detail": 0.003
+    },
+    {
+      "check": "Casual acknowledgement is not a signature",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "Webhook acknowledges before inference: yes",
+      "passed": true,
+      "detail": 0.003
+    },
+    {
+      "check": "Restart and duplicate delivery preserve one confirmed answer",
+      "passed": true,
+      "detail": "Keep Retry-After outside the cap. Cap only exponential backoff. Zero must disable the backoff cap, not disable retries."
+    },
+    {
+      "check": "Host receives the decision and can finish honestly",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "check": "A new task reaches the person who ultimately answered",
+      "passed": true,
+      "detail": "William Tan"
+    },
+    {
+      "check": "Answer is reused but needs a fresh signature",
+      "passed": true,
+      "detail": "Keep Retry-After outside the cap. Cap only exponential backoff. Zero must disable the backoff cap, not disable retries."
+    },
+    {
+      "check": "No personal Raven accounts were created",
+      "passed": true,
+      "detail": null
+    }
+  ],
+  "conversation": [
+    {
+      "human": "Why do we need a decision here? What behavior do we need to preserve?",
+      "raven": "The decision matters because a retry delay cap could conflict with server-sent Retry-After headers. If a server explicitly requests 120 seconds via Retry-After, should the cap override that, or should we respect the server's directive? The task says to keep server Retry-After semantics explicit\u2014meaning we need to decide whether the cap applies uniformly or whether Retry-After gets special treatment to preserve server intent.\nNo decision or sign-off recorded."
+    },
+    {
+      "human": "I worked on the implementation, but <@U00000> makes this compatibility call. Could you ask them?",
+      "raven": "Pass this question to William Tan\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+    },
+    {
+      "human": "yes",
+      "raven": "Handed to William Tan. If they answer, Raven will remember them as a first contact for similar questions, without creating a broad ownership rule."
+    },
+    {
+      "human": "I'm away today, so I can't make this call yet.",
+      "raven": "No problem\u2014I've got you down as the decision maker on this one. When you're back, the question is: should the retry delay cap apply to Retry-After headers from servers, or only to exponential backoff? The cap is opt-in, so existing apps stay unchanged either way.\nNo decision or sign-off recorded."
+    },
+    {
+      "human": "Keep Retry-After outside the cap. The server explicitly requested that delay; cap only exponential backoff.",
+      "raven": "Record your decision as:\nKeep Retry-After outside the cap. Cap only exponential backoff.\nReason: The server explicitly requested that delay.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+    },
+    {
+      "human": "Actually, one qualification: zero must disable the backoff cap, not disable retries. Keep the Retry-After part as stated.",
+      "raven": "Record your decision as:\nKeep Retry-After outside the cap. Cap only exponential backoff. Zero must disable the backoff cap, not disable retries.\nReason: The server explicitly requested that delay.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+    },
+    {
+      "human": "ok",
+      "raven": "Thanks. Nothing recorded or signed. I am here when you are ready."
+    },
+    {
+      "human": "yes",
+      "raven": "Recorded and signed as William Tan's answer. The coding agent can now read it."
+    }
+  ]
+}

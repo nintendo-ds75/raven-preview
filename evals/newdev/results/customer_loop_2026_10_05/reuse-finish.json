@@ -1,0 +1,26 @@
+{
+  "id": "f76ade4ad6a6",
+  "status": "completed",
+  "counts": {
+    "resolved": 1,
+    "unrouted": 0,
+    "needs_review": 0,
+    "parent_changed_after": 0,
+    "signoff_required": 0,
+    "blocking": 0
+  },
+  "next": "no node waits on anyone",
+  "authorized": [
+    {
+      "node_id": "55247168942d",
+      "question": "Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?",
+      "signed_by": "Engineer 001"
+    }
+  ],
+  "checks": "Policy reuse probe only; no implementation changes claimed for this sibling task.",
+  "follows": [],
+  "unread": [],
+  "uncovered": [],
+  "verified": false,
+  "caveat": "1 decision on this task was authorized by a person. Bridge did not read the diff and does not know whether it follows them; pass `diff` to bridge_finish_task and it will say what it can: what the agent says it ran: Policy reuse probe only; no implementation changes claimed for this sibling task.. Authorized is not verified; code review is still the gate on shipping."
+}

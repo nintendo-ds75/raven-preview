@@ -1,0 +1,1655 @@
+{
+  "requests": [
+    {
+      "method": "auth.test",
+      "at": 1791186377.822328,
+      "request": {}
+    },
+    {
+      "method": "users.list",
+      "at": 1791186377.8400362,
+      "request": {
+        "limit": 200
+      }
+    },
+    {
+      "method": "users.list",
+      "at": 1791186377.845464,
+      "request": {
+        "limit": 200,
+        "cursor": "20"
+      }
+    },
+    {
+      "method": "users.list",
+      "at": 1791186377.850742,
+      "request": {
+        "limit": 200,
+        "cursor": "40"
+      }
+    },
+    {
+      "method": "users.list",
+      "at": 1791186377.856582,
+      "request": {
+        "limit": 200,
+        "cursor": "60"
+      }
+    },
+    {
+      "method": "conversations.open",
+      "at": 1791186626.5724502,
+      "request": {
+        "users": "U00028"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791186626.581068,
+      "request": {
+        "channel": "DU00028",
+        "text": "*A decision needs you, Engineer 028.*\n*Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nThe code needs to decide whether Retry-After header waits should support jitter (randomized delays). Currently `backoff_jitter` only affects exponential backoff, not Retry-After waits. Reusing `backoff_jitter` for both would silently change behavior for existing users who set it. A new parameter like `retry_after_jitter` keeps existing behavior unchanged but adds a second configuration knob that must be passed through `increment()`. Alternatively, a boolean flag could make `backoff_jitter` apply to both cases only when explicitly enabled. Which approach should be taken: add a new opt-in `retry_after_jitter` parameter, reuse `backoff_jitter` for both, or add a boolean flag to control whether `backoff_jitter` applies to Retry-After?\nContext: `Retry` already has `backoff_jitter: float = 0.0`, applied only in `get_backoff_time()` to the exponential backoff, and `Retry.sleep()` returns early on a Retry-After header without touching backoff at all. Reusing `backoff_jitter` would silently change behaviour for everyone who already sets it (today it never affects Retry-After waits), which conflicts with \"keep existing behavior by default\". A new `retry_after_jitter=0.0` parameter is strictly opt-in but adds a second knob and must also be threaded through `Retry.new()` so it survives `increment()`. Paths: src/urllib3/util/retry.py Options: New `retry_after_jitter: float = 0.0` parameter, threaded through `new()`; existing users unaffected | Reuse `backoff_jitter` for both backoff and Retry-After waits; one knob, but changes behaviour for current `backoff_jitter` users | New boolean `jitter_retry_after: bool = False` that makes `backoff_jitter` also apply to Retry-After waits\nWhy you: inferred first contact: authored pr 3788 (Describe Retry backoff_max and backoff_jitter params in docs (#3788)); confirm or refer in Slack\nOptions: New `retry_after_jitter: float = 0.0` parameter, threaded through `new()`; existing users unaffected | Reuse `backoff_jitter` for both backoff and Retry-After waits; one knob, but changes behaviour for current `backoff_jitter` users | New boolean `jitter_retry_after: bool = False` that makes `backoff_jitter` also apply to Retry-After waits\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 4c891c655eb2). You can answer here without a Raven account.",
+        "unfurl_links": false,
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*A decision needs you, Engineer 028.*\n*Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nThe code needs to decide whether Retry-After header waits should support jitter (randomized delays). Currently `backoff_jitter` only affects exponential backoff, not Retry-After waits. Reusing `backoff_jitter` for both would silently change behavior for existing users who set it. A new parameter like `retry_after_jitter` keeps existing behavior unchanged but adds a second configuration knob that must be passed through `increment()`. Alternatively, a boolean flag could make `backoff_jitter` apply to both cases only when explicitly enabled. Which approach should be taken: add a new opt-in `retry_after_jitter` parameter, reuse `backoff_jitter` for both, or add a boolean flag to control whether `backoff_jitter` applies to Retry-After?\nContext: `Retry` already has `backoff_jitter: float = 0.0`, applied only in `get_backoff_time()` to the exponential backoff, and `Retry.sleep()` returns early on a Retry-After header without touching backoff at all. Reusing `backoff_jitter` would silently change behaviour for everyone who already sets it (today it never affects Retry-After waits), which conflicts with \"keep existing behavior by default\". A new `retry_after_jitter=0.0` parameter is strictly opt-in but adds a second knob and must also be threaded through `Retry.new()` so it survives `increment()`. Paths: src/urllib3/util/retry.py Options: New `retry_after_jitter: float = 0.0` parameter, threaded through `new()`; existing users unaffected | Reuse `backoff_jitter` for both backoff and Retry-After waits; one knob, but changes behaviour for current `backoff_jitter` users | New boolean `jitter_retry_after: bool = False` that makes `backoff_jitter` also apply to Retry-After waits\nWhy you: inferred first contact: authored pr 3788 (Describe Retry backoff_max and backoff_jitter params in docs (#3788)); confirm or refer in Slack\nOptions: New `retry_after_jitter: float = 0.0` parameter, threaded through `new()`; existing users unaffected | Reuse `backoff_jitter` for both backoff and Retry-After waits; one knob, but changes behaviour for current `backoff_jitter` users | New boolean `jitter_retry_after: bool = False` that makes `backoff_jitter` also apply to Retry-After waits\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 4c891c655eb2). You can answer here without a Raven account."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "method": "conversations.open",
+      "at": 1791186640.617625,
+      "request": {
+        "users": "U00003"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791186640.625042,
+      "request": {
+        "channel": "DU00003",
+        "text": "*A decision needs you, Engineer 003.*\n*Must jitter only ever lengthen a Retry-After wait (additive uniform [0, jitter)), or may it shorten it (full/equal jitter)?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nContext: \"Preserve server-requested delays\" reads as: never sleep less than the server asked for, so additive-only jitter (`retry_after + random.uniform(0, jitter)`) is the safe reading, matching how `backoff_jitter` already works in `get_backoff_time()` (`backoff_value += random.random() * self.backoff_jitter`). Full jitter (`random.uniform(0, retry_after)`) de-correlates a fleet better but can retry before the server's requested delay elapses, which for 429/503 risks violating the server's rate limit. Paths: src/urllib3/util/retry.py Options: Additive only: sleep retry_after + uniform(0, jitter); never shorter than the server asked | Full jitter: uniform(0, retry_after); best de-correlation, may retry early | Equal jitter: retry_after/2 + uniform(0, retry_after/2); may still retry early\nWhy you: inferred first contact: authored pr 4960 (Fix full read with `amt=None` after a partial read (#4960)); confirm or refer in Slack\nWhat Bridge found: related: decision 4c891c655eb2 asks the same question maybe in another scope (this one names 429/503, `backoff_value, preserve server-requested delays, decision 4c891c655eb2 names `retry_after_jitter=0, keep existing behavior by default); one answer does not settle both\nOptions: Additive only: sleep retry_after + uniform(0, jitter); never shorter than the server asked | Full jitter: uniform(0, retry_after); best de-correlation, may retry early | Equal jitter: retry_after/2 + uniform(0, retry_after/2); may still retry early\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 892270f8693f). You can answer here without a Raven account.",
+        "unfurl_links": false,
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*A decision needs you, Engineer 003.*\n*Must jitter only ever lengthen a Retry-After wait (additive uniform [0, jitter)), or may it shorten it (full/equal jitter)?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nContext: \"Preserve server-requested delays\" reads as: never sleep less than the server asked for, so additive-only jitter (`retry_after + random.uniform(0, jitter)`) is the safe reading, matching how `backoff_jitter` already works in `get_backoff_time()` (`backoff_value += random.random() * self.backoff_jitter`). Full jitter (`random.uniform(0, retry_after)`) de-correlates a fleet better but can retry before the server's requested delay elapses, which for 429/503 risks violating the server's rate limit. Paths: src/urllib3/util/retry.py Options: Additive only: sleep retry_after + uniform(0, jitter); never shorter than the server asked | Full jitter: uniform(0, retry_after); best de-correlation, may retry early | Equal jitter: retry_after/2 + uniform(0, retry_after/2); may still retry early\nWhy you: inferred first contact: authored pr 4960 (Fix full read with `amt=None` after a partial read (#4960)); confirm or refer in Slack\nWhat Bridge found: related: decision 4c891c655eb2 asks the same question maybe in another scope (this one names 429/503, `backoff_value, preserve server-requested delays, decision 4c891c655eb2 names `retry_after_jitter=0, keep existing behavior by default); one answer does not settle both\nOptions: Additive only: sleep retry_after + uniform(0, jitter); never shorter than the server asked | Full jitter: uniform(0, retry_after); best de-correlation, may retry early | Equal jitter: retry_after/2 + uniform(0, retry_after/2); may still retry early\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 892270f8693f). You can answer here without a Raven account."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791186648.6707761,
+      "request": {
+        "channel": "DU00028",
+        "text": "*A decision needs you, Engineer 028.*\n*Does `retry_after_max` cap the jittered total, or only the server-parsed value before jitter is added?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nWhen a Retry-After header is parsed and jitter is optionally added, should `retry_after_max` cap the final sleep time (after jitter) or only the parsed header value (before jitter)? Clamping after jitter keeps the documented guarantee that waits never exceed the configured maximum but causes jitter to silently vanish when the header is already at the cap, while clamping before jitter only allows the actual sleep to exceed `retry_after_max` by up to the jitter amount.\nContext: `parse_retry_after()` clamps the parsed header to `self.retry_after_max` (default 21600s). If jitter is added afterwards the actual sleep can exceed the configured maximum, which reads against \"preserve ... configured limits\". Clamping the jittered total keeps the documented guarantee that no Retry-After wait exceeds `retry_after_max`, but means jitter silently vanishes when the header is already at the cap (same way `backoff_max` already swallows `backoff_jitter` in `get_backoff_time()`). Paths: src/urllib3/util/retry.py Options: Clamp after jitter: min(retry_after + jitter, retry_after_max); the configured limit is never exceeded, jitter disappears at the cap | Clamp before jitter only: sleep may exceed retry_after_max by up to the jitter amount | Clamp after jitter against a separate limit so jitter is preserved at the cap\nWhy you: inferred first contact: authored pr 3788 (Describe Retry backoff_max and backoff_jitter params in docs (#3788)); confirm or refer in Slack\nWhat Bridge found: related: decision 4c891c655eb2 asks the same question maybe in another scope (this one names 21600s, `backoff_max`, `parse_retry_after()`, decision 4c891c655eb2 names `retry_after_jitter=0, keep existing behavior by default); one answer does not settle both\nOptions: Clamp after jitter: min(retry_after + jitter, retry_after_max); the configured limit is never exceeded, jitter disappears at the cap | Clamp before jitter only: sleep may exceed retry_after_max by up to the jitter amount | Clamp after jitter against a separate limit so jitter is preserved at the cap\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision b8cae0e4f89a). You can answer here without a Raven account.",
+        "unfurl_links": false,
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*A decision needs you, Engineer 028.*\n*Does `retry_after_max` cap the jittered total, or only the server-parsed value before jitter is added?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nWhen a Retry-After header is parsed and jitter is optionally added, should `retry_after_max` cap the final sleep time (after jitter) or only the parsed header value (before jitter)? Clamping after jitter keeps the documented guarantee that waits never exceed the configured maximum but causes jitter to silently vanish when the header is already at the cap, while clamping before jitter only allows the actual sleep to exceed `retry_after_max` by up to the jitter amount.\nContext: `parse_retry_after()` clamps the parsed header to `self.retry_after_max` (default 21600s). If jitter is added afterwards the actual sleep can exceed the configured maximum, which reads against \"preserve ... configured limits\". Clamping the jittered total keeps the documented guarantee that no Retry-After wait exceeds `retry_after_max`, but means jitter silently vanishes when the header is already at the cap (same way `backoff_max` already swallows `backoff_jitter` in `get_backoff_time()`). Paths: src/urllib3/util/retry.py Options: Clamp after jitter: min(retry_after + jitter, retry_after_max); the configured limit is never exceeded, jitter disappears at the cap | Clamp before jitter only: sleep may exceed retry_after_max by up to the jitter amount | Clamp after jitter against a separate limit so jitter is preserved at the cap\nWhy you: inferred first contact: authored pr 3788 (Describe Retry backoff_max and backoff_jitter params in docs (#3788)); confirm or refer in Slack\nWhat Bridge found: related: decision 4c891c655eb2 asks the same question maybe in another scope (this one names 21600s, `backoff_max`, `parse_retry_after()`, decision 4c891c655eb2 names `retry_after_jitter=0, keep existing behavior by default); one answer does not settle both\nOptions: Clamp after jitter: min(retry_after + jitter, retry_after_max); the configured limit is never exceeded, jitter disappears at the cap | Clamp before jitter only: sleep may exceed retry_after_max by up to the jitter amount | Clamp after jitter against a separate limit so jitter is preserved at the cap\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision b8cae0e4f89a). You can answer here without a Raven account."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791186649.560231,
+      "request": {
+        "user": "U00028"
+      }
+    },
+    {
+      "method": "assistant.search.context",
+      "at": 1791186649.585141,
+      "request": {
+        "query": "Can you explain in a couple of sentences why this needs my decision and what happens if we reuse the existing setting?\nAbout this decision: Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?",
+        "channel_types": [
+          "public_channel"
+        ],
+        "content_types": [
+          "messages"
+        ],
+        "include_bots": false,
+        "include_context_messages": true
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791186652.0314949,
+      "request": {
+        "channel": "DU00028",
+        "text": "Reusing `backoff_jitter` would silently apply jitter to Retry-After waits for anyone who already set that parameter, even though today it only affects exponential backoff. That breaks the \"keep existing behavior by default\" requirement\u2014users didn't opt into Retry-After jitter, so their fleets could suddenly behave differently. A new parameter like `retry_after_jitter=0.0` keeps existing users unaffected and makes the intent explicit, but adds a second knob to maintain.\n<https://raven-eval.slack.com/archives/CGENERAL/p1770000000000000|Slack source>\nNo decision or sign-off recorded.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Reusing `backoff_jitter` would silently apply jitter to Retry-After waits for anyone who already set that parameter, even though today it only affects exponential backoff. That breaks the \"keep existing behavior by default\" requirement\u2014users didn't opt into Retry-After jitter, so their fleets could suddenly behave differently. A new parameter like `retry_after_jitter=0.0` keeps existing users unaffected and makes the intent explicit, but adds a second knob to maintain.\n<https://raven-eval.slack.com/archives/CGENERAL/p1770000000000000|Slack source>\nNo decision or sign-off recorded."
+            }
+          }
+        ],
+        "thread_ts": "1791186626.000000",
+        "client_msg_id": "7e60b64b-4cb5-5a8d-9762-a4d0900cdd60",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "conversations.open",
+      "at": 1791186674.7280178,
+      "request": {
+        "users": "U00035"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791186674.740931,
+      "request": {
+        "channel": "DU00035",
+        "text": "*A decision needs you, Engineer 035.*\n*Is the jitter amount an absolute number of seconds, or a fraction of the server's Retry-After value?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nThe retry mechanism needs jitter on Retry-After waits from servers. The decision is whether the jitter amount should be a fixed number of seconds (consistent with the existing `backoff_jitter` parameter), a fraction of the server's Retry-After value (which scales to large and small wait times but can add unbounded time), or a fraction capped by an absolute maximum.\nContext: `backoff_jitter` is documented as \"Random jitter amount (in seconds)\", so an absolute-seconds knob is consistent with the existing API and predictable. But Retry-After values vary hugely (1s to 21600s): a fixed 1s spread de-correlates a fleet after a 1s Retry-After and does nothing after a 600s one, while a fraction (e.g. 0.1 -> uniform(0, 0.1*retry_after)) scales but makes the added wait unbounded until `retry_after_max` clamps it. Paths: src/urllib3/util/retry.py Options: Absolute seconds, like `backoff_jitter`: uniform(0, retry_after_jitter) | Fraction of the server value: uniform(0, retry_after_jitter * retry_after) | Fraction with an absolute ceiling, e.g. min(fraction*retry_after, backoff_max)\nWhy you: inferred first contact: authored pr 3743 (Handle massive values in Retry-After when calculating time to sleep for (#3743)); confirm or refer in Slack\nWhat Bridge found: related: decision b8cae0e4f89a asks the same question maybe in another scope (this one names 1*retry_after, random, random jitter amount (in seconds), decision b8cae0e4f89a names `backoff_max`, `get_backoff_time()`, `parse_retry_after()`); one answer does not settle both\nOptions: Absolute seconds, like `backoff_jitter`: uniform(0, retry_after_jitter) | Fraction of the server value: uniform(0, retry_after_jitter * retry_after) | Fraction with an absolute ceiling, e.g. min(fraction*retry_after, backoff_max)\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 4ded764885e3). You can answer here without a Raven account.",
+        "unfurl_links": false,
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*A decision needs you, Engineer 035.*\n*Is the jitter amount an absolute number of seconds, or a fraction of the server's Retry-After value?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nThe retry mechanism needs jitter on Retry-After waits from servers. The decision is whether the jitter amount should be a fixed number of seconds (consistent with the existing `backoff_jitter` parameter), a fraction of the server's Retry-After value (which scales to large and small wait times but can add unbounded time), or a fraction capped by an absolute maximum.\nContext: `backoff_jitter` is documented as \"Random jitter amount (in seconds)\", so an absolute-seconds knob is consistent with the existing API and predictable. But Retry-After values vary hugely (1s to 21600s): a fixed 1s spread de-correlates a fleet after a 1s Retry-After and does nothing after a 600s one, while a fraction (e.g. 0.1 -> uniform(0, 0.1*retry_after)) scales but makes the added wait unbounded until `retry_after_max` clamps it. Paths: src/urllib3/util/retry.py Options: Absolute seconds, like `backoff_jitter`: uniform(0, retry_after_jitter) | Fraction of the server value: uniform(0, retry_after_jitter * retry_after) | Fraction with an absolute ceiling, e.g. min(fraction*retry_after, backoff_max)\nWhy you: inferred first contact: authored pr 3743 (Handle massive values in Retry-After when calculating time to sleep for (#3743)); confirm or refer in Slack\nWhat Bridge found: related: decision b8cae0e4f89a asks the same question maybe in another scope (this one names 1*retry_after, random, random jitter amount (in seconds), decision b8cae0e4f89a names `backoff_max`, `get_backoff_time()`, `parse_retry_after()`); one answer does not settle both\nOptions: Absolute seconds, like `backoff_jitter`: uniform(0, retry_after_jitter) | Fraction of the server value: uniform(0, retry_after_jitter * retry_after) | Fraction with an absolute ceiling, e.g. min(fraction*retry_after, backoff_max)\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 4ded764885e3). You can answer here without a Raven account."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791186682.88693,
+      "request": {
+        "user": "U00028"
+      }
+    },
+    {
+      "method": "assistant.search.context",
+      "at": 1791186682.907158,
+      "request": {
+        "query": "I contributed the documentation, but <@U00001> makes compatibility decisions for this feature. Could you ask them instead?\nAbout this decision: Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?",
+        "channel_types": [
+          "public_channel"
+        ],
+        "content_types": [
+          "messages"
+        ],
+        "include_bots": false,
+        "include_context_messages": true
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791186684.170608,
+      "request": {
+        "channel": "DU00028",
+        "text": "I found relevant Slack context. Tell me in your own words what you want decided or who I should ask; search results cannot authorize an action.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "I found relevant Slack context. Tell me in your own words what you want decided or who I should ask; search results cannot authorize an action."
+            }
+          }
+        ],
+        "thread_ts": "1791186626.000000",
+        "client_msg_id": "cb376f8d-9591-52d1-b401-d9233197e28b",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791186684.766732,
+      "request": {
+        "channel": "DU00035",
+        "text": "*A decision needs you, Engineer 035.*\n*Where is the jitter applied: inside `parse_retry_after()`/`get_retry_after()`, or only in `sleep_for_retry()` so the accessors keep returning the server's value?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nThe code needs to add optional jitter to Retry-After delays. The decision is where to apply it: in the public accessor functions `get_retry_after()` and `parse_retry_after()` which are documented as returning the server's value and called by tests expecting deterministic results, or only in `sleep_for_retry()` which is the internal function that actually waits. Applying jitter in the accessors would make them non-deterministic and change what callers observe from the server; applying it only in `sleep_for_retry()` keeps the accessors pure while still adding jitter at both call sites that invoke `sleep_for_retry()`.\nContext: `get_retry_after()` and `parse_retry_after()` are public and documented as \"the value of Retry-After in seconds\"; tests call `parse_retry_after()` directly (test_configurable_retry_after_max). Jittering inside them would make a documented accessor non-deterministic and change what callers reading the server's delay observe. Applying jitter only in `sleep_for_retry()` keeps the accessors pure; `connectionpool.py:944` calls `sleep_for_retry()` directly, so both call sites (that one and `Retry.sleep()`) would still get jitter. Paths: src/urllib3/util/retry.py, src/urllib3/connectionpool.py Options: Only in `sleep_for_retry()`; accessors stay pure and deterministic | Inside `get_retry_after()`; accessor reports the jittered wait, `parse_retry_after()` stays pure | Inside `parse_retry_after()`; every caller sees the jittered value\nWhy you: inferred first contact: authored pr 3743 (Handle massive values in Retry-After when calculating time to sleep for (#3743)); confirm or refer in Slack\nWhat Bridge found: related: decision b8cae0e4f89a asks the same question maybe in another scope (this one names 944`, `get_retry_after()`, test_configurable_retry_after_max, decision b8cae0e4f89a names 21600s, `backoff_jitter`, `backoff_max`); one answer does not settle both; related: decision 4ded764885e3 asks the same question maybe in another scope (this one names 944`, `get_retry_after()` \u2026 _[cut here: the inbox has the rest]_\nOptions: Only in `sleep_for_retry()`; accessors stay pure and deterministic | Inside `get_retry_after()`; accessor reports the jittered wait, `parse_retry_after()` stays pure | Inside `parse_retry_after()`; every caller sees the jittered value\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 7e08207b4e8d). You can answer here without a Raven account.",
+        "unfurl_links": false,
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*A decision needs you, Engineer 035.*\n*Where is the jitter applied: inside `parse_retry_after()`/`get_retry_after()`, or only in `sleep_for_retry()` so the accessors keep returning the server's value?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nThe code needs to add optional jitter to Retry-After delays. The decision is where to apply it: in the public accessor functions `get_retry_after()` and `parse_retry_after()` which are documented as returning the server's value and called by tests expecting deterministic results, or only in `sleep_for_retry()` which is the internal function that actually waits. Applying jitter in the accessors would make them non-deterministic and change what callers observe from the server; applying it only in `sleep_for_retry()` keeps the accessors pure while still adding jitter at both call sites that invoke `sleep_for_retry()`.\nContext: `get_retry_after()` and `parse_retry_after()` are public and documented as \"the value of Retry-After in seconds\"; tests call `parse_retry_after()` directly (test_configurable_retry_after_max). Jittering inside them would make a documented accessor non-deterministic and change what callers reading the server's delay observe. Applying jitter only in `sleep_for_retry()` keeps the accessors pure; `connectionpool.py:944` calls `sleep_for_retry()` directly, so both call sites (that one and `Retry.sleep()`) would still get jitter. Paths: src/urllib3/util/retry.py, src/urllib3/connectionpool.py Options: Only in `sleep_for_retry()`; accessors stay pure and deterministic | Inside `get_retry_after()`; accessor reports the jittered wait, `parse_retry_after()` stays pure | Inside `parse_retry_after()`; every caller sees the jittered value\nWhy you: inferred first contact: authored pr 3743 (Handle massive values in Retry-After when calculating time to sleep for (#3743)); confirm or refer in Slack\nWhat Bridge found: related: decision b8cae0e4f89a asks the same question maybe in another scope (this one names 944`, `get_retry_after()`, test_configurable_retry_after_max, decision b8cae0e4f89a names 21600s, `backoff_jitter`, `backoff_max`); one answer does not settle both; related: decision 4ded764885e3 asks the same question maybe in another scope (this one names 944`, `get_retry_after()` \u2026 _[cut here: the inbox has the rest]_\nOptions: Only in `sleep_for_retry()`; accessors stay pure and deterministic | Inside `get_retry_after()`; accessor reports the jittered wait, `parse_retry_after()` stays pure | Inside `parse_retry_after()`; every caller sees the jittered value"
+            }
+          },
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Reply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 7e08207b4e8d). You can answer here without a Raven account."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791186700.780119,
+      "request": {
+        "user": "U00028"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791186702.19078,
+      "request": {
+        "channel": "DU00028",
+        "text": "Pass this question to Engineer 001\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Pass this question to Engineer 001\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+            }
+          }
+        ],
+        "thread_ts": "1791186626.000000",
+        "client_msg_id": "a40db986-b9d9-5760-916d-899ead3c7a67",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "auth.test",
+      "at": 1791186802.814071,
+      "request": {}
+    },
+    {
+      "method": "users.list",
+      "at": 1791186802.82753,
+      "request": {
+        "limit": 200
+      }
+    },
+    {
+      "method": "users.list",
+      "at": 1791186802.834639,
+      "request": {
+        "limit": 200,
+        "cursor": "20"
+      }
+    },
+    {
+      "method": "users.list",
+      "at": 1791186802.838637,
+      "request": {
+        "limit": 200,
+        "cursor": "40"
+      }
+    },
+    {
+      "method": "users.list",
+      "at": 1791186802.845566,
+      "request": {
+        "limit": 200,
+        "cursor": "60"
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791186823.990303,
+      "request": {
+        "user": "U00028"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791186825.4126122,
+      "request": {
+        "channel": "DU00028",
+        "text": "Pass this question to Engineer 001\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Pass this question to Engineer 001\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+            }
+          }
+        ],
+        "thread_ts": "1791186626.000000",
+        "client_msg_id": "76188921-1090-53ef-81ec-cdf58967c7fd",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791186849.457388,
+      "request": {
+        "user": "U00028"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791186849.5994408,
+      "request": {
+        "channel": "DU00028",
+        "text": "Handed to Engineer 001. If they answer, Raven will remember them as a first contact for similar questions, without creating a broad ownership rule.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Handed to Engineer 001. If they answer, Raven will remember them as a first contact for similar questions, without creating a broad ownership rule."
+            }
+          }
+        ],
+        "thread_ts": "1791186626.000000",
+        "client_msg_id": "d4800eca-d7c2-5aa8-bf71-bb4f65c700dd",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "conversations.open",
+      "at": 1791186851.066985,
+      "request": {
+        "users": "U00001"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791186851.0783072,
+      "request": {
+        "channel": "DU00001",
+        "text": "*Handed to you, Engineer 001.*\n*Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nThe code needs to decide whether Retry-After header waits should support jitter (randomized delays). Currently `backoff_jitter` only affects exponential backoff, not Retry-After waits. Reusing `backoff_jitter` for both would silently change behavior for existing users who set it. A new parameter like `retry_after_jitter` keeps existing behavior unchanged but adds a second configuration knob that must be passed through `increment()`. Alternatively, a boolean flag could make `backoff_jitter` apply to both cases only when explicitly enabled. Which approach should be taken: add a new opt-in `retry_after_jitter` parameter, reuse `backoff_jitter` for both, or add a boolean flag to control whether `backoff_jitter` applies to Retry-After?\nContext: `Retry` already has `backoff_jitter: float = 0.0`, applied only in `get_backoff_time()` to the exponential backoff, and `Retry.sleep()` returns early on a Retry-After header without touching backoff at all. Reusing `backoff_jitter` would silently change behaviour for everyone who already sets it (today it never affects Retry-After waits), which conflicts with \"keep existing behavior by default\". A new `retry_after_jitter=0.0` parameter is strictly opt-in but adds a second knob and must also be threaded through `Retry.new()` so it survives `increment()`. Paths: src/urllib3/util/retry.py Options: New `retry_after_jitter: float = 0.0` parameter, threaded through `new()`; existing users unaffected | Reuse `backoff_jitter` for both backoff and Retry-After waits; one knob, but changes behaviour for current `backoff_jitter` users | New boolean `jitter_retry_after: bool = False` that makes `backoff_jitter` also apply to Retry-After waits\nWhy you: handed on by Engineer 028: \"Could you ask <@U00001> instead? They make the compatibility call; I only contributed the documentation.\"\nOptions: New `retry_after_jitter: float = 0.0` parameter, threaded through `new()`; existing users unaffected | Reuse `backoff_jitter` for both backoff and Retry-After waits; one knob, but changes behaviour for current `backoff_jitter` users | New boolean `jitter_retry_after: bool = False` that makes `backoff_jitter` also apply to Retry-After waits\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 4c891c655eb2). You can answer here without a Raven account.",
+        "unfurl_links": false,
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*Handed to you, Engineer 001.*\n*Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nThe code needs to decide whether Retry-After header waits should support jitter (randomized delays). Currently `backoff_jitter` only affects exponential backoff, not Retry-After waits. Reusing `backoff_jitter` for both would silently change behavior for existing users who set it. A new parameter like `retry_after_jitter` keeps existing behavior unchanged but adds a second configuration knob that must be passed through `increment()`. Alternatively, a boolean flag could make `backoff_jitter` apply to both cases only when explicitly enabled. Which approach should be taken: add a new opt-in `retry_after_jitter` parameter, reuse `backoff_jitter` for both, or add a boolean flag to control whether `backoff_jitter` applies to Retry-After?\nContext: `Retry` already has `backoff_jitter: float = 0.0`, applied only in `get_backoff_time()` to the exponential backoff, and `Retry.sleep()` returns early on a Retry-After header without touching backoff at all. Reusing `backoff_jitter` would silently change behaviour for everyone who already sets it (today it never affects Retry-After waits), which conflicts with \"keep existing behavior by default\". A new `retry_after_jitter=0.0` parameter is strictly opt-in but adds a second knob and must also be threaded through `Retry.new()` so it survives `increment()`. Paths: src/urllib3/util/retry.py Options: New `retry_after_jitter: float = 0.0` parameter, threaded through `new()`; existing users unaffected | Reuse `backoff_jitter` for both backoff and Retry-After waits; one knob, but changes behaviour for current `backoff_jitter` users | New boolean `jitter_retry_after: bool = False` that makes `backoff_jitter` also apply to Retry-After waits\nWhy you: handed on by Engineer 028: \"Could you ask <@U00001> instead? They make the compatibility call; I only contributed the documentation.\"\nOptions: New `retry_after_jitter: float = 0.0` parameter, threaded through `new()`; existing users unaffected | Reuse `backoff_jitter` for both backoff and Retry-After waits; one knob, but changes behaviour for current `backoff_jitter` users | New boolean `jitter_retry_after: bool = False` that makes `backoff_jitter` also apply to Retry-After waits\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 4c891c655eb2). You can answer here without a Raven account."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791186891.678657,
+      "request": {
+        "user": "U00003"
+      }
+    },
+    {
+      "method": "assistant.search.context",
+      "at": 1791186896.029402,
+      "request": {
+        "query": "Only add uniform jitter between zero and retry_after_jitter seconds to a positive Retry-After wait. Never shorten the already-capped server delay; keep exponential backoff jitter unchanged.\nAbout this decision: Must jitter only ever lengthen a Retry-After wait (additive uniform [0, jitter)), or may it shorten it (full/equal jitter)?",
+        "channel_types": [
+          "public_channel"
+        ],
+        "content_types": [
+          "messages"
+        ],
+        "include_bots": false,
+        "include_context_messages": true
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791186898.419224,
+      "request": {
+        "channel": "DU00003",
+        "text": "I need to clarify your intent. Your message says \"Only add uniform jitter between zero and retry_after_jitter seconds to a positive Retry-After wait. Never shorten the already-capped server delay.\" This describes additive-only jitter, which matches the context you provided.\n\nAre you answering that jitter must be additive only (never shortening the server's delay)? Or are you asking whether this is the right choice before you decide?\n<https://raven-eval.slack.com/archives/CGENERAL/p1770000000000000|Slack source>\nNo decision or sign-off recorded.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "I need to clarify your intent. Your message says \"Only add uniform jitter between zero and retry_after_jitter seconds to a positive Retry-After wait. Never shorten the already-capped server delay.\" This describes additive-only jitter, which matches the context you provided.\n\nAre you answering that jitter must be additive only (never shortening the server's delay)? Or are you asking whether this is the right choice before you decide?\n<https://raven-eval.slack.com/archives/CGENERAL/p1770000000000000|Slack source>\nNo decision or sign-off recorded."
+            }
+          }
+        ],
+        "thread_ts": "1791186640.000001",
+        "client_msg_id": "613dc94e-25d0-5da5-816e-d92fc5d8c1a4",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791186898.702692,
+      "request": {
+        "user": "U00001"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791186900.5769112,
+      "request": {
+        "channel": "DU00001",
+        "text": "Record your decision as:\nUse a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction.\nReason: New opt-in parameter avoids silently changing behavior for existing `backoff_jitter` users, aligns with the goal to keep existing behavior by default, and fails early on invalid delays.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Record your decision as:\nUse a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction.\nReason: New opt-in parameter avoids silently changing behavior for existing `backoff_jitter` users, aligns with the goal to keep existing behavior by default, and fails early on invalid delays.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+            }
+          }
+        ],
+        "thread_ts": "1791186851.000010",
+        "client_msg_id": "0134d715-9ba0-547c-903b-8714c7689ede",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791186920.279695,
+      "request": {
+        "user": "U00001"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791186922.141147,
+      "request": {
+        "channel": "DU00001",
+        "text": "Record your decision as:\nUse a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.\nReason: New opt-in parameter avoids silently changing behavior for existing `backoff_jitter` users, aligns with the goal to keep existing behavior by default, and fails early on invalid delays. Preserving fallback to exponential backoff when Retry-After is absent or invalid maintains current behavior.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Record your decision as:\nUse a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.\nReason: New opt-in parameter avoids silently changing behavior for existing `backoff_jitter` users, aligns with the goal to keep existing behavior by default, and fails early on invalid delays. Preserving fallback to exponential backoff when Retry-After is absent or invalid maintains current behavior.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+            }
+          }
+        ],
+        "thread_ts": "1791186851.000010",
+        "client_msg_id": "974387c0-60b4-5039-842b-7b7a745914fd",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791186964.854631,
+      "request": {
+        "user": "U00003"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791186968.892212,
+      "request": {
+        "channel": "DU00003",
+        "text": "Record your decision as:\nUse additive-only uniform jitter from zero to retry_after_jitter seconds, only for positive Retry-After waits. Never shorten the already-capped server delay. Keep exponential backoff jitter unchanged.\nReason: You stated this decision explicitly: additive jitter only, preserving the server-requested delay as a floor, matching the existing backoff_jitter pattern in get_backoff_time().\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Record your decision as:\nUse additive-only uniform jitter from zero to retry_after_jitter seconds, only for positive Retry-After waits. Never shorten the already-capped server delay. Keep exponential backoff jitter unchanged.\nReason: You stated this decision explicitly: additive jitter only, preserving the server-requested delay as a floor, matching the existing backoff_jitter pattern in get_backoff_time().\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+            }
+          }
+        ],
+        "thread_ts": "1791186640.000001",
+        "client_msg_id": "2da7ae74-5b90-5eba-b71c-df6481e65fa5",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791186983.199127,
+      "request": {
+        "user": "U00001"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791186983.2360058,
+      "request": {
+        "channel": "DU00001",
+        "text": "Thanks. Nothing recorded or signed. I am here when you are ready.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Thanks. Nothing recorded or signed. I am here when you are ready."
+            }
+          }
+        ],
+        "thread_ts": "1791186851.000010",
+        "client_msg_id": "3ea552bf-64d5-569f-94bf-0662a0d80c67",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791186983.75166,
+      "request": {
+        "user": "U00028"
+      }
+    },
+    {
+      "method": "assistant.search.context",
+      "at": 1791186986.1297762,
+      "request": {
+        "query": "The final jittered sleep must stay within retry_after_max. Apply the ceiling after adding jitter, because operators rely on it as a hard maximum.\nAbout this decision: Does `retry_after_max` cap the jittered total, or only the server-parsed value before jitter is added?",
+        "channel_types": [
+          "public_channel"
+        ],
+        "content_types": [
+          "messages"
+        ],
+        "include_bots": false,
+        "include_context_messages": true
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791186988.193855,
+      "request": {
+        "channel": "DU00028",
+        "text": "I found relevant Slack context. Tell me in your own words what you want decided or who I should ask; search results cannot authorize an action.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "I found relevant Slack context. Tell me in your own words what you want decided or who I should ask; search results cannot authorize an action."
+            }
+          }
+        ],
+        "thread_ts": "1791186648.000002",
+        "client_msg_id": "6dbe9a8f-79b6-5377-b487-812ff24b969d",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791187020.631271,
+      "request": {
+        "user": "U00003"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791187020.6976798,
+      "request": {
+        "channel": "DU00003",
+        "text": "Recorded and signed as Engineer 003's answer. The coding agent can now read it.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Recorded and signed as Engineer 003's answer. The coding agent can now read it."
+            }
+          }
+        ],
+        "thread_ts": "1791186640.000001",
+        "client_msg_id": "9b0ff169-96c6-5c7d-842c-a2a1c72e70a0",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "auth.test",
+      "at": 1791187042.475617,
+      "request": {}
+    },
+    {
+      "method": "users.list",
+      "at": 1791187042.4927812,
+      "request": {
+        "limit": 200
+      }
+    },
+    {
+      "method": "users.list",
+      "at": 1791187042.498396,
+      "request": {
+        "limit": 200,
+        "cursor": "20"
+      }
+    },
+    {
+      "method": "users.list",
+      "at": 1791187042.505894,
+      "request": {
+        "limit": 200,
+        "cursor": "40"
+      }
+    },
+    {
+      "method": "users.list",
+      "at": 1791187042.511891,
+      "request": {
+        "limit": 200,
+        "cursor": "60"
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791187085.039187,
+      "request": {
+        "user": "U00001"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791187085.114112,
+      "request": {
+        "channel": "DU00001",
+        "text": "Recorded and signed as Engineer 001's answer. The coding agent can now read it.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Recorded and signed as Engineer 001's answer. The coding agent can now read it."
+            }
+          }
+        ],
+        "thread_ts": "1791186851.000010",
+        "client_msg_id": "03d54f8b-71d9-5620-8401-6fa145808127",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791187085.628449,
+      "request": {
+        "user": "U00028"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791187087.1760051,
+      "request": {
+        "channel": "DU00028",
+        "text": "Record your decision as:\nThe final jittered sleep must stay within retry_after_max. Apply the ceiling after adding jitter, because operators rely on it as a hard maximum.\nReason: Operators depend on retry_after_max as a hard maximum for configured limits.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Record your decision as:\nThe final jittered sleep must stay within retry_after_max. Apply the ceiling after adding jitter, because operators rely on it as a hard maximum.\nReason: Operators depend on retry_after_max as a hard maximum for configured limits.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+            }
+          }
+        ],
+        "thread_ts": "1791186648.000002",
+        "client_msg_id": "0f0f7048-e7a4-5d1a-91d8-8f03d30b5db1",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791187088.716961,
+      "request": {
+        "user": "U00028"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791187088.788904,
+      "request": {
+        "channel": "DU00028",
+        "text": "Recorded and signed as Engineer 028's answer. The coding agent can now read it.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Recorded and signed as Engineer 028's answer. The coding agent can now read it."
+            }
+          }
+        ],
+        "thread_ts": "1791186648.000002",
+        "client_msg_id": "83ab6e5e-8086-5835-8018-a6e10c9d319f",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791187090.323474,
+      "request": {
+        "user": "U00035"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791187092.128659,
+      "request": {
+        "channel": "DU00035",
+        "text": "Record your decision as:\nUse absolute seconds, consistent with backoff_jitter. Do not interpret the value as a fraction.\nReason: Absolute seconds is consistent with the existing `backoff_jitter` API and provides predictable behavior.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Record your decision as:\nUse absolute seconds, consistent with backoff_jitter. Do not interpret the value as a fraction.\nReason: Absolute seconds is consistent with the existing `backoff_jitter` API and provides predictable behavior.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+            }
+          }
+        ],
+        "thread_ts": "1791186674.000004",
+        "client_msg_id": "d6ca19ea-d82c-5196-8231-70a86b874ec8",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791187093.163767,
+      "request": {
+        "user": "U00035"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791187093.243867,
+      "request": {
+        "channel": "DU00035",
+        "text": "Recorded and signed as Engineer 035's answer. The coding agent can now read it.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Recorded and signed as Engineer 035's answer. The coding agent can now read it."
+            }
+          }
+        ],
+        "thread_ts": "1791186674.000004",
+        "client_msg_id": "feb15450-8e4b-51b6-abdf-ee57e7a2605f",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "conversations.open",
+      "at": 1791187094.7550778,
+      "request": {
+        "users": "U00028"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791187094.76453,
+      "request": {
+        "channel": "DU00028",
+        "text": "*Sign-off wanted from Engineer 028.*\n*Should the release note explicitly state that retry_after_jitter defaults to zero, adds seconds only to positive Retry-After waits, and the final wait remains capped?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nContext: Requester's note on this task asks for a short release note saying the option defaults to zero and existing users keep the same behaviour. urllib3 uses towncrier fragments in changelog/<PR>.<type>.rst, past tense, user-facing. There is no issue/PR number for this change yet, so the fragment number has to be chosen. Draft: \"Added an optional ``retry_after_jitter`` parameter to ``urllib3.util.Retry``. It defaults to ``0.0``, so existing behavior is unchanged; when set, a random number of seconds between zero and that value is added to a positive ``Retry-After`` wait, and the resulting wait is still limited by ``retry_after_max``.\" The capping clause depends on the answer to b8cae0e4f89a. Paths: changelog/, src/urllib3/util/retry.py Options: Yes: state all three (default zero, additive on positive waits only, still capped) in one changelog/<n>.feature.rst fragment | Yes but shorter: default zero and unchanged behavior only, leave mechanics to the API docs | No changelog fragment; document only in the Retry docstring\nBridge's guess (an answer given for another scope, which may not carry over): The release note can state, per this record, that jitter is added only to positive Retry-After waits as additive-only uniform jitter from zero up to retry_after_jitter seconds, and that the final wait is never shortened below the already-capped server delay, remaining capped. The earlier answer does not establish: What is the default value of retry_after_jitter.\n_Bridge did not find this decided anywhere. It is a guess for you to confirm or correct, not something your team settled._\nOptions: Yes: state all three (default zero, additive on positive waits only, still capped) in one changelog/<n>.feature.rst fragment | Yes but shorter: default zero and unchanged behavior only, leave mechanics to the API docs | No changelog fragment; document only in the Retry docstring\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.\nOptional web inbox: http://localhost:17486/#inbox (decision 6c78b9e10729). You can answer here without a Raven account.",
+        "unfurl_links": false,
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*Sign-off wanted from Engineer 028.*\n*Should the release note explicitly state that retry_after_jitter defaults to zero, adds seconds only to positive Retry-After waits, and the final wait remains capped?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nContext: Requester's note on this task asks for a short release note saying the option defaults to zero and existing users keep the same behaviour. urllib3 uses towncrier fragments in changelog/<PR>.<type>.rst, past tense, user-facing. There is no issue/PR number for this change yet, so the fragment number has to be chosen. Draft: \"Added an optional ``retry_after_jitter`` parameter to ``urllib3.util.Retry``. It defaults to ``0.0``, so existing behavior is unchanged; when set, a random number of seconds between zero and that value is added to a positive ``Retry-After`` wait, and the resulting wait is still limited by ``retry_after_max``.\" The capping clause depends on the answer to b8cae0e4f89a. Paths: changelog/, src/urllib3/util/retry.py Options: Yes: state all three (default zero, additive on positive waits only, still capped) in one changelog/<n>.feature.rst fragment | Yes but shorter: default zero and unchanged behavior only, leave mechanics to the API docs | No changelog fragment; document only in the Retry docstring\nBridge's guess (an answer given for another scope, which may not carry over): The release note can state, per this record, that jitter is added only to positive Retry-After waits as additive-only uniform jitter from zero up to retry_after_jitter seconds, and that the final wait is never shortened below the already-capped server delay, remaining capped. The earlier answer does not establish: What is the default value of retry_after_jitter.\n_Bridge did not find this decided anywhere. It is a guess for you to confirm or correct, not something your team settled._\nOptions: Yes: state all three (default zero, additive on positive waits only, still capped) in one changelog/<n>.feature.rst fragment | Yes but shorter: default zero and unchanged behavior only, leave mechanics to the API docs | No changelog fragment; document only in the Retry docstring\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.\nOptional web inbox: http://localhost:17486/#inbox (decision 6c78b9e10729). You can answer here without a Raven account."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791187094.777508,
+      "request": {
+        "user": "U00035"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791187096.831549,
+      "request": {
+        "channel": "DU00035",
+        "text": "Record your decision as:\nApply jitter only in `sleep_for_retry()`. Keep `parse_retry_after()` and `get_retry_after()` deterministic, returning only the parsed and capped server value.\nReason: Accessors are documented as returning the server's Retry-After value and are called directly by tests expecting deterministic results. Jittering only at sleep time keeps them pure while still applying jitter to both call sites: `connectionpool.py:944` and `Retry.sleep()`.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Record your decision as:\nApply jitter only in `sleep_for_retry()`. Keep `parse_retry_after()` and `get_retry_after()` deterministic, returning only the parsed and capped server value.\nReason: Accessors are documented as returning the server's Retry-After value and are called directly by tests expecting deterministic results. Jittering only at sleep time keeps them pure while still applying jitter to both call sites: `connectionpool.py:944` and `Retry.sleep()`.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+            }
+          }
+        ],
+        "thread_ts": "1791186684.000006",
+        "client_msg_id": "ef670404-a7f3-5df2-b61d-cb25b3bde5dd",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791187097.6057012,
+      "request": {
+        "user": "U00035"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791187097.705817,
+      "request": {
+        "channel": "DU00035",
+        "text": "Recorded and signed as Engineer 035's answer. The coding agent can now read it.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Recorded and signed as Engineer 035's answer. The coding agent can now read it."
+            }
+          }
+        ],
+        "thread_ts": "1791186684.000006",
+        "client_msg_id": "0b367603-9543-5f4b-ad9e-0cb6ce4fea92",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791187138.104542,
+      "request": {
+        "user": "U00028"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791187139.9894762,
+      "request": {
+        "channel": "DU00028",
+        "text": "Record your decision as:\nState all three points in the release note: default zero, additive seconds for positive Retry-After waits only, and final wait capped at retry_after_max. Include the new parameter in the Retry API docstring too.\nReason: You want the release note to explicitly cover all three mechanics: the default value, the additive-only behavior on positive waits, and the capping constraint.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Record your decision as:\nState all three points in the release note: default zero, additive seconds for positive Retry-After waits only, and final wait capped at retry_after_max. Include the new parameter in the Retry API docstring too.\nReason: You want the release note to explicitly cover all three mechanics: the default value, the additive-only behavior on positive waits, and the capping constraint.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+            }
+          }
+        ],
+        "thread_ts": "1791187094.000023",
+        "client_msg_id": "e3aaaa0e-7de1-51e2-a0aa-a4e8ab052c5b",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791187182.073652,
+      "request": {
+        "user": "U00028"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791187182.335225,
+      "request": {
+        "channel": "DU00028",
+        "text": "Recorded and signed as Engineer 028's answer. The coding agent can now read it.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Recorded and signed as Engineer 028's answer. The coding agent can now read it."
+            }
+          }
+        ],
+        "thread_ts": "1791187094.000023",
+        "client_msg_id": "a0ffbbba-fe66-5075-8274-d895269eaa50",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791187417.45336,
+      "request": {
+        "channel": "DU00028",
+        "text": "*Sign-off wanted from Engineer 028.*\n*Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?*\nTask: Check existing Retry-After jitter policy (urllib3/urllib3)\nContext: Paths: src/urllib3/util/retry.py\nAnswer on the table (from Engineer 001): Use a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.\nOptional web inbox: http://localhost:17486/#inbox (decision 9dfa05761fc6). You can answer here without a Raven account.",
+        "unfurl_links": false,
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*Sign-off wanted from Engineer 028.*\n*Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?*\nTask: Check existing Retry-After jitter policy (urllib3/urllib3)\nContext: Paths: src/urllib3/util/retry.py\nAnswer on the table (from Engineer 001): Use a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.\nOptional web inbox: http://localhost:17486/#inbox (decision 9dfa05761fc6). You can answer here without a Raven account."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "method": "conversations.open",
+      "at": 1791187585.858939,
+      "request": {
+        "users": "U00001"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791187585.8684711,
+      "request": {
+        "channel": "DU00001",
+        "text": "*Sign-off wanted from Engineer 001.*\n*Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?*\nTask: Check existing Retry-After jitter policy (urllib3/urllib3)\nContext: Paths: src/urllib3/util/retry.py\nAnswer on the table (from Engineer 001): Use a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.\nOptional web inbox: http://localhost:17486/#inbox (decision 55247168942d). You can answer here without a Raven account.",
+        "unfurl_links": false,
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*Sign-off wanted from Engineer 001.*\n*Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?*\nTask: Check existing Retry-After jitter policy (urllib3/urllib3)\nContext: Paths: src/urllib3/util/retry.py\nAnswer on the table (from Engineer 001): Use a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.\nOptional web inbox: http://localhost:17486/#inbox (decision 55247168942d). You can answer here without a Raven account."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "method": "auth.test",
+      "at": 1791187843.1999118,
+      "request": {}
+    },
+    {
+      "method": "users.list",
+      "at": 1791187843.218606,
+      "request": {
+        "limit": 200
+      }
+    },
+    {
+      "method": "users.list",
+      "at": 1791187843.224718,
+      "request": {
+        "limit": 200,
+        "cursor": "20"
+      }
+    },
+    {
+      "method": "users.list",
+      "at": 1791187843.2314281,
+      "request": {
+        "limit": 200,
+        "cursor": "40"
+      }
+    },
+    {
+      "method": "users.list",
+      "at": 1791187843.2375958,
+      "request": {
+        "limit": 200,
+        "cursor": "60"
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791188026.372328,
+      "request": {
+        "user": "U00001"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791188029.975084,
+      "request": {
+        "channel": "DU00001",
+        "text": "I want to make sure I understand: are you confirming the full answer that's on the table for this task, or are you saying something should change about it? The answer describes using a new `retry_after_jitter` parameter with specific validation and fallback behavior. Should I read that back for your explicit confirmation?\nNo decision or sign-off recorded.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "I want to make sure I understand: are you confirming the full answer that's on the table for this task, or are you saying something should change about it? The answer describes using a new `retry_after_jitter` parameter with specific validation and fallback behavior. Should I read that back for your explicit confirmation?\nNo decision or sign-off recorded."
+            }
+          }
+        ],
+        "thread_ts": "1791187585.000029",
+        "client_msg_id": "66401441-cfc3-5414-a3ee-cc657a956b2c",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "auth.test",
+      "at": 1791188279.747175,
+      "request": {}
+    },
+    {
+      "method": "users.list",
+      "at": 1791188279.762568,
+      "request": {
+        "limit": 200
+      }
+    },
+    {
+      "method": "users.list",
+      "at": 1791188279.7702038,
+      "request": {
+        "limit": 200,
+        "cursor": "20"
+      }
+    },
+    {
+      "method": "users.list",
+      "at": 1791188279.775166,
+      "request": {
+        "limit": 200,
+        "cursor": "40"
+      }
+    },
+    {
+      "method": "users.list",
+      "at": 1791188279.780145,
+      "request": {
+        "limit": 200,
+        "cursor": "60"
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791188350.349649,
+      "request": {
+        "user": "U00001"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791188350.386977,
+      "request": {
+        "channel": "DU00001",
+        "text": "Sign the complete answer above in your name:\nUse a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Sign the complete answer above in your name:\nUse a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+            }
+          }
+        ],
+        "thread_ts": "1791187585.000029",
+        "client_msg_id": "81056486-e86a-5b3c-8929-7e8e44d2e4fa",
+        "unfurl_links": false
+      }
+    },
+    {
+      "method": "users.info",
+      "at": 1791188396.9146419,
+      "request": {
+        "user": "U00001"
+      }
+    },
+    {
+      "method": "chat.postMessage",
+      "at": 1791188397.023892,
+      "request": {
+        "channel": "DU00001",
+        "text": "Signed by Engineer 001. The coding agent can now read it.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Signed by Engineer 001. The coding agent can now read it."
+            }
+          }
+        ],
+        "thread_ts": "1791187585.000029",
+        "client_msg_id": "fece21b6-8913-5332-a946-ace67ed24355",
+        "unfurl_links": false
+      }
+    }
+  ],
+  "messages": [
+    {
+      "channel": "DU00028",
+      "text": "*A decision needs you, Engineer 028.*\n*Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nThe code needs to decide whether Retry-After header waits should support jitter (randomized delays). Currently `backoff_jitter` only affects exponential backoff, not Retry-After waits. Reusing `backoff_jitter` for both would silently change behavior for existing users who set it. A new parameter like `retry_after_jitter` keeps existing behavior unchanged but adds a second configuration knob that must be passed through `increment()`. Alternatively, a boolean flag could make `backoff_jitter` apply to both cases only when explicitly enabled. Which approach should be taken: add a new opt-in `retry_after_jitter` parameter, reuse `backoff_jitter` for both, or add a boolean flag to control whether `backoff_jitter` applies to Retry-After?\nContext: `Retry` already has `backoff_jitter: float = 0.0`, applied only in `get_backoff_time()` to the exponential backoff, and `Retry.sleep()` returns early on a Retry-After header without touching backoff at all. Reusing `backoff_jitter` would silently change behaviour for everyone who already sets it (today it never affects Retry-After waits), which conflicts with \"keep existing behavior by default\". A new `retry_after_jitter=0.0` parameter is strictly opt-in but adds a second knob and must also be threaded through `Retry.new()` so it survives `increment()`. Paths: src/urllib3/util/retry.py Options: New `retry_after_jitter: float = 0.0` parameter, threaded through `new()`; existing users unaffected | Reuse `backoff_jitter` for both backoff and Retry-After waits; one knob, but changes behaviour for current `backoff_jitter` users | New boolean `jitter_retry_after: bool = False` that makes `backoff_jitter` also apply to Retry-After waits\nWhy you: inferred first contact: authored pr 3788 (Describe Retry backoff_max and backoff_jitter params in docs (#3788)); confirm or refer in Slack\nOptions: New `retry_after_jitter: float = 0.0` parameter, threaded through `new()`; existing users unaffected | Reuse `backoff_jitter` for both backoff and Retry-After waits; one knob, but changes behaviour for current `backoff_jitter` users | New boolean `jitter_retry_after: bool = False` that makes `backoff_jitter` also apply to Retry-After waits\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 4c891c655eb2). You can answer here without a Raven account.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*A decision needs you, Engineer 028.*\n*Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nThe code needs to decide whether Retry-After header waits should support jitter (randomized delays). Currently `backoff_jitter` only affects exponential backoff, not Retry-After waits. Reusing `backoff_jitter` for both would silently change behavior for existing users who set it. A new parameter like `retry_after_jitter` keeps existing behavior unchanged but adds a second configuration knob that must be passed through `increment()`. Alternatively, a boolean flag could make `backoff_jitter` apply to both cases only when explicitly enabled. Which approach should be taken: add a new opt-in `retry_after_jitter` parameter, reuse `backoff_jitter` for both, or add a boolean flag to control whether `backoff_jitter` applies to Retry-After?\nContext: `Retry` already has `backoff_jitter: float = 0.0`, applied only in `get_backoff_time()` to the exponential backoff, and `Retry.sleep()` returns early on a Retry-After header without touching backoff at all. Reusing `backoff_jitter` would silently change behaviour for everyone who already sets it (today it never affects Retry-After waits), which conflicts with \"keep existing behavior by default\". A new `retry_after_jitter=0.0` parameter is strictly opt-in but adds a second knob and must also be threaded through `Retry.new()` so it survives `increment()`. Paths: src/urllib3/util/retry.py Options: New `retry_after_jitter: float = 0.0` parameter, threaded through `new()`; existing users unaffected | Reuse `backoff_jitter` for both backoff and Retry-After waits; one knob, but changes behaviour for current `backoff_jitter` users | New boolean `jitter_retry_after: bool = False` that makes `backoff_jitter` also apply to Retry-After waits\nWhy you: inferred first contact: authored pr 3788 (Describe Retry backoff_max and backoff_jitter params in docs (#3788)); confirm or refer in Slack\nOptions: New `retry_after_jitter: float = 0.0` parameter, threaded through `new()`; existing users unaffected | Reuse `backoff_jitter` for both backoff and Retry-After waits; one knob, but changes behaviour for current `backoff_jitter` users | New boolean `jitter_retry_after: bool = False` that makes `backoff_jitter` also apply to Retry-After waits\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 4c891c655eb2). You can answer here without a Raven account."
+          }
+        }
+      ],
+      "ts": "1791186626.000000"
+    },
+    {
+      "channel": "DU00003",
+      "text": "*A decision needs you, Engineer 003.*\n*Must jitter only ever lengthen a Retry-After wait (additive uniform [0, jitter)), or may it shorten it (full/equal jitter)?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nContext: \"Preserve server-requested delays\" reads as: never sleep less than the server asked for, so additive-only jitter (`retry_after + random.uniform(0, jitter)`) is the safe reading, matching how `backoff_jitter` already works in `get_backoff_time()` (`backoff_value += random.random() * self.backoff_jitter`). Full jitter (`random.uniform(0, retry_after)`) de-correlates a fleet better but can retry before the server's requested delay elapses, which for 429/503 risks violating the server's rate limit. Paths: src/urllib3/util/retry.py Options: Additive only: sleep retry_after + uniform(0, jitter); never shorter than the server asked | Full jitter: uniform(0, retry_after); best de-correlation, may retry early | Equal jitter: retry_after/2 + uniform(0, retry_after/2); may still retry early\nWhy you: inferred first contact: authored pr 4960 (Fix full read with `amt=None` after a partial read (#4960)); confirm or refer in Slack\nWhat Bridge found: related: decision 4c891c655eb2 asks the same question maybe in another scope (this one names 429/503, `backoff_value, preserve server-requested delays, decision 4c891c655eb2 names `retry_after_jitter=0, keep existing behavior by default); one answer does not settle both\nOptions: Additive only: sleep retry_after + uniform(0, jitter); never shorter than the server asked | Full jitter: uniform(0, retry_after); best de-correlation, may retry early | Equal jitter: retry_after/2 + uniform(0, retry_after/2); may still retry early\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 892270f8693f). You can answer here without a Raven account.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*A decision needs you, Engineer 003.*\n*Must jitter only ever lengthen a Retry-After wait (additive uniform [0, jitter)), or may it shorten it (full/equal jitter)?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nContext: \"Preserve server-requested delays\" reads as: never sleep less than the server asked for, so additive-only jitter (`retry_after + random.uniform(0, jitter)`) is the safe reading, matching how `backoff_jitter` already works in `get_backoff_time()` (`backoff_value += random.random() * self.backoff_jitter`). Full jitter (`random.uniform(0, retry_after)`) de-correlates a fleet better but can retry before the server's requested delay elapses, which for 429/503 risks violating the server's rate limit. Paths: src/urllib3/util/retry.py Options: Additive only: sleep retry_after + uniform(0, jitter); never shorter than the server asked | Full jitter: uniform(0, retry_after); best de-correlation, may retry early | Equal jitter: retry_after/2 + uniform(0, retry_after/2); may still retry early\nWhy you: inferred first contact: authored pr 4960 (Fix full read with `amt=None` after a partial read (#4960)); confirm or refer in Slack\nWhat Bridge found: related: decision 4c891c655eb2 asks the same question maybe in another scope (this one names 429/503, `backoff_value, preserve server-requested delays, decision 4c891c655eb2 names `retry_after_jitter=0, keep existing behavior by default); one answer does not settle both\nOptions: Additive only: sleep retry_after + uniform(0, jitter); never shorter than the server asked | Full jitter: uniform(0, retry_after); best de-correlation, may retry early | Equal jitter: retry_after/2 + uniform(0, retry_after/2); may still retry early\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 892270f8693f). You can answer here without a Raven account."
+          }
+        }
+      ],
+      "ts": "1791186640.000001"
+    },
+    {
+      "channel": "DU00028",
+      "text": "*A decision needs you, Engineer 028.*\n*Does `retry_after_max` cap the jittered total, or only the server-parsed value before jitter is added?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nWhen a Retry-After header is parsed and jitter is optionally added, should `retry_after_max` cap the final sleep time (after jitter) or only the parsed header value (before jitter)? Clamping after jitter keeps the documented guarantee that waits never exceed the configured maximum but causes jitter to silently vanish when the header is already at the cap, while clamping before jitter only allows the actual sleep to exceed `retry_after_max` by up to the jitter amount.\nContext: `parse_retry_after()` clamps the parsed header to `self.retry_after_max` (default 21600s). If jitter is added afterwards the actual sleep can exceed the configured maximum, which reads against \"preserve ... configured limits\". Clamping the jittered total keeps the documented guarantee that no Retry-After wait exceeds `retry_after_max`, but means jitter silently vanishes when the header is already at the cap (same way `backoff_max` already swallows `backoff_jitter` in `get_backoff_time()`). Paths: src/urllib3/util/retry.py Options: Clamp after jitter: min(retry_after + jitter, retry_after_max); the configured limit is never exceeded, jitter disappears at the cap | Clamp before jitter only: sleep may exceed retry_after_max by up to the jitter amount | Clamp after jitter against a separate limit so jitter is preserved at the cap\nWhy you: inferred first contact: authored pr 3788 (Describe Retry backoff_max and backoff_jitter params in docs (#3788)); confirm or refer in Slack\nWhat Bridge found: related: decision 4c891c655eb2 asks the same question maybe in another scope (this one names 21600s, `backoff_max`, `parse_retry_after()`, decision 4c891c655eb2 names `retry_after_jitter=0, keep existing behavior by default); one answer does not settle both\nOptions: Clamp after jitter: min(retry_after + jitter, retry_after_max); the configured limit is never exceeded, jitter disappears at the cap | Clamp before jitter only: sleep may exceed retry_after_max by up to the jitter amount | Clamp after jitter against a separate limit so jitter is preserved at the cap\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision b8cae0e4f89a). You can answer here without a Raven account.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*A decision needs you, Engineer 028.*\n*Does `retry_after_max` cap the jittered total, or only the server-parsed value before jitter is added?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nWhen a Retry-After header is parsed and jitter is optionally added, should `retry_after_max` cap the final sleep time (after jitter) or only the parsed header value (before jitter)? Clamping after jitter keeps the documented guarantee that waits never exceed the configured maximum but causes jitter to silently vanish when the header is already at the cap, while clamping before jitter only allows the actual sleep to exceed `retry_after_max` by up to the jitter amount.\nContext: `parse_retry_after()` clamps the parsed header to `self.retry_after_max` (default 21600s). If jitter is added afterwards the actual sleep can exceed the configured maximum, which reads against \"preserve ... configured limits\". Clamping the jittered total keeps the documented guarantee that no Retry-After wait exceeds `retry_after_max`, but means jitter silently vanishes when the header is already at the cap (same way `backoff_max` already swallows `backoff_jitter` in `get_backoff_time()`). Paths: src/urllib3/util/retry.py Options: Clamp after jitter: min(retry_after + jitter, retry_after_max); the configured limit is never exceeded, jitter disappears at the cap | Clamp before jitter only: sleep may exceed retry_after_max by up to the jitter amount | Clamp after jitter against a separate limit so jitter is preserved at the cap\nWhy you: inferred first contact: authored pr 3788 (Describe Retry backoff_max and backoff_jitter params in docs (#3788)); confirm or refer in Slack\nWhat Bridge found: related: decision 4c891c655eb2 asks the same question maybe in another scope (this one names 21600s, `backoff_max`, `parse_retry_after()`, decision 4c891c655eb2 names `retry_after_jitter=0, keep existing behavior by default); one answer does not settle both\nOptions: Clamp after jitter: min(retry_after + jitter, retry_after_max); the configured limit is never exceeded, jitter disappears at the cap | Clamp before jitter only: sleep may exceed retry_after_max by up to the jitter amount | Clamp after jitter against a separate limit so jitter is preserved at the cap\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision b8cae0e4f89a). You can answer here without a Raven account."
+          }
+        }
+      ],
+      "ts": "1791186648.000002"
+    },
+    {
+      "channel": "DU00028",
+      "text": "Reusing `backoff_jitter` would silently apply jitter to Retry-After waits for anyone who already set that parameter, even though today it only affects exponential backoff. That breaks the \"keep existing behavior by default\" requirement\u2014users didn't opt into Retry-After jitter, so their fleets could suddenly behave differently. A new parameter like `retry_after_jitter=0.0` keeps existing users unaffected and makes the intent explicit, but adds a second knob to maintain.\n<https://raven-eval.slack.com/archives/CGENERAL/p1770000000000000|Slack source>\nNo decision or sign-off recorded.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Reusing `backoff_jitter` would silently apply jitter to Retry-After waits for anyone who already set that parameter, even though today it only affects exponential backoff. That breaks the \"keep existing behavior by default\" requirement\u2014users didn't opt into Retry-After jitter, so their fleets could suddenly behave differently. A new parameter like `retry_after_jitter=0.0` keeps existing users unaffected and makes the intent explicit, but adds a second knob to maintain.\n<https://raven-eval.slack.com/archives/CGENERAL/p1770000000000000|Slack source>\nNo decision or sign-off recorded."
+          }
+        }
+      ],
+      "thread_ts": "1791186626.000000",
+      "client_msg_id": "7e60b64b-4cb5-5a8d-9762-a4d0900cdd60",
+      "unfurl_links": false,
+      "ts": "1791186652.000003"
+    },
+    {
+      "channel": "DU00035",
+      "text": "*A decision needs you, Engineer 035.*\n*Is the jitter amount an absolute number of seconds, or a fraction of the server's Retry-After value?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nThe retry mechanism needs jitter on Retry-After waits from servers. The decision is whether the jitter amount should be a fixed number of seconds (consistent with the existing `backoff_jitter` parameter), a fraction of the server's Retry-After value (which scales to large and small wait times but can add unbounded time), or a fraction capped by an absolute maximum.\nContext: `backoff_jitter` is documented as \"Random jitter amount (in seconds)\", so an absolute-seconds knob is consistent with the existing API and predictable. But Retry-After values vary hugely (1s to 21600s): a fixed 1s spread de-correlates a fleet after a 1s Retry-After and does nothing after a 600s one, while a fraction (e.g. 0.1 -> uniform(0, 0.1*retry_after)) scales but makes the added wait unbounded until `retry_after_max` clamps it. Paths: src/urllib3/util/retry.py Options: Absolute seconds, like `backoff_jitter`: uniform(0, retry_after_jitter) | Fraction of the server value: uniform(0, retry_after_jitter * retry_after) | Fraction with an absolute ceiling, e.g. min(fraction*retry_after, backoff_max)\nWhy you: inferred first contact: authored pr 3743 (Handle massive values in Retry-After when calculating time to sleep for (#3743)); confirm or refer in Slack\nWhat Bridge found: related: decision b8cae0e4f89a asks the same question maybe in another scope (this one names 1*retry_after, random, random jitter amount (in seconds), decision b8cae0e4f89a names `backoff_max`, `get_backoff_time()`, `parse_retry_after()`); one answer does not settle both\nOptions: Absolute seconds, like `backoff_jitter`: uniform(0, retry_after_jitter) | Fraction of the server value: uniform(0, retry_after_jitter * retry_after) | Fraction with an absolute ceiling, e.g. min(fraction*retry_after, backoff_max)\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 4ded764885e3). You can answer here without a Raven account.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*A decision needs you, Engineer 035.*\n*Is the jitter amount an absolute number of seconds, or a fraction of the server's Retry-After value?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nThe retry mechanism needs jitter on Retry-After waits from servers. The decision is whether the jitter amount should be a fixed number of seconds (consistent with the existing `backoff_jitter` parameter), a fraction of the server's Retry-After value (which scales to large and small wait times but can add unbounded time), or a fraction capped by an absolute maximum.\nContext: `backoff_jitter` is documented as \"Random jitter amount (in seconds)\", so an absolute-seconds knob is consistent with the existing API and predictable. But Retry-After values vary hugely (1s to 21600s): a fixed 1s spread de-correlates a fleet after a 1s Retry-After and does nothing after a 600s one, while a fraction (e.g. 0.1 -> uniform(0, 0.1*retry_after)) scales but makes the added wait unbounded until `retry_after_max` clamps it. Paths: src/urllib3/util/retry.py Options: Absolute seconds, like `backoff_jitter`: uniform(0, retry_after_jitter) | Fraction of the server value: uniform(0, retry_after_jitter * retry_after) | Fraction with an absolute ceiling, e.g. min(fraction*retry_after, backoff_max)\nWhy you: inferred first contact: authored pr 3743 (Handle massive values in Retry-After when calculating time to sleep for (#3743)); confirm or refer in Slack\nWhat Bridge found: related: decision b8cae0e4f89a asks the same question maybe in another scope (this one names 1*retry_after, random, random jitter amount (in seconds), decision b8cae0e4f89a names `backoff_max`, `get_backoff_time()`, `parse_retry_after()`); one answer does not settle both\nOptions: Absolute seconds, like `backoff_jitter`: uniform(0, retry_after_jitter) | Fraction of the server value: uniform(0, retry_after_jitter * retry_after) | Fraction with an absolute ceiling, e.g. min(fraction*retry_after, backoff_max)\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 4ded764885e3). You can answer here without a Raven account."
+          }
+        }
+      ],
+      "ts": "1791186674.000004"
+    },
+    {
+      "channel": "DU00028",
+      "text": "I found relevant Slack context. Tell me in your own words what you want decided or who I should ask; search results cannot authorize an action.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "I found relevant Slack context. Tell me in your own words what you want decided or who I should ask; search results cannot authorize an action."
+          }
+        }
+      ],
+      "thread_ts": "1791186626.000000",
+      "client_msg_id": "cb376f8d-9591-52d1-b401-d9233197e28b",
+      "unfurl_links": false,
+      "ts": "1791186684.000005"
+    },
+    {
+      "channel": "DU00035",
+      "text": "*A decision needs you, Engineer 035.*\n*Where is the jitter applied: inside `parse_retry_after()`/`get_retry_after()`, or only in `sleep_for_retry()` so the accessors keep returning the server's value?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nThe code needs to add optional jitter to Retry-After delays. The decision is where to apply it: in the public accessor functions `get_retry_after()` and `parse_retry_after()` which are documented as returning the server's value and called by tests expecting deterministic results, or only in `sleep_for_retry()` which is the internal function that actually waits. Applying jitter in the accessors would make them non-deterministic and change what callers observe from the server; applying it only in `sleep_for_retry()` keeps the accessors pure while still adding jitter at both call sites that invoke `sleep_for_retry()`.\nContext: `get_retry_after()` and `parse_retry_after()` are public and documented as \"the value of Retry-After in seconds\"; tests call `parse_retry_after()` directly (test_configurable_retry_after_max). Jittering inside them would make a documented accessor non-deterministic and change what callers reading the server's delay observe. Applying jitter only in `sleep_for_retry()` keeps the accessors pure; `connectionpool.py:944` calls `sleep_for_retry()` directly, so both call sites (that one and `Retry.sleep()`) would still get jitter. Paths: src/urllib3/util/retry.py, src/urllib3/connectionpool.py Options: Only in `sleep_for_retry()`; accessors stay pure and deterministic | Inside `get_retry_after()`; accessor reports the jittered wait, `parse_retry_after()` stays pure | Inside `parse_retry_after()`; every caller sees the jittered value\nWhy you: inferred first contact: authored pr 3743 (Handle massive values in Retry-After when calculating time to sleep for (#3743)); confirm or refer in Slack\nWhat Bridge found: related: decision b8cae0e4f89a asks the same question maybe in another scope (this one names 944`, `get_retry_after()`, test_configurable_retry_after_max, decision b8cae0e4f89a names 21600s, `backoff_jitter`, `backoff_max`); one answer does not settle both; related: decision 4ded764885e3 asks the same question maybe in another scope (this one names 944`, `get_retry_after()` \u2026 _[cut here: the inbox has the rest]_\nOptions: Only in `sleep_for_retry()`; accessors stay pure and deterministic | Inside `get_retry_after()`; accessor reports the jittered wait, `parse_retry_after()` stays pure | Inside `parse_retry_after()`; every caller sees the jittered value\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 7e08207b4e8d). You can answer here without a Raven account.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*A decision needs you, Engineer 035.*\n*Where is the jitter applied: inside `parse_retry_after()`/`get_retry_after()`, or only in `sleep_for_retry()` so the accessors keep returning the server's value?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nThe code needs to add optional jitter to Retry-After delays. The decision is where to apply it: in the public accessor functions `get_retry_after()` and `parse_retry_after()` which are documented as returning the server's value and called by tests expecting deterministic results, or only in `sleep_for_retry()` which is the internal function that actually waits. Applying jitter in the accessors would make them non-deterministic and change what callers observe from the server; applying it only in `sleep_for_retry()` keeps the accessors pure while still adding jitter at both call sites that invoke `sleep_for_retry()`.\nContext: `get_retry_after()` and `parse_retry_after()` are public and documented as \"the value of Retry-After in seconds\"; tests call `parse_retry_after()` directly (test_configurable_retry_after_max). Jittering inside them would make a documented accessor non-deterministic and change what callers reading the server's delay observe. Applying jitter only in `sleep_for_retry()` keeps the accessors pure; `connectionpool.py:944` calls `sleep_for_retry()` directly, so both call sites (that one and `Retry.sleep()`) would still get jitter. Paths: src/urllib3/util/retry.py, src/urllib3/connectionpool.py Options: Only in `sleep_for_retry()`; accessors stay pure and deterministic | Inside `get_retry_after()`; accessor reports the jittered wait, `parse_retry_after()` stays pure | Inside `parse_retry_after()`; every caller sees the jittered value\nWhy you: inferred first contact: authored pr 3743 (Handle massive values in Retry-After when calculating time to sleep for (#3743)); confirm or refer in Slack\nWhat Bridge found: related: decision b8cae0e4f89a asks the same question maybe in another scope (this one names 944`, `get_retry_after()`, test_configurable_retry_after_max, decision b8cae0e4f89a names 21600s, `backoff_jitter`, `backoff_max`); one answer does not settle both; related: decision 4ded764885e3 asks the same question maybe in another scope (this one names 944`, `get_retry_after()` \u2026 _[cut here: the inbox has the rest]_\nOptions: Only in `sleep_for_retry()`; accessors stay pure and deterministic | Inside `get_retry_after()`; accessor reports the jittered wait, `parse_retry_after()` stays pure | Inside `parse_retry_after()`; every caller sees the jittered value"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Reply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 7e08207b4e8d). You can answer here without a Raven account."
+          }
+        }
+      ],
+      "ts": "1791186684.000006"
+    },
+    {
+      "channel": "DU00028",
+      "text": "Pass this question to Engineer 001\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Pass this question to Engineer 001\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+          }
+        }
+      ],
+      "thread_ts": "1791186626.000000",
+      "client_msg_id": "a40db986-b9d9-5760-916d-899ead3c7a67",
+      "unfurl_links": false,
+      "ts": "1791186702.000007"
+    },
+    {
+      "channel": "DU00028",
+      "text": "Pass this question to Engineer 001\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Pass this question to Engineer 001\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+          }
+        }
+      ],
+      "thread_ts": "1791186626.000000",
+      "client_msg_id": "76188921-1090-53ef-81ec-cdf58967c7fd",
+      "unfurl_links": false,
+      "ts": "1791186825.000008"
+    },
+    {
+      "channel": "DU00028",
+      "text": "Handed to Engineer 001. If they answer, Raven will remember them as a first contact for similar questions, without creating a broad ownership rule.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Handed to Engineer 001. If they answer, Raven will remember them as a first contact for similar questions, without creating a broad ownership rule."
+          }
+        }
+      ],
+      "thread_ts": "1791186626.000000",
+      "client_msg_id": "d4800eca-d7c2-5aa8-bf71-bb4f65c700dd",
+      "unfurl_links": false,
+      "ts": "1791186849.000009"
+    },
+    {
+      "channel": "DU00001",
+      "text": "*Handed to you, Engineer 001.*\n*Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nThe code needs to decide whether Retry-After header waits should support jitter (randomized delays). Currently `backoff_jitter` only affects exponential backoff, not Retry-After waits. Reusing `backoff_jitter` for both would silently change behavior for existing users who set it. A new parameter like `retry_after_jitter` keeps existing behavior unchanged but adds a second configuration knob that must be passed through `increment()`. Alternatively, a boolean flag could make `backoff_jitter` apply to both cases only when explicitly enabled. Which approach should be taken: add a new opt-in `retry_after_jitter` parameter, reuse `backoff_jitter` for both, or add a boolean flag to control whether `backoff_jitter` applies to Retry-After?\nContext: `Retry` already has `backoff_jitter: float = 0.0`, applied only in `get_backoff_time()` to the exponential backoff, and `Retry.sleep()` returns early on a Retry-After header without touching backoff at all. Reusing `backoff_jitter` would silently change behaviour for everyone who already sets it (today it never affects Retry-After waits), which conflicts with \"keep existing behavior by default\". A new `retry_after_jitter=0.0` parameter is strictly opt-in but adds a second knob and must also be threaded through `Retry.new()` so it survives `increment()`. Paths: src/urllib3/util/retry.py Options: New `retry_after_jitter: float = 0.0` parameter, threaded through `new()`; existing users unaffected | Reuse `backoff_jitter` for both backoff and Retry-After waits; one knob, but changes behaviour for current `backoff_jitter` users | New boolean `jitter_retry_after: bool = False` that makes `backoff_jitter` also apply to Retry-After waits\nWhy you: handed on by Engineer 028: \"Could you ask <@U00001> instead? They make the compatibility call; I only contributed the documentation.\"\nOptions: New `retry_after_jitter: float = 0.0` parameter, threaded through `new()`; existing users unaffected | Reuse `backoff_jitter` for both backoff and Retry-After waits; one knob, but changes behaviour for current `backoff_jitter` users | New boolean `jitter_retry_after: bool = False` that makes `backoff_jitter` also apply to Retry-After waits\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 4c891c655eb2). You can answer here without a Raven account.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Handed to you, Engineer 001.*\n*Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nThe code needs to decide whether Retry-After header waits should support jitter (randomized delays). Currently `backoff_jitter` only affects exponential backoff, not Retry-After waits. Reusing `backoff_jitter` for both would silently change behavior for existing users who set it. A new parameter like `retry_after_jitter` keeps existing behavior unchanged but adds a second configuration knob that must be passed through `increment()`. Alternatively, a boolean flag could make `backoff_jitter` apply to both cases only when explicitly enabled. Which approach should be taken: add a new opt-in `retry_after_jitter` parameter, reuse `backoff_jitter` for both, or add a boolean flag to control whether `backoff_jitter` applies to Retry-After?\nContext: `Retry` already has `backoff_jitter: float = 0.0`, applied only in `get_backoff_time()` to the exponential backoff, and `Retry.sleep()` returns early on a Retry-After header without touching backoff at all. Reusing `backoff_jitter` would silently change behaviour for everyone who already sets it (today it never affects Retry-After waits), which conflicts with \"keep existing behavior by default\". A new `retry_after_jitter=0.0` parameter is strictly opt-in but adds a second knob and must also be threaded through `Retry.new()` so it survives `increment()`. Paths: src/urllib3/util/retry.py Options: New `retry_after_jitter: float = 0.0` parameter, threaded through `new()`; existing users unaffected | Reuse `backoff_jitter` for both backoff and Retry-After waits; one knob, but changes behaviour for current `backoff_jitter` users | New boolean `jitter_retry_after: bool = False` that makes `backoff_jitter` also apply to Retry-After waits\nWhy you: handed on by Engineer 028: \"Could you ask <@U00001> instead? They make the compatibility call; I only contributed the documentation.\"\nOptions: New `retry_after_jitter: float = 0.0` parameter, threaded through `new()`; existing users unaffected | Reuse `backoff_jitter` for both backoff and Retry-After waits; one knob, but changes behaviour for current `backoff_jitter` users | New boolean `jitter_retry_after: bool = False` that makes `backoff_jitter` also apply to Retry-After waits\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.\nOptional web inbox: http://localhost:17486/#inbox (decision 4c891c655eb2). You can answer here without a Raven account."
+          }
+        }
+      ],
+      "ts": "1791186851.000010"
+    },
+    {
+      "channel": "DU00003",
+      "text": "I need to clarify your intent. Your message says \"Only add uniform jitter between zero and retry_after_jitter seconds to a positive Retry-After wait. Never shorten the already-capped server delay.\" This describes additive-only jitter, which matches the context you provided.\n\nAre you answering that jitter must be additive only (never shortening the server's delay)? Or are you asking whether this is the right choice before you decide?\n<https://raven-eval.slack.com/archives/CGENERAL/p1770000000000000|Slack source>\nNo decision or sign-off recorded.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "I need to clarify your intent. Your message says \"Only add uniform jitter between zero and retry_after_jitter seconds to a positive Retry-After wait. Never shorten the already-capped server delay.\" This describes additive-only jitter, which matches the context you provided.\n\nAre you answering that jitter must be additive only (never shortening the server's delay)? Or are you asking whether this is the right choice before you decide?\n<https://raven-eval.slack.com/archives/CGENERAL/p1770000000000000|Slack source>\nNo decision or sign-off recorded."
+          }
+        }
+      ],
+      "thread_ts": "1791186640.000001",
+      "client_msg_id": "613dc94e-25d0-5da5-816e-d92fc5d8c1a4",
+      "unfurl_links": false,
+      "ts": "1791186898.000011"
+    },
+    {
+      "channel": "DU00001",
+      "text": "Record your decision as:\nUse a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction.\nReason: New opt-in parameter avoids silently changing behavior for existing `backoff_jitter` users, aligns with the goal to keep existing behavior by default, and fails early on invalid delays.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Record your decision as:\nUse a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction.\nReason: New opt-in parameter avoids silently changing behavior for existing `backoff_jitter` users, aligns with the goal to keep existing behavior by default, and fails early on invalid delays.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+          }
+        }
+      ],
+      "thread_ts": "1791186851.000010",
+      "client_msg_id": "0134d715-9ba0-547c-903b-8714c7689ede",
+      "unfurl_links": false,
+      "ts": "1791186900.000012"
+    },
+    {
+      "channel": "DU00001",
+      "text": "Record your decision as:\nUse a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.\nReason: New opt-in parameter avoids silently changing behavior for existing `backoff_jitter` users, aligns with the goal to keep existing behavior by default, and fails early on invalid delays. Preserving fallback to exponential backoff when Retry-After is absent or invalid maintains current behavior.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Record your decision as:\nUse a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.\nReason: New opt-in parameter avoids silently changing behavior for existing `backoff_jitter` users, aligns with the goal to keep existing behavior by default, and fails early on invalid delays. Preserving fallback to exponential backoff when Retry-After is absent or invalid maintains current behavior.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+          }
+        }
+      ],
+      "thread_ts": "1791186851.000010",
+      "client_msg_id": "974387c0-60b4-5039-842b-7b7a745914fd",
+      "unfurl_links": false,
+      "ts": "1791186922.000013"
+    },
+    {
+      "channel": "DU00003",
+      "text": "Record your decision as:\nUse additive-only uniform jitter from zero to retry_after_jitter seconds, only for positive Retry-After waits. Never shorten the already-capped server delay. Keep exponential backoff jitter unchanged.\nReason: You stated this decision explicitly: additive jitter only, preserving the server-requested delay as a floor, matching the existing backoff_jitter pattern in get_backoff_time().\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Record your decision as:\nUse additive-only uniform jitter from zero to retry_after_jitter seconds, only for positive Retry-After waits. Never shorten the already-capped server delay. Keep exponential backoff jitter unchanged.\nReason: You stated this decision explicitly: additive jitter only, preserving the server-requested delay as a floor, matching the existing backoff_jitter pattern in get_backoff_time().\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+          }
+        }
+      ],
+      "thread_ts": "1791186640.000001",
+      "client_msg_id": "2da7ae74-5b90-5eba-b71c-df6481e65fa5",
+      "unfurl_links": false,
+      "ts": "1791186968.000014"
+    },
+    {
+      "channel": "DU00001",
+      "text": "Thanks. Nothing recorded or signed. I am here when you are ready.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Thanks. Nothing recorded or signed. I am here when you are ready."
+          }
+        }
+      ],
+      "thread_ts": "1791186851.000010",
+      "client_msg_id": "3ea552bf-64d5-569f-94bf-0662a0d80c67",
+      "unfurl_links": false,
+      "ts": "1791186983.000015"
+    },
+    {
+      "channel": "DU00028",
+      "text": "I found relevant Slack context. Tell me in your own words what you want decided or who I should ask; search results cannot authorize an action.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "I found relevant Slack context. Tell me in your own words what you want decided or who I should ask; search results cannot authorize an action."
+          }
+        }
+      ],
+      "thread_ts": "1791186648.000002",
+      "client_msg_id": "6dbe9a8f-79b6-5377-b487-812ff24b969d",
+      "unfurl_links": false,
+      "ts": "1791186988.000016"
+    },
+    {
+      "channel": "DU00003",
+      "text": "Recorded and signed as Engineer 003's answer. The coding agent can now read it.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Recorded and signed as Engineer 003's answer. The coding agent can now read it."
+          }
+        }
+      ],
+      "thread_ts": "1791186640.000001",
+      "client_msg_id": "9b0ff169-96c6-5c7d-842c-a2a1c72e70a0",
+      "unfurl_links": false,
+      "ts": "1791187020.000017"
+    },
+    {
+      "channel": "DU00001",
+      "text": "Recorded and signed as Engineer 001's answer. The coding agent can now read it.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Recorded and signed as Engineer 001's answer. The coding agent can now read it."
+          }
+        }
+      ],
+      "thread_ts": "1791186851.000010",
+      "client_msg_id": "03d54f8b-71d9-5620-8401-6fa145808127",
+      "unfurl_links": false,
+      "ts": "1791187085.000018"
+    },
+    {
+      "channel": "DU00028",
+      "text": "Record your decision as:\nThe final jittered sleep must stay within retry_after_max. Apply the ceiling after adding jitter, because operators rely on it as a hard maximum.\nReason: Operators depend on retry_after_max as a hard maximum for configured limits.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Record your decision as:\nThe final jittered sleep must stay within retry_after_max. Apply the ceiling after adding jitter, because operators rely on it as a hard maximum.\nReason: Operators depend on retry_after_max as a hard maximum for configured limits.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+          }
+        }
+      ],
+      "thread_ts": "1791186648.000002",
+      "client_msg_id": "0f0f7048-e7a4-5d1a-91d8-8f03d30b5db1",
+      "unfurl_links": false,
+      "ts": "1791187087.000019"
+    },
+    {
+      "channel": "DU00028",
+      "text": "Recorded and signed as Engineer 028's answer. The coding agent can now read it.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Recorded and signed as Engineer 028's answer. The coding agent can now read it."
+          }
+        }
+      ],
+      "thread_ts": "1791186648.000002",
+      "client_msg_id": "83ab6e5e-8086-5835-8018-a6e10c9d319f",
+      "unfurl_links": false,
+      "ts": "1791187088.000020"
+    },
+    {
+      "channel": "DU00035",
+      "text": "Record your decision as:\nUse absolute seconds, consistent with backoff_jitter. Do not interpret the value as a fraction.\nReason: Absolute seconds is consistent with the existing `backoff_jitter` API and provides predictable behavior.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Record your decision as:\nUse absolute seconds, consistent with backoff_jitter. Do not interpret the value as a fraction.\nReason: Absolute seconds is consistent with the existing `backoff_jitter` API and provides predictable behavior.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+          }
+        }
+      ],
+      "thread_ts": "1791186674.000004",
+      "client_msg_id": "d6ca19ea-d82c-5196-8231-70a86b874ec8",
+      "unfurl_links": false,
+      "ts": "1791187092.000021"
+    },
+    {
+      "channel": "DU00035",
+      "text": "Recorded and signed as Engineer 035's answer. The coding agent can now read it.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Recorded and signed as Engineer 035's answer. The coding agent can now read it."
+          }
+        }
+      ],
+      "thread_ts": "1791186674.000004",
+      "client_msg_id": "feb15450-8e4b-51b6-abdf-ee57e7a2605f",
+      "unfurl_links": false,
+      "ts": "1791187093.000022"
+    },
+    {
+      "channel": "DU00028",
+      "text": "*Sign-off wanted from Engineer 028.*\n*Should the release note explicitly state that retry_after_jitter defaults to zero, adds seconds only to positive Retry-After waits, and the final wait remains capped?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nContext: Requester's note on this task asks for a short release note saying the option defaults to zero and existing users keep the same behaviour. urllib3 uses towncrier fragments in changelog/<PR>.<type>.rst, past tense, user-facing. There is no issue/PR number for this change yet, so the fragment number has to be chosen. Draft: \"Added an optional ``retry_after_jitter`` parameter to ``urllib3.util.Retry``. It defaults to ``0.0``, so existing behavior is unchanged; when set, a random number of seconds between zero and that value is added to a positive ``Retry-After`` wait, and the resulting wait is still limited by ``retry_after_max``.\" The capping clause depends on the answer to b8cae0e4f89a. Paths: changelog/, src/urllib3/util/retry.py Options: Yes: state all three (default zero, additive on positive waits only, still capped) in one changelog/<n>.feature.rst fragment | Yes but shorter: default zero and unchanged behavior only, leave mechanics to the API docs | No changelog fragment; document only in the Retry docstring\nBridge's guess (an answer given for another scope, which may not carry over): The release note can state, per this record, that jitter is added only to positive Retry-After waits as additive-only uniform jitter from zero up to retry_after_jitter seconds, and that the final wait is never shortened below the already-capped server delay, remaining capped. The earlier answer does not establish: What is the default value of retry_after_jitter.\n_Bridge did not find this decided anywhere. It is a guess for you to confirm or correct, not something your team settled._\nOptions: Yes: state all three (default zero, additive on positive waits only, still capped) in one changelog/<n>.feature.rst fragment | Yes but shorter: default zero and unchanged behavior only, leave mechanics to the API docs | No changelog fragment; document only in the Retry docstring\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.\nOptional web inbox: http://localhost:17486/#inbox (decision 6c78b9e10729). You can answer here without a Raven account.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Sign-off wanted from Engineer 028.*\n*Should the release note explicitly state that retry_after_jitter defaults to zero, adds seconds only to positive Retry-After waits, and the final wait remains capped?*\nTask: Support optional jitter on Retry-After waits (urllib3/urllib3)\nContext: Requester's note on this task asks for a short release note saying the option defaults to zero and existing users keep the same behaviour. urllib3 uses towncrier fragments in changelog/<PR>.<type>.rst, past tense, user-facing. There is no issue/PR number for this change yet, so the fragment number has to be chosen. Draft: \"Added an optional ``retry_after_jitter`` parameter to ``urllib3.util.Retry``. It defaults to ``0.0``, so existing behavior is unchanged; when set, a random number of seconds between zero and that value is added to a positive ``Retry-After`` wait, and the resulting wait is still limited by ``retry_after_max``.\" The capping clause depends on the answer to b8cae0e4f89a. Paths: changelog/, src/urllib3/util/retry.py Options: Yes: state all three (default zero, additive on positive waits only, still capped) in one changelog/<n>.feature.rst fragment | Yes but shorter: default zero and unchanged behavior only, leave mechanics to the API docs | No changelog fragment; document only in the Retry docstring\nBridge's guess (an answer given for another scope, which may not carry over): The release note can state, per this record, that jitter is added only to positive Retry-After waits as additive-only uniform jitter from zero up to retry_after_jitter seconds, and that the final wait is never shortened below the already-capped server delay, remaining capped. The earlier answer does not establish: What is the default value of retry_after_jitter.\n_Bridge did not find this decided anywhere. It is a guess for you to confirm or correct, not something your team settled._\nOptions: Yes: state all three (default zero, additive on positive waits only, still capped) in one changelog/<n>.feature.rst fragment | Yes but shorter: default zero and unchanged behavior only, leave mechanics to the API docs | No changelog fragment; document only in the Retry docstring\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.\nOptional web inbox: http://localhost:17486/#inbox (decision 6c78b9e10729). You can answer here without a Raven account."
+          }
+        }
+      ],
+      "ts": "1791187094.000023"
+    },
+    {
+      "channel": "DU00035",
+      "text": "Record your decision as:\nApply jitter only in `sleep_for_retry()`. Keep `parse_retry_after()` and `get_retry_after()` deterministic, returning only the parsed and capped server value.\nReason: Accessors are documented as returning the server's Retry-After value and are called directly by tests expecting deterministic results. Jittering only at sleep time keeps them pure while still applying jitter to both call sites: `connectionpool.py:944` and `Retry.sleep()`.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Record your decision as:\nApply jitter only in `sleep_for_retry()`. Keep `parse_retry_after()` and `get_retry_after()` deterministic, returning only the parsed and capped server value.\nReason: Accessors are documented as returning the server's Retry-After value and are called directly by tests expecting deterministic results. Jittering only at sleep time keeps them pure while still applying jitter to both call sites: `connectionpool.py:944` and `Retry.sleep()`.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+          }
+        }
+      ],
+      "thread_ts": "1791186684.000006",
+      "client_msg_id": "ef670404-a7f3-5df2-b61d-cb25b3bde5dd",
+      "unfurl_links": false,
+      "ts": "1791187096.000024"
+    },
+    {
+      "channel": "DU00035",
+      "text": "Recorded and signed as Engineer 035's answer. The coding agent can now read it.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Recorded and signed as Engineer 035's answer. The coding agent can now read it."
+          }
+        }
+      ],
+      "thread_ts": "1791186684.000006",
+      "client_msg_id": "0b367603-9543-5f4b-ad9e-0cb6ce4fea92",
+      "unfurl_links": false,
+      "ts": "1791187097.000025"
+    },
+    {
+      "channel": "DU00028",
+      "text": "Record your decision as:\nState all three points in the release note: default zero, additive seconds for positive Retry-After waits only, and final wait capped at retry_after_max. Include the new parameter in the Retry API docstring too.\nReason: You want the release note to explicitly cover all three mechanics: the default value, the additive-only behavior on positive waits, and the capping constraint.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Record your decision as:\nState all three points in the release note: default zero, additive seconds for positive Retry-After waits only, and final wait capped at retry_after_max. Include the new parameter in the Retry API docstring too.\nReason: You want the release note to explicitly cover all three mechanics: the default value, the additive-only behavior on positive waits, and the capping constraint.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+          }
+        }
+      ],
+      "thread_ts": "1791187094.000023",
+      "client_msg_id": "e3aaaa0e-7de1-51e2-a0aa-a4e8ab052c5b",
+      "unfurl_links": false,
+      "ts": "1791187139.000026"
+    },
+    {
+      "channel": "DU00028",
+      "text": "Recorded and signed as Engineer 028's answer. The coding agent can now read it.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Recorded and signed as Engineer 028's answer. The coding agent can now read it."
+          }
+        }
+      ],
+      "thread_ts": "1791187094.000023",
+      "client_msg_id": "a0ffbbba-fe66-5075-8274-d895269eaa50",
+      "unfurl_links": false,
+      "ts": "1791187182.000027"
+    },
+    {
+      "channel": "DU00028",
+      "text": "*Sign-off wanted from Engineer 028.*\n*Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?*\nTask: Check existing Retry-After jitter policy (urllib3/urllib3)\nContext: Paths: src/urllib3/util/retry.py\nAnswer on the table (from Engineer 001): Use a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.\nOptional web inbox: http://localhost:17486/#inbox (decision 9dfa05761fc6). You can answer here without a Raven account.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Sign-off wanted from Engineer 028.*\n*Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?*\nTask: Check existing Retry-After jitter policy (urllib3/urllib3)\nContext: Paths: src/urllib3/util/retry.py\nAnswer on the table (from Engineer 001): Use a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.\nOptional web inbox: http://localhost:17486/#inbox (decision 9dfa05761fc6). You can answer here without a Raven account."
+          }
+        }
+      ],
+      "ts": "1791187417.000028"
+    },
+    {
+      "channel": "DU00001",
+      "text": "*Sign-off wanted from Engineer 001.*\n*Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?*\nTask: Check existing Retry-After jitter policy (urllib3/urllib3)\nContext: Paths: src/urllib3/util/retry.py\nAnswer on the table (from Engineer 001): Use a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.\nOptional web inbox: http://localhost:17486/#inbox (decision 55247168942d). You can answer here without a Raven account.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Sign-off wanted from Engineer 001.*\n*Should Retry-After jitter reuse the existing `backoff_jitter` parameter, or be a new opt-in parameter (e.g. `retry_after_jitter`) defaulting to 0.0?*\nTask: Check existing Retry-After jitter policy (urllib3/urllib3)\nContext: Paths: src/urllib3/util/retry.py\nAnswer on the table (from Engineer 001): Use a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.\nOptional web inbox: http://localhost:17486/#inbox (decision 55247168942d). You can answer here without a Raven account."
+          }
+        }
+      ],
+      "ts": "1791187585.000029"
+    },
+    {
+      "channel": "DU00001",
+      "text": "I want to make sure I understand: are you confirming the full answer that's on the table for this task, or are you saying something should change about it? The answer describes using a new `retry_after_jitter` parameter with specific validation and fallback behavior. Should I read that back for your explicit confirmation?\nNo decision or sign-off recorded.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "I want to make sure I understand: are you confirming the full answer that's on the table for this task, or are you saying something should change about it? The answer describes using a new `retry_after_jitter` parameter with specific validation and fallback behavior. Should I read that back for your explicit confirmation?\nNo decision or sign-off recorded."
+          }
+        }
+      ],
+      "thread_ts": "1791187585.000029",
+      "client_msg_id": "66401441-cfc3-5414-a3ee-cc657a956b2c",
+      "unfurl_links": false,
+      "ts": "1791188029.000030"
+    },
+    {
+      "channel": "DU00001",
+      "text": "Sign the complete answer above in your name:\nUse a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Sign the complete answer above in your name:\nUse a new `retry_after_jitter` parameter, defaulting to 0.0, threaded through `new()` and `increment()`. Existing `backoff_jitter` behavior must stay unchanged. Accept finite nonnegative numbers; reject negative, NaN and infinite values at construction. If the Retry-After value is zero, missing or already expired, preserve the existing fallback to exponential backoff; do not turn it into a new jitter sleep.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet."
+          }
+        }
+      ],
+      "thread_ts": "1791187585.000029",
+      "client_msg_id": "81056486-e86a-5b3c-8929-7e8e44d2e4fa",
+      "unfurl_links": false,
+      "ts": "1791188350.000031"
+    },
+    {
+      "channel": "DU00001",
+      "text": "Signed by Engineer 001. The coding agent can now read it.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Signed by Engineer 001. The coding agent can now read it."
+          }
+        }
+      ],
+      "thread_ts": "1791187585.000029",
+      "client_msg_id": "fece21b6-8913-5332-a946-ace67ed24355",
+      "unfurl_links": false,
+      "ts": "1791188397.000032"
+    }
+  ]
+}

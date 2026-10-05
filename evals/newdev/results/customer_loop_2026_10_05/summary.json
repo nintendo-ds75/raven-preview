@@ -1,0 +1,38 @@
+{
+  "raven_python": {
+    "run": 641,
+    "skipped": 4,
+    "failed": 0
+  },
+  "postgres": {
+    "run": 264,
+    "failed": 0
+  },
+  "urllib3_final": {
+    "passed": 874,
+    "skipped": 53,
+    "independent_checks_included": 22
+  },
+  "walkthrough": {
+    "passed": 37,
+    "total": 37
+  },
+  "main_task": "c29503d2dd11",
+  "coding_host_cost_usd": 2.440897,
+  "recovery_host_cost_usd": 0.1983795,
+  "slack": "simulated",
+  "model": "real Anthropic API",
+  "database": "PostgreSQL 17 in Docker",
+  "manual_ownership_map": false,
+  "ui": [
+    "workspace naming",
+    "login",
+    "connections",
+    "overview",
+    "note",
+    "required followup",
+    "history",
+    "review",
+    "390px viewport"
+  ]
+}

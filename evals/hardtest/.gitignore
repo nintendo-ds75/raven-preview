@@ -1,0 +1,5 @@
+*.db
+*.db-wal
+*.db-shm
+codes.json
+__pycache__/

@@ -1,0 +1,10 @@
+{
+  "account_passwords": 1,
+  "people": 73,
+  "authority": 2,
+  "routing_feedback": 8,
+  "slack_ingress": 24,
+  "slack_replies": 24,
+  "manual_authority": 0,
+  "failed_ingress": 0
+}

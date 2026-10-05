@@ -1,0 +1,6 @@
+__pycache__/
+*.db
+*.db-wal
+*.db-shm
+*.jsonl
+mcp-config.json

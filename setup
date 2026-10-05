@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# One entry point for macOS, Linux, and Windows through WSL.
+set -euo pipefail
+cd "$(dirname "$0")"
+setup_root=$PWD
+setup_args=()
+setup_import=''
+setup_repo=''
+setup_yes=0
+setup_configure=0
+setup_headless=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --help|-h)
+      printf '%s\n' 'Usage: ./setup [--yes] [--configure] [--workspace NAME] [--demo] [--port PORT] [--repo PATH] [--repo-name OWNER/NAME] [--import-sqlite FILE]' \
+        'No flags: start Bridge and open browser-based setup.' \
+        '--repo PATH: optionally ingest a local Git checkout.' \
+        '--demo: add sample tasks and ownership data. --configure: configure agent MCP clients and other connections.' \
+        '--yes: use saved settings without prompts. Import requires an empty destination.'
+      exit 0 ;;
+    --repo)
+      [ "$#" -ge 2 ] || { echo '--repo needs a checkout path' >&2; exit 1; }
+      setup_repo=$(cd "$2" && pwd)
+      [ -e "$setup_repo/.git" ] || { echo 'Repository must be a Git checkout' >&2; exit 1; }
+      [ -d "$setup_repo/.git" ] || { echo 'Use a standalone Git clone; linked worktrees need additional Git metadata mounts.' >&2; exit 1; }
+      setup_args+=(--repo "$setup_repo"); shift 2 ;;
+    --import-sqlite)
+      [ "$#" -ge 2 ] && [ -f "$2" ] || { echo '--import-sqlite needs an existing database file' >&2; exit 1; }
+      setup_import="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
+      shift 2 ;;
+    --workspace)
+      [ "$#" -ge 2 ] || { echo "--workspace needs a name" >&2; exit 1; }
+      setup_headless=1; setup_args+=("$1" "$2"); shift 2 ;;
+    --repo-name|--port)
+      [ "$#" -ge 2 ] || { echo "$1 needs a value" >&2; exit 1; }
+      setup_args+=("$1" "$2"); shift 2 ;;
+    --yes) setup_yes=1; setup_args+=("$1"); shift ;;
+    --configure) setup_configure=1; setup_args+=("$1"); shift ;;
+    --demo) setup_args+=("$1"); shift ;;
+    *) echo "Unknown option: $1 (see ./setup --help)" >&2; exit 1 ;;
+  esac
+done
+if [ "$setup_configure" -eq 0 ] && [ -z "$setup_repo" ] && [ "$setup_yes" -eq 0 ]; then
+  setup_args+=(--yes)
+fi
+setup_agent_project=$setup_root
+if [ -n "$setup_repo" ]; then setup_agent_project=$setup_repo; fi
+command -v docker >/dev/null || { echo 'Install Docker Desktop (macOS/Windows) or Docker Engine with Compose v2 (Linux), then rerun ./setup.' >&2; exit 1; }
+docker compose version >/dev/null 2>&1 || { echo 'Docker Compose v2 is required. Update Docker, then rerun ./setup.' >&2; exit 1; }
+docker info >/dev/null 2>&1 || { echo 'Start Docker Desktop or the Docker daemon, then rerun ./setup.' >&2; exit 1; }
+echo 'Preparing the setup runtime…'
+docker compose build app || { echo 'Build failed. Check Docker network access and the build error above, then rerun ./setup.' >&2; exit 1; }
+setup_tty=()
+if [ ! -t 0 ] || [ ! -t 1 ]; then setup_tty=(-T); fi
+# Bash 3.2 (shipped with macOS) treats empty arrays as unset with nounset.
+docker compose run --rm --no-deps ${setup_tty[@]+"${setup_tty[@]}"} --user "$(id -u):$(id -g)" \
+  -v "$setup_root:/workspace" -v "$setup_agent_project:/agent-project" \
+  -w /workspace --entrypoint python app \
+  -m bridge.setup ${setup_args[@]+"${setup_args[@]}"}
+if [ -n "$setup_import" ]; then ./dev import-sqlite "$setup_import"; fi
+./dev up || { echo 'Startup failed. Run ./dev logs and ./dev status for details; your data is retained.' >&2; exit 1; }
+if grep -Eq "^BRIDGE_MCP_CLIENTS='[^']+" .env; then
+  docker compose exec -T -u bridge app cat /data/dev-agent-token | docker compose run --rm --no-deps -T --user "$(id -u):$(id -g)" \
+    -v "$setup_root:/workspace" -v "$setup_agent_project:/agent-project" \
+    -w /workspace --entrypoint python app -m bridge.setup --connect-mcp
+fi
+echo 'Setup complete. Use your coding agent and Slack. The web overview and account setup are optional with --workspace.'
+if [ "$setup_yes" -eq 0 ] && [ "$setup_headless" -eq 0 ]; then
+  setup_url=$(docker compose exec -T app printenv BRIDGE_PUBLIC_URL 2>/dev/null | tr -d '\r\n')
+  setup_url="${setup_url%/}/#connect"
+  echo "Opening Bridge setup: $setup_url"
+  if command -v open >/dev/null 2>&1; then
+    open "$setup_url" || echo "Open $setup_url in your browser to continue."
+  elif command -v wslview >/dev/null 2>&1; then
+    wslview "$setup_url" || echo "Open $setup_url in your browser to continue."
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$setup_url" >/dev/null 2>&1 || echo "Open $setup_url in your browser to continue."
+  else
+    echo "Open $setup_url in your browser to continue."
+  fi
+fi

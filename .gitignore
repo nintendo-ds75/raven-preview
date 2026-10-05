@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.bridge/
+test-results/
+.DS_Store
+.env
+backups/
+
+# Claude Code worktrees
+.claude/worktrees/

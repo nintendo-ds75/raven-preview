@@ -1,0 +1,67 @@
+name: bridge
+services:
+  db:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: bridge
+      POSTGRES_USER: bridge
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bridge-local-development}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bridge -d bridge"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  app:
+    build:
+      context: .
+      args:
+        INSTALL_AGENTS: ${BRIDGE_INSTALL_AGENTS:-false}
+    environment:
+      DATABASE_URL: postgresql://bridge:${POSTGRES_PASSWORD:-bridge-local-development}@db:5432/bridge
+      BRIDGE_PUBLIC_URL: ${BRIDGE_PUBLIC_URL:-http://localhost:7333}
+      BRIDGE_DEMO: ${BRIDGE_DEMO:-0}
+      BRIDGE_DEV_LOGIN: ${BRIDGE_DEV_LOGIN:-1}
+      BRIDGE_WORKSPACE_NAME: ${BRIDGE_WORKSPACE_NAME:-}
+      BRIDGE_AGENTS: ${BRIDGE_AGENTS:-0}
+      BRIDGE_INGEST_REPO_DIR: ${BRIDGE_INGEST_REPO_DIR:-}
+      BRIDGE_INGEST_REPO: ${BRIDGE_INGEST_REPO:-}
+      BRIDGE_MODEL_API: ${BRIDGE_MODEL_API:-none}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      BRIDGE_ADMIN_TOKEN: ${BRIDGE_ADMIN_TOKEN:-}
+      BRIDGE_GITHUB_CLIENT_ID: ${BRIDGE_GITHUB_CLIENT_ID:-}
+      BRIDGE_GITHUB_CLIENT_SECRET: ${BRIDGE_GITHUB_CLIENT_SECRET:-}
+      BRIDGE_GITHUB_ORG: ${BRIDGE_GITHUB_ORG:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      BRIDGE_GITHUB_APP_FILE: /data/bridge-github-app.json
+      BRIDGE_GITHUB_APP_CLIENT_ID: ${BRIDGE_GITHUB_APP_CLIENT_ID:-}
+      BRIDGE_GITHUB_APP_SLUG: ${BRIDGE_GITHUB_APP_SLUG:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      BRIDGE_GITHUB_REPOS: ${BRIDGE_GITHUB_REPOS:-}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
+      SLACK_FALLBACK_CHANNEL: ${SLACK_FALLBACK_CHANNEL:-}
+      SLACK_API_BASE: ${SLACK_API_BASE:-}
+      TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL:-}
+    ports:
+      - "127.0.0.1:${BRIDGE_PORT:-7333}:7333"
+    volumes:
+      - app_data:/data
+      - ${BRIDGE_REPOS_DIR:-./fixtures}:/repos:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, urllib.request; from bridge.database import connect; db=connect(os.environ['DATABASE_URL'], autocommit=True); db.execute('SELECT 1'); db.close(); urllib.request.urlopen('http://127.0.0.1:7333/auth/login', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    init: true
+    restart: unless-stopped
+volumes:
+  postgres_data:
+  app_data:

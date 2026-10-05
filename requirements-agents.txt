@@ -1,0 +1,2 @@
+# Optional; the local inbox and MCP server require no third-party packages.
+openai==3.13.0

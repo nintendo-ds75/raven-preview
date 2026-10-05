@@ -1,0 +1,195 @@
+..FFFFFFFFFF....FFFFFF                                                   [100%]
+=================================== FAILURES ===================================
+_____________________________ test_additive[0-10] ______________________________
+
+draw = 0, expected = 10
+
+    @pytest.mark.parametrize('draw,expected', [(0,10),(.25,11),(.75,13),(1,14)])
+    def test_additive(draw,expected):
+        with patch('urllib3.util.retry.time.sleep') as sleep, patch('urllib3.util.retry.random.random',return_value=draw), patch('urllib3.util.retry.random.uniform',return_value=draw*4):
+>           Retry(retry_after_jitter=4,retry_after_max=120).sleep(response('10'))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: Retry.__init__() got an unexpected keyword argument 'retry_after_jitter'
+
+<evaluation>/evidence/test_independent.py:21: TypeError
+____________________________ test_additive[0.25-11] ____________________________
+
+draw = 0.25, expected = 11
+
+    @pytest.mark.parametrize('draw,expected', [(0,10),(.25,11),(.75,13),(1,14)])
+    def test_additive(draw,expected):
+        with patch('urllib3.util.retry.time.sleep') as sleep, patch('urllib3.util.retry.random.random',return_value=draw), patch('urllib3.util.retry.random.uniform',return_value=draw*4):
+>           Retry(retry_after_jitter=4,retry_after_max=120).sleep(response('10'))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: Retry.__init__() got an unexpected keyword argument 'retry_after_jitter'
+
+<evaluation>/evidence/test_independent.py:21: TypeError
+____________________________ test_additive[0.75-13] ____________________________
+
+draw = 0.75, expected = 13
+
+    @pytest.mark.parametrize('draw,expected', [(0,10),(.25,11),(.75,13),(1,14)])
+    def test_additive(draw,expected):
+        with patch('urllib3.util.retry.time.sleep') as sleep, patch('urllib3.util.retry.random.random',return_value=draw), patch('urllib3.util.retry.random.uniform',return_value=draw*4):
+>           Retry(retry_after_jitter=4,retry_after_max=120).sleep(response('10'))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: Retry.__init__() got an unexpected keyword argument 'retry_after_jitter'
+
+<evaluation>/evidence/test_independent.py:21: TypeError
+_____________________________ test_additive[1-14] ______________________________
+
+draw = 1, expected = 14
+
+    @pytest.mark.parametrize('draw,expected', [(0,10),(.25,11),(.75,13),(1,14)])
+    def test_additive(draw,expected):
+        with patch('urllib3.util.retry.time.sleep') as sleep, patch('urllib3.util.retry.random.random',return_value=draw), patch('urllib3.util.retry.random.uniform',return_value=draw*4):
+>           Retry(retry_after_jitter=4,retry_after_max=120).sleep(response('10'))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: Retry.__init__() got an unexpected keyword argument 'retry_after_jitter'
+
+<evaluation>/evidence/test_independent.py:21: TypeError
+___________________________ test_final_ceiling[119] ____________________________
+
+header = '119'
+
+    @pytest.mark.parametrize('header', ['119','120','999999'])
+    def test_final_ceiling(header):
+        with patch('urllib3.util.retry.time.sleep') as sleep, patch('urllib3.util.retry.random.random',return_value=1), patch('urllib3.util.retry.random.uniform',return_value=4):
+>           Retry(retry_after_jitter=4,retry_after_max=120).sleep(response(header))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: Retry.__init__() got an unexpected keyword argument 'retry_after_jitter'
+
+<evaluation>/evidence/test_independent.py:27: TypeError
+___________________________ test_final_ceiling[120] ____________________________
+
+header = '120'
+
+    @pytest.mark.parametrize('header', ['119','120','999999'])
+    def test_final_ceiling(header):
+        with patch('urllib3.util.retry.time.sleep') as sleep, patch('urllib3.util.retry.random.random',return_value=1), patch('urllib3.util.retry.random.uniform',return_value=4):
+>           Retry(retry_after_jitter=4,retry_after_max=120).sleep(response(header))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: Retry.__init__() got an unexpected keyword argument 'retry_after_jitter'
+
+<evaluation>/evidence/test_independent.py:27: TypeError
+__________________________ test_final_ceiling[999999] __________________________
+
+header = '999999'
+
+    @pytest.mark.parametrize('header', ['119','120','999999'])
+    def test_final_ceiling(header):
+        with patch('urllib3.util.retry.time.sleep') as sleep, patch('urllib3.util.retry.random.random',return_value=1), patch('urllib3.util.retry.random.uniform',return_value=4):
+>           Retry(retry_after_jitter=4,retry_after_max=120).sleep(response(header))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: Retry.__init__() got an unexpected keyword argument 'retry_after_jitter'
+
+<evaluation>/evidence/test_independent.py:27: TypeError
+_______________ test_no_new_wait_for_missing_zero_expired[None] ________________
+
+header = None
+
+    @pytest.mark.parametrize('header', [None,'0','Wed, 01 Jan 2020 00:00:00 GMT'])
+    def test_no_new_wait_for_missing_zero_expired(header):
+>       retry=Retry(retry_after_jitter=4,backoff_factor=1).increment().increment()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: Retry.__init__() got an unexpected keyword argument 'retry_after_jitter'
+
+<evaluation>/evidence/test_independent.py:32: TypeError
+_________________ test_no_new_wait_for_missing_zero_expired[0] _________________
+
+header = '0'
+
+    @pytest.mark.parametrize('header', [None,'0','Wed, 01 Jan 2020 00:00:00 GMT'])
+    def test_no_new_wait_for_missing_zero_expired(header):
+>       retry=Retry(retry_after_jitter=4,backoff_factor=1).increment().increment()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: Retry.__init__() got an unexpected keyword argument 'retry_after_jitter'
+
+<evaluation>/evidence/test_independent.py:32: TypeError
+___ test_no_new_wait_for_missing_zero_expired[Wed, 01 Jan 2020 00:00:00 GMT] ___
+
+header = 'Wed, 01 Jan 2020 00:00:00 GMT'
+
+    @pytest.mark.parametrize('header', [None,'0','Wed, 01 Jan 2020 00:00:00 GMT'])
+    def test_no_new_wait_for_missing_zero_expired(header):
+>       retry=Retry(retry_after_jitter=4,backoff_factor=1).increment().increment()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: Retry.__init__() got an unexpected keyword argument 'retry_after_jitter'
+
+<evaluation>/evidence/test_independent.py:32: TypeError
+_______________________ test_setting_survives_copies[0] ________________________
+
+value = 0
+
+    @pytest.mark.parametrize('value',[0,.25,4])
+    def test_setting_survives_copies(value):
+>       retry=Retry(retry_after_jitter=value)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: Retry.__init__() got an unexpected keyword argument 'retry_after_jitter'
+
+<evaluation>/evidence/test_independent.py:45: TypeError
+______________________ test_setting_survives_copies[0.25] ______________________
+
+value = 0.25
+
+    @pytest.mark.parametrize('value',[0,.25,4])
+    def test_setting_survives_copies(value):
+>       retry=Retry(retry_after_jitter=value)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: Retry.__init__() got an unexpected keyword argument 'retry_after_jitter'
+
+<evaluation>/evidence/test_independent.py:45: TypeError
+_______________________ test_setting_survives_copies[4] ________________________
+
+value = 4
+
+    @pytest.mark.parametrize('value',[0,.25,4])
+    def test_setting_survives_copies(value):
+>       retry=Retry(retry_after_jitter=value)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: Retry.__init__() got an unexpected keyword argument 'retry_after_jitter'
+
+<evaluation>/evidence/test_independent.py:45: TypeError
+_______________________ test_backoff_jitter_is_unchanged _______________________
+
+    def test_backoff_jitter_is_unchanged():
+>       retry=Retry(retry_after_jitter=10,backoff_jitter=4,backoff_factor=1).increment().increment()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: Retry.__init__() got an unexpected keyword argument 'retry_after_jitter'
+
+<evaluation>/evidence/test_independent.py:51: TypeError
+_____________________ test_disabled_retry_after_falls_back _____________________
+
+    def test_disabled_retry_after_falls_back():
+>       retry=Retry(retry_after_jitter=10,respect_retry_after_header=False,backoff_factor=1).increment().increment()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: Retry.__init__() got an unexpected keyword argument 'retry_after_jitter'
+
+<evaluation>/evidence/test_independent.py:57: TypeError
+____________________________ test_future_http_date _____________________________
+
+    def test_future_http_date():
+        with patch('urllib3.util.retry.time.time',return_value=1577836800), patch('urllib3.util.retry.random.random',return_value=.5), patch('urllib3.util.retry.random.uniform',return_value=2), patch('urllib3.util.retry.time.sleep') as sleep:
+>           Retry(retry_after_jitter=4).sleep(response('Wed, 01 Jan 2020 00:00:10 GMT'))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: Retry.__init__() got an unexpected keyword argument 'retry_after_jitter'
+
+<evaluation>/evidence/test_independent.py:65: TypeError
+=========================== short test summary info ============================
+FAILED ../../../../..<evaluation>/evidence/test_independent.py::test_additive[0-10]
+FAILED ../../../../..<evaluation>/evidence/test_independent.py::test_additive[0.25-11]
+FAILED ../../../../..<evaluation>/evidence/test_independent.py::test_additive[0.75-13]
+FAILED ../../../../..<evaluation>/evidence/test_independent.py::test_additive[1-14]
+FAILED ../../../../..<evaluation>/evidence/test_independent.py::test_final_ceiling[119]
+FAILED ../../../../..<evaluation>/evidence/test_independent.py::test_final_ceiling[120]
+FAILED ../../../../..<evaluation>/evidence/test_independent.py::test_final_ceiling[999999]
+FAILED ../../../../..<evaluation>/evidence/test_independent.py::test_no_new_wait_for_missing_zero_expired[None]
+FAILED ../../../../..<evaluation>/evidence/test_independent.py::test_no_new_wait_for_missing_zero_expired[0]
+FAILED ../../../../..<evaluation>/evidence/test_independent.py::test_no_new_wait_for_missing_zero_expired[Wed, 01 Jan 2020 00:00:00 GMT]
+FAILED ../../../../..<evaluation>/evidence/test_independent.py::test_setting_survives_copies[0]
+FAILED ../../../../..<evaluation>/evidence/test_independent.py::test_setting_survives_copies[0.25]
+FAILED ../../../../..<evaluation>/evidence/test_independent.py::test_setting_survives_copies[4]
+FAILED ../../../../..<evaluation>/evidence/test_independent.py::test_backoff_jitter_is_unchanged
+FAILED ../../../../..<evaluation>/evidence/test_independent.py::test_disabled_retry_after_falls_back
+FAILED ../../../../..<evaluation>/evidence/test_independent.py::test_future_http_date
+16 failed, 6 passed in 0.12s

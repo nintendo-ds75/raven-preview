@@ -1,0 +1,74 @@
+#!/bin/sh
+# Docker-only development commands; no host Python, Make, or Xcode required.
+set -eu
+cd "$(dirname "$0")"
+action=${1:-up}
+case "$action" in
+  setup) shift; exec ./setup "$@" ;;
+  config) shift; exec ./setup --configure "$@" ;;
+  up)
+    docker compose up --build -d --wait
+    # Print the URL the server was configured with, not the port mapping:
+    # the container binds 7333 whatever port is published, and a Host the
+    # server was not told about is refused with 403. Asking the container
+    # keeps the printed link and the accepted host the same thing.
+    bridge_port=$(docker compose port app 7333); bridge_port=${bridge_port##*:}
+    # Some Docker Desktop/Compose versions report :0 despite a real host binding.
+    if [ "$bridge_port" = 0 ]; then
+      bridge_port=$(docker inspect "$(docker compose ps -q app)" \
+        --format '{{(index (index .NetworkSettings.Ports "7333/tcp") 0).HostPort}}' 2>/dev/null) || bridge_port=''
+    fi
+    case "$bridge_port" in ''|*[!0-9]*) bridge_port=7333 ;; esac
+    bridge_url=$(docker compose exec -T app printenv BRIDGE_PUBLIC_URL 2>/dev/null | tr -d '\r\n')
+    case "$bridge_url" in
+      *:"$bridge_port") ;;
+      *)
+        echo "Warning: this Bridge is published on port $bridge_port but configured as ${bridge_url:-nothing}."
+        echo "Sign-in links and the accepted host will be wrong. Run ./setup --port $bridge_port to line them up."
+        bridge_url="http://localhost:$bridge_port" ;;
+    esac
+    echo "Bridge: $bridge_url"
+    if [ -t 1 ] && docker compose exec -T -u bridge app sh -c 'test "$BRIDGE_DEV_LOGIN" = 1 && test -s /data/dev-login-token'; then
+      ./dev login
+    else
+      echo 'First workspace setup credential: ./dev login. Existing users sign in with their account.'
+    fi
+    ;;
+  down) docker compose down ;;
+  status) docker compose ps ;;
+  logs) docker compose logs -f app ;;
+  login) docker compose exec -T -u bridge app python -c 'import os; from pathlib import Path; from bridge.store import Store; store=Store(os.environ["DATABASE_URL"]); print("Workspace already claimed. Sign in with your account." if store.graph.get_setting("workspace_name", "") and store.graph.get_setting("workspace_profile_pending", "") != "1" else Path(os.environ.get("BRIDGE_LOGIN_FILE", "/data/dev-login-token")).read_text().strip())' ;;
+  mcp) docker compose exec -T -u bridge app sh -c 'BRIDGE_TOKEN=$(cat /data/dev-agent-token); BRIDGE_MCP_HOST=${BRIDGE_PUBLIC_URL#*://}; BRIDGE_MCP_HOST=${BRIDGE_MCP_HOST%%/*}; export BRIDGE_TOKEN BRIDGE_MCP_HOST; exec python -m bridge mcp --url http://127.0.0.1:7333' ;;
+  seed) docker compose exec -T app python -m bridge.bootstrap ;;
+  import-sqlite)
+    test "$#" -eq 2 || { echo 'Usage: ./dev import-sqlite /absolute/path/to/bridge.db'; exit 1; }
+    case "$2" in /*) ;; *) echo 'Use an absolute source path'; exit 1 ;; esac
+    test -f "$2"
+    docker compose up -d --wait db
+    docker compose run --build --rm -v "$(dirname "$2"):/import:ro" --entrypoint python app \
+      -m bridge.import_sqlite "/import/$(basename "$2")"
+    ;;
+  shell) docker compose exec app sh ;;
+  db) docker compose exec db psql -U bridge -d bridge ;;
+  test) docker compose exec -T app python -m unittest discover -s tests -q ;;
+  test-postgres)
+    docker compose exec -T -e BRIDGE_TEST_POSTGRES=1 app python -m unittest discover -s tests -p test_postgres.py -v
+    ;;
+  ingest)
+    test "$#" -ge 2 || { echo 'Usage: ./dev ingest directory-name [owner/repository]'; exit 1; }
+    docker compose exec -T app python -m bridge ingest "/repos/$2" --repo "${3:-$2}"
+    ;;
+  backup)
+    mkdir -p backups
+    backup_file="backups/bridge-$(date +%Y%m%d-%H%M%S).dump"
+    docker compose exec -T db pg_dump -U bridge -d bridge -Fc > "$backup_file"
+    echo "$backup_file"
+    ;;
+  restore)
+    test "$#" -eq 3 || { echo 'Usage: ./dev restore backups/file.dump new_database_name'; exit 1; }
+    test -f "$2"
+    docker compose exec -T db createdb -U bridge "$3"
+    docker compose exec -T db pg_restore -U bridge -d "$3" --exit-on-error < "$2"
+    ;;
+  *) echo 'Usage: ./dev {setup|config|up|down|status|logs|login|mcp|seed|import-sqlite|shell|db|test|test-postgres|ingest|backup|restore}'; exit 1 ;;
+esac
