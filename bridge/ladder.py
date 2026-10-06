@@ -463,11 +463,19 @@ def _close_open_twins(store: Graph, source_id: str, question: str, repo: str,
 
 
 def close_open_twins(store: Graph, source_id: str, question: str, repo: str,
-                     answer: str, answered_by: str) -> int:
+                     answer: str, answered_by: str, *, expected_revision: str = "") -> int:
     """Public entry used by the inbox after a human signs an answer."""
-    src = store.get_decision(source_id, exact=True)
-    return _close_open_twins(store, source_id, question, repo, answer, answered_by, source="human",
-                             context=src.context if src else "", path=src.path if src else "")
+    # The caller's answer was captured before its commit. A later human
+    # correction may have won before this post-commit work starts; never
+    # publish that old answer with the newer source's revision. This entry
+    # uses only deterministic local retrieval, with no model/provider call.
+    with store.transaction():
+        src = store.get_decision(source_id, exact=True)
+        if (src is None or not src.authorized or src.superseded_by or src.answer != answer
+                or (expected_revision and ts_to_iso(src.updated_at) != expected_revision)):
+            return 0
+        return _close_open_twins(store, source_id, question, repo, answer, answered_by, source="human",
+                                 context=src.context, path=src.path)
 
 
 _RETRO_MACHINERY = {"reason", "given", "decid", "who", "why", "made",

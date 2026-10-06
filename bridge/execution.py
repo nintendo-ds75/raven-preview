@@ -184,6 +184,19 @@ class ExecutionService:
     def update(self, run_id, **values):
         values["updated_at"] = now()
         with self.store.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if values.get("status") in ("completed", "result_ready"):
+                # Provider terminal state is not authority. Recheck on the
+                # writer that publishes it; reconcile's earlier reads may have
+                # raced a human correction or a stale legacy source pin.
+                blocked = self.store.graph.blocking_nodes(run_id, sweep=False, db=db)
+                pending = db.execute("SELECT 1 FROM scope_clarifications WHERE task_id=?", (run_id,)).fetchone()
+                drafting = db.execute("SELECT 1 FROM decisions WHERE run_id=? AND draft=1", (run_id,)).fetchone()
+                deliveries = db.execute("SELECT 1 FROM deliveries d JOIN provider_calls c ON c.id=d.call_id "
+                    "WHERE c.run_id=? AND d.state IN ('queued','sending','uncertain','error','stopped')", (run_id,)).fetchone()
+                if blocked or pending or drafting or deliveries:
+                    values["status"] = "review_required"
+                    values["review_required"] = 1
             db.execute("UPDATE executions SET " + ",".join(k + "=?" for k in values) + " WHERE run_id=?",
                        (*values.values(), run_id))
             if "status" in values:

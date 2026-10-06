@@ -172,7 +172,7 @@ def load_tests(loader, tests, pattern):
     suite = loader.loadTestsFromTestCase(PostgresSpecific)
     # Reuse the same expectations on both backends, rather than implementing
     # weaker PostgreSQL copies of the authorization and lifecycle tests.
-    for name in ("test_memory_scope_retrieval", "test_answer_provenance", "test_record_state", "test_readback_generations", "test_contract", "test_kickoff_scope", "test_rules", "test_rule_invalidation", "test_delivery", "test_auth", "test_authority", "test_agent_rest_reads",
+    for name in ("test_atomic_source_corrections", "test_memory_scope_retrieval", "test_answer_provenance", "test_record_state", "test_readback_generations", "test_contract", "test_kickoff_scope", "test_rules", "test_rule_invalidation", "test_delivery", "test_auth", "test_authority", "test_agent_rest_reads",
                  "test_trust", "test_github", "test_execution", "test_accounts", "test_minimal_e2e_regressions",
                  "test_slack_discovery", "test_discovery_guidance", "test_slack_conversation", "test_reconstructed_fixes", "test_routing_peers", "test_brief",
                  "test_proof", "test_finish_diff_integrity", "test_finish_disconnect", "test_review_invariants", "test_review_inputs", "test_bounded_review",

@@ -474,7 +474,7 @@ def authorized(row) -> bool:
     keys = row.keys() if hasattr(row, "keys") else ()
     status = row["status"] if "status" in keys else ""
     signoff = (row["signoff"] if "signoff" in keys else "") or ""
-    return status == "approved" or signoff in ("signed", "rule")
+    return not ("needs_review" in keys and row["needs_review"]) and (status == "approved" or signoff in ("signed", "rule"))
 
 
 def still_to_sign(required_raw, signatures_raw, owner: str = "") -> list[str]:
@@ -557,7 +557,7 @@ class Decision:
     def authorized(self) -> bool:
         """A person stands behind this answer: a human answer recorded by
         the inbox, a signature, or a reusable rule."""
-        return self.status == "approved" or self.signoff in ("signed", "rule")
+        return not self.needs_review and (self.status == "approved" or self.signoff in ("signed", "rule"))
 
     @property
     def blocking(self) -> bool:
@@ -898,17 +898,19 @@ class Graph:
         if db.in_transaction:
             yield db
             return
-        db.execute("BEGIN IMMEDIATE")
-        try:
-            yield db
-        except BaseException:
-            # A full disk or an I/O error can end the transaction on its
-            # own; the rollback then has nothing to undo, and the error
-            # that matters is the original one.
-            if db.in_transaction:
-                db.execute("ROLLBACK")
-            raise
-        db.execute("COMMIT")
+        from .database import commit_effects
+        with commit_effects(db):
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                yield db
+            except BaseException:
+                # A full disk or an I/O error can end the transaction on its
+                # own; the rollback then has nothing to undo, and the error
+                # that matters is the original one.
+                if db.in_transaction:
+                    db.execute("ROLLBACK")
+                raise
+            db.execute("COMMIT")
 
     # ---------------- route-time memo ----------------
 
@@ -972,9 +974,10 @@ class Graph:
 
     # ---------------- ledger (the inbox's events table) ----------------
 
-    def append_event(self, event: str, payload: dict[str, Any]) -> str:
+    def append_event(self, event: str, payload: dict[str, Any], *, db=None) -> str:
+        db = self.db if db is None else db
         body = json.dumps(payload, sort_keys=True, ensure_ascii=False)
-        self.db.execute(
+        db.execute(
             "INSERT INTO events(decision_id, run_id, kind, detail, created_at) VALUES(?,?,?,?,?)",
             (payload.get("decision_id"), payload.get("task_id") or payload.get("run_id"),
              event, body, now_iso()))
@@ -2123,7 +2126,57 @@ class Graph:
         self._refresh_rule_dependents(now=iso_to_ts(stamp))
         return ended
 
-    def blocking_nodes(self, task_id: str, sweep: bool = True) -> list[dict]:
+    def source_review_reason(self, decision_id: str, *, db=None, allow_root_review=False) -> str:
+        """Check recorded decision premises on the authority writer's snapshot.
+
+        Legacy source_revision values are ISO timestamps, not immutable version
+        IDs. Compare their instants (including equivalent timezone encodings),
+        never manufacture a missing pin from the source's present state. Parent
+        and explicit dependency edges have no revision column on this schema;
+        follow their existing review flags and any pinned sources transitively.
+        A fresh signature may clear its own review marker only after all
+        recorded premises pass; stale/missing pins are never refreshed here.
+        """
+        db = self.db if db is None else db
+        queue, seen = [decision_id], set()
+        while queue:
+            current = queue.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            row = db.execute("SELECT * FROM decisions WHERE id=?", (current,)).fetchone()
+            if row is None:
+                return f"source decision {current} is unavailable; review and answer afresh"
+            if row["needs_review"] and not (allow_root_review and current == decision_id):
+                return row["review_reason"] or f"source decision {current} needs review"
+            if row["superseded_by"] and row["status"] != "duplicate":
+                return f"source decision {current} was superseded; review and answer afresh"
+            source = row["source_id"]
+            if source:
+                revision = row["source_revision"]
+                prior = db.execute("SELECT updated_at FROM decisions WHERE id=?", (source,)).fetchone()
+                if prior is None:
+                    return f"source decision {source} is unavailable; review and answer afresh"
+                if not revision:
+                    return f"source decision {source} has no recorded revision; review and answer afresh"
+                try:
+                    recorded = datetime.fromisoformat(revision.replace("Z", "+00:00"))
+                    latest = datetime.fromisoformat(prior["updated_at"].replace("Z", "+00:00"))
+                    same = recorded.tzinfo is not None and latest.tzinfo is not None and recorded == latest
+                except (ValueError, TypeError, AttributeError):
+                    same = False
+                if not same:
+                    return f"source decision {source} changed since its recorded revision; review and answer afresh"
+                queue.append(source)
+            if row["parent_id"]:
+                queue.append(row["parent_id"])
+            if row["status"] == "duplicate" and row["superseded_by"]:
+                queue.append(row["superseded_by"])
+            queue.extend(link["related_id"] for link in db.execute(
+                "SELECT related_id FROM decision_links WHERE decision_id=? AND kind='depends'", (current,)))
+        return ""
+
+    def blocking_nodes(self, task_id: str, sweep: bool = True, *, db=None) -> list[dict]:
         """The decisions of a task that still wait on a person, each with
         the reason: an open question, an unsigned answer, a correction
         upstream, or a duplicate whose canonical decision is in one of
@@ -2133,10 +2186,11 @@ class Graph:
         The sweeps write, so a caller already inside a write transaction
         on another connection runs them itself, before opening it, and
         passes sweep=False."""
+        db = self.db if db is None else db
         if sweep:
             self.expire_rules()
             self.expire_drafts()
-        rows = self.db.execute(
+        rows = db.execute(
             "SELECT d.id, d.question, d.status, d.signoff, d.needs_review, d.review_reason, d.superseded_by, "
             "d.required_signers, d.signatures, d.followup_required, d.model_pending, "
             "o.name AS owner_name, c.id AS c_id, c.status AS c_status, c.signoff AS c_signoff, "
@@ -2153,11 +2207,15 @@ class Graph:
                     continue
                 probe = {"status": r["c_status"], "signoff": r["c_signoff"], "needs_review": r["c_needs_review"]}
                 probe = _Probe(probe)
-            if not blocks_finish(probe):
+            source_reason = (self.source_review_reason(r["c_id"] or r["id"], db=db)
+                             if authorized(probe) else "")
+            if not blocks_finish(probe) and not source_reason:
                 continue
             status = probe["status"]
             owner = (r["c_owner"] if r["status"] == "duplicate" else r["owner_name"]) or ""
-            if probe["needs_review"]:
+            if source_reason:
+                why = "needs review: " + source_reason
+            elif probe["needs_review"]:
                 why = "needs review: " + ((r["review_reason"] if r["status"] != "duplicate" else "") or
                                           "an answer it was derived from was corrected")
             elif status == "pending":
@@ -2182,7 +2240,7 @@ class Graph:
 
     def flag_dependents(self, decision_id: str, reason: str, exclude: Iterable[str] = (),
                         *, include_root: bool = False, outstanding_only: bool = False,
-                        source_id: str = "") -> list[str]:
+                        source_id: str = "", db=None) -> list[str]:
         """Put an invalidated premise and its complete dependent chain in doubt.
 
         Source reuse, parent/child questions and explicit dependencies can mix.
@@ -2190,6 +2248,7 @@ class Graph:
         text but lose live signatures. Rule lifecycle changes preserve completed
         history, while corrections and supersession also flag completed proofs.
         """
+        db = self.db if db is None else db
         source_id = source_id or decision_id
         seen: set[str] = set(exclude)
         queue = [decision_id]
@@ -2200,9 +2259,9 @@ class Graph:
         while queue:
             src = queue.pop()
             if include_root and src == decision_id and src not in seen:
-                rows = self.db.execute("SELECT * FROM decisions WHERE id=?", (src,)).fetchall()
+                rows = db.execute("SELECT * FROM decisions WHERE id=?", (src,)).fetchall()
             else:
-                rows = self.db.execute(
+                rows = db.execute(
                     "SELECT * FROM decisions WHERE source_id=? OR parent_id=? OR id IN "
                     "(SELECT decision_id FROM decision_links WHERE related_id=? AND kind='depends')",
                     (src, src, src)).fetchall()
@@ -2213,31 +2272,35 @@ class Graph:
                 queue.append(r["id"])
                 if r["status"] in ("withdrawn", "adopted"):
                     continue
-                if outstanding_only:
-                    run = self.db.execute("SELECT status FROM runs WHERE id=?", (r["run_id"],)).fetchone()
-                    if run is not None and run["status"] == "completed":
-                        continue
+                run = db.execute("SELECT status FROM runs WHERE id=?", (r["run_id"],)).fetchone()
+                completed = run is not None and run["status"] == "completed"
+                if outstanding_only and completed:
+                    continue
                 why = f"{reason} (source decision {source_id})"
                 if r["status"] == "pending":
-                    self.db.execute("UPDATE decisions SET prediction=NULL, source_id=NULL, source_revision='', "
+                    db.execute("UPDATE decisions SET prediction=NULL, source_id=NULL, source_revision='', "
                                     "updated_at=? WHERE id=?", (ts, r["id"]))
                     self.append_event("prediction_withdrawn", {"task_id": r["run_id"], "decision_id": r["id"],
-                                                               "reason": why})
+                                                               "reason": why}, db=db)
                     continue
-                self.db.execute("UPDATE decisions SET needs_review=1, review_reason=?, "
-                                "status=CASE WHEN status='approved' THEN 'resolved' ELSE status END, "
-                                "signoff=CASE WHEN signoff IN ('signed','rule') THEN 'required' ELSE signoff END, "
-                                "signatures='[]', signed_by='', signed_hash='', signed_revision='', "
-                                "updated_at=? WHERE id=?", (clip_marked(why, 500, "the source decision has the rest"),
-                                                           ts, r["id"]))
-                self.db.execute("UPDATE runs SET needs_review=1, updated_at=? WHERE id=?", (ts, r["run_id"]))
+                # Completed signatures remain historical evidence. Mark them
+                # stale without rewriting what the people actually signed;
+                # traversal still reaches active consumers beyond them.
+                authorization = ("" if completed else
+                    "status=CASE WHEN status='approved' THEN 'resolved' ELSE status END, "
+                    "signoff=CASE WHEN signoff IN ('signed','rule') THEN 'required' ELSE signoff END, "
+                    "signatures='[]', signed_by='', signed_hash='', signed_revision='', ")
+                db.execute("UPDATE decisions SET needs_review=1, review_reason=?, " + authorization +
+                           "updated_at=? WHERE id=?", (clip_marked(why, 500, "the source decision has the rest"),
+                                                      ts, r["id"]))
+                db.execute("UPDATE runs SET needs_review=1, updated_at=? WHERE id=?", (ts, r["run_id"]))
                 self.append_event("dependent_flagged", {"task_id": r["run_id"], "decision_id": r["id"],
                                                         "source": source_id,
                                                         "previous_authorization": {key: r[key] for key in (
                                                             "status", "signoff", "signatures", "signed_by",
                                                             "signed_hash", "signed_revision")},
                                                         "reason": clip_marked(reason, 300,
-                                                                              "the source decision has the rest")})
+                                                                              "the source decision has the rest")}, db=db)
                 flagged.append(r["id"])
         return flagged
 

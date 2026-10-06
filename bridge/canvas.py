@@ -1520,7 +1520,7 @@ def _live_signatures(d: dict) -> list[str]:
 
 
 def _authorized(d: dict) -> bool:
-    return d.get("status") == "approved" or (d.get("signoff") or "") in ("signed", "rule")
+    return not d.get("needs_review") and (d.get("status") == "approved" or (d.get("signoff") or "") in ("signed", "rule"))
 
 
 def _blocking(d: dict) -> bool:
@@ -2698,23 +2698,22 @@ def sign_off(store, decision_id: str, data, actor=None, transaction_db=None) -> 
         raise Invalid(f"a node that is {d.status} is not signed off; "
                       + ("its twin carries the answer" if d.status == "duplicate" else "the agent adopts it first"))
     basis = authz.check(graph, actor, store.get_decision(d.id), "correct" if answer else "sign")
+    if transaction_db is not None and not transaction_db.in_transaction:
+        raise Invalid("Internal sign-off transaction must already be open")
+    from contextlib import nullcontext
     if answer:
-        # A correction is a new answer with one signature, the corrector's:
-        # store.answer checks the revision, records it and drops every
-        # earlier signature, which covered other text. The signer owns
-        # the corrected answer; owner_id_for resolves the name to its
-        # inbox owner row.
-        with graph.transaction() as db:
-            current = db.execute("SELECT run_id, status, updated_at FROM decisions WHERE id=?", (d.id,)).fetchone()
+        # Ownership, the new answer and every invalidation are one write.
+        # A read-back caller keeps its outer transaction and consent record.
+        with (nullcontext(transaction_db) if transaction_db is not None else graph.transaction()) as db:
+            current = db.execute("SELECT * FROM decisions WHERE id=?", (d.id,)).fetchone()
             check_not_abandoned(db, current["run_id"], current)
             check_revision(data, current)
-            graph.update_decision(d.id, owner=by)
-        store.answer(d.id, {"answer": answer, "rationale": _text(data, "rationale") or "corrected at sign-off",
-                            "applicability": data.get("applicability") or {},
-                            "source": data.get("source"),
-                            "signed_by": by, "expected_updated_at": graph.db.execute(
-                                "SELECT updated_at FROM decisions WHERE id=?", (d.id,)).fetchone()["updated_at"]},
-                     actor=actor, transaction_db=transaction_db)
+            owner_id = graph.owner_id_for(by)
+            db.execute("UPDATE decisions SET owner_id=? WHERE id=?", (owner_id, d.id))
+            store.answer(d.id, {"answer": answer, "rationale": _text(data, "rationale") or "corrected at sign-off",
+                                "applicability": data.get("applicability") or {},
+                                "source": data.get("source"), "signed_by": by,
+                                "expected_updated_at": current["updated_at"]}, actor=actor, transaction_db=db)
         view = node_view(store, d.id)
         remaining = [r for r in view["required_signers"] if r.lower() not in {x.lower() for x in view["signatures"]}]
         if remaining:
@@ -2727,11 +2726,14 @@ def sign_off(store, decision_id: str, data, actor=None, transaction_db=None) -> 
     # one transaction, so two signers or a signer racing a correction
     # serialize and neither counts a signature for other text.
     stamp = now()
-    with graph.transaction():
-        current = graph.db.execute("SELECT run_id, status, updated_at, answer, required_signers, signatures FROM decisions WHERE id=?",
+    with (nullcontext(transaction_db) if transaction_db is not None else graph.transaction()) as db:
+        current = db.execute("SELECT * FROM decisions WHERE id=?",
                                    (d.id,)).fetchone()
-        check_not_abandoned(graph.db, current["run_id"], current)
+        check_not_abandoned(db, current["run_id"], current)
         check_revision(data, current)
+        source_reason = graph.source_review_reason(d.id, db=db, allow_root_review=True)
+        if source_reason:
+            raise Invalid("Cannot sign this answer: " + source_reason)
         if not (current["answer"] or "").strip():
             raise Invalid("There is no answer on this node to sign; answer it or correct it")
         content = answer_hash(current["answer"] or "")
@@ -2742,18 +2744,18 @@ def sign_off(store, decision_id: str, data, actor=None, transaction_db=None) -> 
         remaining = [r for r in required if r.lower() not in {x.get("by", "").lower() for x in signatures}]
         if remaining:
             # One of several required approvers: recorded, not yet authorized.
-            graph.db.execute("UPDATE decisions SET signatures=?, signed_by=?, updated_at=?, actor_id=?, actor_name=?, "
+            db.execute("UPDATE decisions SET signatures=?, signed_by=?, updated_at=?, actor_id=?, actor_name=?, "
                              "actor_basis=? WHERE id=?",
                              (json.dumps(signatures), ", ".join(x["by"] for x in signatures), stamp,
                               actor.id if actor is not None else "", by, basis, d.id))
             graph.append_event("signature", {"task_id": d.task_id, "decision_id": d.id, "by": by, "remaining": remaining,
                                              "revision": stamp, "basis": basis,
-                                             **authz.event_provenance(actor, data.get("source"))})
+                                             **authz.event_provenance(actor, data.get("source"))}, db=db)
         else:
             # A person's answer, now signed by everyone it needed, is a
             # recorded answer like any other, not something resolved from
             # evidence.
-            graph.db.execute("UPDATE decisions SET signoff='signed', signed_by=?, signed_revision=?, signed_hash=?, "
+            db.execute("UPDATE decisions SET signoff='signed', signed_by=?, signed_revision=?, signed_hash=?, "
                              "signatures=?, needs_review=0, review_reason='', updated_at=?, actor_id=?, actor_name=?, "
                              "actor_basis=?, status=CASE WHEN source='human' AND kind='answer' THEN 'approved' "
                              "ELSE status END WHERE id=?",
@@ -2762,32 +2764,30 @@ def sign_off(store, decision_id: str, data, actor=None, transaction_db=None) -> 
                               actor.id if actor is not None else "", by, basis, d.id))
             graph.append_event("signoff", {"task_id": d.task_id, "decision_id": d.id, "by": by, "corrected": False,
                                            "revision": stamp, "basis": basis,
-                                           **authz.event_provenance(actor, data.get("source"))})
-    if basis == 'owner':
-        with graph.transaction():
-            graph.learn_from_answer(d.id, by, store.get_decision(d.id).get('owner_evidence') or '')
-    if remaining:
+                                           **authz.event_provenance(actor, data.get("source"))}, db=db)
+        if not remaining:
+            from .execution_store import record_answer
+            record_answer(db, {"id": d.id, "run_id": d.task_id, "owner_name": by}, current["answer"] or "",
+                          current["rationale"] or "", provenance=f"signed by {by}")
+    def committed():
+        if basis == 'owner':
+            with graph.transaction():
+                graph.learn_from_answer(d.id, by, store.get_decision(d.id).get('owner_evidence') or '')
         for name in remaining:
             store.notify(d.id, "signoff", to=name)
-        view = node_view(store, d.id)
+        if not remaining:
+            try:
+                from .ladder import close_open_twins
+                close_open_twins(graph, d.id, d.question, d.repo or "", current["answer"] or "", by,
+                                 expected_revision=stamp)
+            except Exception:
+                pass
+    from .database import after_commit
+    after_commit(db, committed)
+    view = node_view(store, d.id)
+    if remaining:
         view["notice"] = f"Signed by {by}; still waiting on {', '.join(remaining)}"
-        return view
-    if not answer:
-        # The signed answer is a revision a managed agent waiting on this
-        # node can now be given: the signature is what it waited for.
-        from .execution_store import record_answer
-        with graph.transaction():
-            record_answer(graph.db, {"id": d.id, "run_id": d.task_id, "owner_name": by}, current["answer"] or "",
-                          graph.db.execute("SELECT rationale FROM decisions WHERE id=?", (d.id,)).fetchone()[0] or "",
-                          provenance=f"signed by {by}")
-        # A signature on an unsigned answer makes it the org's: the
-        # still-open twins of the question take it as derived evidence.
-        try:
-            from .ladder import close_open_twins
-            close_open_twins(graph, d.id, d.question, d.repo or "", current["answer"] or "", by)
-        except Exception:
-            pass
-    return node_view(store, d.id)
+    return view
 
 
 def _decision_context(store, row):

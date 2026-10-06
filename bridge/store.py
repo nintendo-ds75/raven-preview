@@ -253,11 +253,12 @@ class Store:
 
     @contextmanager
     def connect(self):
-        from .database import connect
+        from .database import connect, commit_effects
         db = connect(self.path)
         try:
-            with db:
-                yield db
+            with commit_effects(db):
+                with db:
+                    yield db
         finally:
             db.close()
 
@@ -509,7 +510,7 @@ class Store:
                 if db.execute("SELECT 1 FROM decisions WHERE run_id=? AND draft=1", (run_id,)).fetchone():
                     raise Invalid("Refused: a node on this task is being written right now. "
                                   "Finish once the write that started it has returned.")
-                blocking = self.graph.blocking_nodes(run_id, sweep=False)
+                blocking = self.graph.blocking_nodes(run_id, sweep=False, db=db)
                 if blocking:
                     shown = "; ".join(f"{b['id']} ({b['why']})" for b in blocking[:4])
                     more = f"; and {len(blocking) - 4} more" if len(blocking) > 4 else ""
@@ -997,6 +998,7 @@ class Store:
             # retrieval notes.
             db.execute("UPDATE decisions SET status='approved',answer=?,rationale=?,answered_by=?,updated_at=?,"
                        "prediction=NULL,source_id=NULL,source_revision='',source='human',evidence='',"
+                       "superseded_by=CASE WHEN status='duplicate' THEN '' ELSE superseded_by END,"
                        "signoff='signed',signed_by=?,signed_revision=?,signed_hash=?,needs_review=0,review_reason='',"
                        "supersedes=CASE WHEN ?='' THEN supersedes ELSE ? END,actor_id=?,actor_name=?,actor_basis=?,"
                        "signatures=?,applicability=? WHERE id=?",
@@ -1007,10 +1009,6 @@ class Store:
                                              "actor": signer, "basis": basis,
                                              **authz.event_provenance(actor, data.get("source")),
                                              "applicability": applicability}), decision_id, decision["run_id"])
-            if corrects:
-                for dependent in db.execute("SELECT id,run_id FROM decisions WHERE source_id=? AND status='pending'", (decision_id,)).fetchall():
-                    db.execute("UPDATE decisions SET prediction=NULL,source_id=NULL,updated_at=? WHERE id=?", (now(), dependent["id"]))
-                    self.event(db, "prediction_withdrawn", f"Source decision {decision_id} was corrected; review fresh context", dependent["id"], dependent["run_id"])
             # Several required approvers: the answer is one signature, and
             # the decision is evidence until every one of them has signed.
             keys = decision.keys()
@@ -1037,39 +1035,44 @@ class Store:
             managed = db.execute("SELECT 1 FROM executions WHERE run_id=?", (decision["run_id"],)).fetchone()
             if not pending and not managed:
                 db.execute("UPDATE runs SET status=CASE WHEN status='completed' THEN status ELSE 'working' END,updated_at=? WHERE id=?", (now(), decision["run_id"]))
-        # Every decision that took its answer from this one is now in
-        # doubt: pending suggestions were withdrawn above, answered and
-        # signed dependents are marked for review, transitively.
-        flagged: list = []
-        if corrects or supersedes:
-            with self.graph.transaction():
-                if corrects:
-                    flagged = self.graph.flag_dependents(decision_id, f"the answer of decision {decision_id} was corrected")
-                if supersedes:
-                    flagged.extend(self.graph.flag_dependents(supersedes,
-                        f"decision {supersedes} was superseded by {decision_id}", exclude=(decision_id,)))
-        for dependent_id in set(flagged):
-            self.notify(dependent_id, "review")
-        # The answer teaches routing: a referral to this person is accepted
-        # by their answering, and a decision routed on inference alone
-        # that they answered makes them someone who knows its categories.
-        try:
-            with self.graph.transaction():
-                self.graph.learn_from_answer(decision_id, decision["owner_name"], decision["owner_evidence"] or "")
-        except Exception as error:
-            print(f"Raven: could not learn from answer {decision_id}: {error}")
-        self.notify(decision_id, "answered")
-        for name in remaining:
-            self.notify(decision_id, "signoff", to=name)
-        # A signed answer settles the still-open twins of this question in
-        # other runs (deterministic bar only; no model call on this path).
-        try:
-            from .ladder import close_open_twins
-            close_open_twins(self.graph, decision_id, decision["question"], decision["repo"] or "",
-                             answer, decision["owner_name"])
-        except Exception as error:
-            print(f"Raven: could not settle open twins of {decision_id}: {type(error).__name__}: {error}",
-                  file=sys.stderr)
+            # Publish the human revision, supersession, and the complete
+            # invalidation chain under the very same writer lock. This also
+            # applies when read-back confirmation owns transaction_db.
+            flagged = []
+            if corrects:
+                flagged = self.graph.flag_dependents(decision_id,
+                    f"the answer of decision {decision_id} was corrected", db=db)
+            if supersedes:
+                flagged.extend(self.graph.flag_dependents(supersedes,
+                    f"decision {supersedes} was superseded by {decision_id}", exclude=(decision_id,), db=db))
+        def committed():
+            for dependent_id in set(flagged):
+                self.notify(dependent_id, "review")
+            # The answer teaches routing: a referral to this person is accepted
+            # by their answering, and a decision routed on inference alone
+            # that they answered makes them someone who knows its categories.
+            try:
+                with self.graph.transaction():
+                    self.graph.learn_from_answer(decision_id, decision["owner_name"], decision["owner_evidence"] or "")
+            except Exception as error:
+                print(f"Raven: could not learn from answer {decision_id}: {error}")
+            self.notify(decision_id, "answered")
+            for name in remaining:
+                self.notify(decision_id, "signoff", to=name)
+            # A signed answer settles the still-open twins of this question in
+            # other runs (deterministic bar only; no model call on this path).
+            try:
+                from .ladder import close_open_twins
+                close_open_twins(self.graph, decision_id, decision["question"], decision["repo"] or "",
+                                 answer, decision["owner_name"], expected_revision=stamp)
+            except Exception as error:
+                print(f"Raven: could not settle open twins of {decision_id}: {type(error).__name__}: {error}",
+                      file=sys.stderr)
+        if transaction_db is not None:
+            from .database import after_commit
+            after_commit(transaction_db, committed)
+        else:
+            committed()
         return self.get_decision(decision_id)
 
     def readiness(self) -> list[dict]:

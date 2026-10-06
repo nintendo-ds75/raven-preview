@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 WRITE_LOCK = 724193801
@@ -21,6 +23,45 @@ REPLACE_KEYS = {
     "gh_users": ("login",),
     "gh_pulls": ("repo", "number"),
 }
+
+
+_commit_effects = threading.local()
+
+
+@contextmanager
+def commit_effects(db):
+    """Release best-effort side effects only after the owning writer commits.
+
+    Place this around the connection's transaction context, not inside it.
+    A failed write drops its callbacks along with its database changes.
+    """
+    scopes = getattr(_commit_effects, "scopes", None)
+    if scopes is None:
+        scopes = _commit_effects.scopes = {}
+    key = id(db)
+    if key in scopes:
+        yield
+        return
+    callbacks = scopes[key] = []
+    try:
+        yield
+    except BaseException:
+        scopes.pop(key, None)
+        raise
+    scopes.pop(key, None)
+    for callback in callbacks:
+        callback()
+
+
+def after_commit(db, callback):
+    """Schedule work for a managed writer, or run after an ordinary commit."""
+    if not db.in_transaction:
+        callback()
+        return
+    callbacks = getattr(_commit_effects, "scopes", {}).get(id(db))
+    if callbacks is None:
+        raise ValueError("Answer transactions must use Store.connect or Graph.transaction")
+    callbacks.append(callback)
 
 
 def is_postgres(target):
