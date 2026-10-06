@@ -178,7 +178,7 @@ def load_tests(loader, tests, pattern):
                  "test_proof", "test_finish_diff_integrity", "test_finish_disconnect", "test_review_invariants", "test_review_inputs", "test_bounded_review",
                  "test_scope_clarification", "test_interview", "test_security_isolation",
                  "test_lifecycle_security", "test_reframe", "test_routing_continuity", "test_billing_contract",
-                 "test_transport_contracts", "test_slack_contract_transport", "test_teams"):
+                 "test_transport_contracts", "test_slack_contract_transport", "test_teams", "test_person_assignment_identity"):
         module = importlib.import_module(name)
         for key, case in vars(module).items():
             if isinstance(case, type) and issubclass(case, unittest.TestCase) and case.__module__ == name:

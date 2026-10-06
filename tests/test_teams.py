@@ -119,6 +119,30 @@ class TeamsTests(OfflineCase):
     def decision(self):
         return self.store.get_decision(self.node)
 
+    def test_default_owner_destination_preserves_namesake_identity(self):
+        self.graph.add_person("Wes Chen", email="other@example.test")
+        notice = self.store.notify(self.node, "reassigned")
+        self.assertIsNotNone(notice)
+        self.assertEqual((notice["destination"], notice["person_id"]), (self.config.destination, self.wes))
+        self.assertEqual(self.delivery.deliver_now(), 1)
+        # Both namesakes are mapped Teams members; the other still cannot answer.
+        self.submit(self.activity(oid=OTHER))
+        self.assertEqual(self.decision()["status"], "pending")
+
+    def test_explicit_recipient_keeps_its_identity_instead_of_owner(self):
+        notice = self.store.notify(self.node, "signoff", to="Other Person")
+        self.assertIsNotNone(notice)
+        self.assertEqual((notice["destination"], notice["person_id"]), (self.config.destination, self.other))
+
+    def test_exact_destination_does_not_fall_back_for_missing_or_inactive_person(self):
+        self.graph.add_person("Wes Chen", email="other@example.test")
+        self.graph.db.execute("UPDATE people SET active=0 WHERE id=?", (self.wes,))
+        self.graph._bump("")
+        for target in (self.wes, "missing-person-id"):
+            with self.subTest(target=target):
+                self.assertEqual(self.delivery._destination("Wes Chen", target),
+                                 (self.config.destination, "", "", "channel"))
+
     def test_verified_reply_records_stable_person_and_teams_origin(self):
         self.submit()
         decision = self.decision()

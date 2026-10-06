@@ -309,9 +309,17 @@ class TeamsDelivery(Delivery):
             store.graph.set_setting("teams_delivery", json.dumps({
                 "version": 1, "mode": "bot", "destination": config.destination}))
 
-    def _destination(self, person_name):
+    def _destination(self, person_name, person_id=""):
         from .routing import contact_for
-        person = contact_for(self.store.graph, person_name) if person_name else None
+        graph = self.store.graph
+        # Shared enqueue/retry preserve an assigned person's stable identity.
+        # Explicit recipients without an ID keep the existing contact lookup.
+        if person_id:
+            person = graph.get_person(person_id)
+        else:
+            person = contact_for(graph, person_name) if person_name else None
+        if person is not None and not person["active"]:
+            person = None
         return self.config.destination, (person or {}).get("id", ""), "", "channel"
 
     def slack_person(self, person_id):

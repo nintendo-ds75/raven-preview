@@ -163,14 +163,21 @@ class Delivery:
 
     # ---------------- enqueue ----------------
 
-    def _destination(self, person_name: str) -> tuple[str, str, str, str]:
+    def _destination(self, person_name: str, person_id: str = "") -> tuple[str, str, str, str]:
         """(destination, person_id, note, kind_of_destination) for a
         person: their DM when they have a Slack id, else the fallback
         channel with a note naming them, else nothing."""
         graph = self.store.graph
         from .routing import contact_for
-        person = contact_for(graph, person_name) if person_name else None
-        if person is not None:
+        # A bound owner is an exact identity, even after a rename or when
+        # a namesake exists. Never fall back to a name for a missing target.
+        if person_id:
+            person = graph.get_person(person_id)
+        else:
+            person = contact_for(graph, person_name) if person_name else None
+        if person is not None and not person["active"]:
+            person = None
+        if person is not None and not person_id:
             graph.db.execute("UPDATE owners SET person_id=?,name=? WHERE name=? AND person_id=''",
                              (person["id"], person["name"], person_name))
         if self.transport is None and (destination := self._teams_destination()):
@@ -256,7 +263,8 @@ class Delivery:
             raise ValueError(f"kind must be one of {', '.join(KINDS)}")
         graph = self.store.graph
         row = graph.db.execute(
-            "SELECT d.*, o.name AS owner_name, r.title AS run_title, r.requester, r.agent AS run_agent, r.repo, "
+            "SELECT d.*, o.name AS owner_name, o.person_id AS owner_person_id, r.title AS run_title, "
+            "r.requester, r.agent AS run_agent, r.repo, "
             "r.status AS run_status FROM decisions d "
             "LEFT JOIN owners o ON o.id = d.owner_id JOIN runs r ON r.id = d.run_id WHERE d.id=?",
             (decision_id,)).fetchone()
@@ -281,7 +289,10 @@ class Delivery:
             if asker is None or (answerer is not None and answerer["id"] == asker["id"]):
                 return None
             person_name = asker["name"]
-        destination, person_id, dest_note, dest_kind = self._destination(person_name)
+        # Explicit recipients (co-signers, escalations, requester notices)
+        # retain their own route; only default owner delivery uses its link.
+        owner_person_id = row["owner_person_id"] if not to and kind != "answered" else ""
+        destination, person_id, dest_note, dest_kind = self._destination(person_name, owner_person_id or "")
         note = " ".join(n for n in (note, dest_note) if n)
         # What this message shows the person: the answer on the table, or
         # the question asked. A reply is checked against it.
@@ -305,8 +316,15 @@ class Delivery:
                 "AND kind IN ('dependent_flagged','prediction_withdrawn')", (decision_id,)).fetchone()
             if epoch['n']:
                 dedupe += f":review-epoch:{epoch['n']}:{epoch['latest']}"
-        if graph.db.execute("SELECT 1 FROM notifications WHERE dedupe_key=?", (dedupe,)).fetchone():
-            return None
+        existing = graph.db.execute("SELECT person_id FROM notifications WHERE dedupe_key=?", (dedupe,)).fetchone()
+        if existing is not None:
+            if existing["person_id"] == person_id:
+                return None
+            # Keep historical keys working, but namesakes are different
+            # recipients even for identical question text and display names.
+            dedupe += f":person:{person_id}"
+            if graph.db.execute("SELECT 1 FROM notifications WHERE dedupe_key=?", (dedupe,)).fetchone():
+                return None
         nid = uuid.uuid4().hex[:12]
         payload = render(self._with_records(row), kind, person_name, self.base_url, note,
                          task_link=self._task_link(person_id if dest_kind == "dm" else "", row["run_id"],
@@ -410,7 +428,7 @@ class Delivery:
         destination = row["destination"]
         payload = row["payload"]
         if not destination:
-            destination, _pid, note, dest_kind = self._destination(row["person_name"])
+            destination, _pid, note, dest_kind = self._destination(row["person_name"], row["person_id"])
             if not destination:
                 raise Invalid(f"{row['person_name']} still has no Slack id and there is no fallback channel")
             decision = graph.db.execute(

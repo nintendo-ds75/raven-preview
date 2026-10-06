@@ -722,7 +722,9 @@ class Store:
         with graph.transaction():
             decision = self.get_decision(decision_id)
             authz.check(graph, actor, decision, "assign")
-            owner = graph.owner_id_for(person["name"])
+            owner = graph.owner_id_for_person(person["id"])
+            if owner is None:
+                raise Invalid("The contact must be an active Slack member")
             result = graph.db.execute(
                 "UPDATE decisions SET owner_id=?,routing_reason=?,owner_evidence=?,updated_at=?, "
                 "actor_id=?,actor_name=?,actor_basis='slack-triage' WHERE id=? "
@@ -761,7 +763,6 @@ class Store:
         if decision["status"] not in ("pending",) and not (decision["status"] in ("resolved", "partial", "assumed", "proposed")
                                                          and decision["signoff"] == "required"):
             raise Invalid("Only an open question or a node waiting for sign-off can be handed on")
-        owner_id = graph.owner_id_for(person["name"])
         choice = str(data.get("scope_kind") or "").strip().lower()
         explicit = str(data.get("scope") or "").strip()
         if choice in ("none", "this", "contact"):
@@ -794,6 +795,9 @@ class Store:
         why_them = (f"handed on by {by}" + (f": \"{said}\"" if said else "")
                     + (f"; once you answer, Raven routes {', '.join(learned)} to you first" if learned else ""))
         with graph.transaction() as db:
+            owner_id = graph.owner_id_for_person(person["id"])
+            if owner_id is None:
+                raise Invalid("The contact must be an active member")
             from .routing_memory import record
             previous = graph.find_person(decision.get("owner_name") or "")
             if previous and previous['id'] != person['id'] and choice not in ('none', 'this'):

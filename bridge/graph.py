@@ -1316,26 +1316,46 @@ class Graph:
                     hits.append(full)
         return hits[0] if len(hits) == 1 else raw
 
+    def owner_id_for_person(self, person_id: str) -> str | None:
+        """The owner bound to this active person, without name fallback.
+
+        Missing historical links are filled by creating a new owner row;
+        an existing row bound to somebody else is never silently repaired.
+        """
+        person = self.get_person(person_id)
+        if person is None or not person["active"]:
+            return None
+        row = self.db.execute("SELECT id FROM owners WHERE person_id=? ORDER BY created_at, id LIMIT 1",
+                              (person_id,)).fetchone()
+        if row:
+            return row["id"]
+        owner_id = uuid.uuid4().hex[:12]
+        self.db.execute("INSERT INTO owners(id, name, team, patterns, created_at, person_id) VALUES(?,?,?,?,?,?)",
+                        (owner_id, person["name"], person["team"], "", now_iso(), person_id))
+        return owner_id
+
     def owner_id_for(self, name: str) -> str | None:
-        """The inbox owner row for an engineer name, created on first use
-        with no routing patterns (the graph routes them, not globs), and
-        linked to the person of that name when the people table has one."""
+        """Resolve an identity before reducing it to an engineer name.
+
+        Unresolved legacy names can still create unbound owner rows, but
+        cannot select somebody's bound row through an ambiguous name.
+        """
+        person = self.find_person(name)
+        if person is not None:
+            return self.owner_id_for_person(person["id"])
         name = self.resolve_engineer(name)
         if not name:
             return None
         person = self.find_person(name)
         if person is not None:
-            row = self.db.execute("SELECT id FROM owners WHERE person_id=? ORDER BY created_at LIMIT 1",
-                                  (person["id"],)).fetchone()
-            if row:
-                return row["id"]
-        row = self.db.execute("SELECT id FROM owners WHERE name=? ORDER BY created_at LIMIT 1",
+            return self.owner_id_for_person(person["id"])
+        row = self.db.execute("SELECT id FROM owners WHERE name=? AND person_id='' ORDER BY created_at, id LIMIT 1",
                               (name,)).fetchone()
         if row:
             return row["id"]
         owner_id = uuid.uuid4().hex[:12]
         self.db.execute("INSERT INTO owners(id, name, team, patterns, created_at, person_id) VALUES(?,?,?,?,?,?)",
-                        (owner_id, name, (person or {}).get("team", ""), "", now_iso(), (person or {}).get("id", "")))
+                        (owner_id, name, "", "", now_iso(), ""))
         return owner_id
 
     # ---------------- people, teams, authority ----------------
@@ -1439,9 +1459,14 @@ class Graph:
                              json.dumps(merged), team or existing["team"], role or "", role or "", ts,
                              github_id, github_id, pid))
         final = name or (existing or {}).get("name") or email or github_login
-        owner = self.db.execute("SELECT id, person_id, name FROM owners WHERE person_id=? OR name=? "
-                                "ORDER BY CASE WHEN person_id=? THEN 0 ELSE 1 END, created_at LIMIT 1",
-                                (pid, final, pid)).fetchone()
+        # A namesake must never acquire an owner already bound to another
+        # person. Adopt a legacy blank link only when the name is unique,
+        # including inactive people whose historical decisions still exist.
+        owner = self.db.execute("SELECT id, person_id, name FROM owners WHERE person_id=? OR "
+                                "(person_id='' AND name=? AND NOT EXISTS "
+                                "(SELECT 1 FROM people WHERE id<>? AND lower(trim(name))=lower(trim(?)))) "
+                                "ORDER BY CASE WHEN person_id=? THEN 0 ELSE 1 END, created_at, id LIMIT 1",
+                                (pid, final, pid, final, pid)).fetchone()
         if owner is None:
             self.db.execute("INSERT INTO owners(id, name, team, patterns, created_at, person_id) VALUES(?,?,?,?,?,?)",
                             (uuid.uuid4().hex[:12], final, team or "", "", ts, pid))
