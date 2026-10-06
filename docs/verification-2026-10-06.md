@@ -86,6 +86,14 @@ container cases are not counted as passes.
 
 - Latest native aggregate on runtime `764b1c4`: **ran 984 tests, 4 skipped,
   zero failures**, in 147.256 seconds.
+- A separate offline rerun of `test_agents_contract.SDKContractTests` on
+  `764b1c4` **ran 4 tests, zero skipped, zero failures**, in 0.918 seconds,
+  using already-installed OpenAI SDK 3.13.0, httpx2 2.13.1 and socksio 1.0.0.
+  It covered mutation retry prevention, recovery pagination/metadata filtering,
+  session/result wire format and webhook signature/replay handling. Provider
+  credentials were removed and sockets/DNS blocked; there were zero network
+  attempts. This is an offline SDK contract pass, not live managed-host
+  verification, and does not change either aggregate's recorded skip count.
 - Independent PostgreSQL 17.11 contract aggregate on `61948c9`: **ran 532
   tests, zero skipped, zero failures**, with actual psycopg and Teams crypto
   dependencies.
