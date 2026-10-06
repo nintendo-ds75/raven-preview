@@ -144,7 +144,9 @@ def load_tests(loader, tests, pattern):
     # weaker PostgreSQL copies of the authorization and lifecycle tests.
     for name in ("test_contract", "test_rules", "test_delivery", "test_auth", "test_authority",
                  "test_trust", "test_github", "test_execution", "test_accounts", "test_minimal_e2e_regressions",
-                 "test_slack_discovery", "test_slack_conversation", "test_reconstructed_fixes", "test_routing_peers", "test_brief"):
+                 "test_slack_discovery", "test_slack_conversation", "test_reconstructed_fixes", "test_routing_peers", "test_brief",
+                 "test_proof", "test_scope_clarification", "test_interview", "test_security_isolation",
+                 "test_lifecycle_security", "test_reframe", "test_routing_continuity", "test_billing_contract"):
         module = importlib.import_module(name)
         for key, case in vars(module).items():
             if isinstance(case, type) and issubclass(case, unittest.TestCase) and case.__module__ == name:
