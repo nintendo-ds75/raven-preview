@@ -33,6 +33,8 @@ kind is one of answer, signoff, handoff, claim, question, context, followup, ref
 reframe: the person says the current QUESTION is mistaken and supplies the corrected question. Put that new question in answer.
 It replaces the question, clears old approvals and invalidates dependent work; never use reframe merely to amend an answer.
 answer: a clear decision the person intends for this task, including ALL qualifications. Keep their values and words.
+Explicit task-only, one-off, and no-standing-rule/no-future-reuse restrictions are part of the answer,
+not conversational boilerplate. Copy those restrictions verbatim, including at the end of a long answer.
 An imperative such as "Only add jitter; never shorten the delay" is an answer, even without "I decide".
 Do not ask whether a clear instruction is a decision: code will read it back and ask for confirmation.
 signoff: explicit agreement with the proposal, not merely acknowledging it. "ok", "sure", "thanks", "makes sense"
@@ -57,6 +59,26 @@ You may copy an explicitly named category into scope_kind=category and scope, bu
 Do NOT claim anything has been saved, signed, sent or learned. Code applies actions after confirmation.
 reply is conversational text for question or chat only. Other actions are read back by code.
 Do not include text beyond the JSON.'''
+
+
+# Recognizable human scope restrictions are a conservative omission guard,
+# not an authority inference. The model still has to preserve every other
+# qualification, and no answer is applied without the person's confirmation.
+_SCOPE_QUALIFIERS = (
+    ('task_only', re.compile(
+        r"\b(?:this|current) (?:task|question|change|request) only\b"
+        r"|\bonly (?:for|on) (?:this|the current) (?:task|question|change|request)\b", re.I)),
+    ('not_a_rule', re.compile(
+        r"\b(?:not|never) (?:a |any )?(?:standing|reusable) (?:rule|approval|authorization)\b"
+        r"|\b(?:do not|don't|never) (?:reuse|generalize)\b", re.I)),
+)
+
+
+def missing_scope_qualifiers(action, message):
+    if action.get('kind') != 'answer':
+        return []
+    return [name for name, marker in _SCOPE_QUALIFIERS
+            if marker.search(message or '') and not marker.search(action.get('answer') or '')]
 
 
 def migrate(db):
@@ -273,6 +295,18 @@ def respond(delivery, note, d, person, text, actor, action_token=''):
                 action=reading(cfg,payload); kind=action['kind']
                 if kind == 'confirm':
                     raise LLMError('The model could not distinguish this message from confirmation')
+            missing = missing_scope_qualifiers(action, text)
+            if missing:
+                # Retry once with the original human evidence, never with the
+                # rejected answer as a source. A second omission clears any
+                # older readback rather than inviting an overbroad confirmation.
+                payload['validation_error'] = (
+                    'The answer omitted explicit human scope restrictions: ' + ', '.join(missing) +
+                    '. Return an answer preserving those restrictions verbatim and every other qualification. '
+                    'Task-only approval must not become a standing or reusable rule.')
+                action = reading(cfg, payload); kind = action['kind']
+                if kind != 'answer' or missing_scope_qualifiers(action, text):
+                    raise LLMError('The conversation model omitted explicit answer scope restrictions')
             # Interpret the person's intent before introducing transient search
             # content. A polite referral or answer can also contain a question
             # mark; search must neither discard it nor supply its authorization.

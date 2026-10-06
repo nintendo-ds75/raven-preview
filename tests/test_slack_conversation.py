@@ -31,6 +31,46 @@ class ConversationTests(DeliveryCase):
         with patch('bridge.slack_chat.reading',return_value=model or {'kind':'chat','reply':'Tell me more.'}):
             return self.reply(self.message,who,text,event_id)
 
+    def test_live_task_only_qualifier_omission_gets_one_repair(self):
+        policy = ('For the Northstar edge pilot, use future timestamp tolerance of 17 seconds inclusive only when explicitly configured. '
+                  'Never add tolerance to max_age: already-expired tokens stay expired, including when max_age is zero. '
+                  'The default is zero and preserves all existing behavior. Timestamps further in the future stay invalid. '
+                  'Signature integrity is mandatory. Apply the same checks to rotated/fallback signing keys. '
+                  'No internal, test, or staging exemption. This approval is for this task only; it is not a standing rule.')
+        omitted = policy.rsplit(' This approval', 1)[0]
+        with patch('bridge.slack_chat.reading', side_effect=[
+                {'kind': 'answer', 'answer': omitted}, {'kind': 'answer', 'answer': policy}]) as model:
+            offered = self.reply(self.message, 'UWES', policy)
+        self.assertEqual(model.call_count, 2)
+        self.assertIn('task_only', model.call_args.args[1]['validation_error'])
+        self.assertIn(policy, offered)
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+        self.say('yes')
+        row = self.store.get_decision(self.n['node_id'])
+        self.assertEqual(row['answer'], policy)
+        self.assertFalse(row['reusable'])
+
+    def test_repeated_scope_omission_discards_old_confirmable_readback(self):
+        self.say('Keep the old limit', {'kind': 'answer', 'answer': 'Keep the old limit.'})
+        with patch('bridge.slack_chat.reading', return_value={
+                'kind': 'answer', 'answer': 'Keep the old limit.'}) as model:
+            reply = self.reply(self.message, 'UWES',
+                'Keep the old limit for this task only. It is not a reusable rule.')
+        self.assertEqual(model.call_count, 2)
+        self.assertIn('Nothing was changed', reply)
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+        self.say('yes', {'kind': 'confirm'})
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+
+    def test_faithful_scope_restrictions_do_not_trigger_a_repair(self):
+        text = 'Keep the limit only for this task. This is not a standing rule.'
+        answer = 'Keep the limit for this task only. It is not a reusable rule.'
+        with patch('bridge.slack_chat.reading', return_value={'kind': 'answer', 'answer': answer}) as model:
+            reply = self.reply(self.message, 'UWES', text)
+        self.assertEqual(model.call_count, 1)
+        self.assertIn(answer, reply)
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+
     def test_context_then_answer_amendment_and_confirmation(self):
         with patch('bridge.slack_chat.reading',return_value={'kind':'question','reply':'The task says enterprise-two had an 11x usage spike.'}) as model:
             said=self.reply(self.message,'UWES','Which account was affected?')
