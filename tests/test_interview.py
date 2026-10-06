@@ -302,6 +302,53 @@ class InterviewTests(OfflineCase):
             self.assertNotIn('private-rejected-text', str(output['guidance']))
             self.assertFalse(self.store.get_decision(self.node)['signed_by'])
 
+    def test_live_question_only_rationale_mismatch_repairs_once_without_inventing_answer(self):
+        # Captured shape from an actual provider response to synthetic input.
+        quote = ('This exception is decided for production only. I have not decided whether the '
+                 'staging_7ae65524 environment should use that exception. Ask me about this '
+                 'unresolved environment before proposing its policy.')
+        raw = {'question': "For the staging_7ae65524 environment, should cohort pilot_e46c6eb4's "
+                           'internal load-test traffic with more than 795 calls remain billable, '
+                           'or should all internal load-test traffic be excluded like in other cohorts?',
+               'question_quote': quote, 'proposed_answer': '', 'answer_quotes': [],
+               'proposed_rationale': 'The decision owner explicitly flagged staging_7ae65524 as unresolved '
+                                     'and requested clarification before the policy is finalized.',
+               'caveats': [{'text': 'Staging is unresolved.',
+                           'quote': 'I have not decided whether the staging_7ae65524 environment should use that exception.'}]}
+        row = self.draft(self.create(), transcript=quote, answer='', rationale='')
+        repaired = {**raw, 'proposed_rationale': ''}
+        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
+             patch('bridge.llm.Client.complete_json', side_effect=[raw, repaired]) as model:
+            result = self.advance(row, Config())
+        self.assertEqual(model.call_count, 2)
+        retry = json.loads(model.call_args_list[1].args[2])
+        self.assertEqual(retry['validation_feedback']['error'], 'answer_without_quotes')
+        self.assertEqual(retry['transcript'], quote)
+        self.assertNotIn(raw['proposed_rationale'], model.call_args_list[1].args[2])
+        guidance = result['guidance']
+        self.assertEqual(guidance['question'], raw['question'])
+        self.assertEqual(guidance['mode'], 'model-assisted')
+        self.assertEqual((guidance['proposed_answer'], guidance['proposed_rationale'], guidance['answer_quotes']), ('', '', []))
+        self.assertFalse(self.store.get_decision(self.node)['signed_by'])
+        with self.assertRaisesRegex(Invalid, 'clear answer and rationale'):
+            self.confirm(result)
+        # An already compliant clarification needs no repair or invented quote.
+        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
+             patch('bridge.llm.Client.complete_json', return_value=repaired) as model:
+            self.advance(result, Config())
+        self.assertEqual(model.call_count, 1)
+
+    def test_ungrounded_substantive_answer_stays_rejected_after_one_repair(self):
+        row = self.draft(self.create())
+        raw = {**self.model_answer(), 'answer_quotes': []}
+        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
+             patch('bridge.llm.Client.complete_json', return_value=raw) as model:
+            result = self.advance(row, Config())
+        self.assertEqual(model.call_count, 2)
+        self.assertEqual(result['guidance']['validation_error'], 'answer_without_quotes')
+        self.assertNotIn('proposed_answer', result['guidance'])
+        self.assertFalse(self.store.get_decision(self.node)['signed_by'])
+
     def test_model_result_is_discarded_if_interview_is_cancelled_during_inference(self):
         row = self.draft(self.create())
         def model(*args, **kwargs):

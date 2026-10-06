@@ -277,7 +277,14 @@ Ask one targeted follow-up grounded in the specific task and the person's latest
 new exceptions, contradictions or caveats, rather than assuming them away. Never invent authority,
 people, requirements, consent or agreement. Propose a concise readback only of what the person
 actually said, retaining all conditions. If their answer is insufficient leave the proposed answer
-empty and ask for clarification. Return ONLY a JSON object with these exact keys:
+empty and ask for clarification. For question-only clarification, BOTH proposed_answer and
+proposed_rationale must be empty strings and answer_quotes must be an empty array. Do not put
+an explanation of why you need clarification into proposed_rationale: that field is only the
+person's stated rationale for a proposed substantive answer. If EITHER proposed_answer or
+proposed_rationale is nonempty, answer_quotes must include at least one exact supporting quote
+copied from their response/transcript. Never invent a quote to satisfy the schema. All quotes
+must be contiguous verbatim substrings, without ellipses or paraphrasing. Use empty strings,
+not null, for omitted text fields. Return ONLY a JSON object with these exact keys:
 question (string, one follow-up or empty if nothing remains), question_quote (exact supporting quote
 from supplied context or responses), proposed_answer (string), proposed_rationale (string),
 answer_quotes (array of exact response/transcript quotes supporting the readback), caveats
@@ -285,8 +292,38 @@ answer_quotes (array of exact response/transcript quotes supporting the readback
 Do not include any confirmation, permission, actor, task id or scope changes in your output."""
 
 
+def _validate_model_guidance(raw, context, responses):
+    """Return a fixed schema/grounding failure code, or an empty string."""
+    keys = {"question", "question_quote", "proposed_answer", "proposed_rationale", "answer_quotes", "caveats"}
+    if not isinstance(raw, dict) or set(raw) != keys:
+        return "response_keys"
+    for key, limit in (("question", 600), ("question_quote", 1000), ("proposed_answer", 6000), ("proposed_rationale", 3000)):
+        if not isinstance(raw[key], str) or len(raw[key]) > limit:
+            return "text_field_shape"
+    if raw["question"] and (not raw["question_quote"].strip() or raw["question_quote"] not in context):
+        return "question_quote_not_grounded"
+    quotes = raw["answer_quotes"]
+    if not isinstance(quotes, list) or len(quotes) > 10:
+        return "answer_quotes_shape"
+    if any(not isinstance(q, str) or not q.strip() or len(q) > 2000 or q not in responses for q in quotes):
+        return "answer_quote_not_grounded"
+    if (raw["proposed_answer"] or raw["proposed_rationale"]) and not quotes:
+        return "answer_without_quotes"
+    caveats = raw["caveats"]
+    if not isinstance(caveats, list) or len(caveats) > 6:
+        return "caveats_shape"
+    for caveat in caveats:
+        if not isinstance(caveat, dict) or set(caveat) != {"text", "quote"}:
+            return "caveat_keys"
+        if any(not isinstance(caveat[k], str) or not caveat[k].strip() or len(caveat[k]) > 1000 for k in caveat):
+            return "caveat_field_shape"
+        if caveat["quote"] not in responses:
+            return "caveat_quote_not_grounded"
+    return ""
+
+
 def _model_guidance(cfg, row):
-    """Strictly validated, grounded draft output. It cannot become a signature."""
+    """Strictly validated draft; one repair attempt cannot become a signature."""
     from .llm import Client, LLMError
     fallback = {"mode": "deterministic-guided-prompts", "reason": "model_unavailable"}
     if not cfg or not cfg.semantic_retrieval:
@@ -295,42 +332,26 @@ def _model_guidance(cfg, row):
     turns = json.loads(row["turns"])
     responses = "\n".join([row["transcript"], row["pending_response"], *[t["response"] for t in turns]])
     context = json.dumps(scope, ensure_ascii=False) + "\n" + responses
-    prompt = json.dumps({"scope": scope, "turns": turns, "transcript": row["transcript"],
-                         "pending_response": row["pending_response"]}, ensure_ascii=False)
-    try:
-        raw = Client(cfg.fast()).complete_json("interview_followup", _INTERVIEW_SYSTEM, prompt, max_tokens=1600)
-    except LLMError:
-        return {**fallback, "reason": "model_failed"}
-    keys = {"question", "question_quote", "proposed_answer", "proposed_rationale", "answer_quotes", "caveats"}
-    def invalid(code):
-        # Fixed reason codes let operators distinguish grounding/schema failures
-        # without retaining rejected model text or provider diagnostics.
-        return {**fallback, "reason": "invalid_model_response", "validation_error": code}
-    if not isinstance(raw, dict) or set(raw) != keys:
-        return invalid("response_keys")
-    for key, limit in (("question", 600), ("question_quote", 1000), ("proposed_answer", 6000), ("proposed_rationale", 3000)):
-        if not isinstance(raw[key], str) or len(raw[key]) > limit:
-            return invalid("text_field_shape")
-    if raw["question"] and (not raw["question_quote"].strip() or raw["question_quote"] not in context):
-        return invalid("question_quote_not_grounded")
-    quotes = raw["answer_quotes"]
-    if not isinstance(quotes, list) or len(quotes) > 10:
-        return invalid("answer_quotes_shape")
-    if any(not isinstance(q, str) or not q.strip() or len(q) > 2000 or q not in responses for q in quotes):
-        return invalid("answer_quote_not_grounded")
-    if (raw["proposed_answer"] or raw["proposed_rationale"]) and not quotes:
-        return invalid("answer_without_quotes")
-    caveats = raw["caveats"]
-    if not isinstance(caveats, list) or len(caveats) > 6:
-        return invalid("caveats_shape")
-    for caveat in caveats:
-        if not isinstance(caveat, dict) or set(caveat) != {"text", "quote"}:
-            return invalid("caveat_keys")
-        if any(not isinstance(caveat[k], str) or not caveat[k].strip() or len(caveat[k]) > 1000 for k in caveat):
-            return invalid("caveat_field_shape")
-        if caveat["quote"] not in responses:
-            return invalid("caveat_quote_not_grounded")
-    return {**raw, "mode": "model-assisted", "model": cfg.fast_model, "status": "unapproved"}
+    payload = {"scope": scope, "turns": turns, "transcript": row["transcript"],
+               "pending_response": row["pending_response"]}
+    for attempt in range(2):
+        try:
+            raw = Client(cfg.fast()).complete_json("interview_followup", _INTERVIEW_SYSTEM,
+                                                  json.dumps(payload, ensure_ascii=False), max_tokens=1600)
+        except LLMError:
+            return {**fallback, "reason": "model_failed"}
+        error = _validate_model_guidance(raw, context, responses)
+        if not error:
+            return {**raw, "mode": "model-assisted", "model": cfg.fast_model, "status": "unapproved"}
+        if attempt == 0:
+            # Fixed feedback only. Rejected model text is not promoted into a
+            # source or persisted; the same original human evidence is resent.
+            payload["validation_feedback"] = {
+                "error": error,
+                "instruction": "Return a new draft meeting every original schema and exact-quote requirement. "
+                               "Question-only guidance must leave both proposal fields empty. "
+                               "Never invent an answer, rationale or supporting quotation."}
+    return {**fallback, "reason": "invalid_model_response", "validation_error": error}
 
 
 def advance(store, task_id, interview_id, data, actor=None, cfg=None):
