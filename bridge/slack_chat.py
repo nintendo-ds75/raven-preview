@@ -25,8 +25,13 @@ correct a proposal, give an answer, refer to someone, add context, request a fol
 Use the supplied task, sources and conversation. Do not invent facts, people, decisions, authority or actions.
 Current authorization fields take precedence over historical conversation. needs_review means earlier approval
 was invalidated: answer_on_table is now evidence requiring fresh confirmation, even if its text is unchanged.
-Never dismiss a repeated answer as already signed when needs_review is true and authorized is false.
-A person may reaffirm the identical policy: read it as answer or signoff for fresh confirmation, not a no-op.
+An unsigned answer still needs confirmation when signoff is required, even when needs_review is false.
+Never use historical signatures as current authorization. speaker_signed_current_answer says whether this
+person has already signed the current answer; other outstanding co-signers do not invalidate that signature.
+A person may repeat their earlier policy after the agent replaces it with a summary. repeats_previous_answer
+identifies that exact earlier human answer, not approval of the new summary. Read it as a fresh answer.
+A person may reaffirm the identical current policy: read it as answer or signoff for fresh confirmation,
+not a no-op, unless their signature is still current.
 Do not say you searched Slack unless sources were supplied. rationale is the reason the person gave, in their own words,
 or empty when they gave none; never restate the answer as its reason and never supply a reason of your own.
 Name people by the names given in sources and conversation, never by a Slack member id.
@@ -44,6 +49,9 @@ Do not ask whether a clear instruction is a decision: code will read it back and
 signoff: explicit agreement with the proposal, not merely acknowledging it. "ok", "sure", "thanks", "makes sense"
 and statements about what usually happens are chat, not authorization. "I will check because..." is chat too.
 confirm: explicit agreement with the pending read-back and NO new qualification. New qualifications mean a new answer.
+There is nothing to confirm when pending_readback is null. A task or question asking to "re-confirm" does not
+make a full human policy a confirmation. A complete instruction such as "Expose keyword-only options..."
+is an answer to read back, even if the person gave the same policy on another node.
 An amendment must keep unaffected requirements from the pending answer and incorporate the new requirement.
 For example, "Actually, one qualification: zero must disable the cap. Keep the Retry-After part"
 means answer with BOTH requirements, never confirm.
@@ -118,9 +126,13 @@ def validated_reading(cfg, payload):
     from .delivery import _CONFIRM_RE
     require_answer = False
     require_reapproval = False
-    reaffirming = (bool(payload.get('needs_review')) and not payload.get('authorized')
-                   and bool((payload.get('answer_on_table') or '').strip())
-                   and (payload.get('message') or '').strip() == payload['answer_on_table'].strip())
+    message = (payload.get('message') or '').strip()
+    current_answer = (payload.get('answer_on_table') or '').strip()
+    reaffirming = (not payload.get('authorized') and not payload.get('speaker_signed_current_answer')
+                   and (payload.get('needs_review') or payload.get('signoff') == 'required')
+                   and bool(message) and (message == current_answer or payload.get('repeats_previous_answer')))
+    # Repeating an older answer cannot be repaired into signing a newer summary.
+    can_sign_reaffirmation = message == current_answer
     for attempt in range(2):
         action = reading(cfg, payload)
         kind = action['kind']
@@ -132,18 +144,27 @@ def validated_reading(cfg, payload):
                      'Do not reframe the question or sign off the old answer.')
         elif require_answer and (kind != 'answer' or not action.get('answer', '').strip()):
             error = 'The repair must supply the complete amended answer, not another action or an empty answer.'
-        elif require_reapproval and (kind not in ('answer', 'signoff')
-                                     or (kind == 'answer' and not action.get('answer', '').strip())):
-            error = 'The repair must read back the reaffirmed answer for fresh approval, not dismiss it or change the question.'
-        elif reaffirming and kind in ('chat', 'question', 'context'):
+        elif require_reapproval and (
+                kind not in ('answer', 'signoff')
+                or (kind == 'signoff' and not can_sign_reaffirmation)
+                or (kind == 'answer' and action.get('answer', '').strip() != message)):
+            error = ('The repair must read back the complete reaffirmed human answer verbatim for fresh approval. '
+                     'Do not dismiss it, change the question, or sign a different answer on the table.')
+        elif reaffirming and (kind in ('chat', 'question', 'context')
+                              or (kind == 'signoff' and not can_sign_reaffirmation)):
             require_reapproval = True
-            error = ('This exact answer is being repeated after its authorization was invalidated. '
-                     'It still needs fresh confirmation. Read the complete human policy as answer or signoff; '
-                     'do not claim it is already approved based on history. Preserve every qualification.')
+            error = ('This person is repeating an earlier answer, but has no current signature and authorization '
+                     'is still required. Read the complete human policy back verbatim for fresh confirmation. '
+                     'Use answer if it differs from answer_on_table, not signoff of the newer summary. '
+                     'Do not claim it is already approved based on history. Preserve every qualification.')
         elif kind == 'confirm' and not _CONFIRM_RE.match(payload['message']):
             # Code recognizes confirmations before calling the model.
-            error = ('This message was not an explicit confirmation. Re-read it as an amendment, '
-                     'question, context or chat. Preserve all unaffected requirements when amending the pending answer.')
+            error = ('This message was not an explicit confirmation. '
+                     + ('There is no pending read-back to confirm. ' if not payload.get('pending_readback') else '')
+                     + 'Read the current human words, not a task or question asking to re-confirm. '
+                     'A complete policy or instruction is an answer to read back for fresh confirmation. '
+                     'Otherwise re-read it as an amendment, question, context or chat. '
+                     'Preserve all unaffected requirements when amending the pending answer.')
         if not error:
             missing = missing_scope_qualifiers(action, payload['message'])
             if missing:
@@ -172,6 +193,38 @@ def remember(graph, decision_id, channel, thread, person_id, role, text):
         with graph.transaction():
             graph.db.execute('INSERT INTO slack_conversation VALUES(?,?,?,?,?,?,?,?)',
                 (uuid.uuid4().hex, decision_id, channel, thread, person_id, role, text, now_iso()))
+
+
+def _reply_count(graph, channel, thread, person_id):
+    # This conversation is append-only. Counting human turns avoids depending
+    # on wall-clock ordering or timestamp resolution across concurrent workers.
+    return graph.db.execute("SELECT COUNT(*) FROM slack_conversation WHERE channel=? AND thread_ts=? "
+                            "AND person_id=? AND role='user'", (channel, thread, person_id)).fetchone()[0]
+
+
+def _forget_snapshot(delivery, channel, thread, person_id, held):
+    """Retire only the read-back this reply saw, never a concurrent newer one."""
+    with delivery.store.graph.transaction():
+        if delivery._reading(channel, thread, person_id) != held:
+            return False
+        delivery._forget_reading(channel, thread, person_id)
+        return True
+
+
+def _repeats_previous_answer(decision, person, text):
+    """Exact previously recorded words are evidence of intent, never authority."""
+    for event in decision.get('events') or []:
+        if event.get('kind') != 'owner_approved':
+            continue
+        try:
+            detail = json.loads(event.get('detail') or '{}')
+        except (ValueError, TypeError):
+            continue
+        if (isinstance(detail, dict)
+                and (detail.get('actor') or detail.get('owner') or '').casefold() == person['name'].casefold()
+                and (detail.get('answer') or '').strip() == text.strip()):
+            return True
+    return False
 
 
 def reading(cfg, payload):
@@ -300,6 +353,12 @@ def apply(delivery, d, person, action, actor):
             args.update(scope_kind=action['scope_kind'],scope=action.get('scope',''))
         return store.refer(d['id'], args, actor=actor)['notice']
     if kind == 'answer':
+        # An identical answer is a co-signature, not a correction that drops
+        # other people's valid signatures or changes the decision's owner.
+        if (d['status'] != 'pending' and not action.get('rationale')
+                and action['answer'].strip() == (d.get('answer') or '').strip()):
+            canvas.sign_off(store, d['id'], by, actor=actor)
+            return f"Signed by {person['name']}. The coding agent can now read it."
         data = {**by, 'answer':action['answer'], 'rationale':action.get('rationale') or f'No reason given in the {delivery.channel.title()} conversation',
                 'signed_by':person['name'],'source':f"{delivery.channel}: {person['name']} (read back and confirmed)"}
         if d['status'] == 'pending': store.answer(d['id'],data,actor=actor)
@@ -323,7 +382,7 @@ def apply(delivery, d, person, action, actor):
 
 def respond(delivery, note, d, person, text, actor, action_token=''):
     """None leaves explicit commands and installations without a model to the existing parser."""
-    from .delivery import _CONFIRM_RE, _DECLINE_RE, _ACK_ONLY_RE, _what_it_says
+    from .delivery import _CONFIRM_RE, _DECLINE_RE, _ACK_ONLY_RE, _what_it_says, _signed_as_it_stands
     graph = delivery.store.graph
     channel, thread = note['external_ref'].split(':',1)
     held = delivery._reading(channel,thread,person['id'])
@@ -337,15 +396,22 @@ def respond(delivery, note, d, person, text, actor, action_token=''):
         return None
     if held and not pending:
         return None  # A read-back made by the compatibility parser owns its confirmation.
+    revision = _what_it_says(d)
+    if pending and (held['decision_id'] != d['id'] or held['revision'] != revision):
+        _forget_snapshot(delivery, channel, thread, person['id'], held)
+        held = pending = None
+        # A short yes must never approve a different revision. New substantive
+        # words, however, deserve a new reading against the current decision.
+        if _CONFIRM_RE.match(text) or _DECLINE_RE.match(text):
+            return 'The decision changed since my read-back. Nothing was applied. Please review the current answer before confirming again.'
     stale = delivery._stale(note,d,person)
     if stale and not pending:
         delivery.store.notify(d['id'], 'signoff' if d.get('answer') else 'ask', to=person['name'])
         return 'This decision changed since the message above. I will show you its current state before asking for a signature.'
     history = [dict(r) for r in graph.db.execute('SELECT role,text FROM slack_conversation WHERE channel=? AND thread_ts=? AND person_id=? ORDER BY created_at DESC LIMIT 10', (channel,thread,person['id']))][::-1]
-    remember(graph,d['id'],channel,thread,person['id'],'user',text)
-    if pending and held['revision'] != _what_it_says(d):
-        delivery._forget_reading(channel,thread,person['id'])
-        return 'The decision changed since my read-back. Nothing was applied. Please review the current answer before confirming again.'
+    with graph.transaction():
+        remember(graph,d['id'],channel,thread,person['id'],'user',text)
+        reply_count = _reply_count(graph, channel, thread, person['id'])
     if _ACK_ONLY_RE.match(text):
         return 'Thanks. Nothing recorded or signed. I am here when you are ready.'
     sources=[]; named={}
@@ -363,6 +429,8 @@ def respond(delivery, note, d, person, text, actor, action_token=''):
                  'owner':d.get('owner_name',''),'authorized':d.get('authorized',False),
                  'needs_review':bool(d.get('needs_review')), 'review_reason':d.get('review_reason') or '',
                  'signoff':d.get('signoff') or '', 'signed_by':d.get('signed_by') or '',
+                 'speaker_signed_current_answer':not d.get('needs_review') and _signed_as_it_stands(d,person),
+                 'repeats_previous_answer':_repeats_previous_answer(d,person,text),
                  'task_notes':canvas.task_notes(delivery.store,d['run_id'])[-10:],
                  'history':history,'pending_readback':pending,'message':text,'sources':sources,
                  'today':now_iso()[:10]}
@@ -389,7 +457,7 @@ def respond(delivery, note, d, person, text, actor, action_token=''):
                     [text] + [h.get('text', '') for h in history if h.get('role') == 'user'])
         except LLMError as error:
             if pending:
-                delivery._forget_reading(channel,thread,person['id'])
+                _forget_snapshot(delivery, channel, thread, person['id'], held)
             with graph.transaction():
                 graph.append_event('slack_inference_failed', {'decision_id': d['id'], 'task_id': d['run_id'],
                     'error': type(error).__name__ + ': ' + str(error)[:300]})
@@ -407,11 +475,11 @@ def respond(delivery, note, d, person, text, actor, action_token=''):
         if not pending: return 'There is no read-back waiting for confirmation. Tell me the answer you want recorded.'
         if not _CONFIRM_RE.match(text):
             return 'To confirm the complete read-back above, reply yes. If you want to change any part, tell me what to change.'
-        result=apply(delivery,d,person,pending,actor)
-        delivery._forget_reading(channel,thread,person['id'])
-        return result
+        if not _forget_snapshot(delivery, channel, thread, person['id'], held):
+            return 'The read-back changed while I was reading your reply. Nothing was applied. Please review the latest read-back.'
+        return apply(delivery,d,person,pending,actor)
     if kind=='decline':
-        delivery._forget_reading(channel,thread,person['id'])
+        _forget_snapshot(delivery, channel, thread, person['id'], held)
         return 'Understood. Nothing was changed. What should I change in the read-back?'
     if kind in ('question','chat'):
         response=(action.get('reply') or 'What else would help you decide?')+'\nNo decision or sign-off recorded.'
@@ -443,8 +511,17 @@ def respond(delivery, note, d, person, text, actor, action_token=''):
     else: summary='Make your signed answer reusable in the same scope. Conditions: '+(action.get('conditions') or 'none')+'. Expiry: '+(action.get('expires') or 'none')+'.'
     action['original']=text
     with graph.transaction():
+        # Inference happens outside the transaction. Do not rebind an old
+        # interpretation to a newer decision or replace a newer human reply.
+        if (_reply_count(graph, channel, thread, person['id']) != reply_count
+                or delivery._reading(channel, thread, person['id']) != held):
+            return 'Another reply arrived while I was reading this one. Nothing was applied. Please use the latest read-back or restate your answer.'
+        current = delivery.store.get_decision(d['id'])
+        if current['status'] == 'withdrawn' or _what_it_says(current) != revision:
+            _forget_snapshot(delivery, channel, thread, person['id'], held)
+            return 'The decision changed while I was reading your answer. Nothing was applied. Please review the current decision and send your answer again.'
         graph.db.execute('''INSERT INTO reply_readings(channel,thread_ts,person_id,decision_id,revision,kind,answer,created_at)
         VALUES(?,?,?,?,?,'conversation',?,?) ON CONFLICT(channel,thread_ts,person_id) DO UPDATE SET
         decision_id=excluded.decision_id,revision=excluded.revision,kind=excluded.kind,answer=excluded.answer,created_at=excluded.created_at''',
-        (channel,thread,person['id'],d['id'],_what_it_says(d),json.dumps(action),now_iso()))
+        (channel,thread,person['id'],d['id'],revision,json.dumps(action),now_iso()))
     return summary+'\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.'

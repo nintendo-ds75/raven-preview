@@ -170,6 +170,287 @@ class ConversationTests(DeliveryCase):
         self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.marisol))
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
 
+    # Sanitized policies from the actual Flask/itsdangerous recovery. The
+    # captured outputs were a stale refusal, a historical-approval no-op,
+    # and an invalid-confirm failure. Successful repairs below are mocked
+    # regressions, not a claim that the live model has passed a rerun.
+    recovery_policy = (
+        'For the Northstar edge pilot, use future timestamp tolerance of 17 seconds inclusive only when explicitly configured. '
+        'Never add tolerance to max_age: already-expired tokens stay expired, including when max_age is zero. '
+        'The default is zero and preserves all existing behavior. Timestamps further in the future stay invalid. '
+        'Signature integrity is mandatory. Apply the same checks to rotated/fallback signing keys. '
+        'No internal, test, or staging exemption. This approval is for this task only; it is not a standing rule.')
+    recovery_api_policy = (
+        'Expose keyword-only future_tolerance=0 on TimestampSigner.unsign and validate, and on TimedSerializer.loads and loads_unsafe. '
+        'Expose SESSION_COOKIE_FUTURE_TOLERANCE in Flask, default zero. Accept only nonnegative integers; '
+        'reject bool, negative values, strings, None, and floats with ValueError. Preserve legacy positional parameters '
+        'and return_timestamp behavior. When max_age is None preserve the old behavior of not checking timestamp age. '
+        'For custom serializers, do not pass the new keyword when tolerance is zero. This is opt-in per Flask app, '
+        'never process-global. Document that this is future-clock tolerance, not longer session lifetime.')
+
+    def resettle_review(self, policy, summary):
+        parent = self.review_source(policy)
+        self.invalidate_review(parent)
+        canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': self.n['node_id'],
+                                      'answer': summary, 'rationale': 'Agent summary after upstream review'})
+        self.delivery.deliver_now()
+        row = self.store.get_decision(self.n['node_id'])
+        self.assertFalse(row['needs_review'])
+        self.assertFalse(row['authorized'])
+        self.assertEqual(row['signoff'], 'required')
+        self.assertFalse(row['signed_by'])
+
+    def test_captured_new_full_answer_replaces_stale_readback_after_resettle(self):
+        policy = self.recovery_policy
+        parent = self.review_source(policy)
+        self.invalidate_review(parent)
+        scoped = ('For the security part, my complete answer is: ' + policy +
+                  ' The public API and compatibility portion requires Nisha Bell’s separate decision; '
+                  'this security answer does not approve that portion.')
+        self.say(scoped, {'kind': 'answer', 'answer': scoped})
+        canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': self.n['node_id'],
+                                      'answer': 'No additional constraint beyond the signed parent.', 'rationale': 'Host summary'})
+        self.delivery.deliver_now()
+        with patch('bridge.slack_chat.reading', return_value={'kind': 'answer', 'answer': scoped}) as model:
+            offered = self.reply(self.message, 'UWES', scoped)
+        model.assert_called_once()
+        self.assertIsNone(model.call_args.args[1]['pending_readback'])
+        self.assertIn('No additional constraint', model.call_args.args[1]['answer_on_table'])
+        self.assertIn(scoped, offered)
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+        self.say('yes')
+        row = self.store.get_decision(self.n['node_id'])
+        self.assertEqual(row['answer'], scoped)
+        self.assertTrue(row['authorized'])
+        self.assertFalse(row['reusable'])
+
+    def test_stale_notification_still_requires_showing_the_current_decision(self):
+        # The captured recovery had already delivered the new signoff request.
+        # Without that new notification, preserve the existing safety boundary:
+        # neither a stale yes nor a new answer may silently target unseen state.
+        canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': self.n['node_id'],
+                                      'answer': 'Bill one unit.', 'rationale': 'Earlier proposal'})
+        self.delivery.deliver_now()
+        self.say('Bill two units.', {'kind': 'answer', 'answer': 'Bill two units.'})
+        canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': self.n['node_id'],
+                                      'answer': 'Bill three units.', 'rationale': 'New unseen proposal'})
+        with patch('bridge.slack_chat.reading') as model:
+            response = self.reply(self.message, 'UWES', 'Bill two units for this task only.')
+        model.assert_not_called()
+        self.assertIn('show you its current state', response)
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+        self.delivery.deliver_now()
+        offered = self.say('Bill two units for this task only.',
+                           {'kind': 'answer', 'answer': 'Bill two units for this task only.'})
+        self.assertIn('Reply yes to confirm', offered)
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+
+    def test_confirmation_revision_race_after_snapshot_retirement_fails_closed(self):
+        from bridge.slack_chat import apply
+        self.say('Bill two units.', {'kind': 'answer', 'answer': 'Bill two units.'})
+        def race(delivery, decision, person, action, actor):
+            self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+            canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': self.n['node_id'],
+                                          'answer': 'Hold the invoice.', 'rationale': 'Concurrent revision'})
+            return apply(delivery, decision, person, action, actor)
+        with patch('bridge.slack_chat.apply', side_effect=race):
+            response = self.say('yes')
+        self.assertIn('Nothing recorded', response)
+        row = self.store.get_decision(self.n['node_id'])
+        self.assertEqual(row['answer'], 'Hold the invoice.')
+        self.assertFalse(row['authorized'])
+        self.assertFalse(row['signed_by'])
+
+    def test_stale_short_yes_cannot_sign_resettled_summary(self):
+        self.say('Bill real traffic.', {'kind': 'answer', 'answer': 'Bill real traffic.'})
+        canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': self.n['node_id'],
+                                      'answer': 'Bill everything.', 'rationale': 'New agent proposal'})
+        self.delivery.deliver_now()
+        with patch('bridge.slack_chat.reading') as model:
+            response = self.reply(self.message, 'UWES', 'yes')
+        model.assert_not_called()
+        self.assertIn('changed since my read-back', response)
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+
+    def test_captured_historical_policy_noop_repaired_after_review_flag_cleared(self):
+        policy = self.recovery_policy
+        self.resettle_review(policy, 'Same answer as the signed parent: never extend expiration; include fallback keys.')
+        with patch('bridge.slack_chat.reading', side_effect=[
+                {'kind': 'chat', 'reply': "I see you're restating the same answer. The most recent confirmation was recorded just now."},
+                {'kind': 'answer', 'answer': policy}]) as model:
+            offered = self.reply(self.message, 'UWES', policy)
+        self.assertEqual(model.call_count, 2)
+        payload = model.call_args.args[1]
+        self.assertFalse(payload['needs_review'])
+        self.assertTrue(payload['repeats_previous_answer'])
+        self.assertFalse(payload['speaker_signed_current_answer'])
+        self.assertIn(policy, offered)
+        self.assertIn('Reply yes to confirm', offered)
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+        self.say('yes')
+        row = self.store.get_decision(self.n['node_id'])
+        self.assertEqual(row['answer'], policy)
+        self.assertTrue(row['authorized'])
+        self.assertFalse(row['reusable'])
+
+    def test_historical_reaffirmation_repair_cannot_sign_the_different_summary(self):
+        policy = 'Bill two units for this task only. This is not a standing rule.'
+        self.resettle_review(policy, 'Bill three units.')
+        for repair in ({'kind': 'signoff'}, {'kind': 'answer', 'answer': 'Bill two units.'},
+                       {'kind': 'confirm'}, LLMError('provider unavailable')):
+            with self.subTest(repair=repair), patch('bridge.slack_chat.reading', side_effect=[
+                    {'kind': 'chat', 'reply': 'Already signed.'}, repair]) as model:
+                response = self.reply(self.message, 'UWES', policy)
+            self.assertEqual(model.call_count, 2)
+            self.assertIn('Nothing was changed', response)
+            self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+            self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+
+    def test_historical_answer_is_not_signoff_of_the_new_summary(self):
+        policy = 'Bill two units for this task only.'
+        self.resettle_review(policy, 'Bill three units.')
+        with patch('bridge.slack_chat.reading', side_effect=[
+                {'kind': 'signoff'}, {'kind': 'answer', 'answer': policy}]) as model:
+            response = self.reply(self.message, 'UWES', policy)
+        self.assertEqual(model.call_count, 2)
+        self.assertIn(policy, response)
+        self.assertNotIn('Sign the complete answer', response)
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+
+    def test_repair_for_invalid_confirm_can_remain_a_genuine_question(self):
+        with patch('bridge.slack_chat.reading', side_effect=[
+                {'kind': 'confirm'}, {'kind': 'question', 'reply': 'An earlier summary changed.'}]) as model:
+            response = self.reply(self.message, 'UWES', 'Why are you asking for confirmation again?')
+        self.assertEqual(model.call_count, 2)
+        self.assertIn('earlier summary changed', response)
+        self.assertNotIn('Reply yes to confirm', response)
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+
+    def test_repeated_genuine_question_after_resettle_is_not_forced_into_answer(self):
+        self.resettle_review('Bill two units.', 'Bill three units.')
+        for _ in range(2):
+            with patch('bridge.slack_chat.reading', return_value={
+                    'kind': 'question', 'reply': 'The agent supplied a different summary.'}) as model:
+                response = self.reply(self.message, 'UWES', 'Why does this need a signature again?')
+            model.assert_called_once()
+            self.assertFalse(model.call_args.args[1]['repeats_previous_answer'])
+            self.assertIn('different summary', response)
+            self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+
+    def test_matching_unsigned_answer_needs_fresh_readback_without_review_flag(self):
+        policy = 'Bill two units for this task only.'
+        canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': self.n['node_id'],
+                                      'answer': policy, 'rationale': 'Proposal'})
+        self.delivery.deliver_now()
+        with patch('bridge.slack_chat.reading', side_effect=[
+                {'kind': 'chat', 'reply': 'Already signed.'}, {'kind': 'signoff'}]) as model:
+            response = self.reply(self.message, 'UWES', policy)
+        self.assertEqual(model.call_count, 2)
+        self.assertFalse(model.call_args.args[1]['needs_review'])
+        self.assertIn(policy, response)
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+        self.say('yes')
+        self.assertTrue(self.store.get_decision(self.n['node_id'])['authorized'])
+
+    def test_signed_repeat_waiting_for_cosigner_keeps_current_signature(self):
+        policy = 'Bill two units for this task only.'
+        self.graph.db.execute('UPDATE decisions SET required_signers=? WHERE id=?',
+                              (json.dumps(['Wes Chen', 'Priya Natarajan']), self.n['node_id']))
+        canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': self.n['node_id'],
+                                      'answer': policy, 'rationale': 'Proposal'})
+        self.delivery.deliver_now()
+        self.say(policy, {'kind': 'answer', 'answer': policy})
+        self.say('yes')
+        before = self.store.get_decision(self.n['node_id'])
+        self.assertFalse(before['authorized'])
+        with patch('bridge.slack_chat.reading', return_value={'kind': 'chat', 'reply': 'Your signature is current.'}) as model:
+            self.reply(self.message, 'UWES', policy)
+        model.assert_called_once()
+        self.assertTrue(model.call_args.args[1]['speaker_signed_current_answer'])
+        self.assertEqual(self.store.get_decision(self.n['node_id'])['signatures'], before['signatures'])
+        self.say(policy, {'kind': 'answer', 'answer': policy}, who='UPRI')
+        self.say('yes', who='UPRI')
+        row = self.store.get_decision(self.n['node_id'])
+        self.assertTrue(row['authorized'])
+        self.assertEqual({x['by'] for x in json.loads(row['signatures'])}, {'Wes Chen', 'Priya Natarajan'})
+        self.assertEqual(row['owner_id'], before['owner_id'])
+        self.assertFalse(row['reusable'])
+
+    def test_captured_full_policy_confirm_error_gets_one_bounded_repair(self):
+        policy = self.recovery_api_policy
+        with patch('bridge.slack_chat.reading', side_effect=[
+                {'kind': 'confirm'}, {'kind': 'answer', 'answer': policy}]) as model:
+            response = self.reply(self.message, 'UWES', policy)
+        self.assertEqual(model.call_count, 2)
+        self.assertIsNone(model.call_args.args[1]['pending_readback'])
+        self.assertIn('no pending read-back', model.call_args.args[1]['validation_error'])
+        self.assertIn('complete policy or instruction is an answer', model.call_args.args[1]['validation_error'])
+        self.assertIn(policy, response)
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+        self.say('yes')
+        self.assertEqual(self.store.get_decision(self.n['node_id'])['answer'], policy)
+
+    def test_captured_repeated_invalid_confirm_still_fails_closed(self):
+        # The live artifact records this error, not the raw model JSON.
+        # Repeated confirm is the minimal output reproducing that branch.
+        with patch('bridge.slack_chat.reading', return_value={'kind': 'confirm'}) as model:
+            response = self.reply(self.message, 'UWES', self.recovery_api_policy)
+        self.assertEqual(model.call_count, 2)
+        self.assertIn('Nothing was changed', response)
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+        event = self.store.get_decision(self.n['node_id'])['events'][-1]
+        self.assertEqual(event['kind'], 'slack_inference_failed')
+
+    def test_model_result_cannot_bind_to_a_revision_changed_during_inference(self):
+        def read(cfg, payload):
+            canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': self.n['node_id'],
+                                          'answer': 'Hold the invoice.', 'rationale': 'New evidence'})
+            return {'kind': 'answer', 'answer': 'Bill two units.'}
+        with patch('bridge.slack_chat.reading', side_effect=read) as model:
+            response = self.reply(self.message, 'UWES', 'Bill two units.')
+        model.assert_called_once()
+        self.assertIn('changed while I was reading', response)
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+
+    def test_slow_model_result_cannot_replace_a_newer_readback(self):
+        def read(cfg, payload):
+            self.say('Hold the invoice.', {'kind': 'answer', 'answer': 'Hold the invoice.'})
+            return {'kind': 'answer', 'answer': 'Bill two units.'}
+        with patch('bridge.slack_chat.reading', side_effect=read):
+            response = self.reply(self.message, 'UWES', 'Bill two units.')
+        self.assertIn('Another reply arrived', response)
+        held = self.delivery._reading(self.message['channel'], self.message['ts'], self.wes)
+        self.assertEqual(json.loads(held['answer'])['answer'], 'Hold the invoice.')
+        self.say('yes')
+        self.assertEqual(self.store.get_decision(self.n['node_id'])['answer'], 'Hold the invoice.')
+
+    def test_failed_slow_model_does_not_clear_a_newer_readback(self):
+        self.say('Bill one unit.', {'kind': 'answer', 'answer': 'Bill one unit.'})
+        def read(cfg, payload):
+            self.say('Hold the invoice.', {'kind': 'answer', 'answer': 'Hold the invoice.'})
+            raise LLMError('provider unavailable')
+        with patch('bridge.slack_chat.reading', side_effect=read) as model:
+            response = self.reply(self.message, 'UWES', 'Bill two units.')
+        model.assert_called_once()
+        self.assertIn('Nothing was changed', response)
+        held = self.delivery._reading(self.message['channel'], self.message['ts'], self.wes)
+        self.assertEqual(json.loads(held['answer'])['answer'], 'Hold the invoice.')
+
+    def test_newer_decline_prevents_slow_readback_from_reviving(self):
+        def read(cfg, payload):
+            self.say('Hold the invoice.', {'kind': 'answer', 'answer': 'Hold the invoice.'})
+            self.say('no')
+            return {'kind': 'answer', 'answer': 'Bill two units.'}
+        with patch('bridge.slack_chat.reading', side_effect=read):
+            response = self.reply(self.message, 'UWES', 'Bill two units.')
+        self.assertIn('Another reply arrived', response)
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+
     def test_captured_answer_correction_reframe_gets_one_repair(self):
         # Actual Anthropic/MCP Click run: this answer amendment was read back
         # as "Replace the current question with". The old examiner also
