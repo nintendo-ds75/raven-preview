@@ -79,3 +79,42 @@ class MCPVersionTests(DeliveryCase):
             reply = dispatch(self.store, {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize',
                                           'params': {'protocolVersion': offered}})
             self.assertEqual(reply['result']['protocolVersion'], expected)
+
+    def malformed_calls(self):
+        return [
+            {'method': 'initialize', 'params': {'protocolVersion': []}},
+            {'method': 'initialize', 'params': {'protocolVersion': {}}},
+            {'method': 'initialize', 'params': {'protocolVersion': 17}},
+            {'method': 'tools/call', 'params': {'name': [], '_meta': {'progressToken': 1}}},
+            {'method': 'tools/call', 'params': {'name': {}, '_meta': {'progressToken': 1}}},
+            {'method': 'tools/call', 'params': {'name': 'bridge_connection_status', 'arguments': []}},
+            {'method': 'tools/call', 'params': {'name': 'bridge_connection_status', 'arguments': None}},
+        ]
+
+    def test_malformed_params_preserve_request_id_and_protocol_error(self):
+        for call in self.malformed_calls():
+            with self.subTest(call=call):
+                reply = dispatch(self.store, {'jsonrpc': '2.0', 'id': 'bad-request', **call}, notify=lambda note: None)
+                self.assertEqual(reply['id'], 'bad-request')
+                self.assertEqual(reply['error']['code'], -32602)
+        self.assertEqual(dispatch(self.store, {'jsonrpc': '2.0', 'id': 2, 'method': 'ping'})['result'], {})
+
+    def test_http_malformed_params_match_stdio_without_internal_errors(self):
+        server = make_server(self.store, 0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = 'http://127.0.0.1:' + str(server.server_port) + '/mcp'
+            headers = {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream'}
+            for call in self.malformed_calls():
+                with self.subTest(call=call):
+                    body = json.dumps({'jsonrpc': '2.0', 'id': 'bad-request', **call}).encode()
+                    with urlopen(Request(url, body, headers)) as response:
+                        reply = json.load(response)
+                    self.assertEqual(reply['id'], 'bad-request')
+                    self.assertEqual(reply['error']['code'], -32602)
+            body = json.dumps({'jsonrpc': '2.0', 'id': 2, 'method': 'ping'}).encode()
+            with urlopen(Request(url, body, headers)) as response:
+                self.assertEqual(json.load(response)['result'], {})
+        finally:
+            server.shutdown(); server.server_close(); thread.join(3)

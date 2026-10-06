@@ -916,7 +916,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
 
         def mcp_http(self, message):
             """Stateless Streamable HTTP: each POST answers one JSON-RPC request."""
-            from .mcp import dispatch, SUPPORTED_HTTP_VERSIONS
+            from .mcp import dispatch, params_error, SUPPORTED_HTTP_VERSIONS
             version = self.headers.get('MCP-Protocol-Version')
             if version is not None and version not in SUPPORTED_HTTP_VERSIONS:
                 return self.send(400, {'jsonrpc': '2.0', 'id': message.get('id'),
@@ -926,8 +926,12 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                        "error": {"code": -32600, "message": "Invalid request"}})
             if "id" not in message:
                 return self.send(202, b"", "text/plain")
+            params = message.get("params", {})
+            error = params_error(message["method"], params)
+            if error:
+                return self.send(200, {"jsonrpc": "2.0", "id": message["id"],
+                                       "error": {"code": -32602, "message": error}})
             if message["method"] == "tools/call":
-                params = message.get("params", {})
                 from .mcp import _progress_token
                 if (isinstance(params, dict) and params.get("name") in ("bridge_wait", "bridge_finish_task")
                         and _progress_token(params) is not None

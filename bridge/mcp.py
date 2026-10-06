@@ -283,6 +283,24 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None):
     return result
 
 
+def params_error(method, params):
+    """Validate the shared envelope before either transport indexes it.
+
+    Tool argument schemas are checked by call_tool; malformed protocol
+    fields must instead return Invalid params under the original request ID.
+    """
+    if not isinstance(params, dict):
+        return "Invalid params"
+    if method == "initialize" and "protocolVersion" in params and not isinstance(params["protocolVersion"], str):
+        return "protocolVersion must be a string"
+    if method == "tools/call":
+        if not isinstance(params.get("name"), str):
+            return "Tool name must be a string"
+        if "arguments" in params and not isinstance(params["arguments"], dict):
+            return "Tool arguments must be an object"
+    return None
+
+
 def dispatch(store, message, notify=None):
     if not isinstance(message, dict) or message.get("jsonrpc") != "2.0" or not isinstance(message.get("method"), str):
         return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid request"}}
@@ -290,8 +308,9 @@ def dispatch(store, message, notify=None):
         return None
     response = {"jsonrpc": "2.0", "id": message["id"]}
     method, params = message["method"], message.get("params", {})
-    if not isinstance(params, dict):
-        return {**response, "error": {"code": -32602, "message": "Invalid params"}}
+    error = params_error(method, params)
+    if error:
+        return {**response, "error": {"code": -32602, "message": error}}
     if method == "initialize":
         result = {"protocolVersion": params.get('protocolVersion') if params.get('protocolVersion') in SUPPORTED_HTTP_VERSIONS else PROTOCOL_VERSION,
                   "capabilities": {"tools": {}},
