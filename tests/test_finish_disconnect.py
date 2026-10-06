@@ -40,10 +40,14 @@ class FinishDisconnectTests(ContractCase):
     @contextmanager
     def held_review(self):
         release, entered = threading.Event(), threading.Event()
-        workers = []
+        coordinators = []
+        run_review = canvas._run_review
+
+        def coordinated_review(*args):
+            coordinators.append(threading.current_thread())
+            return run_review(*args)
 
         def slow(*args):
-            workers.append(threading.current_thread())
             entered.set()
             if not release.wait(10):
                 raise RuntimeError("test did not release the reader")
@@ -51,11 +55,15 @@ class FinishDisconnectTests(ContractCase):
 
         def finish_reading():
             release.set()
-            for worker in workers:
-                worker.join(5)
-                self.assertFalse(worker.is_alive())
+            # check_conformance runs in an inner ThreadPoolExecutor. Its
+            # worker exiting does not mean the review coordinator has saved
+            # conformance_read yet. Await that actual persistence boundary.
+            for coordinator in coordinators:
+                coordinator.join(5)
+                self.assertFalse(coordinator.is_alive())
 
-        with patch("bridge.llm.check_conformance", side_effect=slow) as reader:
+        with patch("bridge.llm.check_conformance", side_effect=slow) as reader, \
+                patch("bridge.canvas._run_review", side_effect=coordinated_review):
             try:
                 yield reader, entered, finish_reading
             finally:
