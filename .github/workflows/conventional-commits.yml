@@ -3,6 +3,8 @@ name: Conventional commits
 on:
   push:
   pull_request:
+    # edited: a renamed PR is checked against its new title.
+    types: [opened, synchronize, reopened, edited]
 
 jobs:
   headers:

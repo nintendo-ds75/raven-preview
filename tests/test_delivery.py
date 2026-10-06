@@ -290,15 +290,40 @@ class OutboxTests(DeliveryCase):
         self.assertIn("Should we bill the usage spike", text)
         self.assertIn("Task: Add usage-based pricing", text)
         self.assertIn("enterprise-two", text)
-        self.assertIn("Why you: verified: Wes Chen decides for billing/*", text)
         self.assertIn("Options: Bill it | Exclude the load test", text)
         self.assertIn("not me @person", text)
-        self.assertIn(f"https://bridge.acme.test/#inbox (decision {n['node_id']})", text)
+        # The task page link comes right under the question; the options
+        # are said once; why Wes, and the inbox he has no login for, are
+        # on the page instead. Measured on prometheus/prometheus: the link
+        # was the second-to-last line, under options said twice.
+        lines = text.split("\n")
+        self.assertIn("https://bridge.acme.test/brief#rvn_", lines[3])
+        self.assertEqual(text.count("Exclude the load test"), 1)
+        self.assertNotIn("Why you:", text)
+        self.assertNotIn("#inbox", text)
         sent = self.delivery.list("sent")[0]
         self.assertEqual(sent["external_ref"], f"DUWES:{message['ts']}")
         # Nothing goes twice for one state; a second call sends nothing.
         self.assertEqual(self.delivery.deliver_now(), 0)
         self.assertIsNone(self.store.notify(n["node_id"], "ask"))
+
+    def test_without_a_task_page_the_message_says_why_and_links_the_inbox(self):
+        self.store.update_settings({"brief_mode": "off"})
+        n = self.node(self.task())
+        self.delivery.deliver_now()
+        text = self.slack.messages[-1]["text"]
+        self.assertIn("Why you: verified: Wes Chen decides for billing/*", text)
+        self.assertIn(f"https://bridge.acme.test/#inbox (decision {n['node_id']})", text)
+        self.assertEqual(text.count("Exclude the load test"), 1)
+
+    def test_a_person_with_a_login_gets_the_inbox_beside_the_task_page(self):
+        with self.graph.transaction():
+            self.graph.db.execute("UPDATE people SET github_id='777' WHERE id=?", (self.wes,))
+        n = self.node(self.task())
+        self.delivery.deliver_now()
+        text = self.slack.messages[-1]["text"]
+        self.assertIn("/brief#rvn_", text)
+        self.assertIn(f"https://bridge.acme.test/#inbox (decision {n['node_id']})", text)
 
     def test_a_signoff_wanted_and_a_review_reach_the_owner(self):
         t = self.task()

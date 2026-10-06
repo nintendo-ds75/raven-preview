@@ -1684,3 +1684,246 @@ h1,.task-heading h1 { font-size:1.6rem; line-height:1.3; letter-spacing:-.025em;
 
 @media(min-width:761px) { :root { --sidebar-width:200px; } }
 @media(prefers-contrast:more) { :root { --muted:#333; --line:#777; } }
+
+/* Task page (brief): the page a Slack message links to. Same quiet
+   surroundings as the app; the decision waiting on the reader first. */
+.brief-body { background:#fff; min-height:100vh; }
+.brief-top { display:flex; align-items:center; gap:1rem; min-height:3.25rem; padding:.5rem 2rem; border-bottom:1px solid var(--line); position:sticky; top:0; background:#fff; z-index:5; }
+.brief-top .brand { display:flex; align-items:center; gap:.5rem; margin:0; font-size:17px; font-weight:650; letter-spacing:-.02em; }
+.brief-top .brand img { width:24px; height:24px; }
+.brief-workspace { color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.brief-top-right { margin-left:auto; display:flex; align-items:center; gap:.75rem; min-width:0; }
+.brief-viewer { display:flex; align-items:center; gap:.5rem; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.brief-viewer strong { color:#222; font-weight:550; }
+.brief-viewer .avatar { width:24px; height:24px; font-size:10px; flex-shrink:0; }
+/* "Viewing as" opens what the link is: whose, until when, not to forward. */
+.brief-viewer-menu { position:relative; min-width:0; }
+.brief-viewer-menu > summary { list-style:none; cursor:pointer; border-radius:6px; padding:.2rem .35rem; }
+.brief-viewer-menu > summary::-webkit-details-marker { display:none; }
+.brief-viewer-menu[open] > summary { background:#f6f7f6; }
+.brief-caret { width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-top:5px solid var(--muted); flex-shrink:0; }
+.brief-viewer-pop { position:absolute; right:0; top:calc(100% + 6px); width:18rem; max-width:calc(100vw - 32px); background:#fff; border:1px solid var(--line); border-radius:6px; padding:.65rem .8rem; font-size:13px; line-height:1.5; color:#333; z-index:6; }
+.brief-viewer-pop p { margin:0; }
+.brief-viewer-pop p + p { margin-top:.35rem; color:var(--muted); }
+.brief-top-link { color:var(--green); font-size:13px; text-decoration:underline; text-underline-offset:2px; white-space:nowrap; }
+.brief-top-right .button.text.brief-top-link { min-height:0; padding:0; }
+#brief-main { max-width:1120px; margin:0 auto; padding:1.5rem 2rem 2.5rem; }
+#brief-main:focus { outline:0; }
+.brief-hero { margin-bottom:1.25rem; }
+.brief-hero h1 { margin:0 0 .3rem; }
+.brief-ask { margin:0 0 .6rem; font-size:.95rem; }
+.brief-hero .metadata { align-items:center; margin:0; }
+.brief-columns { display:grid; grid-template-columns:minmax(0,1fr) minmax(300px,360px); gap:1.25rem; align-items:start; }
+.brief-main, .brief-side, .brief-stack { min-width:0; }
+/* The side column stays in view; brief.js lowers `top` for one taller
+   than the window so it scrolls to its end before it stays. */
+.brief-side { position:sticky; top:4.25rem; }
+.brief-body .task-panel { margin-bottom:1rem; }
+.brief-body .task-panel > h2 { font-size:1rem; margin:0 0 .5rem; }
+/* Muted helper text, whole: the app's .context stops at two lines. */
+.brief-intro { margin:0 0 .85rem; font-size:13px; color:var(--muted); line-height:1.55; }
+
+/* The decision card is a plain panel like the others; its kicker says
+   where the reader stands. */
+.brief-kicker { margin:0 0 .3rem; color:var(--amber); font-size:.75rem; font-weight:650; }
+.brief-focus.is-mine .brief-kicker { color:var(--green); }
+.brief-focus.is-read .brief-kicker, .brief-focus.is-cosign .brief-kicker, .brief-focus.is-handed .brief-kicker { color:var(--muted); }
+.brief-focus > h2 { font-size:1.15rem; line-height:1.45; margin:0 0 .75rem; letter-spacing:-.01em; }
+.brief-lead { font-size:.95rem; line-height:1.65; margin:0 0 .85rem; white-space:pre-wrap; }
+.brief-block { background:var(--pale); border-radius:6px; padding:.7rem .85rem; margin:0 0 .6rem; }
+.brief-block > .label, .brief-reason > .label { display:block; font-size:.72rem; font-weight:650; color:var(--muted); margin-bottom:.2rem; }
+.brief-block p { margin:.15rem 0; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.6; }
+.brief-block.is-guess { background:#fbf6ee; }
+.brief-block.is-answer { background:#eef4ef; }
+.brief-why-line { color:var(--muted); font-size:13px; line-height:1.55; }
+.brief-found { list-style:none; margin:0; padding:0; display:grid; gap:.6rem; }
+.brief-found > li > p { margin:0; line-height:1.55; white-space:normal; }
+.brief-found-q { color:#222; }
+.brief-quote { margin:.3rem 0 0; padding:0 0 0 .7rem; border-left:2px solid #cfdccf; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.55; }
+.brief-quote.is-clamped { display:-webkit-box; -webkit-line-clamp:5; -webkit-box-orient:vertical; overflow:hidden; }
+.brief-more { min-height:0; padding:.15rem 0; font-size:12px; text-decoration:underline; text-underline-offset:2px; }
+.brief-block .brief-found-note { margin:.25rem 0 0; color:var(--muted); font-size:12px; white-space:normal; }
+.brief-where { margin:.6rem 0 0; color:var(--muted); font-size:.8rem; overflow-wrap:anywhere; }
+.brief-where code { color:#222; font-size:.78rem; }
+.brief-reason { margin:.5rem 0 0; font-size:.85rem; color:#333; }
+.brief-reason > p { margin:0; line-height:1.55; overflow-wrap:anywhere; }
+.brief-reason .brief-why { margin-top:.3rem; }
+.brief-why { font-size:.8rem; color:var(--muted); }
+.brief-why > summary { cursor:pointer; width:fit-content; }
+.brief-why[open] > summary { margin-bottom:.35rem; }
+.brief-why ul { margin:0; padding-left:1.1rem; }
+.brief-why li, .brief-why p { margin:.2rem 0; overflow-wrap:anywhere; white-space:pre-wrap; }
+/* A snake_case name in running text: code, breaking only after an
+   underscore (brief.js puts a <wbr> there). */
+.brief-ident { font-size:.9em; overflow-wrap:normal; word-break:normal; }
+
+.brief-answer { margin-top:1rem; border-top:1px solid var(--line); padding-top:.9rem; }
+.brief-correct { margin-top:.9rem; padding-top:.75rem; border-top:1px solid var(--line); }
+.brief-correct .brief-answer { margin-top:.5rem; padding-top:0; border-top:0; font-size:13px; color:#222; }
+.brief-answer > label, .brief-account label, .brief-chat-form label { display:block; font-weight:600; margin:.8rem 0 .35rem; }
+.brief-answer > label:first-child, .brief-chat-form label:first-child { margin-top:0; }
+.brief-answer > label .muted { font-weight:400; }
+.brief-answer textarea, .brief-chat-form textarea, .brief-account input { display:block; width:100%; border:1px solid var(--line); border-radius:6px; padding:.55rem .7rem; min-height:5rem; resize:vertical; background:#fff; color:inherit; line-height:1.5; }
+.brief-answer textarea:focus, .brief-chat-form textarea:focus, .brief-account input:focus { border-color:#b9c4bb; }
+.brief-answer textarea.short { min-height:3.25rem; }
+.brief-account input { min-height:var(--control-height); }
+/* The options are a choice: a radio circle in each, so none reads as an
+   answer already filled in. Picking one puts its words in the box. */
+.brief-form-title { margin:0 0 .3rem; font-weight:600; }
+.brief-options { display:flex; flex-wrap:wrap; gap:.4rem; margin:0 0 .75rem; padding:0; border:0; min-width:0; }
+.brief-options > legend { padding:0; margin:0 0 .4rem; font-size:13px; color:var(--muted); }
+.brief-option { display:inline-flex; align-items:center; gap:.45rem; border:1px solid var(--line); background:#fff; color:#333; border-radius:6px; padding:.3rem .65rem .3rem .5rem; min-height:32px; font-size:13px; line-height:1.4; cursor:pointer; }
+.brief-option input { margin:0; width:14px; height:14px; flex-shrink:0; accent-color:var(--green); }
+.brief-option.is-picked { border-color:var(--green); background:#eef4ef; color:var(--green); }
+.brief-option:focus-within { outline:2px solid #b9c4bb; outline-offset:1px; }
+.brief-answer-foot { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-top:.85rem; }
+.brief-answer-note { color:var(--muted); font-size:13px; }
+.brief-answer [hidden] { display:none; }
+.brief-cannot { margin:1rem 0 0; padding:.7rem .85rem; border:1px solid var(--line); border-radius:6px; color:var(--muted); }
+.brief-back { min-height:0; padding:0; margin:0 0 .5rem; font-size:12px; color:var(--muted); text-decoration:underline; text-underline-offset:2px; }
+.brief-focus:focus-within h2:focus { outline:0; }
+/* Handing on, tucked under the answer form. */
+.brief-handon { margin-top:.85rem; }
+.brief-handon-form { margin-top:.5rem; color:#222; font-size:.875rem; }
+.brief-handon-form label { display:block; font-weight:600; margin:.7rem 0 .3rem; }
+.brief-handon-form label:first-child { margin-top:0; }
+.brief-handon-form label .muted { font-weight:400; }
+.brief-handon-form select, .brief-handon-form input, .brief-handon-form textarea { display:block; width:100%; max-width:30rem; min-height:var(--control-height); border:1px solid var(--line); border-radius:6px; padding:.4rem .6rem; background:#fff; color:inherit; font:inherit; line-height:1.5; }
+.brief-handon-form textarea { resize:vertical; }
+.brief-handon-form .brief-field-help { margin:.35rem 0 0; max-width:30rem; color:#333; font-size:13px; line-height:1.5; }
+.brief-handon-form .brief-answer-foot { margin-top:.75rem; flex-wrap:nowrap; align-items:flex-start; }
+/* What the hand-on leaves alone, beside its button. */
+.brief-handon-scope { flex:1 1 auto; min-width:0; max-width:26rem; line-height:1.5; padding-top:.15rem; }
+.brief-handon-form [hidden] { display:none; }
+
+.brief-requester { display:flex; align-items:center; gap:.65rem; margin-bottom:.65rem; }
+.brief-requester > div { display:flex; flex-wrap:wrap; align-items:baseline; gap:0 .5rem; min-width:0; }
+.brief-requester span { color:var(--muted); font-size:13px; }
+.brief-prompt { margin:0 0 .75rem; padding:.1rem 0 .1rem .85rem; border-left:2px solid var(--line); }
+.brief-prompt p { margin:0; white-space:pre-wrap; line-height:1.65; font-size:.95rem; overflow-wrap:anywhere; }
+.brief-facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:.25rem 1rem; margin:0 0 .75rem; font-size:.85rem; }
+.brief-facts dt { color:var(--muted); }
+.brief-facts dd { margin:0; overflow-wrap:anywhere; }
+.brief-note { margin:0; font-size:.75rem; color:var(--muted); line-height:1.5; }
+
+.brief-decisions { list-style:none; margin:0; padding:0; }
+.brief-decisions > li { padding:.75rem 0; border-top:1px solid var(--line); }
+.brief-decisions > li:first-child { border-top:0; padding-top:0; }
+.brief-decisions > li:last-child { padding-bottom:0; }
+.brief-decisions > li[class*="depth-"]:not(.depth-0) { padding-left:1rem; border-left:2px solid var(--line); }
+.brief-decisions strong { display:block; line-height:1.45; font-weight:600; }
+.brief-decisions p { margin:.3rem 0 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.brief-decisions .button { margin-top:.5rem; }
+.brief-decision-top { display:flex; align-items:center; gap:.6rem; margin-bottom:.35rem; font-size:.8rem; color:var(--muted); min-width:0; }
+.brief-decision-top > span:last-child { overflow-wrap:anywhere; }
+.brief-decisions > li.is-focus .brief-decision-top { margin-bottom:.15rem; }
+.brief-decisions .button.text.brief-decision-here { margin:0; min-height:0; padding:0; color:var(--muted); font-size:.85rem; text-decoration:underline; text-underline-offset:2px; }
+
+.brief-person-list { list-style:none; margin:0; padding:0; }
+.brief-person { display:flex; gap:.65rem; padding:.7rem 0; border-top:1px solid var(--line); }
+.brief-person:first-child { border-top:0; padding-top:0; }
+.brief-person:last-child { padding-bottom:0; }
+.brief-person > div { min-width:0; flex:1; }
+.brief-person-head { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:0 .5rem; }
+.brief-person-head strong { font-weight:600; }
+.brief-person-head small { color:var(--muted); font-size:.72rem; }
+.brief-person-head small.is-failed { color:#a65e45; }
+.brief-asks-toggle { margin-top:.15rem; font-size:.85rem; }
+.brief-asks-toggle > summary { cursor:pointer; width:fit-content; color:var(--muted); }
+.brief-dot { margin:0 .35rem; color:var(--muted); }
+.brief-asks { list-style:none; margin:.4rem 0 0; padding:0; display:grid; gap:.45rem; }
+.brief-asks p { margin:0; overflow-wrap:anywhere; }
+.brief-ask-q { color:#444; line-height:1.45; }
+.brief-asks .brief-ask-a { margin-top:.15rem; padding-left:.6rem; border-left:2px solid #cfe0d3; color:#222; line-height:1.45; }
+.brief-state { font-weight:600; color:var(--muted); }
+.brief-state.is-done, .brief-asks .is-done .brief-state { color:var(--green); }
+.brief-state.is-owes, .brief-asks .is-owes .brief-state { color:var(--amber); }
+
+.brief-earlier { margin:0 0 .5rem; padding-left:0; padding-right:0; min-height:28px; }
+.brief-history { list-style:none; margin:0; padding:0; }
+.brief-history > li { position:relative; padding:0 0 .8rem 1.1rem; }
+.brief-history > li:last-child { padding-bottom:0; }
+.brief-history > li::before { content:''; position:absolute; left:0; top:.45rem; width:7px; height:7px; border-radius:50%; background:#c4ccc5; }
+.brief-history > li::after { content:''; position:absolute; left:3px; top:1rem; bottom:.05rem; width:1px; background:var(--line); }
+.brief-history > li:last-child::after { display:none; }
+.brief-history > li.is-key::before { background:var(--green); }
+.brief-history > li.is-quiet { color:var(--muted); }
+.brief-history > li.is-quiet::before { background:#fff; border:1px solid #c4ccc5; }
+.brief-history > li.is-quiet strong { font-weight:500; }
+.brief-event-head { display:flex; align-items:baseline; justify-content:space-between; gap:.75rem; }
+.brief-event-head strong { font-weight:600; }
+.brief-event-head time { flex-shrink:0; color:var(--muted); font-size:.72rem; }
+.brief-history p { margin:.15rem 0 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.brief-history .brief-event-q { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; color:var(--muted); font-size:.8rem; white-space:normal; }
+
+/* Notes, and the box that adds one. */
+.brief-notes { list-style:none; margin:0 0 .75rem; padding:0; display:grid; gap:.5rem; }
+.brief-notes > li { padding:.5rem .7rem; border:1px solid var(--line); border-radius:6px; }
+.brief-notes p { margin:.2rem 0 0; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.55; }
+.brief-notes > li.is-withdrawn > p:not(.brief-note-state) { text-decoration:line-through; color:var(--muted); }
+.brief-notes .brief-note-state { color:var(--muted); font-size:12px; }
+.brief-notes .button.text.brief-note-withdraw { min-height:0; padding:0; margin-top:.2rem; font-size:12px; color:var(--muted); text-decoration:underline; text-underline-offset:2px; }
+/* A note's byline and time. */
+.brief-turn-head { display:flex; justify-content:space-between; gap:.5rem; font-size:.78rem; }
+.brief-turn-head strong { font-weight:600; }
+.brief-turn-head time { color:var(--muted); }
+/* Hover only where there is a pointer: on a phone a tapped option kept
+   its hover tint and read as a second choice. */
+@media (hover:hover) {
+  .brief-viewer-menu > summary:hover, .brief-option:hover { background:#f6f7f6; }
+  .brief-option.is-picked:hover { background:#eef4ef; }
+}
+.brief-chat-form { display:grid; gap:.5rem; }
+.brief-chat-form label { margin:0; font-size:13px; }
+.brief-chat-form textarea { min-height:4.25rem; }
+.brief-chat-form .button { justify-self:end; }
+.brief-chat-foot { display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
+.brief-audience { color:var(--muted); font-size:12px; }
+
+.brief-join { margin:.25rem 0 1rem; font-size:.8rem; color:var(--muted); line-height:1.55; }
+.brief-join .button.text { display:inline; min-height:0; padding:0; color:var(--green); font-size:inherit; text-decoration:underline; text-underline-offset:2px; }
+.brief-empty { max-width:34rem; margin:3rem auto; }
+.brief-empty h1 { margin-bottom:.5rem; }
+.brief-empty h1 + p { color:#222; font-size:.95rem; }
+.brief-empty p { margin:0 0 .75rem; line-height:1.6; }
+.brief-empty a { color:var(--green); text-underline-offset:2px; }
+.brief-empty-actions { margin:0 0 .75rem; }
+.brief-resent { color:#222; }
+#brief-modal { max-width:28rem; width:calc(100% - 32px); border:1px solid var(--line); border-radius:6px; padding:1.25rem; }
+/* A plain dimmed page behind the dialog, without the app's blur. */
+#brief-modal::backdrop { background:#0003; backdrop-filter:none; -webkit-backdrop-filter:none; }
+.brief-account h2 { margin:0 0 .5rem; font-size:1.1rem; }
+.brief-account p { margin:0 0 .6rem; line-height:1.55; }
+.brief-account .brief-field-help { margin:.3rem 0 0; color:var(--muted); font-size:12px; }
+.brief-account-alt { margin:.85rem 0 0; font-size:13px; color:var(--muted); }
+.brief-account-alt a { color:var(--green); text-underline-offset:2px; }
+@media (max-width:900px) {
+  .brief-columns { grid-template-columns:minmax(0,1fr); }
+  .brief-side { position:static; }
+}
+@media (max-width:640px) {
+  .brief-top { padding:.5rem 16px; gap:.5rem; }
+  .brief-workspace, .brief-viewer-as { display:none; }
+  .brief-viewer { font-size:12px; }
+  #brief-main { padding:1.1rem 16px 2rem; }
+  .brief-hero h1, .brief-empty h1 { font-size:1.35rem; }
+  .brief-empty { margin-top:1.5rem; }
+  .brief-body .task-panel { padding:.9rem; }
+  .brief-answer-foot .button, .brief-empty-actions .button { width:100%; min-height:44px; }
+  .brief-handon-form .brief-answer-foot { flex-wrap:wrap; }
+  /* A list of choices on a phone, each with its circle. */
+  .brief-options { display:grid; gap:.35rem; }
+  .brief-option { display:flex; width:100%; min-height:44px; padding:.45rem .7rem; font-size:14px; }
+  .brief-option input { width:18px; height:18px; }
+  .brief-handon-form select, .brief-handon-form input, .brief-handon-form textarea { max-width:none; min-height:44px; }
+  .brief-event-head { flex-wrap:wrap; gap:0 .75rem; }
+  .brief-chat-foot { flex-direction:column-reverse; align-items:stretch; gap:.4rem; }
+  .brief-chat-foot .button { min-height:44px; }
+  .brief-audience { text-align:center; }
+  .brief-why > summary, .brief-asks-toggle > summary { padding:.4rem 0; }
+  .brief-earlier, .brief-more { min-height:40px; }
+  .brief-viewer-menu > summary { padding:.2rem; }
+  /* On a phone the popover spans the bar, under it, not off its left edge. */
+  .brief-viewer-menu { position:static; }
+  .brief-viewer-pop { left:16px; right:16px; width:auto; max-width:none; top:calc(100% - 2px); }
+}

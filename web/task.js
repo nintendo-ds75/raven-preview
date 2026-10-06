@@ -64,15 +64,46 @@ function taskTimeline(trace, nodes) {
   }).join('')}</ol>`;
 }
 
-function taskPeople(nodes, trace) {
-  const names = [...new Set(nodes.flatMap(n => [n.owner, n.answered_by, ...n.required_signers, ...n.signatures]).concat(trace.notifications.map(n => n.person_name)).filter(Boolean))];
+// Where each person stands, in the task page's words (Decided, Signed,
+// Handed on, Waiting on), and in the order the task reached them. The page
+// and the app named the same facts two ways, and listed people in two
+// orders.
+function taskPeople(all, trace) {
+  const same = (a, b) => (a || '').toLowerCase() === (b || '').toLowerCase();
+  // The decisions the page counts: a duplicate reads through to the one it
+  // repeats, and counted that answer twice.
+  const nodes = all.filter(n => !['duplicate', 'suggested', 'adopted'].includes(n.status));
+  const first = name => (trace.notifications.find(n => same(n.person_name, name)) || {}).created_at || '~';
+  const names = [...new Set(nodes.flatMap(n => [n.owner, n.answered_by, ...n.required_signers, ...n.signatures]).concat(trace.notifications.map(n => n.person_name)).filter(Boolean))]
+    .sort((a, b) => first(a).localeCompare(first(b)));
+  const handoffs = trace.events.filter(e => e.kind === 'owner_changed' && e.detail && e.detail.referral);
   return names.length ? names.map((name,i) => {
-    const assigned = nodes.filter(n => n.owner === name);
-    const signed = nodes.filter(n => n.signatures.includes(name));
+    // Who decided a node, as the task page counts it (briefing.decided_by):
+    // the person whose answer it is, who gave it and signed it. An answered
+    // node keeps the kind it was asked with, so `kind === 'answer'` alone
+    // called Mei's and Priya's own answers "Signed".
+    const decidedBy = n => n.answered_by && (n.kind === 'answer' || n.signatures.some(s => same(s, n.answered_by))) ? n.answered_by : '';
+    const decided = nodes.filter(n => same(decidedBy(n), name)).length;
+    const signed = nodes.filter(n => n.signatures.some(s => same(s, name)) && !same(decidedBy(n), name)).length;
+    const waiting = nodes.filter(n => n.blocking && [n.owner, ...n.required_signers].some(x => same(x, name)) && !n.signatures.some(s => same(s, name))).length;
+    const handed = handoffs.filter(e => same(e.detail.by, name)).length;
+    const states = [['Decided', decided], ['Signed', signed], ['Handed on', handed], ['Waiting on', waiting]].filter(([, n]) => n).map(([label, n]) => `${label} ${n}`);
     const messages = trace.notifications.filter(n => n.person_name === name);
     const sent = messages.filter(m => m.state === 'sent').length;
-    return `<div class="task-person">${avatar(name,i)}<div><strong>${esc(name)}</strong><p>${assigned.length} assigned · ${signed.length} signed</p><small>${sent ? `${sent} messages sent` : 'No external message sent; available in the inbox'}${messages.some(m => m.state === 'failed') ? ' · delivery failed' : ''}</small></div></div>`;
+    return `<div class="task-person">${avatar(name,i)}<div><strong>${esc(name)}</strong><p>${esc(states.join(' · ') || 'Asked')}</p><small>${sent ? `${sent} message${sent === 1 ? '' : 's'} sent` : 'No external message sent; available in the inbox'}${messages.some(m => m.state === 'failed') ? ' · delivery failed' : ''}</small></div></div>`;
   }).join('') : '<p class="context">Nobody has been assigned a decision yet.</p>';
+}
+
+// The decision the task page should open on for the signed-in person:
+// one waiting on them, else one they answered or signed, else one they
+// own. Without it the page lost the decision they had just answered.
+function taskBriefDecision() {
+  const me = state.me?.name || '';
+  const nodes = taskDetail ? flattenTask(taskDetail.tree.nodes).filter(n => !['duplicate','adopted','suggested'].includes(n.status)) : [];
+  const mine = name => (name || '').toLowerCase() === me.toLowerCase();
+  const owed = n => n.blocking && [n.owner, ...n.required_signers].some(x => mine(x) && !n.signatures.some(mine));
+  const pick = nodes.find(owed) || nodes.find(n => mine(n.answered_by) || n.signatures.some(mine)) || nodes.find(n => mine(n.owner));
+  return pick ? pick.node_id : '';
 }
 
 function taskOverview() {
@@ -92,12 +123,12 @@ function taskOverview() {
   const facts = Object.entries(t.facts || {});
   const uncertain = (t.review?.follows || []).filter(r => r.verdict !== 'follows').length;
   const reviewNote = t.review?.status === 'running' ? 'The code review is still running.' : uncertain ? `${uncertain} decision${uncertain === 1 ? ' needs' : 's need'} inspection after the model review. Open Code review for details.` : '';
-  const progress = `<div class="task-summary"><div><span class="label">Current status</span><h2>${esc(status)}</h2><p>${blockers.length ? `${blockers.length} decision${blockers.length === 1 ? '' : 's'} still ${blockers.length === 1 ? 'blocks' : 'block'} completion${waiting.length ? '. Waiting on ' + esc(waiting.join(', ')) : '. An owner needs to be assigned or a follow-up adopted'}.` : nodes.length ? 'No recorded decision is blocking this task.' : 'The agent has not recorded a decision yet.'}</p>${reviewNote ? `<p class="task-warning">${esc(reviewNote)} <button class="button small" data-action="task-tab" data-tab="review">Open code review</button></p>` : ''}${t.review?.status === 'stale' ? '<p class="task-warning">An answer changed after the code review. The agent must submit its current diff again.</p>' : ''}</div><div class="task-count"><strong>${signed.length}<span> / ${nodes.filter(n => !['duplicate','adopted','suggested'].includes(n.status)).length}</span></strong><span>authorized answers</span></div></div>`;
+  const progress = `<div class="task-summary"><div><span class="label">Current status</span><h2>${esc(status)}</h2><p>${blockers.length ? `${blockers.length} decision${blockers.length === 1 ? '' : 's'} still ${blockers.length === 1 ? 'blocks' : 'block'} completion${waiting.length ? '. Waiting on ' + esc(waiting.join(', ')) : '. An owner needs to be assigned or a follow-up adopted'}.` : nodes.length ? 'No recorded decision is blocking this task.' : 'The agent has not recorded a decision yet.'}</p>${reviewNote ? `<p class="task-warning">${esc(reviewNote)} <button class="button small" data-action="task-tab" data-tab="review">Open code review</button></p>` : ''}${t.review?.status === 'stale' ? '<p class="task-warning">An answer changed after the code review. The agent must submit its current diff again.</p>' : ''}</div><div class="task-count"><strong>${signed.length}<span> / ${nodes.filter(n => !['duplicate','adopted','suggested'].includes(n.status)).length}</span></strong><span>signed</span></div></div>`;
   const review = t.review ? `<section class="task-panel"><h2>Code review against decisions</h2>${pill(t.review.status)}${t.review.seconds != null ? `<span class="context"> ${esc(t.review.seconds)} seconds</span>` : ''}<p class="context">This model review covers the recorded decisions. It does not replace tests or verify the whole change.</p>${(t.review.follows || []).map(r => `<article class="task-review-item"><div>${pill(r.verdict)} <strong>${esc(nodes.find(n => n.node_id === r.node_id)?.question || r.node_id)}</strong></div><p>${esc(r.why || r.reason || '')}</p><details class="review-requirements" id="requirements-${esc(r.node_id)}"><summary>Inspect requirements (${(r.requirements || []).length})</summary>${(r.requirements || []).map(q => `<details><summary>${esc(q.state || q.status || q.verdict || '')} · ${esc(q.needs || q.requirement || q.text || '')}</summary><pre>${esc(JSON.stringify(q, null, 2))}</pre></details>`).join('')}</details></article>`).join('')}<details><summary>Full review record</summary><pre>${esc(JSON.stringify(t.review, null, 2))}</pre></details></section>` : '';
   const notes = `<section class="task-panel"><h2>Context & discussion</h2><p class="context">Notes are visible to the agent when it reads the task. Use a decision’s follow-up action for a question that must block completion.</p>${(t.notes || []).map(n => `<article class="task-note"><div><strong>${esc(n.by || 'Unattributed note')}</strong><time>${esc(taskTime(n.at))}</time></div><p>${esc(n.text)}</p></article>`).join('') || '<p class="context">No notes yet.</p>'}${canWrite ? `<details class="history" id="task-note-compose"><summary>Add context for the agent</summary><form id="note-form" data-id="${esc(t.task_id)}"><label for="note-text">A note the agent reads on its tree</label><textarea id="note-text" name="text" maxlength="4000" placeholder="Add context, a constraint, or something the agent should revisit." required></textarea><p class="error" id="form-error" role="alert" hidden></p><button class="button primary" type="submit">Add note</button></form></details>` : '<p class="context">You have read-only access to this workspace.</p>'}</section>`;
   const overview = `<div class="task-columns"><div><section class="task-panel"><h2>What the agent has learned</h2><p class="context">Signed answers and enabled standing rules. Evidence and guesses stay in Decisions until authorized.</p>${signed.length ? signed.map(n => `<details class="learned-decision" id="learned-${esc(n.node_id)}"><summary><span>${esc(n.question)}</span><small>${esc(n.signoff === 'rule' ? 'Standing rule' : 'Signed by ' + (n.signed_by || n.answered_by || n.owner))}</small></summary>${taskDecision(n)}</details>`).join('') : '<p class="task-empty">No authorized answers yet. Open Decisions to see the questions and proposals.</p>'}</section>${notes}</div><aside><section class="task-panel"><h2>People involved</h2>${taskPeople(nodes,trace)}</section><section class="task-panel"><h2>Task context</h2><dl class="task-facts"><dt>Requested by</dt><dd>${esc(t.requester || 'Not recorded')}</dd><dt>Repository</dt><dd>${esc(t.repo)}</dd>${facts.map(([k,v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl><details class="history"><summary>Kickoff verdict · ${esc(t.verdict || 'not recorded')}${t.requester ? ' · asked by ' + esc(t.requester) : ''}</summary><p>${esc(t.verdict_why)}</p></details><p class="context">Requester is recorded task context, not proof of identity. Signatures and notes keep their acting person.</p></section></aside></div>`;
   const decisions = `<div class="task-decisions">${nodes.length ? nodes.map(n => `<div class="tree-node depth-${Math.min(n.depth,6)}">${n.depth ? `<p class="context">Level ${n.depth}${n.origin === 'human' ? ' · added by a person' : ''}</p>` : ''}${taskDecision(n)}</div>`).join('') : '<div class="empty">No decisions recorded yet.</div>'}</div>`;
-  return `<div class="task-heading"><a class="task-back" href="#runs">← All tasks</a><div class="task-heading-actions"><button class="button small" data-action="task-refresh">Refresh</button><button class="button small" data-action="task-share">Copy task link</button></div><p class="eyebrow">TASK OVERVIEW</p><h1>${esc(t.title)}</h1><details class="task-brief" id="task-brief"><summary>Read the task brief</summary><p class="task-goal">${esc(t.goal || 'No task brief recorded.')}</p></details><div class="metadata">${pill(status, blockers.length ? '' : 'gray')}<span>Requested by ${esc(t.requester || 'unknown')}</span><span>${esc(t.repo)}</span></div></div>
+  return `<div class="task-heading"><a class="task-back" href="#runs">← All tasks</a><div class="task-heading-actions"><button class="button small" data-action="task-refresh">Refresh</button><button class="button small" data-action="task-share">Copy app link</button>${state.auth?.enabled && state.me?.id && state.me.role !== 'viewer' && state.settings?.brief_mode !== 'off' ? `<button class="button small" data-action="task-brief">Open task page</button>` : ''}</div><p class="eyebrow">TASK OVERVIEW</p><h1>${esc(t.title)}</h1><details class="task-brief" id="task-brief"><summary>Read the task brief</summary><p class="task-goal">${esc(t.goal || 'No task brief recorded.')}</p></details><div class="metadata">${pill(status, blockers.length ? '' : 'gray')}<span>Requested by ${esc(t.requester || 'unknown')}</span><span>${esc(t.repo)}</span></div></div>
     ${taskError ? `<p class="task-warning" role="alert">Refresh failed: ${esc(taskError)}. Showing the last successful read.</p>` : ''}${progress}
     <nav class="task-tabs" aria-label="Task sections">${[['overview','Overview'],['decisions',`Decisions (${nodes.length})`],['history','History'],['review',`Code review${uncertain ? ' (' + uncertain + ' to inspect)' : ''}`]].map(([key,label]) => `<button id="task-tab-${key}" class="tab ${taskTab === key ? 'active' : ''}" data-action="task-tab" data-tab="${key}" aria-pressed="${taskTab === key}">${label}</button>`).join('')}<span>Updated ${esc(taskTime(t.observed_at))}</span></nav>
     ${taskTab === 'overview' ? overview : taskTab === 'decisions' ? decisions : taskTab === 'review' ? review || '<section class="task-panel"><h2>No code review yet</h2><p>The agent submits its diff when it finishes. Owner approval and code review are separate.</p></section>' : `<section class="task-panel"><h2>What happened, in order</h2><p class="context">The complete recorded task history, including assignments, messages, answers, corrections, and notes. Work an agent does outside Raven is not captured here.</p>${taskTimeline(trace,flattenTask(t.nodes))}</section>`}

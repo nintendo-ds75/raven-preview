@@ -88,6 +88,16 @@ def migrate(db) -> None:
             db.execute(f"ALTER TABLE webhook_receipts ADD COLUMN {name} {decl}")
 
 
+def _take_ownership(graph, decision_id: str, name: str) -> str:
+    """The person replying takes a decision nobody owns, and the revision
+    that makes, which their answer names. Taking it is itself a write:
+    an answer that named the revision from before was refused as stale,
+    and the person was left owning a decision they could not answer."""
+    with graph.transaction():
+        graph.update_decision(decision_id, owner=name)
+        return graph.db.execute("SELECT updated_at FROM decisions WHERE id=?", (decision_id,)).fetchone()["updated_at"]
+
+
 class Delivery:
     """The outbox for one store: enqueue from the write paths, send from
     the worker (or deliver_now in tests), and resolve inbound replies."""
@@ -170,6 +180,46 @@ class Delivery:
             out["named_records"] = []
         return out
 
+    def _task_link(self, person_id: str, run_id: str, decision_id: str, notification_id: str) -> str:
+        """The person's own link to the task page, or "" when there is no
+        public address or no person to issue it to. A message to a
+        channel on someone's behalf links to the inbox instead: a link
+        that signs in as the person must reach only them."""
+        from . import briefing
+        if not self.base_url or not person_id or briefing.mode(self.store.graph) == "off":
+            return ""
+        token = briefing.mint(self.store.graph, person_id, run_id, decision_id, notification_id)
+        return briefing.url_for(self.base_url, token)
+
+    def _has_login(self, person_id: str) -> bool:
+        """The person can sign in to Raven: a password, or GitHub."""
+        if not person_id:
+            return False
+        graph = self.store.graph
+        person = graph.get_person(person_id)
+        if person is None:
+            return False
+        return bool(person.get("github_id")) or graph.db.execute(
+            "SELECT 1 FROM account_passwords WHERE person_id=?", (person_id,)).fetchone() is not None
+
+    def _answered_in_slack(self, person_name: str) -> bool:
+        """The person has answered a decision by replying in Slack before,
+        so the reply syntax beyond `answer:` is worth a line. On first
+        contact `rule if <words> until <date>` meant nothing and took more
+        of a phone screen than the question."""
+        if not person_name:
+            return False
+        source = f"slack: {person_name}"
+        for r in self.store.graph.db.execute(
+                "SELECT detail FROM events WHERE kind IN ('owner_approved', 'answer_corrected') AND detail LIKE ?",
+                ('%"source": "slack: %',)):
+            try:
+                if json.loads(r["detail"]).get("source") == source:
+                    return True
+            except ValueError:
+                continue
+        return False
+
     def enqueue(self, decision_id: str, kind: str, to: str = "", note: str = "") -> dict | None:
         """One notification for one state of one decision. `to` names the
         person; by default the decision's owner (the requester for
@@ -180,7 +230,7 @@ class Delivery:
             raise ValueError(f"kind must be one of {', '.join(KINDS)}")
         graph = self.store.graph
         row = graph.db.execute(
-            "SELECT d.*, o.name AS owner_name, r.title AS run_title, r.requester, r.repo FROM decisions d "
+            "SELECT d.*, o.name AS owner_name, r.title AS run_title, r.requester, r.agent AS run_agent, r.repo FROM decisions d "
             "LEFT JOIN owners o ON o.id = d.owner_id JOIN runs r ON r.id = d.run_id WHERE d.id=?",
             (decision_id,)).fetchone()
         if row is None:
@@ -206,7 +256,6 @@ class Delivery:
             person_name = asker["name"]
         destination, person_id, dest_note, dest_kind = self._destination(person_name)
         note = " ".join(n for n in (note, dest_note) if n)
-        payload = render(self._with_records(row), kind, person_name, self.base_url, note)
         # What this message shows the person: the answer on the table, or
         # the question asked. A reply is checked against it.
         content_hash = (answer_hash(row["answer"] or "") if kind in ("signoff", "review", "answered")
@@ -222,6 +271,10 @@ class Delivery:
         if graph.db.execute("SELECT 1 FROM notifications WHERE dedupe_key=?", (dedupe,)).fetchone():
             return None
         nid = uuid.uuid4().hex[:12]
+        payload = render(self._with_records(row), kind, person_name, self.base_url, note,
+                         task_link=self._task_link(person_id if dest_kind == "dm" else "", row["run_id"],
+                                                   decision_id, nid),
+                         has_account=self._has_login(person_id), rule_hint=self._answered_in_slack(person_name))
         state = "queued" if destination else "failed"
         error = "" if destination else (f"{person_name} has no Slack id in Bridge and no fallback channel is configured")
         # Newer state of the same decision to the same person supersedes
@@ -295,16 +348,20 @@ class Delivery:
         destination = row["destination"]
         payload = row["payload"]
         if not destination:
-            destination, _pid, note, _kind = self._destination(row["person_name"])
+            destination, _pid, note, dest_kind = self._destination(row["person_name"])
             if not destination:
                 raise Invalid(f"{row['person_name']} still has no Slack id and there is no fallback channel")
             decision = graph.db.execute(
-                "SELECT d.*, o.name AS owner_name, r.title AS run_title, r.requester, r.repo FROM decisions d "
+                "SELECT d.*, o.name AS owner_name, r.title AS run_title, r.requester, r.agent AS run_agent, r.repo FROM decisions d "
                 "LEFT JOIN owners o ON o.id = d.owner_id JOIN runs r ON r.id = d.run_id WHERE d.id=?",
                 (row["decision_id"],)).fetchone()
             if decision is not None:
                 payload = json.dumps(render(self._with_records(decision), row["kind"], row["person_name"],
-                                            self.base_url, note))
+                                            self.base_url, note,
+                                            task_link=self._task_link(_pid if dest_kind == "dm" else "",
+                                                                      decision["run_id"], row["decision_id"], nid),
+                                            has_account=self._has_login(_pid),
+                                            rule_hint=self._answered_in_slack(row["person_name"])))
         with graph.transaction():
             graph.db.execute("UPDATE notifications SET state='queued', next_attempt=0, last_error='', destination=?, "
                              "payload=? WHERE id=?", (destination, payload, nid))
@@ -648,8 +705,7 @@ class Delivery:
         rationale = held["rationale"] or "answered in Slack, in their own words"
         if decision["status"] == "pending":
             if not decision["owner_id"]:
-                with self.store.graph.transaction():
-                    self.store.graph.update_decision(decision["id"], owner=person["name"])
+                decision["updated_at"] = _take_ownership(self.store.graph, decision["id"], person["name"])
             self.store.answer(decision["id"], {"answer": held["answer"], "rationale": rationale,
                                                "expected_updated_at": decision["updated_at"],
                                                "signed_by": person["name"],
@@ -892,21 +948,23 @@ def _source_label(row: dict) -> str:
     return "Answer on the table"
 
 
-def _found_for_owner(evidence: str) -> str:
+def _found_for_owner(evidence: str, rest: str = "the inbox has the rest") -> str:
     """What Bridge found that a person can use: the earlier decisions and
     the records it cites. How the search went (scores, floors, what did
     not match) belongs to the audit trail in the inbox, not the message.
     Measured live: an owner was sent "memory: best match scored 0.28,
     under the 0.6 floor". A conflict has its own line."""
     keep = []
-    for part in re.split(r";\s+(?=[a-z]+:\s)", evidence or ""):
+    # "how they decide" starts a part of its own; without it the ladder's
+    # "assumption: ..." before it was kept, glued to the cited decision.
+    for part in re.split(r";\s+(?=[a-z]+:\s|how they decide\b)", evidence or ""):
         part = part.strip()
         if part.startswith("conflict:"):
             continue
         if re.search(r"\bdecision [0-9a-f]{12}\b|\b(?:retrieved|selected)\b", part) \
                 and not re.search(r"\bscored\b|\bfloor\b", part):
             keep.append(part)
-    return _clip("; ".join(keep), 400, "the inbox has the rest")
+    return _clip("; ".join(keep), 400, rest)
 
 
 def _conflicts(evidence: str) -> list[str]:
@@ -922,11 +980,35 @@ def _conflicts(evidence: str) -> list[str]:
     return out
 
 
-def render(row: dict, kind: str, person_name: str, base_url: str, note: str = "") -> dict:
+def _message_context(context: str, has_options: bool, has_page: bool) -> str:
+    """The agent's context as a message shows it. The canvas writes a
+    node's paths and options onto its context; the options have their
+    own line, and with a task page the paths are on it. Measured on
+    prometheus/prometheus: the options were in the message twice, once
+    run into the context."""
+    lines = (context or "").split("\n")
+    while lines and ((has_options and lines[-1].startswith("Options: "))
+                     or (has_page and lines[-1].startswith("Paths: "))):
+        lines.pop()
+    text = " ".join(" ".join(lines).split())
+    return "" if text == "a node on the canvas" else text
+
+
+def render(row: dict, kind: str, person_name: str, base_url: str, note: str = "", task_link: str = "",
+           has_account: bool = True, rule_hint: bool = True) -> dict:
     """The message for one notification: what is being decided, the
     brief when one was written, the context, what Bridge found, the
-    options, and how to reply. Plain text with Slack mrkdwn."""
-    link = f"{base_url}/#inbox" if base_url else ""
+    options, and how to reply. Plain text with Slack mrkdwn.
+
+    A `task_link` is the person's own link to the task page; it opens
+    without an account. It comes right under the question: measured on
+    prometheus/prometheus, it was the second-to-last line, two and a
+    half phone screens down. With it, why the decision came to them is
+    on the page, and the inbox line is left out for a person with no
+    account (`has_account`), for whom it opened a sign-in page.
+    `rule_hint` adds how to make an answer a rule, for a person who has
+    answered in Slack before."""
+    link = f"{base_url}/#inbox" if base_url and (has_account or not task_link) else ""
     question = row.get("question") or ""
     title = row.get("run_title") or ""
     heads = {
@@ -946,14 +1028,26 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
         lines.append(f"_{note}_")
     lines.append(f"*{question}*")
     if title:
-        lines.append(f"Task: {title}" + (f" ({row.get('repo')})" if row.get("repo") else ""))
+        # Who asked, and through which agent: the first thing a skeptical
+        # maintainer asks of a message from a bot.
+        requester = (row.get("requester") or "").strip()
+        agent = (row.get("run_agent") or "").strip()
+        asked = ""
+        if requester and requester.lower() != (person_name or "").lower():
+            asked = f", requested by {requester}" + (f" via {agent}" if agent else "")
+        lines.append(f"Task: {title}" + (f" ({row.get('repo')})" if row.get("repo") else "") + asked)
+    if task_link:
+        # Short: on a phone the 20-word parenthetical took more room than
+        # the question. The page itself says not to forward the link.
+        lines.append(f"<{task_link}|Open the task> (your own link, no account needed)")
+    rest = "the task page has the rest" if task_link else "the inbox has the rest"
     conflicts = _conflicts(row.get("evidence") or "")
     if kind in ("ask", "reassigned", "overdue") and conflicts:
         # Why this came to a person, before anything else: two sources
         # Bridge holds disagree. Measured live on 63eb671: the brief said
         # no current policy was given, and the two policies were quoted
         # lower down, cut at 400 characters.
-        lines.append("*Conflict:* " + _clip(" ".join(conflicts), 1500, "the inbox has the rest"))
+        lines.append("*Conflict:* " + _clip(" ".join(conflicts), 1500, rest))
     brief = drop_absence(row.get("brief") or "")
     if brief:
         lines.append(brief)
@@ -961,11 +1055,16 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
     named = records_line(row.get("named_records") or [])
     if named:
         lines.append("Records it names: " + named + ".")
-    context = " ".join((row.get("context") or "").split())
+    options = []
+    try:
+        options = json.loads(row.get("options") or "[]")
+    except ValueError:
+        pass
+    context = _message_context(row.get("context") or "", bool(options), bool(task_link))
     if context:
         # The agent's own words, the part a withheld brief leaves to be read:
         # whole up to a length a message holds, else cut at a word and said so.
-        lines.append("Context: " + _clip(context, 1500, "the rest is in the inbox"))
+        lines.append("Context: " + _clip(context, 1500, rest))
     if kind in ("signoff", "review", "answered") and row.get("answer"):
         # A signature covers the whole answer. Split it across Slack blocks
         # rather than requiring an inbox account to read the rest.
@@ -976,8 +1075,12 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
     if kind == "review" and row.get("review_reason"):
         lines.append(f"Why: {_clip(row['review_reason'], 600, 'the inbox has the rest')}")
     evidence = [ln for ln in (row.get("owner_evidence") or "").split("; ") if ln][:3]
-    if kind in ("ask", "reassigned") and evidence:
-        lines.append("Why you: " + "; ".join(evidence))
+    if kind == "reassigned" or (kind == "ask" and not task_link):
+        # Who handed it on, and what answering teaches, belongs in the
+        # message itself; the routing evidence behind an ask is on the
+        # task page, said plainly, when there is one.
+        if evidence:
+            lines.append("Why you: " + "; ".join(evidence))
     if kind in ("ask", "reassigned", "overdue") and row.get("prediction"):
         lines.append(f"How you decided before: {_clip(row['prediction'], 800, 'the rest is in the inbox')} "
                      "(a prediction from your earlier answers; confirm or correct it)")
@@ -987,19 +1090,14 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
         scope = prediction_scope(row.get("evidence") or "")
         if scope:
             lines.append(f"Scope: {scope}.")
-    found = _found_for_owner(row.get("evidence") or "")
+    found = _found_for_owner(row.get("evidence") or "", rest)
     if kind == "ask" and found:
         lines.append(f"What Bridge found: {found}")
-    options = []
-    try:
-        options = json.loads(row.get("options") or "[]")
-    except ValueError:
-        pass
     if options:
         lines.append("Options: " + " | ".join(str(o) for o in options))
     if kind in ("ask", "reassigned", "overdue") and person_name:
-        lines.append("Reply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`. "
-                     "After answering, `rule if <words> until <date>` makes the answer reusable for matching questions.")
+        lines.append("Reply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`."
+                     + (" After answering, `rule if <words> until <date>` makes the answer reusable for matching questions." if rule_hint else ""))
     elif kind == "signoff" and person_name:
         lines.append("Ask a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.")
     elif kind == "review":

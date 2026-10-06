@@ -16,6 +16,14 @@ class Invalid(ValueError):
     pass
 
 
+BRIEF_MODES = ("off", "static")
+
+
+def brief_mode(graph):
+    from .briefing import mode
+    return mode(graph)
+
+
 def now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -167,10 +175,11 @@ class Store:
                     run_id TEXT, kind TEXT NOT NULL, detail TEXT NOT NULL,
                     created_at TEXT NOT NULL);
             """)
-            from . import delivery, execution_store, graph
+            from . import briefing, delivery, execution_store, graph
             execution_store.migrate(db)
             graph.migrate(db)
             delivery.migrate(db)
+            briefing.migrate(db)
             # executescript commits as it goes; the statements that read
             # the schema and write rows run in one transaction so two
             # processes opening at once (the inbox and an MCP server)
@@ -402,6 +411,7 @@ class Store:
                 "slack_capture_repo": graph.get_setting("slack_capture_repo"),
                 "auto_rules": graph.get_setting("auto_rules") == "1",
                 "notify_requester": graph.get_setting("notify_requester") == "1",
+                "brief_mode": brief_mode(graph),
                 "coordinators": {k[len("coordinator:"):]: graph.get_person(v)
                                  for k, v in graph.db.execute("SELECT key, value FROM settings WHERE key LIKE 'coordinator:%'")}}
 
@@ -430,6 +440,12 @@ class Store:
                 graph.set_setting("overdue_hours", str(hours))
             if "slack_capture_repo" in data:
                 graph.set_setting("slack_capture_repo", repo_key(str(data["slack_capture_repo"] or "")))
+            if "brief_mode" in data:
+                mode = str(data["brief_mode"] or "")
+                if mode not in BRIEF_MODES:
+                    raise Invalid(f"brief_mode must be one of {', '.join(BRIEF_MODES)}")
+                graph.set_setting("brief_mode", mode)
+                graph.append_event("setting_changed", {"key": "brief_mode", "value": mode})
             for key in ("auto_rules", "notify_requester"):
                 if key in data:
                     on = data[key] in (True, 1, "1", "true", "on")
@@ -763,8 +779,12 @@ class Store:
                 record(graph, decision_id, previous['id'], 'declined')
             if choice in ('none', 'this'):
                 graph.append_event('route_learning_optout', {'decision_id': decision_id, 'by': by})
+            # The prediction was for the previous owner and goes with them;
+            # an open question left marked as a prediction kept its
+            # "Prediction" pill in the inbox with nothing predicted.
             db.execute("UPDATE decisions SET owner_id=?, routing_reason=?, owner_evidence=?, prediction=NULL, "
-                       "source_id=NULL, updated_at=?, actor_id=?, actor_name=?, actor_basis=? WHERE id=?",
+                       "source_id=NULL, kind=CASE WHEN status='pending' AND kind='prediction' THEN 'new' ELSE kind END, "
+                       "updated_at=?, actor_id=?, actor_name=?, actor_basis=? WHERE id=?",
                        (owner_id, f"Referred to {person['name']} by {by}", why_them, now(),
                         actor.id if actor is not None else "", by, basis, decision_id))
             graph.append_event("owner_changed", {"task_id": decision["run_id"], "decision_id": decision_id,

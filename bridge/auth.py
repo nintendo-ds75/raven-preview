@@ -335,7 +335,7 @@ def _http_json(method: str, url: str, body: dict | None, headers: dict) -> objec
 
 
 LOGIN_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Raven · Sign in</title><link rel="stylesheet" href="/style.css"></head>
+<title>Raven · Sign in</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"></head>
 <body class="login-body"><main class="login"><h1>Raven</h1><p>{message}</p>{github}
 <form method="post" action="/auth/password"><input type="hidden" name="csrf" value="{csrf}">
 <label>Email<input name="email" type="email" autocomplete="username" required></label>

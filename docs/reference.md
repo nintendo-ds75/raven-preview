@@ -224,6 +224,16 @@ A newly joined member or referral target is verified through Slack’s API and a
 
 **Microsoft Teams** takes the same outbox through an incoming webhook (`TEAMS_WEBHOOK_URL`, used when no Slack token is set): every message goes to that one channel, addressed to the person, with the link to the inbox where they answer; Teams webhooks carry no replies.
 
+#### The task page a message links to
+
+A direct message to a person carries their own link, `<public-url>/brief#rvn_…`. The token rides in the fragment, which browsers never send, so it stays out of server logs and Referer headers; the page sends it as the `X-Raven-Link` header. Only its hash is stored (`brief_links`). A link names one person, one task and the decision the message was about, and expires after `brief_link_days` (14 by default, at most 90). It is never put in a channel or fallback post: it acts as its person, so it goes only where they read it. A link that stopped working can ask for a new one, which goes to its person's DM, never to whoever holds the old link (one per old link an hour, three a day).
+
+The page shows the decision waiting on the person (its brief, the agent's context, what Raven found, why it came to them, and a prediction labelled as a guess), the request and who made it, every decision on the task with who signed or still owes it, everyone contacted and where each question stands for them, the notes, and the history. From it the person answers, signs or corrects (`POST /api/brief/answer`, with the revision they read), hands the decision on (`/api/brief/refer`), adds a note (`/api/brief/note`), and withdraws a note they added (`/api/brief/withdraw`). Every action runs the same permission check as the inbox and Slack, acting as a member: an administrator's link carries no override, and a viewer's link only reads. A hand-on from a link is for that question only and teaches Raven no route, because a forwarded link would otherwise decide routing for a whole directory. A signed-in member opens the same page from the task overview (**Open task page**, `POST /api/tasks/:id/link`), which keeps one such link per person and task.
+
+`brief_mode` (People & ownership → **Task page in messages**) is `off` (messages link to the inbox as before) or `static` (the default: the page described here, which needs no model). A conversation with an agent on this page is planned as a follow-up.
+
+A person can create a login from their link (`/api/brief/account`): the account is the person the map already names, with the role it gives them. Administrators are refused; they sign in with GitHub or an invitation. Set `brief_signup` to `0` to require invitations for everyone.
+
 ### The canvas protocol
 
 Bridge is the canvas for the decisions inside a task. The host agent breaks the task down; Bridge never does. Bridge finds out who owns what, what the org already settled, and who has to be asked, and it writes that back onto the same tree the agent writes to. `--demo` seeds one such task so a first run shows a kickoff verdict, a tree, and a node the agent settled waiting for sign-off under **Needs you**.

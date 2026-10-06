@@ -45,6 +45,12 @@ The developer stays in Claude Code, Codex, Cursor, or another MCP client. People
 
 People can add context or required follow-up questions. Stakeholders can have read-only viewer accounts. A copied task link shares the location; it does not grant access to a shared instance.
 
+### The task page in a Slack message
+
+People answer in the Slack thread, without a Raven account. A thread holds the question, though, not the task around it, so each Slack direct message also carries that person's own link to the task page. It opens without signing in and shows the decision waiting on them, who requested the task and what they asked for, the other decisions and who made them, who was contacted, and what happened. They can answer, sign, hand the decision on, or add context for the agent from there too. Raven's usual permission check still decides whether their answer counts. A link opens only its own task, expires after 14 days, and acts as a member, never as an administrator. Anyone holding it can act as that person, so the page asks people not to forward it. Someone who wants the web inbox can create an account from the page in one step.
+
+An administrator can turn the link off under People & ownership; messages then read as they did before.
+
 ## Who does Raven ask?
 
 Raven starts without a manually configured ownership map. Ingestion gives it the first signals, and Slack’s directory makes those people reachable. It asks the strongest available contact and explains why. That is a first contact to confirm or refer, not a claim that a commit author has authority over every business decision.

@@ -152,6 +152,37 @@ class Accounts:
             self.graph.append_event('invitation_accepted', {'person_id': pid, 'invite_id': invite['id']})
         return pid
 
+    def claim(self, person, data):
+        """A person Raven messaged makes their own login from their task
+        link. The link reached them in their own Slack DM, the same proof
+        an emailed invitation is, and the account is the person the map
+        already names, with the role it already gives them. An admin
+        turns this off with the brief_signup setting."""
+        if not self.ready():
+            raise Invalid('Complete workspace setup first')
+        if self.graph.get_setting('brief_signup', '1') == '0':
+            raise Invalid('Ask an administrator for an invitation to create your account')
+        if person.get('role') == 'admin':
+            # The link acts as a member and never carries an override; a
+            # login made from it would carry the admin role to whoever
+            # holds the link. An administrator's login comes from GitHub
+            # sign-in or an invitation, as it always has.
+            raise Invalid('An administrator signs in with GitHub or an invitation, not from a task link')
+        hashed = password_hash(data.get('password'))
+        with self.graph.transaction():
+            if self.has_password(person['id']) or person.get('github_id'):
+                raise Invalid('You already have an account; sign in instead')
+            email = person.get('email') or email_address(data.get('email'))
+            existing = self.graph.person_by_email(email)
+            if existing and existing['id'] != person['id']:
+                raise Invalid('That email belongs to another person in this workspace')
+            if not person.get('email'):
+                self.graph.db.execute('UPDATE people SET email=? WHERE id=?', (email, person['id']))
+            self.graph.db.execute('INSERT INTO account_passwords(person_id,password_hash) VALUES(?,?)',
+                                  (person['id'], hashed))
+            self.graph.append_event('account_claimed', {'person_id': person['id'], 'via': 'task link'})
+        return person['id']
+
     def login(self, email, password):
         email = str(email or '').strip().lower()
         # Database-backed attempt window works across restarts and worker threads.

@@ -21,6 +21,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from .auth import LOGIN_PAGE, Auth, Identity
 from .authz import Refused
+from .briefing import mode as briefing_mode
 from .store import Invalid, field
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -174,6 +175,25 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                 if url.path == "/mcp":
                     return self.send(405, {"error": "Use POST for MCP requests"},
                                      extra_headers={"Allow": "POST"})
+                if url.path in ("/brief", "/brief.js"):
+                    # The task page opens without an account: the person's
+                    # own link rides in the fragment and the page sends it.
+                    file = WEB / ("brief.html" if url.path == "/brief" else "brief.js")
+                    return self.send(200, file.read_bytes(), (mimetypes.guess_type(str(file))[0] or "text/plain")
+                                     + "; charset=utf-8", extra_headers={"Referrer-Policy": "no-referrer"})
+                if url.path == "/api/brief":
+                    from . import briefing
+                    link = self.brief_link()
+                    # A decision on the task opened from the page's list.
+                    focus = parse_qs(url.query).get("focus", [""])[0][:100]
+                    view = briefing.overview(store, link, accounts.workspace(), self.has_account(link),
+                                             {"enabled": auth.enabled, "github": auth.github_configured}, focus_id=focus)
+                    # Signed in as this person too, "Open in Raven" goes
+                    # straight to the task; signed out, sign-in lands on
+                    # the inbox, and the page says "Sign in" instead.
+                    view["viewer"]["signed_in"] = bool(auth.enabled and self.me is not None
+                                                       and self.me.id == link.person["id"])
+                    return self.send(200, view)
                 if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js"):
                     if url.path == "/" and auth.enabled and self.me is None:
                         if parse_qs(url.query).get("github_connect") == ["1"]:
@@ -204,7 +224,10 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         # own, and the inbox marks overdue questions; without these
                         # it always said automatic rules were off and used 72 hours.
                         "settings": {"auto_rules": store.graph.get_setting("auto_rules") == "1",
-                                     "overdue_hours": store.overdue_hours()}})
+                                     "overdue_hours": store.overdue_hours(),
+                                     # The task overview offers the task page
+                                     # unless messages link to none.
+                                     "brief_mode": briefing_mode(store.graph)}})
                 if url.path == "/api/deliveries":
                     query = parse_qs(url.query)
                     return self.send(200, {"notifications": store.delivery.list(query.get("state", [""])[0]),
@@ -434,6 +457,46 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                 return self.redirect("/auth/login", {"Set-Cookie": auth.clear_cookie()})
             return self.send(404, {"error": "Not found"})
 
+        def brief_link(self):
+            """The task link this request carries, or a refusal. It is a
+            header the page sets, never a cookie: nothing ambient, so a
+            link request needs no CSRF token."""
+            from . import briefing
+            link = briefing.resolve(store.graph, self.headers.get("X-Raven-Link", ""))
+            if link is None:
+                # One answer whatever the cause, so it tells nobody which.
+                raise Forbidden(401, "This link isn't valid: it may be incomplete, expired or revoked. Ask for a "
+                                     "new one, or sign in")
+            return link
+
+        def has_account(self, link):
+            return accounts.has_password(link.person["id"]) or bool(link.person.get("github_id"))
+
+        def brief_post(self, path, data):
+            from . import briefing
+            if path == "/api/brief/resend":
+                # The one link request that works with a link that no
+                # longer does. Whatever happened, the answer is the same.
+                briefing.resend(store, self.headers.get("X-Raven-Link", ""))
+                return self.send(200, {"notice": "If this link was yours, a new one is on its way to your Slack "
+                                                 "direct messages."})
+            link = self.brief_link()
+            if path == "/api/brief/answer":
+                return self.send(200, briefing.act(store, link, data))
+            if path == "/api/brief/refer":
+                return self.send(200, briefing.refer(store, link, data))
+            if path == "/api/brief/note":
+                return self.send(200, briefing.add_note(store, link, data))
+            if path == "/api/brief/withdraw":
+                return self.send(200, briefing.withdraw_note(store, link, data.get("note_id")))
+            if path == "/api/brief/account":
+                if not auth.enabled:
+                    raise Invalid("This workspace runs without sign-in; there is no account to create")
+                pid = accounts.claim(link.person, data)
+                cookie = auth.session_cookie(pid)
+                return self.send(200, {"redirect": f"/#runs/{link.run_id}"}, extra_headers={"Set-Cookie": cookie})
+            return self.send(404, {"error": "Not found"})
+
         def me_view(self):
             if self.me is None:
                 return None
@@ -530,6 +593,13 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         data = json.loads(raw)
                     self.identify()
                     return self.auth_post(path, data)
+                if path.startswith("/api/brief/"):
+                    if content_type != "application/json":
+                        return self.send(415, {"error": "Expected application/json"})
+                    data = json.loads(raw)
+                    if not isinstance(data, dict):
+                        raise Invalid("Expected a JSON object")
+                    return self.brief_post(path, data)
                 bearer = self.headers.get("Authorization", "").lower().startswith("bearer ")
                 # A browser session proves itself with the CSRF token; a
                 # token is not ambient, so it needs none.
@@ -678,6 +748,28 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         result = (canvas.add_followups(store, load(), parts[2], data, actor=self.actor(data))
                                   if parts[3] == "followups"
                                   else canvas.sign_off(store, parts[2], data, actor=self.actor(data)))
+                    elif len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "link":
+                        # A signed-in person opens the task page for
+                        # themselves: the same view the people it
+                        # messaged get.
+                        from . import briefing
+                        from .canvas import _task
+                        _task(store, parts[2])
+                        person_id = self.me.id
+                        if self.me.kind == "operator":
+                            # The local operator previews the page as a
+                            # person on the map, the way it answers for them.
+                            person = store.graph.find_person(str(data.get("person") or ""))
+                            person_id = person["id"] if person else ""
+                        if not person_id:
+                            raise Invalid("Sign in as a person to open the task page" if auth.enabled
+                                          else "Name the person to preview the page as")
+                        decision_id = str(data.get("decision_id") or "")[:100]
+                        if decision_id and store.get_decision(decision_id)["run_id"] != parts[2]:
+                            raise Invalid("That decision is not on this task")
+                        with store.graph.transaction():
+                            token = briefing.mint_own(store.graph, person_id, parts[2], decision_id)
+                        result = {"url": briefing.url_for(self.base_url(), token)}
                     elif len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "notes":
                         from .canvas import add_note
                         self.attribute(data, "by")

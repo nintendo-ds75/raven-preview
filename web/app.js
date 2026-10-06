@@ -40,7 +40,7 @@ let state = {decisions: [], runs: [], owners: [], events: []};
 // polled state: the owners view fetches them when it renders.
 let ownership = null, ownershipLoading = false;
 let directory = null, directoryLoading = false;
-let view = 'inbox', tab = 'pending', query = '', ownerFilter = '', fetching = false;
+let view = 'inbox', tab = 'pending', tabChosen = false, query = '', ownerFilter = '', fetching = false;
 let toastTimer;
 let modalVersion = 0;
 let launcherPair = null;
@@ -180,7 +180,9 @@ async function refresh({quiet = false} = {}) {
       $('#profile-avatar').textContent = initials(state.me.name);
       $('#profile-note').innerHTML = state.auth && state.auth.enabled ? `${esc(state.me.role)} · <a href="/auth/logout">Sign out</a>` : 'Self-hosted workspace';
     }
-    $('#inbox-count').textContent = state.counts ? state.counts.needs_you : state.decisions.filter(needsYou).length;
+    if (personalInbox() && !tabChosen) tab = 'mine';
+    $('#inbox-count').textContent = personalInbox() ? state.decisions.filter(assignedToMe).length
+      : state.counts ? state.counts.needs_you : state.decisions.filter(needsYou).length;
     if (taskId()) await loadTask({quiet});
     if (!taskId() && (!quiet || (!$('#modal').open && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)))) render();
   } catch (error) {
@@ -295,6 +297,13 @@ const settledNow = d => !needsYou(d) && (settledStatuses.includes(d.status) || s
 // A person is needed for an open question, for a node Raven or the agent resolved without one, and for a
 // node put in doubt by a correction upstream. Evidence is not authorization.
 const needsYou = d => d.status === 'pending' || !!d.needs_review || (['resolved','partial','assumed','proposed'].includes(d.status) && !['signed','rule'].includes(d.signoff));
+const assignedToMe = d => needsYou(d) && (d.owner_name === state.me?.name || stillToSign(d).includes(state.me?.name));
+// A signed-in member's inbox is theirs: the badge counts what waits on
+// them and the inbox opens on it. Measured: a person who had just made an
+// account from a task link, with nothing waiting on him, saw "Inbox 1" and
+// someone else's decision with a Review button. Admins and viewers keep
+// the workspace view.
+const personalInbox = () => Boolean(state?.auth?.enabled && state.me?.id && state.me.role === 'member');
 function activity() {
   const items = state.events.filter(e => !quietEvents.has(e.kind)).slice(0, 5);
   return `<div class="side-section"><div class="side-section-head">Across your workspace <a href="#runs">View runs ↗</a></div><div class="activity-list">${items.length ? items.map(event => {
@@ -314,7 +323,7 @@ function inbox() {
   const isEvidence = d => ['resolved','partial'].includes(d.status);
   const overdueMs = ((state.settings && state.settings.overdue_hours) || 72) * 3600e3;
   const isOverdue = d => d.status === 'pending' && (Date.now() - new Date(d.created_at).getTime()) > overdueMs;
-  const mine = d => needsYou(d) && (d.owner_name === state.me?.name || stillToSign(d).includes(state.me?.name));
+  const mine = assignedToMe;
   const rows = state.decisions.filter(d => (tab === 'all' || (tab === 'mine' ? mine(d) : tab === 'predicted' ? isPredicted(d) : tab === 'evidence' ? isEvidence(d) : tab === 'overdue' ? isOverdue(d) : needsYou(d))) && `${d.question} ${d.context} ${d.owner_name}`.toLowerCase().includes(query.toLowerCase()));
   const demo = state.runs.some(r => r.agent.startsWith('Demo'));
   return `${state.execution_config?.enabled ? '<div class="wide-toolbar"><button class="button primary" data-action="task">Start a task</button></div>' : ''}${demo ? `<div class="demo-banner">${icon('help')}Sample workspace · Demo runs are illustrative. New agent requests will appear here in real time.</div>` : ''}
@@ -362,7 +371,7 @@ function verifiedLayer() {
   const settings = dir.settings || {};
   const people = dir.people || [];
   const coordinator = settings.coordinator;
-  const control = `<section class="setup-card routing-settings"><div><span class="label">ROUTING SETTINGS</span><h2>Coordinator &amp; pilot mode</h2><p>Optional overrides. Raven normally discovers contacts from connected sources and learns from Slack replies.</p><label for="coordinator-select">Coordinator</label><select id="coordinator-select" aria-label="Coordinator"><option value="">No coordinator — use the Slack triage channel</option>${people.map(p => `<option value="${esc(p.id)}" ${coordinator && coordinator.id === p.id ? 'selected' : ''}>${esc(p.name)}${p.team ? ` · ${esc(p.team)}` : ''}</option>`).join('')}</select><p class="field-help">Optional fallback before the Slack triage channel.</p></div><div class="routing-options"><label class="routing-option" for="verified-only"><input type="checkbox" id="verified-only" ${settings.require_verified_route ? 'checked' : ''}><span><strong>Pilot mode: route only verified owners</strong><small>Route git-history-only matches to the coordinator, with the candidates named.</small></span></label><label class="routing-option" for="auto-rules"><input type="checkbox" id="auto-rules" ${settings.auto_rules ? 'checked' : ''}><span><strong>Automatic rules</strong><small>Matching reusable rules authorize without a fresh signature. Leave off to review every request.</small></span></label></div></section>`;
+  const control = `<section class="setup-card routing-settings"><div><span class="label">ROUTING SETTINGS</span><h2>Coordinator &amp; pilot mode</h2><p>Optional overrides. Raven normally discovers contacts from connected sources and learns from Slack replies.</p><label for="coordinator-select">Coordinator</label><select id="coordinator-select" aria-label="Coordinator"><option value="">No coordinator — use the Slack triage channel</option>${people.map(p => `<option value="${esc(p.id)}" ${coordinator && coordinator.id === p.id ? 'selected' : ''}>${esc(p.name)}${p.team ? ` · ${esc(p.team)}` : ''}</option>`).join('')}</select><p class="field-help">Optional fallback before the Slack triage channel.</p></div><div class="routing-options"><label class="routing-option" for="verified-only"><input type="checkbox" id="verified-only" ${settings.require_verified_route ? 'checked' : ''}><span><strong>Pilot mode: route only verified owners</strong><small>Route git-history-only matches to the coordinator, with the candidates named.</small></span></label><label class="routing-option" for="auto-rules"><input type="checkbox" id="auto-rules" ${settings.auto_rules ? 'checked' : ''}><span><strong>Automatic rules</strong><small>Matching reusable rules authorize without a fresh signature. Leave off to review every request.</small></span></label><label class="routing-option" for="brief-mode"><span><strong>Task page in messages</strong><small>Each Slack message carries the recipient’s own link to the task page, no account needed.</small><select id="brief-mode" aria-label="Task page in messages">${[['off','Off: messages link to the inbox'],['static','Task page: the task’s context, the answer form and notes']].map(([v,l]) => `<option value="${v}" ${(settings.brief_mode || 'static') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></span></label></div></section>`;
   const cards = people.length ? `<div class="people-grid">${people.map((p, i) => `<article class="person-card ${p.active ? '' : 'inactive'}">${avatar(p.name, i)}<h3>${esc(p.name)}</h3><p>${esc(p.team || '')}${p.teams && p.teams.length ? ` · ${esc(p.teams.join(', '))}` : ''}</p><small>${[p.email, p.github_login ? '@' + p.github_login : '', p.slack_id ? 'Slack ' + p.slack_id : ''].filter(Boolean).map(esc).join(' · ') || 'no identities recorded'}</small><small>${(p.authority || []).length ? (p.authority || []).map(a => `${roleLabels[a.role] || a.role} ${a.scope_kind === 'repo' ? 'everything' : esc(a.scope)}${a.repo ? ` in ${esc(a.repo)}` : ''}`).join('; ') : 'Contact discovered · routing follows available evidence'}</small>${p.active ? '' : '<small>inactive</small>'}</article>`).join('')}</div>` : '<p class="context">Connect Slack to discover people automatically. No manual owner setup or personal Raven accounts are required.</p>';
   const rows = dir.authority || [];
   // A row whose date has passed decides nothing; it read the same as a
@@ -685,12 +694,13 @@ document.addEventListener('click', async event => {
     }
     if (action === 'task') newTask();
     if (action === 'retry') await refresh();
-    if (action === 'tab') { tab = target.dataset.tab; render(); }
+    if (action === 'tab') { tab = target.dataset.tab; tabChosen = true; render(); }
     if (action === 'review' || action === 'source') await review(target.dataset.id);
     if (action === 'run') location.hash = 'runs/' + encodeURIComponent(target.dataset.id);
     if (action === 'task-tab') { taskTab = target.dataset.tab; render(); }
     if (action === 'task-refresh') await loadTask();
-    if (action === 'task-share') { await navigator.clipboard.writeText(location.href); notify('Task link copied. Workspace access is required on shared instances.'); }
+    if (action === 'task-brief') { const r = await api(`/api/tasks/${encodeURIComponent(taskId())}/link`, {decision_id: taskBriefDecision()}); location.assign(r.url); }
+    if (action === 'task-share') { await navigator.clipboard.writeText(location.href); notify('App link copied. Workspace access is required on shared instances.'); }
     if (action === 'execution-details') showRun(target.dataset.id);
     if (action === 'assign') {
       target.disabled = true;
@@ -791,6 +801,10 @@ document.addEventListener('change', async event => {
     if (event.target.id === 'verified-only') {
       await api('/api/settings', {require_verified_route: event.target.checked});
       directory = null; render(); notify(event.target.checked ? 'Pilot mode on: only verified owners are routed to.' : 'Pilot mode off: git history routes again.');
+    }
+    if (event.target.id === 'brief-mode') {
+      await api('/api/settings', {brief_mode: event.target.value});
+      directory = null; render(); notify({off:'Task links are off: messages link to the inbox.', static:'Messages link to the static task page.'}[event.target.value]);
     }
     if (event.target.id === 'auto-rules') {
       await api('/api/settings', {auto_rules: event.target.checked});

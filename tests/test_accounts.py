@@ -38,10 +38,13 @@ class AccountFlowTests(SharedServer):
         state = self.get('/api/state', cookie=cookie)
         self.assertEqual(state['workspace']['name'], 'Test workspace')
         self.assertEqual(state['me']['role'], 'admin')
-        # The decision card and the inbox read these; they must follow the saved settings.
-        self.assertEqual(state['settings'], {'auto_rules': False, 'overdue_hours': 72})
-        self.post('/api/settings', {'auto_rules': True, 'overdue_hours': 24}, cookie=cookie, csrf=state['csrf_token'])
-        self.assertEqual(self.get('/api/state', cookie=cookie)['settings'], {'auto_rules': True, 'overdue_hours': 24})
+        # The decision card, the inbox and the task overview read these;
+        # they must follow the saved settings.
+        self.assertEqual(state['settings'], {'auto_rules': False, 'overdue_hours': 72, 'brief_mode': 'static'})
+        self.post('/api/settings', {'auto_rules': True, 'overdue_hours': 24, 'brief_mode': 'off'}, cookie=cookie,
+                  csrf=state['csrf_token'])
+        self.assertEqual(self.get('/api/state', cookie=cookie)['settings'],
+                         {'auto_rules': True, 'overdue_hours': 24, 'brief_mode': 'off'})
         invitation = self.post('/api/invitations', {'email': 'member@example.test', 'role': 'member'},
                                cookie=cookie, csrf=state['csrf_token'])
         token = invitation['url'].split('#invite=')[1]
