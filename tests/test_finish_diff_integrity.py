@@ -37,8 +37,8 @@ class FinishDiffIntegrityTests(ContractCase):
 
     def assert_rejected_without_completion(self, task, message, **args):
         before = dict(self.store.graph.get_task(task))
-        events = list(self.store.graph.db.execute(
-            "SELECT id FROM events WHERE run_id=? ORDER BY id", (task,)))
+        events = [row["id"] for row in self.store.graph.db.execute(
+            "SELECT id FROM events WHERE run_id=? ORDER BY id", (task,))]
         with patch.object(self.store, "update_run", wraps=self.store.update_run) as update, \
                 patch("bridge.canvas._review") as review, \
                 patch("bridge.proof.create") as create:
@@ -48,8 +48,8 @@ class FinishDiffIntegrityTests(ContractCase):
             review.assert_not_called()
             create.assert_not_called()
         self.assertEqual(dict(self.store.graph.get_task(task)), before)
-        self.assertEqual(list(self.store.graph.db.execute(
-            "SELECT id FROM events WHERE run_id=? ORDER BY id", (task,))), events)
+        self.assertEqual([row["id"] for row in self.store.graph.db.execute(
+            "SELECT id FROM events WHERE run_id=? ORDER BY id", (task,))], events)
         with self.assertRaisesRegex(Invalid, "No change proof saved"):
             proof.export(self.store, {"task_id": task})
 
