@@ -1005,7 +1005,7 @@ class Store:
                         applicability_json, decision_id))
             self.event(db, kind, json.dumps({"answer": answer, "rationale": rationale, "owner": decision["owner_name"],
                                              "actor": signer, "basis": basis,
-                                             "source": data.get("source") or "local operator",
+                                             **authz.event_provenance(actor, data.get("source")),
                                              "applicability": applicability}), decision_id, decision["run_id"])
             if corrects:
                 for dependent in db.execute("SELECT id,run_id FROM decisions WHERE source_id=? AND status='pending'", (decision_id,)).fetchall():
@@ -1027,7 +1027,9 @@ class Store:
                            "signatures=?, signed_by=? WHERE id=?",
                            (json.dumps([{"by": signer, "at": stamp, "revision": stamp, "hash": answer_hash(answer)}]),
                             signer, decision_id))
-                self.event(db, "signature", json.dumps({"by": signer, "remaining": remaining}), decision_id, decision["run_id"])
+                self.event(db, "signature", json.dumps({"by": signer, "remaining": remaining,
+                                                       **authz.event_provenance(actor, data.get("source"))}),
+                           decision_id, decision["run_id"])
             pending = db.execute("SELECT 1 FROM decisions WHERE run_id=? AND status='pending'", (decision["run_id"],)).fetchone()
             from .execution_store import record_answer
             if not remaining:

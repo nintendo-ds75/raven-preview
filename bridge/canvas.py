@@ -2711,6 +2711,7 @@ def sign_off(store, decision_id: str, data, actor=None, transaction_db=None) -> 
             graph.update_decision(d.id, owner=by)
         store.answer(d.id, {"answer": answer, "rationale": _text(data, "rationale") or "corrected at sign-off",
                             "applicability": data.get("applicability") or {},
+                            "source": data.get("source"),
                             "signed_by": by, "expected_updated_at": graph.db.execute(
                                 "SELECT updated_at FROM decisions WHERE id=?", (d.id,)).fetchone()["updated_at"]},
                      actor=actor, transaction_db=transaction_db)
@@ -2746,7 +2747,8 @@ def sign_off(store, decision_id: str, data, actor=None, transaction_db=None) -> 
                              (json.dumps(signatures), ", ".join(x["by"] for x in signatures), stamp,
                               actor.id if actor is not None else "", by, basis, d.id))
             graph.append_event("signature", {"task_id": d.task_id, "decision_id": d.id, "by": by, "remaining": remaining,
-                                             "revision": stamp, "basis": basis})
+                                             "revision": stamp, "basis": basis,
+                                             **authz.event_provenance(actor, data.get("source"))})
         else:
             # A person's answer, now signed by everyone it needed, is a
             # recorded answer like any other, not something resolved from
@@ -2759,7 +2761,8 @@ def sign_off(store, decision_id: str, data, actor=None, transaction_db=None) -> 
                               content, json.dumps(signatures), stamp,
                               actor.id if actor is not None else "", by, basis, d.id))
             graph.append_event("signoff", {"task_id": d.task_id, "decision_id": d.id, "by": by, "corrected": False,
-                                           "revision": stamp, "basis": basis})
+                                           "revision": stamp, "basis": basis,
+                                           **authz.event_provenance(actor, data.get("source"))})
     if basis == 'owner':
         with graph.transaction():
             graph.learn_from_answer(d.id, by, store.get_decision(d.id).get('owner_evidence') or '')

@@ -46,6 +46,21 @@ class Actor:
         return cls(id=row["id"], name=row["name"], role=row.get("role") or "member", kind=kind)
 
 
+def event_provenance(actor: Actor | None, source=None) -> dict:
+    """Append-only attribution for new human answer/signature events.
+
+    A source is a descriptive label, not an identity claim. Stable identity
+    and transport come only from the authenticated actor, never client data.
+    Internal callers retain the historical local-operator label without
+    claiming an authenticated person or guessing a transport for old events.
+    """
+    if not source:
+        source = "local operator" if actor is None or actor.kind == "operator" else (
+            f"{actor.kind}: {actor.name}" if actor.name else actor.kind)
+    return {"source": source, "actor_id": actor.id if actor is not None else "",
+            "actor_kind": actor.kind if actor is not None else "internal"}
+
+
 class Refused(Invalid):
     """The actor may not do this; the message says who may."""
 
