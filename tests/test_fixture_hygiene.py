@@ -16,7 +16,7 @@ from fixtures import MAINTAINERS, NODE_PEOPLE, PEOPLE, ROOT, OfflineCase  # noqa
 
 from evals import pseudonyms  # noqa: E402
 
-_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![A-Za-z0-9])")
 _BINARY = (".jpg", ".jpeg", ".png", ".gif", ".svg", ".ico", ".woff", ".woff2", ".pdf")
 
 

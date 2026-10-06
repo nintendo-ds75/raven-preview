@@ -483,7 +483,7 @@ class TeamsTests(OfflineCase):
 
     def test_endpoint_configuration_refuses_credential_exfiltration_routes(self):
         endpoints = ("http://smba.trafficmanager.net/teams/", "https://smba.trafficmanager.net.evil.test/teams/",
-            "https://evil@smba.trafficmanager.net/teams/", "https://smba.trafficmanager.net:444/teams/",
+            "https://fixture@example.invalid@smba.trafficmanager.net/teams/", "https://smba.trafficmanager.net:444/teams/",
             "https://127.0.0.1/teams/", "https://smba.trafficmanager.net/teams/?target=evil",
             "https://smba.trafficmanager.net/teams/#fragment", "https://smba.trafficmanager.net/../evil/")
         for endpoint in endpoints:
