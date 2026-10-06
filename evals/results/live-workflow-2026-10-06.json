@@ -1,0 +1,431 @@
+{
+  "status": "passed",
+  "stage": "complete",
+  "provider": "anthropic",
+  "model": "claude-sonnet-5",
+  "fast_model": "claude-haiku-4-5-20251001",
+  "synthetic_slack": true,
+  "model_outputs_mocked": false,
+  "human_messages_synthetic": true,
+  "limitations": [
+    "No live Slack workspace or actual human approval.",
+    "Synthetic repository and human inputs; actual live provider inference and authenticated HTTP workflow.",
+    "Behavioral code is a restricted model-generated expression, not a general-purpose autonomous coding run.",
+    "Interview draft is tested for adaptivity and grounding; it is not confirmed as a separate approval.",
+    "Proof integrity and advisory review do not independently verify host test execution."
+  ],
+  "diagnostic_only": false,
+  "scenario": {
+    "threshold": 683,
+    "cohort": "pilot_d9b4410e",
+    "staging": "staging_f15146f9",
+    "base_answer": "Please exclude internal load-test traffic from invoices and continue billing real customer traffic.",
+    "caveat_message": "Actually, one exception: for cohort pilot_d9b4410e, internal load-test traffic with more than 683 calls must remain billable. At or below 683 calls it is excluded. Internal traffic for other cohorts is excluded. Keep real customer traffic billable.",
+    "interview_response": "Please exclude internal load-test traffic from invoices and continue billing real customer traffic.\nActually, one exception: for cohort pilot_d9b4410e, internal load-test traffic with more than 683 calls must remain billable. At or below 683 calls it is excluded. Internal traffic for other cohorts is excluded. Keep real customer traffic billable.\nThis exception is decided for production only. I have not decided whether the staging_f15146f9 environment should use that exception. Ask me about this unresolved environment before proposing its policy."
+  },
+  "discovery": {
+    "question": "Should sandbox load tests be identified by a separate flag (like `bill_sandbox_test`), by customer/account tagging, or by transaction metadata\u2014and who decides the identification mechanism?",
+    "path": "billing/usage.py",
+    "raven_candidates": [
+      {
+        "question": "How should billing treat sandbox load tests differently from normal customer charges?",
+        "from": "\"treat our sandbox load tests correctly\""
+      },
+      {
+        "question": "What identifies a transaction or customer as a sandbox load test rather than a normal charge?",
+        "from": "\"sandbox load tests\""
+      }
+    ]
+  },
+  "readback": "Record your decision as:\nExclude internal load-test traffic from invoices and continue billing real customer traffic, except for cohort pilot_d9b4410e: internal load-test traffic with more than 683 calls remains billable; at or below 683 calls it is excluded. Internal traffic for other cohorts is excluded.\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.",
+  "interview_http": [
+    {
+      "operation": "create",
+      "status": 200
+    },
+    {
+      "operation": "draft",
+      "status": 200
+    },
+    {
+      "operation": "advance",
+      "status": 200
+    }
+  ],
+  "interview_model_observations": [
+    {
+      "result_type": "dict",
+      "field_count": 6,
+      "fields": [
+        {
+          "name": "question",
+          "type": "str"
+        },
+        {
+          "name": "question_quote",
+          "type": "str"
+        },
+        {
+          "name": "proposed_answer",
+          "type": "str"
+        },
+        {
+          "name": "proposed_rationale",
+          "type": "str"
+        },
+        {
+          "name": "answer_quotes",
+          "type": "list"
+        },
+        {
+          "name": "caveats",
+          "type": "list"
+        }
+      ],
+      "values": {
+        "question": {
+          "type": "str",
+          "length": 219,
+          "value": "For the staging_f15146f9 environment, should internal load-test traffic for cohort pilot_d9b4410e with more than 683 calls remain billable, or should all internal load-test traffic be excluded regardless of call volume?",
+          "truncated": false
+        },
+        "question_quote": {
+          "type": "str",
+          "length": 133,
+          "value": "This exception is decided for production only. I have not decided whether the staging_f15146f9 environment should use that exception.",
+          "truncated": false
+        },
+        "proposed_answer": {
+          "type": "str",
+          "length": 0,
+          "value": "",
+          "truncated": false
+        },
+        "proposed_rationale": {
+          "type": "str",
+          "length": 0,
+          "value": "",
+          "truncated": false
+        },
+        "answer_quotes": {
+          "type": "list",
+          "length": 0,
+          "items": [],
+          "truncated": false
+        },
+        "caveats": {
+          "type": "list",
+          "length": 3,
+          "items": [
+            {
+              "type": "dict",
+              "field_count": 2,
+              "fields": [
+                {
+                  "name": "text",
+                  "type": "str"
+                },
+                {
+                  "name": "quote",
+                  "type": "str"
+                }
+              ],
+              "values": {
+                "text": {
+                  "type": "str",
+                  "length": 87,
+                  "value": "Exception applies to production only; staging_f15146f9 environment policy is unresolved",
+                  "truncated": false
+                },
+                "quote": {
+                  "type": "str",
+                  "length": 133,
+                  "value": "This exception is decided for production only. I have not decided whether the staging_f15146f9 environment should use that exception.",
+                  "truncated": false
+                }
+              },
+              "truncated": false
+            },
+            {
+              "type": "dict",
+              "field_count": 2,
+              "fields": [
+                {
+                  "name": "text",
+                  "type": "str"
+                },
+                {
+                  "name": "quote",
+                  "type": "str"
+                }
+              ],
+              "values": {
+                "text": {
+                  "type": "str",
+                  "length": 138,
+                  "value": "For cohort pilot_d9b4410e in production, internal load-test traffic above 683 calls remains billable; at or below 683 calls it is excluded",
+                  "truncated": false
+                },
+                "quote": {
+                  "type": "str",
+                  "length": 138,
+                  "value": "for cohort pilot_d9b4410e, internal load-test traffic with more than 683 calls must remain billable. At or below 683 calls it is excluded.",
+                  "truncated": false
+                }
+              },
+              "truncated": false
+            },
+            {
+              "type": "dict",
+              "field_count": 2,
+              "fields": [
+                {
+                  "name": "text",
+                  "type": "str"
+                },
+                {
+                  "name": "quote",
+                  "type": "str"
+                }
+              ],
+              "values": {
+                "text": {
+                  "type": "str",
+                  "length": 66,
+                  "value": "Internal traffic for cohorts other than pilot_d9b4410e is excluded",
+                  "truncated": false
+                },
+                "quote": {
+                  "type": "str",
+                  "length": 47,
+                  "value": "Internal traffic for other cohorts is excluded.",
+                  "truncated": false
+                }
+              },
+              "truncated": false
+            }
+          ],
+          "truncated": false
+        }
+      },
+      "fields_truncated": false
+    }
+  ],
+  "interview": {
+    "mode": "model-assisted",
+    "status": "unapproved",
+    "model": "claude-haiku-4-5-20251001",
+    "question": "For the staging_f15146f9 environment, should internal load-test traffic for cohort pilot_d9b4410e with more than 683 calls remain billable, or should all internal load-test traffic be excluded regardless of call volume?",
+    "question_quote": "This exception is decided for production only. I have not decided whether the staging_f15146f9 environment should use that exception.",
+    "proposed_answer": "",
+    "proposed_rationale": "",
+    "answer_quotes": [],
+    "caveats": [
+      {
+        "text": "Exception applies to production only; staging_f15146f9 environment policy is unresolved",
+        "quote": "This exception is decided for production only. I have not decided whether the staging_f15146f9 environment should use that exception."
+      },
+      {
+        "text": "For cohort pilot_d9b4410e in production, internal load-test traffic above 683 calls remains billable; at or below 683 calls it is excluded",
+        "quote": "for cohort pilot_d9b4410e, internal load-test traffic with more than 683 calls must remain billable. At or below 683 calls it is excluded."
+      },
+      {
+        "text": "Internal traffic for cohorts other than pilot_d9b4410e is excluded",
+        "quote": "Internal traffic for other cohorts is excluded."
+      }
+    ]
+  },
+  "signed_answer": "Exclude internal load-test traffic from invoices and continue billing real customer traffic, except for cohort pilot_d9b4410e: internal load-test traffic with more than 683 calls remains billable; at or below 683 calls it is excluded. Internal traffic for other cohorts is excluded.",
+  "agent_implementation": {
+    "expression": "(not is_internal) or (is_internal and cohort == 'pilot_d9b4410e' and calls > 683)",
+    "behavioral_cases_passed": 16,
+    "boundary_cases": [
+      {
+        "is_internal": false,
+        "cohort": "pilot_d9b4410e",
+        "calls": 0,
+        "billable": true
+      },
+      {
+        "is_internal": false,
+        "cohort": "pilot_d9b4410e",
+        "calls": 682,
+        "billable": true
+      },
+      {
+        "is_internal": false,
+        "cohort": "pilot_d9b4410e",
+        "calls": 683,
+        "billable": true
+      },
+      {
+        "is_internal": false,
+        "cohort": "pilot_d9b4410e",
+        "calls": 684,
+        "billable": true
+      },
+      {
+        "is_internal": false,
+        "cohort": "ordinary_pilot_d9b4410e",
+        "calls": 0,
+        "billable": true
+      },
+      {
+        "is_internal": false,
+        "cohort": "ordinary_pilot_d9b4410e",
+        "calls": 682,
+        "billable": true
+      },
+      {
+        "is_internal": false,
+        "cohort": "ordinary_pilot_d9b4410e",
+        "calls": 683,
+        "billable": true
+      },
+      {
+        "is_internal": false,
+        "cohort": "ordinary_pilot_d9b4410e",
+        "calls": 684,
+        "billable": true
+      },
+      {
+        "is_internal": true,
+        "cohort": "pilot_d9b4410e",
+        "calls": 0,
+        "billable": false
+      },
+      {
+        "is_internal": true,
+        "cohort": "pilot_d9b4410e",
+        "calls": 682,
+        "billable": false
+      },
+      {
+        "is_internal": true,
+        "cohort": "pilot_d9b4410e",
+        "calls": 683,
+        "billable": false
+      },
+      {
+        "is_internal": true,
+        "cohort": "pilot_d9b4410e",
+        "calls": 684,
+        "billable": true
+      },
+      {
+        "is_internal": true,
+        "cohort": "ordinary_pilot_d9b4410e",
+        "calls": 0,
+        "billable": false
+      },
+      {
+        "is_internal": true,
+        "cohort": "ordinary_pilot_d9b4410e",
+        "calls": 682,
+        "billable": false
+      },
+      {
+        "is_internal": true,
+        "cohort": "ordinary_pilot_d9b4410e",
+        "calls": 683,
+        "billable": false
+      },
+      {
+        "is_internal": true,
+        "cohort": "ordinary_pilot_d9b4410e",
+        "calls": 684,
+        "billable": false
+      }
+    ]
+  },
+  "advisory_review": {
+    "status": "done",
+    "follows": [
+      {
+        "node_id": "9b35cc3ef008",
+        "question": "Should sandbox load tests be identified by a separate flag (like `bill_sandbox_test`), by customer/account tagging, or by transaction metadata\u2014and who decides the identification mechanism?",
+        "requirements": [
+          {
+            "at": "return (not is_internal) or (is_internal and cohort == 'pilot_d9b4410e' and calls > 683)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Exclude internal load-test traffic from invoices by default",
+            "not_shown": "caller code in billing/usage.py or elsewhere that invokes is_billable with actual invoice line data",
+            "state": "ok"
+          },
+          {
+            "at": "return (not is_internal) or (is_internal and cohort == 'pilot_d9b4410e' and calls > 683)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Continue billing real (non-internal) customer traffic",
+            "not_shown": "caller code that supplies is_internal=False for real customer traffic",
+            "state": "ok"
+          },
+          {
+            "at": "return (not is_internal) or (is_internal and cohort == 'pilot_d9b4410e' and calls > 683)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Cohort pilot_d9b4410e: internal traffic with more than 683 calls remains billable",
+            "state": "ok"
+          },
+          {
+            "at": "return (not is_internal) or (is_internal and cohort == 'pilot_d9b4410e' and calls > 683)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Cohort pilot_d9b4410e: internal traffic at or below 683 calls is excluded",
+            "state": "ok"
+          },
+          {
+            "at": "return (not is_internal) or (is_internal and cohort == 'pilot_d9b4410e' and calls > 683)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Internal traffic for cohorts other than pilot_d9b4410e is excluded",
+            "state": "ok"
+          }
+        ],
+        "unexamined": [
+          "caller code in billing/usage.py or elsewhere that invokes is_billable with actual invoice line data",
+          "caller code that supplies is_internal=False for real customer traffic"
+        ],
+        "verdict": "follows",
+        "why": "The single boolean expression in is_billable implements all five billing conditions exactly as authorized: non-internal traffic billable, pilot_d9b4410e internal traffic billable only above 683 calls, and all other internal traffic excluded."
+      }
+    ]
+  },
+  "proof": {
+    "id": "a6ea703c511f154a6fb8960e42360df04647e828269845ad424e8503cda2159d",
+    "integrity_valid": true,
+    "authenticity_verified": false,
+    "diff_sha256": "3ec2442a742d866e505afa56dbaf4bbe4d7f80b1b3e29864de51f4721db3f007"
+  },
+  "mcp_tools": [
+    "bridge_add_node",
+    "bridge_export_proof",
+    "bridge_finish_task",
+    "bridge_get_decision",
+    "bridge_get_tree",
+    "bridge_start_task",
+    "bridge_wait"
+  ],
+  "physical_http_requests": 12,
+  "max_physical_http_requests": 30,
+  "successful_http_responses": 12,
+  "http_statuses": [
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200,
+    200
+  ],
+  "input_tokens": 14324,
+  "output_tokens": 3174,
+  "cache_creation_input_tokens": 0,
+  "cache_read_input_tokens": 0
+}

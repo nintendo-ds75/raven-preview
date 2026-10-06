@@ -206,3 +206,30 @@ python -m unittest discover -s tests -p test_live_workflow_acceptance.py -v
 
 Those unit tests explicitly inject a provider HTTP fixture. Their success is
 not a substitute for a passing `--run-live` report.
+
+The full live acceptance passed on runtime `764b1c4` on October 6, 2026:
+12 physical Anthropic requests, all HTTP 200, with 14,324 input and 3,174 output
+tokens. It exercised adaptive clarification, grounded caveats and all 16
+behavioral cases. See the [recorded verification](verification-2026-10-06.md)
+and [sanitized result](../evals/results/live-workflow-2026-10-06.json), including
+the initial interview failures and fixes. Slack and human inputs remained
+synthetic throughout.
+
+### Focused live interview diagnosis
+
+A failed run retains its synthetic scenario, stage, fixed failure code, HTTP
+operation statuses and bounded structured interview draft fields. It never
+records request headers or raw provider errors. To isolate a failure without
+repeating discovery and routing, reuse that saved scenario:
+
+```sh
+python evals/live_workflow_acceptance.py --run-live --interview-only \
+  --scenario-from /tmp/raven-live-workflow.json --max-calls 3 \
+  --output /tmp/raven-interview-diagnostic.json
+```
+
+This mode explicitly simulates unsigned task/owner setup, then uses the real
+authenticated interview HTTP routes and provider. It does not count as a full
+workflow pass. If an older report lacks its random staging identifier, the
+report discloses that a new identifier was generated. The unchanged full
+acceptance is required after any fix. See [recorded verification](verification-2026-10-06.md).
