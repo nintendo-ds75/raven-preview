@@ -22,13 +22,14 @@ MAX_FILE = 256 * 1024
 MAX_CHECKOUT = 8 * 1024 * 1024
 JUDGMENT_FIELDS = {"question": 2000, "context": 5500, "path": 1000,
                    "evidence": 2000, "options": 2000, "blocked_work": 1000, "independent_work": 1000}
+OPTIONAL_JUDGMENT_FIELDS = {'facts': 2000, 'scope_request': 200}
 TOOLS = [
     {"type": "function", "name": "search_decisions", "description": "Find reviewed prior decisions and provenance. These are evidence, not approval for a new request.",
      "parameters": {"type": "object", "properties": {"query": {"type": "string", "maxLength": 2000}},
                     "required": ["query"], "additionalProperties": False}},
-    {"type": "function", "name": "request_judgment", "description": "Ask the configured owner about a consequential unresolved choice. The call stays pending until reviewed.",
-     "parameters": {"type": "object", "properties": {k: {"type": "string", "maxLength": v} for k, v in JUDGMENT_FIELDS.items()},
-                    "required": list(JUDGMENT_FIELDS), "additionalProperties": False}},
+    {"type": "function", "name": "request_judgment", "description": "Ask the configured owner about a consequential unresolved choice. The call stays pending until reviewed. Use empty strings for facts and scope_request unless needed. If needs_scope_clarification returns, establish the actual missing facts and retry with facts as key=value pairs and scope_request set to the returned request_key; never copy historical facts as current truth.",
+     "parameters": {"type": "object", "properties": {k: {"type": "string", "maxLength": v} for k, v in {**JUDGMENT_FIELDS, **OPTIONAL_JUDGMENT_FIELDS}.items()},
+                    "required": list(JUDGMENT_FIELDS) + list(OPTIONAL_JUDGMENT_FIELDS), "additionalProperties": False}},
 ]
 OUTPUT_INSTRUCTIONS = """
 Work in /workspace/repo. Preserve the baseline git commit. When finished, run the
@@ -224,9 +225,15 @@ class ExecutionService:
             if not isinstance(args, dict):
                 raise Invalid("Tool arguments must be an object")
             if name == "request_judgment":
-                if set(args) != set(JUDGMENT_FIELDS):
-                    raise Invalid("Supply exactly the documented judgment fields; run and owner are assigned by Raven")
+                if not set(JUDGMENT_FIELDS) <= set(args) or set(args) - set(JUDGMENT_FIELDS) - set(OPTIONAL_JUDGMENT_FIELDS):
+                    raise Invalid("Supply the documented judgment fields; run and owner are assigned by Raven")
                 validated = {k: field(args, k, limit=v) for k, v in JUDGMENT_FIELDS.items()}
+                optional = {k: field(args, k, limit=v) for k, v in OPTIONAL_JUDGMENT_FIELDS.items() if args.get(k)}
+                scope_ref = optional.get('scope_request')
+                if scope_ref and not self.store.graph.db.execute(
+                        'SELECT 1 FROM scope_clarifications WHERE task_id=? AND request_key=?',
+                        (run['run_id'], scope_ref)).fetchone():
+                    raise Invalid('scope_request must name a pending clarification on this task')
                 if validated["path"].startswith("/") or ".." in validated["path"].split("/"):
                     raise Invalid("Use a repository-relative routing path")
                 context = validated["context"] + "\n\n" + "\n\n".join(
@@ -238,9 +245,12 @@ class ExecutionService:
                 from . import canvas
                 node = canvas.add_node(self.store, self.config, {
                     "task_id": run["run_id"], "question": validated["question"], "context": context,
-                    "paths": validated["path"], "client_ref": f"{turn_id}:{call_id}"})
-                decision_id = node["node_id"]
-                if node["authorized"]:
+                    "paths": validated["path"], "client_ref": scope_ref or f"{turn_id}:{call_id}",
+                    **({'facts': optional['facts']} if 'facts' in optional else {})})
+                decision_id = node.get("node_id")
+                if node.get('status') == 'needs_scope_clarification':
+                    output = node
+                elif node["authorized"]:
                     # A rule or a signed decision already covers it: the
                     # answer goes back now, with its provenance.
                     with self.store.connect() as db:
@@ -366,6 +376,7 @@ class ExecutionService:
                 f"SELECT 1 FROM decisions d WHERE d.run_id=? AND ({BLOCKING_SQL} OR (d.status='duplicate' AND EXISTS "
                 f"(SELECT 1 FROM decisions d2 WHERE d2.id=d.superseded_by AND {twin_blocking})))",
                 (run["run_id"],)).fetchone()
+            pending = pending or db.execute('SELECT 1 FROM scope_clarifications WHERE task_id=?', (run['run_id'],)).fetchone()
             deliveries = db.execute("SELECT 1 FROM deliveries d JOIN provider_calls c ON c.id=d.call_id "
                 "WHERE c.run_id=? AND d.state IN ('queued','sending','uncertain','error','stopped')", (run["run_id"],)).fetchone()
         if not terminal and pending:

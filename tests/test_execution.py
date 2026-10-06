@@ -94,6 +94,40 @@ class ExecutionTests(unittest.TestCase):
         return self.store.answer(decision["id"], {"answer": value, "rationale": "Synthetic fixture policy",
                                                "expected_updated_at": decision["updated_at"]})
 
+    def scoped_followup(self):
+        first = self.launch()
+        original = self.question(first)
+        self.store.graph.db.execute('UPDATE decisions SET facts=? WHERE id=?',
+                                    (json.dumps({'customer': 'acme'}), original['id']))
+        self.answer(original)
+        self.service.tick()
+        second = self.launch(key='second-scoped-task')
+        action = self.api.ask(second['session_id'])
+        self.service.tick()
+        outputs = [e for sid, events, _ in self.api.sent if sid == second['session_id'] for e in events]
+        clarification = json.loads(outputs[-1]['output'])
+        return second, action, clarification
+
+    def test_scope_clarification_returns_to_managed_host_and_explicit_retry_clears_it(self):
+        run, action, result = self.scoped_followup()
+        self.assertEqual(result['status'], 'needs_scope_clarification')
+        self.assertIsNone(self.service.get(run['run_id'])['last_error'])
+        args = {**action['arguments'], 'facts': 'customer=acme', 'scope_request': result['request_key']}
+        self.api.ask(run['session_id'], call_id='clarified', arguments=args)
+        self.service.tick()
+        self.assertFalse(self.store.graph.db.execute('SELECT 1 FROM scope_clarifications WHERE task_id=?',
+                                                      (run['run_id'],)).fetchone())
+        node = self.store.graph.db.execute('SELECT * FROM decisions WHERE run_id=?', (run['run_id'],)).fetchone()
+        self.assertIsNotNone(node)
+        self.assertNotEqual(node['signoff'], 'signed')
+
+    def test_unresolved_scope_prevents_managed_result_ready(self):
+        run, _, result = self.scoped_followup()
+        self.assertEqual(result['status'], 'needs_scope_clarification')
+        self.api.saved_turns[run['session_id']][-1]['status'] = 'completed'
+        self.service.tick()
+        self.assertEqual(self.service.get(run['run_id'])['status'], 'review_required')
+
     def test_concurrent_submission_deduplicates_and_rejects_key_reuse(self):
         data = {"task": "Add usage-based pricing", "repository": "billing-fixture", "submission_key": "one"}
         with ThreadPoolExecutor(max_workers=4) as pool:
@@ -367,4 +401,3 @@ class ManagedCanvasTests(unittest.TestCase):
         self.assertEqual(json.loads(service.get(result["id"])["config"])["repository"], "app")
         with self.assertRaises(Invalid):
             service.submit({"task": "x", "repository": "other", "submission_key": "app-two"})
-
