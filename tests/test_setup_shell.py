@@ -51,6 +51,10 @@ class SetupShellTests(unittest.TestCase):
         calls = self.run_launcher(False, [])
         self.assertIn("-T", calls)
         self.assertIn("bridge.setup", calls)
+        root = Path(__file__).resolve().parents[1]
+        self.assertIn("ANTHROPIC_WORKSPACE_ID: ${ANTHROPIC_WORKSPACE_ID:-}",
+                      (root / "compose.yaml").read_text())
+        self.assertIn("# ANTHROPIC_WORKSPACE_ID=", (root / ".env.example").read_text())
 
     def test_project_is_not_forwarded_to_the_connection_wizard(self):
         calls = self.run_launcher(False, ["--yes", "--configure", "--project", "{project}"])

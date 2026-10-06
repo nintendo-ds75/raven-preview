@@ -5,6 +5,7 @@ BRIDGE_MODEL       model id for the Anthropic Messages API (default claude-sonne
 BRIDGE_FAST_MODEL  a fast model for the quick calls (area mapping, briefs, kickoff triage;
                    default claude-haiku-4-5-20251001)
 ANTHROPIC_API_KEY  read from the environment at call time, never stored
+ANTHROPIC_WORKSPACE_ID  optional explicit workspace selection for multi-workspace API keys
 BRIDGE_SEMANTIC    0 turns the model-backed rungs off; default on when a backend exists
 BRIDGE_DEEP        0 keeps the fast model points only (area mapping, briefs, kickoff triage, record
                    confirmation) and skips query expansion, near-twin checks and follow-up rewriting
@@ -41,6 +42,11 @@ class Config:
     @property
     def api_key(self) -> str:
         return os.environ.get("ANTHROPIC_API_KEY", "").strip()
+
+    @property
+    def anthropic_workspace_id(self) -> str:
+        """Explicit non-secret selection; never infer or look up a workspace."""
+        return os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
 
     def has_backend(self) -> bool:
         """A model backend exists: an API key, or the claude CLI when the

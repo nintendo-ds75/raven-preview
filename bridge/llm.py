@@ -218,9 +218,15 @@ class Client:
         return _anthropic_text(payload)
 
     def _messages(self, system: str, prompt: str, max_tokens: int) -> dict:
+        headers = {"x-api-key": self.cfg.api_key, "anthropic-version": "2023-06-01"}
+        workspace = self.cfg.anthropic_workspace_id
+        if workspace:
+            if len(workspace) > 256 or any(ord(char) < 33 or ord(char) > 126 for char in workspace):
+                raise LLMError("ANTHROPIC_WORKSPACE_ID must be a printable header value of at most 256 characters")
+            headers["anthropic-workspace-id"] = workspace
         payload = self._post_json(
             "https://api.anthropic.com/v1/messages",
-            {"x-api-key": self.cfg.api_key, "anthropic-version": "2023-06-01"},
+            headers,
             {"model": self.cfg.model, "max_tokens": max_tokens,
              "system": system,
              "messages": [{"role": "user", "content": prompt}]})

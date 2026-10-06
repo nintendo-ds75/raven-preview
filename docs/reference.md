@@ -151,6 +151,16 @@ Evidence is not authorization. A person stands behind a decision when the inbox 
 
 ## Model keys
 
+For a multi-workspace Anthropic key, explicitly set the non-secret
+`ANTHROPIC_WORKSPACE_ID` in the runtime environment (or the ignored local `.env`
+used by Compose). Raven sends it as `anthropic-workspace-id` on Messages requests;
+unset or blank preserves existing single-workspace behavior. The ID is read at
+call time and must be a printable header value of at most 256 characters. Raven
+does not choose, discover or grant access to a workspace. See the
+[Anthropic workspace-selection documentation](https://platform.claude.com/docs/en/manage-claude/authentication#select-a-workspace).
+This setting covers Raven's direct Messages API client; external coding hosts
+must configure their own supported workspace header separately.
+
 The model-backed rungs read `ANTHROPIC_API_KEY` from the environment at call time and talk to the Anthropic Messages API with the standard library. The terminal setup wizard can save it in the ignored, owner-only `.env` file; do not commit or share that file. The model adapter does not put the key in decision records or logs. `BRIDGE_MODEL` selects the model. A direct local Python installation can use an installed, signed-in Claude CLI (`BRIDGE_MODEL_API=claude-cli`; `BRIDGE_CLAUDE_BIN` names the binary). Docker does not inherit that host login and normally uses `BRIDGE_MODEL_API=anthropic` with an API key. With no configured backend, or with `BRIDGE_SEMANTIC=0`, the ladder runs its deterministic rungs only: memory, ownership graph, records by reference and lexical match, dedupe, and routing. Questions those rungs cannot settle route to a person; natural-language interpretation needs inference, while explicit reply commands remain available. `BRIDGE_MODEL_API=none` disables backends outright.
 
 Embeddings are always local (a hashed bag of stemmed words); no embedding API is called.
