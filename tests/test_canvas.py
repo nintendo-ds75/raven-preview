@@ -749,7 +749,7 @@ class FinishTests(CanvasCase):
         self.assertEqual([(x["node_id"], x["why"]) for x in review["stale"]],
                          [(node["node_id"], "its signed answer changed after this reading")])
         self.assertTrue(review["follows"][0]["stale"])
-        self.assertIn(f"read an earlier answer to 1 decision ({node['node_id']}): call bridge_finish_task again",
+        self.assertIn(f"needs refreshing for 1 decision ({node['node_id']}): call bridge_finish_task again",
                       tree["next"])
         # Read again against the answers as they stand: current, not stale.
         departs = {"verdict": "departs", "why": "the diff makes the aplic the default", "requirements": []}
@@ -784,7 +784,9 @@ class FinishTests(CanvasCase):
             self.store.graph.append_event("conformance_read", {
                 "task_id": t["task_id"], "review_id": "legacy000001", "diff_hash": "d", "status": "done",
                 "follows": [{"node_id": node["node_id"], "verdict": "follows", "why": "w", "requirements": []}]})
-        self.assertEqual(canvas.get_tree(self.store, t["task_id"])["review"]["status"], "done")
+        legacy = canvas.get_tree(self.store, t["task_id"])["review"]
+        self.assertEqual((legacy["status"], legacy["read_status"]), ("stale", "done"))
+        self.assertIn("did not record its question", legacy["stale"][0]["why"])
         time.sleep(0.01)
         row = self.store.get_decision(node["node_id"])
         self.store.answer(node["node_id"], {"answer": "Keep the plic", "rationale": "r", "signed_by": "Oriel Vance",

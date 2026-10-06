@@ -1680,7 +1680,7 @@ def get_tree(store, task_id: str) -> dict:
     notes = task_notes(store, task_id)
     if notes:
         parts.append(f"{len(notes)} note{'s' if len(notes) > 1 else ''} from people on this task (notes)")
-    review = _current_review(graph, task_id, nodes)
+    review = _current_review(graph, task_id, _flatten(nest("")))
     if review is not None and review["status"] == "running":
         parts.append("the advisory diff review is still running; call bridge_wait to read its result, or repeat "
                      "bridge_finish_task with the same complete diff and checks to resume an interrupted review. "
@@ -1690,9 +1690,9 @@ def get_tree(store, task_id: str) -> dict:
                      "diff and checks to retry it before exporting the proof")
     if review is not None and review["status"] == "stale":
         ids = ", ".join(x["node_id"] for x in review["stale"][:6])
-        parts.append(f"the diff reading on file (review {review['id']}) read an earlier answer to "
+        parts.append(f"the diff reading on file (review {review['id']}) needs refreshing for "
                      f"{len(review['stale'])} decision{'s' if len(review['stale']) != 1 else ''} ({ids}): call "
-                     "bridge_finish_task again with your current diff to read it against the answers as they stand, "
+                     "bridge_finish_task again with your current diff to read it against the questions and answers as they stand, "
                      "and do not report the change as following them until then")
     return {"task_id": task_id, "title": run["title"], "goal": run["goal"] or "", "repo": run["repo"],
             "requester": run["requester"] or "", "facts": _json_dict(run["facts"] if "facts" in run.keys() else ""),
@@ -2129,12 +2129,22 @@ def _revisions(signed: list[dict]) -> dict:
     return {n["node_id"]: answer_hash(n.get("answer") or "") for n in signed}
 
 
+def _review_inputs(signed: list[dict]) -> dict:
+    """Question/answer content supplied to the reader, including its other
+    signed decisions. Signers and timestamps do not change those inputs.
+    Keep their order too: the reader caps decisions and signed context."""
+    import hashlib
+    return {n["node_id"]: hashlib.sha256(json.dumps(
+        [position, n.get("question") or "", n.get("answer") or ""], ensure_ascii=False,
+        separators=(",", ":")).encode()).hexdigest() for position, n in enumerate(signed)}
+
+
 def _review_key(task_id: str, diff: str, signed: list[dict]) -> tuple[str, str]:
-    """One reading per task, diff and set of signed answers."""
+    """One reading per task, diff and ordered signed question/answer inputs."""
     import hashlib
     diff_hash = hashlib.sha256(diff.encode()).hexdigest()[:16]
-    revisions = sorted(f"{k}:{v}" for k, v in _revisions(signed).items())
-    return hashlib.sha256("\n".join([task_id, diff_hash, *revisions]).encode()).hexdigest()[:12], diff_hash
+    inputs = json.dumps(_review_inputs(signed), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256("\n".join([task_id, diff_hash, inputs]).encode()).hexdigest()[:12], diff_hash
 
 
 def _stored_review(graph, task_id: str, review_id: str | None = None) -> dict | None:
@@ -2148,7 +2158,7 @@ def _stored_review(graph, task_id: str, review_id: str | None = None) -> dict | 
             continue
         if not d.get("review_id") or (review_id is not None and d["review_id"] != review_id):
             continue
-        read = {"revisions": d["revisions"]} if isinstance(d.get("revisions"), dict) else {}
+        read = {k: d[k] for k in ("revisions", "review_inputs") if isinstance(d.get(k), dict)}
         if r["kind"] == "conformance_read":
             return {"id": d["review_id"], "status": d.get("status") or "done", "follows": d.get("follows") or [],
                     "diff_hash": d.get("diff_hash") or "", "seconds": d.get("seconds"), "finished_at": r["created_at"],
@@ -2160,8 +2170,8 @@ def _stored_review(graph, task_id: str, review_id: str | None = None) -> dict | 
 
 def _current_review(graph, task_id: str, nodes: list[dict]) -> dict | None:
     """The latest kept reading, as it stands against the tree now. A
-    reading is about the signed answers it read: when one of them has
-    changed since, is no longer signed, or a decision was signed after it,
+    reading is about the signed questions and answers it read: when one
+    changes, is no longer signed, or a decision was signed after it,
     the reading is stale and says which. Measured live on 63eb671: an
     owner reversed a signed answer after the task finished, re-signed it,
     and the tree went on showing the old reading as done and followed."""
@@ -2199,18 +2209,31 @@ def _current_review(graph, task_id: str, nodes: list[dict]) -> dict | None:
     for nid in signed:
         if nid not in read:
             add(nid, "it was signed after this reading, which does not cover it")
+    inputs = review.get("review_inputs")
+    current_inputs = _review_inputs(list(signed.values()))
+    changed = {x["node_id"] for x in stale}
+    if inputs is None:
+        # An answer-only cache cannot establish which question/context it
+        # read. Preserve the old record, but require an explicit new finish.
+        for nid in read:
+            if nid not in changed:
+                add(nid, "this older reading did not record its question and signed decision context")
+    else:
+        for nid in dict.fromkeys([*inputs, *current_inputs]):
+            if nid not in changed and inputs.get(nid) != current_inputs.get(nid):
+                add(nid, "its question or signed decision context changed after this reading")
     if stale:
-        changed = {x["node_id"] for x in stale}
+        # Every reading receives the other signed questions and answers as
+        # context, so a changed secondary decision also stales its findings.
         review = {**review, "read_status": review["status"], "status": "stale", "stale": stale,
-                  "follows": [{**f, "stale": True} if f.get("node_id") in changed else f
-                              for f in review.get("follows") or []]}
+                  "follows": [{**f, "stale": True} for f in review.get("follows") or []]}
     return review
 
 
 def _review(store, task_id: str, signed: list[dict], diff: str, sleep=None, stop=None) -> dict:
     """The reading of the diff against what was signed: run once per task,
-    diff and set of signed answers, and kept. A finish that is retried, or
-    a host that timed out before the answer came, reads the kept one
+    diff and ordered signed question/answer inputs, and kept. A retried finish,
+    or a host that timed out before the answer came, reads the kept one
     instead of starting it again. Measured live on 5e967e4: three finish
     calls timed out at 60 seconds while the reading ran, the hosts never
     saw the departure it found, and a retry would have read it all again."""
@@ -2233,7 +2256,8 @@ def _review(store, task_id: str, signed: list[dict], diff: str, sleep=None, stop
             # Never started, or started by a process that has since gone.
             graph.append_event("conformance_started", {"task_id": task_id, "review_id": rid, "diff_hash": diff_hash,
                                                        "decisions": [n["node_id"] for n in signed],
-                                                       "revisions": _revisions(signed)})
+                                                       "revisions": _revisions(signed),
+                                                       "review_inputs": _review_inputs(signed)})
             thread = threading.Thread(target=_run_review, args=(store, task_id, rid, diff_hash, signed, diff),
                                       daemon=True, name=f"bridge-review-{rid}")
             _REVIEWS[rid] = thread
@@ -2280,7 +2304,7 @@ def _run_review(store, task_id: str, rid: str, diff_hash: str, signed: list[dict
     try:
         store.graph.append_event("conformance_read", {
             "task_id": task_id, "review_id": rid, "diff_hash": diff_hash, "status": status,
-            "revisions": _revisions(signed),
+            "revisions": _revisions(signed), "review_inputs": _review_inputs(signed),
             "seconds": round(_time.monotonic() - started, 1), "follows": follows,
             "read": [{"node": r["node_id"], "verdict": r["verdict"],
                       "counterexamples": sum(1 for q in r["requirements"]

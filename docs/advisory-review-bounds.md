@@ -70,11 +70,23 @@ model call. The evidence bundle preserves the earlier incomplete attempt after
 a later retry succeeds. A fully completed reading with an honest semantic
 `unclear` verdict is still a completed advisory result, not a transport failure.
 
+A kept reading is bound to the ordered questions and answer text of the signed
+decisions supplied to the reviewer, including other decisions used as context.
+Reframing a question and freshly approving the same answer (such as “Yes”)
+requires a new reading. Changing shared signed context marks all findings stale;
+co-signing or changing only timestamps or rationale does not cause another read.
+
+Older readings without question/input fingerprints remain visible as stale, with
+an explicit missing-metadata reason. Reading the tree never starts inference.
+An explicit finish refreshes them under a new input-aware cache key; historical
+review events and exported evidence bundles are not rewritten.
+
 Run deterministic checks with:
 
 ```sh
 python -m unittest discover -s tests -p 'test_bounded_review.py' -v
 python -m unittest discover -s tests -p 'test_review_invariants.py' -v
+python -m unittest discover -s tests -p 'test_review_inputs.py' -v
 python -m unittest discover -s tests -p 'test_proof.py' -v
 python -m unittest discover -s tests -q
 ```

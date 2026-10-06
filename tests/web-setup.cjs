@@ -179,6 +179,22 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   assert.match(overview, /Signed by Wes/);
   assert.doesNotMatch(overview, /Existing code is outside the diff/);
   assert.doesNotMatch(overview, /id="note-form"/);
+  // Stale reviews can reflect changed answers, reframed questions, or legacy
+  // input metadata that was never recorded. Do not invent a specific cause.
+  const keptReview = fixture.tree.review;
+  for (const reason of ['its signed answer changed after this reading',
+      'its question or signed decision context changed after this reading',
+      'this older reading did not record its question and signed decision context']) {
+    fixture.tree.review = {...keptReview, status:'stale', read_status:'done',
+      stale:[{node_id:'n1',why:reason}]};
+    const staleOverview = vm.runInContext('taskOverview()',taskContext);
+    assert.match(staleOverview, /Review needed/);
+    assert.match(staleOverview, /needs refreshing for the current signed questions and answers/);
+    assert.match(staleOverview, /The agent must submit its current diff again/);
+    assert.doesNotMatch(staleOverview, /An answer changed after the code review/);
+    assert.equal(reads,0,'Rendering stale review guidance must not issue requests');
+  }
+  fixture.tree.review = keptReview;
   const review = vm.runInContext("taskTab='review';taskOverview()",taskContext);
   assert.match(review, /Existing code is outside the diff/);
   assert.match(review, /Inspect requirements/);

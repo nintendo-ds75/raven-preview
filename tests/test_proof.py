@@ -298,7 +298,7 @@ class ReviewRecoveryTests(ContractCase):
             # The submitted review still describes the old signed answer.
             self.assertEqual(result["review"]["status"], "done")
             self.assertEqual(result["follows"][0]["verdict"], "follows")
-            self.assertIn("read an earlier answer", result["next"])
+            self.assertIn("needs refreshing", result["next"])
             self.assertNotIn("resolved", result["counts"])
             self.assertEqual(result["counts"]["answered"], 1)
             current = result["guidance_snapshot"]
