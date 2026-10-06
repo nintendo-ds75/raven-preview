@@ -83,8 +83,9 @@ class DiscoveryTests(OfflineCase):
         ack = self.delivery.receive(message['channel'], message['ts'], 'UORIEL',
                                     'answer: Preserve the old default because compatibility matters', event_id='answer-1')
         self.assertIn('Recorded', ack)
-        self.assertEqual(self.delivery.receive(message['channel'], message['ts'], 'UORIEL',
-                         'answer: Different because retry', event_id='answer-1'), '')
+        with self.assertRaisesRegex(Invalid, 'reused with different'):
+            self.delivery.receive(message['channel'], message['ts'], 'UORIEL',
+                                 'answer: Different because retry', event_id='answer-1')
         result = call_tool(self.store, 'bridge_wait', {'task_id': task, 'timeout': '0'})
         self.assertFalse(result['timed_out'])
         call_tool(self.store, 'bridge_get_tree', {'task_id': task})

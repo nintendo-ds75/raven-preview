@@ -44,9 +44,9 @@ Raven sends the question, task context, evidence, and why it chose the person in
 * “This is Priya’s call. Could you ask @Priya?”
 * “Before finishing, check whether this also changes exports.”
 
-Raven reads an answer, correction, referral, follow-up or rule back before applying it. Say yes to confirm, or explain what to change. “OK”, “thanks” and “I’ll check tomorrow” do not sign anything. If the underlying answer changes, an older confirmation is refused. Pending read-backs survive a restart.
+Raven reads an answer, correction, referral, follow-up or rule back before applying it. Each read-back has a fresh short code: reply `confirm <code>` (or `yes <code>`) to approve that exact reading, `decline <code>` to drop it, or explain what to change. A bare `yes` in the root thread is ambiguous and does not approve anything. A natural confirmation works only when the authenticated transport supplies an exact reply-to reference to the delivered read-back. “OK”, “thanks” and “I’ll check tomorrow” do not sign anything. If the underlying answer changes, an older confirmation is refused. Pending read-backs, their message occurrence, and delivery proof survive a restart. Duplicate or out-of-order callbacks do not rebind consent to newer content. Missing, invalid, tied, or stale occurrence metadata fails closed; callbacks never borrow a signature-verification clock or processing time. Read-backs created before this binding existed must be restated.
 
-Command shortcuts still work: `answer: <decision> because <reason>`, `sign off`, or `not me @person`. Add `just this one` to a referral to avoid teaching a reusable route. Signable answers are shown in full across Slack blocks. No inbox account is required.
+With no pending read-back, command shortcuts still work: `answer: <decision> because <reason>`, `sign off`, or `not me @person`. If a read-back is pending, approval shortcuts also require its code or an exact reply-to binding. Add `just this one` to a referral to avoid teaching a reusable route. Signable answers are shown in full across Slack blocks. No inbox account is required.
 
 If no contact matches the available evidence, Raven posts the question in the triage channel. Reply `I'll take this` or `ask @person`. This assigns the question only. The chosen person then answers or signs off; claiming it does not approve it or create broad authority.
 
@@ -61,3 +61,9 @@ An operator can refresh contacts with `POST /api/slack/sync` or the optional Con
 Directory matching and inferred routing can still pick the wrong first person. The reply and referral loop is how Raven corrects this. You do not need to configure owners in advance, and inferred contact evidence does not grant that person permanent authority over unrelated questions.
 
 Slack API references: [directory pagination](https://docs.slack.dev/reference/methods/users.list/), [email scope](https://docs.slack.dev/reference/scopes/users.read.email/), [Events API](https://docs.slack.dev/apis/events-api/), [Real-time Search](https://docs.slack.dev/apis/web-api/real-time-search-api/), [app manifest](https://docs.slack.dev/reference/app-manifest/).
+
+A referral read-back keeps the exact person identity shown when it was offered.
+Confirmation does not re-resolve an old name or mention. If that contact is no
+longer active or eligible, Raven keeps the proposal unsigned and asks for a fresh
+referral. Contact lookup happens before the read-back, outside the approval write
+transaction.

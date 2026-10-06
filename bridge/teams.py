@@ -245,6 +245,14 @@ class TeamsBotTransport:
             return self.token
 
     def post_message(self, channel, text, blocks=None, thread_ts=""):
+        return self._post_message(channel, text, blocks, thread_ts)
+
+    def post_reply(self, channel, text, blocks, thread_ts, event_id):
+        # Notification external_ref uses our opaque thread handle; a read-back
+        # needs Microsoft's actual activity ID for exact reply-to binding.
+        return self._post_message(channel, text, blocks, thread_ts, reply_ref=True)
+
+    def _post_message(self, channel, text, blocks=None, thread_ts="", reply_ref=False):
         if channel != self.config.destination:
             raise Invalid("Teams destination does not match the pinned channel")
         text = re.sub(r"<(https?://[^|>]+)\|([^>]+)>", r"[\2](\1)", text)
@@ -278,7 +286,7 @@ class TeamsBotTransport:
         if not isinstance(response.get("id"), str) or not response["id"]:
             raise TeamsUnavailable("Teams accepted no message identifier")
         if thread_ts:
-            return thread_ts
+            return response["id"] if reply_ref else thread_ts
         if not isinstance(response.get("activityId"), str) or not response["activityId"]:
             raise TeamsUnavailable("Teams created no addressable channel thread")
         handle = uuid.uuid4().hex
@@ -330,13 +338,14 @@ class TeamsDelivery(Delivery):
         person = self.store.graph.get_person(person_id)
         return person if person and person.get("active", 1) else None
 
-    def _apply_reply(self, channel, thread_ts, user_id, text, action_token=""):
+    def _apply_reply(self, channel, thread_ts, user_id, text, action_token="", occurrence=None, event_id=""):
         note = self.notification_for_thread(channel, thread_ts)
         if note is None:
             return ""
         if not self.store.get_decision(note["decision_id"]).get("owner_id"):
             return "This question has no assigned contact. Route it in the Raven inbox before answering here."
-        return super()._apply_reply(channel, thread_ts, user_id, text, action_token=action_token)
+        return super()._apply_reply(channel, thread_ts, user_id, text, action_token=action_token,
+                                    occurrence=occurrence, event_id=event_id)
 
     def handle(self, authorization, activity):
         self.auth.verify(authorization, activity)
@@ -422,7 +431,9 @@ class TeamsInbox:
         text = html.unescape(text).strip()
         key = "teams:" + hashlib.sha256(json.dumps([config.tenant_id, config.app_id, conversation_id, eid]).encode()).hexdigest()
         payload = {"channel": config.destination, "thread": row["id"], "person": person_id, "oid": oid,
-                   "tenant": config.tenant_id, "app": config.app_id, "text": text}
+                   "tenant": config.tenant_id, "app": config.app_id, "text": text,
+                   "occurrence": {"platform": "teams", "id": eid, "timestamp": activity["timestamp"],
+                                  "reply_to": activity.get("replyToId", "")}}
         encoded = json.dumps(payload, sort_keys=True)
         digest = hashlib.sha256(encoded.encode()).hexdigest()
         with self.graph.transaction():
@@ -493,7 +504,8 @@ class TeamsInbox:
                     reply = receipt["reply"]
                 else:
                     with self._keep_lease(row["id"]):
-                        reply = self.delivery.receive(data["channel"], data["thread"], data["person"], data["text"], event_id=row["id"])
+                        reply = self.delivery.receive(data["channel"], data["thread"], data["person"], data["text"], event_id=row["id"],
+                                                      occurrence=data.get("occurrence"))
                 with self.graph.transaction():
                     if reply:
                         self.graph.db.execute("INSERT INTO teams_replies(id,channel,thread_ts,text) VALUES(?,?,?,?) "
@@ -519,8 +531,13 @@ class TeamsInbox:
             if not claimed.rowcount:
                 continue
             try:
-                self.delivery.transport.post_message(row["channel"], row["text"], thread_ts=row["thread_ts"])
+                if hasattr(self.delivery.transport, 'post_reply'):
+                    message_ref = self.delivery.transport.post_reply(row['channel'], row['text'], None, row['thread_ts'], row['id'])
+                else:
+                    message_ref = self.delivery.transport.post_message(row["channel"], row["text"], thread_ts=row["thread_ts"])
                 with self.graph.transaction():
+                    from .readback import mark_delivered
+                    mark_delivered(self.graph, "teams", row["id"], row["channel"], row["thread_ts"], message_ref)
                     self.graph.db.execute("UPDATE teams_replies SET state='sent',error='',attempts=attempts+1 WHERE id=?", (row["id"],))
             except Exception as exc:
                 with self.graph.transaction():

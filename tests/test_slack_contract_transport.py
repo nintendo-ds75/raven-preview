@@ -100,11 +100,12 @@ class SlackCustomerPathTests(unittest.TestCase):
     def test_wrong_person_cannot_confirm_an_owner_readback(self):
         with RavenContractHarness() as h:
             _, node, message = h.begin()
-            h.say(message, 'Please exclude internal load tests, but still bill real customer traffic.',
+            from evals.slack_contract_harness import confirmation_text
+            _, readback = h.say(message, 'Please exclude internal load tests, but still bill real customer traffic.',
                   expected='Record your decision as:')
-            h.say(message, 'yes', user=REFERRED, expected='No decision or sign-off recorded')
+            h.say(message, confirmation_text(readback), user=REFERRED, expected='no read-back')
             self.assertFalse(h.call('bridge_get_decision', decision_id=node)['authorized'])
-            h.say(message, 'yes', expected='Recorded')
+            h.say(message, confirmation_text(readback), expected='Recorded')
             decision = h.call('bridge_get_decision', decision_id=node)
             self.assertTrue(decision['authorized'])
             self.assertEqual(decision['signed_by'], 'Wes Contract')

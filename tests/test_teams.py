@@ -252,7 +252,8 @@ class TeamsTests(OfflineCase):
         self.assertEqual(self.decision()["status"], "pending")
         prompt = self.graph.db.execute("SELECT text FROM teams_replies").fetchone()[0]
         self.assertIn("Not recorded yet", prompt)
-        self.submit(self.activity("yes"))
+        held = self.delivery._reading(self.config.destination, self.thread["id"], self.wes)
+        self.submit(self.activity("confirm " + held["proposal_id"]))
         self.assertEqual(self.decision()["answer"], "Exclude the load test")
 
     def test_stale_readback_cannot_sign_new_question(self):
@@ -364,6 +365,9 @@ class TeamsTests(OfflineCase):
         self.graph.db.execute("UPDATE teams_replies SET next_attempt=0")
         self.delivery.inbox.flush()
         self.delivery.inbox.process()
+        self.assertEqual(self.decision()["status"], "pending")
+        held = self.delivery._reading(self.config.destination, self.thread["id"], self.wes)
+        self.submit(self.activity("confirm " + held["proposal_id"]))
         self.assertEqual(self.decision()["answer"], "Exclude the load test")
 
     def test_concurrent_duplicate_callback_applies_once(self):
@@ -426,7 +430,7 @@ class TeamsTests(OfflineCase):
     def test_rate_limit_and_expired_oauth_token_remain_retryable(self):
         self.microsoft.fail = True
         self.submit()
-        with patch.object(self.transport, "post_message", side_effect=TeamsUnavailable("throttled", status=429, retry_after=7200)):
+        with patch.object(self.transport, "post_reply", side_effect=TeamsUnavailable("throttled", status=429, retry_after=7200)):
             self.graph.db.execute("UPDATE teams_replies SET next_attempt=0")
             self.delivery.inbox.flush()
         delay = self.graph.db.execute("SELECT next_attempt FROM teams_replies").fetchone()[0] - time.time()

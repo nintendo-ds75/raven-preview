@@ -911,7 +911,7 @@ class Store:
                          + (f" until {expires[:10]}" if expires else "") + ". End the rule to go back to sign-off.")
         return row
 
-    def answer(self, decision_id, data, actor=None, transaction_hook=None):
+    def answer(self, decision_id, data, actor=None, transaction_hook=None, transaction_db=None):
         """A person's answer: the signed revision of the decision. The
         actor must be the decision's owner, a required signer, verified
         for its scope, or an admin overriding; who acted and on what
@@ -925,8 +925,13 @@ class Store:
         except ValueError as exc:
             raise Invalid(str(exc)) from exc
         applicability_json = json.dumps(applicability, sort_keys=True)
-        with self.connect() as db:
-            db.execute("BEGIN IMMEDIATE")
+        # Internal callers may bind read-back consumption and the signature to
+        # the same already-open writer transaction. Never a client parameter.
+        if transaction_db is not None and not transaction_db.in_transaction:
+            raise Invalid("Internal answer transaction must already be open")
+        with (nullcontext(transaction_db) if transaction_db is not None else self.connect()) as db:
+            if not db.in_transaction:
+                db.execute("BEGIN IMMEDIATE")
             decision = db.execute("SELECT d.*,o.name AS owner_name FROM decisions d LEFT JOIN owners o ON o.id=d.owner_id WHERE d.id=?", (decision_id,)).fetchone()
             if decision is not None:
                 check_not_abandoned(db, decision["run_id"], decision)

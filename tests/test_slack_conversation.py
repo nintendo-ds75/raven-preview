@@ -39,7 +39,7 @@ class ConversationTests(DeliveryCase):
             response = self.reply(self.message, 'UWES', policy)
         self.assertEqual(model.call_count, 2)
         self.assertIn(policy, response)
-        self.assertIn('Reply yes to confirm', response)
+        self.assertIn('reply `confirm ', response)
         row = self.store.get_decision(self.n['node_id'])
         self.assertFalse(row['authorized'])
         self.assertFalse(row['answer'])
@@ -119,7 +119,7 @@ class ConversationTests(DeliveryCase):
                 self.assertEqual(payload['signoff'], 'required')
                 self.assertIn(parent, payload['review_reason'])
                 self.assertIn('fresh', payload['validation_error'])
-                self.assertIn('Reply yes to confirm', result)
+                self.assertIn('reply `confirm ', result)
                 self.assertIn(policy, result)
                 self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
                 self.say('yes')
@@ -218,7 +218,7 @@ class ConversationTests(DeliveryCase):
         with patch('bridge.slack_chat.reading', side_effect=[
                 {'kind': 'chat', 'reply': 'It is already signed.'}, {'kind': 'answer', 'answer': policy}]):
             response = self.reply(self.message, 'UMAR', policy)
-        self.assertNotIn('Reply yes to confirm', response)
+        self.assertNotIn('reply `confirm ', response)
         self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.marisol))
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
 
@@ -295,7 +295,7 @@ class ConversationTests(DeliveryCase):
         self.delivery.deliver_now()
         offered = self.say('Bill two units for this task only.',
                            {'kind': 'answer', 'answer': 'Bill two units for this task only.'})
-        self.assertIn('Reply yes to confirm', offered)
+        self.assertIn('reply `confirm ', offered)
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
 
     def test_confirmation_revision_race_after_snapshot_retirement_fails_closed(self):
@@ -310,7 +310,10 @@ class ConversationTests(DeliveryCase):
             response = self.say('yes')
         self.assertIn('Nothing recorded', response)
         row = self.store.get_decision(self.n['node_id'])
-        self.assertEqual(row['answer'], 'Hold the invoice.')
+        # The injected same-connection revision and read-back consumption now
+        # share one atomic transaction, so refusal rolls both back.
+        self.assertFalse(row['answer'])
+        self.assertIsNotNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
         self.assertFalse(row['authorized'])
         self.assertFalse(row['signed_by'])
 
@@ -339,7 +342,7 @@ class ConversationTests(DeliveryCase):
         self.assertTrue(payload['repeats_previous_answer'])
         self.assertFalse(payload['speaker_signed_current_answer'])
         self.assertIn(policy, offered)
-        self.assertIn('Reply yes to confirm', offered)
+        self.assertIn('reply `confirm ', offered)
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
         self.say('yes')
         row = self.store.get_decision(self.n['node_id'])
@@ -377,7 +380,7 @@ class ConversationTests(DeliveryCase):
             response = self.reply(self.message, 'UWES', 'Why are you asking for confirmation again?')
         self.assertEqual(model.call_count, 2)
         self.assertIn('earlier summary changed', response)
-        self.assertNotIn('Reply yes to confirm', response)
+        self.assertNotIn('reply `confirm ', response)
         self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
 
     def test_repeated_genuine_question_after_resettle_is_not_forced_into_answer(self):
@@ -753,8 +756,8 @@ class ConversationTests(DeliveryCase):
         message=self.slack.messages[-1]
         self.assertEqual(message['channel'],'DUMAR')
         with patch('bridge.slack_chat.reading',return_value={'kind':'answer','answer':'Exclude internal test traffic.'}):
-            self.delivery.receive(message['channel'],message['ts'],'UMAR','Leave the internal test traffic out')
-        self.delivery.receive(message['channel'],message['ts'],'UMAR','yes')
+            self.reply(message,'UMAR','Leave the internal test traffic out')
+        self.reply(message,'UMAR','yes')
         feedback=[dict(r) for r in self.graph.db.execute('SELECT * FROM routing_feedback')]
         self.assertEqual({r['person_id']:r['outcome'] for r in feedback}, {self.wes:'declined',self.marisol:'answered'})
         self.assertFalse([a for a in self.graph.authority_rows() if a['person_id']==self.marisol and a['role']=='decides'])
@@ -794,7 +797,10 @@ class ConversationTests(DeliveryCase):
         other=Store(self.store.path);self.addCleanup(other.graph.close)
         delivery=other.connect_delivery(self.slack)
         with patch('bridge.slack_chat.load',return_value=Config(model_api='none')):
-            said=delivery.receive(self.message['channel'],self.message['ts'],'UWES','yes')
+            held = delivery._reading(self.message['channel'], self.message['ts'], self.wes)
+            said=delivery.receive(self.message['channel'],self.message['ts'],'UWES','confirm '+held['proposal_id'],
+                event_id='after-restart', occurrence={'platform':'slack','id':'2000000001.000001',
+                'timestamp':'2000000001.000001','reply_to':self.message['ts']})
         self.assertIn('Recorded',said)
 
     def test_model_failure_keeps_gate_closed(self):
@@ -820,7 +826,7 @@ class ConversationTests(DeliveryCase):
     def test_unrelated_person_cannot_confirm_someone_elses_answer(self):
         self.say('Exclude traffic',{'kind':'answer','answer':'Exclude traffic.'})
         said=self.say('yes',{'kind':'signoff'},who='UPRI')
-        self.assertIn('Nothing recorded',said)
+        self.assertIn('Not recorded',said)
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
 
     def test_search_context_is_ephemeral_and_token_not_stored(self):
@@ -887,7 +893,7 @@ class ConversationTests(DeliveryCase):
             with patch('bridge.slack_chat.reading', return_value={'kind':'handoff','to':'Marisol Vega'}):
                 handle_slack_event(self.delivery, {'type':'event_callback','team_id':'TTEST','event_id':'polite-referral','event':{
                     'type':'message','channel':self.message['channel'],'thread_ts':self.message['ts'],
-                    'user':'UWES','text':'Could you ask Marisol Vega instead?', 'action_token':'short-lived'}})
+                    'user':'UWES','text':'Could you ask Marisol Vega instead?', 'ts':'1900000000.000001', 'action_token':'short-lived'}})
             self.assertIn('Pass this question to Marisol Vega',self.slack.messages[-1]['text'])
             search.assert_not_called()
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])

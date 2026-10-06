@@ -354,12 +354,17 @@ def recipient(delivery, name, message='', speaker=''):
 
 def apply(delivery, d, person, action, actor):
     store = delivery.store
+    transaction_db = store.graph.db if store.graph.db.in_transaction else None
     kind = action['kind']
     by = {'by':person['name'], 'expected_updated_at':d['updated_at']}
     if kind in ('handoff','claim'):
-        who = recipient(delivery, action.get('to',''), action.get('original',''), person['id']) if kind == 'handoff' else person
-        if not who:
-            return 'I could not identify that person. Mention them with @ so I can find the right Slack account.'
+        # The proposed reading already resolved the recipient before this
+        # writer transaction. Keep that exact identity: reparsing the old
+        # mention could select a different person and perform network I/O
+        # while holding the global writer lock.
+        who = store.graph.get_person(action.get('to', '')) if kind == 'handoff' else store.graph.get_person(person['id'])
+        if not who or not who.get('active') or who.get('role') == 'viewer':
+            raise Invalid('The person in this read-back is no longer an active eligible contact. Restate the referral for a fresh read-back.')
         if not d.get('owner_id'):
             store.claim_slack_question(d['id'], who['id'], actor)
             return f"I have assigned this question to {who['name']}. They will receive a DM; nothing is approved yet."
@@ -376,8 +381,8 @@ def apply(delivery, d, person, action, actor):
             return f"Signed by {person['name']}. The coding agent can now read it."
         data = {**by, 'answer':action['answer'], 'rationale':action.get('rationale') or f'No reason given in the {delivery.channel.title()} conversation',
                 'signed_by':person['name'],'source':f"{delivery.channel}: {person['name']} (read back and confirmed)"}
-        if d['status'] == 'pending': store.answer(d['id'],data,actor=actor)
-        else: canvas.sign_off(store,d['id'],data,actor=actor)
+        if d['status'] == 'pending': store.answer(d['id'],data,actor=actor,transaction_db=transaction_db)
+        else: canvas.sign_off(store,d['id'],data,actor=actor,transaction_db=transaction_db)
         return f"Recorded and signed as {person['name']}'s answer. The coding agent can now read it."
     if kind == 'signoff':
         canvas.sign_off(store,d['id'],by,actor=actor)
@@ -395,9 +400,10 @@ def apply(delivery, d, person, action, actor):
     raise Invalid('This message did not contain an action to confirm')
 
 
-def respond(delivery, note, d, person, text, actor, action_token=''):
+def respond(delivery, note, d, person, text, actor, action_token='', occurrence=None, event_id=''):
     """None leaves explicit commands and installations without a model to the existing parser."""
-    from .delivery import _CONFIRM_RE, _DECLINE_RE, _ACK_ONLY_RE, _what_it_says, _signed_as_it_stands
+    from .delivery import _ACK_ONLY_RE, _what_it_says, _signed_as_it_stands
+    from . import readback
     graph = delivery.store.graph
     channel, thread = note['external_ref'].split(':',1)
     held = delivery._reading(channel,thread,person['id'])
@@ -417,7 +423,7 @@ def respond(delivery, note, d, person, text, actor, action_token=''):
         held = pending = None
         # A short yes must never approve a different revision. New substantive
         # words, however, deserve a new reading against the current decision.
-        if _CONFIRM_RE.match(text) or _DECLINE_RE.match(text):
+        if readback.confirming(text) or readback.declining(text):
             return 'The decision changed since my read-back. Nothing was applied. Please review the current answer before confirming again.'
     stale = delivery._stale(note,d,person)
     if stale and not pending:
@@ -430,8 +436,8 @@ def respond(delivery, note, d, person, text, actor, action_token=''):
     if _ACK_ONLY_RE.match(text):
         return 'Thanks. Nothing recorded or signed. I am here when you are ready.'
     sources=[]; named={}
-    if pending and _CONFIRM_RE.match(text): kind='confirm'; action={'kind':kind}
-    elif pending and _DECLINE_RE.match(text): kind='decline'; action={'kind':kind}
+    if pending and readback.confirming(text): kind='confirm'; action={'kind':kind}
+    elif pending and readback.declining(text): kind='decline'; action={'kind':kind}
     elif not pending and d.get('answer') and _SIGNOFF_REQUEST.fullmatch(text.strip()):
         kind='signoff'; action={'kind':kind}
     else:
@@ -488,13 +494,20 @@ def respond(delivery, note, d, person, text, actor, action_token=''):
             action['reply']=(action.get('reply') or '')+'\n'+' · '.join(links[:3])
     if kind=='confirm':
         if not pending: return 'There is no read-back waiting for confirmation. Tell me the answer you want recorded.'
-        if not _CONFIRM_RE.match(text):
-            return 'To confirm the complete read-back above, reply yes. If you want to change any part, tell me what to change.'
-        if not _forget_snapshot(delivery, channel, thread, person['id'], held):
-            return 'The read-back changed while I was reading your reply. Nothing was applied. Please review the latest read-back.'
-        return apply(delivery,d,person,pending,actor)
+        with graph.transaction():
+            error = readback.refusal(delivery, channel, thread, person['id'], held, text, occurrence)
+            if error:
+                return error
+            if not _forget_snapshot(delivery, channel, thread, person['id'], held):
+                return 'The read-back changed while I was reading your reply. Nothing was applied. Please review the latest read-back.'
+            readback.record_confirmation(delivery, held, person, occurrence)
+            return apply(delivery,d,person,pending,actor)
     if kind=='decline':
-        _forget_snapshot(delivery, channel, thread, person['id'], held)
+        with graph.transaction():
+            error = readback.refusal(delivery, channel, thread, person['id'], held, text, occurrence)
+            if error:
+                return error
+            _forget_snapshot(delivery, channel, thread, person['id'], held)
         return 'Understood. Nothing was changed. What should I change in the read-back?'
     if kind in ('question','chat'):
         response=(action.get('reply') or 'What else would help you decide?')+'\nNo decision or sign-off recorded.'
@@ -535,8 +548,6 @@ def respond(delivery, note, d, person, text, actor, action_token=''):
         if current['status'] == 'withdrawn' or _what_it_says(current) != revision:
             _forget_snapshot(delivery, channel, thread, person['id'], held)
             return 'The decision changed while I was reading your answer. Nothing was applied. Please review the current decision and send your answer again.'
-        graph.db.execute('''INSERT INTO reply_readings(channel,thread_ts,person_id,decision_id,revision,kind,answer,created_at)
-        VALUES(?,?,?,?,?,'conversation',?,?) ON CONFLICT(channel,thread_ts,person_id) DO UPDATE SET
-        decision_id=excluded.decision_id,revision=excluded.revision,kind=excluded.kind,answer=excluded.answer,created_at=excluded.created_at''',
-        (channel,thread,person['id'],d['id'],revision,json.dumps(action),now_iso()))
-    return summary+'\nIs that right? Reply yes to confirm, or tell me what to change. Nothing applied yet.'
+        return readback.save(delivery, channel, thread, person['id'], occurrence, event_id,
+            {'decision_id': d['id'], 'revision': revision, 'kind': 'conversation',
+             'answer': json.dumps(action), 'rationale': '', 'recipient': '', 'created_at': now_iso()}, summary)

@@ -76,6 +76,8 @@ def migrate(db) -> None:
             recipient TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (channel, thread_ts, person_id));
     """)
+    from .readback import migrate as readback_migrate
+    readback_migrate(db)
     # What the person was shown, so a reply is checked against it; and
     # the inbound state machine: received, applied, failed.
     if "content_hash" not in {r["name"] for r in db.execute("PRAGMA table_info(notifications)")}:
@@ -553,7 +555,8 @@ class Delivery:
 
     IN_FLIGHT_SECONDS = 120
 
-    def receive(self, channel: str, thread_ts: str, user_id: str, text: str, event_id: str = "", action_token: str = "") -> str:
+    def receive(self, channel: str, thread_ts: str, user_id: str, text: str, event_id: str = "", action_token: str = "",
+                occurrence: dict | None = None) -> str:
         """A reply in a thread Raven started. Returns the text Raven
         posts back. Every delivery is a durable receipt: received while
         it is being applied, applied with the reply it got (a repeat of
@@ -564,31 +567,35 @@ class Delivery:
         but before the receipt was marked is caught by the handler,
         which recognizes an answer already recorded by this person."""
         graph = self.store.graph
+        payload = {"channel": channel, "thread_ts": thread_ts, "user": user_id, "text": text, "occurrence": occurrence}
         if event_id:
-            row = graph.db.execute("SELECT state, reply, updated_at, attempts FROM webhook_receipts WHERE id=?",
-                                   (event_id,)).fetchone()
-            if row is not None:
-                state = row["state"] or "applied"
-                if state == "applied":
-                    # Applied already: nothing changes, and the thread
-                    # got its acknowledgement the first time.
-                    return ""
-                if state == "received":
-                    try:
-                        age = time.time() - datetime.fromisoformat(row["updated_at"]).timestamp()
-                    except ValueError:
-                        age = self.IN_FLIGHT_SECONDS + 1
-                    if age < self.IN_FLIGHT_SECONDS:
-                        return ""
             with graph.transaction():
+                row = graph.db.execute("SELECT state, reply, updated_at, attempts, payload FROM webhook_receipts WHERE id=?",
+                                       (event_id,)).fetchone()
+                if row is not None:
+                    saved = json.loads(row["payload"] or "{}")
+                    if saved and {**saved, "occurrence": saved.get("occurrence")} != payload:
+                        raise Invalid("Inbound event ID was reused with different content or occurrence metadata")
+                    state = row["state"] or "applied"
+                    if state == "applied":
+                        # Applied already: nothing changes, and the thread
+                        # got its acknowledgement the first time.
+                        return ""
+                    if state == "received":
+                        try:
+                            age = time.time() - datetime.fromisoformat(row["updated_at"]).timestamp()
+                        except ValueError:
+                            age = self.IN_FLIGHT_SECONDS + 1
+                        if age < self.IN_FLIGHT_SECONDS:
+                            return ""
                 graph.db.execute(
                     "INSERT INTO webhook_receipts(id, channel, received_at, state, attempts, payload, updated_at) "
                     "VALUES(?,?,?,'received',1,?,?) ON CONFLICT(id) DO UPDATE SET state='received', "
                     "attempts=webhook_receipts.attempts+1, updated_at=excluded.updated_at, payload=excluded.payload",
-                    (event_id, self.channel, now_iso(),
-                     json.dumps({"channel": channel, "thread_ts": thread_ts, "user": user_id, "text": text}), now_iso()))
+                    (event_id, self.channel, now_iso(), json.dumps(payload), now_iso()))
         try:
-            reply = self._apply_reply(channel, thread_ts, user_id, text, action_token=action_token)
+            reply = self._apply_reply(channel, thread_ts, user_id, text, action_token=action_token,
+                                      occurrence=occurrence, event_id=event_id)
             note = self.notification_for_thread(channel, thread_ts)
             person = graph.find_person(user_id)
             from .slack_chat import EphemeralReply
@@ -645,7 +652,7 @@ class Delivery:
         if not payload.get("channel"):
             raise Invalid("This event kept no payload to retry from")
         reply = self.receive(payload["channel"], payload.get("thread_ts", ""), payload.get("user", ""),
-                             payload.get("text", ""), event_id=event_id)
+                             payload.get("text", ""), event_id=event_id, occurrence=payload.get("occurrence"))
         return {"id": event_id, "state": "applied", "reply": reply}
 
     def _stale(self, note: dict, decision: dict, person: dict) -> str:
@@ -696,7 +703,8 @@ class Delivery:
                 "DELETE FROM reply_readings WHERE channel=? AND thread_ts=? AND person_id=?",
                 (channel, thread_ts, person_id))
 
-    def _offer_reading(self, channel: str, thread_ts: str, decision: dict, person: dict, text: str) -> str:
+    def _offer_reading(self, channel: str, thread_ts: str, decision: dict, person: dict, text: str,
+                       occurrence=None, event_id="") -> str:
         """What Raven thinks the message meant, read back for the person
         to confirm. Empty when there is no model backend or it is not
         confident, which leaves the deterministic refusal in place.
@@ -706,7 +714,8 @@ class Delivery:
         thing that gets to say a person decided something."""
         if _ACK_ONLY_RE.match(text or ""):
             return ""
-        from . import llm as llm_mod
+        from . import llm as llm_mod, readback
+        held = self._reading(channel, thread_ts, person["id"])
         from .config import load as load_config
         try:
             read = llm_mod.read_reply(load_config(), decision.get("question") or "",
@@ -724,39 +733,48 @@ class Delivery:
                     "<date>` once the answer itself is signed, so the terms are recorded with it.")
         if kind == "handoff" and not read.get("to"):
             return ""
+        if kind == "handoff":
+            from .slack_chat import recipient
+            who = recipient(self, read['to'], speaker=person['id'])
+            if not who or not who.get('active') or who.get('role') == 'viewer':
+                return 'Who should I ask? Mention an active contact for a fresh read-back.'
+            # Resolve before offering the read-back, outside the writer lock.
+            # Consent later keeps this exact person even if names/bindings move.
+            read = {**read, 'to': who['id']}
+            summary = f"Not recorded yet. I read that as handing this to {who['name']}."
+        elif kind == "signoff":
+            summary = "Not recorded yet. I read that as agreeing with the complete answer on the table:\n" + (decision.get('answer') or '')
+        else:
+            summary = f"Not recorded yet. I read your answer as: \"{read['answer']}\"."
         graph = self.store.graph
         with graph.transaction():
-            graph.db.execute(
-                "INSERT INTO reply_readings(channel, thread_ts, person_id, decision_id, revision, kind, answer, "
-                "rationale, recipient, created_at) VALUES(?,?,?,?,?,?,?,?,?,?) "
-                "ON CONFLICT(channel, thread_ts, person_id) DO UPDATE SET decision_id=excluded.decision_id, "
-                "revision=excluded.revision, kind=excluded.kind, answer=excluded.answer, "
-                "rationale=excluded.rationale, recipient=excluded.recipient, created_at=excluded.created_at",
-                (channel, thread_ts, person["id"], decision["id"],
-                 _what_it_says(decision), kind, read.get("answer", ""), read.get("rationale", ""),
-                 read.get("to", ""), now_iso()))
-        if kind == "handoff":
-            return (f"Not recorded yet. I read that as handing this to {read['to']}. Reply `yes` and I will pass it "
-                    "on, or `not me @person` to name them yourself.")
-        if kind == "signoff":
-            return ("Not recorded yet. I read that as agreeing with the answer on the table. Reply `yes` and I will "
-                    "sign it in your name, or `sign off` to say so outright.")
-        line = read["answer"]
-        return (f"Not recorded yet. I read your answer as: \"{line}\". Reply `yes` and I will record it in your "
-                "name, or put it in your own words with `answer: <the decision> because <why>`.")
+            if self._reading(channel, thread_ts, person['id']) != held:
+                return 'Another reply arrived while I was reading this one. Nothing was applied. Please review the latest read-back.'
+            current = self.store.get_decision(decision['id'])
+            if current['status'] == 'withdrawn' or _what_it_says(current) != _what_it_says(decision):
+                return 'The decision changed while I was reading your answer. Nothing was applied. Please send your answer again.'
+            return readback.save(self, channel, thread_ts, person['id'], occurrence, event_id,
+                {'decision_id': decision['id'], 'revision': _what_it_says(decision), 'kind': kind,
+                 'answer': read.get('answer', ''), 'rationale': read.get('rationale', ''),
+                 'recipient': read.get('to', ''), 'created_at': now_iso()}, summary)
 
     def _take_reading(self, channel: str, thread_ts: str, decision: dict, person: dict, text: str,
-                      actor) -> str | None:
+                      actor, occurrence=None) -> str | None:
         """Apply a reading the person has just confirmed, or None when
         this message is not a confirmation of one."""
+        from . import readback
         held = self._reading(channel, thread_ts, person["id"])
         if held is None:
             return None
-        if _DECLINE_RE.match(text or ""):
+        if readback.intent(text, include_signoff=True)[0]:
+            error = readback.refusal(self, channel, thread_ts, person["id"], held, text, occurrence)
+            if error:
+                return error
+        if readback.declining(text):
             self._forget_reading(channel, thread_ts, person["id"])
             return ("Dropped, and nothing was recorded. Put it in your own words with `answer: <the decision> "
                     "because <why>`.")
-        if not _CONFIRM_RE.match(text or ""):
+        if not readback.confirming(text):
             # They said something new; the old reading is not what they
             # meant any more, whatever this turns out to be.
             self._forget_reading(channel, thread_ts, person["id"])
@@ -771,11 +789,12 @@ class Delivery:
             return ("Not recorded: the decision changed since I read your message back to you. Reply in the newer "
                     "thread, or answer again here.")
         self._forget_reading(channel, thread_ts, person["id"])
+        readback.record_confirmation(self, held, person, occurrence)
         from . import canvas
         if held["kind"] == "handoff":
-            who = self.store.graph.find_person(held["recipient"].strip("@ "))
-            if who is None:
-                return f"I do not know {held['recipient']} in Raven; name them by Slack mention, email or full name."
+            who = self.store.graph.get_person(held['recipient'])
+            if not who or not who.get('active') or who.get('role') == 'viewer':
+                raise Invalid('The person in this read-back is no longer an active eligible contact. Restate the referral for a fresh read-back.')
             return self.store.refer(decision["id"], {"person": who["id"], "by": person["name"],
                                                      "expected_updated_at": decision["updated_at"],
                                                      "note": f"handed on in {self.channel.title()}: {held['recipient']}"},
@@ -793,14 +812,16 @@ class Delivery:
                                                "expected_updated_at": decision["updated_at"],
                                                "signed_by": person["name"],
                                                "source": f"{self.channel}: {person['name']} (read back and confirmed)"},
-                              actor=actor)
+                              actor=actor, transaction_db=self.store.graph.db)
             return f"Recorded as {person['name']}'s answer. The agent sees it on the tree"
         canvas.sign_off(self.store, decision["id"], {"by": person["name"], "answer": held["answer"],
                                                      "rationale": rationale,
-                                                     "expected_updated_at": decision["updated_at"]}, actor=actor)
+                                                     "expected_updated_at": decision["updated_at"]}, actor=actor,
+                        transaction_db=self.store.graph.db)
         return f"Corrected and signed by {person['name']}. The agent sees it on the tree"
 
-    def _apply_reply(self, channel: str, thread_ts: str, user_id: str, text: str, action_token: str = "") -> str:
+    def _apply_reply(self, channel: str, thread_ts: str, user_id: str, text: str, action_token: str = "",
+                     occurrence=None, event_id="") -> str:
         graph = self.store.graph
         note = self.notification_for_thread(channel, thread_ts)
         if note is None:
@@ -809,6 +830,18 @@ class Delivery:
         if person is None:
             return ("I could not verify you as an active member of the connected Slack workspace. "
                     "The operator can check Slack permissions in Connections & setup; no Raven account is needed.")
+        from . import readback
+        order_error = readback.begin(graph, self.channel, channel, thread_ts, person["id"], occurrence, event_id)
+        if order_error:
+            return order_error
+        held = self._reading(channel, thread_ts, person["id"])
+        if (held and event_id and held.get('source_event_id') == event_id
+                and held.get('source_occurrence') == json.dumps(occurrence, sort_keys=True)):
+            return held['prompt']
+        if held and readback.occurrence_time(occurrence) is None:
+            return 'Not recorded: this message has missing or invalid occurrence metadata. Please send a fresh reply. ' + readback.guidance(held)
+        if readback.intent(text)[0] and not held:
+            return readback.refusal(self, channel, thread_ts, person["id"], held, text, occurrence)
         from .authz import Actor, Refused
         actor = Actor.person(person, kind=self.channel)
         decision = self.store.get_decision(note["decision_id"])
@@ -823,7 +856,8 @@ class Delivery:
             return 'Context added for the coding agent. The decision owner and approval requirements have not changed.'
         from .slack_chat import respond
         try:
-            conversational = respond(self, note, decision, person, text, actor, action_token)
+            conversational = respond(self, note, decision, person, text, actor, action_token,
+                                     occurrence=occurrence, event_id=event_id)
             if conversational is not None:
                 return conversational
         except (Refused, Invalid) as error:
@@ -862,7 +896,9 @@ class Delivery:
                         "or on its way now), or act in the inbox.")
             return f"Not recorded: {stale}. You have signed the answer as it stands; act on it in the inbox."
         try:
-            confirmed = self._take_reading(channel, thread_ts, decision, person, text, actor)
+            # Snapshot consumption and the authorized write share the same lock.
+            with graph.transaction():
+                confirmed = self._take_reading(channel, thread_ts, decision, person, text, actor, occurrence)
             handoff = re.match(r"^(?:not me|refer(?: to)?|ask|hand(?: it)? to|reassign(?: to)?)\s*:?\s*(.+)$", text, re.IGNORECASE)
             if confirmed is not None:
                 reply = confirmed
@@ -928,7 +964,7 @@ class Delivery:
                     # as one, or carries its because. Where a person wrote
                     # neither, ask the model what they meant and read it
                     # back to them; their `yes` applies it, nothing else.
-                    offer = self._offer_reading(channel, thread_ts, decision, person, text)
+                    offer = self._offer_reading(channel, thread_ts, decision, person, text, occurrence, event_id)
                     if offer:
                         return offer
                     return ("Not recorded. To answer, reply `answer: <the decision> because <why>`; to confirm the "
@@ -1574,7 +1610,9 @@ def handle_slack_event(delivery: Delivery, event: dict) -> dict:
             delivery.inbox.ack(eid,channel,inner.get('ts',''), '\n'.join(lines))
             return {"ok":True}
     reply = delivery.receive(channel, thread_ts, inner.get("user", ""), text,
-                             event_id=eid, action_token=inner.get('action_token',''))
+                             event_id=eid, action_token=inner.get('action_token',''),
+                             occurrence={'platform': 'slack', 'id': inner.get('ts', ''),
+                                         'timestamp': inner.get('ts', ''), 'reply_to': thread_ts})
     if not reply and eid:
         receipt=delivery.store.graph.db.execute("SELECT reply FROM webhook_receipts WHERE id=? AND state='applied'",(eid,)).fetchone()
         reply=receipt['reply'] if receipt else ''

@@ -116,10 +116,12 @@ class Inbox:
             text = str(transient_text) if transient_text is not None else row['text']
             blocks = [{'type': 'section', 'text': {'type': 'mrkdwn', 'text': t}} for t in _sections(text, 2900)]
             if hasattr(self.delivery.transport, 'post_reply'):
-                self.delivery.transport.post_reply(row['channel'], text, blocks, row['thread_ts'], row['id'])
+                message_ref = self.delivery.transport.post_reply(row['channel'], text, blocks, row['thread_ts'], row['id'])
             else:
-                self.delivery.transport.post_message(row['channel'], text, blocks, thread_ts=row['thread_ts'])
+                message_ref = self.delivery.transport.post_message(row['channel'], text, blocks, thread_ts=row['thread_ts'])
             with self.graph.transaction():
+                from .readback import mark_delivered
+                mark_delivered(self.graph, "slack", row["id"], row["channel"], row["thread_ts"], message_ref)
                 self.graph.db.execute("UPDATE slack_replies SET state='sent',error='' WHERE id=?", (row['id'],))
         except Exception as error:
             from .delivery import retry_delay

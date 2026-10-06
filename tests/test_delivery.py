@@ -58,6 +58,9 @@ class DeliveryCase(OfflineCase):
         self.store = Store(Path(self.temp.name) / "delivery.db")
         self.graph = self.store.graph
         self.slack = FakeSlack()
+        self.reply_occurrences = {}
+        self.reply_inputs = {}
+        self.reply_counter = 0
         self.delivery = self.store.connect_delivery(self.slack, base_url="https://bridge.acme.test")
         with self.graph.transaction():
             self.wes = self.graph.add_person("Wes Chen", email="wes@acme.example", slack_id="UWES")
@@ -75,7 +78,36 @@ class DeliveryCase(OfflineCase):
                                                  "options": "Bill it | Exclude the load test", **extra})
 
     def reply(self, message, user, text, event_id=""):
-        return self.delivery.receive(message["channel"], message["ts"], user, text, event_id=event_id)
+        """Unit-level person replies adopt the displayed generation code.
+
+        Transport-level tests exercise the real queue/delivery proof instead.
+        These direct-reader tests simulate a delivered read-back explicitly.
+        """
+        from bridge import readback
+        self.reply_counter += 1
+        event_id = event_id or f'fixture-reply-{self.reply_counter}'
+        occurrence = self.reply_occurrences.setdefault(event_id, {
+            'platform': 'slack', 'id': f'2000000000.{self.reply_counter:06d}',
+            'timestamp': f'2000000000.{self.reply_counter:06d}', 'reply_to': message['ts']})
+        original_input = text
+        previous_input = self.reply_inputs.setdefault(event_id, text)
+        person = self.graph.find_person(user)
+        held = self.delivery._reading(message['channel'], message['ts'], person['id']) if person else None
+        kind, token = readback.intent(text)
+        if kind and not token and held and held.get('proposal_id'):
+            text = ('confirm' if kind == 'confirm' else 'decline') + ' ' + held['proposal_id']
+        # Preserve the exact already-emitted callback when testing duplicate IDs.
+        receipt = self.graph.db.execute('SELECT payload FROM webhook_receipts WHERE id=?', (event_id,)).fetchone()
+        if receipt and previous_input == original_input:
+            original = json.loads(receipt['payload'])
+            text = original['text']
+        reply = self.delivery.receive(message["channel"], message["ts"], user, text,
+                                      event_id=event_id, occurrence=occurrence)
+        held = self.delivery._reading(message['channel'], message['ts'], person['id']) if person else None
+        if held and held.get('source_event_id') == event_id:
+            readback.mark_delivered(self.graph, 'slack', event_id, message['channel'], message['ts'],
+                                   occurrence['timestamp'])
+        return reply
 
 
 class QuietTests(DeliveryCase):
@@ -498,7 +530,9 @@ class ReplyTests(DeliveryCase):
                          ("approved", "Exclude the load test", "the accounts share the internal tag", "Wes Chen"))
         self.assertIn("slack: Wes Chen", [e["detail"] for e in row["events"] if e["kind"] == "owner_approved"][0])
         # The same event delivered twice does nothing twice.
-        self.assertEqual(self.reply(message, "UWES", "Bill it after all", event_id="Ev1"), "")
+        from bridge.store import Invalid
+        with self.assertRaisesRegex(Invalid, 'reused with different'):
+            self.reply(message, "UWES", "Bill it after all", event_id="Ev1")
         self.assertEqual(self.store.get_decision(n["node_id"])["answer"], "Exclude the load test")
 
     def test_a_reply_from_someone_unknown_records_nothing(self):

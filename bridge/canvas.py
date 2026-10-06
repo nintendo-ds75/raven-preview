@@ -2680,7 +2680,7 @@ def _add_followups(store, cfg, decision_id: str, data, actor=None) -> dict:
     return {"nodes": created}
 
 
-def sign_off(store, decision_id: str, data, actor=None) -> dict:
+def sign_off(store, decision_id: str, data, actor=None, transaction_db=None) -> dict:
     """A person signs a node Raven or the agent resolved without them,
     or corrects it: a correction is a signed answer, recorded like any
     other, and it settles the twins of the question. The signature is
@@ -2713,7 +2713,7 @@ def sign_off(store, decision_id: str, data, actor=None) -> dict:
                             "applicability": data.get("applicability") or {},
                             "signed_by": by, "expected_updated_at": graph.db.execute(
                                 "SELECT updated_at FROM decisions WHERE id=?", (d.id,)).fetchone()["updated_at"]},
-                     actor=actor)
+                     actor=actor, transaction_db=transaction_db)
         view = node_view(store, d.id)
         remaining = [r for r in view["required_signers"] if r.lower() not in {x.lower() for x in view["signatures"]}]
         if remaining:

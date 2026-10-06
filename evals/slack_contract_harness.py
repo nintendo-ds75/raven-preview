@@ -13,6 +13,7 @@ import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -65,6 +66,13 @@ def http_json(url, payload, headers=None, raw=None, timeout=15):
     with response:
         data = response.read()
         return response.status, json.loads(data) if data else {}, dict(response.headers)
+
+
+def confirmation_text(readback):
+    """A synthetic person copies the identity from the actually delivered reading."""
+    match = re.search(r'`confirm ([0-9a-f]{12})`', readback['text'])
+    assert match, readback
+    return 'confirm ' + match[1]
 
 
 def eventually(predicate, description, timeout=12):
@@ -471,8 +479,8 @@ def run_contract():
             assert all(secret not in persisted for secret in
                        (ACTION_TOKEN, SOURCE_TEXT, SOURCE_URL, search_reply['text'])), table
         checks.append('assistant.search.context via HTTP; named source and exact citation; transient source/token not retained')
-        harness.say(owner_message, 'Could you ask Marisol Contract instead?', expected='Pass this question to Marisol Contract')
-        harness.say(owner_message, 'yes', expected='Marisol Contract')
+        _, referral = harness.say(owner_message, 'Could you ask Marisol Contract instead?', expected='Pass this question to Marisol Contract')
+        harness.say(owner_message, confirmation_text(referral), expected='Marisol Contract')
         referred_message = eventually(lambda: harness.slack.matching_messages(channel='D' + REFERRED[1:]), 'referral DM')[0]
         assert not harness.call('bridge_get_decision', decision_id=node_id)['authorized']
         checks.append('natural referral parsed at mocked provider boundary; confirmed handoff sends a distinct DM')
@@ -484,7 +492,7 @@ def run_contract():
         harness.restart(workers=False)
         # Stop only scheduling to reproduce an acknowledged queued callback at shutdown.
         # Receipt insertion/signature/HTTP handling still execute normally.
-        confirm = harness.event(referred_message, 'yes', user=REFERRED, event_id='EvDurableConfirm')
+        confirm = harness.event(referred_message, confirmation_text(readback), user=REFERRED, event_id='EvDurableConfirm')
         with patch('bridge.slack_events.Inbox.start'):
             assert harness.callback(confirm)[0] == 200
         assert harness.store.graph.db.execute('SELECT state FROM slack_ingress WHERE id=?',

@@ -87,5 +87,65 @@ function harness(link = false) {
     assert.equal(h.run('interviewSession.recognition'),null);
     assert(h.ctx.cancels > 0);
   }
+  const clickConfirm = h => {
+    const review = h.run('interviewSession.review');
+    const button = {disabled:false,isConnected:true,dataset:{interviewAction:'confirm',
+      interviewId:review.id,interviewVersion:String(review.version)}};
+    return {button,click:()=>h.handlers.dialog.click({target:{closest:()=>button}})};
+  };
+  // Confirmation names the exact rendered interview version, including task-link mode.
+  for (const link of [false,true]) {
+    const h = harness(link); await h.run("openInterview('task','decision')");
+    h.run('interviewBody(interviewSession, true)');
+    const {click} = clickConfirm(h); await click();
+    const requests = h.calls.filter(c=>c.url.endsWith('/confirm'));
+    assert.equal(requests.length,1);
+    assert.equal(requests[0].body.expected_version,1);
+    assert.equal(requests[0].body.expected_updated_at,'rev');
+    assert(!h.dialog.open);
+  }
+  // A save that completes while a button click waits cannot replace what was reviewed.
+  {
+    const h = harness(); await h.run("openInterview('task','decision')");
+    h.run('interviewBody(interviewSession, true)');
+    const {click} = clickConfirm(h);
+    h.run('interviewSession.writes = Promise.resolve().then(() => { interviewSession.row.version = 2; interviewSession.row.answer = "Bill everything."; })');
+    await click();
+    assert.equal(h.calls.filter(c=>c.url.endsWith('/confirm')).length,0);
+    assert(h.dialog.open);
+  }
+  // An old button is inert after replacement, editing, or another active interview.
+  for (const mutation of [
+    'interviewSession.row.version++; interviewBody(interviewSession, true)',
+    'interviewBody(interviewSession, false)',
+    'interviewSession.row.id="another-interview"; interviewBody(interviewSession, true)',
+  ]) {
+    const h = harness(); await h.run("openInterview('task','decision')");
+    h.run('interviewBody(interviewSession, true)');
+    const {click} = clickConfirm(h); h.run(mutation); await click();
+    assert.equal(h.calls.filter(c=>c.url.endsWith('/confirm')).length,0);
+  }
+  // Navigation while waiting cancels submission; a late result never closes a newer interview.
+  {
+    const h = harness(); await h.run("openInterview('task','decision')");
+    h.run('interviewBody(interviewSession, true)');
+    const {click} = clickConfirm(h);
+    let release; h.ctx.waiting = new Promise(resolve=>{release=resolve;});
+    h.run('interviewSession.writes = waiting');
+    const pending = click();
+    h.run('interviewSession = null; ++interviewGeneration'); release(); await pending;
+    assert.equal(h.calls.filter(c=>c.url.endsWith('/confirm')).length,0);
+  }
+  {
+    const h = harness(); await h.run("openInterview('task','decision')");
+    h.run('interviewBody(interviewSession, true)');
+    const {click} = clickConfirm(h); let release;
+    h.ctx.api = (url,body)=>{h.calls.push({url,body}); return new Promise(resolve=>{release=resolve;});};
+    const pending = click(); for (let i=0;i<10 && !release;i++) await Promise.resolve();
+    h.run('interviewSession = {...interviewSession, row:{...interviewSession.row,id:"new-active"}}');
+    release({...row(),status:'confirmed',version:2}); await pending;
+    assert.equal(h.run('interviewSession.row.id'),'new-active');
+    assert(h.dialog.open);
+  }
   console.log('Interview UI logic checks passed (DOM/audio stubs, not browser verification).');
 })().catch(e=>{console.error(e);process.exitCode=1;});
