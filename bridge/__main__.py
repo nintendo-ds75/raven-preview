@@ -121,7 +121,17 @@ def main():
     delivery = None
     slack_token = os.environ.get("SLACK_BOT_TOKEN", "").strip()
     teams_url = os.environ.get("TEAMS_WEBHOOK_URL", "").strip()
-    if slack_token:
+    from .teams import TeamsConfig, TeamsDelivery
+    teams_config = TeamsConfig.from_env()
+    teams_adapter = None
+    if teams_config and (slack_token or teams_url):
+        parser.error("Choose one delivery mode: Slack, Teams bot, or outbound-only Teams webhook")
+    if teams_config:
+        store.graph.set_setting("slack_connected", "")
+        teams_adapter = TeamsDelivery(store, teams_config, base_url=auth.public_url or args.public_url)
+        store._delivery = delivery = teams_adapter
+        delivery.start()
+    elif slack_token:
         from .delivery import SlackTransport
         delivery = store.connect_delivery(SlackTransport(slack_token),
                                           fallback_channel=os.environ.get("SLACK_FALLBACK_CHANNEL", "").strip(),
@@ -134,6 +144,7 @@ def main():
         delivery.start()
     else:
         store.graph.set_setting("slack_connected", "")
+        store.graph.set_setting("teams_delivery", "")
     from .github import GitHubAPI, Syncer
     from .github_device import connection_for
     app_file = Path(os.environ.get("BRIDGE_GITHUB_APP_FILE") or
@@ -147,7 +158,7 @@ def main():
     syncer.start()
     try:
         server = make_server(store, args.port, executions, host=args.host, auth=auth, public_url=args.public_url,
-                             github_app=github_app, github_syncer=syncer)
+                             github_app=github_app, github_syncer=syncer, teams_adapter=teams_adapter)
     except Exception as error:
         parser.error(str(error))
     shown = auth.public_url or f"http://{args.host}:{server.server_port}"

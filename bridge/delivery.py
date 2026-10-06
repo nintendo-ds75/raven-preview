@@ -106,6 +106,8 @@ class Delivery:
         self.store = store
         self.transport = transport
         self.fallback_channel = fallback_channel
+        if self.transport is not None and hasattr(self.transport, 'bind_rate_store'):
+            self.transport.bind_rate_store(store.graph)
         self.base_url = base_url.rstrip("/")
         self._thread = None
         self._stop = threading.Event()
@@ -132,15 +134,32 @@ class Delivery:
             return contact(self.store.graph, self.transport, user_id)
         return self.store.graph.find_person(user_id)
 
+    def _teams_destination(self) -> str:
+        """Public enqueue-only address, published by the configured bot server.
+
+        No credentials, identities or endpoint overrides are read from this
+        setting. A sender still checks it against its own pinned installation.
+        Read on every enqueue so an already-running stdio agent sees reconnects.
+        """
+        try:
+            metadata = json.loads(self.store.graph.get_setting("teams_delivery") or "{}")
+        except (ValueError, TypeError):
+            return ""
+        if not isinstance(metadata, dict) or metadata.get("version") != 1 or metadata.get("mode") != "bot":
+            return ""
+        destination = metadata.get("destination")
+        return destination if isinstance(destination, str) and re.fullmatch(r"teams-[0-9a-f]{32}", destination) else ""
+
     @property
     def enabled(self) -> bool:
-        # Stdio MCP can enqueue into the same database as the Slack worker
-        # without possessing its bot token. Only that worker sends messages.
-        return self.transport is not None or self.store.graph.get_setting("slack_connected") == "1"
+        # Stdio MCP enqueues without either platform's credentials. Only the
+        # separately configured server worker authenticates and sends messages.
+        return (self.transport is not None or bool(self._teams_destination())
+                or self.store.graph.get_setting("slack_connected") == "1")
 
     @property
     def channel(self) -> str:
-        return getattr(self.transport, "name", "slack")
+        return getattr(self.transport, "name", "teams" if self._teams_destination() else "slack")
 
     # ---------------- enqueue ----------------
 
@@ -154,6 +173,8 @@ class Delivery:
         if person is not None:
             graph.db.execute("UPDATE owners SET person_id=?,name=? WHERE name=? AND person_id=''",
                              (person["id"], person["name"], person_name))
+        if self.transport is None and (destination := self._teams_destination()):
+            return destination, (person or {}).get("id", ""), "", "channel"
         if not getattr(self.transport, "supports_dm", True):
             # A channel-only transport (Teams incoming webhook): every
             # message goes to the one channel, addressed to the person.
@@ -433,7 +454,7 @@ class Delivery:
                 sent += 1
             except Exception as error:
                 attempts = row["attempts"] + 1
-                delay = BACKOFF[min(attempts - 1, len(BACKOFF) - 1)]
+                delay = retry_delay(error, BACKOFF[min(attempts - 1, len(BACKOFF) - 1)])
                 state = "failed" if attempts >= MAX_ATTEMPTS else "queued"
                 with graph.transaction():
                     graph.db.execute("UPDATE notifications SET attempts=?, next_attempt=?, last_error=?, state=? WHERE id=?",
@@ -729,21 +750,21 @@ class Delivery:
                 return f"I do not know {held['recipient']} in Raven; name them by Slack mention, email or full name."
             return self.store.refer(decision["id"], {"person": who["id"], "by": person["name"],
                                                      "expected_updated_at": decision["updated_at"],
-                                                     "note": f"handed on in Slack: {held['recipient']}"},
+                                                     "note": f"handed on in {self.channel.title()}: {held['recipient']}"},
                                     actor=actor)["notice"]
         if held["kind"] == "signoff":
             canvas.sign_off(self.store, decision["id"], {"by": person["name"],
                                                          "expected_updated_at": decision["updated_at"]},
                             actor=actor)
             return f"Signed off by {person['name']}. The agent sees it on the tree"
-        rationale = held["rationale"] or "answered in Slack, in their own words"
+        rationale = held["rationale"] or f"answered in {self.channel.title()}, in their own words"
         if decision["status"] == "pending":
             if not decision["owner_id"]:
                 decision["updated_at"] = _take_ownership(self.store.graph, decision["id"], person["name"])
             self.store.answer(decision["id"], {"answer": held["answer"], "rationale": rationale,
                                                "expected_updated_at": decision["updated_at"],
                                                "signed_by": person["name"],
-                                               "source": f"slack: {person['name']} (read back and confirmed)"},
+                                               "source": f"{self.channel}: {person['name']} (read back and confirmed)"},
                               actor=actor)
             return f"Recorded as {person['name']}'s answer. The agent sees it on the tree"
         canvas.sign_off(self.store, decision["id"], {"by": person["name"], "answer": held["answer"],
@@ -761,7 +782,7 @@ class Delivery:
             return ("I could not verify you as an active member of the connected Slack workspace. "
                     "The operator can check Slack permissions in Connections & setup; no Raven account is needed.")
         from .authz import Actor, Refused
-        actor = Actor.person(person, kind="slack")
+        actor = Actor.person(person, kind=self.channel)
         decision = self.store.get_decision(note["decision_id"])
         if decision.get('status') == 'withdrawn':
             return 'This question was withdrawn because its task was closed. Nothing was recorded.'
@@ -843,7 +864,7 @@ class Delivery:
                 if who is None:
                     return f"I do not know {target} in Raven; name a person by their Slack mention, email or full name."
                 refer = {"person": who["id"], "by": person["name"], "expected_updated_at": decision["updated_at"],
-                         "note": _clip(_named_mentions(graph, text), 300, "the Slack reply has the rest")}
+                         "note": _clip(_named_mentions(graph, text), 300, f"the {self.channel.title()} reply has the rest")}
                 scope = _handon_scope(rest)
                 if scope:
                     refer.update(scope)
@@ -852,7 +873,7 @@ class Delivery:
                 from . import reframe
                 question, rationale = _split_rationale(re.sub(r'^reframe\s*:\s*', '', text, flags=re.I))
                 reply = reframe.apply(self.store, decision['id'], {'question': question,
-                    'rationale': rationale or 'The person corrected the question in Slack',
+                    'rationale': rationale or f'The person corrected the question in {self.channel.title()}',
                     'expected_updated_at': decision['updated_at']}, actor=actor)['notice']
             elif re.match(r"^(?:make (?:this |it )?a )?rule\b", lowered):
                 # `rule`, `rule if enterprise plan`, `rule until 2027-01-01`:
@@ -887,15 +908,15 @@ class Delivery:
                             "answer reusable, `rule if <words> until <date>`.")
                 answer, rationale = _split_rationale(explicit or text)
                 if decision["status"] == "pending":
-                    self.store.answer(decision["id"], {"answer": answer, "rationale": rationale or "answered in Slack",
+                    self.store.answer(decision["id"], {"answer": answer, "rationale": rationale or f"answered in {self.channel.title()}",
                                                        "expected_updated_at": decision["updated_at"],
-                                                       "signed_by": person["name"], "source": f"slack: {person['name']}"},
+                                                       "signed_by": person["name"], "source": f"{self.channel}: {person['name']}"},
                                       actor=actor)
                     reply = f"Recorded as {person['name']}'s answer. The agent sees it on the tree"
                 else:
                     from . import canvas
                     canvas.sign_off(self.store, decision["id"], {"by": person["name"], "answer": answer,
-                                                                 "rationale": rationale or "corrected in Slack",
+                                                                 "rationale": rationale or f"corrected in {self.channel.title()}",
                                                                  "expected_updated_at": decision["updated_at"]},
                                     actor=actor)
                     reply = f"Corrected and signed by {person['name']}. The agent sees it on the tree"
@@ -1241,6 +1262,18 @@ def _sections(text: str, size: int) -> list[str]:
 
 # ---------------- Slack ----------------
 
+class SlackRateLimited(RuntimeError):
+    """A server-directed delay retained by durable outbound queues."""
+    def __init__(self, method, retry_after):
+        super().__init__(f'Slack {method} rate limited; retry after {retry_after:g} seconds')
+        self.retry_after = retry_after
+
+
+def retry_delay(error, fallback):
+    import math
+    value = getattr(error, 'retry_after', None)
+    return max(fallback, value) if isinstance(value, (int, float)) and math.isfinite(value) and value >= 0 else fallback
+
 class SlackTransport:
     """Slack's Web API over the standard library: a bot token, DMs opened
     on demand, messages posted with a text fallback."""
@@ -1253,8 +1286,35 @@ class SlackTransport:
         # double standing in for Slack in an end-to-end run.
         self.api_base = (api_base or os.environ.get("SLACK_API_BASE", "") or "https://slack.com/api").rstrip("/")
         self._dm: dict[str, str] = {}
+        self._cooldowns = {}
+        self._rate_lock = threading.Lock()
+        self._rate_graph = None
+
+    def bind_rate_store(self, graph):
+        self._rate_graph = graph
+
+    def _check_cooldown(self, method):
+        with self._rate_lock:
+            until = self._cooldowns.get(method, 0)
+            if self._rate_graph is not None:
+                try:
+                    until = max(until, float(self._rate_graph.get_setting('slack_rate_limit:' + method) or 0))
+                except ValueError:
+                    pass
+            remaining = until - time.time()
+        if remaining > 0:
+            raise SlackRateLimited(method, remaining)
+
+    def _set_cooldown(self, method, delay):
+        with self._rate_lock:
+            until = max(self._cooldowns.get(method, 0), time.time() + delay)
+            self._cooldowns[method] = until
+            if self._rate_graph is not None:
+                with self._rate_graph.transaction():
+                    self._rate_graph.set_setting('slack_rate_limit:' + method, str(until))
 
     def _call(self, method: str, payload: dict) -> dict:
+        self._check_cooldown(method)
         req = urllib.request.Request(f"{self.api_base}/{method}", data=json.dumps(payload).encode(), method="POST",
                                      headers={"Authorization": f"Bearer {self.token}",
                                               "Content-Type": "application/json; charset=utf-8"})
@@ -1262,6 +1322,16 @@ class SlackTransport:
             with urllib.request.urlopen(req, timeout=20) as resp:
                 body = json.loads(resp.read().decode())
         except urllib.error.HTTPError as error:
+            if error.code == 429:
+                try:
+                    delay = float(error.headers.get('Retry-After', ''))
+                    import math
+                    if not math.isfinite(delay) or delay < 0:
+                        raise ValueError('Invalid Retry-After')
+                except (TypeError, ValueError):
+                    delay = 60.0
+                self._set_cooldown(method, delay)
+                raise SlackRateLimited(method, delay) from error
             raise RuntimeError(f"Slack {method} failed: HTTP {error.code}") from error
         except (urllib.error.URLError, OSError) as error:
             raise RuntimeError(f"Slack {method} unreachable: {error}") from error

@@ -122,10 +122,12 @@ class Inbox:
             with self.graph.transaction():
                 self.graph.db.execute("UPDATE slack_replies SET state='sent',error='' WHERE id=?", (row['id'],))
         except Exception as error:
+            from .delivery import retry_delay
             with self.graph.transaction():
                 self.graph.db.execute('''UPDATE slack_replies SET state='queued',attempts=attempts+1,
                     next_attempt=?,error=? WHERE id=?''',
-                    (time.time() + min(300, 2 ** min(row['attempts'] + 1, 8)), type(error).__name__, row['id']))
+                    (time.time() + retry_delay(error, min(300, 2 ** min(row['attempts'] + 1, 8))),
+                     type(error).__name__, row['id']))
 
     def flush(self):
         rows = self.graph.db.execute('''SELECT * FROM slack_replies
@@ -189,10 +191,12 @@ class Inbox:
                     self.graph.db.execute("UPDATE slack_ingress SET state='done',payload='{}',error='' WHERE id=?", (row['id'],))
                 done += 1
             except Exception as error:
+                from .delivery import retry_delay
                 with self.graph.transaction():
                     state = 'failed' if row['attempts'] >= 4 else 'queued'
                     self.graph.db.execute('''UPDATE slack_ingress SET state=?,lease_until=0,next_attempt=?,error=? WHERE id=?''',
-                        (state, time.time() + min(300, 2 ** (row['attempts'] + 1)), type(error).__name__, row['id']))
+                        (state, time.time() + retry_delay(error, min(300, 2 ** (row['attempts'] + 1))),
+                         type(error).__name__, row['id']))
         self.flush()
         return done
 

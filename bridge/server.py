@@ -55,7 +55,7 @@ class Forbidden(Exception):
 
 def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, public_url="",
                 slack_signing_secret=None, wait_cap=50.0, github_webhook_secret=None, github_api=None,
-                github_app=None, github_syncer=None):
+                github_app=None, github_syncer=None, teams_adapter=None):
     """The HTTP server. `auth` is an Auth (from bridge.auth); None means
     the local operator mode, which is refused off loopback. Slack's
     Events API posts to /webhooks/slack, verified with the signing
@@ -549,7 +549,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
             return {"enabled": delivery.enabled, "channel": delivery.channel if delivery.enabled else "",
                     "fallback_channel": delivery.fallback_channel or store.graph.get_setting("slack_fallback_channel"),
                     "signing_secret": bool(slack_signing_secret),
-                    "directory": json.loads(store.graph.get_setting("slack_directory") or "{}"), **counts}
+                    "directory": json.loads(store.graph.get_setting("slack_directory") or "{}"),
+                    "teams_replies": teams_adapter is not None, **counts}
 
         def mcp_config(self):
             """URL-based agent configuration for the shared HTTP MCP endpoint."""
@@ -610,6 +611,20 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                                              self.headers.get("X-GitHub-Delivery", ""), event))
                     except GitHubError as error:
                         return self.send(502, {"error": str(error)})
+                if path == "/webhooks/teams":
+                    # The Bot Connector JWT proves the service; the adapter
+                    # additionally pins tenant/channel and maps Entra identity.
+                    if teams_adapter is None:
+                        return self.send(404, {"error": "Teams bot replies are not configured"})
+                    if content_type != "application/json":
+                        return self.send(415, {"error": "Expected application/json"})
+                    from .teams import TeamsAuthError, TeamsUnavailable
+                    try:
+                        return self.send(200, teams_adapter.handle(self.headers.get("Authorization", ""), json.loads(raw)))
+                    except TeamsAuthError as error:
+                        return self.send(403, {"error": str(error)})
+                    except TeamsUnavailable as error:
+                        return self.send(503, {"error": str(error)})
                 if path == "/webhooks/slack":
                     # Slack proves itself with its signature; no session, no CSRF.
                     from .delivery import verify_slack_signature
@@ -901,7 +916,11 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
 
         def mcp_http(self, message):
             """Stateless Streamable HTTP: each POST answers one JSON-RPC request."""
-            from .mcp import dispatch
+            from .mcp import dispatch, SUPPORTED_HTTP_VERSIONS
+            version = self.headers.get('MCP-Protocol-Version')
+            if version is not None and version not in SUPPORTED_HTTP_VERSIONS:
+                return self.send(400, {'jsonrpc': '2.0', 'id': message.get('id'),
+                    'error': {'code': -32600, 'message': 'Unsupported MCP-Protocol-Version'}})
             if message.get("jsonrpc") != "2.0" or not isinstance(message.get("method"), str):
                 return self.send(400, {"jsonrpc": "2.0", "id": message.get("id"),
                                        "error": {"code": -32600, "message": "Invalid request"}})

@@ -17,6 +17,8 @@ from .ingest import index_repo
 from .store import Invalid, graph_summary, ownership_rows
 
 MAX_LINE = 1 << 20
+PROTOCOL_VERSION = '2025-06-18'
+SUPPORTED_HTTP_VERSIONS = frozenset((PROTOCOL_VERSION, '2025-03-26'))
 
 # Viewer-owned credentials retain evidence/review access, but never acquire
 # write privileges merely because they use the agent protocol. New tools are
@@ -176,6 +178,9 @@ HANDLERS = {
     "bridge_ingest_repo": _ingest_repo,
     "bridge_import_record": lambda store, args: store.add_record(args),
     "bridge_connection_status": lambda store, args: {
+        "delivery": {"enabled": store.delivery.enabled, "channel": store.delivery.channel,
+                     "teams_reply_enabled": bool(store.delivery._teams_destination()),
+                     "failed": store.delivery.list(state='failed')},
         "inference": __import__("bridge.config", fromlist=["backend_status"]).backend_status(),
         "readiness": store.readiness(),
         "github": _github_status(store),
@@ -288,7 +293,8 @@ def dispatch(store, message, notify=None):
     if not isinstance(params, dict):
         return {**response, "error": {"code": -32602, "message": "Invalid params"}}
     if method == "initialize":
-        result = {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}},
+        result = {"protocolVersion": params.get('protocolVersion') if params.get('protocolVersion') in SUPPORTED_HTTP_VERSIONS else PROTOCOL_VERSION,
+                  "capabilities": {"tools": {}},
                   "serverInfo": {"name": "bridge", "version": "0.2.0"},
                   "instructions": INSTRUCTIONS}
     elif method == "ping":

@@ -199,8 +199,8 @@ def apply(delivery, d, person, action, actor):
             args.update(scope_kind=action['scope_kind'],scope=action.get('scope',''))
         return store.refer(d['id'], args, actor=actor)['notice']
     if kind == 'answer':
-        data = {**by, 'answer':action['answer'], 'rationale':action.get('rationale') or 'No reason given in the Slack conversation',
-                'signed_by':person['name'],'source':f"slack: {person['name']} (read back and confirmed)"}
+        data = {**by, 'answer':action['answer'], 'rationale':action.get('rationale') or f'No reason given in the {delivery.channel.title()} conversation',
+                'signed_by':person['name'],'source':f"{delivery.channel}: {person['name']} (read back and confirmed)"}
         if d['status'] == 'pending': store.answer(d['id'],data,actor=actor)
         else: canvas.sign_off(store,d['id'],data,actor=actor)
         return f"Recorded and signed as {person['name']}'s answer. The coding agent can now read it."
@@ -213,7 +213,7 @@ def apply(delivery, d, person, action, actor):
     if kind == 'reframe':
         from . import reframe
         return reframe.apply(store, d['id'], {'question': action['answer'],
-            'rationale': action.get('rationale') or 'The person corrected the question in Slack',
+            'rationale': action.get('rationale') or f'The person corrected the question in {delivery.channel.title()}',
             'expected_updated_at': d['updated_at']}, actor=actor)['notice']
     if kind == 'rule':
         return store.make_rule(d['id'], {**by,'conditions':action.get('conditions',''), 'expires':action.get('expires',''), 'scope':'same'}, actor=actor)['notice']

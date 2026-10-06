@@ -219,10 +219,14 @@ class Store:
     def connect_delivery(self, transport, fallback_channel="", base_url=""):
         from .delivery import Delivery
         self._delivery = Delivery(self, transport=transport, fallback_channel=fallback_channel, base_url=base_url)
-        if getattr(transport, "name", "") == "slack":
-            self.graph.set_setting("slack_connected", "1")
-            if fallback_channel:
-                self.graph.set_setting("slack_fallback_channel", fallback_channel)
+        # Changing the server's transport must retire any enqueue-only Teams
+        # destination inherited by independently running stdio agents.
+        with self.graph.transaction():
+            self.graph.set_setting("teams_delivery", "")
+            if getattr(transport, "name", "") == "slack":
+                self.graph.set_setting("slack_connected", "1")
+                if fallback_channel:
+                    self.graph.set_setting("slack_fallback_channel", fallback_channel)
         return self._delivery
 
     def notify(self, decision_id, kind, to=""):
@@ -1067,7 +1071,7 @@ class Store:
         if not self.delivery.enabled:
             out.append({"key": "no_slack", "level": "blocker", "what": "Slack is not connected; people receive no Slack notifications.",
                         "do": "Connect the Slack app with ./setup --configure. See docs/slack.md. No ownership map is required."})
-        if directory.get("error"):
+        if directory.get("error") and self.delivery.channel == 'slack':
             out.append({"key": "slack_directory", "level": "blocker", "what": directory["error"],
                         "do": "Check the bot's users:read and users:read.email scopes, then refresh Slack contacts in Connections & setup."})
         if self.delivery.enabled and self.delivery.channel == "slack" and not fallback:
@@ -1123,7 +1127,7 @@ class Store:
                         "do": "Remove them and add the team with its members, or name the people directly."})
         unreachable = graph.db.execute(
             "SELECT count(*) c FROM people WHERE active=1 AND slack_id=''").fetchone()["c"]
-        if people and unreachable and self.delivery.enabled:
+        if people and unreachable and self.delivery.enabled and self.delivery.channel == 'slack':
             out.append({"key": "unreachable", "level": "warning",
                         "what": f"{unreachable} of {people} people have no Slack id, so messages for them fall "
                                 "back to a channel or fail visibly.",

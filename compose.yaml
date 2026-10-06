@@ -19,6 +19,7 @@ services:
       context: .
       args:
         INSTALL_AGENTS: ${BRIDGE_INSTALL_AGENTS:-false}
+        INSTALL_TEAMS: ${BRIDGE_INSTALL_TEAMS:-false}
     environment:
       DATABASE_URL: postgresql://bridge:${POSTGRES_PASSWORD:-bridge-local-development}@db:5432/bridge
       BRIDGE_PUBLIC_URL: ${BRIDGE_PUBLIC_URL:-http://localhost:7333}
@@ -46,6 +47,12 @@ services:
       SLACK_FALLBACK_CHANNEL: ${SLACK_FALLBACK_CHANNEL:-}
       SLACK_API_BASE: ${SLACK_API_BASE:-}
       TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL:-}
+      TEAMS_APP_ID: ${TEAMS_APP_ID:-}
+      TEAMS_TENANT_ID: ${TEAMS_TENANT_ID:-}
+      TEAMS_CLIENT_SECRET: ${TEAMS_CLIENT_SECRET:-}
+      TEAMS_CHANNEL_ID: ${TEAMS_CHANNEL_ID:-}
+      TEAMS_PEOPLE_JSON: ${TEAMS_PEOPLE_JSON:-}
+      TEAMS_SERVICE_URL: ${TEAMS_SERVICE_URL:-https://smba.trafficmanager.net/teams/}
     ports:
       - "127.0.0.1:${BRIDGE_PORT:-7333}:7333"
     volumes:

@@ -31,7 +31,7 @@ What a pilot proves: an agent kicks a task off once, the decisions inside it rea
 - [ ] Sync it from GitHub (`GITHUB_TOKEN=... python3 -m bridge sync acme/platform --db "$BRIDGE_DB"`, and `GITHUB_TOKEN` with `BRIDGE_GITHUB_REPOS=acme/platform` on the server to keep it current every 15 minutes): pull request approvals land on the squash commits that merged, the teams CODEOWNERS names become their members, and descriptions become records. Optionally a repository webhook at `<public-url>/webhooks/github` (`GITHUB_WEBHOOK_SECRET`; events pull requests, pull request reviews, teams, memberships) so a merge is known the minute it lands. `GET /api/sync` shows when each repository last synced; a route built on a sync older than three days says so in its evidence.
 - [ ] Read `bridge_list_owners` (or `GET /api/people`) once and check that the people, the authority rows and the coordinator are what you meant.
 
-**Slack, or Teams.** People reply in the Slack thread or in the inbox; the inbox is the record. Teams (`TEAMS_WEBHOOK_URL`, an incoming webhook) is outbound only: every message goes to one channel with a link to the inbox, and people answer in the inbox, not in Teams.
+**Slack, or Teams.** People reply in the Slack thread or in the inbox; the inbox is the record. Teams (`TEAMS_WEBHOOK_URL`, an incoming webhook) is outbound only: every message goes to one channel with a link to the inbox, and people answer in the inbox. A separate opt-in [Teams bot reply preview](docs/teams.md) supports verified replies in one pinned standard channel after bot registration and explicit identity mapping; live tenant acceptance remains required.
 
 - [ ] A Slack app from [docs/slack-manifest.json](docs/slack-manifest.json), with the bot scopes `chat:write`, `im:write`, `im:history`, `channels:history`, `users:read`, `users:read.email`, `app_mentions:read`, `assistant:write` and `search:read.public`; its bot token in `SLACK_BOT_TOKEN`, its signing secret in `SLACK_SIGNING_SECRET` ([docs/slack.md](docs/slack.md) walks through it).
 - [ ] Events API subscribed to `message.im`, `message.channels` and `app_mention`, request URL `<public-url>/webhooks/slack`. Raven answers the URL verification.
@@ -94,4 +94,4 @@ The gate covers authorization, not conformance. `evals/real_oss` caught a real a
 
 ## What the pilot does not get yet
 
-Replies from Teams (its webhook is outbound only); connectors that pull Linear, Jira, Notion or Confluence on their own (records from them arrive through `POST /api/records`); a learned embedding model.
+Full Teams support (its incoming webhook is outbound only; the separately configured channel-bot reply preview has not been live-tenant verified); connectors that pull Linear, Jira, Notion or Confluence on their own (records from them arrive through `POST /api/records`); a learned embedding model.

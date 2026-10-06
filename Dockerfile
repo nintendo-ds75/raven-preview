@@ -6,14 +6,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 bridge \
     && mkdir /data && chown bridge:bridge /data
-COPY requirements-postgres.txt requirements-agents.txt ./
+COPY requirements-postgres.txt requirements-agents.txt requirements-teams.txt ./
 RUN pip install --no-cache-dir -r requirements-postgres.txt
+ARG INSTALL_TEAMS=false
+RUN if [ "$INSTALL_TEAMS" = true ]; then pip install --no-cache-dir -r requirements-teams.txt; fi
 ARG INSTALL_AGENTS=false
 RUN if [ "$INSTALL_AGENTS" = true ]; then pip install --no-cache-dir -r requirements-agents.txt; fi
 COPY --chown=bridge:bridge bridge ./bridge
 COPY --chown=bridge:bridge web ./web
 COPY --chown=bridge:bridge fixtures ./fixtures
 COPY --chown=bridge:bridge tests ./tests
+COPY --chown=bridge:bridge scripts ./scripts
 COPY --chown=bridge:bridge bench ./bench
 COPY --chown=bridge:bridge evals ./evals
 COPY --chown=bridge:bridge bridge_mcp.py ./
