@@ -1872,6 +1872,9 @@ def finish_task(store, data, sleep=None, stop=None) -> dict:
     else:
         read = ("Raven did not read the diff and does not know whether it follows them; pass `diff` to "
                 "bridge_finish_task and it will say what it can")
+    if follows and review["status"] == "failed":
+        read += (". The reading did not complete for every attempted decision; call bridge_finish_task again "
+                 "with the same diff to retry the incomplete reading")
     # Files the diff changes whose decider was asked nothing on this task,
     # and the reason the agent gave for each it said settles nothing.
     unasked = [u for u in uncovered if not u.get("reason")]
@@ -2138,8 +2141,12 @@ def _review(store, task_id: str, signed: list[dict], diff: str, sleep=None, stop
     rid, diff_hash = _review_key(task_id, diff, signed)
     with _REVIEWS_LOCK:
         stored = _stored_review(graph, task_id, rid)
-        if stored is not None and stored["status"] in ("done", "failed"):
+        if stored is not None and stored["status"] == "done":
             return stored
+        # A failed reading is evidence of that attempt, not a permanent
+        # answer. The finish response tells the host to retry the same diff;
+        # that explicit call starts one new attempt while preserving history.
+        # Reads alone never retry, and concurrent finish calls share the thread.
         thread = _REVIEWS.get(rid)
         if thread is None:
             # Never started, or started by a process that has since gone.
@@ -2170,6 +2177,15 @@ def _run_review(store, task_id: str, rid: str, diff_hash: str, signed: list[dict
     status, follows = "done", []
     try:
         follows = _conformance(store, task_id, signed, diff)
+        # The provider adapter returns no reading on an unavailable or
+        # malformed response. With inference enabled that is an incomplete
+        # attempt, not a successful empty result to cache forever. Preserve
+        # any completed findings; an explicit finish retry can recover.
+        from .config import load as load_config
+        expected = {n["node_id"] for n in signed[:8] if (n.get("answer") or "").strip()}
+        if load_config().semantic_retrieval and expected - {r["node_id"] for r in follows}:
+            status = "failed"
+            print(f"Raven: reading the diff for task {task_id} returned incomplete model results", file=sys.stderr)
     except Exception as error:
         status = "failed"
         print(f"Raven: reading the diff for task {task_id} failed: {type(error).__name__}: {error}", file=sys.stderr)
