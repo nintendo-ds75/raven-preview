@@ -13,6 +13,10 @@ class EphemeralReply(str):
     """A search-derived reply. Never retain its text in Raven's database."""
 
 
+class ReadingShapeError(LLMError):
+    """A local action-schema failure, distinct from provider/transport errors."""
+
+
 # These words request a read-back, never a signature. Keep the match whole:
 # a qualification after the agreement must still be interpreted as an edit.
 _SIGNOFF_REQUEST = re.compile(
@@ -122,7 +126,7 @@ def explicit_answer_amendment(message):
 
 
 def validated_reading(cfg, payload):
-    """One repair budget across intent and scope guards; never repair a repair."""
+    """One repair budget across shape, intent and scope; never repair a repair."""
     from .delivery import _CONFIRM_RE
     require_answer = False
     require_reapproval = False
@@ -134,7 +138,18 @@ def validated_reading(cfg, payload):
     # Repeating an older answer cannot be repaired into signing a newer summary.
     can_sign_reaffirmation = message == current_answer
     for attempt in range(2):
-        action = reading(cfg, payload)
+        try:
+            action = reading(cfg, payload)
+        except ReadingShapeError as error:
+            if attempt:
+                raise
+            # Only our local schema validator reaches this branch. Do not
+            # add retries to API errors, timeouts or complete_json's own
+            # JSON parsing policy. Never echo the rejected provider content.
+            payload = {**payload, 'validation_error': str(error) +
+                       ' Return one recognized action object with text fields as strings. '
+                       'Use the original human words and preserve every qualification.'}
+            continue
         kind = action['kind']
         error = ''
         if kind == 'reframe' and explicit_answer_amendment(payload['message']):
@@ -229,14 +244,14 @@ def _repeats_previous_answer(decision, person, text):
 
 def reading(cfg, payload):
     raw = Client(cfg.fast()).complete_json('slack_conversation', SYSTEM, json.dumps(payload), max_tokens=1600)
-    if not isinstance(raw, dict) or raw.get('kind') not in {
+    if not isinstance(raw, dict) or not isinstance(raw.get('kind'), str) or raw['kind'] not in {
         'answer','signoff','handoff','claim','question','context','followup','reframe','rule','chat','confirm','decline'}:
-        raise LLMError('The conversation model did not return a recognized action')
+        raise ReadingShapeError('The conversation model did not return an object with a recognized kind')
     for key in ('reply','answer','rationale','to','conditions','expires','scope_kind','scope'):
         if raw.get(key) is None:
             raw[key] = ''
         if not isinstance(raw.get(key,''),str) or len(raw.get(key,'')) > 12000:
-            raise LLMError('The conversation model returned malformed text')
+            raise ReadingShapeError(f'The conversation model returned malformed text: {key} must be a string of at most 12000 characters')
     return raw
 
 

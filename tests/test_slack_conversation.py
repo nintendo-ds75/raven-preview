@@ -31,6 +31,58 @@ class ConversationTests(DeliveryCase):
         with patch('bridge.slack_chat.reading',return_value=model or {'kind':'chat','reply':'Tell me more.'}):
             return self.reply(self.message,who,text,event_id)
 
+    def test_schema_repaired_policy_still_requires_a_fresh_human_yes(self):
+        policy = ('Add a boolean accessor. Missing values return the exact default object unchanged. '
+                  'Invalid values raise ValueError. This approval is for this task only; it is not a standing rule.')
+        with patch('bridge.slack_chat.Client.complete_json', side_effect=[
+                {'kind': 'answer', 'answer': {'text': policy}}, {'kind': 'answer', 'answer': policy}]) as model:
+            response = self.reply(self.message, 'UWES', policy)
+        self.assertEqual(model.call_count, 2)
+        self.assertIn(policy, response)
+        self.assertIn('Reply yes to confirm', response)
+        row = self.store.get_decision(self.n['node_id'])
+        self.assertFalse(row['authorized'])
+        self.assertFalse(row['answer'])
+        self.say('yes')
+        row = self.store.get_decision(self.n['node_id'])
+        self.assertEqual(row['answer'], policy)
+        self.assertTrue(row['authorized'])
+        self.assertFalse(row['reusable'])
+
+    def test_repeated_malformed_schema_clears_old_readback_without_recording_model_content(self):
+        self.say('Bill one unit.', {'kind': 'answer', 'answer': 'Bill one unit.'})
+        canary = {'not-for-error-or-storage': 'synthetic-rejected-content'}
+        with patch('bridge.slack_chat.Client.complete_json', side_effect=[
+                {'kind': 'answer', 'answer': canary}, {'kind': 'answer', 'rationale': canary}]) as model:
+            response = self.reply(self.message, 'UWES', 'Bill two units.')
+        self.assertEqual(model.call_count, 2)
+        self.assertIn('Nothing was changed', response)
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+        row = self.store.get_decision(self.n['node_id'])
+        self.assertFalse(row['authorized'])
+        failure = next(event for event in reversed(row['events']) if event['kind'] == 'slack_inference_failed')
+        self.assertIn('rationale', failure['detail'])
+        self.assertNotIn('not-for-error-or-storage', failure['detail'])
+        self.assertNotIn('synthetic-rejected-content', failure['detail'])
+        self.say('yes')
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+
+    def test_schema_repair_cannot_replace_a_newer_readback(self):
+        def repaired(*args, **kwargs):
+            self.say('Hold the invoice.', {'kind': 'answer', 'answer': 'Hold the invoice.'})
+            return {'kind': 'answer', 'answer': 'Bill two units.'}
+        calls = iter([{'kind': 'answer', 'answer': []}, None])
+        def model(*args, **kwargs):
+            return next(calls) or repaired(*args, **kwargs)
+        with patch('bridge.slack_chat.Client.complete_json', side_effect=model) as read:
+            response = self.reply(self.message, 'UWES', 'Bill two units.')
+        self.assertEqual(read.call_count, 2)
+        self.assertIn('Another reply arrived', response)
+        held = self.delivery._reading(self.message['channel'], self.message['ts'], self.wes)
+        self.assertEqual(json.loads(held['answer'])['answer'], 'Hold the invoice.')
+        self.say('yes')
+        self.assertEqual(self.store.get_decision(self.n['node_id'])['answer'], 'Hold the invoice.')
+
     def review_source(self, policy):
         task = self.store.get_decision(self.n['node_id'])['run_id']
         with self.graph.transaction():
@@ -1012,6 +1064,69 @@ class InferenceIsolationTests(OfflineCase):
         self.assertEqual(run.call_args.kwargs['input'],'untrusted Slack text')
 
 class ReplySchemaTests(OfflineCase):
+    def validated(self, replies, message='Bill two units for this task only.'):
+        from bridge.slack_chat import validated_reading
+        with patch('bridge.slack_chat.Client.complete_json', side_effect=replies) as model:
+            self.model = model
+            return validated_reading(Config(model_api='none'), {'message': message})
+
+    def test_local_malformed_text_gets_one_bounded_repair(self):
+        # Iniconfig18 stored this validator's error, not its raw action JSON.
+        # These bodies are representative synthetic failures, not reconstructed
+        # claims about which field the actual provider returned incorrectly.
+        for field in ('reply', 'answer', 'rationale', 'to', 'conditions', 'expires', 'scope_kind', 'scope'):
+            with self.subTest(field=field):
+                good = {'kind': 'answer', 'answer': 'Bill two units for this task only.'}
+                got = self.validated([{'kind': 'answer', field: {'private-canary': 'not-for-error'}}, good])
+                self.assertEqual(got['answer'], good['answer'])
+                self.assertEqual(self.model.call_count, 2)
+                repaired = json.loads(self.model.call_args.args[2])
+                self.assertIn(field, repaired['validation_error'])
+                self.assertNotIn('private-canary', repaired['validation_error'])
+                self.assertNotIn('not-for-error', repaired['validation_error'])
+
+    def test_unrecognized_action_shapes_get_at_most_one_repair(self):
+        for bad in ([], None, {'kind': 'invented'}, {'kind': ['answer']}, {'kind': {'answer': True}}):
+            with self.subTest(shape=type(bad).__name__):
+                got = self.validated([bad, {'kind': 'chat', 'reply': 'Please clarify.'}])
+                self.assertEqual(got['kind'], 'chat')
+                self.assertEqual(self.model.call_count, 2)
+
+    def test_oversized_text_is_repaired_without_echoing_the_rejected_value(self):
+        got = self.validated([{'kind': 'answer', 'answer': 'canary-' * 2000},
+                              {'kind': 'answer', 'answer': 'Bill two units for this task only.'}])
+        self.assertEqual(got['kind'], 'answer')
+        repaired = json.loads(self.model.call_args.args[2])
+        self.assertIn('12000', repaired['validation_error'])
+        self.assertNotIn('canary-', repaired['validation_error'])
+
+    def test_second_malformed_response_fails_closed_without_a_third_call(self):
+        with self.assertRaises(LLMError):
+            self.validated([{'kind': 'answer', 'answer': []}, {'kind': 'answer', 'answer': {}}])
+        self.assertEqual(self.model.call_count, 2)
+
+    def test_schema_and_scope_guards_share_one_repair_budget(self):
+        for replies in ([{'kind': 'answer', 'answer': []}, {'kind': 'answer', 'answer': 'Bill two units.'}],
+                        [{'kind': 'answer', 'answer': 'Bill two units.'}, {'kind': 'answer', 'answer': []}]):
+            with self.subTest(first=replies[0]):
+                with self.assertRaises(LLMError):
+                    self.validated(replies)
+                self.assertEqual(self.model.call_count, 2)
+
+    def test_schema_and_intent_guards_share_one_repair_budget(self):
+        with self.assertRaises(LLMError):
+            self.validated([{'kind': 'answer', 'answer': {}}, {'kind': 'reframe', 'answer': 'A new question?'}],
+                           'I need to correct my earlier answer. Bill two units.')
+        self.assertEqual(self.model.call_count, 2)
+
+    def test_provider_failure_does_not_get_an_extra_schema_retry(self):
+        for replies, expected in (([LLMError('provider unavailable')], 1),
+                                   ([{'kind': 'answer', 'answer': []}, LLMError('provider unavailable')], 2)):
+            with self.subTest(expected=expected):
+                with self.assertRaisesRegex(LLMError, 'provider unavailable'):
+                    self.validated(replies)
+                self.assertEqual(self.model.call_count, expected)
+
     def test_unused_null_fields_do_not_discard_a_valid_reply(self):
         from bridge.slack_chat import reading
         with patch('bridge.slack_chat.Client.complete_json',return_value={'kind':'question','reply':'This preserves compatibility.','answer':None,'to':None}):
