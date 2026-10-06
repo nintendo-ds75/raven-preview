@@ -185,9 +185,11 @@ real Raven inference and a real model-backed coding-host driver. It checks:
    threshold, before finishing and exporting the actual change proof.
 
 The default cap is 30 physical Anthropic HTTP attempts, including retries;
-`--max-calls` is bounded to 1–100. Each provider network operation has a
-45-second timeout. The JSON report records request counts, response statuses,
-actual input/output/cache token usage, semantic results, and the failed stage
+`--max-calls` is bounded to 1–100. The observer forwards the production client’s
+network timeout unchanged (currently 120 seconds); it does not impose a shorter
+timeout. The JSON report records request counts, response statuses, per-attempt
+elapsed time and fixed error categories, actual input/output/cache token usage,
+semantic results, and the failed stage
 when applicable. It never includes headers, keys or an environment dump.
 Background inference is stopped/drained under the same request gate at teardown.
 

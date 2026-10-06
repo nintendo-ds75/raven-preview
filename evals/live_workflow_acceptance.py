@@ -67,14 +67,33 @@ class RequestBudget:
             if len(self.requests) >= self.maximum:
                 raise llm.LLMError('Live workflow physical HTTP request budget exhausted')
             record = {'status': None, 'input_tokens': 0, 'output_tokens': 0,
-                      'cache_creation_input_tokens': 0, 'cache_read_input_tokens': 0}
+                      'cache_creation_input_tokens': 0, 'cache_read_input_tokens': 0,
+                      'elapsed_seconds': 0.0, 'error_kind': None}
             self.requests.append(record)
+        started = time.monotonic()
+
+        def observe_error(error):
+            # Fixed categories only: exception text can contain private request data.
+            if isinstance(error, urllib.error.HTTPError):
+                record['status'] = error.code
+                record['error_kind'] = 'http'
+            elif isinstance(error, TimeoutError) or (isinstance(error, urllib.error.URLError)
+                    and isinstance(error.reason, TimeoutError)):
+                record['error_kind'] = 'timeout'
+            elif isinstance(error, (urllib.error.URLError, OSError)):
+                record['error_kind'] = 'network'
+            else:
+                record['error_kind'] = 'other'
+            record['elapsed_seconds'] = round(time.monotonic() - started, 6)
+
         try:
-            kwargs['timeout'] = min(float(kwargs.get('timeout', 45)), 45)
+            # Forward all caller options unchanged, including a positional or
+            # omitted timeout. This observer must not alter production behavior.
             response = self.opener(request, *args, **kwargs)
-        except urllib.error.HTTPError as error:
-            record['status'] = error.code
+        except Exception as error:
+            observe_error(error)
             raise
+        record['elapsed_seconds'] = round(time.monotonic() - started, 6)
         record['status'] = getattr(response, 'status', 200)
         budget = self
 
@@ -84,7 +103,12 @@ class RequestBudget:
                 self.counted = False
 
             def read(self, *read_args, **read_kwargs):
-                data = response.read(*read_args, **read_kwargs)
+                try:
+                    data = response.read(*read_args, **read_kwargs)
+                except Exception as error:
+                    observe_error(error)
+                    raise
+                record['elapsed_seconds'] = round(time.monotonic() - started, 6)
                 self.body += data
                 if not self.counted:
                     try:
@@ -119,6 +143,8 @@ class RequestBudget:
             return {'physical_http_requests': len(self.requests), 'max_physical_http_requests': self.maximum,
                     'successful_http_responses': sum(r['status'] == 200 for r in self.requests),
                     'http_statuses': [r['status'] for r in self.requests],
+                    'http_attempts': [{key: r[key] for key in ('status', 'elapsed_seconds', 'error_kind')}
+                                      for r in self.requests],
                     **{field: sum(r[field] for r in self.requests) for field in
                        ('input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens')}}
 

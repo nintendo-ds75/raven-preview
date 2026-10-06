@@ -55,6 +55,49 @@ class LiveWorkflowDriverTests(unittest.TestCase):
         with self.assertRaisesRegex(llm.LLMError, 'unexpected external'):
             budget.open('https://unexpected.invalid/data')
 
+    def test_budget_forwards_timeout_and_opener_arguments_unchanged(self):
+        request = urllib.request.Request(PROVIDER_URL, data=b'{}')
+        for args, kwargs in (((), {'timeout': 120}), ((), {'timeout': 7}),
+                             ((), {}), ((None, 120), {})):
+            with self.subTest(args=args, kwargs=kwargs):
+                with patch('urllib.request.urlopen', return_value=Response(b'{}')) as opener:
+                    budget = RequestBudget(1, opener=opener)
+                    with budget.open(request, *args, **kwargs) as response:
+                        self.assertEqual(response.read(), b'{}')
+                    opener.assert_called_once_with(request, *args, **kwargs)
+
+    def test_budget_reports_fixed_transport_metrics_without_exception_details(self):
+        for error, kind, status in (
+                (TimeoutError('private-timeout-detail'), 'timeout', None),
+                (urllib.error.URLError(TimeoutError('private-nested-detail')), 'timeout', None),
+                (urllib.error.URLError('private-network-detail'), 'network', None),
+                (urllib.error.HTTPError(PROVIDER_URL, 429, 'private-http-detail', {}, None), 'http', 429)):
+            with self.subTest(kind=kind, status=status):
+                with patch('urllib.request.urlopen', side_effect=error), \
+                     patch('evals.live_workflow_acceptance.time.monotonic', side_effect=[10, 13.5]):
+                    budget = RequestBudget(1)
+                    with self.assertRaises(type(error)) as caught:
+                        budget.open(PROVIDER_URL, timeout=120)
+                self.assertIs(caught.exception, error)
+                self.assertEqual(budget.summary()['http_attempts'], [
+                    {'status': status, 'elapsed_seconds': 3.5, 'error_kind': kind}])
+                self.assertNotIn('private-', json.dumps(budget.summary()))
+
+    def test_budget_observes_read_timeouts_without_swallowing_them(self):
+        error = TimeoutError('private-read-detail')
+        class BrokenResponse(Response):
+            def read(self, *args, **kwargs):
+                raise error
+        budget = RequestBudget(1, opener=lambda *_, **__: BrokenResponse(b''))
+        with patch('evals.live_workflow_acceptance.time.monotonic', side_effect=[10, 11, 14]):
+            with budget.open(PROVIDER_URL, timeout=120) as response:
+                with self.assertRaises(TimeoutError) as caught:
+                    response.read()
+        self.assertIs(caught.exception, error)
+        self.assertEqual(budget.summary()['http_attempts'], [
+            {'status': 200, 'elapsed_seconds': 4, 'error_kind': 'timeout'}])
+        self.assertNotIn('private-read-detail', json.dumps(budget.summary()))
+
     def test_fixture_injected_driver_uses_live_mode_and_real_client_http_path(self):
         captured = {}
         class Harness:
