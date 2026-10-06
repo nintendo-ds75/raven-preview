@@ -122,6 +122,38 @@ def verify(bundle):
     return {"valid": not errors, "errors": errors, "authenticity_verified": False}
 
 
+def _review_comparison(saved, current):
+    """Describe two readings without changing either or inferring attempt identity.
+
+    Review IDs bind inputs and can be reused by an explicit failed-review retry.
+    Equal IDs therefore do not establish that these are the same attempt.
+    """
+    def summary(review):
+        return {"id": review.get("id"), "status": review.get("status")} if review is not None else None
+
+    saved_summary, current_summary = summary(saved), summary(current)
+    saved_id = (saved_summary or {}).get("id")
+    current_id = (current_summary or {}).get("id")
+    same_id = saved_id == current_id if saved_id and current_id else None
+
+    def label(path, review):
+        if review is None:
+            return f"{path}: no advisory review recorded."
+        return f"{path}: id={review['id']}, status={review['status']}."
+
+    description = (label("Saved bundle.payload.review", saved_summary) + " "
+                   + label("Current top-level review", current_summary))
+    if same_id is True:
+        description += (" The review IDs match. A status change alone does not establish a new attempt or pass; "
+                        "an ID can be reused on retry and does not identify a unique attempt.")
+    elif same_id is False:
+        description += " The review IDs differ."
+    description += (" The saved snapshot matches the current reading." if saved == current else
+                    " The saved snapshot differs from the current reading and has not been rewritten.")
+    return {"saved": saved_summary, "current": current_summary,
+            "same_review_id": same_id, "description": description}
+
+
 def export(store, data):
     """Return the saved finish proof, with an explicit live staleness check."""
     from . import canvas
@@ -158,6 +190,7 @@ def export(store, data):
     return {"bundle": bundle, "integrity": verify(bundle), "stale": bool(reasons),
             "stale_reasons": reasons, "markdown": markdown(bundle), "review": review,
             "review_pending": review_pending, "review_snapshot_current": review_snapshot_current,
+            "review_comparison": _review_comparison(bundle["payload"].get("review"), review),
             "next": next_step}
 
 

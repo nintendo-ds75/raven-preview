@@ -11,7 +11,7 @@ The bundle contains:
 - The exact submitted diff, byte length and full SHA-256
 - Decision answers, revisions, scope, rationale, recorded signers and attribution
 - Source-decision citations and recorded evidence
-- The model review available at export time, if any
+- The model review saved at finish time, if any
 - Test/build claims explicitly labeled as coding-host-reported
 
 The finish response includes the proof ID and diff SHA-256. Repeating the same
@@ -19,6 +19,23 @@ export returns the saved bundle. Restarting Raven does not lose it. If a decisio
 or signature changes afterward, export returns `stale: true`; reread the tree,
 update the code and finish again with the current complete diff. A separate task
 cannot retrieve a proof merely by supplying the old task's client key.
+
+The export's top-level `review` is the current advisory reading;
+`bundle.payload.review` remains the immutable saved snapshot. `review_comparison`
+lists the saved and current IDs and statuses separately. For example, a saved
+`running` snapshot can share its ID with a current `done` reading. That does not
+make the saved snapshot complete. Review IDs bind the inputs and are reused on
+retry, so `same_review_id` is not an attempt identifier; it is null if either ID
+is absent. `review_snapshot_current` compares the complete readings, not just
+their IDs or statuses. Historical lookup should report both readings without
+refreshing the proof. When preparing an updated proof, wait for a running review,
+then finish again with the same complete diff and checks before exporting.
+
+When summarizing a decision, use its recorded answer and rationale. Proposed
+`options` are not an exhaustive list: a person can refine them or answer outside
+them. Do not describe a refined answer as an original option unless the record
+supports that. A citation points to evidence; its presence does not establish
+that a summary accurately represents that evidence.
 
 To check a downloaded JSON bundle offline, run
 `python -m bridge.proof proof.json --diff changes.patch`, or call
@@ -48,7 +65,8 @@ in one shared instance and expect repository-scoped access controls.
 ## Tests
 
 `PYTHONPATH=tests:. python -m unittest test_proof -v` covers exact-diff binding,
-tampering, restart persistence, idempotency, stale decisions and premature export.
+tampering, restart persistence, idempotency, stale decisions, premature export,
+saved/current review separation, retry identity and human answers outside proposals.
 The billing contract tests separately execute a reference implementation at the
 allowance, seat, month, internal-test and scoped-legal-hold boundaries. Their
 owners and policy decisions are explicitly synthetic.

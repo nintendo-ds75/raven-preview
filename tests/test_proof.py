@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from test_contract import ContractCase
 from bridge import canvas, proof
-from bridge.mcp import call_tool
+from bridge.mcp import TOOLS, call_tool
 from bridge.store import Invalid, Store
 
 DIFF = "diff --git a/billing/usage.py b/billing/usage.py\n--- a/billing/usage.py\n+++ b/billing/usage.py\n@@ -1 +1 @@\n-rate = 1\n+rate = 2\n"
@@ -88,6 +88,57 @@ class ProofTests(ContractCase):
         with self.assertRaises(Invalid):
             proof.export(self.store, {"task_id": other})
         self.assertEqual(proof.export(self.store, {"task_id": task})["bundle"]["payload"]["task"]["id"], task)
+
+    def test_export_with_no_review_does_not_invent_an_identity_or_status(self):
+        task = self.start(title="Fix a documentation typo")
+        diff = "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-teh\n+the\n"
+        canvas.get_tree(self.store, task)
+        canvas.finish_task(self.store, {"task_id": task, "diff": diff})
+        exported = proof.export(self.store, {"task_id": task})
+        self.assertIsNone(exported['bundle']['payload']['review'])
+        self.assertIsNone(exported['review'])
+        self.assertTrue(exported['review_snapshot_current'])
+        self.assertFalse(exported['review_pending'])
+        comparison = exported['review_comparison']
+        self.assertIsNone(comparison['saved'])
+        self.assertIsNone(comparison['current'])
+        self.assertIsNone(comparison['same_review_id'])
+        self.assertIn('no advisory review recorded', comparison['description'])
+
+    def test_comparison_does_not_infer_identity_when_either_id_is_absent(self):
+        for saved, current in ((None, {'id': 'review-b', 'status': 'done'}),
+                               ({'id': 'review-a', 'status': 'running'}, None),
+                               ({'status': 'done'}, {'status': 'done'})):
+            with self.subTest(saved=saved, current=current):
+                comparison = proof._review_comparison(saved, current)
+                self.assertIsNone(comparison['same_review_id'])
+                self.assertNotIn('IDs match', comparison['description'])
+
+    def test_human_answer_can_refine_options_without_rewriting_proposals(self):
+        task = self.start()
+        proposals = ['Bill one cent per call.', 'Waive the charge.']
+        node = self.node(task, options=' | '.join(proposals))
+        answer = 'Bill two cents per call, with the first ten calls free.'
+        self.answer(node['node_id'], answer)
+        record = call_tool(self.store, 'bridge_get_decision', {'decision_id': node['node_id']})
+        self.assertEqual(json.loads(record['options']), proposals)
+        self.assertEqual(record['answer'], answer)
+        self.assertNotIn(answer, proposals)
+        self.assertTrue(record['authorized'])
+        matches = call_tool(self.store, 'bridge_search_decisions', {
+            'query': 'usage charge', 'repo': 'acme/platform'})['matches']
+        found = next(item for item in matches if item['id'] == node['node_id'])
+        self.assertEqual(found['answer'], answer)
+        self.assertEqual(json.loads(found['options']), proposals)
+        descriptions = {tool['name']: tool['description'] for tool in TOOLS}
+        for name in ('bridge_get_decision', 'bridge_search_decisions'):
+            self.assertIn('options are proposals', descriptions[name])
+            self.assertIn('refine', descriptions[name])
+            self.assertIn('outside them', descriptions[name])
+        guidance = descriptions['bridge_export_proof']
+        for text in ('bundle.payload.review', 'top-level review', 'review_comparison',
+                     'does not imply a new review ID or attempt', 'without rewriting history'):
+            self.assertIn(text, guidance)
 
 
 class ReviewRecoveryTests(ContractCase):
@@ -291,15 +342,28 @@ class ReviewRecoveryTests(ContractCase):
     def test_export_keeps_snapshot_but_exposes_completed_live_review(self):
         task, _, _, finish_reading = self.pending_review()
         before = proof.export(self.store, {'task_id': task})
+        saved_bytes = json.dumps(before['bundle'], sort_keys=True)
         exports = self.store.graph.count_events('proof_exported', task_id=task)
         finish_reading()
         after = proof.export(self.store, {'task_id': task})
         self.assertEqual(self.store.graph.count_events('proof_exported', task_id=task), exports)
         self.assertEqual(after['bundle'], before['bundle'])
+        self.assertEqual(json.dumps(after['bundle'], sort_keys=True), saved_bytes)
+        self.assertEqual(after['markdown'], before['markdown'])
         self.assertEqual(after['bundle']['payload']['review']['status'], 'running')
         self.assertEqual(after['review']['status'], 'done')
         self.assertFalse(after['review_pending'])
         self.assertFalse(after['review_snapshot_current'])
+        comparison = after['review_comparison']
+        review_id = before['review']['id']
+        self.assertEqual(comparison['saved'], {'id': review_id, 'status': 'running'})
+        self.assertEqual(comparison['current'], {'id': review_id, 'status': 'done'})
+        self.assertTrue(comparison['same_review_id'])
+        self.assertIn('Saved bundle.payload.review: id=' + review_id + ', status=running', comparison['description'])
+        self.assertIn('Current top-level review: id=' + review_id + ', status=done', comparison['description'])
+        self.assertIn('A status change alone does not establish a new attempt or pass', comparison['description'])
+        self.assertIn('has not been rewritten', comparison['description'])
+        self.assertEqual(self.store.graph.count_events('conformance_started', task_id=task), 1)
         self.assertTrue(after['integrity']['valid'])
         self.assertFalse(after['stale'])
         self.assertIn('bridge_finish_task', after['next'])
@@ -307,7 +371,46 @@ class ReviewRecoveryTests(ContractCase):
         refreshed = proof.export(self.store, {'task_id': task})
         self.assertEqual(refreshed['bundle']['payload']['review']['status'], 'done')
         self.assertTrue(refreshed['review_snapshot_current'])
+        self.assertEqual(refreshed['review_comparison']['saved'], refreshed['review_comparison']['current'])
         self.assertIn('Attach the bundle', refreshed['next'])
+
+    def test_export_distinguishes_a_different_review_id_without_replacing_saved_proof(self):
+        task, node = self.signed_task()
+        finding = {'verdict': 'follows', 'why': 'The rate is present', 'requirements': []}
+        with patch('bridge.llm.check_conformance', return_value=finding):
+            self.finish(task)
+            before = proof.export(self.store, {'task_id': task})
+            signed = [canvas.node_view(self.store, node['node_id'])]
+            current = canvas._review(self.store, task, signed, DIFF + '\n')
+        after = proof.export(self.store, {'task_id': task})
+        comparison = after['review_comparison']
+        self.assertFalse(comparison['same_review_id'])
+        self.assertEqual(comparison['saved'], {'id': before['review']['id'], 'status': 'done'})
+        self.assertEqual(comparison['current'], {'id': current['id'], 'status': 'done'})
+        self.assertIn('review IDs differ', comparison['description'])
+        self.assertFalse(after['review_snapshot_current'])
+        self.assertEqual(after['bundle'], before['bundle'])
+        self.assertTrue(after['integrity']['valid'])
+        self.assertEqual(self.store.graph.count_events('proof_exported', task_id=task), 1)
+
+    def test_same_review_id_does_not_claim_the_same_attempt_after_a_retry(self):
+        task, node = self.signed_task()
+        with patch('bridge.llm.check_conformance', side_effect=RuntimeError('temporary reader failure')):
+            self.finish(task)
+        before = proof.export(self.store, {'task_id': task})
+        with patch('bridge.llm.check_conformance', return_value={
+                'verdict': 'follows', 'why': 'The rate is present', 'requirements': []}):
+            canvas._review(self.store, task, [canvas.node_view(self.store, node['node_id'])], DIFF)
+        after = proof.export(self.store, {'task_id': task})
+        comparison = after['review_comparison']
+        self.assertTrue(comparison['same_review_id'])
+        self.assertEqual(comparison['saved']['status'], 'failed')
+        self.assertEqual(comparison['current']['status'], 'done')
+        self.assertNotIn('same_attempt', comparison)
+        self.assertIn('does not identify a unique attempt', comparison['description'])
+        self.assertEqual(after['bundle'], before['bundle'])
+        self.assertFalse(after['review_snapshot_current'])
+        self.assertEqual(self.store.graph.count_events('conformance_started', task_id=task), 2)
 
     def test_failed_review_export_instructs_retry_without_claiming_conformance(self):
         task, _ = self.signed_task()
