@@ -1,3 +1,6 @@
+> **Experimental archive: semantic effectiveness remains unproven. Do not merge or deploy.**
+> See the [validation status](docs/advisory-review-experiment-validation.md). Use `main` for current validated code.
+
 # Raven
 
 **Your agents do the work. They come to you for judgment.**

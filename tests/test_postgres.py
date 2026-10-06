@@ -176,6 +176,7 @@ def load_tests(loader, tests, pattern):
                  "test_trust", "test_github", "test_execution", "test_accounts", "test_minimal_e2e_regressions",
                  "test_slack_discovery", "test_discovery_guidance", "test_slack_conversation", "test_reconstructed_fixes", "test_routing_peers", "test_brief",
                  "test_proof", "test_finish_diff_integrity", "test_finish_disconnect", "test_review_invariants", "test_bounded_review",
+                 "test_behavioral_review", "test_review_contract_version", "test_review_coverage", "test_review_sources",
                  "test_scope_clarification", "test_interview", "test_security_isolation",
                  "test_lifecycle_security", "test_reframe", "test_routing_continuity", "test_billing_contract",
                  "test_transport_contracts", "test_slack_contract_transport", "test_teams"):

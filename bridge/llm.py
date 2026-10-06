@@ -67,7 +67,19 @@ JSON_MAX_TOKENS = 8000
 # These are output/transport limits, not a quota on requirements to examine.
 REVIEW_MAX_TOKENS = 1200
 REVIEW_MAX_CHARS = 6000
+# A separate input ceiling for the complete authority context, not an output
+# allowance or a token conversion. Oversized authority is retained but not read.
+REVIEW_CONTEXT_MAX_CHARS = 6000
 REVIEW_MAX_FINDINGS = 4
+REVIEW_CONTRACT_VERSION = "approved-source-v3"
+
+
+def _review_effort(cfg, purpose, bounded):
+    """Only the documented exact model/backend has an advisory effort policy."""
+    if (bounded and cfg.model_api == 'anthropic' and cfg.model == 'claude-sonnet-5'
+            and cfg.api_key and purpose in ('conformance', 'counterexample', 'conditions')):
+        return 'medium'
+    return None
 
 
 class LLMError(RuntimeError):
@@ -190,8 +202,15 @@ class Client:
             raise NoAPIKey(
                 "no ANTHROPIC_API_KEY in the environment and no claude CLI "
                 "found; the ladder runs its deterministic rungs only")
+        # Sonnet 5 defaults to adaptive/high. Its manual thinking budget is
+        # unsupported, so advisory reads use the documented medium effort
+        # signal instead. This is NOT a hard reserve for response text. Keep
+        # unverified model IDs and all non-review requests exactly as before.
+        # https://platform.claude.com/docs/en/build-with-claude/effort
+        effort = _review_effort(self.cfg, purpose, bounded)
+        review_options = {'effort': effort} if effort is not None else {}
         thinks = self.cfg.model in _THINKS
-        payload = self._messages(system, prompt, max_tokens + (THINKING_ROOM if thinks else 0))
+        payload = self._messages(system, prompt, max_tokens + (THINKING_ROOM if thinks else 0), **review_options)
         if not thinks and _cut_short_by_thinking(payload):
             # This model thinks before it answers, and the thinking counts
             # against max_tokens. Measured live on the conformance read: a
@@ -201,7 +220,7 @@ class Client:
             # again with that room.
             _THINKS.add(self.cfg.model)
             thinks = True
-            payload = self._messages(system, prompt, max_tokens + THINKING_ROOM)
+            payload = self._messages(system, prompt, max_tokens + THINKING_ROOM, **review_options)
         if payload.get("stop_reason") == "max_tokens":
             if bounded:
                 # An advisory reading is allowed to be inconclusive. Repeating
@@ -212,18 +231,19 @@ class Client:
             # The answer itself ran out of room. It is asked once more with
             # twice the room, and a text still cut short is never returned as
             # if it were whole: a caller would store it as the answer.
-            payload = self._messages(system, prompt, 2 * max_tokens + (THINKING_ROOM if thinks else 0))
+            payload = self._messages(system, prompt, 2 * max_tokens + (THINKING_ROOM if thinks else 0), **review_options)
             if payload.get("stop_reason") == "max_tokens":
                 raise LLMError(f"the model's {purpose} answer was cut off at max_tokens twice; not used")
         return _anthropic_text(payload)
 
-    def _messages(self, system: str, prompt: str, max_tokens: int) -> dict:
+    def _messages(self, system: str, prompt: str, max_tokens: int, *, effort: str | None = None) -> dict:
+        body = {"model": self.cfg.model, "max_tokens": max_tokens, "system": system,
+                "messages": [{"role": "user", "content": prompt}]}
+        if effort is not None:
+            body['output_config'] = {'effort': effort}
         payload = self._post_json(
             "https://api.anthropic.com/v1/messages",
-            {"x-api-key": self.cfg.api_key, "anthropic-version": "2023-06-01"},
-            {"model": self.cfg.model, "max_tokens": max_tokens,
-             "system": system,
-             "messages": [{"role": "user", "content": prompt}]})
+            {"x-api-key": self.cfg.api_key, "anthropic-version": "2023-06-01"}, body)
         USAGE.add(payload)
         return payload
 
@@ -1002,9 +1022,42 @@ REVIEW_OUTPUT_GUIDANCE = (
 )
 
 
+ALLEGATION_GUIDANCE = (
+    "Judge observable behavior against the approved words, not your preferred implementation. Once-only, "
+    "ordering and duplicate policies do not require a set, dict, list or any other tracking structure unless "
+    "the approval explicitly says so; semantically equivalent implementations are acceptable. Every claimed "
+    "behavioral violation, missing behavior, extra restriction or counterexample needs an allegation object: "
+    "{\"kind\":\"behavioral\", \"authorized\":\"exact relevant quote from WHAT WAS AUTHORIZED\", "
+    "\"input\":\"concrete initial state and permitted invocation\", \"sequence\":[\"ordered input/action\", "
+    "\"permitted intervening state change, if any\"], \"expected\":\"behavior the quoted approval requires\", "
+    "\"observed\":\"different behavior reached through the quoted code\"}. Use at most four short sequence "
+    "steps; keep each field at most 160 characters. A label such as duplicates fail, a location, or absence of "
+    "your preferred data structure is not a behavioral witness. Trace the stated sequence before alleging a "
+    "departure: do not claim ordinary repeated inputs fail when the shown code actually handles them. "
+    "For a genuinely explicit structural requirement only (a named file, signature, type or literal), use "
+    "{\"kind\":\"structural\", \"authorized\":\"exact approval quote naming it\", "
+    "\"required\":\"the exact literal structure named in that quote\", \"observed\":\"the shown mismatch\"}. "
+    "Do not label a behavioral policy structural to avoid giving a witness. The row's at must locate the "
+    "shown behavior or explicit structure. If you cannot supply this evidence, use unseen/inconclusive "
+    "rather than inventing a preference or claiming a departure. "
+)
+
+
+SOURCE_REVIEW_GUIDANCE = (
+    "APPROVED SOURCES are immutable source text supplied by Raven. Their IDs and character spans refer "
+    "only to the original approval, never to your interpretation. Each requirement row must copy its "
+    "source_id. Do not generate a needs label or replace the source with a paraphrase: the program supplies "
+    "the original text. Multiple code checks may reference one source. Explicitly attest scope "
+    "all_obligations for each fully examined source, separately from code-check counts. Examine every obligation within "
+    "that source, including compound clauses, qualifications, types and distinctions between missing and "
+    "explicit values. Code hints and individual checks do not narrow its scope. The entire original source "
+    "and decision context govern each judgment. A source reference verifies provenance, not correctness. "
+)
+
+
 CONFORMANCE_SYSTEM = (
     "You are given one decision a person authorized, in their words, and a diff. Work in two steps and do "
-    "not skip the first. " + TEMPORAL_REVIEW_GUIDANCE + REVIEW_OUTPUT_GUIDANCE +
+    "not skip the first. " + TEMPORAL_REVIEW_GUIDANCE + REVIEW_OUTPUT_GUIDANCE + ALLEGATION_GUIDANCE + SOURCE_REVIEW_GUIDANCE +
     "FIRST, break the answer into the separate things it requires of the code: every "
     "named value, state, default, table, column, flag, file or behaviour it says the change must have. A "
     "sentence like \"three states, off, log and block, defaulting to off\" requires all three states AND the "
@@ -1032,10 +1085,12 @@ CONFORMANCE_SYSTEM = (
     "that does it, or for something ruled out the line that keeps clear of it; for violated, the line that "
     "does what was ruled out; for missing, the nearest line that works on that thing; empty for unseen. A "
     "requirement you cannot point at a line for is not honored. Do not give an overall verdict; report what "
-    "you saw and it will be worked out from that. Return ONLY JSON: {\"status\": \"complete\" or \"inconclusive\", "
-    "\"unexamined\": \"\" or a short limitation, \"requirements\": [{\"needs\": \"...\", "
+    "you saw and it will be worked out from that. Return ONLY JSON: {\"schema\":\"source-checks-v1\", \"status\": \"complete\" or \"inconclusive\", "
+    "\"unexamined\": \"\" or a short limitation, \"source_coverage\":[{\"source_id\":\"the supplied ID\", "
+    "\"scope\":\"all_obligations\"}], \"requirements\": [{\"source_id\": \"the supplied ID\", "
     "\"kind\": \"must\" or \"must_not\", \"at\": \"the line\", \"found\": \"honored\" or \"missing\" or "
-    "\"violated\" or \"unseen\"}], \"why\": one sentence naming what is missing or where you read it}. No em "
+    "\"violated\" or \"unseen\", \"allegation\": null or the required evidence object}], "
+    "\"why\": one sentence naming only substantiated differences or where you read it}. No em "
     "dashes or en dashes."
 )
 
@@ -1049,8 +1104,11 @@ CONFORMANCE_SYSTEM = (
 # asked to break it, it has to walk the paths around them.
 COUNTEREXAMPLE_SYSTEM = (
     "You are checking a reading of a diff, and your job is to break it. You get one decision a person "
-    "authorized, in their words, the diff, and numbered requirements a first reader said the diff honors, "
-    "each with the line it pointed at. " + TEMPORAL_REVIEW_GUIDANCE + REVIEW_OUTPUT_GUIDANCE +
+    "authorized, in their words, the diff, and numbered original source scopes. First-reader code checks "
+    "are hints, not replacements for those scopes. " + TEMPORAL_REVIEW_GUIDANCE + REVIEW_OUTPUT_GUIDANCE + ALLEGATION_GUIDANCE + SOURCE_REVIEW_GUIDANCE +
+    "Some numbered rows are unsupported first-reader allegations, marked needs witness. Check them too. "
+    "If such an allegation is refuted and the shown code honors the approval, return assessment honored "
+    "with its exact code location. Never retain a preferred implementation as a requirement. "
     "Make one focused adversarial pass over every requirement. Challenge its cited line using relevant "
     "shown callers and branches, every early return or continue that can skip it, boundary values (zero, "
     "negative, None or null, empty input, exactly a limit), exception paths, and other shown places doing "
@@ -1068,16 +1126,41 @@ COUNTEREXAMPLE_SYSTEM = (
     "exits with a concrete counterexample, identifying the requirement they break. Only report a path you can "
     "follow in the diff; when a requirement depends on code the diff does not show, such as a caller or a "
     "function defined elsewhere, name that code in not_shown instead of guessing what it does. Most "
-    "requirements have no counterexample: omit their entries rather than stretch. Inspect ALL numbered "
-    "requirements and listed exits, but return at most four checks and four exits, with at most one concrete "
-    "counterexample per requirement. Do not repeat a check in exits. Omit empty/no-finding entries entirely; "
-    "status complete explicitly attests that the omitted requirements and exits were examined too. If more "
-    "findings exist than fit, preserve the strongest concrete findings and use inconclusive. Return ONLY JSON: "
-    "{\"status\": \"complete\" or \"inconclusive\", \"unexamined\": \"\" or a short limitation, "
-    "\"checks\": [{\"n\": the requirement's number, \"counterexample\": \"\" or one sentence, \"at\": the line "
-    "of the diff it goes through, copied exactly, \"not_shown\": \"\" or the code it depends on that the diff "
-    "does not show}], \"exits\": [{\"exit\": the exit's number, \"breaks\": the requirement's number or 0, "
-    "\"how\": \"\" or one sentence: the call, the value, and what then happens}]}. No em dashes or en dashes."
+    "requirements have no counterexample. In a source-bound reading the numbered scopes are ORIGINAL "
+    "approved sources, not the first reader's paraphrases. Examine every obligation in each whole source. "
+    "Every coverage row and finding must copy that numbered scope's source_id. Source coverage rows must "
+    "also attest scope all_obligations; checking only selected code hints is incomplete. Return compact coverage for EVERY numbered requirement, not "
+    "a narrative about each successful check. Coverage rows do not count toward the finding limit. Return "
+    "each index exactly once in checks with assessment honored, unseen, or alleged; include at only when "
+    "explicitly clearing an unsupported first-reader allegation. List every examined early-exit index in "
+    "exits_checked. Put actionable allegations or missing-code details in a SEPARATE findings array with "
+    "at most four distinct entries in total, including exit findings. An exit finding names both n and exit. "
+    "Do not repeat a finding. All requirements and listed exits must be covered before status complete; "
+    "unseen stays unknown and alleged needs a corresponding finding. If more than four distinct findings "
+    "exist, keep the concrete evidence that fits, name the overflow in unexamined and use inconclusive. "
+    "A positive coverage row must not hide or contradict a negative finding. Return ONLY JSON: "
+    "{\"schema\":\"coverage-v2\", \"status\":\"complete\" or \"inconclusive\", "
+    "\"unexamined\":\"\" or a short limitation, \"checks\":[{\"n\":1, "
+    "\"source_id\":\"the supplied ID\", \"scope\":\"all_obligations\", \"assessment\":\"honored\" or \"unseen\" or \"alleged\", \"at\":optional exact code quote}], "
+    "\"exits_checked\":[examined exit numbers], \"findings\":[{\"n\":requirement number, \"source_id\":\"the supplied ID\", "
+    "\"exit\":optional exit number, \"at\":exact code quote, \"allegation\":the required evidence object "
+    "or null, \"not_shown\":\"\" or missing code}]}. No em dashes or en dashes."
+)
+
+
+# A finite search policy for the same verified Sonnet 5 advisory API path.
+# This additional search instruction is appended only on that API path.
+COUNTEREXAMPLE_STOP_RULE = (
+    " FINITE SEARCH: For every requirement within each original source, select at most three candidate traces from the relevant "
+    "categories above, including permitted temporal state changes. Prefer the shortest traces most likely "
+    "to break it. Settle each trace as a counterexample, not a counterexample, or dependent on missing code "
+    "without repeatedly reconsidering it. Stop after one concrete counterexample or three candidate traces, "
+    "then move to the next requirement. A compound source can contain multiple requirements; do not treat "
+    "three traces for one clause as coverage of its other clauses. In addition, inspect each listed early exit once without enumerating "
+    "alternative inputs. Emit the JSON after this pass, with no second verification pass. If a specific "
+    "relevant path remains unresolved at the limit, name it in unexamined and use inconclusive. Report "
+    "concrete findings even when other paths remain unresolved. Complete means this bounded pass finished "
+    "for every requirement, not exhaustive path coverage or a proof of correctness. "
 )
 
 
@@ -1239,20 +1322,22 @@ def located(quote: str, kept: str) -> bool:
 
 
 UNSTATED_CONDITIONS_SYSTEM = (
-    REVIEW_OUTPUT_GUIDANCE +
+    REVIEW_OUTPUT_GUIDANCE + ALLEGATION_GUIDANCE +
     "Read the authorized decisions and the diff. Find additional policy conditions or exemptions "
     "the change introduces which none of those decisions authorizes. Look for extra customer, plan, "
     "region, account or feature-flag branches that change who gets the behavior. Do not invent "
     "requirements, treat ordinary validation as policy, or report conditions that the other signed "
     "decisions allow. Quote an exact line of production code for each finding. Return ONLY JSON: "
     '{"status": "complete" or "inconclusive", "unexamined": "" or a short limitation, '
-    '"conditions": [{"condition": "the extra condition and its effect", "at": "exact code line"}]}. '
+    '"conditions": [{"condition": "the extra condition and its effect", "at": "exact code line", '
+    '"allegation": the required evidence object}]}. '
     "Return at most four conditions; if more exist, retain concrete findings and use inconclusive. "
     "Return an empty conditions list when there is no such addition. Test expectations alone are not evidence."
 )
 
 
-def _unstated_conditions(reader, context: str, shown: str, code: str, seen: list[dict]) -> tuple[list[str], bool]:
+def _unstated_conditions(reader, context: str, shown: str, code: str, seen: list[dict],
+                         answer: str = '') -> tuple[list[str], bool]:
     try:
         raw = Client(reader).complete_json('conditions', UNSTATED_CONDITIONS_SYSTEM,
                                            context + "\nDIFF:\n" + shown, max_tokens=REVIEW_MAX_TOKENS, bounded=True)
@@ -1273,14 +1358,124 @@ def _unstated_conditions(reader, context: str, shown: str, code: str, seen: list
         at = clip_marked(str(condition.get('at') or ''), 300, 'the line ran on')
         if not what:
             continue
-        found = located(at, code)
-        seen.append({'needs': what, 'kind': 'must_not', 'found': 'violated' if found else 'unseen',
-                     'state': 'departs' if found else 'unclear', 'at': at,
-                     'note': 'the diff adds a condition no signed answer states' if found else
-                             'the extra condition was not located in the change'})
-        if not found:
-            unexamined.append(what)
+        allegation = _grounded_allegation(condition.get('allegation'), answer, at, code, shown)
+        seen.append({'needs': allegation['authorized'] if allegation else what, 'kind': 'must_not',
+                     'found': 'violated' if allegation else 'unseen',
+                     'state': 'departs' if allegation else 'unclear', 'at': at,
+                     **({'allegation': allegation} if allegation else {}),
+                     'note': 'the diff adds a condition no signed answer states' if allegation else
+                             'the extra-condition allegation lacks a grounded behavioral witness'})
+        if not allegation:
+            unexamined.append('an extra-condition allegation lacks a grounded behavioral witness')
     return unexamined, complete
+
+
+def _approved_sources(answer):
+    """A conservative exact span: do not guess semantic clause boundaries.
+
+    Punctuation, inline code, examples and compound clauses can change meaning
+    when split. The whole signed answer is currently one immutable source unit.
+    Models may decompose code checks, but cannot decompose away this scope.
+    """
+    if not isinstance(answer, str) or not answer.strip():
+        return []
+    digest = hashlib.sha256(answer.encode('utf-8', errors='surrogatepass')).hexdigest()
+    return [{'id': f'answer-{digest[:16]}-0-{len(answer)}', 'start': 0, 'end': len(answer), 'text': answer}]
+
+
+def _source_binding_report(raw, sources):
+    """Validate source references; never certify natural-language entailment."""
+    known = {source['id']: source for source in sources}
+    rows = raw.get('requirements') if isinstance(raw, dict) else None
+    report = {'complete': False, 'bindings': [], 'missing': [], 'issues': []}
+    issues, covered, attested = report['issues'], set(), set()
+    if not isinstance(raw, dict) or raw.get('schema') != 'source-checks-v1':
+        issues.append('schema: expected source-checks-v1')
+    if not _review_complete(raw, 'requirements'):
+        issues.append('requirements: no complete bounded examination')
+    if not isinstance(rows, list) or not rows:
+        issues.append('requirements: expected a nonempty list')
+        rows = []
+    attestations = raw.get('source_coverage') if isinstance(raw, dict) else None
+    if not isinstance(attestations, list):
+        issues.append('source_coverage: expected explicit whole-source attestations')
+        attestations = []
+    for index, entry in enumerate(attestations):
+        source_id = entry.get('source_id') if isinstance(entry, dict) else None
+        if not isinstance(source_id, str) or source_id not in known:
+            issues.append(f'source_coverage[{index}].source_id: missing or unknown approved source')
+        elif entry.get('scope') != 'all_obligations' or set(entry) != {'source_id', 'scope'}:
+            issues.append(f'source_coverage[{index}]: expected scope all_obligations')
+        else:
+            attested.add(source_id)
+    for index, row in enumerate(rows):
+        path = f'requirements[{index}]'
+        source_id = row.get('source_id') if isinstance(row, dict) else None
+        source = known.get(source_id) if isinstance(source_id, str) else None
+        valid = source is not None and _requirement_shape(row)
+        if source is None:
+            issues.append(path + '.source_id: missing or unknown approved source')
+        elif not _requirement_shape(row):
+            issues.append(path + ': malformed code check')
+        # Older labels and optional echoes may not narrow or paraphrase the
+        # whole source. Absence is safe: runtime supplies the exact text.
+        for key in ('needs', 'source_text'):
+            if isinstance(row, dict) and key in row and source is not None and row[key] != source['text']:
+                issues.append(path + '.' + key + ': does not match the whole approved source')
+                valid = False
+        report['bindings'].append({'row': index, 'source_id': source_id if source else '', 'valid': valid})
+        if valid:
+            covered.add(source_id)
+    report['missing'] = [source_id for source_id in known if source_id not in covered or source_id not in attested]
+    if report['missing']:
+        issues.append(f'approved sources: {len(report["missing"])} sources lack valid checks or whole-source attestations')
+    report['complete'] = not issues
+    return report
+
+
+def _source_counterexamples(reader, context, shown, code, seen, sources, answer):
+    """Give the critic original source scopes independently of decomposition.
+
+    A single source may have several first-reader code checks. Challenge its
+    full text once, retain evidence once, and propagate uncertainty to its rows.
+    """
+    scopes = []
+    for source in sources:
+        peers = [row for row in seen if row.get('source_id') == source['id'] and row.get('source_status') == 'bound']
+        scope = {'source_id': source['id'], 'needs': source['text'], 'kind': 'must', 'state': 'ok',
+                 'at': next((row['at'] for row in peers if row.get('at')), '')}
+        scope['code_checks'] = [{key: row[key] for key in ('at', 'kind', 'found') if key in row} for row in peers]
+        if any(row.get('allegation_status') == 'needs_witness' for row in peers):
+            scope['allegation_status'] = 'needs_witness'
+        scopes.append(scope)
+    limitations, complete = _counterexamples(reader, context, shown, code, scopes, answer, sources=sources)
+    for scope in scopes:
+        peers = [row for row in seen if row.get('source_id') == scope['source_id'] and row.get('source_status') == 'bound']
+        if not peers:
+            # Missing decomposition cannot be repaired into a complete first
+            # reading; keep any independently grounded critic evidence visible.
+            peers = [{'needs': clip_marked(scope['needs'], 400, 'full text is in approved_sources'),
+                      'kind': 'must', 'found': 'unseen', 'state': 'unclear',
+                      'source_id': scope['source_id'], 'source_status': 'unexamined'}]
+            seen.extend(peers)
+        if scope['state'] != 'ok':
+            for row in peers:
+                if row['state'] != 'departs':
+                    row['state'] = 'unclear'
+                if scope.get('note'):
+                    row['note'] = clip_marked('; '.join(dict.fromkeys(filter(None, (row.get('note'), scope['note'])))),
+                                              500, 'additional limitations are listed separately')
+        elif scope.get('note') == 'the critic rejected an unsupported first-reader allegation':
+            for row in peers:
+                if row.get('allegation_status') == 'needs_witness':
+                    row.update(state='ok', found='honored', at=scope['at'], note=scope['note'])
+                    row.pop('allegation_status', None)
+        for key in ('counterexample', 'counterexamples', 'not_shown', 'not_shown_details'):
+            if key in scope:
+                peers[0][key] = scope[key]
+                if key == 'counterexample':
+                    peers[0].pop('allegation_status', None)
+    return limitations, complete
 
 
 def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple = ()) -> dict:
@@ -1312,6 +1507,7 @@ def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple 
     careful to say it cannot check."""
     if not cfg or not cfg.semantic_retrieval or not (diff or "").strip():
         return {}
+    sources = _approved_sources(answer)
     shown = diff[:DIFF_READ]
     kept = diff_kept(shown)
     production = diff_kept(shown, tests=False)
@@ -1323,7 +1519,22 @@ def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple 
     # patch as departing from what was signed once in every run, the main
     # model never did. It runs once per signed decision at the finish.
     reader = cfg.fast() if os.environ.get("BRIDGE_CONFORMANCE_MODEL", "main") == "fast" else cfg
-    context = f"DECISION: {question}\nWHAT WAS AUTHORIZED: {answer}\n" + _other_decisions(others)
+    try:
+        shared = _shared_decisions(others)
+    except (TypeError, ValueError):
+        return _inconclusive_review('the shared approved decision context is malformed', sources=sources)
+    if not isinstance(question, str):
+        return _inconclusive_review('the original decision question is malformed', sources=sources)
+    approved_context = {'question': question, 'other_decisions': shared}
+    context = (f"DECISION: {question}\nWHAT WAS AUTHORIZED:\n"
+               + "APPROVED SOURCES (exact text; offsets are Python character positions):\n"
+               + json.dumps(sources, ensure_ascii=False) + '\n' + _other_decisions(others))
+    if not sources:
+        return _inconclusive_review('the exact approved source is empty or malformed',
+                                    sources=sources, context=approved_context)
+    if len(context) > REVIEW_CONTEXT_MAX_CHARS:
+        return _inconclusive_review('the exact approved context exceeds the bounded source-context limit',
+                                    sources=sources, context=approved_context)
     try:
         raw = Client(reader).complete_json("conformance", CONFORMANCE_SYSTEM, context + f"\nDIFF:\n{shown}",
                                            max_tokens=REVIEW_MAX_TOKENS, bounded=True)
@@ -1331,10 +1542,17 @@ def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple 
         raw = None
     raw_reqs = raw.get('requirements') if isinstance(raw, dict) else None
     reqs = [r for r in raw_reqs if _requirement_shape(r)] if isinstance(raw_reqs, list) else []
-    first_complete = (_review_complete(raw, 'requirements') and bool(reqs)
-                      and len(reqs) == len(raw_reqs))
+    binding = _source_binding_report(raw, sources)
+    valid_rows = {id(raw_reqs[row['row']]): row['source_id'] for row in binding['bindings'] if row['valid']}
+    known_sources = {source['id']: source for source in sources}
+    first_complete = binding['complete']
     if not reqs:
-        return _inconclusive_review('the requirement reading did not complete')
+        result = _inconclusive_review('the requirement reading did not complete')
+        result['approved_sources'] = sources
+        result['approved_context'] = approved_context
+        result['source_issues'] = binding['issues'][:8]
+        result['source_issues_omitted'] = max(0, len(binding['issues']) - 8)
+        return result
     # The model reports what it saw; the verdict is worked out here. Told
     # to judge directly it blessed a change that dropped two of the three
     # values an owner signed for, and told to weigh its own observations
@@ -1342,6 +1560,8 @@ def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple 
     # uncertain on a change that plainly did what was asked.
     seen = []
     for r in reqs:
+        source = known_sources.get(valid_rows.get(id(r)))
+        source_text = source['text'] if source else str(r.get('needs', ''))
         found = str(r.get("found", "")).strip().lower()
         forbids = str(r.get("kind", "must")).strip().lower() == "must_not"
         at = clip_marked(str(r.get("at") or ""), 300, "the line ran on")
@@ -1366,7 +1586,7 @@ def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple 
         else:
             state = {"present": "ok", "missing": "departs", "unseen": "unclear"}.get(found, "unclear")
         if state == "departs" and found == "missing":
-            named_calls = set(re.findall(r'\b([A-Za-z_]\w*)\(\)', str(r.get("needs", ""))))
+            named_calls = set(re.findall(r'\b([A-Za-z_]\w*)\(\)', source_text))
             absent = sorted(name for name in named_calls
                             if not re.search(r'\b' + re.escape(name) + r'\s*\(', production))
             if absent:
@@ -1376,7 +1596,7 @@ def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple 
                 state = "unclear"
                 note = "missing behavior was claimed in code the diff does not show: " + ', '.join(name + '()' for name in absent)
         if state == "ok" and found in ("honored", "present") and not located(at, kept) \
-                and not (_STRUCTURAL_RE.search(str(r.get("needs", ""))) and located_header(at, shown)):
+                and not (_STRUCTURAL_RE.search(source_text) and located_header(at, shown)):
             # Honored is a claim about lines, and the line has to be there.
             # Measured live on eb9d22d: "when time left is zero or negative,
             # no further retry is permitted" read as honored with nothing to
@@ -1388,10 +1608,35 @@ def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple 
                 state = "unclear"
                 note = ("the line quoted for it is not in the diff" if at.strip()
                         else "read as honored with no line of the diff to show for it")
-        item = {"needs": clip_marked(str(r.get("needs", "")), 400, "the requirement ran on"),
+        allegation = None
+        unsupported_allegation = state == 'departs'
+        if state == 'departs':
+            allegation = _grounded_allegation(r.get('allegation'), answer, at, production, shown)
+            if allegation is None:
+                state = 'unclear'
+                note = 'departure was claimed without a grounded behavioral witness or explicit structural requirement'
+            else:
+                unsupported_allegation = False
+        source_id = valid_rows.get(id(r))
+        source = known_sources.get(source_id)
+        if source is None and state == 'ok':
+            state = 'unclear'
+        if source is None:
+            note = 'the code check is not bound to the whole verbatim approved source'
+        item = {"needs": clip_marked(source['text'] if source else str(r.get("needs", "Unbound code check")),
+                                    400, "full text is in approved_sources"),
                 "kind": "must_not" if forbids else "must", "found": found, "state": state}
+        item['source_status'] = 'bound' if source else 'unbound'
+        if source:
+            item['source_id'] = source_id
         if at.strip():
             item["at"] = at
+        if allegation is not None:
+            if source is None:
+                item['needs'] = allegation['authorized']
+            item['allegation'] = allegation
+        if unsupported_allegation:
+            item['allegation_status'] = 'needs_witness'
         if note:
             item["note"] = note
         seen.append(item)
@@ -1399,6 +1644,7 @@ def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple 
     if not first_complete:
         limitation = _review_limitation(raw, 'the requirement reading did not complete')
         unexamined.append(limitation)
+        unexamined.extend(binding['issues'][:6])
         seen.append({'needs': 'Every signed requirement examined', 'kind': 'must', 'found': 'unseen',
                      'state': 'unclear', 'note': limitation})
     if len(diff) > DIFF_READ:
@@ -1407,12 +1653,14 @@ def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple 
                           + (f": {', '.join(cut[:8])}" + (f" and {len(cut) - 8} more" if len(cut) > 8 else "")
                              if cut else ""))
     complete = first_complete
-    if any(item['state'] == 'ok' for item in seen):
-        limitations, stage_complete = _counterexamples(reader, context, shown, diff_kept(shown, tests=False), seen)
+    if any(row['state'] == 'ok' or row.get('allegation_status') == 'needs_witness'
+           or row.get('source_status') == 'unbound' and row.get('found') in ('honored', 'present') for row in seen):
+        limitations, stage_complete = _source_counterexamples(reader, context, shown, diff_kept(shown, tests=False),
+                                                             seen, sources, answer)
         unexamined += limitations
         complete = complete and stage_complete
     if any(item['state'] == 'ok' for item in seen):
-        limitations, stage_complete = _unstated_conditions(reader, context, shown, diff_kept(shown, tests=False), seen)
+        limitations, stage_complete = _unstated_conditions(reader, context, shown, diff_kept(shown, tests=False), seen, answer)
         unexamined += limitations
         complete = complete and stage_complete
     states = {s["state"] for s in seen}
@@ -1420,6 +1668,13 @@ def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple 
     # Whole, or cut at a word and marked. Measured live on a397f1c: five of
     # seven reasons ended mid-word at 300 characters ("used by sleep_for_r").
     why = str(raw.get("why", "")).strip()
+    if any(r.get('found') in ('missing', 'violated', 'present') for r in reqs):
+        # The free-text reason may invent an implementation mandate. Rebuild
+        # negative summaries solely from the evidence that survived grounding.
+        supported = [item['allegation'] for item in seen if item.get('allegation')]
+        why = '; '.join(_allegation_summary(item) for item in supported)
+        if not why and any(item.get('allegation_status') == 'needs_witness' for item in seen):
+            why = 'The claimed departure lacks a grounded behavioral witness or explicit structural requirement.'
     unsupported = [s for s in seen if s.get("note", "").startswith("missing behavior was claimed")]
     if unsupported and verdict == "unclear":
         why = "The diff does not establish whether these requirements are met: " + '; '.join(s["needs"] for s in unsupported)
@@ -1431,7 +1686,7 @@ def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple 
         # Measured live: two "follows" readings came back with no reason at
         # all. Name the requirements the verdict rests on.
         state = {"follows": "ok", "departs": "departs", "unclear": "unclear"}[verdict]
-        named = [s["needs"] for s in seen if s["state"] == state and s["needs"]]
+        named = list(dict.fromkeys(s["needs"] for s in seen if s["state"] == state and s["needs"]))
         lead = {"follows": "Read as doing each thing it requires", "departs": "Read as departing from it on",
                 "unclear": "The diff does not show"}[verdict]
         why = f"{lead}: {'; '.join(named)}" if named else ""
@@ -1443,13 +1698,24 @@ def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple 
         where = f" (at `{c['counterexample']['at']}`)" if c["counterexample"].get("at") else ""
         why = (f"Possible counterexample to \"{c['needs']}\": {c['counterexample']['what']}{where}. "
                + (f"The first reading: {why}" if why else "")).strip()
-    additions = [item['needs'] for item in seen if item.get('note') == 'the diff adds a condition no signed answer states']
+    additions = [_allegation_summary(item['allegation']) for item in seen
+                 if item.get('note') == 'the diff adds a condition no signed answer states']
     if additions:
         why = 'The diff adds a condition no signed answer states: ' + '; '.join(additions)
-    if verdict == 'unclear' and unexamined and not countered:
-        why = 'The review is inconclusive: ' + '; '.join(unexamined[:2]) + '. ' + why
+    if verdict == 'unclear' and not countered:
+        # Uncertainty can come from a missing quote with no unexamined entry.
+        # Do not repeat the model's unqualified all-supported summary after
+        # deterministic checks have contradicted it.
+        unresolved = [f"{item['needs']}: {item.get('note') or item.get('not_shown') or 'not established by the shown diff'}"
+                      for item in seen if item['state'] == 'unclear']
+        limitations = list(dict.fromkeys([*unexamined, *unresolved]))
+        why = 'The review is inconclusive: ' + '; '.join(limitations[:4] or ['the shown diff does not establish conformance'])
     why = clip_marked(why, 1200, "the requirements list what was read")
-    out = {"verdict": verdict, "why": why, "requirements": seen}
+    out = {"verdict": verdict, "why": why, "requirements": seen, "approved_sources": sources,
+           "approved_context": approved_context}
+    if binding['issues']:
+        out['source_issues'] = binding['issues'][:8]
+        out['source_issues_omitted'] = max(0, len(binding['issues']) - 8)
     if not complete:
         out['incomplete'] = True
     if unexamined:
@@ -1475,13 +1741,84 @@ def _review_limitation(raw, fallback):
     return clip_marked(value, 300, 'the limitation ran on') if isinstance(value, str) and value.strip() else fallback
 
 
-def _inconclusive_review(reason):
-    return {'verdict': 'unclear', 'why': reason + '; the advisory reading is inconclusive.',
-            'requirements': [], 'unexamined': [reason], 'incomplete': True}
+def _inconclusive_review(reason, *, sources=None, context=None):
+    result = {'verdict': 'unclear', 'why': reason + '; the advisory reading is inconclusive.',
+              'requirements': [], 'unexamined': [reason], 'incomplete': True}
+    if sources is not None:
+        result['approved_sources'] = sources
+    if context is not None:
+        result['approved_context'] = context
+    return result
+
+
+def _grounded_allegation(raw, answer, at, code, shown):
+    """Check a behavioral witness or an explicitly authorized literal.
+
+    This validates provenance and structure, never executes the supplied diff
+    or claims the described behavior was independently reproduced.
+    """
+    if not isinstance(raw, dict) or raw.get('kind') not in ('behavioral', 'structural'):
+        return None
+    quote = raw.get('authorized')
+    if not isinstance(quote, str) or not quote.strip() or len(quote) > 300:
+        return None
+    if (_flat(quote) not in _flat(answer) or not _flat(answer)
+            or len(_flat(quote)) < min(12, len(_flat(answer)))):
+        return None
+    fields = ('input', 'expected', 'observed') if raw['kind'] == 'behavioral' else ('required', 'observed')
+    if any(not isinstance(raw.get(key), str) or not raw[key].strip() or len(raw[key]) > 300 for key in fields):
+        return None
+    result = {'kind': raw['kind'], 'authorized': quote.strip(), **{key: raw[key].strip() for key in fields}}
+    if raw['kind'] == 'behavioral':
+        steps = raw.get('sequence')
+        if (not isinstance(steps, list) or not 1 <= len(steps) <= 4
+                or any(not isinstance(step, str) or not step.strip() or len(step) > 200 for step in steps)
+                or _flat(raw['expected']) == _flat(raw['observed']) or not _located_allegation(at, code)):
+            return None
+        result['sequence'] = [step.strip() for step in steps]
+    else:
+        literal = raw['required'].strip().strip('`')
+        if (not _explicit_structure(quote, literal) or _flat(literal) == _flat(raw['observed'])
+                or not (_located_allegation(at, code) or (_STRUCTURAL_RE.search(quote) and located_header(at, shown)))):
+            return None
+    return result
+
+
+def _located_allegation(at, code):
+    if not isinstance(at, str) or len(at) > 300:
+        return False
+    quote = _flat(' '.join(re.sub(r'^[+ ]', '', line) for line in at.strip().strip('`').splitlines()))
+    return len(quote) >= 6 and quote in code
+
+
+def _explicit_structure(quote, literal):
+    """Conservative source syntax, not a proof that the allegation is true."""
+    if not literal or len(literal) > 120 or not re.search(r'(?<!\w)' + re.escape(literal) + r'(?!\w)', quote):
+        return False
+    # Identifier/path/signature syntax must be a literal, not a sentence
+    # containing punctuation such as "ignore later duplicates.".
+    if (re.fullmatch(r"[\w./()\[\],:*=-]+", literal) and re.search(r'[/_()]|\w\.\w', literal)):
+        return True
+    named = re.search(r'\b(?:named|name|signature|file|path|column|table|format|states|values|default|literal|string)\b'
+                      r'[^.;:]{0,60}(?<!\w)' + re.escape(literal) + r'(?!\w)', quote, re.IGNORECASE)
+    types = {'set', 'dict', 'dictionary', 'list', 'tuple', 'array', 'map', 'integer', 'int', 'float',
+             'boolean', 'bool', 'string', 'str'}
+    typed = literal.lower() in types and re.search(r'\b(?:use|using|return|returns|type)\s+(?:(?:a|an|the)\s+)?'
+                                                    + re.escape(literal) + r'\b', quote, re.IGNORECASE)
+    return bool(named or typed)
+
+
+def _allegation_summary(allegation):
+    if allegation['kind'] == 'structural':
+        return f"Approved: {allegation['authorized']}; shown: {allegation['observed']}"
+    return (f"{allegation['input']}; " + '; '.join(allegation['sequence'])
+            + f". Expected: {allegation['expected']}; observed: {allegation['observed']}")
 
 
 def _requirement_shape(row):
-    return (isinstance(row, dict) and isinstance(row.get('needs'), str) and bool(row['needs'].strip())
+    return (isinstance(row, dict)
+            and (isinstance(row.get('needs'), str) and bool(row['needs'].strip())
+                 or isinstance(row.get('source_id'), str) and bool(row['source_id']))
             and row.get('kind') in ('must', 'must_not')
             and row.get('found') in ('honored', 'missing', 'violated', 'unseen', 'present')
             and isinstance(row.get('at', ''), str))
@@ -1496,144 +1833,449 @@ def _has_finding(value):
     return bool(value.strip()) and value.strip().lower().rstrip('.') not in ('none', 'no', 'n/a')
 
 
-def _counterexample_shape(raw, requirements, exits):
-    """Malformed model output cannot establish a successful adversarial read."""
-    if not isinstance(raw, dict) or not isinstance(raw.get('checks'), list):
-        return False
-    if 'exits' in raw and not isinstance(raw['exits'], list):
-        return False
-    for check in raw['checks']:
-        if not isinstance(check, dict):
-            return False
-        try:
-            number = int(str(check.get('n', '')).strip().rstrip('.'))
-        except ValueError:
-            return False
-        if not 1 <= number <= requirements or not any(key in check for key in ('counterexample', 'not_shown')):
-            return False
-        if any(key in check and (not isinstance(check[key], str) or len(check[key]) > limit)
-               for key, limit in (('counterexample', 500), ('at', 300), ('not_shown', 300))):
-            return False
-    for check in raw.get('exits', []):
-        if (not isinstance(check, dict) or 'breaks' not in check or not isinstance(check.get('how'), str)
-                or len(check['how']) > 500):
-            return False
-        try:
-            position = int(str(check.get('exit', '')).strip())
-            number = int(str(check.get('breaks', '0')).strip() or 0)
-        except ValueError:
-            return False
-        if not 1 <= position <= exits or not 0 <= number <= requirements:
-            return False
-    return True
+def _review_index(value, limit, zero=False):
+    """Normalize bounded legacy numbers without bools, floats or huge ints."""
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return None
+    if isinstance(value, str):
+        digits = value.strip().rstrip('.')
+        if len(digits) > 20 or not re.fullmatch(r'[0-9]+\.?', value.strip()):
+            return None
+        number = int(digits)
+    else:
+        number = value
+    return number if (0 if zero else 1) <= number <= limit else None
 
 
-def _counterexamples(reader, context: str, shown: str, code: str, seen: list[dict]) -> tuple[list[str], bool]:
-    """Try to break each requirement read as met, in place: one with a
-    counterexample through a line of the change's own code stops reading
-    as met and carries it. One whose line is not there (a paraphrase, a
-    test, code the diff does not show) is kept beside the requirement and
-    listed as unexamined; uncertainty cannot support an all-clear. Returns
-    the unexamined scope and whether the structured search completed."""
-    met = [s for s in seen if s["state"] == "ok"]
-    if not met:
+def _counterexample_report(raw, requirements, exits, sources=None):
+    """Normalize coverage and actionable claims separately, before any cap.
+
+    Issues contain only controlled paths, numeric indices and fixed messages;
+    safe observers can retain this report without transport bodies or prompts.
+    Legacy sparse replies require their explicit complete attestation. New
+    coverage-v2 replies additionally account for every supplied requirement
+    and early exit. This is protocol validation, not semantic verification.
+    """
+    exit_lines = exits if isinstance(exits, list) else None
+    exit_count = len(exits) if exit_lines is not None else exits
+    report = {'mode': 'invalid', 'complete': False, 'checks': [], 'findings': [], 'issues': [],
+              'conflicts': [], 'counts': {'requirements': requirements, 'listed_exits': exit_count, 'exit_rows': 0,
+                                        'check_rows': 0, 'finding_rows': 0, 'duplicate_checks': 0,
+                                        'duplicate_findings': 0, 'distinct_findings': 0}}
+    issues = report['issues']
+    expected_sources = [source['id'] for source in sources] if sources is not None else None
+    def issue(path, problem):
+        value = f'{path}: {problem}'
+        if value not in issues:
+            issues.append(value)
+    if not isinstance(raw, dict):
+        issue('reply', 'expected an object')
+        return report
+    indexed = 'schema' in raw or 'findings' in raw or 'exits_checked' in raw
+    report['mode'] = 'coverage-v2' if indexed else 'legacy-sparse'
+    if expected_sources is not None and not indexed:
+        issue('schema', 'source-bound coverage requires coverage-v2 with explicit source IDs')
+    if indexed and raw.get('schema') != 'coverage-v2':
+        issue('schema', 'expected coverage-v2')
+    if raw.get('status') != 'complete':
+        issue('status', 'no explicit complete attestation')
+    if not isinstance(raw.get('unexamined', ''), str):
+        issue('unexamined', 'expected a string')
+    elif raw.get('unexamined', '').strip():
+        issue('unexamined', 'declared unresolved scope')
+    if len(json.dumps(raw, ensure_ascii=False)) > REVIEW_MAX_CHARS:
+        issue('reply', f'exceeds {REVIEW_MAX_CHARS} normalized JSON characters')
+    allowed = {'schema', 'status', 'unexamined', 'checks', 'findings', 'exits_checked'} if indexed else {
+        'status', 'unexamined', 'checks', 'exits'}
+    if set(raw) - allowed:
+        issue('reply', 'unexpected fields')
+    checks = raw.get('checks')
+    if not isinstance(checks, list):
+        issue('checks', 'expected a list')
+        checks = []
+    report['counts']['check_rows'] = len(checks)
+    coverage, actions, conflicts = {}, [], set()
+
+    def bind_source(row, n, entry, path):
+        if expected_sources is None:
+            return
+        expected = expected_sources[n - 1]
+        if row.get('source_id') != expected:
+            issue(path + '.source_id', 'missing or mismatched approved source')
+        # n identifies the expected scope; a malformed source echo cannot
+        # promote a pass. Independently grounded partial evidence may survive.
+        entry['source_id'] = expected
+
+    def action(row, path, exit_number=None):
+        if not isinstance(row, dict):
+            issue(path, 'expected an object')
+            return
+        n = _review_index(row.get('n'), requirements)
+        if n is None:
+            issue(path + '.n', f'expected an index in 1..{requirements}')
+            return
+        entry = {'n': n}
+        bind_source(row, n, entry, path)
+        if exit_number is None and 'exit' in row:
+            exit_number = _review_index(row['exit'], exit_count)
+            if exit_number is None:
+                issue(path + '.exit', f'expected an index in 1..{exit_count}')
+                # An invalid optional exit cannot erase independently located evidence.
+        for key, limit in (('at', 300), ('counterexample', 500), ('not_shown', 300)):
+            if key in row:
+                if not isinstance(row[key], str) or len(row[key]) > limit:
+                    issue(path + '.' + key, f'expected a string of at most {limit} characters')
+                    continue
+                if row[key].strip() and (key != 'not_shown' or _has_finding(row[key])):
+                    entry[key] = row[key].strip()
+        if row.get('allegation') is not None:
+            if not isinstance(row['allegation'], dict):
+                issue(path + '.allegation', 'expected an object or null')
+            else:
+                # Ignore arbitrary extra keys in a model object; they are not evidence.
+                keys = ('kind', 'authorized', 'input', 'sequence', 'expected', 'observed', 'required')
+                if row['allegation'].get('kind') == 'behavioral':
+                    keys = tuple(key for key in keys if key != 'required')
+                elif row['allegation'].get('kind') == 'structural':
+                    keys = ('kind', 'authorized', 'required', 'observed')
+                entry['allegation'] = {key: row['allegation'][key] for key in keys if key in row['allegation']}
+                for key, value in entry['allegation'].items():
+                    if key != 'kind' and isinstance(value, str):
+                        entry['allegation'][key] = value.strip()
+                    elif key == 'sequence' and isinstance(value, list):
+                        entry['allegation'][key] = [step.strip() if isinstance(step, str) else step for step in value]
+        if exit_number is not None:
+            entry['exit'] = exit_number
+            if exit_lines is not None:
+                entry['at'] = exit_lines[exit_number - 1].split(' -> ')[0]
+        if 'allegation' not in entry and not any(_has_finding(entry.get(key, '')) for key in ('counterexample', 'not_shown')):
+            issue(path, 'expected an actionable allegation or missing-code detail')
+            return
+        actions.append(entry)
+
+    def negative(row):
+        return (row.get('allegation') is not None or any(isinstance(row.get(key), str) and _has_finding(row[key])
+                for key in ('counterexample', 'not_shown')) or row.get('assessment') == 'alleged')
+
+    for position, row in enumerate(checks):
+        path = f'checks[{position}]'
+        if not isinstance(row, dict):
+            issue(path, 'expected an object')
+            continue
+        n = _review_index(row.get('n'), requirements)
+        if n is None:
+            issue(path + '.n', f'expected an index in 1..{requirements}')
+            continue
+        assessment = row.get('assessment')
+        if not indexed and assessment is None:
+            assessment = ('alleged' if row.get('allegation') is not None or _has_finding(row.get('counterexample', ''))
+                          else 'unseen' if _has_finding(row.get('not_shown', '')) else 'honored') if all(
+                              isinstance(row.get(key, ''), str) for key in ('counterexample', 'not_shown')) else None
+        if assessment not in ('honored', 'alleged', 'unseen'):
+            issue(path + '.assessment', 'expected honored, alleged, or unseen')
+        else:
+            normalized = {'n': n, 'assessment': assessment}
+            bind_source(row, n, normalized, path)
+            if expected_sources is not None:
+                if row.get('scope') != 'all_obligations':
+                    issue(path + '.scope', 'expected all_obligations for the original approved source')
+                else:
+                    normalized['scope'] = 'all_obligations'
+            if 'at' in row:
+                if not isinstance(row['at'], str) or len(row['at']) > 300:
+                    issue(path + '.at', 'expected a string of at most 300 characters')
+                elif row['at'].strip():
+                    normalized['at'] = row['at'].strip()
+            if n in coverage:
+                report['counts']['duplicate_checks'] += 1
+                if coverage[n] != normalized:
+                    conflicts.add(n)
+                    issue(path, f'contradictory duplicate coverage for requirement {n}')
+            else:
+                coverage[n] = normalized
+        permitted = {'n', 'assessment', 'at', 'source_id', 'scope'} if indexed else {'n', 'assessment', 'at', 'counterexample', 'not_shown', 'allegation'}
+        if set(row) - permitted:
+            issue(path, 'unexpected fields')
+        if negative(row) and (not indexed or any(key in row for key in ('allegation', 'counterexample', 'not_shown'))):
+            action(row, path)
+        elif not any(key in row for key in ('assessment', 'counterexample', 'not_shown', 'allegation')):
+            issue(path, 'missing check result')
+        for key, limit in (('counterexample', 500), ('not_shown', 300)):
+            if key in row and (not isinstance(row[key], str) or len(row[key]) > limit):
+                issue(path + '.' + key, f'expected a string of at most {limit} characters')
+
+    if indexed:
+        missing = sorted(set(range(1, requirements + 1)) - set(coverage))
+        if missing:
+            issue('checks', f'missing {len(missing)} requirement indices; first indices {missing[:12]}')
+        checked = raw.get('exits_checked')
+        if not isinstance(checked, list):
+            issue('exits_checked', 'expected a list')
+            checked = []
+        report['counts']['exit_rows'] = len(checked)
+        known_exits = set()
+        for position, value in enumerate(checked):
+            e = _review_index(value, exit_count)
+            if e is None:
+                issue(f'exits_checked[{position}]', f'expected an index in 1..{exit_count}')
+            else:
+                known_exits.add(e)
+        if len(known_exits) != exit_count:
+            issue('exits_checked', f'missing {exit_count - len(known_exits)} listed exits')
+        findings = raw.get('findings')
+        if not isinstance(findings, list):
+            issue('findings', 'expected a list')
+            findings = []
+        report['counts']['finding_rows'] = len(findings)
+        for position, row in enumerate(findings):
+            path = f'findings[{position}]'
+            if isinstance(row, dict) and set(row) - {'n', 'exit', 'at', 'allegation', 'not_shown', 'source_id'}:
+                issue(path, 'unexpected fields')
+            action(row, path)
+    else:
+        judged = raw.get('exits', [])
+        if not isinstance(judged, list):
+            issue('exits', 'expected a list')
+            judged = []
+        report['counts']['exit_rows'] = len(judged)
+        exit_claims = {}
+        for position, row in enumerate(judged):
+            path = f'exits[{position}]'
+            if not isinstance(row, dict):
+                issue(path, 'expected an object')
+                continue
+            e, n = _review_index(row.get('exit'), exit_count), _review_index(row.get('breaks'), requirements, zero=True)
+            if e is None or n is None:
+                issue(path, 'invalid exit index or requirement index')
+                continue
+            claims = exit_claims.setdefault(e, set())
+            claims.add(n)
+            if 0 in claims and len(claims) > 1:
+                conflicts.update(claims - {0})
+                issue(path, f'contradictory no-break and negative coverage for exit {e}')
+            how = row.get('how')
+            if not isinstance(how, str) or len(how) > 500:
+                issue(path + '.how', 'expected a string of at most 500 characters')
+                how = ''
+            if set(row) - {'exit', 'breaks', 'how', 'allegation'}:
+                issue(path, 'unexpected fields')
+            if row.get('allegation') is not None:
+                if not isinstance(row['allegation'], dict):
+                    issue(path + '.allegation', 'expected an object or null')
+                if n == 0:
+                    issue(path + '.allegation', 'a no-break exit cannot carry an allegation')
+            if n:
+                action({'n': n, 'counterexample': how, **({'allegation': row['allegation']} if 'allegation' in row else {})}, path, e)
+
+    distinct = {}
+    for entry in actions:
+        # An exit label is redundant once its exact location is resolved.
+        identity = {key: value for key, value in entry.items() if key != 'exit' or exit_lines is None}
+        if 'at' in identity:
+            identity['at'] = _flat(identity['at'])
+        if 'allegation' in identity:
+            identity.pop('counterexample', None)
+        key = json.dumps(identity, sort_keys=True, ensure_ascii=False)
+        if key in distinct:
+            report['counts']['duplicate_findings'] += 1
+        else:
+            distinct[key] = entry
+    actions = list(distinct.values())
+    report['counts']['distinct_findings'] = len(actions)
+    if len(actions) > REVIEW_MAX_FINDINGS:
+        issue('findings', f'{len(actions)} distinct actionable findings exceed the limit of {REVIEW_MAX_FINDINGS}')
+    for entry in actions:
+        n = entry['n']
+        claim = 'alleged' if 'allegation' in entry or _has_finding(entry.get('counterexample', '')) else 'unseen'
+        if n in coverage and coverage[n]['assessment'] != claim:
+            conflicts.add(n)
+            issue('findings', f'finding contradicts coverage for requirement {n}')
+    if indexed:
+        addressed = {entry['n'] for entry in actions}
+        for n, row in coverage.items():
+            if row['assessment'] == 'alleged' and n not in addressed:
+                issue('findings', f'no actionable finding for alleged requirement {n}')
+    report.update(checks=list(coverage.values()), findings=actions, conflicts=sorted(conflicts), complete=not issues)
+    return report
+
+
+def _counterexamples(reader, context: str, shown: str, code: str, seen: list[dict],
+                     answer: str = '', sources=None) -> tuple[list[str], bool]:
+    """Challenge positive readings and first-reader claims lacking evidence.
+
+    A location alone is never a behavioral witness. Valid partial evidence is
+    retained, but an ungrounded accusation can neither depart nor clear a row.
+    """
+    reviewed = [s for s in seen if s['state'] == 'ok' or s.get('allegation_status') == 'needs_witness']
+    if not reviewed:
         return [], True
-    listed = "\n".join(f"{i}. {s['needs']} ({'must not' if s['kind'] == 'must_not' else 'must'})"
-                       + (f" at: {s['at']}" if s.get("at") else "") for i, s in enumerate(met, 1))
+    listed = '\n'.join(f"{i}. " + (f"ORIGINAL SOURCE {s['source_id']} (whole verbatim text in APPROVED SOURCES)" if s.get('source_id')
+                       else f"{s['needs']} ({'must not' if s['kind'] == 'must_not' else 'must'})")
+                       + (f" at: {s['at']}" if s.get('at') else '')
+                       + (' code checks: ' + json.dumps(s['code_checks'], ensure_ascii=False) if s.get('code_checks') else '')
+                       + (' [first-reader allegation needs witness]' if s.get('allegation_status') else '')
+                       for i, s in enumerate(reviewed, 1))
     exits = early_exits(shown)
     exits_text = ("\nEARLY EXITS THE DIFF SHOWS (added or unchanged):\n"
                   + "\n".join(f"{i}. {e}" for i, e in enumerate(exits, 1)) + "\n" if exits else "")
+    system = COUNTEREXAMPLE_SYSTEM
+    if _review_effort(reader, 'counterexample', True) is not None:
+        system += COUNTEREXAMPLE_STOP_RULE
     try:
         raw = Client(reader).complete_json(
-            "counterexample", COUNTEREXAMPLE_SYSTEM,
-            context + f"\nREQUIREMENTS READ AS HONORED:\n{listed}\n{exits_text}\nDIFF:\n{shown}",
+            'counterexample', system,
+            context + f"\nREQUIREMENTS TO CHALLENGE:\n{listed}\n{exits_text}\nDIFF:\n{shown}",
             max_tokens=REVIEW_MAX_TOKENS, bounded=True)
     except LLMError:
         raw = None
+    report = _counterexample_report(raw, len(reviewed), exits, sources=sources)
+    complete = report['complete']
     unexamined = []
-    complete = (_review_complete(raw, 'checks') and _counterexample_shape(raw, len(met), len(exits))
-                and len(raw['checks']) <= REVIEW_MAX_FINDINGS
-                and len(raw.get('exits', [])) <= REVIEW_MAX_FINDINGS)
     if not complete:
-        # A failed or malformed second reading cannot support a "follows"
-        # verdict. Keep independently valid counterexamples from a partial
-        # reply, rather than throwing away a concrete finding with bad data.
-        for item in met:
-            item["state"] = "unclear"
-            item["note"] = "counterexample search did not complete"
+        for item in reviewed:
+            item['state'] = 'unclear'
+            item['note'] = 'counterexample search did not complete'
         if not isinstance(raw, dict):
-            return ["no search for counterexamples: the model did not answer"], False
-        unexamined.append(_review_limitation(raw, "the counterexample search returned malformed or incomplete data"))
-        checks = raw.get('checks') if isinstance(raw.get('checks'), list) else []
-        judged_exits = raw.get('exits') if isinstance(raw.get('exits'), list) else []
-        raw = {
-            'checks': [check for check in checks
-                       if _counterexample_shape({'checks': [check]}, len(met), len(exits))],
-            'exits': [check for check in judged_exits
-                      if _counterexample_shape({'checks': [], 'exits': [check]}, len(met), len(exits))],
-        }
-    # Empty legacy entries are not findings and must not crowd a concrete
-    # counterexample out of a partial/oversized response.
-    findings = [check for check in raw.get('checks', [])
-                if any(_has_finding(check.get(field, '')) for field in ('counterexample', 'not_shown'))]
-    for check in findings[:REVIEW_MAX_FINDINGS]:
-        if not isinstance(check, dict):
+            return ['no search for counterexamples: the model did not answer'], False
+        unexamined.append(_review_limitation(raw, 'the counterexample search returned malformed or incomplete data'))
+        unexamined.extend(report['issues'])
+
+    def unsupported(item, number):
+        item['state'] = 'unclear'
+        item['allegation_status'] = 'needs_witness'
+        item['note'] = 'claimed departure lacks a grounded behavioral witness or explicit structural requirement'
+        limitation = f"requirement {number}: the claimed departure lacks a grounded witness"
+        if limitation not in unexamined:
+            unexamined.append(limitation)
+
+    def record(allegation, at):
+        return {'what': clip_marked(_allegation_summary(allegation), 500, 'the witness ran on'),
+                'at': at, 'located': True, 'allegation': allegation}
+
+    def retain(item, value):
+        item['state'] = 'unclear'
+        item.pop('allegation_status', None)
+        if not item.get('counterexample'):
+            if not item.get('source_id'):
+                item['needs'] = value['allegation']['authorized']
+            item['counterexample'] = value
+        elif value != item['counterexample']:
+            alternatives = item.setdefault('counterexamples', [item['counterexample']])
+            if value not in alternatives:
+                alternatives.append(value)
+
+    # Coverage never consumes the finding allowance. All coverage is examined
+    # before retaining evidence, so a late conflicting status cannot erase it.
+    addressed = {entry['n'] for entry in report['findings']}
+    for check in report['checks']:
+        n, assessment = check['n'], check['assessment']
+        item = reviewed[n - 1]
+        if assessment == 'unseen':
+            item['state'] = 'unclear'
+            unexamined.append(f'requirement {n}: the diff does not establish the behavior')
+        elif assessment == 'alleged' and n not in addressed:
+            unsupported(item, n)
+        elif (complete and assessment == 'honored' and n not in addressed
+              and located(check.get('at', ''), code) and item.get('allegation_status') == 'needs_witness'):
+            # Rejecting an invented allegation does not make its invented
+            # requirement true. Preserve the source-grounding guard.
+            quoted = _flat(item['needs'])
+            if (quoted and quoted in _flat(answer)
+                    and len(quoted) >= min(12, len(_flat(answer)))):
+                item.update(state='ok', found='honored', at=check['at'],
+                            note='the critic rejected an unsupported first-reader allegation')
+                item.pop('allegation_status', None)
+            else:
+                item['note'] = ('the critic rejected an unsupported allegation, but the requirement '
+                                'it would mark honored was not quoted from the approval')
+
+    candidates = []
+    for entry in report['findings']:
+        at = entry.get('at', '')
+        source_answer = sources[entry['n'] - 1]['text'] if sources is not None else answer
+        allegation = _grounded_allegation(entry.get('allegation'), source_answer, at, code, shown)
+        candidates.append((entry, allegation))
+    # Examine every candidate. Grounded evidence (including late conflicts)
+    # has priority over unsupported claims and missing-code descriptions.
+    candidates.sort(key=lambda pair: (pair[1] is None, pair[0]['n'] not in report['conflicts']))
+    retained, omitted, evidence_chars = 0, 0, 0
+    for entry, allegation in candidates:
+        n = entry['n']
+        item = reviewed[n - 1]
+        value = record(allegation, entry.get('at', '')) if allegation is not None else None
+        cost = len(json.dumps(value, ensure_ascii=False)) + 80 if value else 160
+        # Reserve both primary and plural detail slots, including mixed findings.
+        cost += 2 * len(entry.get('not_shown', '')) + 80 if entry.get('not_shown') else 0
+        if value and item.get('counterexample') and not item.get('counterexamples'):
+            cost += len(json.dumps(item['counterexample'], ensure_ascii=False)) + 40
+        if retained >= REVIEW_MAX_FINDINGS or evidence_chars + cost > REVIEW_MAX_CHARS:
+            omitted += 1
+            item['state'] = 'unclear'
+            if not item.get('counterexample'):
+                item['note'] = 'additional actionable evidence was omitted by the bounded retention limit'
             continue
-        try:
-            n = int(str(check.get("n", "")).strip().rstrip("."))
-        except ValueError:
-            continue
-        if not 1 <= n <= len(met):
-            continue
-        item = met[n - 1]
-        what = clip_marked(str(check.get("counterexample") or ""), 500, "the counterexample ran on")
-        if _has_finding(what):
-            at = clip_marked(str(check.get("at") or ""), 300, "the line ran on")
-            found = located(at, code) or bool(_STRUCTURAL_RE.search(item["needs"]) and located_header(at, shown))
-            if found or not (item.get('counterexample') or {}).get('located'):
-                item["counterexample"] = {"what": what, "at": at, "located": found}
-            item["state"] = "unclear"
-            if not found:
-                # Measured live on the conformance panel: a path through a
-                # branch the diff does not show, pinned to a test's name.
-                unexamined.append(f"a possible counterexample whose line is not in the change's code: {what}")
-        not_shown = clip_marked(str(check.get("not_shown") or ""), 300, "it ran on")
+        retained += 1
+        evidence_chars += cost
+        if allegation is not None:
+            retain(item, value)
+        elif 'allegation' in entry or _has_finding(entry.get('counterexample', '')):
+            if not (item.get('counterexample') or {}).get('allegation'):
+                unsupported(item, n)
+        not_shown = entry.get('not_shown', '').strip()
         if _has_finding(not_shown):
-            item["state"] = "unclear"
-            item["not_shown"] = not_shown
+            item['state'] = 'unclear'
+            if not item.get('not_shown'):
+                item['not_shown'] = not_shown
+            elif not_shown != item['not_shown']:
+                details = item.setdefault('not_shown_details', [item['not_shown']])
+                if not_shown not in details:
+                    details.append(not_shown)
             if not_shown not in unexamined:
                 unexamined.append(not_shown)
-    # Each early exit judged on its own. Measured live on the eb9d22d
-    # patch: asked for counterexamples in general, the search named the
-    # zero-backoff return in one run of four.
-    exit_findings = [check for check in raw.get('exits', []) if _has_finding(check.get('how', ''))]
-    for judged in exit_findings[:REVIEW_MAX_FINDINGS]:
-        if not isinstance(judged, dict):
-            continue
-        try:
-            e, n = int(str(judged.get("exit", "")).strip()), int(str(judged.get("breaks", "0")).strip() or 0)
-        except ValueError:
-            continue
-        how = clip_marked(str(judged.get("how") or ""), 500, "the counterexample ran on")
-        if not (1 <= e <= len(exits) and 1 <= n <= len(met) and how):
-            continue
-        item = met[n - 1]
-        if (item.get("counterexample") or {}).get("located"):
-            continue
-        # The exit came from the diff, so its line is there by construction.
-        item["state"] = "unclear"
-        item["counterexample"] = {"what": how, "at": exits[e - 1].split(" -> ")[0], "located": True}
-    return unexamined[:6], complete
+    if omitted:
+        complete = False
+        unexamined.append(f'{omitted} additional distinct actionable findings omitted; retained {retained} '
+                          f'within the {REVIEW_MAX_FINDINGS}-finding/{REVIEW_MAX_CHARS}-character evidence limit')
+    if not complete:
+        for item in reviewed:
+            if item['state'] == 'ok':
+                item.update(state='unclear', note='counterexample search did not complete')
+
+    for n, item in enumerate(reviewed, 1):
+        if item.get('allegation_status') == 'needs_witness':
+            limitation = f'requirement {n}: the first-reader allegation remains unsubstantiated'
+            if limitation not in unexamined:
+                unexamined.append(limitation)
+    unexamined = list(dict.fromkeys(unexamined))
+    # Overflow and contradictions must remain visible even after many malformed
+    # rows; detailed parser diagnostics still retain all controlled reasons.
+    unexamined.sort(key=lambda reason: not any(marker in reason for marker in
+                    ('distinct actionable findings', 'contradict', 'additional distinct actionable findings omitted')))
+    if len(unexamined) > 6:
+        unexamined = unexamined[:5] + [f'{len(unexamined) - 5} additional limitations omitted from this summary; affected requirement states remain unclear']
+    return unexamined, complete
+
+
+def _shared_decisions(others):
+    if not isinstance(others, (tuple, list)):
+        raise ValueError('shared decisions must be a sequence')
+    records = []
+    for pair in others:
+        if (not isinstance(pair, (tuple, list)) or len(pair) != 2
+                or any(not isinstance(text, str) for text in pair)):
+            raise ValueError('shared decisions need exact question and answer strings')
+        question, answer = pair
+        if answer.strip():
+            records.append({'question': question, 'answer': answer})
+    return records
 
 
 def _other_decisions(others) -> str:
-    """The task's other authorized decisions, for the conformance read.
-    Measured live: three signed answers on one task, each read alone, and
-    the one about negative values called the decimal parsing another
-    answer had authorized "not authorized"."""
-    lines = [f"- {q.strip()[:200]}: {a.strip()[:300]}" for q, a in list(others)[:6] if (a or "").strip()]
-    return ("\nOTHER DECISIONS ON THIS TASK, also authorized (not requirements of this one):\n" + "\n".join(lines) + "\n"
-            if lines else "")
+    """Preserve shared authority exactly; the caller bounds the whole context."""
+    records = _shared_decisions(others)
+    return ("\nOTHER DECISIONS ON THIS TASK, also authorized (not requirements of this one):\n"
+            + json.dumps(records, ensure_ascii=False) + "\n" if records else "")
+
 
 
 MEMORY_RERANK_SYSTEM = (

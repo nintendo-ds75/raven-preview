@@ -170,7 +170,8 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   const taskContext = {fixture, state:{auth:{enabled:true},me:{role:'viewer'}},view:'runs',location:{hash:'#runs/t1'},
     document:{activeElement:{tagName:'BUTTON'}}, $: key => key === '#app' ? {contains:()=>true} : {open:false},
     api: async path => {reads++;return path.endsWith('/tree') ? fixture.tree : fixture.trace;},render(){},
-    esc: context.esc, pill: context.pill,icon:()=>'',avatar:()=>'',eventLabels:{owner_approved:'Decision recorded'}};
+    esc: vm.runInNewContext(source.match(/^const esc = .+$/m)[0] + ';esc'),
+    pill: context.pill,icon:()=>'',avatar:()=>'',eventLabels:{owner_approved:'Decision recorded'}};
   vm.createContext(taskContext);
   vm.runInContext(taskSource + ';taskDetail=fixture;',taskContext);
   let overview = vm.runInContext('taskOverview()',taskContext);
@@ -182,6 +183,48 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   const review = vm.runInContext("taskTab='review';taskOverview()",taskContext);
   assert.match(review, /Existing code is outside the diff/);
   assert.match(review, /Inspect requirements/);
+  // Contract age is a read-only notice, separate from the recorded verdict
+  // and from an answer change that already makes a review stale.
+  const savedReview = structuredClone(fixture.tree.review);
+  const contractNotice = 'This saved reading uses an earlier reviewer contract. Read-only access does not rerun it; finish explicitly with the same complete diff for a current reading.';
+  const noticePattern = /<p class="context task-review-contract-notice"><strong>Historical review:<\/strong> ([\s\S]*?)<\/p>/;
+  for (const metadata of [{}, {contract_version:'legacy'}, {contract_current:true,contract_notice:contractNotice},
+    {contract_current:'false',contract_notice:contractNotice}, {contract_current:null}]) {
+    fixture.tree.review = {...savedReview, ...metadata};
+    assert.doesNotMatch(vm.runInContext('taskOverview()',taskContext), noticePattern,
+      'Do not infer a legacy contract without an explicitly false API flag');
+  }
+  fixture.tree.review = {...savedReview, contract_current:false, contract_notice:contractNotice};
+  const beforeRender = structuredClone(fixture);
+  for (const tab of ['overview','review']) {
+    const rendered = vm.runInContext(`taskTab='${tab}';taskOverview()`,taskContext);
+    assert.equal(rendered.match(noticePattern)?.[1], contractNotice);
+    const summary = rendered.slice(rendered.indexOf('<div class="task-summary">'), rendered.indexOf('<nav class="task-tabs"'));
+    assert.match(summary, noticePattern, 'The notice is visible before all tab content and collapsed records');
+    assert.doesNotMatch(summary, /<details/);
+    assert.match(summary, /<h2>Agent reported complete<\/h2>/);
+    assert.doesNotMatch(summary, /Review needed|code review is still running/);
+    if (tab === 'review') {
+      assert.match(rendered, /Existing code is outside the diff/);
+      assert.match(rendered, /<details><summary>Full review record<\/summary>/);
+    }
+  }
+  assert.deepEqual(fixture, beforeRender, 'Rendering must preserve the saved review and task');
+  assert.equal(reads, 0, 'Rendering the notice must not request a review or another API read');
+  delete fixture.tree.review.contract_notice;
+  assert.equal(vm.runInContext('taskOverview()',taskContext).match(noticePattern)?.[1], contractNotice,
+    'The explicit legacy flag still explains the next step if notice text is absent');
+  fixture.tree.review.contract_notice = '<img src=x onerror="alert(1)"> & \'saved\'';
+  const escapedNotice = vm.runInContext('taskOverview()',taskContext).match(noticePattern)?.[1];
+  assert.equal(escapedNotice, '&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; &#39;saved&#39;');
+  for (const contract_current of [true,false]) {
+    fixture.tree.review = {...savedReview, status:'stale', contract_current, contract_notice:contractNotice};
+    const stale = vm.runInContext('taskOverview()',taskContext);
+    assert.match(stale, /<h2>Review needed<\/h2>/);
+    assert.match(stale, /An answer changed after the code review\. The agent must submit its current diff again\./);
+    assert.equal(noticePattern.test(stale), !contract_current);
+  }
+  fixture.tree.review = savedReview;
   const timeline = vm.runInContext('taskTimeline(fixture.trace,fixture.tree.nodes)',taskContext);
   assert.match(timeline, /<strong>Wes<\/strong>/);
   await vm.runInContext('loadTask({quiet:true})',taskContext);

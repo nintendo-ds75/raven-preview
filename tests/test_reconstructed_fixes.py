@@ -1,4 +1,6 @@
 """Behavior reconstructed from the interrupted review, tested without inference."""
+from review_source_fixtures import source_conformance
+
 import json
 import os
 import threading
@@ -171,10 +173,14 @@ class ExtraConditionTests(OfflineCase):
             return {'status': 'complete', 'conditions':[condition]} if condition else {'status': 'complete', 'conditions':[]}
         diff='+if enterprise: return 0\n+if pro and override: return 0\n+return overage * 2\n'
         with patch.dict(os.environ,BRIDGE_SEMANTIC='1'),patch.object(llm.Client,'complete_json',complete):
-            return llm.check_conformance(Config(model_api='none'),'Who is exempt?','Only enterprise is exempt',diff)
+            return source_conformance(Config(model_api='none'),'Who is exempt?','Only enterprise is exempt',diff)
 
     def test_located_unsigned_exemption_departs(self):
-        read=self.check({'condition':'Pro accounts with an override are also exempt','at':'if pro and override: return 0'})
+        read=self.check({'condition':'Pro accounts with an override are also exempt','at':'if pro and override: return 0',
+            'allegation': {'kind': 'behavioral', 'authorized': 'Only enterprise is exempt',
+                'input': 'A non-enterprise Pro account has an override and positive overage.',
+                'sequence': ['Call the billing function.', 'Take the Pro override branch.'],
+                'expected': 'Charge the non-enterprise overage.', 'observed': 'The function returns zero.'}})
         self.assertEqual(read['verdict'],'departs')
         self.assertIn('no signed answer',read['why'])
 

@@ -1971,7 +1971,7 @@ def finish_task(store, data, sleep=None, stop=None) -> dict:
             "follows": follows,
             "unread": unread if follows else [],
             "uncovered": uncovered,
-            **({"review": {k: review[k] for k in ("id", "status", "seconds") if review.get(k) is not None}}
+            **({"review": {k: review[k] for k in ("id", "status", "seconds", "contract_version") if review.get(k) is not None}}
                if review.get("id") else {}),
             "verified": False,
             "caveat": (f"{len(signed)} decision{'s' if len(signed) != 1 else ''} on this task "
@@ -2006,7 +2006,7 @@ def _conformance(store, task_id: str, signed: list[dict], diff: str) -> list[dic
 
     def read_one(n):
         others = tuple((m.get("question") or "", m.get("answer") or "") for m in signed if m is not n)
-        return check_conformance(cfg, n.get("question") or "", (n.get("answer") or "").strip(), scoped[n["node_id"]],
+        return check_conformance(cfg, n.get("question") or "", n.get("answer") or "", scoped[n["node_id"]],
                                  others)
     # One read per decision, all at once: they share nothing but the diff.
     # Measured live: six decisions read one after another took about 44
@@ -2022,6 +2022,10 @@ def _conformance(store, task_id: str, signed: list[dict], diff: str) -> list[dic
         out.append({"node_id": n["node_id"], "question": n.get("question") or "",
                     "verdict": read["verdict"], "why": read["why"],
                     "requirements": list(read.get("requirements") or []),
+                    **({"approved_sources": list(read["approved_sources"])} if read.get("approved_sources") else {}),
+                    **({"approved_context": dict(read["approved_context"])} if read.get("approved_context") else {}),
+                    **({"source_issues": list(read["source_issues"]),
+                        "source_issues_omitted": read.get("source_issues_omitted", 0)} if read.get("source_issues") else {}),
                     **({"incomplete": True} if read.get("incomplete") else {}),
                     **({"unexamined": list(read["unexamined"])} if read.get("unexamined") else {})})
     return out
@@ -2115,11 +2119,12 @@ def _revisions(signed: list[dict]) -> dict:
 
 
 def _review_key(task_id: str, diff: str, signed: list[dict]) -> tuple[str, str]:
-    """One reading per task, diff and set of signed answers."""
+    """One reading per task, diff, signed answers and review contract."""
     import hashlib
+    from .llm import REVIEW_CONTRACT_VERSION
     diff_hash = hashlib.sha256(diff.encode()).hexdigest()[:16]
     revisions = sorted(f"{k}:{v}" for k, v in _revisions(signed).items())
-    return hashlib.sha256("\n".join([task_id, diff_hash, *revisions]).encode()).hexdigest()[:12], diff_hash
+    return hashlib.sha256("\n".join([task_id, diff_hash, REVIEW_CONTRACT_VERSION, *revisions]).encode()).hexdigest()[:12], diff_hash
 
 
 def _stored_review(graph, task_id: str, review_id: str | None = None) -> dict | None:
@@ -2134,6 +2139,7 @@ def _stored_review(graph, task_id: str, review_id: str | None = None) -> dict | 
         if not d.get("review_id") or (review_id is not None and d["review_id"] != review_id):
             continue
         read = {"revisions": d["revisions"]} if isinstance(d.get("revisions"), dict) else {}
+        read['contract_version'] = d.get('contract_version') or 'legacy'
         if r["kind"] == "conformance_read":
             return {"id": d["review_id"], "status": d.get("status") or "done", "follows": d.get("follows") or [],
                     "diff_hash": d.get("diff_hash") or "", "seconds": d.get("seconds"), "finished_at": r["created_at"],
@@ -2153,6 +2159,11 @@ def _current_review(graph, task_id: str, nodes: list[dict]) -> dict | None:
     review = _stored_review(graph, task_id)
     if review is None:
         return None
+    from .llm import REVIEW_CONTRACT_VERSION
+    review['contract_current'] = review.get('contract_version') == REVIEW_CONTRACT_VERSION
+    if not review['contract_current']:
+        review['contract_notice'] = ('This saved reading uses an earlier reviewer contract. Read-only access does not '
+                                     'rerun it; finish explicitly with the same complete diff for a current reading.')
     by_id = {n["node_id"]: n for n in nodes}
     signed = {n["node_id"]: n for n in nodes if n.get("authorized") and (n.get("answer") or "").strip()}
     stale: list[dict] = []
@@ -2216,7 +2227,9 @@ def _review(store, task_id: str, signed: list[dict], diff: str, sleep=None, stop
         thread = _REVIEWS.get(rid)
         if thread is None:
             # Never started, or started by a process that has since gone.
+            from .llm import REVIEW_CONTRACT_VERSION
             graph.append_event("conformance_started", {"task_id": task_id, "review_id": rid, "diff_hash": diff_hash,
+                                                       "contract_version": REVIEW_CONTRACT_VERSION,
                                                        "decisions": [n["node_id"] for n in signed],
                                                        "revisions": _revisions(signed)})
             thread = threading.Thread(target=_run_review, args=(store, task_id, rid, diff_hash, signed, diff),
@@ -2263,8 +2276,10 @@ def _run_review(store, task_id: str, rid: str, diff_hash: str, signed: list[dict
         status = "failed"
         print(f"Raven: reading the diff for task {task_id} failed: {type(error).__name__}: {error}", file=sys.stderr)
     try:
+        from .llm import REVIEW_CONTRACT_VERSION
         store.graph.append_event("conformance_read", {
             "task_id": task_id, "review_id": rid, "diff_hash": diff_hash, "status": status,
+            "contract_version": REVIEW_CONTRACT_VERSION,
             "revisions": _revisions(signed),
             "seconds": round(_time.monotonic() - started, 1), "follows": follows,
             "read": [{"node": r["node_id"], "verdict": r["verdict"],

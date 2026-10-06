@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from bridge import llm
+from review_source_fixtures import source_conformance
 from bridge.config import Config
 
 
@@ -21,7 +22,11 @@ DIFF = ('diff --git a/processor.py b/processor.py\n--- a/processor.py\n+++ b/pro
 FIXED_DIFF = DIFF.replace('+    applied = []', '+    applied = []\n+    seen = set()').replace(
     '+        if key in pending:', '+        if key in seen:\n+            continue\n'
     '+        seen.add(key)\n+        if key in pending:')
-COUNTEREXAMPLE = {'n': 1, 'counterexample': 'A generator yields x, reinserts x, then yields x again; x is applied twice.',
+WITNESS = {'kind': 'behavioral', 'authorized': 'ignore later duplicate identifiers',
+    'input': 'A generator supplies x to a pending mapping initially containing x.',
+    'sequence': ['Yield x and finish removing it.', 'The generator reinserts x into pending.', 'Yield x again.'],
+    'expected': 'One x is removed and returned.', 'observed': 'Two occurrences of x are removed and returned.'}
+COUNTEREXAMPLE = {'n': 1, 'allegation': WITNESS, 'counterexample': 'A generator yields x, reinserts x, then yields x again; x is applied twice.',
                   'at': 'if key in pending:', 'not_shown': ''}
 FIRST = {'status': 'complete', 'requirements': [
     {'needs': 'Ignore later duplicate identifiers', 'kind': 'must', 'found': 'honored', 'at': 'if key in pending:'}],
@@ -108,7 +113,7 @@ class BoundedReviewTests(unittest.TestCase):
             return value
         with patch.object(Config, 'semantic_retrieval', property(lambda self: True)), \
                 patch.object(llm.Client, 'complete_json', new=complete):
-            return llm.check_conformance(Config(model_api='none'), 'How are repeats handled?',
+            return source_conformance(Config(model_api='none'), 'How are repeats handled?',
                                          'Consume events once and ignore later duplicate identifiers.', diff)
 
     def test_complete_sparse_negative_read_is_accepted(self):
@@ -172,17 +177,20 @@ class BoundedReviewTests(unittest.TestCase):
         self.assertEqual(result['verdict'], 'follows')
         self.assertEqual(len(result['requirements']), 12)
         counter_prompt = next(row[2] for row in self.calls if row[0] == 'counterexample')
-        self.assertIn('12. Rule 12', counter_prompt)
-        self.assertIn('1. Rule 1', counter_prompt)
+        self.assertIn('1. ORIGINAL SOURCE', counter_prompt)
+        self.assertEqual(counter_prompt.count('\"found\": \"honored\"'), 12)
+        self.assertNotIn('Rule 12', counter_prompt)
 
     def test_overflowing_findings_must_report_inconclusive(self):
         first = {**FIRST, 'requirements': [{**FIRST['requirements'][0], 'needs': f'Rule {n}'}
                                            for n in range(1, 7)]}
-        checks = [{**COUNTEREXAMPLE, 'n': n} for n in range(1, 7)]
+        checks = [{**COUNTEREXAMPLE, 'n': 1, 'allegation': {**WITNESS,
+                   'input': f'Generator variant {n} initially contains x.'}} for n in range(1, 7)]
         result = self.read(first=first, counter={'status': 'complete', 'checks': checks})
         self.assertTrue(result['incomplete'])
         self.assertEqual(result['verdict'], 'unclear')
-        self.assertEqual(sum('counterexample' in item for item in result['requirements']), llm.REVIEW_MAX_FINDINGS)
+        self.assertEqual(len(result['requirements'][0]['counterexamples']), llm.REVIEW_MAX_FINDINGS)
+        self.assertTrue(any('omitted' in reason for reason in result['unexamined']))
         self.assertTrue(all(item['state'] == 'unclear' for item in result['requirements']))
 
     def test_first_stage_failure_is_an_explicit_retryable_inconclusive_result(self):
@@ -197,7 +205,7 @@ class BoundedReviewTests(unittest.TestCase):
 
     def test_incomplete_first_stage_preserves_valid_departures(self):
         first = {**FIRST, 'status': 'inconclusive', 'requirements': [
-            {**FIRST['requirements'][0], 'found': 'violated'}, None],
+            {**FIRST['requirements'][0], 'found': 'violated', 'allegation': WITNESS}, None],
             'unexamined': 'The rest of the signed requirements were not examined.'}
         result = self.read(first=first)
         self.assertEqual(result['verdict'], 'departs')
@@ -206,7 +214,7 @@ class BoundedReviewTests(unittest.TestCase):
 
     def test_malformed_conditions_preserve_valid_partial_departure(self):
         result = self.read(conditions={'status': 'complete', 'conditions': [None,
-            {'condition': 'Requires a present identifier instead of recording attempts', 'at': 'if key in pending:'}]})
+            {'condition': 'Repeats processing when a generator reinserts an already seen key', 'at': 'if key in pending:', 'allegation': WITNESS}]})
         self.assertTrue(result['incomplete'])
         self.assertEqual(result['verdict'], 'departs')
         self.assertIn('the diff adds a condition', result['requirements'][-1]['note'])
@@ -233,7 +241,8 @@ class BoundedReviewTests(unittest.TestCase):
             self.assertIn('inconclusive', prompt)
             self.assertIn('exact contiguous fragment', prompt)
         self.assertIn('one focused adversarial pass', llm.COUNTEREXAMPLE_SYSTEM)
-        self.assertIn('omitted requirements and exits were examined too', llm.COUNTEREXAMPLE_SYSTEM)
+        self.assertIn('Coverage rows do not count toward the finding limit', llm.COUNTEREXAMPLE_SYSTEM)
+        self.assertIn('each index exactly once', llm.COUNTEREXAMPLE_SYSTEM)
 
     def test_temporal_controls_have_different_executable_behavior(self):
         def compile_added(diff):

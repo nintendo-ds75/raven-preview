@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from bridge import llm
+from review_source_fixtures import source_conformance
 from bridge.config import Config
 
 DIFF = ('diff --git a/processor.py b/processor.py\n--- a/processor.py\n+++ b/processor.py\n'
@@ -11,6 +12,11 @@ DIFF = ('diff --git a/processor.py b/processor.py\n--- a/processor.py\n+++ b/pro
         '+        if key in pending:\n+            del pending[key]\n+            applied.append(key)\n'
         '+    return tuple(applied)\n')
 
+
+WITNESS = {'kind': 'behavioral', 'authorized': 'ignore later duplicate identifiers',
+    'input': 'A generator supplies x to a pending mapping initially containing x.',
+    'sequence': ['Yield x and finish removing it.', 'The generator reinserts x into pending.', 'Yield x again.'],
+    'expected': 'One x is removed and returned.', 'observed': 'Two occurrences of x are removed and returned.'}
 
 class ReviewInvariantTests(unittest.TestCase):
     def read(self, counterexample):
@@ -23,7 +29,7 @@ class ReviewInvariantTests(unittest.TestCase):
             return {'status': 'complete', 'conditions': []}
         with patch.object(Config, 'semantic_retrieval', property(lambda self: True)), \
                 patch.object(llm.Client, 'complete_json', new=complete):
-            return llm.check_conformance(Config(model_api='none'), 'How should repeated events be handled?',
+            return source_conformance(Config(model_api='none'), 'How should repeated events be handled?',
                 'Consume the input once in order and ignore later duplicate identifiers.', DIFF)
 
     def test_missing_or_wrong_check_collection_is_inconclusive(self):
@@ -31,7 +37,7 @@ class ReviewInvariantTests(unittest.TestCase):
             with self.subTest(raw=raw):
                 result = self.read(raw)
                 self.assertEqual(result['verdict'], 'unclear')
-                self.assertIn('did not complete', result['why'])
+                self.assertIn('inconclusive', result['why'])
 
     def test_invalid_number_or_text_cannot_silently_pass_counterexample_search(self):
         for check in ({'n': 0}, {'n': 2}, {'n': 'unknown'}, {'n': 1, 'counterexample': []},
@@ -44,7 +50,7 @@ class ReviewInvariantTests(unittest.TestCase):
 
     def test_located_state_change_counterexample_overrides_initial_honored_claim(self):
         result = self.read({'status': 'complete', 'checks': [{'n': 1,
-            'counterexample': 'A lazy iterator yields x, reinserts x into pending, then yields x again; both occurrences are applied.',
+            'counterexample': 'A lazy iterator yields x, reinserts x into pending, then yields x again; both occurrences are applied.', 'allegation': WITNESS,
             'at': 'if key in pending:', 'not_shown': ''}], 'exits': []})
         self.assertEqual(result['verdict'], 'unclear')
         self.assertTrue(result['requirements'][0]['counterexample']['located'])
@@ -52,7 +58,7 @@ class ReviewInvariantTests(unittest.TestCase):
 
     def test_valid_counterexample_survives_another_malformed_item(self):
         result = self.read({'status': 'complete', 'checks': [
-            {'n': 1, 'counterexample': 'An iterator reinserts an already seen identifier before yielding it again.',
+            {'n': 1, 'counterexample': 'An iterator reinserts an already seen identifier before yielding it again.', 'allegation': WITNESS,
              'at': 'if key in pending:', 'not_shown': ''},
             {'n': 'unknown'}], 'exits': []})
         self.assertEqual(result['verdict'], 'unclear')

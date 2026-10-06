@@ -17,6 +17,7 @@ from urllib.request import Request, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase  # noqa: E402
+from review_source_fixtures import source_conformance
 
 from bridge import canvas  # noqa: E402
 from bridge.config import Config  # noqa: E402
@@ -203,6 +204,31 @@ class FinishTests(CanvasCase):
         self.assertIn("did not read the diff", done["caveat"])
         self.assertIn("reported no checks", done["caveat"])
 
+    def test_finish_retains_source_catalog_in_saved_review_and_proof_without_rereading(self):
+        from bridge import llm, proof
+        sources = llm._approved_sources('Use the aplic')
+        reading = {'verdict': 'unclear', 'why': 'A code check remains unresolved.', 'requirements': [
+            {'needs': 'Use the aplic', 'source_id': sources[0]['id'], 'source_status': 'bound', 'state': 'unclear'}],
+            'approved_sources': sources, 'approved_context': {'question': 'Original question',
+                'other_decisions': [{'question': '  q? ', 'answer': '  exact sibling\n'}]},
+            'source_issues': ['requirements[0]: unresolved fixture'],
+            'source_issues_omitted': 2, 'incomplete': True}
+        with patch.object(llm, 'check_conformance', return_value=reading):
+            node, done = self.finished(diff='--- a/hw/riscv/virt.c\n+++ b/hw/riscv/virt.c\n+  use_aplic = true;')
+        current = done['follows'][0]
+        self.assertEqual(current['approved_sources'], sources)
+        self.assertEqual(current['approved_context'], reading['approved_context'])
+        self.assertEqual(current['source_issues'], reading['source_issues'])
+        self.assertEqual(current['source_issues_omitted'], 2)
+        task_id = self.store.get_decision(node['node_id'])['run_id']
+        with patch.object(llm, 'check_conformance') as model:
+            tree = canvas.get_tree(self.store, task_id)
+            bundle = proof.export(self.store, {'task_id': task_id})['bundle']
+        model.assert_not_called()
+        self.assertEqual(tree['review']['follows'][0]['approved_sources'], sources)
+        self.assertEqual(bundle['payload']['review']['follows'][0]['approved_sources'], sources)
+        self.assertEqual(bundle['payload']['review']['follows'][0]['approved_context'], reading['approved_context'])
+
     def test_the_diff_is_read_against_each_signed_answer_and_reported(self):
         """Raven gates authorization and has never been able to say
         whether the code follows it. Measured on Grafana: an owner
@@ -303,17 +329,19 @@ class FinishTests(CanvasCase):
                   "tests assert both the default and the jittered path with a seeded random source.")
         long = " ".join(["The requirement about copying the setting through new() is met by the change to new()."] * 30)
         needs = "every " * 120
-        replies = [{"status": "complete", "requirements": [{"needs": "default stays 0.0", "kind": "must", "found": "honored"}], "why": medium},
-                   {"status": "complete", "requirements": [{"needs": needs, "kind": "must", "found": "honored"}], "why": long}]
-        with patch.object(llm.Client, "complete_json", lambda self, *a, **k: replies.pop(0)):
-            whole = llm.check_conformance(Config(), "q", "a", "+ diff")
-            cut = llm.check_conformance(Config(), "q", "a", "+ diff")
+        replies = [{"status": "complete", "requirements": [{"needs": "default stays 0.0", "kind": "must", "found": "honored", "at": "default = 0.0"}], "why": medium},
+                   {"status": "complete", "requirements": [{"needs": needs, "kind": "must", "found": "honored", "at": "default = 0.0"}], "why": long}]
+        with patch.object(llm.Client, "complete_json", lambda self, purpose, *a, **k: replies.pop(0)
+                          if purpose == "conformance" else ({"status": "complete", "conditions": []}
+                          if purpose == "conditions" else {"status": "complete", "checks": []})):
+            whole = source_conformance(Config(), "q", "a", "+default = 0.0")
+            cut = source_conformance(Config(), "q", needs, "+default = 0.0")
         self.assertGreater(len(medium), 300)
         self.assertEqual(whole["why"], medium)
         self.assertTrue(cut["why"].endswith("… [cut: the requirements list what was read]"), cut["why"][-80:])
         kept = cut["why"].split(" … [cut:")[0]
         self.assertTrue(long.startswith(kept) and long[len(kept)] == " ", kept[-60:])
-        self.assertTrue(cut["requirements"][0]["needs"].endswith("[cut: the requirement ran on]"))
+        self.assertTrue(cut["requirements"][0]["needs"].endswith("[cut: full text is in approved_sources]"))
 
     def test_the_finish_returns_the_requirements_each_reading_rests_on(self):
         t = self.start("Rework hw/riscv/virt.c interrupt routing", paths="hw/riscv/virt.c")
@@ -339,9 +367,9 @@ class FinishTests(CanvasCase):
         diff = "+    default: float = 0\n+    if value < 0: raise InvalidHeader(value)\n"
         with patch.object(llm.Client, "complete_json",
                           lambda self, purpose, *a, **k: reply if purpose == "conformance" else ({"status": "complete", "conditions": []} if purpose == "conditions" else {"status": "complete", "checks": []})):
-            read = llm.check_conformance(Config(), "Should -1 be accepted?", "Keep negatives invalid", diff)
+            read = source_conformance(Config(), "Should -1 be accepted?", "Keep negatives invalid", diff)
         self.assertEqual(read["verdict"], "follows")
-        self.assertEqual(read["why"], "Read as doing each thing it requires: negatives stay invalid; zero stays the default")
+        self.assertEqual(read["why"], "Read as doing each thing it requires: Keep negatives invalid")
 
     def test_the_conformance_prompt_lists_the_other_answers_and_not_its_own(self):
         from bridge import llm
@@ -359,7 +387,7 @@ class FinishTests(CanvasCase):
         env.start()
         self.addCleanup(env.stop)
         with patch.object(llm.Client, "complete_json", complete_json):
-            read = llm.check_conformance(Config(), "Should -1 be accepted?", "Keep negatives invalid",
+            read = source_conformance(Config(), "Should -1 be accepted?", "Keep negatives invalid",
                                          "+    if value < 0: raise InvalidHeader(value)\n",
                                          (("Should 0.5 be accepted?", "Accept unsigned decimals, rounded up"),))
         self.assertEqual(read["verdict"], "follows")
@@ -369,7 +397,9 @@ class FinishTests(CanvasCase):
         # The search for counterexamples knows what the sibling answers
         # authorized, so their changes are not reported as breaking this one.
         self.assertIn("Accept unsigned decimals, rounded up", prompts[1])
-        self.assertIn("1. negatives stay invalid (must) at: if value < 0: raise InvalidHeader(value)", prompts[1])
+        self.assertIn("1. ORIGINAL SOURCE", prompts[1])
+        self.assertIn("at: if value < 0: raise InvalidHeader(value)", prompts[1])
+        self.assertNotIn("negatives stay invalid", prompts[1])
 
     def test_a_rule_the_diff_keeps_reads_as_kept_however_it_is_worded(self):
         """Measured on the hard end-to-end run: "POST/PATCH must not be
@@ -400,9 +430,10 @@ class FinishTests(CanvasCase):
             [{"needs": rule, "kind": "must_not", "found": "missing"}],
         ])
         with patch.object(llm.Client, "complete_json", complete_json):
-            got = [llm.check_conformance(Config(), "What is safe to retry?", "Connect-phase only",
+            got = [source_conformance(Config(), "What is safe to retry?", "Connect-phase only",
                                          f"         {kept}\n")["verdict"] for _ in range(7)]
-        self.assertEqual(got, ["follows", "departs", "departs", "follows", "unclear", "departs", "unclear"])
+        # Ungrounded negative labels no longer establish a departure.
+        self.assertEqual(got, ["follows", "unclear", "unclear", "follows", "unclear", "unclear", "unclear"])
         self.assertIn('"honored" or "missing" or "violated" or "unseen"', llm.CONFORMANCE_SYSTEM)
 
     # The hunk of the real eb9d22d patch the false reading was about. The
@@ -441,7 +472,7 @@ class FinishTests(CanvasCase):
                'kind':'must','found':'missing','at':'params.update(kw)'}],
                'why':'increment() does not copy jitter.'}
         with patch.object(llm.Client,'complete_json',return_value=raw):
-            read = llm.check_conformance(Config(),'Copy the option?', 'Carry jitter through increment().',diff)
+            read = source_conformance(Config(),'Copy the option?', 'Carry jitter through increment().',diff)
         self.assertEqual(read['verdict'],'unclear')
         self.assertIn('increment',read['requirements'][0]['note'])
         self.assertNotIn('does not copy',read['why'])
@@ -454,9 +485,13 @@ class FinishTests(CanvasCase):
                 '+    params["total"] = total\n'
                 '     params.update(kw)\n')
         raw = {'status': 'complete', 'requirements':[{'needs':'Thread jitter through `increment()`',
-               'kind':'must','found':'missing','at':'params.update(kw)'}]}
+               'kind':'must','found':'missing','at':'params.update(kw)',
+               'allegation': {'kind': 'behavioral', 'authorized': 'Carry jitter through increment().',
+                   'input': 'A retry object has jitter 4; call increment().',
+                   'sequence': ['Build the copied params.', 'Pass them to the new retry object.'],
+                   'expected': 'The copied jitter is 4.', 'observed': 'The copied params omit jitter.'}}]}
         with patch.object(llm.Client,'complete_json',return_value=raw):
-            read = llm.check_conformance(Config(),'Copy the option?', 'Carry jitter through increment().',diff)
+            read = source_conformance(Config(),'Copy the option?', 'Carry jitter through increment().',diff)
         self.assertEqual(read['verdict'],'departs')
 
     def test_honored_needs_a_line_that_is_in_what_the_diff_leaves(self):
@@ -485,7 +520,7 @@ class FinishTests(CanvasCase):
             reply = {"status": "complete", "requirements": [{"needs": need, "kind": kind, "at": at, "found": "honored"}], "why": "w"}
             with patch.object(llm.Client, "complete_json",
                               lambda self, purpose, *a, **k: reply if purpose == "conformance" else ({"status": "complete", "conditions": []} if purpose == "conditions" else {"status": "complete", "checks": []})):
-                read = llm.check_conformance(Config(), "q", "a", self.DEADLINE_DIFF)
+                read = source_conformance(Config(), "q", "a", self.DEADLINE_DIFF)
             self.assertEqual(read["verdict"], want, at)
             self.assertEqual(read["requirements"][0].get("note", ""), note, at)
 
@@ -513,7 +548,7 @@ class FinishTests(CanvasCase):
             reply = {"status": "complete", "requirements": [{"needs": needs, "kind": kind, "at": at, "found": "honored"}], "why": "w"}
             with patch.object(llm.Client, "complete_json",
                               lambda self, purpose, *a, **k: reply if purpose == "conformance" else ({"status": "complete", "conditions": []} if purpose == "conditions" else {"status": "complete", "checks": []})):
-                read = llm.check_conformance(Config(), "q", "a", diff)
+                read = source_conformance(Config(), "q", needs, diff)
             self.assertEqual(read["verdict"], want, (needs, at))
             self.assertNotIn("note", read["requirements"][0]) if want == "follows" else None
 
@@ -532,7 +567,11 @@ class FinishTests(CanvasCase):
         broke = {"status": "complete", "checks": [
             {"n": 1, "counterexample": "sleep() with a zero backoff after the budget ran out returns at the early "
                                        "return and never reaches _sleep_within_deadline, so the next attempt goes ahead",
-             "at": "if backoff <= 0:", "not_shown": "the connection pool loop that calls increment() and sleep()"},
+             "at": "if backoff <= 0:", "not_shown": "the connection pool loop that calls increment() and sleep()",
+             "allegation": {"kind": "behavioral", "authorized": "when time left is zero or negative, no further retry is permitted",
+                 "input": "sleep() with a zero backoff after the budget ran out",
+                 "sequence": ["Enter sleep with backoff 0.", "Take the early return before the deadline check."],
+                 "expected": "Refuse the further retry.", "observed": "sleep returns without checking the exhausted deadline."}},
             {"n": 2, "counterexample": "", "at": "", "not_shown": ""}]}
         prompts = {}
 
@@ -542,7 +581,7 @@ class FinishTests(CanvasCase):
             prompts[purpose] = (system, prompt)
             return first if purpose == "conformance" else ({"status": "complete", "conditions": []} if purpose == "conditions" else broke)
         with patch.object(llm.Client, "complete_json", complete_json):
-            read = llm.check_conformance(Config(), "When the budget is spent, how does that surface?",
+            read = source_conformance(Config(), "When the budget is spent, how does that surface?",
                                          "Through MaxRetryError; when time left is zero or negative, no further "
                                          "retry is permitted.", self.DEADLINE_DIFF)
         self.assertEqual(read["verdict"], "unclear")
@@ -550,18 +589,23 @@ class FinishTests(CanvasCase):
         self.assertEqual(spent["state"], "unclear")
         self.assertEqual(spent["counterexample"]["at"], "if backoff <= 0:")
         self.assertTrue(spent["counterexample"]["located"])
-        self.assertEqual(path["state"], "ok")
+        self.assertEqual(path["state"], "unclear")  # The whole shared source is unresolved.
         self.assertNotIn("counterexample", path)
-        self.assertTrue(read["why"].startswith(f'Possible counterexample to "{need}": sleep() with a zero backoff'),
+        grounded_need = spent['needs']
+        self.assertTrue(read["why"].startswith(f'Possible counterexample to "{grounded_need}": sleep() with a zero backoff'),
                         read["why"])
         self.assertIn("(at `if backoff <= 0:`)", read["why"])
-        self.assertIn("The first reading: The diff raises MaxRetryError", read["why"])
-        self.assertEqual(read["unexamined"], ["the connection pool loop that calls increment() and sleep()"])
+        self.assertIn("The first reading:", read["why"])
+        self.assertIn("The diff raises MaxRetryError", read["why"])
+        self.assertIn("the connection pool loop that calls increment() and sleep()", read["unexamined"])
+        self.assertTrue(read["incomplete"])  # The retained legacy critic lacks source bindings.
         # The search is told to walk the paths around the quoted line, context lines included.
         system, prompt = prompts["counterexample"]
         self.assertIn("every early return", system)
         self.assertIn("Context lines count", system)
-        self.assertIn(f"1. {need} (must) at: if remaining is not None and duration >= remaining:", prompt)
+        self.assertIn("1. ORIGINAL SOURCE", prompt)
+        self.assertIn(need.lower(), prompt.lower())
+        self.assertIn("at: if remaining is not None and duration >= remaining:", prompt)
         # The path it missed is put in front of it: the guarded exits the
         # diff shows, unchanged lines included, and never a removed line.
         self.assertIn("EARLY EXITS THE DIFF SHOWS (added or unchanged):\n1. if backoff <= 0: -> return\n", prompt)
@@ -582,11 +626,10 @@ class FinishTests(CanvasCase):
             broke = {"status": "complete", "checks": [{"n": 1, "counterexample": "an SSLError goes to the other branch", "at": at}]}
             with patch.object(llm.Client, "complete_json",
                               lambda self, purpose, *a, **k: first if purpose == "conformance" else ({"status": "complete", "conditions": []} if purpose == "conditions" else broke)):
-                read = llm.check_conformance(Config(), "q", "a", diff)
+                read = source_conformance(Config(), "q", "a", diff)
             self.assertEqual(read["verdict"], "unclear", at)
-            self.assertFalse(read["requirements"][0]["counterexample"]["located"], at)
-            self.assertEqual(read["unexamined"], ["a possible counterexample whose line is not in the change's code: "
-                                                  "an SSLError goes to the other branch"])
+            self.assertNotIn("counterexample", read["requirements"][0])
+            self.assertTrue(any("grounded witness" in limitation for limitation in read["unexamined"]))
             self.assertIn("inconclusive", read["why"])
 
     def test_an_early_exit_judged_to_let_a_requirement_through_is_a_counterexample(self):
@@ -602,19 +645,23 @@ class FinishTests(CanvasCase):
             {"needs": need, "kind": "must", "found": "honored",
              "at": "if remaining is not None and duration >= remaining:"}], "why": "w"}
         judged = {"status": "complete", "checks": [{"n": 1, "counterexample": ""}, {"n": 2, "counterexample": ""}],
-                  "exits": [{"exit": 1, "breaks": 2, "how": "sleep() with backoff 0 after the budget ran out returns "
-                                                            "here and the next attempt goes ahead"},
+                  "exits": [{"exit": 1, "breaks": 1, "how": "sleep() with backoff 0 after the budget ran out returns "
+                                                            "here and the next attempt goes ahead",
+                             "allegation": {"kind": "behavioral", "authorized": need,
+                                 "input": "sleep() with backoff 0 after the budget ran out",
+                                 "sequence": ["Enter sleep.", "Take the early return before checking the deadline."],
+                                 "expected": "Refuse further retries.", "observed": "sleep returns without checking the spent budget."}},
                             {"exit": 9, "breaks": 1, "how": "no such exit"},
                             {"exit": 1, "breaks": 0, "how": ""}]}
         with patch.object(llm.Client, "complete_json",
                           lambda self, purpose, *a, **k: first if purpose == "conformance" else ({"status": "complete", "conditions": []} if purpose == "conditions" else judged)):
-            read = llm.check_conformance(Config(), "q", "a", self.DEADLINE_DIFF)
+            read = source_conformance(Config(), "q", need, self.DEADLINE_DIFF)
         self.assertEqual(read["verdict"], "unclear")
-        path, spent = read["requirements"]
+        spent, path = read["requirements"]
         self.assertNotIn("counterexample", path)
-        self.assertEqual(spent["counterexample"], {"what": "sleep() with backoff 0 after the budget ran out returns "
-                                                           "here and the next attempt goes ahead",
-                                                   "at": "if backoff <= 0:", "located": True})
+        self.assertTrue(spent["counterexample"]["located"])
+        self.assertEqual(spent["counterexample"]["at"], "if backoff <= 0:")
+        self.assertEqual(spent["counterexample"]["allegation"], judged["exits"][0]["allegation"])
         self.assertTrue(read["why"].startswith(f'Possible counterexample to "{need}"'), read["why"])
 
     def test_a_failed_counterexample_search_cannot_report_follows(self):
@@ -630,7 +677,7 @@ class FinishTests(CanvasCase):
                 raise llm.LLMError("timed out")
             return first
         with patch.object(llm.Client, "complete_json", complete_json):
-            read = llm.check_conformance(Config(), "q", "a", self.DEADLINE_DIFF)
+            read = source_conformance(Config(), "q", "a", self.DEADLINE_DIFF)
         self.assertEqual(read["verdict"], "unclear")
         self.assertIn("counterexample search did not complete", read["why"])
         self.assertEqual(read["unexamined"], ["no search for counterexamples: the model did not answer"])
@@ -639,9 +686,9 @@ class FinishTests(CanvasCase):
         from bridge import llm
         self._conformance_env()
         diff = self.DEADLINE_DIFF + "+# padding\n" * 3000
-        reply = {"status": "complete", "requirements": [{"needs": "n", "kind": "must", "found": "missing"}], "why": "w"}
+        reply = {"status": "complete", "requirements": [{"needs": "n", "kind": "must", "found": "unseen"}], "why": "w"}
         with patch.object(llm.Client, "complete_json", lambda self, *a, **k: reply):
-            read = llm.check_conformance(Config(), "q", "a", diff)
+            read = source_conformance(Config(), "q", "a", diff)
         self.assertEqual(read["unexamined"], [f"the diff past its first {llm.DIFF_READ} characters ({len(diff)} given)"])
 
     def test_the_finish_names_counterexamples_and_calls_the_reading_a_model_reading(self):

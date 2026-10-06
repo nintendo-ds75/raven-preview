@@ -75,6 +75,66 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await delayed.waitForSelector('.task-summary');
     assert.equal(await delayed.locator('#note-form').count(), 1);
     await delayed.close();
+    // Render historical-review API fixtures in a real DOM. Only the read
+    // response is replaced; no saved task, proof, or review is changed.
+    const reviewPage = await context.newPage();
+    const contractNotice = 'This saved reading uses an earlier reviewer contract. Read-only access does not rerun it; finish explicitly with the same complete diff for a current reading.';
+    let reviewMetadata = {contract_current:false, contract_notice:contractNotice};
+    let reviewStatus = 'done';
+    const reviewWrites = [];
+    reviewPage.on('request', request => {
+      if (!['GET','HEAD'].includes(request.method())) reviewWrites.push(`${request.method()} ${request.url()}`);
+    });
+    reviewPage.on('pageerror', error => errors.push(error.message));
+    reviewPage.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+    await reviewPage.route('**/api/tasks/*/tree', async route => {
+      const response = await route.fetch();
+      const tree = await response.json();
+      tree.review = {id:'browser-historical-reading', status:reviewStatus, contract_version:'older-contract',
+        follows:[{node_id:tree.nodes[0].node_id, verdict:'follows', why:'The saved historical verdict.', requirements:[]}],
+        ...reviewMetadata};
+      await route.fulfill({response, json:tree});
+    });
+    await reviewPage.goto(taskUrl);
+    await reviewPage.waitForSelector('.task-summary');
+    const contract = reviewPage.locator('.task-review-contract-notice');
+    assert.equal(await contract.isVisible(), true);
+    assert.equal(await contract.textContent(), `Historical review: ${contractNotice}`);
+    assert.equal(await contract.evaluate(el => el.closest('details')), null);
+    assert.equal(await reviewPage.locator('.task-summary h2').textContent(), await page.locator('.task-summary h2').textContent());
+    await reviewPage.getByRole('button', {name:'Code review',exact:true}).click();
+    assert.equal(await contract.isVisible(), true);
+    assert.equal(await reviewPage.locator('details').filter({has:reviewPage.getByText('Full review record', {exact:true})}).evaluate(el => el.open), false);
+    assert.equal(await reviewPage.locator('.task-review-item .pill').textContent(), 'follows');
+    assert.match(await reviewPage.locator('.task-review-item').textContent(), /The saved historical verdict/);
+    await reviewPage.screenshot({path:path.join(artifacts,'task-legacy-review.png'),fullPage:true});
+    // A current flag or absent flag must not infer a legacy notice, even
+    // if a version string or leftover notice is present in the fixture.
+    for (const metadata of [{contract_current:true,contract_notice:contractNotice}, {}]) {
+      reviewMetadata = metadata;
+      await reviewPage.reload();
+      await reviewPage.waitForSelector('.task-summary');
+      assert.equal(await contract.count(), 0);
+    }
+    const untrustedNotice = '<img data-contract-injection src=x onerror="window.contractNoticeExecuted=true"> & \'saved\'';
+    reviewMetadata = {contract_current:false,contract_notice:untrustedNotice};
+    await reviewPage.reload();
+    await contract.waitFor();
+    assert.equal(await contract.textContent(), `Historical review: ${untrustedNotice}`);
+    assert.equal(await reviewPage.locator('[data-contract-injection]').count(), 0);
+    assert.equal(await reviewPage.evaluate(() => Boolean(window.contractNoticeExecuted)), false);
+    reviewStatus = 'stale';
+    reviewMetadata = {contract_current:false,contract_notice:contractNotice};
+    await reviewPage.reload();
+    await contract.waitFor();
+    assert.equal(await reviewPage.locator('.task-summary h2').textContent(), 'Review needed');
+    assert.match(await reviewPage.locator('.task-summary').textContent(), /An answer changed after the code review\. The agent must submit its current diff again\./);
+    await reviewPage.setViewportSize({width:390,height:844});
+    assert.equal(await contract.isVisible(), true);
+    assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await reviewPage.screenshot({path:path.join(artifacts,'task-legacy-stale-mobile.png'),fullPage:true});
+    assert.deepEqual(reviewWrites, [], 'Viewing contract notices must remain read-only');
+    await reviewPage.close();
     await page.getByRole('button', {name:'Decisions (2)',exact:true}).click();
     assert.equal(await page.locator('#app .tree-node').count(), 2);
     assert.match(await page.locator('#app .tree-node').nth(1).textContent(), /Level 1 · added by a person/);
