@@ -105,6 +105,19 @@ def check_revision(data, row):
         raise Invalid("This decision changed while you were reviewing it. Reopen it before acting on it.")
 
 
+def check_not_abandoned(db, run_id, decision=None):
+    """Validate terminal withdrawal on the same connection as the write.
+
+    Completed work may legitimately receive a correction; abandoned work
+    cannot be revived by a late form, agent retry, or background result.
+    """
+    run = db.execute("SELECT status FROM runs WHERE id=?", (run_id,)).fetchone()
+    if run is None:
+        raise Invalid("Run not found")
+    if run["status"] == "abandoned" or (decision is not None and decision["status"] == "withdrawn"):
+        raise Invalid("This task was abandoned and its questions withdrawn; start a new task")
+
+
 def ownership_rows(db, repo="", limit=200):
     """The live ownership rows (no valid_to), strongest first within each
     path; one repository when named, and all rows when limit is 0."""
@@ -478,8 +491,7 @@ class Store:
             self.graph.expire_drafts()
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            if not db.execute("SELECT 1 FROM runs WHERE id=?", (run_id,)).fetchone():
-                raise Invalid("Run not found")
+            check_not_abandoned(db, run_id)
             if db.execute("SELECT 1 FROM executions WHERE run_id=?", (run_id,)).fetchone():
                 raise Invalid("Managed run status comes from the execution provider")
             if status == "completed":
@@ -538,7 +550,7 @@ class Store:
             if _db is None:
                 db.execute("BEGIN IMMEDIATE")
             run = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
-            if not run or run["status"] == "completed":
+            if not run or run["status"] in ("completed", "abandoned"):
                 raise Invalid("An active run is required")
             owner_id, reason = data.get("owner_id") or None, "No matching owner. Assign someone in the inbox."
             if owner_id:
@@ -901,6 +913,8 @@ class Store:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             decision = db.execute("SELECT d.*,o.name AS owner_name FROM decisions d LEFT JOIN owners o ON o.id=d.owner_id WHERE d.id=?", (decision_id,)).fetchone()
+            if decision is not None:
+                check_not_abandoned(db, decision["run_id"], decision)
             if not decision or not decision["owner_id"]:
                 raise Invalid("Assign an owner before recording an answer")
             basis = authz.check(self.graph, actor, dict(decision),

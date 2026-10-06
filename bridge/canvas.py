@@ -252,11 +252,13 @@ def start_task(store, cfg, data) -> dict:
         # the ticket's release=library-next on the next, and a signed
         # answer could not carry over.
         graph = store.graph
-        row = graph.db.execute("SELECT facts FROM runs WHERE id=?", (task_id,)).fetchone()
-        current = _json_dict(row["facts"]) if row is not None else {}
-        merged = {**current, **facts}
-        if merged != current:
-            with graph.transaction():
+        from .store import check_not_abandoned
+        with graph.transaction() as db:
+            check_not_abandoned(db, task_id)
+            row = db.execute("SELECT facts FROM runs WHERE id=?", (task_id,)).fetchone()
+            current = _json_dict(row["facts"]) if row is not None else {}
+            merged = {**current, **facts}
+            if merged != current:
                 graph.db.execute("UPDATE runs SET facts=? WHERE id=?", (json.dumps(merged), task_id))
         result["facts"] = merged
     return result
@@ -278,6 +280,8 @@ def _start_task(store, cfg, data) -> dict:
     graph = store.graph
     if client_key:
         row = graph.db.execute("SELECT * FROM runs WHERE client_key=?", (client_key,)).fetchone()
+        if row is not None and row['status'] == 'abandoned':
+            return _task_as_started(row)
         if row is not None and _same_task(row, title, goal) and row["repo"] != repo \
                 and _corrects_the_repo(graph, row, repo):
             # Same task, properly named at last: take the correction and
@@ -1069,7 +1073,8 @@ def add_node(store, cfg, data) -> dict:
     if client_ref:
         graph.settle_node_ref(task_id, client_ref, did)
     if background:
-        _start_background(('node', did), _model_node_pass, store, effective, did, ctx, paths, hints, requester, owner_id, context)
+        _start_background(('node', did), _model_node_pass, store, effective, did, ctx, paths, hints, requester,
+                          owner_id, context, view['updated_at'])
     resolve_scope(graph, task_id, scope_request_key)
     return view
 
@@ -1275,14 +1280,15 @@ def settle_node(store, data) -> dict:
     answer = field(data, "answer")
     rationale = field(data, "rationale", "settled by the agent")
     graph = store.graph
-    _task(store, task_id)
-    d = _node(store, node_id, task_id, "node_id")
-    if d.status in ("approved", "duplicate", "adopted", "suggested"):
-        raise Invalid(f"a node that is {d.status} cannot be settled by the agent")
-    if d.signoff in ("signed", "rule"):
-        raise Invalid("a node a person signed is not re-settled by the agent; ask for a correction in the inbox")
-    changed = bool(d.answer and d.answer.strip() != answer.strip())
+    from .store import check_not_abandoned
     with graph.transaction() as db:
+        check_not_abandoned(db, task_id)
+        d = _node(store, node_id, task_id, "node_id")
+        if d.status in ("approved", "duplicate", "adopted", "suggested", "withdrawn"):
+            raise Invalid(f"a node that is {d.status} cannot be settled by the agent")
+        if d.signoff in ("signed", "rule"):
+            raise Invalid("a node a person signed is not re-settled by the agent; ask for a correction in the inbox")
+        changed = bool(d.answer and d.answer.strip() != answer.strip())
         graph.update_decision(d.id, status="resolved", source="agent", answer=answer, rationale=rationale,
                               kind="agent", evidence="settled by the agent: " + _marked(
                                   rationale, 1200, "the rationale on the node has the rest"),
@@ -2341,7 +2347,8 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
 # The events people leave on a node; everything else on the log is the
 # agent's own writes or Raven's bookkeeping.
 PEOPLE_EVENTS = ("owner_approved", "answer_corrected", "signoff", "signature", "owner_changed", "prediction_withdrawn",
-                 "dependent_flagged", "twin_closed", "followup_added", "reply_received", "rule_made", "rule_ended")
+                 "dependent_flagged", "twin_closed", "followup_added", "reply_received", "rule_made", "rule_ended",
+                 "question_reframed")
 
 
 def note_agent_read(store, task_id: str, observed_at: str) -> None:
@@ -2398,6 +2405,14 @@ def _change(n: dict) -> dict:
 # ---------------- what people add ----------------
 
 def add_followups(store, cfg, decision_id: str, data, actor=None) -> dict:
+    from .store import check_not_abandoned
+    with store.graph.transaction() as db:
+        decision = _node(store, decision_id)
+        check_not_abandoned(db, decision.task_id, {"status": decision.status})
+        return _add_followups(store, cfg, decision_id, data, actor=actor)
+
+
+def _add_followups(store, cfg, decision_id: str, data, actor=None) -> dict:
     """A person answering a node also writes the questions the answer
     raises: the right level n+1. They land as suggested children of the
     node, for the agent to adopt. Any person may; an agent may not."""
@@ -2457,12 +2472,12 @@ def sign_off(store, decision_id: str, data, actor=None) -> dict:
     The actor must be the node's owner, a required signer, verified for
     its scope, or an admin overriding."""
     from . import authz
-    from .store import answer_hash, check_revision
+    from .store import answer_hash, check_not_abandoned, check_revision
     graph = store.graph
     d = _node(store, decision_id)
     by = (actor.name if actor is not None and actor.id else field(data, "by", limit=100))[:100]
     answer = _text(data, "answer")
-    if d.status in ("duplicate", "suggested", "adopted"):
+    if d.status in ("duplicate", "suggested", "adopted", "withdrawn"):
         raise Invalid(f"a node that is {d.status} is not signed off; "
                       + ("its twin carries the answer" if d.status == "duplicate" else "the agent adopts it first"))
     basis = authz.check(graph, actor, store.get_decision(d.id), "correct" if answer else "sign")
@@ -2472,8 +2487,11 @@ def sign_off(store, decision_id: str, data, actor=None) -> dict:
         # earlier signature, which covered other text. The signer owns
         # the corrected answer; owner_id_for resolves the name to its
         # inbox owner row.
-        check_revision(data, graph.db.execute("SELECT updated_at FROM decisions WHERE id=?", (d.id,)).fetchone())
-        graph.update_decision(d.id, owner=by)
+        with graph.transaction() as db:
+            current = db.execute("SELECT run_id, status, updated_at FROM decisions WHERE id=?", (d.id,)).fetchone()
+            check_not_abandoned(db, current["run_id"], current)
+            check_revision(data, current)
+            graph.update_decision(d.id, owner=by)
         store.answer(d.id, {"answer": answer, "rationale": _text(data, "rationale") or "corrected at sign-off",
                             "applicability": data.get("applicability") or {},
                             "signed_by": by, "expected_updated_at": graph.db.execute(
@@ -2492,8 +2510,9 @@ def sign_off(store, decision_id: str, data, actor=None) -> dict:
     # serialize and neither counts a signature for other text.
     stamp = now()
     with graph.transaction():
-        current = graph.db.execute("SELECT updated_at, answer, required_signers, signatures FROM decisions WHERE id=?",
+        current = graph.db.execute("SELECT run_id, status, updated_at, answer, required_signers, signatures FROM decisions WHERE id=?",
                                    (d.id,)).fetchone()
+        check_not_abandoned(graph.db, current["run_id"], current)
         check_revision(data, current)
         if not (current["answer"] or "").strip():
             raise Invalid("There is no answer on this node to sign; answer it or correct it")
@@ -2562,9 +2581,10 @@ def _task_as_started(row):
 
 
 def people_acted(store, task_id):
-    marks = ','.join('?' for _ in PEOPLE_EVENTS)
+    participation = PEOPLE_EVENTS + ('task_note', 'interview_started')
+    marks = ','.join('?' for _ in participation)
     return bool(store.graph.db.execute(f"SELECT 1 FROM events WHERE run_id=? AND kind IN ({marks}) LIMIT 1",
-                                      (task_id, *PEOPLE_EVENTS)).fetchone())
+                                      (task_id, *participation)).fetchone())
 
 
 def abandon_task(store, task_id, reason):
@@ -2685,7 +2705,7 @@ def _model_triage_pass(store, cfg, task_id, pending):
                 graph.append_event('task_triaged', {'task_id': task_id, 'verdict': verdict, 'why': why})
 
 
-def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, original_context):
+def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, original_context, scheduled_revision):
     from .ladder import ask
     from .llm import compose_brief
     graph = store.graph
@@ -2694,6 +2714,16 @@ def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, or
     scratch_ids = []
     graph._local.model_exclude = did
     try:
+        # The revision is captured when inference is scheduled. A person
+        # may answer before this thread even starts, so its startup snapshot
+        # must never become permission to overwrite that human action.
+        marks = ','.join('?' for _ in PEOPLE_EVENTS)
+        acted_before_start = graph.db.execute(
+            f"SELECT 1 FROM events WHERE decision_id=? AND kind IN ({marks}) LIMIT 1",
+            (did, *PEOPLE_EVENTS)).fetchone()
+        if (live['updated_at'] != scheduled_revision or not live.get('model_pending')
+                or run['status'] == 'abandoned' or live['status'] == 'withdrawn' or acted_before_start):
+            return
         result = ask(store, cfg, run['id'], live['question'], context=ctx or 'a node on the canvas',
                      path=paths[0] if paths else 'unknown', category=live.get('category') or '', owner_id=owner_id or None,
                      requester=requester, hints=hints, facts=_json_dict(live.get('facts')),
@@ -2719,7 +2749,7 @@ def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, or
                 graph.append_event('brief_withheld', {'task_id': run['id'], 'decision_id': did, 'why': withheld[0]})
         with graph.transaction():
             current = dict(graph.db.execute('SELECT * FROM decisions WHERE id=?', (did,)).fetchone())
-            if current['updated_at'] == live['updated_at'] and current['model_pending'] and _task(store, run['id'])['status'] != 'abandoned':
+            if current['updated_at'] == scheduled_revision and current['model_pending'] and _task(store, run['id'])['status'] != 'abandoned':
                 fields = ['status','answer','rationale','source','source_id','evidence','kind','prediction','owner_id',
                           'owner_evidence','answered_by','signoff','signed_by','signed_hash','signed_revision','signatures','brief','superseded_by']
                 fields = [f for f in fields if f in outcome]
@@ -2764,7 +2794,9 @@ def _route_signer(graph, run, question, ctx, paths, requester, hints, category, 
     ranked = rank_for_decision(graph, repo, question, paths, context=ctx, requester=requester, hints=hints,
                                category=category, facts=facts)
     source = graph.get_decision(source_id) if source_id else None
-    source_signer = (source.answered_by or source.signed_by) if source and source.authorized else ''
+    temporary = source and graph.db.execute(
+        "SELECT 1 FROM events WHERE decision_id=? AND kind='route_learning_optout' LIMIT 1", (source.id,)).fetchone()
+    source_signer = (source.answered_by or source.signed_by) if source and source.authorized and not temporary else ''
     from .graph import parse_facts, applicability_status
     from .ladder import _scope_difference
     scope_row = graph.db.execute('SELECT facts FROM decisions WHERE id=?', (source.id,)).fetchone() if source else None

@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 from .llm import drop_absence
 from .store import Invalid, answer_hash
 
-KINDS = ("ask", "signoff", "review", "reassigned", "answered", "overdue")
+KINDS = ("ask", "signoff", "review", "reassigned", "answered", "overdue", "escalation")
 BACKOFF = (30, 120, 600, 3600, 21600)
 MAX_ATTEMPTS = 20
 
@@ -235,10 +235,11 @@ class Delivery:
             raise ValueError(f"kind must be one of {', '.join(KINDS)}")
         graph = self.store.graph
         row = graph.db.execute(
-            "SELECT d.*, o.name AS owner_name, r.title AS run_title, r.requester, r.agent AS run_agent, r.repo FROM decisions d "
+            "SELECT d.*, o.name AS owner_name, r.title AS run_title, r.requester, r.agent AS run_agent, r.repo, "
+            "r.status AS run_status FROM decisions d "
             "LEFT JOIN owners o ON o.id = d.owner_id JOIN runs r ON r.id = d.run_id WHERE d.id=?",
             (decision_id,)).fetchone()
-        if row is None:
+        if row is None or row["run_status"] == "abandoned" or row["status"] == "withdrawn":
             return None
         person_name = to or (row["requester"] if kind == "answered" else row["owner_name"]) or ""
         if not person_name and kind not in ("ask", "signoff", "review"):
@@ -330,6 +331,31 @@ class Delivery:
                         if self.enqueue(r["id"], "overdue", to=coordinator["name"],
                                         note=f"open for {age}, waiting on {r['owner_name']}; you are the coordinator") is not None:
                             queued += 1
+                    elif not graph.db.execute("SELECT 1 FROM events WHERE decision_id=? AND kind='routing_escalated'",
+                                              (r['id'],)).fetchone():
+                        # Ask one reachable alternate for coordination, without
+                        # reassigning the decision or granting them authority.
+                        decision = self.store.get_decision(r['id'])
+                        from .routing import rank_for_decision, contact_for
+                        ranked = rank_for_decision(graph, r['repo'], decision['question'],
+                            json.loads(decision.get('scope_paths') or '[]') or [decision.get('path') or ''],
+                            context=decision.get('context') or '', category=decision.get('category') or '',
+                            facts=json.loads(decision.get('facts') or '{}'))
+                        unavailable = set(json.loads(graph.get_setting('slack_unavailable') or '[]'))
+                        for name, _evidence, _score in ranked:
+                            alternate = contact_for(graph, name)
+                            if (name == r['owner_name'] or not alternate or not alternate.get('active')
+                                    or alternate.get('role') == 'viewer' or not alternate.get('slack_id')
+                                    or alternate['slack_id'] in unavailable):
+                                continue
+                            notice = self.enqueue(r['id'], 'escalation', to=name,
+                                note=f"Open for {age}; {r['owner_name']} remains the decision owner. "
+                                     'Can you help identify an available responsible person or add context?')
+                            if notice:
+                                queued += 1
+                                graph.append_event('routing_escalated', {'task_id': decision['run_id'],
+                                    'decision_id': r['id'], 'to': name, 'owner_unchanged': r['owner_name']})
+                            break
         return queued
 
     def list(self, state: str = "", limit: int = 200) -> list[dict]:
@@ -590,7 +616,7 @@ class Delivery:
             if shown != answer_hash(decision.get("answer") or "") and not theirs:
                 return (f"the answer changed since this message; it now reads: "
                         f"{_clip(decision.get('answer') or '', 400, 'the inbox has the rest')}")
-        elif kind in ("ask", "reassigned", "overdue"):
+        elif kind in ("ask", "reassigned", "overdue", "escalation"):
             # What this message showed is the question, so a reply is
             # stale when the question changed, or when somebody else
             # settled it. A node Raven resolved from the record and
@@ -742,6 +768,10 @@ class Delivery:
         text = (text or "").strip()
         lowered = text.lower()
         reply = ""
+        if note.get('kind') == 'escalation' and re.match(r'^context\s*:', text, re.I):
+            from .canvas import add_note
+            add_note(self.store, decision['run_id'], {'text': re.sub(r'^context\s*:\s*', '', text, flags=re.I)}, actor=actor)
+            return 'Context added for the coding agent. The decision owner and approval requirements have not changed.'
         from .slack_chat import respond
         try:
             conversational = respond(self, note, decision, person, text, actor, action_token)
@@ -818,6 +848,12 @@ class Delivery:
                 if scope:
                     refer.update(scope)
                 reply = self.store.refer(decision["id"], refer, actor=actor)["notice"]
+            elif re.match(r'^reframe\s*:', text, re.I):
+                from . import reframe
+                question, rationale = _split_rationale(re.sub(r'^reframe\s*:\s*', '', text, flags=re.I))
+                reply = reframe.apply(self.store, decision['id'], {'question': question,
+                    'rationale': rationale or 'The person corrected the question in Slack',
+                    'expected_updated_at': decision['updated_at']}, actor=actor)['notice']
             elif re.match(r"^(?:make (?:this |it )?a )?rule\b", lowered):
                 # `rule`, `rule if enterprise plan`, `rule until 2027-01-01`:
                 # the signed answer becomes reusable on those terms.
@@ -1055,12 +1091,14 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
         "reassigned": f"*Handed to you, {person_name}.*",
         "answered": f"*Your question was answered, {person_name}.*",
         "overdue": f"*Still waiting on you, {person_name}: an agent's task is blocked on this decision.*",
+        "escalation": f"*Can you help unblock this question, {person_name}?*",
     }
     lines = [heads.get(kind, heads["ask"])]
     if not person_name:
         lines = ["*Who can help with this decision?*",
                  "Raven has not identified a reachable contact. Reply `I'll take this` or `ask @person` "
                  "using a Slack mention. This routes the question; it does not approve anything."]
+    lines.append("_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._")
     if note:
         lines.append(f"_{note}_")
     lines.append(f"*{question}*")
@@ -1138,7 +1176,10 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
         lines.append(f"What Raven found: {found}")
     if options:
         lines.append("Options: " + " | ".join(str(o) for o in options))
-    if not _conversational() and kind in ('ask', 'reassigned', 'overdue', 'signoff', 'review') and person_name:
+    if kind == 'escalation':
+        lines.append('This is a coordination request, not an ownership transfer. Reply `context: <who is available or what helps>` '
+                     'to inform the agent. Only someone with existing authority may approve or reassign this decision.')
+    elif not _conversational() and kind in ('ask', 'reassigned', 'overdue', 'signoff', 'review') and person_name:
         lines.append("Reply in this thread: `answer: <the decision> because <why>` to answer or correct it, or `not me @person` to hand it on. "
                      "Reply `sign off` to confirm the complete answer. Natural-language conversation needs an inference backend."
                      + (" After answering, `rule if <words> until <date>` makes the answer reusable for matching questions." if rule_hint else ""))
@@ -1308,7 +1349,10 @@ def _handon_scope(rest: str) -> dict:
     topic, optionally "decisions"), or `just this one` for no route.
     Empty when it names none, and Raven learns its default."""
     from .scopes import CATEGORIES
+    from .slack_chat import temporary_handoff
     words = (rest or "").lower()
+    if temporary_handoff(words):
+        return {"scope_kind": "none"}
     if re.search(r"\b(?:just|only) (?:this|for this)\b|\bthis (?:one|question) only\b|\bfor this (?:one|question)\b",
                  words):
         return {"scope_kind": "none"}

@@ -1490,14 +1490,20 @@ class Graph:
 
     def teams(self) -> list[dict]:
         def build(rows):
-            out = []
+            out = {}
             for r in rows:
                 d = dict(r)
-                d["members"] = [m["person_id"] for m in self.db.execute(
-                    "SELECT person_id FROM team_members WHERE team_id=?", (d["id"],))]
-                out.append(d)
-            return out
-        return self.memo("", "teams", (), lambda: self.db.execute("SELECT * FROM teams ORDER BY name").fetchall(), build)
+                member = d.pop("member_id")
+                team = out.setdefault(d["id"], {**d, "members": []})
+                if member:
+                    team["members"].append(member)
+            return list(out.values())
+        # The cache fingerprint must include membership, not just team
+        # metadata: another worker can remove a member without changing the
+        # team row, and routing must immediately stop granting that standing.
+        return self.memo("", "teams", (), lambda: self.db.execute(
+            "SELECT t.*, m.person_id AS member_id FROM teams t LEFT JOIN team_members m ON m.team_id=t.id "
+            "ORDER BY t.name,t.id,m.person_id").fetchall(), build)
 
     def team_members_by_handle(self, handle: str) -> list[dict]:
         """The people of a team CODEOWNERS names (@acme/payments or
@@ -1569,9 +1575,15 @@ class Graph:
                     continue
                 out.append(d)
             return out
-        return self.memo(repo or "", "authority", (), lambda: self.db.execute(
+        rows = self.memo(repo or "", "authority", (), lambda: self.db.execute(
             "SELECT * FROM authority WHERE ended_at='' AND (repo=? OR repo='') "
-            "AND (effective_to='' OR effective_to > ?) ORDER BY created_at", (repo or "", now_iso())).fetchall(), build)
+            "ORDER BY created_at", (repo or "",)).fetchall(), lambda rows: [dict(r) for r in rows])
+        # Expiry advances without a database write. People and teams also
+        # change independently of these authority rows, so resolve them live
+        # instead of retaining derived identities in the authority memo.
+        stamp = now_iso()
+        live = [r for r in rows if not r["effective_to"] or r["effective_to"] > stamp]
+        return build(live) if live else []
 
     def deciders(self, repo: str = "") -> list[dict]:
         """The authority rows that would in fact put a question to

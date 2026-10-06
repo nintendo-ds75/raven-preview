@@ -43,6 +43,12 @@ def _decisions(store, task_id):
             "actor_id", "actor_name", "actor_basis", "signed_revision", "signed_hash", "answered_at")}
         record["source_decision_id"] = source_id
         record["source_revision"] = source.get("updated_at") or ""
+        record['applicability'] = source.get('applicability') or ''
+        record['authority_evidence'] = node.get('owner_evidence') or ''
+        try:
+            record['signature_records'] = json.loads(source.get('signatures') or '[]')
+        except (TypeError, ValueError):
+            record['signature_records'] = []
         record["citations"] = [{"kind": "decision", "id": source_id}]
         record["citations"].extend({"kind": link.get("kind"), "id": link.get("id"),
                                     "detail": link.get("detail", "")} for link in node.get("related", []))
@@ -154,3 +160,32 @@ def markdown(bundle):
     lines.extend(["", "## Host-reported checks", quote(payload["checks"]["text"]), "",
                   "## Trust limits", *["- " + text for text in payload["limitations"]]])
     return "\n".join(lines) + "\n"
+
+
+def main():
+    """Verify the bundle bytes and optionally compare the actual review diff."""
+    import argparse
+    from pathlib import Path
+    parser = argparse.ArgumentParser(description='Check Raven change-proof integrity; does not verify authenticity')
+    parser.add_argument('bundle', help='Saved proof JSON or bridge_export_proof result JSON')
+    parser.add_argument('--diff', help='Actual complete patch to compare with the proof')
+    args = parser.parse_args()
+    try:
+        saved = json.loads(Path(args.bundle).read_text())
+        bundle = saved.get('bundle', saved) if isinstance(saved, dict) else saved
+        result = verify(bundle)
+        if args.diff:
+            digest = hashlib.sha256(Path(args.diff).read_bytes()).hexdigest()
+            expected = ((bundle or {}).get('payload') or {}).get('change', {}).get('sha256')
+            result['diff_matches'] = digest == expected
+            if not result['diff_matches']:
+                result['valid'] = False
+                result['errors'].append('The actual patch does not match the recorded diff')
+    except (OSError, ValueError, TypeError) as error:
+        result = {'valid': False, 'errors': [str(error)], 'authenticity_verified': False}
+    print(json.dumps(result, indent=2))
+    return 0 if result['valid'] else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

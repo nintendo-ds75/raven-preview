@@ -300,7 +300,10 @@ class OutboxTests(DeliveryCase):
         # on the page instead. Measured on prometheus/prometheus: the link
         # was the second-to-last line, under options said twice.
         lines = text.split("\n")
-        self.assertIn("https://bridge.acme.test/brief#rvn_", lines[3])
+        question_line = lines.index(f"*{n['question']}*")
+        task_line = next(i for i, line in enumerate(lines) if line.startswith("Task: "))
+        self.assertEqual(task_line, question_line + 1)
+        self.assertIn("https://bridge.acme.test/brief#rvn_", lines[task_line + 1])
         self.assertEqual(text.count("Exclude the load test"), 1)
         self.assertNotIn("Why you:", text)
         self.assertNotIn("#inbox", text)

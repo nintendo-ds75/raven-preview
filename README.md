@@ -45,6 +45,11 @@ The developer stays in Claude Code, Codex, Cursor, or another MCP client. People
 
 People can add context or required follow-up questions. Stakeholders can have read-only viewer accounts. A copied task link shares the location; it does not grant access to a shared instance.
 
+At completion, `bridge_export_proof` returns a portable review bundle containing
+the exact submitted diff hash, decision revisions, recorded signers, scope,
+citations and host-reported checks. Changed decisions mark the saved proof stale.
+See [change proof and its trust limits](docs/change-proof.md).
+
 ### The task page in a Slack message
 
 People answer in the Slack thread, without a Raven account. A thread holds the question, though, not the task around it, so each Slack direct message also carries that person's own link to the task page. It opens without signing in and shows the decision waiting on them, who requested the task and what they asked for, the other decisions and who made them, who was contacted, and what happened. They can answer, sign, hand the decision on, or add context for the agent from there too. Raven's usual permission check still decides whether their answer counts. A link opens only its own task, expires after 14 days, and acts as a member, never as an administrator. Anyone holding it can act as that person, so the page asks people not to forward it. Someone who wants the web inbox can create an account from the page in one step.
@@ -123,6 +128,13 @@ Raven proposes candidate decisions from the task, earlier decisions, and ownersh
 
 The task view records what reaches Raven. The finish gate governs Raven's protocol, not your deployment system. Its model review compares a submitted diff with signed decisions; it does not prove the implementation correct or replace tests and code review. This preview is intended for a supervised pilot. See [what we have tested](docs/verification.md).
 
-Slack is the normal notification and reply channel. Teams is outbound only. GitHub sync is built in. Jira records can be ingested through `bridge_import_record` from your host agent’s connectors, or through `POST /api/records`. The customer installs Raven as an internal Slack bot. Public-channel search uses Slack’s Real-time Search API during user interactions; results are transient and are never copied into Raven’s memory. Raven remembers the decisions people explicitly give it and their referrals. It does not backfill Slack or include a Jira polling connector. The voice conversation shown in the demo is a product direction, not a feature shipped in this preview.
+Slack is the normal notification and reply channel. Teams is outbound only. GitHub sync is built in. Jira records can be ingested through `bridge_import_record` from your host agent’s connectors, or through `POST /api/records`. The customer installs Raven as an internal Slack bot. Public-channel search uses Slack’s Real-time Search API during user interactions; results are transient and are never copied into Raven’s memory. Raven remembers the decisions people explicitly give it and their referrals. It does not backfill Slack or include a Jira polling connector. Browser voice interviews are described below; native Slack calls and telephone integration are not shipped.
+
+Browser voice interviews are available from a decision: spoken or typed answers,
+grounded adaptive follow-ups when inference is configured, an editable readback,
+and explicit authenticated confirmation. Without inference, clearly labeled
+guided prompts remain available. Browser speech support and permission are
+required for microphone input. This is not a native Slack huddle or telephone
+integration; see [voice interview setup and limitations](docs/voice-interviews.md).
 
 The product is named Raven. The `bridge` Python package, `bridge_*` MCP tools, and `BRIDGE_*` settings retain their existing names for compatibility.

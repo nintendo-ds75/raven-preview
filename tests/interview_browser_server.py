@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import fixtures  # noqa: F401
 os.environ.update({'BRIDGE_MODEL_API': 'none', 'BRIDGE_SEMANTIC': '0', 'BRIDGE_LIVE': '0'})
 from bridge.auth import Auth
-from bridge import canvas
+from bridge import canvas, briefing
 from bridge.config import Config
 from bridge.server import make_server
 from bridge.store import Store
@@ -23,5 +23,5 @@ node = canvas.add_node(store, Config(model_api='none'), {'task_id': task,
 auth = Auth(store, enabled=True)
 server = make_server(store, port=0, auth=auth)
 print(json.dumps({'url': f'http://127.0.0.1:{server.server_port}', 'cookie': auth.session_cookie(person).split(';')[0],
-                  'task': task, 'node': node}), flush=True)
+                  'task': task, 'node': node, 'link': briefing.mint(store.graph, person, task, node)}), flush=True)
 server.serve_forever()

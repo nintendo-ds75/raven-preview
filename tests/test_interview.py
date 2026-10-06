@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase, ready_server
-from bridge import canvas, interview
+from bridge import briefing, canvas, interview
 from bridge.auth import Auth
 from bridge.authz import Actor, Refused
 from bridge.config import Config
@@ -122,7 +122,7 @@ class InterviewTests(OfflineCase):
             with self.assertRaises(Invalid):
                 operation(self.store, 'another-task', row['id'], self.actor)
         self.assertEqual(interview.list_for_task(self.store, self.task, other_actor)['interviews'], [])
-        for kind in ('agent', 'operator', 'bootstrap', 'slack'):
+        for kind in ('agent', 'operator', 'bootstrap', 'slack', 'link'):
             with self.subTest(kind=kind), self.assertRaises(Refused):
                 self.create(actor=Actor(id=self.person, name='Ada Owner', kind=kind, role='admin', override=True))
         other_task = self.store.add_run({'title': 'Other task', 'repo': 'org/runtime'})['id']
@@ -160,6 +160,59 @@ class InterviewTests(OfflineCase):
             fresh = self.create(key=str(len(str(fields))))
             with self.subTest(fields=list(fields)), self.assertRaises(Invalid):
                 self.draft(fresh, **fields)
+
+    def test_resolved_task_link_has_narrow_person_task_and_decision_scope(self):
+        token = briefing.mint(self.store.graph, self.person, self.task, self.node)
+        link = briefing.resolve(self.store.graph, token)
+        actor = interview.actor_for_link(link)
+        row = self.create(actor=actor)
+        row = interview.update(self.store, self.task, row['id'], {'expected_version': row['version'],
+                'answer': 'Use five seconds.', 'rationale': 'Preserve compatibility.'}, actor)
+        other_node = canvas.add_node(self.store, Config(model_api='none'), {'task_id': self.task,
+            'question': 'Should retries use jitter?', 'owner_id': self.store.get_decision(self.node)['owner_id'],
+            'paths': ['src/client.py']})['node_id']
+        with self.assertRaises(Refused):
+            interview.create(self.store, self.task, {'decision_id': other_node, 'client_key': 'outside'}, actor)
+        other_task = self.store.add_run({'title': 'Other', 'repo': 'org/runtime'})['id']
+        with self.assertRaises(Refused):
+            interview.list_for_task(self.store, other_task, actor)
+        done = interview.confirm(self.store, self.task, row['id'], self.confirmation(row), actor)
+        self.assertEqual(done['confirmed_by'], self.person)
+        detail = json.loads(next(e['detail'] for e in self.store.get_decision(self.node)['events'] if e['kind'] == 'interview_confirmed'))
+        self.assertEqual(detail['actor_kind'], 'link')
+
+    def test_expired_or_revoked_link_stops_confirmation_and_inflight_model(self):
+        token = briefing.mint(self.store.graph, self.person, self.task, self.node)
+        link = briefing.resolve(self.store.graph, token)
+        actor = interview.actor_for_link(link)
+        row = self.draft(self.create())
+        self.store.graph.db.execute("UPDATE brief_links SET expires_at=1 WHERE id=?", (link.id,))
+        with self.assertRaises(Refused):
+            interview.confirm(self.store, self.task, row['id'], self.confirmation(row), actor)
+        token = briefing.mint(self.store.graph, self.person, self.task, self.node)
+        link = briefing.resolve(self.store.graph, token)
+        actor = interview.actor_for_link(link)
+        def revoke(*args, **kwargs):
+            self.store.graph.db.execute("UPDATE brief_links SET revoked_at='now' WHERE id=?", (link.id,))
+            return self.model_answer()
+        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
+             patch('bridge.llm.Client.complete_json', side_effect=revoke), self.assertRaises(Refused):
+            interview.advance(self.store, self.task, row['id'], {'expected_version': row['version']}, actor, Config())
+        self.assertEqual(interview.get(self.store, self.task, row['id'], self.actor)['guidance'], {})
+
+    def test_abandoned_task_or_withdrawn_decision_cannot_be_interviewed(self):
+        row = self.draft(self.create())
+        self.store.graph.db.execute("UPDATE runs SET status='abandoned' WHERE id=?", (self.task,))
+        for operation in (lambda: self.create(key='late'), lambda: self.draft(row), lambda: self.confirm(row),
+                          lambda: self.advance(row)):
+            with self.assertRaisesRegex(Invalid, 'abandoned'):
+                operation()
+        # A discarded private draft is still safely cancellable.
+        interview.update(self.store, self.task, row['id'], {'expected_version': row['version']}, self.actor, 'cancel')
+        self.store.graph.db.execute("UPDATE runs SET status='working' WHERE id=?", (self.task,))
+        self.store.graph.db.execute("UPDATE decisions SET status='withdrawn' WHERE id=?", (self.node,))
+        with self.assertRaisesRegex(Invalid, 'not available'):
+            self.create(key='withdrawn')
 
     def test_transaction_failure_rolls_back_interview_and_decision(self):
         row = self.draft(self.create())
@@ -254,17 +307,30 @@ class InterviewHTTPTests(InterviewTests):
         self.addCleanup(self.server.shutdown)
         self.base = f'http://127.0.0.1:{self.server.server_port}'
 
-    def request(self, path, data=None, token=None, cookie='', csrf=''):
+    def request(self, path, data=None, token=None, cookie='', csrf='', link=''):
         headers = {'Content-Type': 'application/json'}
         if token is not None: headers['Authorization'] = 'Bearer ' + token
         if cookie: headers['Cookie'] = cookie
         if csrf: headers['X-Bridge-CSRF'] = csrf
+        if link: headers['X-Raven-Link'] = link
         req = Request(self.base + path, data=json.dumps(data).encode() if data is not None else None, headers=headers)
         try:
             with urlopen(req) as result:
                 return result.status, json.loads(result.read())
         except HTTPError as error:
             return error.code, json.loads(error.read())
+
+    def test_task_link_http_interview_never_grants_a_workspace_session(self):
+        token = briefing.mint(self.store.graph, self.person, self.task, self.node)
+        path = '/api/brief/interview'
+        code, row = self.request(path, {'action': 'create', 'decision_id': self.node, 'client_key': 'link'}, link=token)
+        self.assertEqual(code, 200)
+        self.assertEqual(self.request('/api/state', link=token)[0], 401)
+        self.assertEqual(self.request(path, {'action': 'list', 'task_id': 'another-task'}, link=token)[0], 403)
+        other = briefing.mint(self.store.graph, self.other, self.task, self.node)
+        self.assertEqual(self.request(path, {'action': 'get', 'interview_id': row['id']}, link=other)[0], 400)
+        self.store.graph.db.execute("UPDATE brief_links SET revoked_at='now' WHERE person_id=?", (self.person,))
+        self.assertEqual(self.request(path, {'action': 'get', 'interview_id': row['id']}, link=token)[0], 401)
 
     def test_http_routes_enforce_auth_person_scope_and_csrf(self):
         path = f'/api/tasks/{self.task}/interviews'

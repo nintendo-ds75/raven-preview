@@ -214,6 +214,7 @@ function focusCard(f) {
     ${paths.length ? `<p class="brief-where">Touches ${paths.map(p => `<code>${esc(p)}</code>`).join(', ')}</p>` : ''}
     ${reasonBlock(f.why, f.node_id)}
     ${form}
+    ${!['read','handed'].includes(standing) && f.owner && (!data.viewer.interview_decision_id || data.viewer.interview_decision_id === f.node_id) ? `<div class="context-box"><strong>Prefer to talk it through?</strong><p class="context">An interview can use browser dictation and spoken readback. You review and confirm the exact decision. It stays on this personal task link.</p><button class="button small" data-action="interview-start" data-task="${esc(data.task.id)}" data-id="${esc(f.node_id)}">Start or resume interview</button></div>` : ''}
   </section>`;
 }
 
@@ -672,3 +673,21 @@ narrow.addEventListener('change', event => { if (event.matches === wasNarrow) re
 addEventListener('resize', fitSide);
 load();
 setInterval(() => load({quiet: true}), 30000);
+
+
+// Interview requests keep the same non-ambient task-link credential. The
+// adapter never signs in, creates an account or requests workspace-wide APIs.
+window.ravenInterviewBridge = {
+  user: () => data?.viewer || {},
+  notify: toast,
+  refresh: () => load(),
+  request: async (path, body) => {
+    const parts = path.split('/');
+    if (parts[1] !== 'api' || parts[2] !== 'tasks' || decodeURIComponent(parts[3]) !== data?.task?.id || parts[4] !== 'interviews') {
+      throw new Error('This interview is outside the task link scope.');
+    }
+    const interviewId = parts[5] || '';
+    const action = parts[6] || (interviewId ? 'get' : body === undefined ? 'list' : 'create');
+    return call('/api/brief/interview', {...(body || {}), action, ...(interviewId ? {interview_id: interviewId} : {})});
+  },
+};

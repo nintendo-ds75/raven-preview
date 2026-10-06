@@ -105,6 +105,40 @@ class AuthorityFreshnessTests(DecisionCase):
         self.assertEqual(basis_for(self.graph, actor, decision, "answer")[0], "")
 
 
+class RouteAuthorityFreshnessTests(DecisionCase):
+    def test_expired_authority_is_not_used_to_assign_a_new_owner(self):
+        from bridge.routing import route_ranked
+        self.store.add_authority({"person": self.alice["id"], "scope_kind": "repo", "role": "decides",
+            "repo": "acme/service", "effective_to": "2030-01-02T00:00:00+00:00"})
+        with patch("bridge.graph.now_iso", return_value="2030-01-01T00:00:00+00:00"):
+            self.assertEqual(route_ranked(self.graph, "acme/service", "Should this policy change?")[0][0], self.alice["name"])
+        with patch("bridge.graph.now_iso", return_value="2030-01-03T00:00:00+00:00"):
+            self.assertEqual(self.graph.authority_rows("acme/service"), [])
+            self.assertEqual(route_ranked(self.graph, "acme/service", "Should this policy change?"), [])
+
+    def test_external_team_removal_is_visible_to_cached_routing(self):
+        from bridge.routing import route_ranked
+        team = self.store.add_team({"name": "Approvers", "members": [self.alice["id"]]})
+        self.store.add_authority({"team": team["id"], "scope_kind": "repo", "role": "decides", "repo": "acme/service"})
+        self.assertEqual(route_ranked(self.graph, "acme/service", "Should this policy change?")[0][0], self.alice["name"])
+        other = Store(self.store.path)
+        self.addCleanup(other.graph.close)
+        with other.graph.transaction():
+            other.graph.set_team_members(team["id"], [], replace=True)
+        self.assertEqual(self.graph.teams()[0]["members"], [])
+        self.assertEqual(self.graph.authority_rows("acme/service")[0]["team"]["members"], [])
+        self.assertEqual(route_ranked(self.graph, "acme/service", "Should this policy change?"), [])
+
+    def test_deactivated_person_is_removed_from_cached_authority(self):
+        self.store.add_authority({"person": self.alice["id"], "scope_kind": "repo", "role": "decides", "repo": "acme/service"})
+        self.assertEqual(len(self.graph.authority_rows("acme/service")), 1)
+        other = Store(self.store.path)
+        self.addCleanup(other.graph.close)
+        with other.graph.transaction():
+            other.graph.db.execute("UPDATE people SET active=0 WHERE id=?", (self.alice["id"],))
+        self.assertEqual(self.graph.authority_rows("acme/service"), [])
+
+
 class SlackWorkspaceIsolationTests(OfflineCase):
     def setUp(self):
         super().setUp()

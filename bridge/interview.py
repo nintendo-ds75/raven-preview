@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import secrets
+import time
+from dataclasses import dataclass
 
 from . import authz
 from .graph import parse_applicability
@@ -37,14 +39,38 @@ def migrate(db):
     """)
 
 
+@dataclass
+class _LinkActor(authz.Actor):
+    link_id: str = ""
+    link_task: str = ""
+    link_decision: str = ""
+
+
+def actor_for_link(link):
+    """Only the already-resolved task-link transport constructs this actor."""
+    actor = link.actor
+    return _LinkActor(**vars(actor), link_id=link.id, link_task=link.run_id, link_decision=link.decision_id)
+
+
 def _human(store, actor):
-    if actor is None or not actor.id or actor.kind not in ("session", "token"):
+    if actor is None or not actor.id or actor.kind not in ("session", "token", "link"):
         raise authz.Refused("Sign in as a person to record an attributed interview; agent and local operator identities cannot do this")
+    if actor.kind == "link":
+        if not isinstance(actor, _LinkActor):
+            raise authz.Refused("An interview task link must be resolved by the task-page transport")
+        link = store.graph.db.execute("SELECT * FROM brief_links WHERE id=?", (actor.link_id,)).fetchone()
+        if (link is None or link["person_id"] != actor.id or link["run_id"] != actor.link_task
+                or (link["decision_id"] or "") != actor.link_decision or link["revoked_at"]
+                or int(link["expires_at"]) <= time.time()):
+            raise authz.Refused("This interview link has expired or been revoked")
     person = store.graph.get_person(actor.id)
     if not person or not person.get("active", 1) or person.get("role") not in ("member", "admin"):
         raise authz.Refused("An active workspace member must review this interview")
     # No supplied name, role or override is trusted. Stable authenticated id
     # attributes the person; this is not biometric speaker verification.
+    if actor.kind == "link":
+        return _LinkActor(id=person["id"], name=person["name"], role="member", kind="link",
+                          link_id=actor.link_id, link_task=actor.link_task, link_decision=actor.link_decision)
     return authz.Actor.person(person, kind=actor.kind)
 
 
@@ -54,10 +80,15 @@ def _task(store, task_id):
 
 
 def _decision(store, task_id, decision_id, actor):
+    if isinstance(actor, _LinkActor) and (task_id != actor.link_task or (actor.link_decision and decision_id != actor.link_decision)):
+        raise authz.Refused("This interview is outside the task link's decision scope")
+    run = _task(store, task_id)
+    if run["status"] == "abandoned":
+        raise Invalid("This task was abandoned; its interview cannot record a decision")
     decision = store.get_decision(decision_id)
     if decision["run_id"] != task_id:
         raise Invalid("The interview decision must belong to this task")
-    if decision["status"] in ("duplicate", "suggested", "adopted"):
+    if decision["status"] in ("duplicate", "suggested", "adopted", "withdrawn"):
         raise Invalid("This decision is not available for an interview; open its active decision")
     if not decision.get("owner_id"):
         raise Invalid("Assign an owner before starting an interview")
@@ -70,6 +101,8 @@ def _owned(store, task_id, interview_id, actor, db=None):
                                        (interview_id, task_id, actor.id)).fetchone()
     if row is None:
         raise Invalid("Interview not found for this person and task")
+    if isinstance(actor, _LinkActor) and (task_id != actor.link_task or (actor.link_decision and row["decision_id"] != actor.link_decision)):
+        raise authz.Refused("This interview is outside the task link's decision scope")
     return dict(row)
 
 
@@ -93,7 +126,7 @@ def _turns(raw, prompts):
         if not isinstance(response, str) or not response.strip() or len(response) > 2000:
             raise Invalid("Each interview response must contain 1 to 2000 characters")
         method = turn.get("capture_method", "typed")
-        if method not in METHODS:
+        if not isinstance(method, str) or method not in METHODS:
             raise Invalid("Invalid turn capture_method")
         out.append({"prompt_id": index, "prompt": prompts[index], "response": response.strip(),
                     "capture_method": method, "voice_verified": False})
@@ -121,10 +154,11 @@ def _version(data, row):
 
 def create(store, task_id, data, actor=None):
     actor = _human(store, actor)
-    _task(store, task_id)
+    task = _task(store, task_id)
     decision_id = field(data, "decision_id", limit=100)
     client_key = field(data, "client_key", limit=100)
     with store.graph.transaction() as db:
+        actor = _human(store, actor)
         decision = _decision(store, task_id, decision_id, actor)
         old = db.execute("SELECT * FROM interviews WHERE person_id=? AND task_id=? AND client_key=?",
                          (actor.id, task_id, client_key)).fetchone()
@@ -132,7 +166,8 @@ def create(store, task_id, data, actor=None):
             if old["decision_id"] != decision_id:
                 raise Invalid("This client_key already names another decision interview")
             return _view(old)
-        scope = {"task_id": task_id, "decision_id": decision_id, "repo": decision.get("repo") or "",
+        scope = {"task_id": task_id, "task_title": task["title"], "task_goal": task["goal"] or "",
+                 "decision_id": decision_id, "repo": decision.get("repo") or "",
                  "question": decision["question"], "context": decision.get("context") or "",
                  "path": decision.get("path") or "", "paths": json.loads(decision.get("scope_paths") or "[]"),
                  "category": decision.get("category") or ""}
@@ -149,8 +184,11 @@ def create(store, task_id, data, actor=None):
 def list_for_task(store, task_id, actor=None):
     actor = _human(store, actor)
     _task(store, task_id)
-    return {"interviews": [_view(row) for row in store.graph.db.execute(
-        "SELECT * FROM interviews WHERE task_id=? AND person_id=? ORDER BY created_at DESC LIMIT 100", (task_id, actor.id))]}
+    if isinstance(actor, _LinkActor) and task_id != actor.link_task:
+        raise authz.Refused("This interview is outside the task link's scope")
+    rows = store.graph.db.execute("SELECT * FROM interviews WHERE task_id=? AND person_id=? ORDER BY created_at DESC LIMIT 100", (task_id, actor.id))
+    return {"interviews": [_view(row) for row in rows
+                           if not isinstance(actor, _LinkActor) or not actor.link_decision or row["decision_id"] == actor.link_decision]}
 
 
 def get(store, task_id, interview_id, actor=None):
@@ -163,12 +201,13 @@ def update(store, task_id, interview_id, data, actor=None, action="draft"):
     if action not in ("draft", "cancel", "failed"):
         raise Invalid("Unknown interview action")
     with store.graph.transaction() as db:
+        actor = _human(store, actor)
         row = _owned(store, task_id, interview_id, actor, db)
         # Repeating a cancelled request is safe; it cannot reopen a draft.
         if action == "cancel" and row["status"] == "cancelled":
             return _view(row)
         _version(data, row)
-        if action == "draft":
+        if action != "cancel":
             _decision(store, task_id, row["decision_id"], actor)
         values = {}
         for key in ("transcript", "answer", "rationale", "pending_response"):
@@ -177,12 +216,12 @@ def update(store, task_id, interview_id, data, actor=None, action="draft"):
                 raise Invalid(f"{key} must be text of at most 12000 characters")
             values[key] = val.strip()
         method = data.get("capture_method", row["capture_method"])
-        if method not in METHODS:
+        if not isinstance(method, str) or method not in METHODS:
             raise Invalid("capture_method must be typed or browser-speech")
         applicability = parse_applicability(data.get("applicability", row["applicability"]))
         turns = _turns(data.get("turns", json.loads(row["turns"])), json.loads(row["prompts"]))
         failure = data.get("failure", "") if action == "failed" else ""
-        if action == "failed" and failure not in FAILURES:
+        if action == "failed" and (not isinstance(failure, str) or failure not in FAILURES):
             raise Invalid("Unsupported interview failure code")
         status = {"draft": "draft", "cancel": "cancelled", "failed": "failed"}[action]
         db.execute("UPDATE interviews SET transcript=?,answer=?,rationale=?,applicability=?,capture_method=?,"
@@ -220,7 +259,7 @@ def confirm(store, task_id, interview_id, data, actor=None):
         db.execute("UPDATE interviews SET status='confirmed',confirmed_version=?,confirmed_by=?,version=version+1,"
                    "updated_at=? WHERE id=?", (version, actor.id, now(), interview_id))
         store.event(db, "interview_confirmed", json.dumps({"interview_id": interview_id,
-                    "actor_id": actor.id, "actor_name": actor.name, "capture_method": current["capture_method"],
+                    "actor_id": actor.id, "actor_name": actor.name, "actor_kind": actor.kind, "capture_method": current["capture_method"],
                     "capture_attribution": "client-reported", "voice_verified": False,
                     "decision_revision": current["decision_revision"], "scope": json.loads(current["scope"])}),
                     current["decision_id"], task_id)

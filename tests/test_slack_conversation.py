@@ -172,7 +172,7 @@ class ConversationTests(DeliveryCase):
         self.slack.workspace_id=lambda: 'TFAKE'
         with patch('bridge.slack_chat.reading',return_value={'kind':'question',
                 'reply':'UMAR said load tests are excluded, UOLA and UZZZZZZZ replied, and <@UWES> agreed.'}) as model:
-            handle_slack_event(self.delivery,{'type':'event_callback','event_id':'search-names','event':{
+            handle_slack_event(self.delivery,{'type':'event_callback','team_id':'TFAKE','event_id':'search-names','event':{
                 'type':'message','channel':self.message['channel'],'thread_ts':self.message['ts'],'user':'UWES',
                 'text':'What did people say about this?','action_token':'short-lived'}})
         posted=self.slack.messages[-1]['text']

@@ -583,6 +583,15 @@ function followupControls(d) {
   return `<div class="context-box"><span class="label">Follow-up questions for the agent · the right questions for the next level</span><textarea id="followups" aria-label="Follow-up questions" placeholder="One question per line. They appear on the agent's tree under this decision." maxlength="4000"></textarea><label for="followups-required"><input type="checkbox" id="followups-required"> Required: the task cannot finish until the agent takes these up and they are answered</label><button class="button small soft" data-action="followups" data-id="${esc(d.id)}">Add follow-up questions</button></div>`;
 }
 
+function reframeControls(d) {
+  if (!(d.allowed_actions || []).includes('correct') || ['withdrawn','duplicate','adopted','suggested'].includes(d.status)) return '';
+  return `<details class="history"><summary>Is this the wrong question?</summary>
+    <p class="context">Replace the question when its premise is mistaken. This clears its old answer and signatures, reroutes it, and marks dependent work for review. Its history is retained.</p>
+    <label for="reframe-question">Corrected question</label><textarea id="reframe-question" maxlength="2000">${esc(d.question)}</textarea>
+    <label for="reframe-reason">Why does the question need to change?</label><textarea id="reframe-reason" maxlength="4000"></textarea>
+    <button class="button small" data-action="reframe" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}">Replace question and clear old signatures</button></details>`;
+}
+
 async function review(id) {
   const requestVersion = ++modalVersion;
   try {
@@ -630,6 +639,7 @@ async function review(id) {
       ${inert ? '' : `<div class="modal-owner">${avatar(d.owner_name)}<select id="assign-owner" aria-label="Decision owner" ${assignable ? '' : 'disabled'}>${ownerOptions(d.owner_id)}</select>${assignable ? `<button class="button small" data-action="assign" data-id="${esc(d.id)}">Assign this one</button><button class="button small soft" data-action="refer" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}">Hand on &amp; learn</button>` : ''}</div>${assignable && d.handon ? `<label class="refer-scope" for="refer-scope">Hand on teaches Raven that they decide <select id="refer-scope" aria-label="What handing on teaches">${d.handon.options.map(o => `<option value="${esc(o.scope_kind)}:${esc(o.scope)}" ${o.scope_kind === d.handon.default.scope_kind && o.scope === d.handon.default.scope ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select></label>${d.handon.why_none ? `<p class="field-help">${esc(d.handon.why_none)}; pick a scope to teach one.</p>` : ''}` : ''}<p class="context">${esc(d.routing_reason)}${d.routing_reason && !/[.!?]$/.test(d.routing_reason) ? '.' : ''}${assignable ? ' Assign moves this request only; Hand on also teaches Raven the scope above, once the person answers.' : ''}</p>`}
       ${signed && canDecide ? `<form id="correct-form" data-id="${esc(d.id)}"><input type="hidden" name="expected_updated_at" value="${esc(d.updated_at)}"><label for="correction">Signed answer · edit to make a correction</label><textarea id="correction" name="answer" maxlength="12000" required>${esc(d.answer || '')}</textarea><label for="correction-rationale">Why this correction?</label><textarea id="correction-rationale" name="rationale" placeholder="Capture the reasoning for future tasks." maxlength="12000" required></textarea>${applicabilityFields(d, 'correction')}<p class="context">A correction is a signed answer recorded on behalf of ${esc(signer)}; the agent reads it on the tree, and every decision that leaned on the old answer is marked for review.</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Close</button><button class="button primary" type="submit">Record correction ${icon('check')}</button></div></form>` : ''}
       ${!canDecide || inert || signoffWanted || signed ? '' : `<form id="answer-form" data-id="${esc(d.id)}"><input type="hidden" name="expected_updated_at" value="${esc(d.updated_at)}"><label for="answer">${approved ? 'Recorded answer · edit to make a correction' : 'Your answer'}</label><textarea id="answer" name="answer" placeholder="Give the agent a clear decision and any conditions." maxlength="12000" required>${esc(approved ? d.answer : '')}</textarea><label for="rationale">Why this decision?</label><textarea id="rationale" name="rationale" placeholder="Capture the reasoning for future tasks." maxlength="12000" required>${esc(d.rationale || '')}</textarea>${applicabilityFields(d, 'answer')}<label for="supersedes">Supersedes decision (optional id)</label><input id="supersedes" name="supersedes" placeholder="Decision id this answer replaces" maxlength="100" value="${esc(d.supersedes || '')}"><p class="context">${me ? `Recorded as ${esc(me)}${d.owner_name && d.owner_name !== me ? `, on behalf of ${esc(d.owner_name)}` : ''}.` : `Recorded by the local operator on behalf of ${esc(d.owner_name || 'the assigned owner')}.`} ${approved ? 'The previous answer stays in the revision history.' : (state.executions || []).some(e => e.run_id === d.run_id) ? 'Saving queues delivery to the waiting agent. Follow delivery in Tasks.' : 'The agent can retrieve your answer after it is saved.'}</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Close</button><button class="button primary" type="submit" ${d.owner_id ? '' : 'disabled'}>${approved ? 'Save correction' : 'Record decision'} ${icon('check')}</button></div></form>`}
+      ${reframeControls(d)}
       ${followupControls(d)}
       <details class="history"><summary>Decision history · ${plural(d.events.length, 'event')}</summary>${d.events.map(e => `<div class="history-item"><strong>${esc(eventLabels[e.kind] || e.kind)}</strong>${esc(e.detail)}<br><small>${esc(new Date(e.created_at).toLocaleString())}</small></div>`).join('')}</details>`);
   } catch (error) { notify(error.message); }
@@ -735,6 +745,14 @@ document.addEventListener('click', async event => {
       const d = state.decisions.find(x => x.id === target.dataset.id);
       const signed = await api(`/api/decisions/${target.dataset.id}/signoff`, {by: (d && halfSigned(d) && stillToSign(d)[0]) || d?.owner_name || 'Local operator', expected_updated_at: target.dataset.updated || d?.updated_at || ''});
       await refresh(); await review(target.dataset.id); notify(signed?.notice || 'Signed off. The agent sees it on the tree.');
+    }
+    if (action === 'reframe') {
+      const question = ($('#reframe-question')?.value || '').trim();
+      const rationale = ($('#reframe-reason')?.value || '').trim();
+      if (!question || !rationale) { notify('Write the corrected question and why it should change.'); return; }
+      target.disabled = true;
+      const result = await api(`/api/decisions/${target.dataset.id}/reframe`, {question, rationale, expected_updated_at: target.dataset.updated});
+      await refresh(); await review(target.dataset.id); notify(result.notice);
     }
     if (action === 'followups') {
       const text = ($('#followups')?.value || '').trim();

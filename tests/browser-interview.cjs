@@ -101,6 +101,20 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.evaluate(() => { location.hash = 'inbox'; });
     await page.locator('#interview-modal[open]').waitFor({state:'hidden'});
     assert.equal(await page.evaluate(() => interviewSession), null);
+    // The same dialog is reachable from a personal task link without a cookie.
+    const guest = await browser.newContext();
+    const linked = await guest.newPage();
+    await linked.goto(`${world.url}/brief#${world.link}`);
+    await linked.getByRole('button', {name:'Start or resume interview',exact:true}).click();
+    await linked.locator('#interview-modal[open]').waitFor();
+    await linked.locator('#interview-answer').fill('Use five seconds for new clients only.');
+    await linked.locator('#interview-rationale').fill('Old clients retain ten seconds.');
+    await linked.getByRole('button', {name:'Save and review',exact:true}).click();
+    await linked.getByText(/using your personal task link/).waitFor();
+    assert.equal((await guest.request.get(`${world.url}/api/state`)).status(),401);
+    await linked.getByRole('button', {name:'Back to edit',exact:true}).click();
+    await linked.getByRole('button', {name:'Discard this interview',exact:true}).click();
+    await guest.close();
     assert.deepEqual(errors, []);
     // Unsupported speech remains fully usable through typed input.
     await page.evaluate(() => { window.SpeechRecognition = undefined; window.webkitSpeechRecognition = undefined; });

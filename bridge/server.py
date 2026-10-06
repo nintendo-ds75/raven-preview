@@ -193,6 +193,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     # the inbox, and the page says "Sign in" instead.
                     view["viewer"]["signed_in"] = bool(auth.enabled and self.me is not None
                                                        and self.me.id == link.person["id"])
+                    view["viewer"]["interview_decision_id"] = link.decision_id
                     return self.send(200, view)
                 if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js"):
                     if url.path == "/" and auth.enabled and self.me is None:
@@ -490,6 +491,30 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                 return self.send(200, {"notice": "If this link was yours, a new one is on its way to your Slack "
                                                  "direct messages."})
             link = self.brief_link()
+            if path == "/api/brief/interview":
+                from . import interview
+                actor = interview.actor_for_link(link)
+                # The link, never request fields, supplies identity and task.
+                if data.get("task_id") not in (None, "", link.run_id):
+                    raise Forbidden(403, "This interview is outside the task link's scope")
+                action = field(data, "action", limit=20)
+                if action == "list":
+                    result = interview.list_for_task(store, link.run_id, actor)
+                elif action == "create":
+                    result = interview.create(store, link.run_id, data, actor)
+                else:
+                    iid = field(data, "interview_id", limit=100)
+                    if action == "get":
+                        result = interview.get(store, link.run_id, iid, actor)
+                    elif action == "confirm":
+                        result = interview.confirm(store, link.run_id, iid, data, actor)
+                    elif action == "advance":
+                        result = interview.advance(store, link.run_id, iid, data, actor)
+                    elif action in ("draft", "cancel", "failed"):
+                        result = interview.update(store, link.run_id, iid, data, actor, action)
+                    else:
+                        raise Invalid("Unknown interview action")
+                return self.send(200, result)
             if path == "/api/brief/answer":
                 return self.send(200, briefing.act(store, link, data))
             if path == "/api/brief/refer":
@@ -754,6 +779,9 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                             result = interview.update(store, parts[2], parts[4], data, self.actor(), parts[5])
                         else:
                             return self.send(404, {"error": "Unknown interview action"})
+                    elif len(parts) == 4 and parts[:2] == ["api", "decisions"] and parts[3] == 'reframe':
+                        from . import reframe
+                        result = reframe.apply(store, parts[2], data, self.actor())
                     elif len(parts) == 4 and parts[:2] == ["api", "decisions"] and parts[3] in {"answer", "assign"}:
                         if parts[3] == "answer":
                             if not data.get("expected_updated_at"):
