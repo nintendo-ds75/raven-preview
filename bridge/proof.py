@@ -136,10 +136,29 @@ def export(store, data):
         reasons.append("A decision, signature, authority, or scope changed since this proof")
     if run["status"] != "completed" or tree.get("needs_review"):
         reasons.append("The task is no longer completed and current")
+    review = tree.get("review")
+    review_pending = bool(review and review.get("status") == "running")
+    review_snapshot_current = review == bundle["payload"].get("review")
+    if reasons:
+        next_step = "Reread the tree and finish with the current complete diff"
+    elif review_pending:
+        next_step = ("The advisory review is still running. Call bridge_wait; once it finishes, call "
+                     "bridge_finish_task again with the same complete diff and checks to refresh the saved proof, "
+                     "then export again. The current bundle is an immutable earlier snapshot.")
+    elif review and review.get("status") == "failed":
+        next_step = ("The advisory review failed. Call bridge_finish_task again with the same complete diff "
+                     "and checks to retry it, then export the updated proof. The current bundle preserves "
+                     "the failed attempt and does not establish conformance.")
+    elif not review_snapshot_current:
+        next_step = ("The saved proof contains an earlier advisory review snapshot. Read review, then call "
+                     "bridge_finish_task again with the same complete diff and checks to save an updated proof "
+                     "and export again. The current bundle has not been rewritten.")
+    else:
+        next_step = "Attach the bundle and summary to the code review; review and tests remain required"
     return {"bundle": bundle, "integrity": verify(bundle), "stale": bool(reasons),
-            "stale_reasons": reasons, "markdown": markdown(bundle),
-            "next": "Reread the tree and finish with the current complete diff" if reasons else
-                    "Attach the bundle and summary to the code review; review and tests remain required"}
+            "stale_reasons": reasons, "markdown": markdown(bundle), "review": review,
+            "review_pending": review_pending, "review_snapshot_current": review_snapshot_current,
+            "next": next_step}
 
 
 def markdown(bundle):

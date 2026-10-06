@@ -1662,6 +1662,13 @@ def get_tree(store, task_id: str) -> dict:
     if notes:
         parts.append(f"{len(notes)} note{'s' if len(notes) > 1 else ''} from people on this task (notes)")
     review = _current_review(graph, task_id, nodes)
+    if review is not None and review["status"] == "running":
+        parts.append("the advisory diff review is still running; call bridge_wait to read its result, or repeat "
+                     "bridge_finish_task with the same complete diff and checks to resume an interrupted review. "
+                     "Once it finishes, repeat bridge_finish_task to refresh the saved proof")
+    elif review is not None and review["status"] == "failed":
+        parts.append("the advisory diff review failed; call bridge_finish_task again with the same complete "
+                     "diff and checks to retry it before exporting the proof")
     if review is not None and review["status"] == "stale":
         ids = ", ".join(x["node_id"] for x in review["stale"][:6])
         parts.append(f"the diff reading on file (review {review['id']}) read an earlier answer to "
@@ -1754,6 +1761,44 @@ def trace(store, task_id: str) -> dict:
 CHECKS_KEPT = 2000
 
 
+def _submitted_diff(data) -> str:
+    """Validate transport integrity without repairing or normalizing a patch.
+
+    Legacy advisory fragments remain accepted. Recognize actual patch
+    headers narrowly, not every fragment starting with '+' or 'diff'. A
+    source file without a final newline has a marker in a generated patch;
+    the patch itself still ends in LF.
+    """
+    import hashlib
+
+    _text(data, "diff", 60000)  # validate type/size, but do not use its stripped value
+    diff = data.get("diff") or ""
+    try:
+        raw = diff.encode("utf-8")
+    except UnicodeEncodeError:
+        raise Invalid("diff must be valid UTF-8 text; reread the original patch without changing its bytes") from None
+    if "diff_sha256" in data:
+        expected = data["diff_sha256"]
+        if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected):
+            raise Invalid("diff_sha256 must be exactly 64 hexadecimal characters")
+        if not diff.strip():
+            raise Invalid("diff_sha256 requires a nonempty diff")
+        if hashlib.sha256(raw).hexdigest() != expected.lower():
+            raise Invalid("diff_sha256 does not match the submitted UTF-8 diff. Reread the complete patch "
+                          "and submit its exact bytes, including the final newline, with the SHA-256 computed "
+                          "from the original patch bytes. Nothing was finished and the diff was not read.")
+    unified = re.search(r"(?m)^--- [^\n]+\n\+\+\+ [^\n]+\n@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@", diff)
+    git_patch = re.search(r"(?m)^diff --git [^\n]+\n(?:index [^\n]+|(?:old|new|new file|deleted file) "
+                          r"mode \d+|similarity index \d+%|GIT binary patch)(?:\n|$)", diff)
+    if (unified or git_patch) and not diff.endswith("\n"):
+        raise Invalid("diff is missing its final newline; the submitted patch may have been truncated. "
+                      "Reread the complete patch and preserve its exact bytes, including the final LF; "
+                      "do not trim or reconstruct it. A source file without a final newline is represented "
+                      "by the patch's 'No newline at end of file' marker. Nothing was finished and the diff "
+                      "was not read.")
+    return diff
+
+
 def finish_task(store, data, sleep=None, stop=None) -> dict:
     """Close the task. The gate this passes is that every decision on the
     canvas was authorized by a person; it is not a statement that the
@@ -1780,8 +1825,7 @@ def finish_task(store, data, sleep=None, stop=None) -> dict:
     if len(checks) > CHECKS_KEPT:
         checks = (checks[:CHECKS_KEPT].rstrip() + f" … [cut by Raven: {len(checks)} characters given, "
                   f"the first {CHECKS_KEPT} kept]")
-    _text(data, "diff", 60000)  # validate without changing the submitted bytes
-    diff = data.get("diff") or ""
+    diff = _submitted_diff(data)  # reject damaged submissions before any finish/review/proof write
     # Files the diff changes whose decider was asked nothing on this task:
     # put to them, or said why not, before the task finishes. Measured live
     # on 63eb671: the finish named the changelog fragment the agent had
@@ -2273,7 +2317,8 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
         raise Invalid(f"node_id {node_id!r} is not on task {task_id}")
     watched = [node_id] if node_id else [nid for nid, n in before.items() if n["blocking"]]
     result = {"task_id": task_id, "timed_out": False, "waited_seconds": 0.0, "changed": [], "waiting_on": [],
-              "counts": tree["counts"], "timeout_applied": timeout, "observed_at": tree["observed_at"]}
+              "counts": tree["counts"], "timeout_applied": timeout, "observed_at": tree["observed_at"],
+              **({"review": tree["review"]} if tree.get("review") is not None else {})}
     if tree.get('scope_clarifications'):
         return {**result, 'scope_clarifications': tree['scope_clarifications'], 'next': tree['next']}
     if capped:
@@ -2304,7 +2349,9 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
     if node_id and not since and not before[node_id]["blocking"] and node_id not in {n["node_id"] for n in changed}:
         changed.append({**_change(before[node_id]), "from": "", "new": False})
     notes_before = len(tree.get("notes") or [])
-    reading = bool(_json_dict(_task(store, task_id)['discovery']).get('model_pending')) or any(n.get('model_pending') for n in before.values())
+    review_pending = not node_id and (tree.get('review') or {}).get('status') == 'running'
+    reading = (bool(_json_dict(_task(store, task_id)['discovery']).get('model_pending'))
+               or any(n.get('model_pending') for n in before.values()) or review_pending)
     verdict_before = tree.get('verdict')
     if changed or result["notes"] or (not watched and not reading):
         result["changed"] = changed
@@ -2327,7 +2374,9 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
         sleep(max(0.0, min(interval, timeout - elapsed)))
         tree = get_tree(store, task_id)
         after = {n["node_id"]: n for n in _flatten(tree["nodes"])}
-        reading_now = bool(_json_dict(_task(store, task_id)['discovery']).get('model_pending')) or any(n.get('model_pending') for n in after.values())
+        reading_now = (bool(_json_dict(_task(store, task_id)['discovery']).get('model_pending'))
+                       or any(n.get('model_pending') for n in after.values())
+                       or (not node_id and (tree.get('review') or {}).get('status') == 'running'))
         if tree.get('verdict') != verdict_before or (reading and not reading_now):
             result['task'] = _task_as_started(_task(store, task_id))
         for nid, n in after.items():
@@ -2346,6 +2395,8 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
     result["changed"] = changed
     result["counts"] = tree["counts"]
     result["observed_at"] = tree["observed_at"]
+    if tree.get("review") is not None:
+        result["review"] = tree["review"]
     still = [n for n in _flatten(tree["nodes"]) if n["blocking"] and (not node_id or n["node_id"] == node_id)]
     result["waiting_on"] = [{"node_id": n["node_id"], "question": n["question"], "status": n["status"],
                              "owner": n["owner"]} for n in still]
@@ -2353,6 +2404,11 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
         result["next"] = "read the changes above and act on each node's next; " + tree["next"]
     elif result.get("interrupted"):
         result["next"] = STOPPED_NEXT
+    elif review_pending and (tree.get('review') or {}).get('status') != 'running':
+        result["next"] = ("The advisory review finished. Read review, then call bridge_finish_task again with "
+                          "the same complete diff and checks to refresh its saved proof. " + tree["next"])
+    elif (tree.get('review') or {}).get('status') == 'running' or result.get('task'):
+        result["next"] = tree["next"]
     else:
         who = sorted({n["owner"] for n in still if n["owner"]})
         result["next"] = (f"nothing changed in {result['waited_seconds']:g}s; {len(still)} node"

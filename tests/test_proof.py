@@ -209,3 +209,86 @@ class ReviewRecoveryTests(ContractCase):
         self.assertEqual(first["review"]["status"], "done")
         self.assertEqual(first["follows"], [])
         self.assertIn("Raven did not read the diff", first["caveat"])
+
+    def pending_review(self):
+        task, node = self.signed_task()
+        release = threading.Event()
+        patcher = patch('bridge.llm.check_conformance', side_effect=lambda *args: (
+            release.wait(5) and {'verdict': 'follows', 'why': 'The rate is present', 'requirements': []}))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        with patch.object(canvas, 'FINISH_WAIT', 0.01):
+            result = self.finish(task)
+        self.assertEqual(result['review']['status'], 'running')
+
+        def finish_reading(*args):
+            release.set()
+            with canvas._REVIEWS_LOCK:
+                worker = canvas._REVIEWS.get(result['review']['id'])
+            if worker is not None:
+                worker.join(5)
+        self.addCleanup(finish_reading)
+        return task, node, result, finish_reading
+
+    def test_tree_and_export_explain_pending_advisory_review(self):
+        task, _, _, _ = self.pending_review()
+        tree = canvas.get_tree(self.store, task)
+        self.assertIn('bridge_wait', tree['next'])
+        self.assertIn('review', tree['next'])
+        exported = proof.export(self.store, {'task_id': task})
+        self.assertTrue(exported['review_pending'])
+        self.assertTrue(exported['review_snapshot_current'])
+        self.assertIn('bridge_wait', exported['next'])
+        self.assertNotIn('Attach the bundle', exported['next'])
+
+    def test_whole_task_wait_returns_terminal_advisory_review(self):
+        task, _, _, finish_reading = self.pending_review()
+        observed = call_tool(self.store, 'bridge_get_tree', {'task_id': task})['observed_at']
+        waited = canvas.wait(self.store, {'task_id': task, 'timeout': '1', 'since': observed}, sleep=finish_reading)
+        self.assertFalse(waited['timed_out'])
+        self.assertEqual(waited['review']['status'], 'done')
+        self.assertEqual(waited['waiting_on'], [])
+        self.assertIn('bridge_finish_task', waited['next'])
+
+    def test_review_wait_timeout_and_interruption_remain_bounded(self):
+        task, _, _, _ = self.pending_review()
+        waited = canvas.wait(self.store, {'task_id': task, 'timeout': '0'})
+        self.assertTrue(waited['timed_out'])
+        self.assertEqual(waited['review']['status'], 'running')
+        self.assertIn('review', waited['next'])
+        self.assertNotIn('nobody yet', waited['next'])
+        stop = threading.Event(); stop.set()
+        interrupted = canvas.wait(self.store, {'task_id': task, 'timeout': '1'}, stop=stop)
+        self.assertIn('interrupted', interrupted)
+        self.assertEqual(interrupted['next'], canvas.STOPPED_NEXT)
+
+    def test_export_keeps_snapshot_but_exposes_completed_live_review(self):
+        task, _, _, finish_reading = self.pending_review()
+        before = proof.export(self.store, {'task_id': task})
+        exports = self.store.graph.count_events('proof_exported', task_id=task)
+        finish_reading()
+        after = proof.export(self.store, {'task_id': task})
+        self.assertEqual(self.store.graph.count_events('proof_exported', task_id=task), exports)
+        self.assertEqual(after['bundle'], before['bundle'])
+        self.assertEqual(after['bundle']['payload']['review']['status'], 'running')
+        self.assertEqual(after['review']['status'], 'done')
+        self.assertFalse(after['review_pending'])
+        self.assertFalse(after['review_snapshot_current'])
+        self.assertTrue(after['integrity']['valid'])
+        self.assertFalse(after['stale'])
+        self.assertIn('bridge_finish_task', after['next'])
+        self.finish(task)
+        refreshed = proof.export(self.store, {'task_id': task})
+        self.assertEqual(refreshed['bundle']['payload']['review']['status'], 'done')
+        self.assertTrue(refreshed['review_snapshot_current'])
+        self.assertIn('Attach the bundle', refreshed['next'])
+
+    def test_failed_review_export_instructs_retry_without_claiming_conformance(self):
+        task, _ = self.signed_task()
+        with patch('bridge.llm.check_conformance', side_effect=RuntimeError('reader unavailable')):
+            self.finish(task)
+        exported = proof.export(self.store, {'task_id': task})
+        self.assertEqual(exported['review']['status'], 'failed')
+        self.assertIn('bridge_finish_task', exported['next'])
+        self.assertIn('does not establish conformance', exported['next'])
+        self.assertNotIn('Attach the bundle', exported['next'])
