@@ -145,9 +145,13 @@ Focused reviewer experiments did not establish a reliable semantic fix. One
 machine-positive result was rejected because it demanded a preferred mechanism
 rather than demonstrating a permitted behavioral counterexample. Later controls
 also failed. Stronger source-bound review and contact-only ownership-discovery
-candidates remain unpublished. Independent review found additional contact-
-invitation boundary issues despite passing regression suites; those need further
-correction and validation.
+candidates remain excluded from `main`. Their historical snapshots are now
+preserved on clearly labeled [review experiment](https://github.com/nintendo-ds75/raven-preview/tree/experimental/source-bound-review-2026-10-06)
+and [contact-discovery experiment](https://github.com/nintendo-ds75/raven-preview/tree/experimental/source-contact-claims-2026-10-06)
+branches with validation-status documents. These older-base archives are not
+merge-ready or deployable. Independent review found additional contact-invitation
+boundary issues despite passing regression suites; those need further correction
+and validation.
 
 Slack people, conversations and approvals were synthetic. This does not certify
 live Slack/Teams/GitHub installations, real employee authority, physical voice,
