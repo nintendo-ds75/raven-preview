@@ -40,6 +40,72 @@ ANSWER = ('Export humanize.ordinal_range(start, stop, *, separator=" to "). Acce
 CFG = Config(model_api='none', deterministic=True)
 
 
+class InferredContactGuidanceTests(OfflineCase):
+    """Imported authors are first-contact hints, not verified deciders."""
+
+    def setUp(self):
+        super().setUp()
+        self.store = Store(Path(self.temp.name) / 'contacts.db')
+        self.graph = self.store.graph
+        self.graph.add_person('Contract Reviewer', slack_id='UCONTRACT')
+        self.graph.add_person('Review Coordinator', slack_id='UCOORDINATOR')
+        self.graph.set_setting('slack_discovery', '1')
+        self.repo = 'example/parser'
+        self.path = 'src/parser.py'
+        self.graph.upsert_artifact(self.repo, self.path)
+        self.graph.add_change(self.repo, 'source-snapshot', '2026-09-01T00:00:00+00:00',
+                              [self.path], [])
+        for ref, author, date, body in (
+            ('REQUEST-12', 'Contract Reviewer', '2026-09-01T00:00:00+00:00',
+             'Contract Reviewer owns the public interface decision for this change.'),
+            ('REVIEW-27', 'Review Coordinator', '2026-09-02T00:00:00+00:00',
+             'Review Coordinator can coordinate a delay. Contract Reviewer remains accountable.'),
+        ):
+            self.store.add_record({'repo': self.repo, 'kind': 'ticket', 'ref': ref,
+                'title': 'Parser accessor review', 'body': body, 'author': author,
+                'created_at': date, 'status': 'Open', 'resolved': False, 'paths': [self.path]})
+
+    def test_kickoff_does_not_promote_an_imported_author_to_owner(self):
+        task = canvas.start_task(self.store, CFG, {
+            'title': 'Add a parser accessor', 'repo': self.repo, 'paths': self.path,
+            'goal': 'The public interface and edge-case policy need a current human decision.'})
+        self.assertEqual(task['verdict'], 'engage')
+        # No typed contact role is present: recency still decides this tie.
+        people = task['discovery']['people']
+        self.assertEqual([(p['name'], p['score']) for p in people],
+                         [('Review Coordinator', 0.25), ('Contract Reviewer', 0.25)])
+        self.assertIn('Review Coordinator as a first contact', task['why'])
+        self.assertIn('confirm who decides or refer', task['why'])
+        self.assertNotIn('who owns the area', task['why'])
+        node = canvas.add_node(self.store, CFG, {
+            'task_id': task['task_id'], 'question': 'What should the public accessor contract be?',
+            'paths': self.path, 'category': 'definition'})
+        self.assertEqual(node['owner'], 'Review Coordinator')
+        self.assertIn('inferred first contact', node['owner_evidence'])
+        self.assertFalse(node['authorized'])
+        self.assertEqual(node['signatures'], [])
+        self.assertEqual(self.graph.authority_rows(), [])
+
+    def test_pass_verdict_also_describes_the_person_as_a_contact(self):
+        task = canvas.start_task(self.store, CFG, {
+            'title': 'Read the parser', 'goal': 'Inspect the parser implementation.',
+            'repo': self.repo, 'paths': self.path})
+        self.assertEqual(task['verdict'], 'pass', task['why'])
+        self.assertIn('Review Coordinator is a first contact', task['why'])
+        self.assertNotIn('owns the area', task['why'])
+        self.assertEqual(self.graph.authority_rows(), [])
+
+    def test_unavailable_author_fallback_is_still_only_a_first_contact(self):
+        self.graph.set_setting('slack_unavailable', '["UCOORDINATOR"]')
+        task = canvas.start_task(self.store, CFG, {
+            'title': 'Add a parser accessor', 'repo': self.repo, 'paths': self.path,
+            'goal': 'The public interface policy needs a current human decision.'})
+        self.assertEqual(task['discovery']['people'][0]['name'], 'Contract Reviewer')
+        self.assertIn('Contract Reviewer as a first contact', task['why'])
+        self.assertNotIn('who owns the area', task['why'])
+        self.assertEqual(self.graph.authority_rows(), [])
+
+
 class DiscoveryGuidanceTests(OfflineCase):
     def setUp(self):
         super().setUp()

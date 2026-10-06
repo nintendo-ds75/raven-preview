@@ -791,11 +791,14 @@ def triage(discovery: dict, title: str, goal: str) -> tuple[str, str]:
     if words and in_scope:
         # Quote the words' own sentence: a reason that cannot be checked
         # against the task is not a reason somebody can act on.
+        # A routing candidate may be only an author or a backup contact.
+        # Recency and reachability do not establish decision authority.
         inside = people[0].get("inside", "") if people else ""
         reasons.append(f"the task speaks of {', '.join(words[:4])}, in \"{_clip(signals[0][1])}\", "
                        "which is a call for "
                        + ((f"{who}, who decides for {inside} in this area; name the files to route to them" if inside
-                           else f"{who}, who owns the area") if known else "a person" + nobody))
+                           else f"{who} as a first contact; ask them to confirm who decides or refer")
+                          if known else "a person" + nobody))
     text = f"{title}\n{task_statement(goal)}"
     if _QUESTION_RE.search(text) and in_scope:
         reasons.append("the task itself poses a question a person has to answer"
@@ -807,8 +810,8 @@ def triage(discovery: dict, title: str, goal: str) -> tuple[str, str]:
                         "about other changes; Raven passes, and the agent may still add a node if the edit turns "
                         "out to change behaviour")
     if people:
-        why = (f"nothing here calls for a person: {people[0]['name']} owns the area and no prior decision, "
-               f"pending question, or policy word touches it")
+        why = (f"nothing here calls for a person: {people[0]['name']} is a first contact for the area and no "
+               "prior decision, pending question, or policy word touches it")
     elif discovery.get("areas"):
         why = "nothing here calls for a person: no clear owner, prior decision, or pending question relates to it"
     else:
