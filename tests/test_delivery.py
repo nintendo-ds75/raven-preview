@@ -30,6 +30,9 @@ CFG = Config(model_api="none")
 class FakeSlack:
     name = "slack"
 
+    def workspace_id(self):
+        return "TTEST"
+
     def __init__(self):
         self.messages = []
         self.fail = False
@@ -674,7 +677,7 @@ class WebhookTests(DeliveryCase):
         n = self.node(self.task())
         self.delivery.deliver_now()
         message = self.slack.messages[0]
-        status, _ = post({"type": "event_callback", "event_id": "Ev9", "event": {
+        status, _ = post({"type": "event_callback", "team_id": "TTEST", "event_id": "Ev9", "event": {
             "type": "message", "channel": message["channel"], "thread_ts": message["ts"], "user": "UWES",
             "text": "Bill it because the tag is not ours"}})
         self.assertEqual(status, 200)
@@ -687,7 +690,7 @@ class WebhookTests(DeliveryCase):
         self.assertEqual((row["status"], row["answer"]), ("approved", "Bill it"))
         # Raven acknowledged in the thread.
         self.assertTrue(any(m["thread_ts"] == message["ts"] and "Recorded" in m["text"] for m in self.slack.messages))
-        self.assertEqual(handle_slack_event(self.delivery, {"type": "event_callback", "event": {"type": "message", "bot_id": "B1"}}), {})
+        self.assertEqual(handle_slack_event(self.delivery, {"type": "event_callback", "team_id": "TTEST", "event": {"type": "message", "bot_id": "B1"}}), {})
 
 
 class SlackApiBaseTests(unittest.TestCase):

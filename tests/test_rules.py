@@ -272,7 +272,7 @@ class RuleChannelTests(RuleCase):
         ask = self.slack.messages[-1]
         def reply(text, eid):
             return handle_slack_event(self.delivery, {
-                "type": "event_callback", "event_id": eid,
+                "type": "event_callback", "team_id": "TTEST", "event_id": eid,
                 "event": {"type": "message", "channel": "DUPRI", "thread_ts": ask["ts"],
                           "user": "UPRI", "text": text}})
         reply("Round half up to whole cents because invoice totals are shown that way", "e1")

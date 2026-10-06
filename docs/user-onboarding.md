@@ -1,10 +1,10 @@
 # Workspace accounts and repeatable verification
 
-New deployments open **Create your workspace**. Step 1 asks only for the workspace
+The default authenticated browser setup opens **Create your workspace**. Step 1 asks only for the workspace
 name and authorization to claim the deployment. Step 2, **Create your profile**,
 asks for your name, email and personal password (12–256 characters). The first
 profile automatically becomes admin. No password belongs to the workspace.
-Normal pages, HTTP APIs, HTTP MCP and webhooks remain blocked until both steps finish.
+When this browser flow is started, normal pages, HTTP APIs, HTTP MCP and webhooks remain blocked until both steps finish.
 Direct database tools and local stdio MCP are operator-level access, not web login boundaries.
 Existing completed workspaces remain ready without re-onboarding. Claiming the workspace
 requires an existing admin session or setup credential; it is never first-visitor
@@ -14,7 +14,14 @@ credential. A deployment may instead provision `BRIDGE_ADMIN_TOKEN` securely.
 The two steps are linked by a private, one-hour setup cookie; only the original
 creator can finish the profile. If it expires, re-enter that creator's setup
 credential. A restart preserves the pending workspace. Authentication must be
-enabled for first-run setup; unauthenticated operator mode cannot bypass it.
+enabled for this browser account-creation flow.
+
+Operators can instead initialize an accountless workspace with
+`./setup --workspace "Your team" --configure`. This headless path keeps the
+operator credential separate from the limited MCP credential and does not
+require a personal password. A recipient can answer in Slack without completing
+either browser step. A direct Python server with authentication off is a trusted
+loopback-only operator installation, not shared workspace authentication.
 
 ## Model
 
@@ -24,7 +31,24 @@ enabled for first-run setup; unauthenticated operator mode cannot bypass it.
 - **Agents:** limited credentials acting on behalf of users.
 - **Invites:** admin-issued access to this workspace.
 
-No workspace switching or multi-tenant isolation is introduced.
+No workspace switching or multi-tenant isolation is introduced. Deploy a separate
+instance and database for each organization; viewer and member accounts can read
+workspace data rather than only the tasks assigned to them.
+
+## Accountless task links
+
+Raven can include a personal task link in a Slack DM. It opens one task without
+a browser account and permits actions on the recipient's existing standing.
+It is a bearer credential: anyone holding it can act as that person on that task.
+Do not forward it. The link expires after 14 days by default, can be revoked,
+and stops working when the recipient is made inactive. It never grants an
+administrator override or access to unrelated tasks. Public fallback messages
+do not carry recipient links.
+
+An eligible recipient can optionally create a personal login from their task
+page; this is separate from answering in Slack. Administrators use the normal
+sign-in or invitation flow. An operator can disable task-page signup with
+`brief_signup=0`. See [the task-page contract](reference.md#the-task-page-a-message-links-to).
 
 ## TODO: secure workspace sharing
 

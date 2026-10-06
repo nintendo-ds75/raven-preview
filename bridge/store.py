@@ -175,11 +175,12 @@ class Store:
                     run_id TEXT, kind TEXT NOT NULL, detail TEXT NOT NULL,
                     created_at TEXT NOT NULL);
             """)
-            from . import briefing, delivery, execution_store, graph
+            from . import briefing, delivery, execution_store, graph, interview
             execution_store.migrate(db)
             graph.migrate(db)
             delivery.migrate(db)
             briefing.migrate(db)
+            interview.migrate(db)
             # executescript commits as it goes; the statements that read
             # the schema and write rows run in one transaction so two
             # processes opening at once (the inbox and an MCP server)
@@ -482,6 +483,10 @@ class Store:
             if db.execute("SELECT 1 FROM executions WHERE run_id=?", (run_id,)).fetchone():
                 raise Invalid("Managed run status comes from the execution provider")
             if status == "completed":
+                if db.execute("SELECT 1 FROM scope_clarifications WHERE task_id=?", (run_id,)).fetchone():
+                    raise Invalid("Refused: missing scope facts must be clarified before this task can finish. "
+                                  "Read scope_clarifications on bridge_get_tree, then retry bridge_add_node "
+                                  "with the same client_ref and the actual facts.")
                 # A node still being written is invisible to every reader,
                 # but the gate counts it: finishing in that window would
                 # be finishing over a decision about to appear.
@@ -879,7 +884,7 @@ class Store:
                          + (f" until {expires[:10]}" if expires else "") + ". End the rule to go back to sign-off.")
         return row
 
-    def answer(self, decision_id, data, actor=None):
+    def answer(self, decision_id, data, actor=None, transaction_hook=None):
         """A person's answer: the signed revision of the decision. The
         actor must be the decision's owner, a required signer, verified
         for its scope, or an admin overriding; who acted and on what
@@ -904,6 +909,10 @@ class Store:
                 raise Invalid("Managed decisions require expected_updated_at to prevent concurrent review conflicts")
             if data.get("expected_updated_at") and data["expected_updated_at"] != decision["updated_at"]:
                 raise Invalid("This decision changed while you were reviewing it. Reopen it before answering.")
+            # Internal-only hook: provenance is committed with the answer, after
+            # authority and revision checks. Never supplied by a client payload.
+            if transaction_hook is not None:
+                transaction_hook(db, decision)
             kind = "answer_corrected" if decision["status"] == "approved" else "owner_approved"
             # A human answer that replaces a different answer nobody signed
             # (a record's, memory's, the agent's) is a correction for every
@@ -920,10 +929,22 @@ class Store:
             # supersedes link retires the decision this one replaces.
             supersedes = data.get("supersedes") or ""
             if supersedes:
-                if not isinstance(supersedes, str) or not db.execute("SELECT 1 FROM decisions WHERE id=?", (supersedes,)).fetchone():
+                if not isinstance(supersedes, str):
                     raise Invalid("supersedes must name an existing decision")
+                prior = db.execute("SELECT d.*,o.name AS owner_name FROM decisions d "
+                                   "LEFT JOIN owners o ON o.id=d.owner_id WHERE d.id=?", (supersedes,)).fetchone()
+                if prior is None:
+                    raise Invalid("supersedes must name an existing decision")
+                if supersedes == decision_id:
+                    raise Invalid("A decision cannot supersede itself")
+                if repo_key(prior["repo"]) != repo_key(decision["repo"]):
+                    raise Invalid("A decision can only supersede another decision in the same repository")
+                # Retiring a decision changes its authority just as a
+                # correction does. Owning the replacement is not standing
+                # to withdraw somebody else's answer on another task.
+                authz.check(self.graph, actor, dict(prior), "correct")
                 db.execute("UPDATE decisions SET superseded_by=?,updated_at=? WHERE id=?", (decision_id, now(), supersedes))
-                self.event(db, "superseded", f"Superseded by decision {decision_id}", supersedes, decision["run_id"])
+                self.event(db, "superseded", f"Superseded by decision {decision_id}", supersedes, prior["run_id"])
             stamp = now()
             # With auth on, the signer is the person who is signed in; the
             # local operator records on behalf of the named owner, as
@@ -1018,6 +1039,12 @@ class Store:
         and nothing said so. Each finding names what to do about it."""
         graph = self.graph
         out: list[dict] = []
+        from .config import backend_status
+        inference = backend_status()
+        if not inference['semantic_enabled']:
+            out.append({'key': 'no_inference', 'level': 'warning', 'what': inference['notice'],
+                        'do': 'Set up Anthropic or the Claude CLI on the server with ./setup --configure. '
+                              'Do not send API keys in chat. Recheck bridge_connection_status afterward.'})
         people = graph.db.execute("SELECT count(*) c FROM people WHERE active=1").fetchone()["c"]
         coordinator = graph.coordinator()
         automatic = graph.get_setting("slack_discovery") == "1"

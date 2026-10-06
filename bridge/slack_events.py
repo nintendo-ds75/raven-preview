@@ -11,6 +11,31 @@ from .graph import now_iso
 LEASE_SECONDS = 120
 
 
+def accepts_workspace(delivery, event):
+    """A signed callback belongs to this instance's connected workspace.
+
+    Slack signs all installations of an app with the same app secret.
+    The signature proves the sender, not the workspace. Never learn the
+    workspace from the incoming payload: pin it to auth.test instead.
+    Check again during replay, before any capture, lookup, or reply.
+    """
+    graph = delivery.store.graph
+    team = graph.get_setting("slack_team_id")
+    if not team:
+        if not hasattr(delivery.transport, "workspace_id"):
+            return False
+        from .slack_directory import workspace
+        # A transient auth.test failure must remain retryable rather than
+        # acknowledging and dropping the callback as an unknown workspace.
+        team = workspace(graph, delivery.transport)
+        with graph.transaction():
+            pinned = graph.get_setting("slack_team_id")
+            if pinned and pinned != team:
+                return False
+            graph.set_setting("slack_team_id", team)
+    return event.get("team_id") == team
+
+
 def migrate(db):
     db.executescript('''CREATE TABLE IF NOT EXISTS slack_ingress (
         id TEXT PRIMARY KEY, payload TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'queued',
@@ -40,6 +65,8 @@ class Inbox:
         inner = event.get('event') or {}
         if event.get('type') != 'event_callback' or inner.get('bot_id') or inner.get('subtype'):
             return {'ok': True}
+        if not accepts_workspace(self.delivery, event):
+            return {'ok': True, 'ignored': 'workspace_mismatch'}
         clean = copy.deepcopy(event)
         token = clean.pop('action_token', '') or clean['event'].pop('action_token', '')
         clean['event'].pop('action_token', None)

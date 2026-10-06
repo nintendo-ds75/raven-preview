@@ -99,3 +99,19 @@ def load() -> Config:
         cfg.fast_model = fast
     cfg.user_name = os.environ.get("BRIDGE_USER_NAME", "").strip()
     return cfg
+
+
+def backend_status(cfg=None) -> dict:
+    """Non-secret local capability check, explicitly not a provider health probe."""
+    cfg = cfg or load()
+    from .llm import find_claude
+    cli = bool(find_claude())
+    configured = cfg.has_backend()
+    backend = ('none' if cfg.model_api == 'none' else 'anthropic' if cfg.api_key and cfg.model_api != 'claude-cli'
+               else 'claude-cli' if cli else 'unconfigured')
+    semantic = configured and cfg.semantic_retrieval
+    return {'backend': backend, 'configured': configured, 'semantic_enabled': semantic,
+            'live_verified': False, 'model': cfg.model, 'fast_model': cfg.fast_model,
+            'notice': 'Configuration detected; provider authentication and reachability are not verified.' if semantic else
+                      'Natural-language discovery, conversation and adaptive voice followups are unavailable. '
+                      'Configure an inference backend with ./setup --configure; explicit commands still work.'}

@@ -90,7 +90,7 @@ class Agent:
 
 
 def thread_reply(channel, thread_ts, user, text, event_id):
-    return {"type": "event_callback", "event_id": event_id,
+    return {"type": "event_callback", "team_id": "TTEST", "event_id": event_id,
             "event": {"type": "message", "channel": channel, "thread_ts": thread_ts, "user": user, "text": text}}
 
 

@@ -1392,6 +1392,9 @@ def handle_slack_event(delivery: Delivery, event: dict) -> dict:
     inner = event.get("event") or {}
     if inner.get("bot_id") or inner.get("subtype"):
         return {}
+    from .slack_events import accepts_workspace
+    if not accepts_workspace(delivery, event):
+        return {"ok": True, "ignored": "workspace_mismatch"}
     text = inner.get("text") or ""
     channel = inner.get("channel", "")
     thread_ts = inner.get("thread_ts", "")

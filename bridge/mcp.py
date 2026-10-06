@@ -18,6 +18,14 @@ from .store import Invalid, graph_summary, ownership_rows
 
 MAX_LINE = 1 << 20
 
+# Viewer-owned credentials retain evidence/review access, but never acquire
+# write privileges merely because they use the agent protocol. New tools are
+# write-restricted unless explicitly classified here.
+READ_ONLY_TOOLS = frozenset({
+    "bridge_get_tree", "bridge_wait", "bridge_get_decision", "bridge_search_decisions",
+    "bridge_list_owners", "bridge_connection_status", "bridge_export_proof",
+})
+
 
 def tool(name, description, properties, required):
     return {"name": name, "description": description, "inputSchema": {
@@ -44,6 +52,8 @@ TOOLS = [
           "uncovered": "Only when a finish was refused for changed files whose decider was asked nothing: one line per file, `<path>: why the change there settles nothing`. A file whose change does settle something gets a node instead (optional)"}, ["task_id"]),
     tool("bridge_get_decision", "Retrieve one node as a decision record: the human answer, provenance, and revision history. approval_pending is true until a person has answered or signed it (evidence found in records or memory does not clear it); authorized says whether a person stands behind the answer. While approval_pending, continue independent work and do not ship on the answer.",
          {"decision_id": "Decision ID (a node_id)"}, ["decision_id"]),
+    tool("bridge_export_proof", "Retrieve the portable change-proof bundle saved by bridge_finish_task. Includes the complete submitted diff and its SHA-256, signed decision revisions, scope, attribution, citations and host-reported checks, plus a review-ready Markdown summary. Reports whether decisions changed afterward. The digest detects tampering but is not a human digital signature or proof that tests ran.",
+         {"task_id": "Completed task ID, previously finished with the complete diff"}, ["task_id"]),
     tool("bridge_search_decisions", "Find similar approved or evidence-resolved decisions as evidence (stemmed lexical overlap, hashed cosine, FTS5, recency-weighted). These are approvals for their original context, not blanket authorization for new work.",
          {"query": "Question to search", "repo": "Optional repository scope"}, ["query"]),
     tool("bridge_list_owners", "List discovered Slack contacts, any optional verified authority map (who knows, decides or approves which paths, decision categories or repositories), any optional coordinator, the configured owners with their path patterns, and the ownership graph inferred from git (blame, CODEOWNERS, reviews) per repository.", {"repo": "Optional repository scope"}, []),
@@ -160,11 +170,13 @@ HANDLERS = {
     "bridge_wait": lambda store, args: canvas.wait(store, args),
     "bridge_finish_task": lambda store, args: canvas.finish_task(store, args),
     "bridge_get_decision": lambda store, args: store.get_decision(args["decision_id"]),
+    "bridge_export_proof": lambda store, args: __import__("bridge.proof", fromlist=["export"]).export(store, args),
     "bridge_search_decisions": lambda store, args: store.search(args["query"], repo=args.get("repo", "")),
     "bridge_list_owners": _list_owners,
     "bridge_ingest_repo": _ingest_repo,
     "bridge_import_record": lambda store, args: store.add_record(args),
     "bridge_connection_status": lambda store, args: {
+        "inference": __import__("bridge.config", fromlist=["backend_status"]).backend_status(),
         "readiness": store.readiness(),
         "github": _github_status(store),
         "sources": [dict(r) for r in store.graph.db.execute("SELECT repo,kind FROM connector_sources ORDER BY repo,kind")],

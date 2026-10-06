@@ -337,7 +337,7 @@ class RecordsAndTeamsTests(PortalCase):
             self.store.add_record({"repo": REPO, "kind": "doc", "ref": "d1"})
         # A decision written in a Slack channel.
         self.store.update_settings({"slack_capture_repo": REPO})
-        event = {"type": "event_callback", "event_id": "Ev7", "event": {
+        event = {"type": "event_callback", "team_id": "TTEST", "event_id": "Ev7", "event": {
             "type": "message", "channel": "C0BILL", "ts": "1700000000.000100", "user": "UWES",
             "text": "record: partner accounts are billed at the list rate, agreed with <@UPRI> and finance today"}}
         self.assertEqual(handle_slack_event(self.delivery, event), {"ok": True, "captured": True})
@@ -352,7 +352,7 @@ class RecordsAndTeamsTests(PortalCase):
         self.assertEqual(self.graph.get_source(REPO, "url:slack:C0BILL:1700000000.000100"),
                          "https://slack.com/archives/C0BILL/p1700000000000100")
         self.assertEqual(handle_slack_event(self.delivery, event), {"ok": True, "captured": False})
-        mention = {"type": "event_callback", "event_id": "Ev8", "event": {
+        mention = {"type": "event_callback", "team_id": "TTEST", "event_id": "Ev8", "event": {
             "type": "app_mention", "channel": "C0BILL", "ts": "1700000000.000200", "user": "UWES", "text": "<@UBRIDGE> hello"}}
         handle_slack_event(self.delivery, mention)
         self.assertIn("record: <what was decided>", self.slack.messages[-1]["text"])

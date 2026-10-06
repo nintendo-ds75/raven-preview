@@ -29,6 +29,12 @@ class Accounts:
         return self.graph.get_setting('workspace_name', '')
 
     def ready(self):
+        # The documented zero-dependency loopback install has no accounts.
+        # Its local-operator mode must not enter an onboarding flow which
+        # intentionally requires authentication to create a shared workspace.
+        # make_server refuses this mode on a non-loopback bind address.
+        if not self.auth.enabled:
+            return True
         return bool(self.workspace()) and self.graph.get_setting('workspace_profile_pending', '') != '1'
 
     def create_workspace(self, data, identity):

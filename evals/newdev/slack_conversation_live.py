@@ -96,7 +96,7 @@ def main():
 
     def say(msg, uid, text, repeat=False):
         eid = secrets.token_hex(12)
-        payload = {'type': 'event_callback', 'event_id': eid, 'event': {'type': 'message',
+        payload = {'type': 'event_callback', 'team_id': store.graph.get_setting('slack_team_id'), 'event_id': eid, 'event': {'type': 'message',
             'channel': msg['channel'], 'thread_ts': msg.get('thread_ts') or msg['ts'], 'user': uid, 'text': text}}
         body = json.dumps(payload).encode()
         timestamp = str(int(time.time()))

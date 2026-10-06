@@ -1,11 +1,12 @@
 # The first hour
 
-What a new engineer does on day one, run for real and checked promise by
-promise. Not a unit test: the commands from the README in the order a
-person runs them, against a real git checkout, with the agent side
-speaking MCP to a real Raven (a stdio subprocess, and then a shared
-Raven over HTTP the way a team runs it) and the human side replying
-through the same Slack event handler Slack posts to.
+A deterministic first-hour protocol walkthrough against a real Git checkout
+and isolated Raven instances. A scripted host speaks MCP through a stdio
+subprocess and HTTP. Simulated people answer through Raven's Slack delivery
+handler, with a fake transport recording outbound messages. The harness prepares
+a synthetic authority map to exercise explicit ownership. This is not a real
+coding-model run, a fresh Docker installation, or a real Slack installation, and
+that map is not a product setup requirement.
 
 ```sh
 python3 -m evals.newdev.walkthrough                      # this repository
@@ -22,8 +23,8 @@ database under `--work`.
 2. **Readiness** reports what is still missing before you trust it, and
    every finding says what to do. It is in the state the inbox polls, so
    you cannot miss it.
-3. **Setting the map up** clears the blockers.
-4. **The MCP server** starts, offers ten tools, and its instructions say
+3. **The harness's explicit authority map** clears the deterministic scenario's blockers.
+4. **The MCP server** starts, exposes the expected agent-tool set, and its instructions say
    what to do first.
 5. **Kickoff** engages a task with a real judgment call in it, says why
    in terms you can check, and names the decisions the task may contain
@@ -34,8 +35,9 @@ database under `--work`.
 7. **The person's message** carries the question, the context and how to
    reply; two decisions make two messages, not eleven; and nothing is
    described as coming from your records unless it did.
-8. **A Slack reply** stated as an answer is recorded and attributed; a
-   conversational one never becomes a decision.
+8. **An explicit simulated Slack answer** is recorded and attributed; a
+   non-answer does not become a decision. Natural-language inference is covered
+   by separate conversation tests, not this command-driven check.
 9. **The gate** refuses the finish while a decision waits on a person,
    naming it.
 10. **A killed process** started again gets the same task back by its
@@ -50,6 +52,11 @@ database under `--work`.
     known rather than that nothing is needed.
 
 ## Where it came from
+
+For automatic directory discovery without a prepared authority map, natural
+conversation, actual coding-model runs and the boundary between simulated and
+live integrations, see [the verification reports](../../docs/verification.md)
+and [the October 5 customer loop](../../docs/customer-loop-2026-10-05.md).
 
 A reviewer ran a real Codex host against a frozen Grafana checkout and
 reported ten steps with what held and what did not: kickoff passing a

@@ -920,12 +920,15 @@ def add_node(store, cfg, data) -> dict:
         raise Invalid("This task is finished; start a new one with bridge_start_task")
     # The task's facts hold here unless this node states its own value.
     facts = {**_json_dict(run["facts"] if "facts" in run.keys() else ""), **facts}
+    from .routing_memory import request_key, clarify, resolve_scope
+    scope_request_key = request_key(question, client_ref, context, paths)
     requester = _text(data, "requester", 200) or (run["requester"] or "")
     if client_ref:
         row = graph.db.execute(
             "SELECT id FROM decisions WHERE run_id=? AND client_ref=? AND draft=0 ORDER BY created_at LIMIT 1",
             (task_id, client_ref)).fetchone()
         if row:
+            resolve_scope(graph, task_id, scope_request_key)
             return node_view(store, row["id"], repeated=True)
     # Reject malformed relationships before reserving a ref or running the
     # ladder. A real host sent a client_ref as depends_on; validation after
@@ -938,6 +941,22 @@ def add_node(store, cfg, data) -> dict:
         candidate = _node(store, adopt, task_id, "adopt")
         if candidate.status != "suggested":
             raise Invalid("adopt must name a follow-up question a person added to this task")
+    # A retry of a node already on this tree must not become a new scope
+    # question merely because the retry omitted its node-specific facts.
+    for existing in graph.db.execute(
+            "SELECT id,client_ref,scope_key FROM decisions WHERE run_id=? AND lower(question)=lower(?) "
+            "AND draft=0 AND status NOT IN ('suggested','adopted') ORDER BY created_at", (task_id, question)):
+        if client_ref and existing['client_ref'] and existing['client_ref'] != client_ref:
+            continue
+        if (not context and not paths) or existing['scope_key'] == scope_key(context, paths):
+            resolve_scope(graph, task_id, scope_request_key)
+            return node_view(store, existing['id'], repeated=True)
+    if not owner_id:
+        from .store import repo_key
+        clarification = clarify(graph, task_id, graph.resolve_repo(repo_key(run['repo'])), question,
+                                scope_request_key, path=paths[0] if paths else '', category=category, facts=facts)
+        if clarification:
+            return clarification
     if client_ref:
         # Nothing published under this ref. Take it before the ladder
         # runs, so a retry that overlaps this write waits for its node
@@ -1051,6 +1070,7 @@ def add_node(store, cfg, data) -> dict:
         graph.settle_node_ref(task_id, client_ref, did)
     if background:
         _start_background(('node', did), _model_node_pass, store, effective, did, ctx, paths, hints, requester, owner_id, context)
+    resolve_scope(graph, task_id, scope_request_key)
     return view
 
 
@@ -1579,6 +1599,13 @@ def get_tree(store, task_id: str) -> dict:
             counts["parent_changed_after"] += 1
     followups = [n for n in nodes if n["status"] == "suggested"]
     parts: list[str] = []
+    from .routing_memory import pending_scopes
+    scope_clarifications = pending_scopes(graph, task_id)
+    if scope_clarifications:
+        counts['blocking'] += len(scope_clarifications)
+        counts['needs_scope_clarification'] = len(scope_clarifications)
+        parts.append(f"{len(scope_clarifications)} scope clarification(s) wait on the agent: confirm the missing "
+                     "facts, then retry bridge_add_node with the same client_ref and explicit facts")
     waiting = [n for n in nodes if n["status"] == "pending"
                or (n["status"] == "duplicate" and n.get("resolution", {}).get("status") == "pending")]
     if waiting:
@@ -1641,6 +1668,7 @@ def get_tree(store, task_id: str) -> dict:
             "needs_review": bool(run["needs_review"]) if "needs_review" in run.keys() else False,
             "model_pending": bool(_json_dict(run["discovery"]).get("model_pending")) or any(n.get("model_pending") for n in nodes),
             "nodes": nest(""), "followups": followups, "observed_at": now(), "notes": notes,
+            "scope_clarifications": scope_clarifications,
             "next": "; ".join(parts) if parts else ("no node waits on anyone" if nodes else _nothing_yet(run)),
             **({"review": review} if review is not None else {})}
 
@@ -1745,7 +1773,8 @@ def finish_task(store, data, sleep=None, stop=None) -> dict:
     if len(checks) > CHECKS_KEPT:
         checks = (checks[:CHECKS_KEPT].rstrip() + f" … [cut by Raven: {len(checks)} characters given, "
                   f"the first {CHECKS_KEPT} kept]")
-    diff = _text(data, "diff", 60000)
+    _text(data, "diff", 60000)  # validate without changing the submitted bytes
+    diff = data.get("diff") or ""
     # Files the diff changes whose decider was asked nothing on this task:
     # put to them, or said why not, before the task finishes. Measured live
     # on 63eb671: the finish named the changelog fragment the agent had
@@ -1854,7 +1883,13 @@ def finish_task(store, data, sleep=None, stop=None) -> dict:
     # the finish says so. Measured on the follow-up run: listed only with
     # its rule's maker as signer, the agent reported it as signed.
     ruled = [n for n in signed if n.get("signoff") == "rule"]
+    proof = None
+    if status == "completed" and diff.strip():
+        from .proof import create as create_proof
+        proof = create_proof(store, task_id, diff, checks=checks)
     return {**result, "counts": tree["counts"], "next": tree["next"],
+            **({"proof": {"id": proof["id"], "diff_sha256": proof["payload"]["change"]["sha256"],
+                          "export_tool": "bridge_export_proof"}} if proof else {}),
             "authorized": [{"node_id": n["node_id"], "question": n["question"],
                             "signed_by": n.get("signed_by") or n.get("answered_by") or "",
                             **({"by_rule": True} if n.get("signoff") == "rule" else {})} for n in signed],
@@ -2214,6 +2249,8 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
     watched = [node_id] if node_id else [nid for nid, n in before.items() if n["blocking"]]
     result = {"task_id": task_id, "timed_out": False, "waited_seconds": 0.0, "changed": [], "waiting_on": [],
               "counts": tree["counts"], "timeout_applied": timeout, "observed_at": tree["observed_at"]}
+    if tree.get('scope_clarifications'):
+        return {**result, 'scope_clarifications': tree['scope_clarifications'], 'next': tree['next']}
     if capped:
         result["notice"] = f"timeout capped at {cap:g} seconds on this connection; call again to keep waiting"
     changed: list[dict] = []
@@ -2728,7 +2765,16 @@ def _route_signer(graph, run, question, ctx, paths, requester, hints, category, 
                                category=category, facts=facts)
     source = graph.get_decision(source_id) if source_id else None
     source_signer = (source.answered_by or source.signed_by) if source and source.authorized else ''
-    if source_signer and graph.find_person(source_signer):
+    from .graph import parse_facts, applicability_status
+    from .ladder import _scope_difference
+    scope_row = graph.db.execute('SELECT facts FROM decisions WHERE id=?', (source.id,)).fetchone() if source else None
+    source_facts = parse_facts(scope_row['facts']) if scope_row else {}
+    complete_scope = all(str((facts or {}).get(k, '')).lower() == v.lower() for k, v in source_facts.items())
+    scope_difference = _scope_difference(question, ctx, paths[0] if paths else '', source, facts,
+                                         source_facts, repo)[0] if source else ''
+    person = graph.find_person(source_signer) if source_signer else None
+    if (person and person['active'] and person['role'] != 'viewer' and complete_scope and not scope_difference
+            and applicability_status(source, paths[0] if paths else '', facts)[0]):
         if not ranked or not any(e.startswith('verified:') for e in ranked[0][1]):
             ranked.insert(0, (source_signer, [f'signs off; {source_signer} signed the reused answer in decision {source.id}'], 2.0))
     if not ranked:

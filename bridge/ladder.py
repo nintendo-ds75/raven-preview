@@ -2001,6 +2001,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                            + (f" (conditions: {'; '.join(terms[:3])})" if terms else "")
                            + (f", until {item.rule_expires[:10]}" if item.rule_expires else ""))
                 rule_note = ""
+                attribution = (item.answered_by + " answered") if item.answered_by else (item.signed_by + " approved")
                 if rule_ok and not auto_rules:
                     # The rule fits; the organization keeps every decision
                     # request-specific until it turns automatic rules on.
@@ -2012,7 +2013,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     why_open.append("memory: " + rule_note)
                 if rule_ok:
                     other_scope = ""
-                    evidence = f"covered by {covered}; {item.answered_by} answered it ({detail})"
+                    evidence = f"covered by {covered}; {attribution} it ({detail})"
                 elif rule_why:
                     # The rule was nominated and did not fit: the node says
                     # so where the person reads it, not only in the log.
@@ -2022,14 +2023,14 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     pass
                 elif signed and other_scope:
                     signed = False
-                    evidence = ((f"prediction: {item.answered_by} answered this for another scope, decision "
+                    evidence = ((f"prediction: {attribution} this for another scope, decision "
                                  f"{item.id} ({other_scope}); it may not carry over" if known_scope else
-                                 f"prediction: {item.answered_by} answered a question like this in decision {item.id}, "
+                                 f"prediction: {attribution} a question like this in decision {item.id}, "
                                  f"which may be another scope ({other_scope}); Raven cannot tell whether it carries "
                                  "over")
                                 + f" ({detail}); confirm with the owner before acting on it")
                 elif signed:
-                    evidence = f"{item.answered_by} answered this ({detail})"
+                    evidence = f"{attribution} this ({detail})"
                 else:
                     who = "settled by the agent" if item.source == "agent" else f"from {item.evidence or item.source}"
                     evidence = (f"prediction: reused from decision {item.id}, {who}, which no human has signed "

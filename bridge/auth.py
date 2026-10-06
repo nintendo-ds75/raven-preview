@@ -54,6 +54,11 @@ class Identity:
     def is_agent(self) -> bool:
         return self.kind == "agent"
 
+    @property
+    def can_write_as_agent(self) -> bool:
+        """An agent's protocol access cannot exceed its person's role."""
+        return self.is_agent and ROLE_RANK.get(self.role, -1) >= ROLE_RANK["member"]
+
     def allows(self, role: str) -> bool:
         if self.is_agent:
             return role == "viewer"
@@ -122,6 +127,8 @@ class Auth:
             if len(pieces) != 3:
                 return ""
             person_id, expires, sig = pieces
+            if not sig.isascii():
+                return ""
             body = f"{person_id}.{expires}"
             expected = hmac.new(self.secret, body.encode(), hashlib.sha256).hexdigest()[:32]
             if not hmac.compare_digest(sig, expected):
@@ -203,6 +210,8 @@ class Auth:
         authorization = headers.get("Authorization", "")
         if authorization.lower().startswith("bearer "):
             token = authorization[7:].strip()
+            if not token.isascii():
+                return None
             if self.bootstrap_token and hmac.compare_digest(token, self.bootstrap_token):
                 return Identity(id="", name="Bootstrap admin", role="admin", kind="bootstrap")
             person_id, label, kind = self._token_person(token)
@@ -241,9 +250,9 @@ class Auth:
     def github_exchange(self, code: str, state: str, redirect_uri: str, fetch=None) -> dict:
         """Trade the code for the GitHub user: their login and verified
         emails. `fetch` is the HTTP function, replaceable in tests."""
-        if state not in self._states:
+        started = self._states.pop(state, None)
+        if started is None or time.time() - started >= 600:
             raise Invalid("Sign-in state is unknown or expired; start again")
-        del self._states[state]
         fetch = fetch or _http_json
         token = fetch("POST", "https://github.com/login/oauth/access_token",
                       {"client_id": self.github_client_id, "client_secret": self.github_client_secret,

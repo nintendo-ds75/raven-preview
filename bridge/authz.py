@@ -59,9 +59,15 @@ def _scope_holders(graph, decision: dict, roles: tuple = ("decides", "approves")
     person on a mention, approving needs the decision's own topic."""
     from .scopes import primary_scopes
     from .signals import _pattern_re
+    from .graph import now_iso
     import re
     repo = decision.get("repo") or ""
-    rows = graph.authority_rows(repo)
+    # Routing may cache its derived people and teams. Authorization cannot:
+    # expiry needs no database write, and another process can remove a team
+    # member without changing the authority row itself.
+    rows = [dict(r) for r in graph.db.execute(
+        "SELECT * FROM authority WHERE ended_at='' AND accepted=1 AND (repo=? OR repo='') "
+        "AND (effective_to='' OR effective_to > ?)", (repo, now_iso()))]
     if not rows:
         return []
     scopes = set(primary_scopes(decision.get("question") or "", decision.get("category") or ""))
@@ -89,12 +95,15 @@ def _scope_holders(graph, decision: dict, roles: tuple = ("decides", "approves")
                 covers = False
         if not covers:
             continue
-        if r.get("person"):
-            out.append(r["person"])
-        elif r.get("team"):
-            for pid in r["team"].get("members", []):
-                p = graph.get_person(pid)
-                if p is not None:
+        if r.get("person_id"):
+            p = graph.get_person(r["person_id"])
+            if p is not None and p.get("active", 1):
+                out.append(p)
+        elif r.get("team_id"):
+            members = graph.db.execute("SELECT person_id FROM team_members WHERE team_id=?", (r["team_id"],))
+            for member in members:
+                p = graph.get_person(member["person_id"])
+                if p is not None and p.get("active", 1):
                     out.append(p)
     return out
 

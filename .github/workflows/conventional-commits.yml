@@ -15,6 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # Force-pushed event tips may still be absent. The checker fetches
+          # those exact SHAs and refuses to silently use a different range.
           fetch-depth: 0
+      - name: Test commit-range recovery
+        run: python3 -m unittest discover -s tests -p 'test_commit_headers.py'
       - name: Check PR title and new commit headers
         run: python3 scripts/check_commit_headers.py

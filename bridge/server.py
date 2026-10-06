@@ -194,7 +194,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     view["viewer"]["signed_in"] = bool(auth.enabled and self.me is not None
                                                        and self.me.id == link.person["id"])
                     return self.send(200, view)
-                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js"):
+                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js"):
                     if url.path == "/" and auth.enabled and self.me is None:
                         if parse_qs(url.query).get("github_connect") == ["1"]:
                             cookie = "bridge_github_connect=1; Max-Age=600; Path=/; HttpOnly; SameSite=Lax"
@@ -205,6 +205,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     files = {"/": "index.html", "/app.js": "app.js", "/style.css": "style.css", "/favicon.svg": "favicon.svg", "/claude.svg": "claude.svg", "/cursor.svg": "cursor.svg", "/openai.svg": "openai.svg"}
                     files['/onboarding.js'] = 'onboarding.js'
                     files['/task.js'] = 'task.js'
+                    files['/interview.js'] = 'interview.js'
                     file = WEB / files[url.path]
                     return self.send(200, file.read_bytes(), (mimetypes.guess_type(str(file))[0] or "text/plain") + "; charset=utf-8")
                 self.require("viewer")
@@ -295,6 +296,12 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     if url.path == "/api/runs":
                         return self.send(200, store.list_runs(page, size, one("status")))
                     return self.send(200, store.list_decisions(page, size, one("status"), one("owner_id"), one("run_id"), one("q")))
+                if len(parts) in (4, 5) and parts[:2] == ["api", "tasks"] and parts[3] == "interviews":
+                    from . import interview
+                    self.require("member")
+                    result = (interview.list_for_task(store, parts[2], self.actor()) if len(parts) == 4
+                              else interview.get(store, parts[2], parts[4], self.actor()))
+                    return self.send(200, result)
                 if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "tree":
                     from .canvas import get_tree
                     return self.send(200, get_tree(store, parts[2]))
@@ -319,6 +326,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                 return self.send(404, {"error": "Not found"})
             except Forbidden as error:
                 self.send(error.code, {"error": str(error)})
+            except Refused as error:
+                self.send(403, {"error": str(error)})
             except Invalid as error:
                 self.send(404, {"error": str(error)})
             except Exception as error:
@@ -617,6 +626,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                          extra_headers={"WWW-Authenticate": "Bearer"})
                     return self.mcp_http(data)
                 if self.me is not None and self.me.is_agent:
+                    if not self.me.can_write_as_agent:
+                        raise Forbidden(403, "A viewer's agent credential is read-only")
                     if not self.agent_may(path):
                         raise Forbidden(403, "An agent credential writes nodes and reads the tree; a person answers, "
                                              "signs, hands on and administers. Sign in as yourself for this")
@@ -731,7 +742,19 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         raise Invalid(str(error))
                 else:
                     parts = path.strip("/").split("/")
-                    if len(parts) == 4 and parts[:2] == ["api", "decisions"] and parts[3] in {"answer", "assign"}:
+                    if len(parts) in (4, 6) and parts[:2] == ["api", "tasks"] and parts[3] == "interviews":
+                        from . import interview
+                        if len(parts) == 4:
+                            result = interview.create(store, parts[2], data, self.actor())
+                        elif parts[5] == "confirm":
+                            result = interview.confirm(store, parts[2], parts[4], data, self.actor())
+                        elif parts[5] == "advance":
+                            result = interview.advance(store, parts[2], parts[4], data, self.actor())
+                        elif parts[5] in ("draft", "cancel", "failed"):
+                            result = interview.update(store, parts[2], parts[4], data, self.actor(), parts[5])
+                        else:
+                            return self.send(404, {"error": "Unknown interview action"})
+                    elif len(parts) == 4 and parts[:2] == ["api", "decisions"] and parts[3] in {"answer", "assign"}:
                         if parts[3] == "answer":
                             if not data.get("expected_updated_at"):
                                 # A human answer over HTTP names the revision it
@@ -824,11 +847,13 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
             """Run one MCP tool with the caller's identity and agent label.
             `sleep` and `cap` are a streamed wait's: its progress sleep and
             the canvas cap instead of this server's request bound."""
-            from .mcp import call_tool
+            from .mcp import READ_ONLY_TOOLS, call_tool
             name = str(data.get("name") or "")
             args = data.get("arguments") or {}
             if not isinstance(args, dict):
                 raise Invalid("arguments must be an object")
+            if self.me.is_agent and not self.me.can_write_as_agent and name not in READ_ONLY_TOOLS:
+                raise Forbidden(403, "A viewer's agent credential is read-only")
             if name == "bridge_ingest_repo":
                 self.require("admin")
             if auth.enabled and self.me.id:
