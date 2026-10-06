@@ -1,6 +1,6 @@
 # Workflow acceptance and remaining limits
 
-Dated execution results and source checkpoints are recorded in [verification evidence](verification-2026-10-06.md).
+Dated execution results and source checkpoints are recorded in [verification evidence](verification-2026-10-06.md) and the later [overnight host examination](overnight-host-verification-2026-10-06.md).
 
 This matrix distinguishes implementation, deterministic protocol tests, actual
 runtime tests and external-service verification. Synthetic people never establish

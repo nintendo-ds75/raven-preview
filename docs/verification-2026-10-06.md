@@ -1,5 +1,8 @@
 # Verification recorded on 2026-10-06
 
+For the later real-host campaign and newer runtime checkpoint, see the
+[overnight host examination](overnight-host-verification-2026-10-06.md).
+
 This is execution evidence for the reconstructed preview plus the workflow
 changes, not a guarantee of complete model reasoning or production readiness.
 The runtime checkpoint is `764b1c4095d3aceadaee4f9e332378c0bebb69a0`, built on
