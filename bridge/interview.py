@@ -302,30 +302,34 @@ def _model_guidance(cfg, row):
     except LLMError:
         return {**fallback, "reason": "model_failed"}
     keys = {"question", "question_quote", "proposed_answer", "proposed_rationale", "answer_quotes", "caveats"}
-    invalid = {**fallback, "reason": "invalid_model_response"}
+    def invalid(code):
+        # Fixed reason codes let operators distinguish grounding/schema failures
+        # without retaining rejected model text or provider diagnostics.
+        return {**fallback, "reason": "invalid_model_response", "validation_error": code}
     if not isinstance(raw, dict) or set(raw) != keys:
-        return invalid
+        return invalid("response_keys")
     for key, limit in (("question", 600), ("question_quote", 1000), ("proposed_answer", 6000), ("proposed_rationale", 3000)):
         if not isinstance(raw[key], str) or len(raw[key]) > limit:
-            return invalid
+            return invalid("text_field_shape")
     if raw["question"] and (not raw["question_quote"].strip() or raw["question_quote"] not in context):
-        return invalid
+        return invalid("question_quote_not_grounded")
     quotes = raw["answer_quotes"]
-    if not isinstance(quotes, list) or len(quotes) > 10 or any(
-            not isinstance(q, str) or not q.strip() or len(q) > 2000 or q not in responses for q in quotes):
-        return invalid
+    if not isinstance(quotes, list) or len(quotes) > 10:
+        return invalid("answer_quotes_shape")
+    if any(not isinstance(q, str) or not q.strip() or len(q) > 2000 or q not in responses for q in quotes):
+        return invalid("answer_quote_not_grounded")
     if (raw["proposed_answer"] or raw["proposed_rationale"]) and not quotes:
-        return invalid
+        return invalid("answer_without_quotes")
     caveats = raw["caveats"]
     if not isinstance(caveats, list) or len(caveats) > 6:
-        return invalid
+        return invalid("caveats_shape")
     for caveat in caveats:
         if not isinstance(caveat, dict) or set(caveat) != {"text", "quote"}:
-            return invalid
+            return invalid("caveat_keys")
         if any(not isinstance(caveat[k], str) or not caveat[k].strip() or len(caveat[k]) > 1000 for k in caveat):
-            return invalid
+            return invalid("caveat_field_shape")
         if caveat["quote"] not in responses:
-            return invalid
+            return invalid("caveat_quote_not_grounded")
     return {**raw, "mode": "model-assisted", "model": cfg.fast_model, "status": "unapproved"}
 
 

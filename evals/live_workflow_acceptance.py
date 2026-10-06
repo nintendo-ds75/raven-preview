@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 import ast
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import difflib
 import hashlib
 import io
@@ -211,11 +211,66 @@ def check_guidance(guidance, scenario):
 
 def record_interview_guidance(guidance, scenario, report):
     """Keep the public-safe unapproved result even when an invariant rejects it."""
-    fields = ('mode', 'status', 'reason', 'model', 'question', 'question_quote',
+    fields = ('mode', 'status', 'reason', 'validation_error', 'model', 'question', 'question_quote',
               'proposed_answer', 'proposed_rationale', 'answer_quotes', 'caveats')
     report['interview'] = ({field: guidance[field] for field in fields if field in guidance}
                            if isinstance(guidance, dict) else {'shape': type(guidance).__name__})
     check_guidance(guidance, scenario)
+
+
+def _diagnostic_text(value, limit):
+    key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+    return (value.replace(key, '[redacted]') if key else value)[:limit]
+
+
+def _bounded_model_value(value, depth=0):
+    """Bound diagnostic output without altering the actual parsed model result."""
+    kind = type(value).__name__
+    if isinstance(value, str):
+        return {'type': kind, 'length': len(value), 'value': _diagnostic_text(value, 2048), 'truncated': len(value) > 2048}
+    if isinstance(value, (bool, int, float)) or value is None:
+        return {'type': kind, 'value': value}
+    if depth >= 3:
+        return {'type': kind, 'truncated': True}
+    if isinstance(value, list):
+        return {'type': kind, 'length': len(value), 'items': [_bounded_model_value(v, depth + 1) for v in value[:12]],
+                'truncated': len(value) > 12}
+    if isinstance(value, dict):
+        keys = list(value)[:12]
+        return {'type': kind, 'field_count': len(value),
+                'fields': [{'name': _diagnostic_text(str(k), 120), 'type': type(value[k]).__name__} for k in keys],
+                'values': {k: _bounded_model_value(value[k], depth + 1) for k in ('text', 'quote') if k in value},
+                'truncated': len(value) > 12}
+    return {'type': kind}
+
+
+def interview_model_observation(raw):
+    fields = ('question', 'question_quote', 'proposed_answer', 'proposed_rationale', 'answer_quotes', 'caveats')
+    if not isinstance(raw, dict):
+        return {'result_type': type(raw).__name__}
+    keys = list(raw)[:32]
+    return {'result_type': 'dict', 'field_count': len(raw),
+            'fields': [{'name': _diagnostic_text(str(k), 120), 'type': type(raw[k]).__name__} for k in keys],
+            'values': {field: _bounded_model_value(raw[field]) for field in fields if field in raw},
+            'fields_truncated': len(raw) > 32}
+
+
+@contextmanager
+def observe_interview_model(report):
+    """Observe one purpose transparently, retaining no request/error/credential data."""
+    original = llm.Client.complete_json
+    lock = threading.Lock()
+    def observed(client, purpose, *args, **kwargs):
+        raw = original(client, purpose, *args, **kwargs)
+        if purpose == 'interview_followup':
+            observation = interview_model_observation(raw)
+            with lock:
+                kept = report.setdefault('interview_model_observations', [])
+                if len(kept) < 4:
+                    kept.append(observation)
+        return raw
+    with patch.object(llm.Client, 'complete_json', new=observed):
+        yield
 
 
 def human_post(harness, token, path, data, *, report=None, operation='request'):
@@ -411,7 +466,8 @@ def run(*, run_live=False, max_calls=None, timeout=180, interview_only=False, pr
         else:
             scenario = novel_scenario()
         report['scenario'] = scenario
-        with redirect_stdout(diagnostics), redirect_stderr(diagnostics), patch('urllib.request.urlopen', side_effect=budget.open):
+        with redirect_stdout(diagnostics), redirect_stderr(diagnostics), \
+             patch('urllib.request.urlopen', side_effect=budget.open), observe_interview_model(report):
             with harness_factory(model_mode='live', request_timeout=timeout, event_timeout=timeout) as h:
                 try:
                     workflow(h, llm.Client(load().fast()), scenario, report, timeout=timeout)

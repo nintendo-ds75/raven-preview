@@ -13,7 +13,8 @@ from fixtures import ROOT
 from bridge import llm
 from evals.live_workflow_acceptance import (
     PROVIDER_URL, AcceptanceFailure, RequestBudget, check_expression, check_guidance,
-    human_post, novel_scenario, record_interview_guidance, reuse_scenario, run, run_interview_only,
+    human_post, interview_model_observation, novel_scenario, observe_interview_model,
+    record_interview_guidance, reuse_scenario, run, run_interview_only,
 )
 
 
@@ -234,6 +235,63 @@ class LiveWorkflowDriverTests(unittest.TestCase):
             with self.assertRaisesRegex(AcceptanceFailure, 'interview_guidance_not_object'):
                 record_interview_guidance(guidance, novel_scenario(), report)
             self.assertEqual(report['interview'], {'shape': type(guidance).__name__})
+
+
+    def test_transparent_observer_returns_identical_result_without_extra_inference(self):
+        from bridge.config import Config
+        raw = {'question': 'Which staging environment?', 'question_quote': 'not retained in supplied input',
+               'answer_quotes': ['fixture quote'], 'caveats': [{'text': 'Fixture caveat', 'quote': 'fixture quote'}],
+               'wrong_extra_key': 'unexpected-value-not-copied'}
+        report = {}
+        with patch.object(llm.Client, 'complete_json', return_value=raw) as original:
+            with observe_interview_model(report):
+                client = llm.Client(Config(model_api='none'))
+                returned = client.complete_json('interview_followup', 'system-canary-not-logged', 'prompt-canary-not-logged')
+                self.assertIs(returned, raw)
+                self.assertIs(client.complete_json('other_purpose', 'system', 'prompt'), raw)
+        self.assertEqual(original.call_count, 2)
+        observed = report['interview_model_observations']
+        self.assertEqual(len(observed), 1)
+        self.assertIn({'name': 'wrong_extra_key', 'type': 'str'}, observed[0]['fields'])
+        self.assertEqual(observed[0]['values']['question_quote']['value'], raw['question_quote'])
+        serialized = json.dumps(report)
+        for excluded in ('unexpected-value-not-copied', 'prompt-canary-not-logged', 'system-canary-not-logged'):
+            self.assertNotIn(excluded, serialized)
+
+    def test_model_observer_is_bounded_and_does_not_record_provider_errors(self):
+        raw = {'question': 'q' * 5000, 'answer_quotes': ['x' * 3000] * 100,
+               'caveats': [{'text': 't', 'quote': 'q', 'secret_extra_field': 'never-copy'}] * 100}
+        observation = interview_model_observation(raw)
+        self.assertEqual(observation['values']['question']['length'], 5000)
+        self.assertEqual(len(observation['values']['question']['value']), 2048)
+        self.assertTrue(observation['values']['question']['truncated'])
+        self.assertEqual(len(observation['values']['answer_quotes']['items']), 12)
+        self.assertNotIn('never-copy', json.dumps(observation))
+        from bridge.config import Config
+        report = {}
+        with patch.object(llm.Client, 'complete_json', side_effect=llm.LLMError('provider-error-canary')):
+            with observe_interview_model(report), self.assertRaises(llm.LLMError):
+                llm.Client(Config(model_api='none')).complete_json('interview_followup', 's', 'p')
+        self.assertEqual(report, {})
+
+    def test_production_validation_detail_code_survives_safe_guidance_projection(self):
+        report = {}
+        with self.assertRaises(AcceptanceFailure):
+            record_interview_guidance({'mode': 'deterministic-guided-prompts',
+                'reason': 'invalid_model_response', 'validation_error': 'fixture_grounding_error'},
+                novel_scenario(), report)
+        self.assertEqual(report['interview']['validation_error'], 'fixture_grounding_error')
+
+
+    def test_model_observer_redacts_before_clipping_credentials(self):
+        secret = 'fixture-key-at-the-clipping-boundary'
+        with patch.dict(os.environ, {'ANTHROPIC_API_KEY': secret}):
+            observed = interview_model_observation({'question': 'x' * 2040 + secret,
+                                                    secret: 'unknown field value'})
+        text = json.dumps(observed)
+        self.assertNotIn(secret, text)
+        self.assertNotIn('fixture-', text)
+        self.assertIn('[redacted]', text)
 
 
 if __name__ == '__main__':

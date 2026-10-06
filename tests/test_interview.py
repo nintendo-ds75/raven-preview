@@ -285,6 +285,23 @@ class InterviewTests(OfflineCase):
         self.assertEqual(output['guidance']['reason'], 'model_failed')
         self.assertNotIn('secret', str(output['guidance']))
 
+    def test_rejected_model_reports_fixed_validation_detail_without_rejected_text(self):
+        cases = [({'confirmed': True}, 'response_keys'),
+                 ({**self.model_answer(), 'question_quote': 'private-rejected-text'}, 'question_quote_not_grounded'),
+                 ({**self.model_answer(), 'answer_quotes': []}, 'answer_without_quotes'),
+                 ({**self.model_answer(), 'caveats': [{'text': 'Caveat', 'quote': 'private-rejected-text'}]},
+                  'caveat_quote_not_grounded')]
+        for index, (raw, code) in enumerate(cases):
+            row = self.draft(self.create(key='validation-' + str(index)),
+                             turns=[{'prompt_id': 0, 'response': 'Keep five seconds, except old clients keep ten.'}])
+            with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
+                 patch('bridge.llm.Client.complete_json', return_value=raw):
+                output = self.advance(row, Config())
+            self.assertEqual(output['guidance']['reason'], 'invalid_model_response')
+            self.assertEqual(output['guidance']['validation_error'], code)
+            self.assertNotIn('private-rejected-text', str(output['guidance']))
+            self.assertFalse(self.store.get_decision(self.node)['signed_by'])
+
     def test_model_result_is_discarded_if_interview_is_cancelled_during_inference(self):
         row = self.draft(self.create())
         def model(*args, **kwargs):
