@@ -153,3 +153,56 @@ and the actual handler route.
 Keep the boundary labels in any report that cites these tests. A pass means the
 covered contracts passed against the synthetic service; it does not mean a live
 customer workspace or a production model was tested.
+
+## Required live-inference workflow acceptance
+
+After secure Anthropic configuration and explicit approval, run the deeper
+acceptance in that configured environment:
+
+```sh
+python evals/live_workflow_acceptance.py --run-live --max-calls 30 --output /tmp/raven-live-workflow.json
+```
+
+Without `--run-live`, or without the configured Anthropic key and enabled
+inference, it refuses before creating the harness or contacting a provider.
+The deterministic commands above retain their offline behavior. Never put a
+provider key in this command, a source file, or a test artifact.
+
+This driver uses the synthetic Slack service and authenticated HTTP MCP, with
+real Raven inference and a real model-backed coding-host driver. It checks:
+
+1. A rough task without supplied paths, owners or decisions produces live
+   Raven candidates, and the coding host discovers a repository path/question.
+2. A natural referral is read back and confirmed before contacting the new owner.
+3. A novel randomized cohort and numerical threshold amend a natural answer;
+   the readback preserves both, without silently signing it.
+4. An attributed interview HTTP call asks a grounded, adaptive follow-up about
+   a newly introduced unresolved staging environment. It remains an unapproved
+   draft and grants no authority.
+5. After explicit Slack confirmation, the coding host reads the signed answer
+   via MCP and generates a restricted Python billing expression. The driver
+   executes 16 positive/negative/boundary cases, including equality at the novel
+   threshold, before finishing and exporting the actual change proof.
+
+The default cap is 30 physical Anthropic HTTP attempts, including retries;
+`--max-calls` is bounded to 1–100. Each provider network operation has a
+45-second timeout. The JSON report records request counts, response statuses,
+actual input/output/cache token usage, semantic results, and the failed stage
+when applicable. It never includes headers, keys or an environment dump.
+Background inference is stopped/drained under the same request gate at teardown.
+
+Live mode does not patch model outputs or return canned answers. The coding
+implementation is deliberately a constrained expression, not arbitrary code
+execution or a general coding benchmark. Human inputs and Slack are still
+synthetic; this run cannot establish actual human approval or live Slack access.
+The interview's staging question remains a draft separate from the confirmed
+production decision. Model review remains advisory.
+
+Offline driver wiring, refusal, request-budget and semantic-oracle tests run as:
+
+```sh
+python -m unittest discover -s tests -p test_live_workflow_acceptance.py -v
+```
+
+Those unit tests explicitly inject a provider HTTP fixture. Their success is
+not a substitute for a passing `--run-live` report.

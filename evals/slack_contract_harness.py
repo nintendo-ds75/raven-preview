@@ -256,7 +256,13 @@ class FixtureProvider:
 
 class RavenContractHarness:
     """Isolated instance; task/decision writes enter exclusively through HTTP."""
-    def __init__(self, directory=None):
+    def __init__(self, directory=None, *, model_mode='fixture', request_timeout=15, event_timeout=12):
+        if model_mode not in ('fixture', 'live'):
+            raise ValueError('model_mode must be fixture or live')
+        if model_mode == 'live' and not os.environ.get('ANTHROPIC_API_KEY', '').strip():
+            raise ValueError('Live mode requires securely configured Anthropic credentials')
+        self.request_timeout = request_timeout
+        self.event_timeout = event_timeout
         self.stack = ExitStack()
         self.temp = self.stack.enter_context(tempfile.TemporaryDirectory(prefix='raven-slack-contract-'))
         self.root = Path(directory or self.temp)
@@ -264,16 +270,19 @@ class RavenContractHarness:
         self.database = self.root / 'raven.db'
         self.slack = SlackContractServer()
         self.stack.callback(self.slack.close)
-        self.provider = FixtureProvider()
-        self.stack.enter_context(patch.dict(os.environ, {'BRIDGE_MODEL_API': 'none', 'BRIDGE_SEMANTIC': '0',
+        self.provider = FixtureProvider() if model_mode == 'fixture' else None
+        self.stack.enter_context(patch.dict(os.environ, {
+            'BRIDGE_MODEL_API': 'none' if model_mode == 'fixture' else 'anthropic',
+            'BRIDGE_SEMANTIC': '0' if model_mode == 'fixture' else '1',
             'BRIDGE_LIVE': '0', 'BRIDGE_DEEP': '0', 'BRIDGE_PUBLIC_URL': '', 'GITHUB_TOKEN': ''}))
-        from bridge.config import Config
-        class ChatConfig(Config):
-            @property
-            def semantic_retrieval(self):
-                return True
-        self.stack.enter_context(patch('bridge.slack_chat.load', return_value=ChatConfig(model_api='none')))
-        self.stack.enter_context(patch('bridge.llm.Client.complete', side_effect=self.provider.complete))
+        if model_mode == 'fixture':
+            from bridge.config import Config
+            class ChatConfig(Config):
+                @property
+                def semantic_retrieval(self):
+                    return True
+            self.stack.enter_context(patch('bridge.slack_chat.load', return_value=ChatConfig(model_api='none')))
+            self.stack.enter_context(patch('bridge.llm.Client.complete', side_effect=self.provider.complete))
         self.rpc_id = 0
         self.protocol_version = ''
         self.server = self.store = None
@@ -350,7 +359,7 @@ class RavenContractHarness:
     def rpc(self, method, params=None):
         self.rpc_id += 1
         status, result, _ = http_json(self.url + '/mcp', {'jsonrpc': '2.0', 'id': self.rpc_id,
-            'method': method, 'params': params or {}}, self.mcp_headers())
+            'method': method, 'params': params or {}}, self.mcp_headers(), timeout=self.request_timeout)
         if status != 200 or 'error' in result:
             raise AssertionError(f'MCP HTTP/JSON-RPC failure: {status} {result}')
         self.transcript.append({'method': method, 'params': params or {}, 'result': result['result']})
@@ -403,7 +412,7 @@ class RavenContractHarness:
         status, result = self.callback(event)
         assert status == 200, (status, result)
         reply = eventually(lambda: self.slack.matching_messages(channel=message['channel'], contains=expected,
-                          start=start), 'Slack reply containing ' + expected)[-1]
+                          start=start), 'Slack reply containing ' + expected, timeout=self.event_timeout)[-1]
         assert reply.get('thread_ts') == (message.get('thread_ts') or message['ts']), reply
         return event, reply
 
