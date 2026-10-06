@@ -66,3 +66,11 @@ class SetupShellTests(unittest.TestCase):
         self.assertIn("--port", calls)
         self.assertIn("7444", calls)
         self.assertNotIn("http://localhost:7333/#connect", calls)
+
+    def test_windows_wrapper_uses_the_same_configuration_wizard(self):
+        root = Path(__file__).resolve().parents[1]
+        self.assertIn('& wsl bash "$bridgeRoot/setup" @bridgeArgs', (root / "setup.ps1").read_text())
+        calls = self.run_launcher(True, ["--configure"])
+        self.assertIn("bridge.setup", calls)
+        self.assertIn("--configure", calls)
+        self.assertNotIn("--yes", calls[:calls.index("bridge.setup") + 2])

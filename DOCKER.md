@@ -35,6 +35,11 @@ prints it when needed.
 
 The same entry point is available as `./dev setup`; `./dev config` reopens the
 configuration wizard. Blank answers keep existing source and integration settings.
+Choosing Anthropic asks for a hidden API key and an optional, non-secret Anthropic
+workspace ID for multi-workspace keys. The ID is saved as `ANTHROPIC_WORKSPACE_ID`;
+Enter keeps a saved ID or leaves it unset. The same prompt is available through
+`.\setup.ps1 --configure` on Windows/WSL. This is Anthropic's workspace ID, not
+the Raven workspace name supplied with `--workspace`.
 Select one or more agent clients to write URL-based Raven entries into their
 project MCP configuration; each keeps unrelated MCP servers. The endpoint is
 `BRIDGE_PUBLIC_URL/mcp` and requires a limited agent token. Setup writes that

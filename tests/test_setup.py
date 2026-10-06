@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from bridge.setup import _mcp_clients, configure, save_settings
+from bridge.setup import _mcp_clients, configure, read_settings, save_settings
 
 
 class SetupTests(unittest.TestCase):
@@ -63,7 +63,7 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
 
     def test_missing_keys_do_not_enable_optional_paid_backends(self):
-        with patch.dict(os.environ, {}, clear=True), patch("builtins.input", side_effect=["", "y", "n", "n", "y"]), patch("getpass.getpass", return_value=""):
+        with patch.dict(os.environ, {}, clear=True), patch("builtins.input", side_effect=["", "y", "", "n", "n", "y"]), patch("getpass.getpass", return_value=""):
             self.run_config(interactive=True)
         text = self.path.read_text()
         self.assertNotIn("BRIDGE_AGENTS", text)
@@ -87,6 +87,107 @@ class SetupTests(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):
                 self.run_config(interactive=True)
         self.assertFalse(self.path.exists())
+
+    def test_anthropic_workspace_prompt_saves_explicit_selection_without_logging_key(self):
+        key = "synthetic-api-key-do-not-log"
+        with patch.dict(os.environ, {}, clear=True), \
+                patch("builtins.input", side_effect=["", "y", "  wrkspc_fixture_selected  ", "n", "n", "n"]) as prompt, \
+                patch("getpass.getpass", return_value=key) as secret, \
+                contextlib.redirect_stdout(io.StringIO()) as output, \
+                contextlib.redirect_stderr(io.StringIO()) as errors:
+            configure(self.args, self.path, interactive=True)
+        settings = read_settings(self.path)
+        self.assertEqual(settings["ANTHROPIC_WORKSPACE_ID"], "wrkspc_fixture_selected")
+        self.assertEqual(settings["ANTHROPIC_API_KEY"], key)
+        self.assertEqual(settings["BRIDGE_MODEL_API"], "anthropic")
+        self.assertIn("ANTHROPIC_WORKSPACE_ID='wrkspc_fixture_selected'", self.path.read_text())
+        self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
+        secret.assert_called_once_with("Anthropic API key: ")
+        workspace_prompt = prompt.call_args_list[2].args[0]
+        self.assertIn("Anthropic workspace ID", workspace_prompt)
+        self.assertIn("optional", workspace_prompt)
+        self.assertIn("multi-workspace", workspace_prompt)
+        self.assertIn("Enter to keep/skip", workspace_prompt)
+        self.assertNotIn(key, output.getvalue() + errors.getvalue() + str(prompt.call_args_list) + str(secret.call_args_list))
+
+    def test_blank_anthropic_workspace_stays_unset(self):
+        for blank in ("", "   "):
+            with self.subTest(blank=blank), patch.dict(os.environ, {}, clear=True), \
+                    patch("builtins.input", side_effect=["", "y", blank, "n", "n", "n"]), \
+                    patch("getpass.getpass", return_value="synthetic-api-key"):
+                self.run_config(interactive=True)
+                self.assertNotIn("ANTHROPIC_WORKSPACE_ID", read_settings(self.path))
+                self.assertEqual(read_settings(self.path)["BRIDGE_MODEL_API"], "anthropic")
+
+    def test_blank_anthropic_workspace_keeps_saved_key_and_selection(self):
+        original = "# retained\nANTHROPIC_API_KEY='synthetic-saved-key'\nANTHROPIC_WORKSPACE_ID='wrkspc_fixture_saved'\n"
+        for blank in ("", "   "):
+            self.path.write_text(original)
+            with self.subTest(blank=blank), patch.dict(os.environ, {}, clear=True), \
+                    patch("builtins.input", side_effect=["", "y", blank, "n", "n", "n"]), \
+                    patch("getpass.getpass", return_value=""):
+                self.run_config(interactive=True)
+                self.assertTrue(self.path.read_text().startswith(original))
+
+    def test_workspace_can_be_updated_without_reentering_saved_key(self):
+        self.path.write_text("ANTHROPIC_API_KEY='synthetic-saved-key'\nANTHROPIC_WORKSPACE_ID='wrkspc_fixture_old'\nBRIDGE_MODEL_API='anthropic'\n")
+        with patch.dict(os.environ, {}, clear=True), \
+                patch("builtins.input", side_effect=["", "y", "wrkspc_fixture_new", "n", "n", "n"]), \
+                patch("getpass.getpass", return_value=""):
+            self.run_config(interactive=True)
+        settings = read_settings(self.path)
+        self.assertEqual(settings["ANTHROPIC_API_KEY"], "synthetic-saved-key")
+        self.assertEqual(settings["ANTHROPIC_WORKSPACE_ID"], "wrkspc_fixture_new")
+        self.assertEqual(settings["BRIDGE_MODEL_API"], "anthropic")
+        self.assertEqual(self.path.read_text().count("ANTHROPIC_WORKSPACE_ID="), 1)
+
+    def test_workspace_alone_does_not_enable_inference(self):
+        with patch.dict(os.environ, {}, clear=True), \
+                patch("builtins.input", side_effect=["", "y", "wrkspc_fixture_only", "n", "n", "n"]), \
+                patch("getpass.getpass", return_value=""):
+            self.run_config(interactive=True)
+        settings = read_settings(self.path)
+        self.assertEqual(settings["ANTHROPIC_WORKSPACE_ID"], "wrkspc_fixture_only")
+        self.assertNotIn("ANTHROPIC_API_KEY", settings)
+        self.assertNotIn("BRIDGE_MODEL_API", settings)
+
+    def test_blank_workspace_keeps_runtime_selection_without_copying_environment(self):
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "synthetic-runtime-key",
+                                     "ANTHROPIC_WORKSPACE_ID": "wrkspc_fixture_runtime"}, clear=True), \
+                patch("builtins.input", side_effect=["", "y", "", "n", "n", "n"]), \
+                patch("getpass.getpass", return_value=""):
+            self.run_config(interactive=True)
+            self.assertEqual(os.environ["ANTHROPIC_WORKSPACE_ID"], "wrkspc_fixture_runtime")
+        settings = read_settings(self.path)
+        self.assertNotIn("ANTHROPIC_WORKSPACE_ID", settings)
+        self.assertNotIn("ANTHROPIC_API_KEY", settings)
+        self.assertEqual(settings["BRIDGE_MODEL_API"], "anthropic")
+
+    def test_skipped_and_noninteractive_setup_preserve_anthropic_settings(self):
+        original = "ANTHROPIC_API_KEY='synthetic-saved-key'\nANTHROPIC_WORKSPACE_ID='wrkspc_fixture_saved'\nBRIDGE_MODEL_API='anthropic'\n"
+        for interactive in (False, True):
+            self.path.write_text(original)
+            with self.subTest(interactive=interactive), \
+                    patch("builtins.input", side_effect=["", "n", "n", "n", "n"]) as prompt, \
+                    patch("getpass.getpass") as secret:
+                self.run_config(interactive=interactive)
+                self.assertTrue(self.path.read_text().startswith(original))
+                secret.assert_not_called()
+                if not interactive:
+                    prompt.assert_not_called()
+
+    def test_cancelled_workspace_prompt_preserves_existing_file(self):
+        original = "# retained\nANTHROPIC_API_KEY='synthetic-saved-key'\nANTHROPIC_WORKSPACE_ID='wrkspc_fixture_saved'\n"
+        for error in (EOFError, KeyboardInterrupt):
+            for after_selection in (False, True):
+                self.path.write_text(original)
+                answers = ["", "y"] + (["wrkspc_fixture_new"] if after_selection else []) + [error]
+                with self.subTest(error=error, after_selection=after_selection), \
+                        patch("builtins.input", side_effect=answers), \
+                        patch("getpass.getpass", return_value="synthetic-new-key"):
+                    with self.assertRaises(error):
+                        self.run_config(interactive=True)
+                    self.assertEqual(self.path.read_text(), original)
 
     def test_demo_requires_explicit_flag(self):
         self.run_config()

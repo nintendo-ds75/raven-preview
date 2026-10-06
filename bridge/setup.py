@@ -196,7 +196,8 @@ def configure(args, path: Path, interactive: bool) -> None:
             return True
 
         print("To connect GitHub, open Connections & setup after startup and choose repositories on GitHub.")
-        if ask("Anthropic model-assisted retrieval", [("ANTHROPIC_API_KEY", "Anthropic API key", True)]):
+        if ask("Anthropic model-assisted retrieval", [("ANTHROPIC_API_KEY", "Anthropic API key", True),
+            ("ANTHROPIC_WORKSPACE_ID", "Anthropic workspace ID (optional, for multi-workspace keys; Enter to keep/skip)", False)]):
             if updates.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
                 updates["BRIDGE_MODEL_API"] = "anthropic"
             else:

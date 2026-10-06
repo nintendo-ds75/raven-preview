@@ -153,7 +153,9 @@ Evidence is not authorization. A person stands behind a decision when the inbox 
 
 For a multi-workspace Anthropic key, explicitly set the non-secret
 `ANTHROPIC_WORKSPACE_ID` in the runtime environment (or the ignored local `.env`
-used by Compose). Raven sends it as `anthropic-workspace-id` on Messages requests;
+used by Compose). The Anthropic section of `./setup --configure` offers this
+optional ID after the API key; Enter keeps the saved ID or leaves it unset.
+Raven sends it as `anthropic-workspace-id` on Messages requests;
 unset or blank preserves existing single-workspace behavior. The ID is read at
 call time and must be a printable header value of at most 256 characters. Raven
 does not choose, discover or grant access to a workspace. See the
