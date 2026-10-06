@@ -2206,7 +2206,13 @@ def _review(store, task_id: str, signed: list[dict], diff: str, sleep=None, stop
     started = _time.monotonic()
     while thread.is_alive() and _time.monotonic() - started < budget and not (stop is not None and stop.is_set()):
         if sleep is not None:
-            sleep(1.0)
+            try:
+                sleep(1.0)
+            except (BrokenPipeError, ConnectionResetError):
+                # Losing the caller's progress stream ends only its wait.
+                # Finish has already recorded completion; let it save the
+                # exact submitted proof while the advisory reader continues.
+                break
         else:
             thread.join(timeout=min(1.0, max(0.0, budget - (_time.monotonic() - started))))
     stored = _stored_review(graph, task_id, rid)
