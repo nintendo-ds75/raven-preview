@@ -283,8 +283,13 @@ an explanation of why you need clarification into proposed_rationale: that field
 person's stated rationale for a proposed substantive answer. If EITHER proposed_answer or
 proposed_rationale is nonempty, answer_quotes must include at least one exact supporting quote
 copied from their response/transcript. Never invent a quote to satisfy the schema. All quotes
-must be contiguous verbatim substrings, without ellipses or paraphrasing. Use empty strings,
-not null, for omitted text fields. Return ONLY a JSON object with these exact keys:
+must be contiguous verbatim substrings, without ellipses or paraphrasing. Keep a separate caveats
+list of the material exceptions, conditions and unresolved limitations the person actually stated.
+Question-only clarification still needs that grounded caveats list: an empty proposed answer is
+not a reason to drop known exceptions or the unresolved condition being discussed. Return an empty
+caveats list only when the supplied responses contain no such caveat. Every caveat must have an exact
+supporting quote; do not fabricate caveats merely to fill the list. Use empty strings, not null,
+for omitted text fields. Return ONLY a JSON object with these exact keys:
 question (string, one follow-up or empty if nothing remains), question_quote (exact supporting quote
 from supplied context or responses), proposed_answer (string), proposed_rationale (string),
 answer_quotes (array of exact response/transcript quotes supporting the readback), caveats

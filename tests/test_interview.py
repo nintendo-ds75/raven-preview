@@ -337,6 +337,9 @@ class InterviewTests(OfflineCase):
              patch('bridge.llm.Client.complete_json', return_value=repaired) as model:
             self.advance(result, Config())
         self.assertEqual(model.call_count, 1)
+        system = model.call_args.args[1]
+        self.assertIn('Question-only clarification still needs that grounded caveats list', system)
+        self.assertEqual(result['guidance']['caveats'], raw['caveats'])
 
     def test_ungrounded_substantive_answer_stays_rejected_after_one_repair(self):
         row = self.draft(self.create())
