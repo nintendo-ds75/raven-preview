@@ -31,6 +31,145 @@ class ConversationTests(DeliveryCase):
         with patch('bridge.slack_chat.reading',return_value=model or {'kind':'chat','reply':'Tell me more.'}):
             return self.reply(self.message,who,text,event_id)
 
+    def review_source(self, policy):
+        task = self.store.get_decision(self.n['node_id'])['run_id']
+        with self.graph.transaction():
+            parent = self.graph.add_decision(task, 'Which upstream constraint applies?', '', 'pending', owner='Wes Chen')
+            self.graph.add_link(self.n['node_id'], parent, 'depends')
+        self.store.answer(parent, {'answer': 'Keep the original upstream constraint.'})
+        self.say(policy, {'kind': 'answer', 'answer': policy})
+        self.say('yes')
+        self.assertTrue(self.store.get_decision(self.n['node_id'])['authorized'])
+        return parent
+
+    def invalidate_review(self, parent):
+        row = self.store.get_decision(parent)
+        self.store.answer(parent, {'answer': 'Use the corrected upstream constraint.',
+                                  'expected_updated_at': row['updated_at']})
+        row = self.store.get_decision(self.n['node_id'])
+        self.assertTrue(row['needs_review'])
+        self.assertFalse(row['authorized'])
+        self.assertEqual(row['signatures'], '[]')
+
+    def test_identical_answer_after_invalidation_gets_fresh_confirmable_readback(self):
+        policy = 'Exclude synthetic load tests for this task only. This is not a standing rule.'
+        parent = self.review_source(policy)
+        self.invalidate_review(parent)
+        for repair in ({'kind': 'answer', 'answer': policy}, {'kind': 'signoff'}):
+            with self.subTest(kind=repair['kind']):
+                with patch('bridge.slack_chat.reading', side_effect=[
+                        {'kind': 'chat', 'reply': 'That decision is already recorded and signed.'}, repair]) as model:
+                    result = self.reply(self.message, 'UWES', policy)
+                self.assertEqual(model.call_count, 2)
+                payload = model.call_args.args[1]
+                self.assertTrue(payload['needs_review'])
+                self.assertFalse(payload['authorized'])
+                self.assertEqual(payload['signoff'], 'required')
+                self.assertIn(parent, payload['review_reason'])
+                self.assertIn('fresh', payload['validation_error'])
+                self.assertIn('Reply yes to confirm', result)
+                self.assertIn(policy, result)
+                self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+                self.say('yes')
+                restored = self.store.get_decision(self.n['node_id'])
+                self.assertTrue(restored['authorized'])
+                self.assertFalse(restored['needs_review'])
+                self.assertEqual(restored['answer'], policy)
+                self.assertFalse(restored['reusable'])
+                if repair['kind'] == 'answer':
+                    # A distinct correction invalidates the next confirmation.
+                    row = self.store.get_decision(parent)
+                    self.store.answer(parent, {'answer': 'A further corrected constraint.',
+                                              'expected_updated_at': row['updated_at']})
+
+    def test_repeated_review_noop_fails_closed_without_reusing_old_approval(self):
+        policy = 'Bill two units for this task only.'
+        parent = self.review_source(policy)
+        self.invalidate_review(parent)
+        with patch('bridge.slack_chat.reading', return_value={
+                'kind': 'question', 'reply': 'You already have a signed answer.'}) as model:
+            result = self.reply(self.message, 'UWES', policy)
+        self.assertEqual(model.call_count, 2)
+        self.assertIn('Nothing was changed', result)
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+
+    def test_review_question_is_not_forced_into_an_answer(self):
+        policy = 'Bill two units.'
+        parent = self.review_source(policy)
+        self.invalidate_review(parent)
+        with patch('bridge.slack_chat.reading', return_value={
+                'kind': 'question', 'reply': 'The upstream constraint changed, so fresh review is needed.'}) as model:
+            result = self.reply(self.message, 'UWES', 'Why am I being asked to review this again?')
+        self.assertEqual(model.call_count, 1)
+        self.assertIn('fresh review', result)
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+
+    def test_still_authorized_repeat_does_not_require_new_confirmation(self):
+        policy = 'Bill two units.'
+        self.review_source(policy)
+        with patch('bridge.slack_chat.reading', return_value={
+                'kind': 'chat', 'reply': 'The current answer is already signed.'}) as model:
+            result = self.reply(self.message, 'UWES', policy)
+        self.assertEqual(model.call_count, 1)
+        self.assertIn('already signed', result)
+        self.assertTrue(self.store.get_decision(self.n['node_id'])['authorized'])
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+
+    def test_invalidation_retires_a_pending_readback_even_when_answer_text_is_unchanged(self):
+        policy = 'Bill two units.'
+        parent = self.review_source(policy)
+        self.say(policy, {'kind': 'answer', 'answer': policy})
+        self.assertIsNotNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+        self.invalidate_review(parent)
+        result = self.say('yes')
+        self.assertIn('changed since my read-back', result)
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+
+    def test_old_readback_does_not_revive_after_another_fresh_approval(self):
+        policy = 'Bill two units.'
+        parent = self.review_source(policy)
+        self.say(policy, {'kind': 'answer', 'answer': policy})
+        self.invalidate_review(parent)
+        row = self.store.get_decision(self.n['node_id'])
+        self.store.answer(self.n['node_id'], {'answer': policy, 'expected_updated_at': row['updated_at']})
+        before = self.store.get_decision(self.n['node_id'])
+        self.assertTrue(before['authorized'])
+        result = self.say('yes')
+        self.assertIn('changed since my read-back', result)
+        after = self.store.get_decision(self.n['node_id'])
+        self.assertEqual(after['revision'], before['revision'])
+        self.assertEqual(after['signatures'], before['signatures'])
+
+    def test_invalidation_epoch_stays_stable_across_normal_cosignatures(self):
+        from bridge.delivery import _what_it_says
+        policy = 'Bill two units.'
+        parent = self.review_source(policy)
+        self.invalidate_review(parent)
+        row = self.store.get_decision(self.n['node_id'])
+        held_revision = _what_it_says(row)
+        self.store.answer(self.n['node_id'], {'answer': policy, 'expected_updated_at': row['updated_at']})
+        approved = self.store.get_decision(self.n['node_id'])
+        self.assertEqual(_what_it_says(approved), held_revision)
+        # An ordinary co-signature changes neither the answer nor the review epoch.
+        with self.graph.transaction():
+            self.graph.append_event('signature', {'task_id': approved['run_id'],
+                                                  'decision_id': approved['id'], 'by': 'Additional approver'})
+        self.assertEqual(_what_it_says(self.store.get_decision(approved['id'])), held_revision)
+
+    def test_fresh_readback_cannot_be_issued_by_an_unrelated_person(self):
+        policy = 'Bill two units.'
+        parent = self.review_source(policy)
+        self.invalidate_review(parent)
+        with patch('bridge.slack_chat.reading', side_effect=[
+                {'kind': 'chat', 'reply': 'It is already signed.'}, {'kind': 'answer', 'answer': policy}]):
+            response = self.reply(self.message, 'UMAR', policy)
+        self.assertNotIn('Reply yes to confirm', response)
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.marisol))
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+
     def test_captured_answer_correction_reframe_gets_one_repair(self):
         # Actual Anthropic/MCP Click run: this answer amendment was read back
         # as "Replace the current question with". The old examiner also

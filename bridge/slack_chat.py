@@ -23,6 +23,10 @@ SYSTEM = '''You are Raven, a customer-installed Slack bot connecting a coding ag
 Talk naturally and briefly. You are discussing ONE decision. The human can ask why, ask for context,
 correct a proposal, give an answer, refer to someone, add context, request a follow-up or make a rule.
 Use the supplied task, sources and conversation. Do not invent facts, people, decisions, authority or actions.
+Current authorization fields take precedence over historical conversation. needs_review means earlier approval
+was invalidated: answer_on_table is now evidence requiring fresh confirmation, even if its text is unchanged.
+Never dismiss a repeated answer as already signed when needs_review is true and authorized is false.
+A person may reaffirm the identical policy: read it as answer or signoff for fresh confirmation, not a no-op.
 Do not say you searched Slack unless sources were supplied. rationale is the reason the person gave, in their own words,
 or empty when they gave none; never restate the answer as its reason and never supply a reason of your own.
 Name people by the names given in sources and conversation, never by a Slack member id.
@@ -113,6 +117,10 @@ def validated_reading(cfg, payload):
     """One repair budget across intent and scope guards; never repair a repair."""
     from .delivery import _CONFIRM_RE
     require_answer = False
+    require_reapproval = False
+    reaffirming = (bool(payload.get('needs_review')) and not payload.get('authorized')
+                   and bool((payload.get('answer_on_table') or '').strip())
+                   and (payload.get('message') or '').strip() == payload['answer_on_table'].strip())
     for attempt in range(2):
         action = reading(cfg, payload)
         kind = action['kind']
@@ -124,6 +132,14 @@ def validated_reading(cfg, payload):
                      'Do not reframe the question or sign off the old answer.')
         elif require_answer and (kind != 'answer' or not action.get('answer', '').strip()):
             error = 'The repair must supply the complete amended answer, not another action or an empty answer.'
+        elif require_reapproval and (kind not in ('answer', 'signoff')
+                                     or (kind == 'answer' and not action.get('answer', '').strip())):
+            error = 'The repair must read back the reaffirmed answer for fresh approval, not dismiss it or change the question.'
+        elif reaffirming and kind in ('chat', 'question', 'context'):
+            require_reapproval = True
+            error = ('This exact answer is being repeated after its authorization was invalidated. '
+                     'It still needs fresh confirmation. Read the complete human policy as answer or signoff; '
+                     'do not claim it is already approved based on history. Preserve every qualification.')
         elif kind == 'confirm' and not _CONFIRM_RE.match(payload['message']):
             # Code recognizes confirmations before calling the model.
             error = ('This message was not an explicit confirmation. Re-read it as an amendment, '
@@ -345,6 +361,8 @@ def respond(delivery, note, d, person, text, actor, action_token=''):
                  'context':d.get('context',''),'routing':d.get('owner_evidence') or d.get('routing_reason',''),
                  'evidence':d.get('evidence',''),'rationale':d.get('rationale',''),
                  'owner':d.get('owner_name',''),'authorized':d.get('authorized',False),
+                 'needs_review':bool(d.get('needs_review')), 'review_reason':d.get('review_reason') or '',
+                 'signoff':d.get('signoff') or '', 'signed_by':d.get('signed_by') or '',
                  'task_notes':canvas.task_notes(delivery.store,d['run_id'])[-10:],
                  'history':history,'pending_readback':pending,'message':text,'sources':sources,
                  'today':now_iso()[:10]}

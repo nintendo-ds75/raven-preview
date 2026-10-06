@@ -968,9 +968,17 @@ def _what_it_says(decision: dict) -> str:
     whether it is still open. A signature that changes none of them (a
     co-signer agreeing) does not make a reading read back to someone
     else out of date."""
-    return "c:" + answer_hash("\n".join([decision.get("question") or "", decision.get("context") or "",
-                                         decision.get("answer") or "", decision.get("owner_id") or "",
-                                         "open" if decision.get("status") == "pending" else "settled"]))
+    parts = [decision.get("question") or "", decision.get("context") or "",
+             decision.get("answer") or "", decision.get("owner_id") or "",
+             "open" if decision.get("status") == "pending" else "settled"]
+    # An upstream correction can invalidate approval without changing this
+    # answer's text. Keep that epoch after reapproval too, so an older held
+    # reading cannot revive. Co-signature events do not change the epoch.
+    invalidations = [str(event['id']) for event in (decision.get('events') or [])
+                     if event.get('kind') in ('dependent_flagged', 'prediction_withdrawn')]
+    if invalidations:
+        parts.append('review events:' + ','.join(invalidations))
+    return "c:" + answer_hash("\n".join(parts))
 
 
 def _explicit_answer(text: str) -> str:
