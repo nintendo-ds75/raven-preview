@@ -20,6 +20,7 @@ the same SQLite file the inbox reads.
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 import time
@@ -2234,6 +2235,8 @@ def _seconds(raw, default: float, cap: float) -> tuple[float, bool]:
         value = float(str(raw).strip())
     except ValueError:
         raise Invalid("timeout must be a number of seconds")
+    if not math.isfinite(value):
+        raise Invalid("timeout must be a finite number of seconds")
     if value < 0:
         raise Invalid("timeout must not be negative")
     return (cap, True) if value > cap else (value, False)

@@ -1,7 +1,8 @@
-"""Failures discovered by a real host given a task without supplied paths."""
+"""Real-host workflow regressions and adversarial host protocol inputs."""
 from unittest.mock import patch
 from test_canvas import CanvasCase
 from bridge import canvas
+from bridge.mcp import call_tool
 from bridge.store import Invalid
 
 
@@ -55,3 +56,18 @@ class MinimalHostTests(CanvasCase):
             goal='Add an optional total elapsed-time budget for retries so a slow upstream cannot keep a request retrying indefinitely. Keep existing behavior unless the caller enables it, and cover the interactions with server-requested waits. Include tests and documentation.')
         self.assertEqual(task['verdict'], 'engage', task)
         self.assertTrue(any('keep working' in c['question'] for c in task['candidates']), task['candidates'])
+
+    def test_nonfinite_wait_cannot_escape_the_host_call_budget(self):
+        task = self.start('Change default interrupt policy', paths='hw/riscv/virt.c')['task_id']
+        canvas.add_node(self.store, self.cfg, {
+            'task_id': task, 'question': 'Should we preserve the boot default?', 'paths': 'hw/riscv/virt.c'})
+        for value in ('NaN', 'nan', '+nan', '-nan', 'Infinity', '-Infinity', '1e309'):
+            with self.subTest(timeout=value), patch('time.sleep', side_effect=AssertionError('invalid timeout started waiting')):
+                with self.assertRaisesRegex(Invalid, 'finite'):
+                    call_tool(self.store, 'bridge_wait', {'task_id': task, 'timeout': value})
+
+    def test_large_finite_wait_still_uses_transport_budget(self):
+        task = self.start('Fix one spelling typo in the documentation', paths='docs/about.rst')['task_id']
+        result = call_tool(self.store, 'bridge_wait', {'task_id': task, 'timeout': '9999999999'}, wait_cap=0.1)
+        self.assertEqual(result['timeout_applied'], 0.1)
+        self.assertIn('timeout capped', result['notice'])
