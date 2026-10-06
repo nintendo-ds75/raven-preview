@@ -263,6 +263,12 @@ def _start_task(store, cfg, data) -> dict:
     if resume:
         existing = store.graph.get_task(resume)
         if existing is not None:
+            requested_repo = _text(data, "repo", 300)
+            if requested_repo and requested_repo != existing["repo"]:
+                raise Invalid(f"This task_id already names repository {existing['repo']!r}; resuming cannot "
+                              "replace its scope. Close the mistaken task with bridge_finish_task "
+                              "(status=abandoned, reason=...), then omit task_id and use a new client_key "
+                              "when starting the correctly scoped task.")
             return _task_as_started(store, existing)
     title = field(data, "title", limit=300)
     goal = _text(data, "goal")
@@ -275,6 +281,9 @@ def _start_task(store, cfg, data) -> dict:
     if client_key:
         row = graph.db.execute("SELECT * FROM runs WHERE client_key=?", (client_key,)).fetchone()
         if row is not None and row['status'] == 'abandoned':
+            if row['repo'] != repo:
+                raise Invalid("This client_key belongs to an abandoned task in a different repository. "
+                              "Omit task_id and use a new client_key for the correctly scoped task.")
             return _task_as_started(store, row)
         if row is not None and _same_task(row, title, goal) and row["repo"] != repo \
                 and _corrects_the_repo(graph, row, repo):
@@ -837,7 +846,9 @@ def _next_for_verdict(verdict: str, discovery: dict, proposed: list[dict] | None
                 f"(Raven has nothing under {discovery['unknown_repo']!r}); this verdict read no repository, "
                 "so treat it as no answer rather than as a pass. Known repositories: "
                 + ', '.join(discovery.get('known_repos') or [])
-                + ". Close a mistaken task with bridge_finish_task(status=abandoned, reason=...).")
+                + ". First close this mistaken task with bridge_finish_task(status=abandoned, reason=...). "
+                  "Then omit task_id and use a new client_key when starting the correctly scoped task; "
+                  "resuming the old task_id does not replace its repository.")
     if proposed:
         ask = (f"; Raven sees {len(proposed)} decision{'s' if len(proposed) > 1 else ''} this task may contain "
                "(candidates): write the ones that are real with bridge_add_node and ignore the rest")
