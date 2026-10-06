@@ -1961,7 +1961,22 @@ def finish_task(store, data, sleep=None, stop=None) -> dict:
     if status == "completed" and diff.strip():
         from .proof import create as create_proof
         proof = create_proof(store, task_id, diff, checks=checks)
-    return {**result, "counts": tree["counts"], "next": tree["next"],
+    # Starting or retrying the reader changes the next step. A person can
+    # also correct an answer during the wait. Refresh only the guidance:
+    # the submitted reading and saved proof keep their own snapshots, and
+    # an internal tree read is not an agent acknowledgment of new answers.
+    guidance = get_tree(store, task_id)
+    guidance_review = guidance.get("review")
+    return {**result, "counts": guidance["counts"], "next": guidance["next"],
+            "guidance_snapshot": {
+                "observed_at": guidance["observed_at"], "task_status": guidance["status"],
+                "needs_review": guidance["needs_review"],
+                "review": ({k: guidance_review[k] for k in ("id", "status", "read_status") if k in guidance_review}
+                           if guidance_review else None),
+                "description": "next and counts come from this later tree read. The finish result (status, "
+                               "authorized, review and follows) describes the earlier signed-answer snapshot; "
+                               "this summary does not acknowledge newer human answers. Read bridge_get_tree "
+                               "to see them."},
             **({"proof": {"id": proof["id"], "diff_sha256": proof["payload"]["change"]["sha256"],
                           "export_tool": "bridge_export_proof"}} if proof else {}),
             "authorized": [{"node_id": n["node_id"], "question": n["question"],

@@ -1,5 +1,7 @@
 """Change evidence survives restarts, detects changes, and never overclaims."""
 import copy
+from contextlib import contextmanager
+import hashlib
 import json
 import os
 import threading
@@ -155,11 +157,71 @@ class ReviewRecoveryTests(ContractCase):
         return call_tool(self.store, "bridge_finish_task", {
             "task_id": task, "diff": DIFF, "checks": "pytest: 12 passed"})
 
+    @contextmanager
+    def held_review(self):
+        release, entered = threading.Event(), threading.Event()
+        coordinators = []
+        run_review = canvas._run_review
+
+        def coordinated_review(*args):
+            coordinators.append(threading.current_thread())
+            return run_review(*args)
+
+        def slow(*args):
+            entered.set()
+            if not release.wait(10):
+                raise RuntimeError("test did not release the reader")
+            return {"verdict": "follows", "why": "The signed rate is present", "requirements": []}
+
+        def finish_reading():
+            release.set()
+            # Wait for the real coordinator to persist conformance_read,
+            # not just for its inner provider worker to return.
+            for coordinator in coordinators:
+                coordinator.join(5)
+                self.assertFalse(coordinator.is_alive())
+
+        with patch("bridge.llm.check_conformance", side_effect=slow) as reader, \
+                patch.object(canvas, "_run_review", side_effect=coordinated_review):
+            try:
+                yield reader, entered, finish_reading
+            finally:
+                finish_reading()
+
+    def test_initial_finish_guidance_tracks_the_review_it_started(self):
+        task, _ = self.signed_task()
+        with self.held_review() as (reader, entered, finish_reading), patch.object(canvas, "FINISH_WAIT", 0):
+            first = self.finish(task)
+            self.assertTrue(entered.wait(5))
+            self.assertEqual(first["review"]["status"], "running")
+            self.assertEqual(first["guidance_snapshot"]["review"], {
+                "id": first["review"]["id"], "status": "running"})
+            self.assertIn("review is still running", first["next"])
+            self.assertIn("bridge_wait", first["next"])
+            self.assertNotIn("review failed", first["next"])
+            saved = proof.export(self.store, {"task_id": task})["bundle"]
+            self.assertEqual(saved["payload"]["change"], {
+                "diff": DIFF, "sha256": hashlib.sha256(DIFF.encode()).hexdigest(), "bytes": len(DIFF.encode())})
+            self.assertEqual(saved["payload"]["review"]["status"], "running")
+            finish_reading()
+            tree = canvas.get_tree(self.store, task)
+            exported = proof.export(self.store, {"task_id": task})
+            self.assertEqual(tree["review"]["status"], "done")
+            self.assertEqual(exported["bundle"], saved)
+            self.assertTrue(exported["integrity"]["valid"])
+            refreshed = self.finish(task)
+            self.assertEqual(refreshed["review"]["status"], "done")
+            self.assertNotIn("review is still running", refreshed["next"])
+            self.assertNotIn("review failed", refreshed["next"])
+            self.assertEqual(reader.call_count, 1)
+            self.assertEqual(self.store.graph.count_events("conformance_started", task_id=task), 1)
+
     def test_explicit_retry_recovers_failed_review_and_preserves_history(self):
         task, node = self.signed_task()
         with patch("bridge.llm.check_conformance", side_effect=RuntimeError("temporary reader failure")) as reader:
             first = self.finish(task)
         self.assertEqual(first["review"]["status"], "failed")
+        self.assertIn("review failed", first["next"])
         self.assertEqual(reader.call_count, 1)
         self.assertIn("call bridge_finish_task again with the same diff", first["caveat"])
         old_proof = proof.export(self.store, {"task_id": task})["bundle"]
@@ -173,6 +235,7 @@ class ReviewRecoveryTests(ContractCase):
                 "task_id": task, "diff": DIFF, "checks": "pytest: 12 passed"})
             repeated = call_tool(reopened, "bridge_finish_task", {"task_id": task, "diff": DIFF})
         self.assertEqual(recovered["review"]["status"], "done")
+        self.assertNotIn("review failed", recovered["next"])
         self.assertEqual(recovered["review"]["id"], first["review"]["id"])
         self.assertEqual(repeated["follows"], recovered["follows"])
         self.assertEqual(reader.call_count, 1, "a successful review is still idempotent")
@@ -198,28 +261,64 @@ class ReviewRecoveryTests(ContractCase):
         task, _ = self.signed_task()
         with patch("bridge.llm.check_conformance", side_effect=RuntimeError("temporary reader failure")):
             first = self.finish(task)
-        release = threading.Event()
-
-        def slow(*args):
-            if not release.wait(5):
-                raise RuntimeError("test did not release the reader")
-            return {"verdict": "follows", "why": "The signed rate is present", "requirements": []}
-
-        with patch("bridge.llm.check_conformance", side_effect=slow) as reader, patch.object(canvas, "FINISH_WAIT", 0.01):
-            try:
-                one = self.finish(task)
-                two = self.finish(task)
-                self.assertEqual(one["review"]["status"], "running")
-                self.assertEqual(two["review"]["status"], "running")
-                self.assertEqual(one["review"]["id"], first["review"]["id"])
-                self.assertEqual(reader.call_count, 1)
-            finally:
-                release.set()
-                with canvas._REVIEWS_LOCK:
-                    thread = canvas._REVIEWS.get(first["review"]["id"])
-                if thread is not None:
-                    thread.join(5)
+        with self.held_review() as (reader, entered, _), patch.object(canvas, "FINISH_WAIT", 0):
+            one = self.finish(task)
+            self.assertTrue(entered.wait(5))
+            two = self.finish(task)
+            for result in (one, two):
+                self.assertEqual(result["review"]["status"], "running")
+                self.assertEqual(result["guidance_snapshot"]["review"], {
+                    "id": result["review"]["id"], "status": "running"})
+                self.assertIn("review is still running", result["next"])
+                self.assertIn("bridge_wait", result["next"])
+                self.assertNotIn("review failed", result["next"])
+            self.assertEqual(one["review"]["id"], first["review"]["id"])
+            self.assertEqual(reader.call_count, 1)
         self.assertEqual(canvas.get_tree(self.store, task)["review"]["status"], "done")
+
+    def test_finish_guidance_separates_a_correction_during_the_review_wait(self):
+        task = self.start()
+        node = self.node(task)
+        self.settle(task, node["node_id"], "Bill at two cents per call.")
+        self.sign(node["node_id"])
+        before = call_tool(self.store, "bridge_get_tree", {"task_id": task})
+        self.assertEqual(before["counts"]["resolved"], 1)
+        receipt = self.store.graph.get_task(task)["agent_read_events"]
+
+        with self.held_review() as (reader, entered, finish_reading):
+            def correct_while_waiting(seconds):
+                self.assertTrue(entered.wait(5))
+                self.sign(node["node_id"], answer="Waive the charge.", rationale="Corrected during review")
+                finish_reading()
+
+            result = call_tool(self.store, "bridge_finish_task", {
+                "task_id": task, "diff": DIFF, "checks": "pytest: 12 passed"}, sleep=correct_while_waiting)
+            self.assertEqual(reader.call_count, 1)
+            self.assertEqual(reader.call_args.args[2], "Bill at two cents per call.")
+            # The submitted review still describes the old signed answer.
+            self.assertEqual(result["review"]["status"], "done")
+            self.assertEqual(result["follows"][0]["verdict"], "follows")
+            self.assertIn("read an earlier answer", result["next"])
+            self.assertNotIn("resolved", result["counts"])
+            self.assertEqual(result["counts"]["answered"], 1)
+            current = result["guidance_snapshot"]
+            self.assertEqual(current["review"], {
+                "id": result["review"]["id"], "status": "stale", "read_status": "done"})
+            self.assertIn("next and counts", current["description"])
+            self.assertIn("earlier signed-answer snapshot", current["description"])
+            self.assertIn("does not acknowledge", current["description"])
+            self.assertEqual(current["task_status"], "completed")
+            self.assertFalse(current["needs_review"])
+            self.assertTrue(current["observed_at"])
+            self.assertEqual(self.store.graph.get_task(task)["agent_read_events"], receipt)
+            self.assertEqual([n["node_id"] for n in canvas.unread_by_agent(self.store, task)], [node["node_id"]])
+            with self.assertRaisesRegex(Invalid, "have not seen"):
+                self.finish(task)
+            exported = proof.export(self.store, {"task_id": task})
+            self.assertEqual(exported["bundle"]["payload"]["change"]["diff"], DIFF)
+            self.assertEqual(exported["bundle"]["payload"]["review"]["status"], "stale")
+            self.assertTrue(exported["integrity"]["valid"])
+            self.assertEqual(reader.call_count, 1, "guidance, export and a refused retry cannot start inference")
 
     def test_provider_failure_is_not_cached_as_a_completed_empty_review(self):
         from bridge.llm import LLMError
