@@ -105,6 +105,8 @@ For an illustrative workspace without a live coding agent:
 ./setup --demo
 ```
 
+On a fresh instance, the browser first shows **Create your workspace**, not the sample tasks. Run `./dev login` locally for the operator setup credential, then complete the workspace and profile steps described in [local onboarding](docs/user-onboarding.md). Keep that operator credential out of your coding agent’s configuration. No provider key is needed to set up or browse the demo; it is an illustrative workspace, not a live coding-agent run.
+
 Inference is optional for exploring the interface and deterministic routing. Model-assisted discovery, proposals, and diff review need a configured provider. The Docker image uses your Anthropic API key; it does not inherit a Claude CLI login from the host.
 
 ```sh
