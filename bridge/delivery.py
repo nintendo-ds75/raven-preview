@@ -295,6 +295,16 @@ class Delivery:
         revision = now_iso()[:10] if kind == "overdue" else row["updated_at"]
         dedupe = (f"{decision_id}:{kind}:{revision}:{person_name}" if kind == "overdue"
                   else f"{decision_id}:{kind}:{person_name}:{content_hash}")
+        if kind in ('review', 'signoff'):
+            # Equal answer text can need a fresh approval after another
+            # upstream correction. Deduplicate within that invalidation epoch,
+            # not forever across all approvals of these same words. Ordinary
+            # co-signatures/timestamp touches do not create a new epoch.
+            epoch = graph.db.execute(
+                "SELECT count(*) AS n, max(id) AS latest FROM events WHERE decision_id=? "
+                "AND kind IN ('dependent_flagged','prediction_withdrawn')", (decision_id,)).fetchone()
+            if epoch['n']:
+                dedupe += f":review-epoch:{epoch['n']}:{epoch['latest']}"
         if graph.db.execute("SELECT 1 FROM notifications WHERE dedupe_key=?", (dedupe,)).fetchone():
             return None
         nid = uuid.uuid4().hex[:12]

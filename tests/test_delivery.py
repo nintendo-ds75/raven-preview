@@ -95,6 +95,80 @@ class QuietTests(DeliveryCase):
         self.assertEqual(self.delivery.deliver_now(), 0)
         self.assertEqual(len(self.slack.messages), 1)
 
+    def review_pair(self):
+        task = self.task()
+        child = self.node(task)['node_id']
+        self.delivery.deliver_now()
+        with self.graph.transaction():
+            parent = self.graph.add_decision(task, 'Which upstream constraint applies?', '', 'pending', owner='Wes Chen')
+        self.store.answer(parent, {'answer': 'Original upstream policy.'})
+        self.store.answer(child, {'answer': 'Keep this downstream answer unchanged.'})
+        with self.graph.transaction():
+            self.graph.add_link(child, parent, 'depends')
+        return parent, child
+
+    def revise_parent(self, parent, answer):
+        row = self.store.get_decision(parent)
+        self.store.answer(parent, {'answer': answer, 'expected_updated_at': row['updated_at']})
+
+    def review_notes(self, child, kind='review'):
+        return [dict(r) for r in self.graph.db.execute(
+            'SELECT * FROM notifications WHERE decision_id=? AND kind=? ORDER BY created_at,id', (child, kind))]
+
+    def test_each_invalidation_epoch_notifies_once_even_when_answer_is_unchanged(self):
+        parent, child = self.review_pair()
+        self.revise_parent(parent, 'First upstream correction.')
+        self.assertEqual(len(self.review_notes(child)), 1)
+        self.assertEqual(self.delivery.deliver_now(), 1)
+        prior = self.store.get_decision(child)
+        self.store.answer(child, {'answer': prior['answer'], 'expected_updated_at': prior['updated_at']})
+        self.revise_parent(parent, 'Second upstream correction.')
+        notes = self.review_notes(child)
+        self.assertEqual(len(notes), 2)
+        self.assertEqual(notes[0]['content_hash'], notes[1]['content_hash'])
+        self.assertNotEqual(notes[0]['dedupe_key'], notes[1]['dedupe_key'])
+        self.assertIsNone(self.store.notify(child, 'review'))
+        self.assertEqual(self.delivery.deliver_now(), 1)
+        self.assertEqual(self.delivery.deliver_now(), 0)
+
+    def test_a_new_undelivered_review_epoch_supersedes_the_old_queue_entry(self):
+        parent, child = self.review_pair()
+        self.revise_parent(parent, 'First upstream correction.')
+        self.revise_parent(parent, 'Second upstream correction.')
+        notes = self.review_notes(child)
+        self.assertEqual(len(notes), 2)
+        self.assertEqual(sorted(n['state'] for n in notes), ['queued', 'superseded'])
+        self.assertEqual(self.delivery.deliver_now(), 1)
+
+    def test_signoff_requests_share_invalidation_epoch_not_timestamp_touches(self):
+        parent, child = self.review_pair()
+        first = self.store.notify(child, 'signoff')
+        self.assertIsNotNone(first)
+        self.delivery.deliver_now()
+        self.revise_parent(parent, 'Changed upstream constraint.')
+        fresh = self.store.notify(child, 'signoff')
+        self.assertIsNotNone(fresh)
+        self.assertEqual(fresh['content_hash'], first['content_hash'])
+        self.assertNotEqual(fresh['dedupe_key'], first['dedupe_key'])
+        with self.graph.transaction():
+            self.graph.db.execute('UPDATE decisions SET updated_at=? WHERE id=?',
+                                  ('2030-01-01T00:00:00+00:00', child))
+            self.graph.append_event('signature', {'task_id': fresh['run_id'], 'decision_id': child,
+                                                  'by': 'Another required approver'})
+        self.assertIsNone(self.store.notify(child, 'signoff'))
+
+    def test_tied_invalidation_timestamps_do_not_hide_a_new_review(self):
+        parent, child = self.review_pair()
+        with patch('bridge.store.now', return_value='2030-01-01T00:00:00+00:00'), \
+                patch('bridge.graph.now_iso', return_value='2030-01-01T00:00:00+00:00'):
+            self.revise_parent(parent, 'First upstream correction.')
+            self.delivery.deliver_now()
+            self.revise_parent(parent, 'Second upstream correction.')
+        notes = self.review_notes(child)
+        self.assertEqual(len(notes), 2)
+        self.assertEqual(notes[0]['revision'], notes[1]['revision'])
+        self.assertNotEqual(notes[0]['dedupe_key'], notes[1]['dedupe_key'])
+
     def test_one_decision_is_one_thread(self):
         t = self.task()
         n = self.node(t)
