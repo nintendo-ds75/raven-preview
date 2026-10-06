@@ -242,10 +242,16 @@ class RuleTests(RuleCase):
         self.assertEqual(again["signoff"], "required")
         with self.assertRaises(Invalid):
             canvas.finish_task(self.store, {"task_id": task})
-        # The corrected answer is still the rule: a new question gets the new text.
+        # A corrected answer is current evidence, not an inherited standing
+        # grant. Reuse requires the person's separate explicit regrant.
         newer = self.node(self.task("l"), ref="l1")
-        self.assertEqual(newer["signoff"], "rule")
+        self.assertEqual(newer["signoff"], "required")
+        self.assertFalse(newer["authorized"])
         self.assertIn("half even", newer["answer"])
+        self.assertFalse(self.store.get_decision(source)["reusable"])
+        self.rule(source)
+        regranted = self.node(self.task("m"), ref="m1")
+        self.assertEqual(regranted["signoff"], "rule")
 
 
 class AutoRulesOffTests(RuleCase):

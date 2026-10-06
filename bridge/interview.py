@@ -12,7 +12,7 @@ import secrets
 import time
 from dataclasses import dataclass
 
-from . import authz
+from . import authz, approval_scope
 from .graph import parse_applicability
 from .store import Invalid, field, now
 
@@ -170,7 +170,10 @@ def create(store, task_id, data, actor=None):
                  "decision_id": decision_id, "repo": decision.get("repo") or "",
                  "question": decision["question"], "context": decision.get("context") or "",
                  "path": decision.get("path") or "", "paths": json.loads(decision.get("scope_paths") or "[]"),
-                 "category": decision.get("category") or ""}
+                 "category": decision.get("category") or "",
+                 "decision_scope": approval_scope.snapshot(decision),
+                 "decision_scope_text": approval_scope.render(decision),
+                 "approval_revision": approval_scope.revision(decision)}
         iid, stamp = secrets.token_hex(12), now()
         db.execute("INSERT INTO interviews(id, task_id, decision_id, person_id, client_key, decision_revision, scope, "
                    "applicability, prompts, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -256,6 +259,10 @@ def confirm(store, task_id, interview_id, data, actor=None):
         _human(store, actor)
         current = _owned(store, task_id, interview_id, actor, db)
         _version(data, current)
+        reviewed = json.loads(current['scope'])
+        live = store.get_decision(current['decision_id'])
+        if not reviewed.get('approval_revision') or reviewed['approval_revision'] != approval_scope.revision(live):
+            raise Invalid('This decision changed while you were reviewing it. Start a new interview before confirming.')
         db.execute("UPDATE interviews SET status='confirmed',confirmed_version=?,confirmed_by=?,version=version+1,"
                    "updated_at=? WHERE id=?", (version, actor.id, now(), interview_id))
         store.event(db, "interview_confirmed", json.dumps({"interview_id": interview_id,

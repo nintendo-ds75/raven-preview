@@ -396,8 +396,8 @@ def _write_index(store: Graph, name: str, depth: int, snap: _Snapshot) -> dict[s
     for m in merge_log:
         pr = _MERGE_PR.search(m.subject)
         ref = pr.group(1) if pr else m.sha[:12]
-        store.upsert_intent(name, "merge", ref, m.subject.strip(), m.body.strip(), m.author, m.date)
-        store.add_intent_paths(name, "merge", ref, m.files[:MAX_INTENT_PATHS])
+        store.upsert_intent(name, "merge", ref, m.subject.strip(), m.body.strip(), m.author, m.date, paths=m.files[:MAX_INTENT_PATHS],
+                            metadata={"provider": "git", "namespace": name, "external_id": m.sha, "object_kind": "merge"})
         # Preserve the evidence. Routing discounts general integration
         # relative to area-specific merges and independent participation.
         record_change(store, name, m, roles=("merger",))
@@ -414,8 +414,8 @@ def _write_index(store: Graph, name: str, depth: int, snap: _Snapshot) -> dict[s
             continue
         kind = "pr" if pr else "commit"
         ref = pr.group(1) if pr else sha[:12]
-        store.upsert_intent(name, kind, ref, subject.strip(), body.strip(), author, date)
-        store.add_intent_paths(name, kind, ref, files_by_sha.get(sha, [])[:MAX_INTENT_PATHS])
+        store.upsert_intent(name, kind, ref, subject.strip(), body.strip(), author, date, paths=files_by_sha.get(sha, [])[:MAX_INTENT_PATHS],
+                            metadata={"provider": "git", "namespace": name, "external_id": sha, "object_kind": kind})
         squashed += 1
         if pr:
             stats["prs"] += 1

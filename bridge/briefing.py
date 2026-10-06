@@ -739,6 +739,7 @@ def _focus(store, link: Link, nodes: list[dict], decision_id: str = "") -> dict 
     can_refer = (_open(d) and d["status"] in ("pending", "resolved", "partial", "assumed", "proposed")
                  and bool(authz.basis_for(graph, link.actor, d, "refer")[0]))
     return {"node_id": d["id"], "question": d["question"], "context": context, "paths": paths,
+            "approval_scope_text": d["approval_scope_text"], "replacement_ends_rule": bool(d.get("reusable")),
             "brief": drop_absence(d.get("brief") or ""), "options": options, "status": d["status"],
             "prediction": d.get("prediction") or "", "found": _found(store, d, link.person["name"]),
             "owner": d.get("owner_name") or "", "routing_reason": d.get("routing_reason") or "",

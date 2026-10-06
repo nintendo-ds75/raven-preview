@@ -206,6 +206,7 @@ function focusCard(f) {
   return `<section class="task-panel brief-focus is-${standing}" id="focus" aria-labelledby="focus-question">
     ${back}<p class="brief-kicker">${kicker}</p>
     <h2 id="focus-question" tabindex="-1">${esc(f.question)}</h2>
+    <pre class="context-box approval-scope">${esc(f.approval_scope_text)}</pre>
     ${f.brief ? `<p class="brief-lead">${prose(f.brief)}</p>` : ''}
     ${f.context ? `<div class="brief-block"><span class="label">Context from the coding agent</span><p>${prose(f.context)}</p></div>` : ''}
     ${found.length ? `<div class="brief-block"><span class="label">What Raven found</span>${foundList(found)}</div>` : ''}
@@ -213,6 +214,7 @@ function focusCard(f) {
     ${f.answer ? `<div class="brief-block is-answer"><span class="label">${mine ? 'Your answer' : (['signed', 'rule'].includes(f.signoff) ? 'Signed answer' : 'Answer on the table') + (f.answered_by ? ' · ' + esc(f.answered_by) : '')}</span><p>${prose(f.answer)}</p>${f.rationale ? `<p class="brief-why-line">Why: ${prose(f.rationale)}</p>` : ''}</div>` : ''}
     ${paths.length ? `<p class="brief-where">Touches ${paths.map(p => `<code>${esc(p)}</code>`).join(', ')}</p>` : ''}
     ${reasonBlock(f.why, f.node_id)}
+    ${f.replacement_ends_rule ? '<p class="context">Recording a new or corrected answer retires the existing standing rule. An unchanged-answer sign-off keeps it. Future automatic reuse needs a fresh explicit make-rule action.</p>' : ''}
     ${form}
     ${!['read','handed'].includes(standing) && f.owner && (!data.viewer.interview_decision_id || data.viewer.interview_decision_id === f.node_id) ? `<div class="context-box"><strong>Prefer to talk it through?</strong><p class="context">An interview can use browser dictation and spoken readback. You review and confirm the exact decision. It stays on this personal task link.</p><button class="button small" data-action="interview-start" data-task="${esc(data.task.id)}" data-id="${esc(f.node_id)}">Start or resume interview</button></div>` : ''}
   </section>`;

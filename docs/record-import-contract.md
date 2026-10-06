@@ -4,9 +4,11 @@
 
 - `(repo, kind, ref)` is the legacy identity. `ticket`, `jira`, and `issue`
   remain distinct kinds; an existing Jira record is never renamed to ticket.
-- Text/status are refreshed. This first compatibility fix preserves the
-  original author and creation timestamp on an existing identity. A subsequent
-  immutable-version layer will capture source metadata at each observation.
+- Text/status are refreshed. The separately frozen first compatibility fix
+  preserved original author/creation metadata. With the additive version layer,
+  explicitly supplied author/creation changes are captured in a new immutable
+  observation; omitted values retain the previous metadata. Prior versions stay
+  intact. See [versioned context memory](context-memory.md).
 - Supplied `paths` is a complete snapshot. A string or array replaces the old
   paths; an empty string or `[]` clears them. Omission preserves existing paths.
 - `resolved` accepts booleans, integers 0/1, or case-insensitive string

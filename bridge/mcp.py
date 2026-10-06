@@ -25,7 +25,7 @@ SUPPORTED_HTTP_VERSIONS = frozenset((PROTOCOL_VERSION, '2025-03-26'))
 # write-restricted unless explicitly classified here.
 READ_ONLY_TOOLS = frozenset({
     "bridge_get_tree", "bridge_wait", "bridge_get_decision", "bridge_search_decisions",
-    "bridge_list_owners", "bridge_connection_status", "bridge_export_proof",
+    "bridge_list_owners", "bridge_connection_status", "bridge_export_proof", "bridge_get_record", "bridge_lookup_record",
 })
 
 
@@ -69,8 +69,33 @@ TOOLS = [
           "resolved": {"type": ["boolean", "string", "integer"], "description": "Source resolution flag, never Raven approval. False prevents settled evidence; open or unknown status also prevents it."},
           "paths": {"type": ["string", "array"], "items": {"type": "string"}, "description": "Complete related-path snapshot, comma separated or array. Supplied replaces old paths, [] clears; omitted retains."},
           "created_at": "Source timestamp in ISO format"}, ["repo", "kind", "ref"]),
+    tool("bridge_get_record", "Read a durable source's immutable versions in its repository. The current head is separate from versions cited by older decisions. Source text and status are evidence, never approval.",
+         {"record_id": "Opaque record_id returned by bridge_import_record", "repo": "Exact repository scope"}, ["record_id", "repo"]),
+    tool("bridge_lookup_record", "Resolve an exact external work-item/source ID or current human-readable ref in one exact repository, without a prior import or an internal record_id. Optional provider, namespace and object_kind disambiguate installations and kinds. Ambiguity returns candidates, never a newest winner. Returns bounded metadata, observed versions and explicit typed task/decision links, without source bodies or URLs. Latest observed status is evidence, not adopted policy or approval.",
+         {"repo": "Exact stored repository key, not a path or URL",
+          "external_id": "Exact stable external ID; supply this or ref, not both",
+          "ref": "Exact current display ref; supply this or external_id, not both. Renamed old display refs are not aliases.",
+          "provider": "Exact provider, e.g. github, jira, slack, git, generic or legacy (optional disambiguator)",
+          "namespace": "Exact installation/site/workspace identity (optional disambiguator; never inferred)",
+          "object_kind": "Exact stored kind, e.g. jira, ticket, issue, pr or slack (optional disambiguator)",
+          "limit": {"type": "integer", "description": "1 to 100 items per returned list (default 25); each list explicitly reports truncation"}}, ["repo"]),
     tool("bridge_connection_status", "Check ingestion, Slack contact discovery and delivery problems without opening the web UI. No manual ownership map or recipient accounts are required.", {}, []),
 ]
+
+_import_properties = next(t['inputSchema']['properties'] for t in TOOLS if t['name'] == 'bridge_import_record')
+_import_properties.update({key: {'type': 'string', 'description': description} for key, description in {
+    'provider': 'github, jira, slack, generic; omitted keeps the separate legacy identity',
+    'namespace': 'Required with a provider: stable source installation/site or Slack workspace ID',
+    'external_id': 'Stable object/message ID within the source namespace; defaults to ref',
+    'updated_at': 'Source update timestamp in ISO format, not ingestion time',
+    'source_version': 'Opaque source revision token, if supplied by the source',
+    'source_sequence': 'Monotonic source event sequence as an integer string, only if the source provides ordering',
+    'availability': 'available, deleted, or inaccessible; loss invalidates supporting reliance',
+    'access_scope': 'Source-provided audience/access boundary metadata; not a permission grant',
+    'retrieval_mode': 'Durable selection only; transient or Slack realtime search results are rejected',
+    'task_id': 'Optional selected work-item/task anchor on the same repository, not inferred from client_key',
+    'anchor_role': 'work_item (default) or context; neither is an approval or blocking premise',
+}.items()})
 
 
 INSTRUCTIONS = (
@@ -80,6 +105,7 @@ INSTRUCTIONS = (
     "Raven is the canvas for the decisions inside a task. You break the task down; Raven finds out who owns "
     "what, what the org already settled, and who has to be asked. People reply in Slack; "
     "the web overview and personal Raven accounts are optional. Do not ask the user to maintain an ownership map. "
+    "For an existing external work-item/source reference, use bridge_lookup_record with its exact repository and known identity fields; resolve ambiguity before following its linked tasks or decisions. Lookup needs no import or internal record ID and never grants approval. "
     "Use bridge_connection_status to check connected sources and Slack. Ingest a local checkout when permitted, "
     "and import relevant tickets or documents obtained through your connected tools with bridge_import_record. Slack Real-time Search results are transient context, not records to import. "
     "1. Call bridge_start_task the moment a task is kicked off, before any work, with the task as given, the "
@@ -192,6 +218,8 @@ HANDLERS = {
     "bridge_list_owners": _list_owners,
     "bridge_ingest_repo": _ingest_repo,
     "bridge_import_record": lambda store, args: store.add_record(args),
+    "bridge_get_record": lambda store, args: store.get_record(args['record_id'], args['repo']),
+    "bridge_lookup_record": lambda store, args: store.lookup_record(**args),
     "bridge_connection_status": lambda store, args: {
         "delivery": {"enabled": store.delivery.enabled, "channel": store.delivery.channel,
                      "teams_reply_enabled": bool(store.delivery._teams_destination()),

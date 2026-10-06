@@ -35,7 +35,9 @@ function taskDecision(n) {
     <div class="card-top">${pill(status, n.authorized ? 'green' : '')}${n.partial ? pill('Partial answer') : ''}<span>${esc(n.owner || 'Owner not assigned')}</span></div>
     <h3>${esc(n.question)}</h3>
     ${n.answer ? `<p class="task-answer">${esc(n.answer)}</p>` : '<p class="context">No answer recorded yet.</p>'}
+    ${n.source_notice ? `<p class="context">${esc(n.source_notice)}</p>` : ''}${sourceEvidence(n.sources)}
     ${n.rationale ? `<p class="context"><strong>Why:</strong> ${esc(n.rationale)}</p>` : ''}
+    ${n.historical_signatures?.length ? `<p class="context">Historical sign-off: ${esc(n.historical_signatures.join(', '))}. Current applicability needs review.</p>` : ''}
     ${n.needs_review ? `<p class="task-warning">${esc(n.review_reason || 'A source answer changed. Review before using this answer.')}</p>` : ''}
     <div class="task-decision-foot"><span>${n.authorized ? esc(n.signoff === 'rule' ? 'Authorized by an enabled standing rule' : 'Signed by ' + (n.signed_by || n.answered_by)) : esc(waiting.length ? 'Still needs ' + waiting.join(', ') : 'Not authorized for use')}${n.path ? `<br><code>${esc(n.path)}</code>` : ''}</span><button class="button small" data-action="review" data-id="${esc(n.node_id)}">Open decision ${icon('arrow')}</button></div>
   </article>`;

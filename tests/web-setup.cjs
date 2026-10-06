@@ -16,6 +16,7 @@ const context = {
   api: async (path, data) => { request = {path, data}; return {token: 'test-only-credential'}; },
 };
 vm.createContext(context);
+vm.runInContext(source.slice(source.indexOf('function sourceReplacementField('), source.indexOf('function applicabilityFields(')), context);
 vm.runInContext(source.slice(source.indexOf('function showHelp()'), source.indexOf('function openModal(')), context);
 vm.runInContext(source.slice(source.indexOf('function updateAgentConnectPrompt()'), source.indexOf('async function quickAgent(')), context);
 vm.runInContext(source.slice(source.indexOf('function updateWorkspaceName()'), source.indexOf('async function refresh(')), context);
@@ -24,6 +25,13 @@ vm.runInContext(source.slice(source.indexOf('function deliveriesCard() {'), sour
 vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf('function activity()'))
   + '\n;globalThis.labels = {statusLabel, signedNow, settledNow, needsYou, beganAs, signedAs};', context);
 (async () => {
+  // Explicit independence is available for human-only and unknown legacy
+  // chains too; source content is never required just to retire reliance.
+  for (const d of [{sources:[{record_id:'r'}]}, {sources:[],source_revalidation:{has_reliance:true}},
+      {sources:[],source_reuse_state:'unknown'}]) {
+    assert.match(context.sourceReplacementField(d), /name="evidence_mode" value="independent"/);
+  }
+  assert.equal(context.sourceReplacementField({sources:[],source_revalidation:{has_reliance:false},source_reuse_state:'human'}), '');
   // A signed prediction is signed: settled, out of Needs you, labelled by its signature, with where it began kept.
   const {statusLabel, signedNow, settledNow, needsYou, beganAs, signedAs} = context.labels;
   const prediction = {status: 'proposed', kind: 'prediction', signoff: 'required', signed_by: '', needs_review: 0};
@@ -162,7 +170,8 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   const taskSource = fs.readFileSync(require('node:path').join(__dirname, '../web/task.js'), 'utf8');
   const taskNode = {node_id:'n1', question:'Which usage counts?', answer:'Exclude internal traffic.',
     owner:'Wes', answered_by:'Wes', signed_by:'Wes', signatures:['Wes'], required_signers:[],
-    authorized:true, status:'answered', signoff:'signed'};
+    authorized:true, status:'answered', signoff:'signed',
+    sources:[{ref:'SRC-42',namespace:'fixture-site',role:'support',sequence:2,source_version_id:'version-2'}]};
   const fixture = {tree:{task_id:'t1',title:'Add billing',goal:'The complete original brief.',nodes:[taskNode],
     status:'completed',notes:[],facts:{}, review:{status:'done',follows:[{node_id:'n1',verdict:'unclear',why:'Existing code is outside the diff.',requirements:[]}]}},
     trace:{notifications:[],events:[{id:1,kind:'owner_approved',at:'2026-10-04T00:00:00Z',decision_id:'n1',detail:{actor:'Wes',answer:'Exclude internal traffic.'}}]}};
@@ -172,11 +181,16 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
     api: async path => {reads++;return path.endsWith('/tree') ? fixture.tree : fixture.trace;},render(){},
     esc: context.esc, pill: context.pill,icon:()=>'',avatar:()=>'',eventLabels:{owner_approved:'Decision recorded'}};
   vm.createContext(taskContext);
+  // task.js uses the actual shared renderer loaded by app.js in the page.
+  vm.runInContext(source.slice(source.indexOf('function sourceEvidence('), source.indexOf('function sourceRevalidationFields(')), taskContext);
   vm.runInContext(taskSource + ';taskDetail=fixture;',taskContext);
   let overview = vm.runInContext('taskOverview()',taskContext);
   assert.match(overview, /Read the task brief/);
   assert.match(overview, /Open code review/);
   assert.match(overview, /Signed by Wes/);
+  assert.match(overview, /Versioned sources/);
+  assert.match(overview, /SRC-42 · version 2 · support/);
+  assert.match(overview, /fixture-site · version-2/);
   assert.doesNotMatch(overview, /Existing code is outside the diff/);
   assert.doesNotMatch(overview, /id="note-form"/);
   // Stale reviews can reflect changed answers, reframed questions, or legacy

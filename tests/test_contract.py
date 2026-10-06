@@ -307,7 +307,9 @@ class CorrectionTests(ContractCase):
         kinds = [e["kind"] for e in self.store.get_decision(reused["node_id"])["events"]]
         self.assertIn("dependent_flagged", kinds)
         # A person confirms or corrects the dependent; either clears the flag.
-        corrected = self.sign(reused["node_id"], answer="Bill the charge here too.", rationale="follows the correction")
+        review = self.store.get_decision(reused["node_id"])['source_revalidation']
+        corrected = self.sign(reused["node_id"], answer="Bill the charge here too.", rationale="follows the correction",
+                              source_evidence=review['pins'], source_decision_pins=review['decision_pins'])
         self.assertEqual(corrected["needs_review"], False)
         self.assertTrue(corrected["authorized"])
         self.assertEqual(canvas.finish_task(self.store, {"task_id": b})["status"], "completed")

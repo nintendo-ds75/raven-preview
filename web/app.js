@@ -160,7 +160,7 @@ async function authorizeGitHub() {
         $('#github-progress').textContent = 'Account authorized. Choose repositories on GitHub, then use Refresh connected repositories in Connect GitHub.';
         await refresh(); return;
       }
-      $('#modal').close(); await refresh(); notify('GitHub connected. Repository sync has started.');
+      closeModal(); await refresh(); notify('GitHub connected. Repository sync has started.');
     } catch (error) {
       if (modalVersion === version && $('#github-progress')) $('#github-progress').textContent = error.message;
     }
@@ -522,6 +522,13 @@ function openModal(title, subtitle, body) {
   if (!$('#modal').open) $('#modal').showModal();
 }
 
+function closeModal() {
+  // Native close events are queued. Invalidate now so a late response cannot
+  // reopen this dialog, and an old close event cannot cancel a newer review.
+  modalVersion += 1;
+  $('#modal').close();
+}
+
 function ownerOptions(selected, auto = false) {
   return `${auto ? '<option value="">Route automatically by path</option>' : '<option value="">Select an owner</option>'}${state.owners.map(o => `<option value="${esc(o.id)}" ${selected === o.id ? 'selected' : ''}>${esc(o.name)} · ${esc(o.team)}</option>`).join('')}`;
 }
@@ -547,6 +554,39 @@ function ruleBox(d) {
     return `<div class="context-box"><span class="label">Reusable rule${d.rule_by ? ` · made by ${esc(d.rule_by)}` : ''}</span>Questions memory matches to this answer ${state.settings && state.settings.auto_rules ? 'resolve without a fresh signature' : 'are shown as covered by this rule (automatic rules are off, so a person still signs)'}${d.rule_conditions ? ` when they satisfy <strong>${esc(d.rule_conditions)}</strong>` : ''}${d.rule_scope === 'any' ? ', in any scope' : ', in this scope only'}${d.rule_expires ? `, until ${esc(d.rule_expires.slice(0, 10))}` : ''}. Ending it puts every outstanding node it authorized back in front of a person.<div class="modal-actions"><button class="button small" data-action="end-rule" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}">End the rule</button></div></div>`;
   }
   return `<details class="history"><summary>Make this answer a reusable rule</summary><form id="rule-form" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}"><label for="rule-conditions">Applies when the question mentions (optional; one phrase per line)</label><textarea id="rule-conditions" name="conditions" maxlength="500" placeholder="enterprise plan"></textarea><label for="rule-expires">Expires (optional, YYYY-MM-DD)</label><input id="rule-expires" name="expires" maxlength="25" placeholder="2027-01-01"><label for="rule-scope"><input type="checkbox" id="rule-scope" name="scope" value="any"> Applies anywhere (other customers, other files); otherwise only in this decision's own scope</label><p class="context">By default every decision is request-specific: a later task that asks the same thing gets this answer as evidence and still needs your signature. A rule skips that signature while its conditions hold, once automatic rules are on under People &amp; ownership. Conditions are checked against what the agent states as facts (<code>plan=enterprise</code>) or phrases the question carries and does not deny; a missing fact means a person decides.</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button class="button primary small" type="submit">Make it a rule</button></div></form></details>`;
+}
+
+function sourceEvidence(sources) {
+  if (!sources?.length) return '';
+  return `<details class="history" open><summary>Versioned sources · ${sources.length}</summary>${sources.map(source => {
+    const label = `${source.ref} · version ${source.sequence} · ${source.role}`;
+    const url = /^https?:\/\//i.test(source.url || '') ? source.url : '';
+    return `<p class="context">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>` : esc(label)}${source.stale ? ' · source changed, revalidation needed' : ''}<br><small>${esc(source.namespace)} · ${esc(source.source_version_id)}</small></p>`;
+  }).join('')}<p class="context">Sources are evidence. Their authors and statuses do not grant approval.</p></details>`;
+}
+
+function sourceRevalidationFields(d, prefix) {
+  const review = d.source_revalidation;
+  if (!d.needs_review || !review) return '';
+  const dependencies = (review.dependencies || []).map(source => `<details class="history"><summary>${source.historical ? 'Historical signed precedent' : 'Source decision'} ${esc(source.decision_id)}</summary><p>${esc(source.question)}</p><p>${esc(source.answer)}</p><p class="context">Current scope, rationale, applicability, authority constraints, and exact dependency snapshot:</p><pre class="modal-context">${esc(JSON.stringify(source.reviewed_snapshot || source, null, 2))}</pre><p class="context">Exact human-source version: ${esc(source.source_version_id || 'Current observation; frozen on confirmation')}<br>Snapshot SHA-256: ${esc(source.source_snapshot_sha256 || '')}</p><button type="button" class="button small" data-action="source" data-id="${esc(source.decision_id)}">Review source decision</button></details>`).join('');
+  const sources = (review.sources || []).map(source => {
+    const snapshot = source.snapshot || {};
+    return `<details class="history" open><summary>${esc(snapshot.display_ref || source.record_id)} · ${esc(source.role)} · ${source.changed ? 'changed revision' : 'current revision'}</summary><p>${esc(snapshot.title || '')}</p><p class="context">${esc(snapshot.author || 'Author not supplied')} · ${esc(snapshot.status || 'Status not supplied')} · ${esc(snapshot.source_updated_at || 'Update time not supplied')}</p><pre class="modal-context">${esc(snapshot.body || '')}</pre><p class="context">Paths: ${esc((snapshot.paths || []).join(', ') || 'None recorded')}<br>Exact source version: ${esc(source.source_version_id)}</p></details>`;
+  }).join('');
+  return `<section class="source-revalidation"><h3>Review current source evidence</h3><p class="context">${esc(review.notice)}</p>${review.retires_rule ? '<p class="context">Confirming these changed source versions retires the existing standing rule. This approval covers this decision only; future automatic reuse needs a fresh explicit make-rule action.</p>' : ''}${dependencies}${sources}${review.available ? `<input type="hidden" id="source-pins-${prefix}" name="current_source_pins" value="${esc(JSON.stringify(review.pins))}"><input type="hidden" id="source-decisions-${prefix}" name="current_source_decisions" value="${esc(JSON.stringify(review.decision_pins || []))}"><label><input type="checkbox" id="source-review-${prefix}" name="use_current_sources" value="yes"> I reviewed these complete source snapshots and source decisions. Bind this answer to these exact revisions.</label>` : ''}</section>`;
+}
+
+function takeSourceRevalidation(data) {
+  if (data.use_current_sources === 'yes') {
+    data.source_evidence = JSON.parse(data.current_source_pins || '[]');
+    data.source_decision_pins = JSON.parse(data.current_source_decisions || '[]');
+  }
+  delete data.use_current_sources; delete data.current_source_pins; delete data.current_source_decisions;
+}
+
+function sourceReplacementField(d) {
+  const reliesOnSources = (d.sources || []).length || d.source_revalidation?.has_reliance || d.source_reuse_state === 'unknown';
+  return reliesOnSources ? '<label><input type="checkbox" name="evidence_mode" value="independent"> This is my independent replacement decision. Retire the previous source reliance and preserve it in history.</label>' : '';
 }
 
 function applicabilityFields(d, prefix) {
@@ -600,7 +640,7 @@ async function review(id) {
     const canDecide = (d.allowed_actions || []).includes('answer');
     const canRoute = (d.allowed_actions || []).includes('assign');
     if (!canDecide && !canRoute) {
-      openModal(d.question, `${d.agent} · ${d.run_title}`, `<div class="metadata">${pill(statusLabel(d))}${signoffLabel(d)}</div><p class="context">${state.me?.role === 'viewer' ? 'Read-only access.' : 'This decision belongs to another owner. You can add context on the task overview.'} ${esc(d.owner_name || 'No owner assigned')} owns this decision.</p><p class="modal-context">${esc(d.context || '')}</p>${d.answer ? `<div class="context-box"><span class="label">${signedNow(d) ? 'Signed answer' : 'Answer awaiting owner signoff'}</span>${esc(d.answer)}</div>` : '<p>No answer recorded yet.</p>'}${d.rationale ? `<p><strong>Why:</strong> ${esc(d.rationale)}</p>` : ''}${d.evidence ? `<p class="context"><strong>Evidence:</strong> ${esc(d.evidence)}</p>` : ''}${d.routing_reason ? `<p class="context"><strong>Routing:</strong> ${esc(d.routing_reason)}</p>` : ''}${d.source_id ? `<button class="button small" data-action="source" data-id="${esc(d.source_id)}">Inspect source decision</button>` : ''}${followupControls(d)}<details class="history"><summary>Decision history · ${plural(d.events.length, 'event')}</summary>${d.events.map(e => `<div class="history-item"><strong>${esc(eventLabels[e.kind] || e.kind)}</strong>${esc(e.detail)}<br><small>${esc(new Date(e.created_at).toLocaleString())}</small></div>`).join('')}</details>`);
+      openModal(d.question, `${d.agent} · ${d.run_title}`, `<pre class="context-box">${esc(d.approval_scope_text)}</pre>${d.reusable ? '<p class="context">Recording a new or corrected answer retires the existing standing rule. A sign-off with unchanged answer and sources keeps it. Future automatic reuse needs a fresh explicit make-rule action.</p>' : ''}<div class="metadata">${pill(statusLabel(d))}${signoffLabel(d)}</div><p class="context">${state.me?.role === 'viewer' ? 'Read-only access.' : 'This decision belongs to another owner. You can add context on the task overview.'} ${esc(d.owner_name || 'No owner assigned')} owns this decision.</p><p class="modal-context">${esc(d.context || '')}</p>${d.answer ? `<div class="context-box"><span class="label">${signedNow(d) ? 'Signed answer' : 'Answer awaiting owner signoff'}</span>${esc(d.answer)}</div>` : '<p>No answer recorded yet.</p>'}${d.rationale ? `<p><strong>Why:</strong> ${esc(d.rationale)}</p>` : ''}${d.evidence ? `<p class="context"><strong>Evidence:</strong> ${esc(d.evidence)}</p>` : ''}${sourceEvidence(d.sources)}${d.routing_reason ? `<p class="context"><strong>Routing:</strong> ${esc(d.routing_reason)}</p>` : ''}${d.source_id ? `<button class="button small" data-action="source" data-id="${esc(d.source_id)}">Inspect source decision</button>` : ''}${followupControls(d)}<details class="history"><summary>Decision history · ${plural(d.events.length, 'event')}</summary>${d.events.map(e => `<div class="history-item"><strong>${esc(eventLabels[e.kind] || e.kind)}</strong>${esc(e.detail)}<br><small>${esc(new Date(e.created_at).toLocaleString())}</small></div>`).join('')}</details>`);
       return;
     }
     const approved = d.status === 'approved';
@@ -627,18 +667,18 @@ async function review(id) {
     // than left in the evidence. Measured live on 63eb671: the brief said no policy was given beside a conflict.
     const conflicts = (d.evidence || '').split(/;\s+(?=[a-z]+:\s)/).filter(p => p.startsWith('conflict:')).map(p => p.slice(9).trim());
     const upfront = `${conflicts.length && !settled ? `<div class="context-box prediction"><span class="label">Conflict · a person decides which stands</span>${esc(conflicts.join(' '))}</div>` : ''}${d.records_named ? `<p class="context"><strong>Records it names:</strong> ${esc(d.records_named)}.</p>` : ''}`;
-    openModal(d.question, `${d.agent} · ${d.run_title}`, `<div class="metadata">${pill(statusLabel(d), settled ? 'green' : '')}${kindBadge(d)}${signoffLabel(d)}<span>${esc(d.repo)} / ${esc(d.path)}</span></div>${upfront}${d.brief ? `<div class="context-box"><span class="label">The brief</span>${esc(d.brief)}</div>` : ''}<details class="history" ${d.answer || d.prediction ? '' : 'open'}><summary>Context and constraints</summary><p class="modal-context">${esc(d.context)}</p></details>${canonical}
+    openModal(d.question, `${d.agent} · ${d.run_title}`, `<pre class="context-box">${esc(d.approval_scope_text)}</pre>${d.reusable ? '<p class="context">Recording a new or corrected answer retires the existing standing rule. A sign-off with unchanged answer and sources keeps it. Future automatic reuse needs a fresh explicit make-rule action.</p>' : ''}<div class="metadata">${pill(statusLabel(d), settled ? 'green' : '')}${kindBadge(d)}${signoffLabel(d)}<span>${esc(d.repo)} / ${esc(d.path)}</span></div>${upfront}${d.source_notice ? `<p class="context">${esc(d.source_notice)}</p>` : ''}${sourceEvidence(d.sources)}${d.brief ? `<div class="context-box"><span class="label">The brief</span>${esc(d.brief)}</div>` : ''}<details class="history" ${d.answer || d.prediction ? '' : 'open'}><summary>Context and constraints</summary><p class="modal-context">${esc(d.context)}</p></details>${canonical}
       ${canDecide && !inert && state.auth?.enabled && state.me?.id && ['session','token'].includes(state.me.kind) ? `<div class="context-box"><strong>Prefer to talk it through?</strong><p class="context">Use an attributed interview, with optional browser dictation. Review and confirm the exact decision before the agent can use it.</p><button class="button small" data-action="interview-start" data-task="${esc(d.run_id)}" data-id="${esc(d.id)}">Start or resume interview</button></div>` : ''}
       ${d.needs_review ? `<div class="context-box prediction"><span class="label">Needs review</span>${esc(d.review_reason || 'An answer this decision leaned on was corrected.')} Confirm the answer below by signing it, or correct it.</div>` : ''}
       ${signed ? `<div class="context-box"><span class="label">${esc(signedAs(d))} · began as ${esc(beganAs(d))}</span>${esc(d.answer || '')}${d.source_id ? `<br><button class="button text small" data-action="source" data-id="${esc(d.source_id)}">Inspect source decision ↗</button>` : ''}</div>` : ''}
       ${(d.allowed_actions || []).includes('rule') && (approved || (signed && d.signoff === 'signed')) && !inert ? ruleBox(d) : ''}
       ${d.evidence && !signoffWanted ? `<p class="context"><strong>Evidence:</strong> ${esc(d.evidence)}</p>` : ''}${d.owner_evidence ? `<details class="history"><summary>Why this owner</summary><p class="context">${esc(d.owner_evidence)}</p></details>` : ''}
       ${suggestion ? `<div class="context-box prediction"><span class="label">${d.status === 'resolved' || d.status === 'partial' ? resolvedLabel(d) : d.status === 'assumed' ? 'Default assumed · not approved' : d.status === 'proposed' ? 'Prediction, unconfirmed · not a decision' : predictionLabel(d)}</span>${esc(suggestion)}${predictionScope(d) ? `<p class="context"><strong>Scope:</strong> ${esc(predictionScope(d))}</p>` : '<br>'}<button class="button text small" data-action="use-suggestion" data-text="${esc(suggestion)}">Use this text as the answer</button>${d.source_id ? `<button class="button text small" data-action="source" data-id="${esc(d.source_id)}">Inspect source decision ↗</button>` : ''}</div>` : ''}
-      ${signoffWanted ? `<div class="context-box prediction"><span class="label">${resolvedLabel(d)}${halfSigned(d) ? ' · every required approver signs' : ' · evidence, not sign-off · your signature is wanted'}</span>${esc(d.answer || d.prediction || '')}${d.evidence ? `<p class="context"><strong>Evidence:</strong> ${esc(d.evidence)}</p>` : ''}<p class="context">The agent prepares on this answer and cannot finish its task until you sign it or correct it.</p>${d.source_id ? `<button class="button text small" data-action="source" data-id="${esc(d.source_id)}">Inspect source decision ↗</button>` : ''}<div class="modal-actions"><button class="button primary small" data-action="signoff" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}">Sign off as ${esc(signer)} ${icon('check')}</button></div></div>
-      <form id="correct-form" data-id="${esc(d.id)}"><input type="hidden" name="expected_updated_at" value="${esc(d.updated_at)}"><label for="correction">Or correct it</label><textarea id="correction" name="answer" placeholder="The answer the agent should act on instead." maxlength="12000" required></textarea><label for="correction-rationale">Why this correction?</label><textarea id="correction-rationale" name="rationale" placeholder="Capture the reasoning for future tasks." maxlength="12000" required></textarea>${applicabilityFields(d, 'correction')}<p class="context">A correction is a signed answer recorded on behalf of ${esc(signer)}; the agent reads it on the tree, and every decision that leaned on the old answer is marked for review.</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Close</button><button class="button primary" type="submit">Record correction ${icon('check')}</button></div></form>` : ''}
+      ${signoffWanted ? `<div class="context-box prediction"><span class="label">${resolvedLabel(d)}${halfSigned(d) ? ' · every required approver signs' : ' · evidence, not sign-off · your signature is wanted'}</span>${esc(d.answer || d.prediction || '')}${d.evidence ? `<p class="context"><strong>Evidence:</strong> ${esc(d.evidence)}</p>` : ''}<p class="context">The agent prepares on this answer and cannot finish its task until you sign it or correct it.</p>${d.source_id ? `<button class="button text small" data-action="source" data-id="${esc(d.source_id)}">Inspect source decision ↗</button>` : ''}${sourceRevalidationFields(d, 'signoff')}<div class="modal-actions"><button class="button primary small" data-action="signoff" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}">Sign off as ${esc(signer)} ${icon('check')}</button></div></div>
+      <form id="correct-form" data-id="${esc(d.id)}"><input type="hidden" name="expected_updated_at" value="${esc(d.updated_at)}"><label for="correction">Or correct it</label><textarea id="correction" name="answer" placeholder="The answer the agent should act on instead." maxlength="12000" required></textarea><label for="correction-rationale">Why this correction?</label><textarea id="correction-rationale" name="rationale" placeholder="Capture the reasoning for future tasks." maxlength="12000" required></textarea>${applicabilityFields(d, 'correction')}${sourceRevalidationFields(d, 'correction')}${sourceReplacementField(d)}<p class="context">A correction is a signed answer recorded on behalf of ${esc(signer)}; the agent reads it on the tree, and every decision that leaned on the old answer is marked for review.</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Close</button><button class="button primary" type="submit">Record correction ${icon('check')}</button></div></form>` : ''}
       ${inert ? '' : `<div class="modal-owner">${avatar(d.owner_name)}<select id="assign-owner" aria-label="Decision owner" ${assignable ? '' : 'disabled'}>${ownerOptions(d.owner_id)}</select>${assignable ? `<button class="button small" data-action="assign" data-id="${esc(d.id)}">Assign this one</button><button class="button small soft" data-action="refer" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}">Hand on &amp; learn</button>` : ''}</div>${assignable && d.handon ? `<label class="refer-scope" for="refer-scope">Hand on teaches Raven that they decide <select id="refer-scope" aria-label="What handing on teaches">${d.handon.options.map(o => `<option value="${esc(o.scope_kind)}:${esc(o.scope)}" ${o.scope_kind === d.handon.default.scope_kind && o.scope === d.handon.default.scope ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select></label>${d.handon.why_none ? `<p class="field-help">${esc(d.handon.why_none)}; pick a scope to teach one.</p>` : ''}` : ''}<p class="context">${esc(d.routing_reason)}${d.routing_reason && !/[.!?]$/.test(d.routing_reason) ? '.' : ''}${assignable ? ' Assign moves this request only; Hand on also teaches Raven the scope above, once the person answers.' : ''}</p>`}
-      ${signed && canDecide ? `<form id="correct-form" data-id="${esc(d.id)}"><input type="hidden" name="expected_updated_at" value="${esc(d.updated_at)}"><label for="correction">Signed answer · edit to make a correction</label><textarea id="correction" name="answer" maxlength="12000" required>${esc(d.answer || '')}</textarea><label for="correction-rationale">Why this correction?</label><textarea id="correction-rationale" name="rationale" placeholder="Capture the reasoning for future tasks." maxlength="12000" required></textarea>${applicabilityFields(d, 'correction')}<p class="context">A correction is a signed answer recorded on behalf of ${esc(signer)}; the agent reads it on the tree, and every decision that leaned on the old answer is marked for review.</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Close</button><button class="button primary" type="submit">Record correction ${icon('check')}</button></div></form>` : ''}
-      ${!canDecide || inert || signoffWanted || signed ? '' : `<form id="answer-form" data-id="${esc(d.id)}"><input type="hidden" name="expected_updated_at" value="${esc(d.updated_at)}"><label for="answer">${approved ? 'Recorded answer · edit to make a correction' : 'Your answer'}</label><textarea id="answer" name="answer" placeholder="Give the agent a clear decision and any conditions." maxlength="12000" required>${esc(approved ? d.answer : '')}</textarea><label for="rationale">Why this decision?</label><textarea id="rationale" name="rationale" placeholder="Capture the reasoning for future tasks." maxlength="12000" required>${esc(d.rationale || '')}</textarea>${applicabilityFields(d, 'answer')}<label for="supersedes">Supersedes decision (optional id)</label><input id="supersedes" name="supersedes" placeholder="Decision id this answer replaces" maxlength="100" value="${esc(d.supersedes || '')}"><p class="context">${me ? `Recorded as ${esc(me)}${d.owner_name && d.owner_name !== me ? `, on behalf of ${esc(d.owner_name)}` : ''}.` : `Recorded by the local operator on behalf of ${esc(d.owner_name || 'the assigned owner')}.`} ${approved ? 'The previous answer stays in the revision history.' : (state.executions || []).some(e => e.run_id === d.run_id) ? 'Saving queues delivery to the waiting agent. Follow delivery in Tasks.' : 'The agent can retrieve your answer after it is saved.'}</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Close</button><button class="button primary" type="submit" ${d.owner_id ? '' : 'disabled'}>${approved ? 'Save correction' : 'Record decision'} ${icon('check')}</button></div></form>`}
+      ${signed && canDecide ? `<form id="correct-form" data-id="${esc(d.id)}"><input type="hidden" name="expected_updated_at" value="${esc(d.updated_at)}"><label for="correction">Signed answer · edit to make a correction</label><textarea id="correction" name="answer" maxlength="12000" required>${esc(d.answer || '')}</textarea><label for="correction-rationale">Why this correction?</label><textarea id="correction-rationale" name="rationale" placeholder="Capture the reasoning for future tasks." maxlength="12000" required></textarea>${applicabilityFields(d, 'correction')}${sourceRevalidationFields(d, 'correction')}${sourceReplacementField(d)}<p class="context">A correction is a signed answer recorded on behalf of ${esc(signer)}; the agent reads it on the tree, and every decision that leaned on the old answer is marked for review.</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Close</button><button class="button primary" type="submit">Record correction ${icon('check')}</button></div></form>` : ''}
+      ${!canDecide || inert || signoffWanted || signed ? '' : `<form id="answer-form" data-id="${esc(d.id)}"><input type="hidden" name="expected_updated_at" value="${esc(d.updated_at)}"><label for="answer">${approved ? 'Recorded answer · edit to make a correction' : 'Your answer'}</label><textarea id="answer" name="answer" placeholder="Give the agent a clear decision and any conditions." maxlength="12000" required>${esc(approved ? d.answer : '')}</textarea><label for="rationale">Why this decision?</label><textarea id="rationale" name="rationale" placeholder="Capture the reasoning for future tasks." maxlength="12000" required>${esc(d.rationale || '')}</textarea>${applicabilityFields(d, 'answer')}${sourceRevalidationFields(d, 'answer')}${sourceReplacementField(d)}<label for="supersedes">Supersedes decision (optional id)</label><input id="supersedes" name="supersedes" placeholder="Decision id this answer replaces" maxlength="100" value="${esc(d.supersedes || '')}"><p class="context">${me ? `Recorded as ${esc(me)}${d.owner_name && d.owner_name !== me ? `, on behalf of ${esc(d.owner_name)}` : ''}.` : `Recorded by the local operator on behalf of ${esc(d.owner_name || 'the assigned owner')}.`} ${approved ? 'The previous answer stays in the revision history.' : (state.executions || []).some(e => e.run_id === d.run_id) ? 'Saving queues delivery to the waiting agent. Follow delivery in Tasks.' : 'The agent can retrieve your answer after it is saved.'}</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Close</button><button class="button primary" type="submit" ${d.owner_id ? '' : 'disabled'}>${approved ? 'Save correction' : 'Record decision'} ${icon('check')}</button></div></form>`}
       ${reframeControls(d)}
       ${followupControls(d)}
       <details class="history"><summary>Decision history · ${plural(d.events.length, 'event')}</summary>${d.events.map(e => `<div class="history-item"><strong>${esc(eventLabels[e.kind] || e.kind)}</strong>${esc(e.detail)}<br><small>${esc(new Date(e.created_at).toLocaleString())}</small></div>`).join('')}</details>`);
@@ -681,7 +721,7 @@ document.addEventListener('click', async event => {
   if (!target || target.disabled) return;
   const action = target.dataset.action;
   try {
-    if (action === 'close') $('#modal').close();
+    if (action === 'close') closeModal();
     if (action === 'new') newRequest();
     if (action === 'owner') newOwner();
     if (action === 'person') newPerson();
@@ -701,14 +741,14 @@ document.addEventListener('click', async event => {
     if (action === 'github-refresh') {
       target.disabled = true;
       const result = await api('/api/github/repositories/refresh', {});
-      $('#modal').close(); await refresh();
+      closeModal(); await refresh();
       notify(result.repositories.length ? 'Connected repositories refreshed. Sync has started.' : 'No repositories selected for Raven yet.');
       return;
     }
     if (action === 'use-suggestion') { const ta = $('#answer'); if (ta) { ta.value = target.dataset.text; ta.focus(); } }
     if (action === 'help') showHelp();
     if (action === 'help-connect') {
-      $('#modal').close();
+      closeModal();
       if (location.hash === '#connect') navigate();
       else location.hash = '#connect';
     }
@@ -743,7 +783,11 @@ document.addEventListener('click', async event => {
     if (action === 'signoff') {
       target.disabled = true;
       const d = state.decisions.find(x => x.id === target.dataset.id);
-      const signed = await api(`/api/decisions/${target.dataset.id}/signoff`, {by: (d && halfSigned(d) && stillToSign(d)[0]) || d?.owner_name || 'Local operator', expected_updated_at: target.dataset.updated || d?.updated_at || ''});
+      const revalidation = $('#source-review-signoff')?.checked ? {
+        source_evidence: JSON.parse($('#source-pins-signoff').value),
+        source_decision_pins: JSON.parse($('#source-decisions-signoff').value),
+      } : {};
+      const signed = await api(`/api/decisions/${target.dataset.id}/signoff`, {by: (d && halfSigned(d) && stillToSign(d)[0]) || d?.owner_name || 'Local operator', expected_updated_at: target.dataset.updated || d?.updated_at || '', ...revalidation});
       await refresh(); await review(target.dataset.id); notify(signed?.notice || 'Signed off. The agent sees it on the tree.');
     }
     if (action === 'reframe') {
@@ -793,7 +837,7 @@ document.addEventListener('click', async event => {
         if (created.id) await api(`/api/tokens/${created.id}/revoke`, {}).catch(() => {});
         throw error;
       }
-      $('#modal').close(); notify('Terminal launch requested. Approve the connection in your agent.');
+      closeModal(); notify('Terminal launch requested. Approve the connection in your agent.');
     }
     if (action === 'agent-credential') await agentCredential(target);
     if (action === 'agent-status') {
@@ -875,6 +919,7 @@ document.addEventListener('submit', async event => {
       notify(result.notice);
     } else if (form.id === 'correct-form') {
       const d = state.decisions.find(x => x.id === form.dataset.id);
+      takeSourceRevalidation(data);
       takeApplicability(data);
       await api(`/api/decisions/${form.dataset.id}/signoff`, {by: d?.owner_name || 'Local operator', ...data});
       notify('Correction signed. The agent sees it on the tree.');
@@ -894,10 +939,11 @@ document.addEventListener('submit', async event => {
       ownership = null;
     } else {
       if (!data.supersedes) delete data.supersedes;
+      takeSourceRevalidation(data);
       takeApplicability(data);
       await api(`/api/decisions/${form.dataset.id}/answer`, data); notify('Decision saved. The answer is available to the agent.');
     }
-    $('#modal').close();
+    closeModal();
     await refresh();
   } catch (error) {
     $('#form-error').textContent = error.message;
@@ -906,8 +952,8 @@ document.addEventListener('submit', async event => {
   }
 });
 $('#new-request').addEventListener('click', () => view === 'owners' ? newOwner() : newRequest());
-$('#modal').addEventListener('close', () => { modalVersion += 1; });
-$('#modal').addEventListener('click', event => { if (event.target === $('#modal')) { const r = $('#modal').getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) $('#modal').close(); } });
+$('#modal').addEventListener('cancel', event => { event.preventDefault(); closeModal(); });
+$('#modal').addEventListener('click', event => { if (event.target === $('#modal')) { const r = $('#modal').getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) closeModal(); } });
 window.addEventListener('hashchange', navigate);
 navigate();
 refresh().then(() => {

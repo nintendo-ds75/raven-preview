@@ -255,6 +255,15 @@ class Delivery:
                 continue
         return False
 
+    def _notification_review(self, row, kind):
+        from .approval_scope import digest, scope_hash, review_epoch
+        row = dict(row)
+        return {'version': 1, 'scope_hash': scope_hash(row),
+                'content_hash': (digest(row.get('answer') or '') if kind in ('signoff', 'review', 'answered')
+                                 else digest((row.get('question') or '') + '\n' + (row.get('context') or ''))),
+                'epoch': review_epoch({'events': [dict(e) for e in self.store.graph.db.execute(
+                    "SELECT id,kind FROM events WHERE decision_id=? AND kind IN ('dependent_flagged','prediction_withdrawn','source_review_required') ORDER BY id", (row['id'],))]})}
+
     def enqueue(self, decision_id: str, kind: str, to: str = "", note: str = "") -> dict | None:
         """One notification for one state of one decision. `to` names the
         person; by default the decision's owner (the requester for
@@ -298,8 +307,9 @@ class Delivery:
         note = " ".join(n for n in (note, dest_note) if n)
         # What this message shows the person: the answer on the table, or
         # the question asked. A reply is checked against it.
-        content_hash = (answer_hash(row["answer"] or "") if kind in ("signoff", "review", "answered")
-                        else answer_hash((row["question"] or "") + "\n" + (row["context"] or "")))
+        from .approval_scope import digest
+        review = self._notification_review(row, kind)
+        content_hash = 's:' + digest({'scope': review['scope_hash'], 'content': review['content_hash']})
         # A reminder is one per day, whatever the revision. Everything
         # else is one per thing said: a decision touched twice without
         # changing what this person would read is not two messages. A
@@ -315,7 +325,7 @@ class Delivery:
             # co-signatures/timestamp touches do not create a new epoch.
             epoch = graph.db.execute(
                 "SELECT count(*) AS n, max(id) AS latest FROM events WHERE decision_id=? "
-                "AND kind IN ('dependent_flagged','prediction_withdrawn')", (decision_id,)).fetchone()
+                "AND kind IN ('dependent_flagged','prediction_withdrawn','source_review_required')", (decision_id,)).fetchone()
             if epoch['n']:
                 dedupe += f":review-epoch:{epoch['n']}:{epoch['latest']}"
         existing = graph.db.execute("SELECT person_id FROM notifications WHERE dedupe_key=?", (dedupe,)).fetchone()
@@ -332,6 +342,7 @@ class Delivery:
                          task_link=self._task_link(person_id if dest_kind == "dm" else "", row["run_id"],
                                                    decision_id, nid),
                          has_account=self._has_login(person_id), rule_hint=self._answered_in_slack(person_name))
+        payload['approval_review'] = {**review, 'complete': payload.pop('review_complete')}
         state = "queued" if destination else "failed"
         error = "" if destination else (f"{person_name} has no Slack id yet and no triage channel is configured")
         # Newer state of the same decision to the same person supersedes
@@ -438,12 +449,15 @@ class Delivery:
                 "LEFT JOIN owners o ON o.id = d.owner_id JOIN runs r ON r.id = d.run_id WHERE d.id=?",
                 (row["decision_id"],)).fetchone()
             if decision is not None:
-                payload = json.dumps(render(self._with_records(decision), row["kind"], row["person_name"],
+                fresh = render(self._with_records(decision), row["kind"], row["person_name"],
                                             self.base_url, note,
                                             task_link=self._task_link(_pid if dest_kind == "dm" else "",
                                                                       decision["run_id"], row["decision_id"], nid),
                                             has_account=self._has_login(_pid),
-                                            rule_hint=self._answered_in_slack(row["person_name"])))
+                                            rule_hint=self._answered_in_slack(row["person_name"]))
+                fresh['approval_review'] = {**self._notification_review(decision, row['kind']),
+                                            'complete': fresh.pop('review_complete')}
+                payload = json.dumps(fresh)
         with graph.transaction():
             graph.db.execute("UPDATE notifications SET state='queued', next_attempt=0, last_error='', destination=?, "
                              "payload=? WHERE id=?", (destination, payload, nid))
@@ -456,6 +470,14 @@ class Delivery:
         if self.transport is None:
             return 0
         graph = self.store.graph
+        # Ingestion records durable requests in the source transaction. Queue
+        # human review here after commit, and send only after releasing the lock.
+        with graph.transaction():
+            requests = graph.db.execute("SELECT r.decision_id,d.needs_review FROM source_review_requests r JOIN decisions d ON d.id=r.decision_id WHERE r.state='pending' ORDER BY r.updated_at LIMIT ?", (limit,)).fetchall()
+            for request in requests:
+                if request['needs_review']:
+                    self.enqueue(request['decision_id'], 'review', note='Source evidence changed. Review the current sources before confirming this answer.')
+                graph.db.execute("UPDATE source_review_requests SET state=? WHERE decision_id=?", ('queued' if request['needs_review'] else 'obsolete', request['decision_id']))
         due = graph.db.execute("SELECT * FROM notifications WHERE state='queued' AND next_attempt<=? "
                                "ORDER BY created_at LIMIT ?", (time.time(), limit)).fetchall()
         sent = 0
@@ -538,14 +560,20 @@ class Delivery:
         person reads one decision in one place and can answer the newest
         state where they were already looking."""
         earlier = self.store.graph.db.execute(
-            "SELECT external_ref FROM notifications WHERE decision_id=? AND person_name=? AND state='sent' "
-            "AND external_ref != '' ORDER BY sent_at LIMIT 1",
+            "SELECT external_ref,payload FROM notifications WHERE decision_id=? AND person_name=? AND state='sent' "
+            "AND external_ref != '' ORDER BY sent_at DESC,created_at DESC LIMIT 1",
             (row["decision_id"], row["person_name"])).fetchone()
         if not earlier:
-            return ""
-        ref = earlier["external_ref"] or ""
-        where, _, ts = ref.rpartition(":")
-        return ts if where == channel else ""
+            return ''
+        current = json.loads(row['payload']).get('approval_review', {})
+        previous = json.loads(earlier['payload']).get('approval_review', {})
+        if (current.get('version') != 1 or previous.get('version') != 1
+                or current.get('scope_hash') != previous.get('scope_hash')
+                or current.get('epoch') != previous.get('epoch')):
+            return ''
+        ref = earlier['external_ref'] or ''
+        where, _, ts = ref.rpartition(':')
+        return ts if where == channel else ''
 
     def notification_for_thread(self, channel: str, thread_ts: str) -> dict | None:
         row = self.store.graph.db.execute(
@@ -664,12 +692,22 @@ class Delivery:
         63eb671: Theo's co-signature made Mira's own answer read as
         "answered by Mira Runtime since this message"."""
         kind = note.get("kind") or ""
-        shown = note.get("content_hash") or ""
+        review = json.loads(note.get('payload') or '{}').get('approval_review', {})
+        if review.get('version') != 1 or review.get('complete') is not True:
+            return 'this message did not carry a complete bound scope review; open the decision in Raven or wait for a fresh complete notification'
+        from .approval_scope import digest, scope_hash, review_epoch
+        if review.get('scope_hash') != scope_hash(decision):
+            if kind in ('ask', 'reassigned', 'overdue', 'escalation') and review.get('content_hash') != digest((decision.get('question') or '') + '\n' + (decision.get('context') or '')):
+                return 'the question changed since this message'
+            return 'the decision scope changed since this message'
+        if review.get('epoch') != review_epoch(decision):
+            return 'an upstream answer changed since this message'
+        shown = review.get('content_hash') or ''
         if not shown:
-            return ""
+            return 'this older message has no complete review binding; reopen the decision in Raven'
         theirs = _signed_as_it_stands(decision, person)
         if kind in ("signoff", "review", "answered"):
-            if shown != answer_hash(decision.get("answer") or "") and not theirs:
+            if shown != digest(decision.get("answer") or "") and not theirs:
                 return (f"the answer changed since this message; it now reads: "
                         f"{_clip(decision.get('answer') or '', 400, 'the inbox has the rest')}")
         elif kind in ("ask", "reassigned", "overdue", "escalation"):
@@ -680,7 +718,7 @@ class Delivery:
             # them is what the message was for, and refusing their reply
             # for want of a `pending` status sent a reviewer hunting for
             # another thread to answer in.
-            if shown != answer_hash((decision.get("question") or "") + "\n" + (decision.get("context") or "")):
+            if shown != digest((decision.get("question") or "") + "\n" + (decision.get("context") or "")):
                 return "the question changed since this message"
             settled = decision.get("status") == "approved" or decision.get("signoff") == "signed"
             if settled and not theirs:
@@ -756,7 +794,7 @@ class Delivery:
             return readback.save(self, channel, thread_ts, person['id'], occurrence, event_id,
                 {'decision_id': decision['id'], 'revision': _what_it_says(decision), 'kind': kind,
                  'answer': read.get('answer', ''), 'rationale': read.get('rationale', ''),
-                 'recipient': read.get('to', ''), 'created_at': now_iso()}, summary)
+                 'recipient': read.get('to', ''), 'created_at': now_iso()}, summary, snapshot=decision)
 
     def _take_reading(self, channel: str, thread_ts: str, decision: dict, person: dict, text: str,
                       actor, occurrence=None) -> str | None:
@@ -782,6 +820,10 @@ class Delivery:
         if decision.get('status') == 'withdrawn':
             self._forget_reading(channel, thread_ts, person['id'])
             return 'This question was withdrawn because its task was closed. Nothing was recorded.'
+        # Validate a source reading before retiring its generation. A material
+        # source/scope change rolls the transaction back with its exact fallback.
+        from .source_review import parameters
+        review_data = parameters(self, held)
         said = held["revision"] or ""
         moved = said and (said != _what_it_says(decision) if said.startswith("c:") else said != decision["updated_at"])
         if held["decision_id"] != decision["id"] or moved:
@@ -801,8 +843,9 @@ class Delivery:
                                     actor=actor)["notice"]
         if held["kind"] == "signoff":
             canvas.sign_off(self.store, decision["id"], {"by": person["name"],
-                                                         "expected_updated_at": decision["updated_at"]},
-                            actor=actor)
+                                                         "expected_updated_at": decision["updated_at"],
+                                                         "source": f"{self.channel}: {person['name']} (read back and confirmed)", **review_data},
+                            actor=actor, transaction_db=self.store.graph.db)
             return f"Signed off by {person['name']}. The agent sees it on the tree"
         rationale = held["rationale"] or f"answered in {self.channel.title()}, in their own words"
         if decision["status"] == "pending":
@@ -811,12 +854,13 @@ class Delivery:
             self.store.answer(decision["id"], {"answer": held["answer"], "rationale": rationale,
                                                "expected_updated_at": decision["updated_at"],
                                                "signed_by": person["name"],
-                                               "source": f"{self.channel}: {person['name']} (read back and confirmed)"},
+                                               "source": f"{self.channel}: {person['name']} (read back and confirmed)", **review_data},
                               actor=actor, transaction_db=self.store.graph.db)
             return f"Recorded as {person['name']}'s answer. The agent sees it on the tree"
         canvas.sign_off(self.store, decision["id"], {"by": person["name"], "answer": held["answer"],
                                                      "rationale": rationale,
-                                                     "expected_updated_at": decision["updated_at"]}, actor=actor,
+                                                     "expected_updated_at": decision["updated_at"],
+                                                     "source": f"{self.channel}: {person['name']} (read back and confirmed)", **review_data}, actor=actor,
                         transaction_db=self.store.graph.db)
         return f"Corrected and signed by {person['name']}. The agent sees it on the tree"
 
@@ -850,6 +894,13 @@ class Delivery:
         text = (text or "").strip()
         lowered = text.lower()
         reply = ""
+        from . import source_review
+        if source_review.has_sources(decision) and (_explicit_answer(text) or readback.signoff_request(text)
+                or re.search(r'\b(?:because|rationale:|reason:)\b', text, re.I)):
+            try:
+                return source_review.offer_command(self, decision, person, actor, text, channel, thread_ts, occurrence, event_id)
+            except (Refused, Invalid) as error:
+                return f"Nothing recorded: {error}"
         if note.get('kind') == 'escalation' and re.match(r'^context\s*:', text, re.I):
             from .canvas import add_note
             add_note(self.store, decision['run_id'], {'text': re.sub(r'^context\s*:\s*', '', text, flags=re.I)}, actor=actor)
@@ -882,7 +933,11 @@ class Delivery:
                 and (decision.get("answer") or "").strip() == answer_text.strip() and answer_text.strip()):
             return (f"Recorded as {person['name']}'s answer. The agent sees it on the tree"
                     + (f" (task {note['run_id']}; it reads the answer with bridge_get_tree)." if note.get("run_id") else "."))
-        stale = self._stale(note, decision, person)
+        stale = '' if held else self._stale(note, decision, person)
+        if stale and not _explicit_answer(text) and not re.search(r'\b(?:because|rationale:|reason:)\b', text, re.I) and not readback.intent(text, include_signoff=True)[0] and not re.match(r'^(?:rule|reframe|not me|ask|refer)\b', text, re.I):
+            offer = self._offer_reading(channel, thread_ts, decision, person, text, occurrence, event_id)
+            if offer:
+                return offer
         if stale and not re.match(r"^(?:not me|refer(?: to)?|ask|hand(?: it)? to|reassign(?: to)?)\b", text, re.IGNORECASE):
             # A reply to what is no longer there: refused, and the current
             # state goes out as a fresh message to reply to (or it went
@@ -895,6 +950,9 @@ class Delivery:
                 return (f"Not recorded: {stale}. Reply in the newer thread for this decision (sent when it changed, "
                         "or on its way now), or act in the inbox.")
             return f"Not recorded: {stale}. You have signed the answer as it stands; act on it in the inbox."
+        command_scope = json.loads(note.get('payload') or '{}').get('approval_review', {}).get('scope_hash')
+        from .approval_scope import revision as reviewed_content
+        command_content = reviewed_content(decision)
         try:
             # Snapshot consumption and the authorized write share the same lock.
             with graph.transaction():
@@ -927,7 +985,7 @@ class Delivery:
                                 break
                 if who is None:
                     return f"I do not know {target} in Raven; name a person by their Slack mention, email or full name."
-                refer = {"person": who["id"], "by": person["name"], "expected_updated_at": decision["updated_at"],
+                refer = {"person": who["id"], "by": person["name"], "expected_scope": command_scope, "expected_updated_at": decision["updated_at"],
                          "note": _clip(_named_mentions(graph, text), 300, f"the {self.channel.title()} reply has the rest")}
                 scope = _handon_scope(rest)
                 if scope:
@@ -948,13 +1006,13 @@ class Delivery:
                 trimmed = re.sub(r"\buntil\s+\d{4}-\d{2}-\d{2}|\b(?:anywhere|any scope|for any customer|everywhere)\b", "",
                                  rest, flags=re.IGNORECASE).strip()
                 conds = re.search(r"\b(?:if|when)\s+(.+)$", trimmed, re.IGNORECASE)
-                reply = self.store.make_rule(decision["id"], {"by": person["name"], "expected_updated_at": decision["updated_at"],
+                reply = self.store.make_rule(decision["id"], {"by": person["name"], "expected_scope": command_scope, "expected_content": command_content, "expected_updated_at": decision["updated_at"],
                                                               "conditions": conds.group(1).strip() if conds else "",
                                                               "expires": until.group(1) if until else "",
                                                               "scope": "any" if anywhere else "same"}, actor=actor)["notice"]
             elif re.match(r"^(sign(?:ed)?[- ]?off|approve[d]?|lgtm|confirm(?:ed)?|yes,? sign(?:ed)?(?: off)?|ok(?:ay)?,? sign(?:ed)?(?: off)?)\W*$", lowered):
                 from . import canvas
-                canvas.sign_off(self.store, decision["id"], {"by": person["name"], "expected_updated_at": decision["updated_at"]},
+                canvas.sign_off(self.store, decision["id"], {"by": person["name"], "expected_scope": command_scope, "expected_content": command_content, "expected_updated_at": decision["updated_at"]},
                                 actor=actor)
                 reply = f"Signed off by {person['name']}. The agent sees it on the tree"
             else:
@@ -970,10 +1028,12 @@ class Delivery:
                     return ("Not recorded. To answer, reply `answer: <the decision> because <why>`; to confirm the "
                             "answer on the table, `sign off`; to hand it on, `not me @person`; to make a signed "
                             "answer reusable, `rule if <words> until <date>`.")
+                if source_review.has_sources(decision):
+                    return source_review.offer_command(self, decision, person, actor, text, channel, thread_ts, occurrence, event_id)
                 answer, rationale = _split_rationale(explicit or text)
                 if decision["status"] == "pending":
                     self.store.answer(decision["id"], {"answer": answer, "rationale": rationale or f"answered in {self.channel.title()}",
-                                                       "expected_updated_at": decision["updated_at"],
+                                                       "expected_scope": command_scope, "expected_content": command_content, "expected_updated_at": decision["updated_at"],
                                                        "signed_by": person["name"], "source": f"{self.channel}: {person['name']}"},
                                       actor=actor)
                     reply = f"Recorded as {person['name']}'s answer. The agent sees it on the tree"
@@ -981,7 +1041,7 @@ class Delivery:
                     from . import canvas
                     canvas.sign_off(self.store, decision["id"], {"by": person["name"], "answer": answer,
                                                                  "rationale": rationale or f"corrected in {self.channel.title()}",
-                                                                 "expected_updated_at": decision["updated_at"]},
+                                                                 "expected_scope": command_scope, "expected_content": command_content, "expected_updated_at": decision["updated_at"]},
                                     actor=actor)
                     reply = f"Corrected and signed by {person['name']}. The agent sees it on the tree"
         except Refused as error:
@@ -1028,21 +1088,9 @@ def _signed_as_it_stands(decision: dict, person: dict) -> bool:
 
 
 def _what_it_says(decision: dict) -> str:
-    """A reading's revision: the question, the answer, who has it and
-    whether it is still open. A signature that changes none of them (a
-    co-signer agreeing) does not make a reading read back to someone
-    else out of date."""
-    parts = [decision.get("question") or "", decision.get("context") or "",
-             decision.get("answer") or "", decision.get("owner_id") or "",
-             "open" if decision.get("status") == "pending" else "settled"]
-    # An upstream correction can invalidate approval without changing this
-    # answer's text. Keep that epoch after reapproval too, so an older held
-    # reading cannot revive. Co-signature events do not change the epoch.
-    invalidations = [str(event['id']) for event in (decision.get('events') or [])
-                     if event.get('kind') in ('dependent_flagged', 'prediction_withdrawn')]
-    if invalidations:
-        parts.append('review events:' + ','.join(invalidations))
-    return "c:" + answer_hash("\n".join(parts))
+    """The exact structured scope and answer, excluding co-signer progress."""
+    from .approval_scope import revision
+    return revision(decision)
 
 
 def _explicit_answer(text: str) -> str:
@@ -1146,18 +1194,14 @@ def _conversational() -> bool:
     return load().semantic_retrieval
 
 
-def _message_context(context: str, has_options: bool, has_page: bool) -> str:
-    """The agent's context as a message shows it. The canvas writes a
-    node's paths and options onto its context; the options have their
-    own line, and with a task page the paths are on it. Measured on
-    prometheus/prometheus: the options were in the message twice, once
-    run into the context."""
-    lines = (context or "").split("\n")
-    while lines and ((has_options and lines[-1].startswith("Options: "))
-                     or (has_page and lines[-1].startswith("Paths: "))):
-        lines.pop()
-    text = " ".join(" ".join(lines).split())
-    return "" if text == "a node on the canvas" else text
+def _message_context(context: str) -> str:
+    """Keep all stored context, regardless of its producer or line prefixes.
+
+    Paths/Options may be authored constraints rather than generated metadata.
+    Without recorded provenance, presentation must not guess which to erase.
+    Harmless repetition is safer; the complete-message budget still applies.
+    """
+    return context or ''
 
 
 def render(row: dict, kind: str, person_name: str, base_url: str, note: str = "", task_link: str = "",
@@ -1174,6 +1218,15 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
     account (`has_account`), for whom it opened a sign-in page.
     `rule_hint` adds how to make an answer a rule, for a person who has
     answered in Slack before."""
+    from .approval_scope import transport_text
+    raw_scope = row
+    row = dict(row)
+    for key in ('question', 'context', 'brief', 'answer', 'prediction', 'evidence',
+                'review_reason', 'run_title', 'requester', 'run_agent', 'repo', 'answered_by',
+                'source_signer', 'source_question'):
+        if isinstance(row.get(key), str):
+            row[key] = transport_text(row[key])
+    person_name, note = transport_text(person_name), transport_text(note)
     link = f"{base_url}/#inbox" if base_url and (has_account or not task_link) else ""
     question = row.get("question") or ""
     title = row.get("run_title") or ""
@@ -1208,6 +1261,8 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
         # Short: on a phone the 20-word parenthetical took more room than
         # the question. The page itself says not to forward the link.
         lines.append(f"<{task_link}|Open the task> (your own link, no account needed)")
+    from .approval_scope import render as render_scope, transport_text
+    lines.append(transport_text(render_scope(raw_scope, exclude=("question", "context", "options"))))
     rest = "the task page has the rest" if task_link else "the inbox has the rest"
     conflicts = _conflicts(row.get("evidence") or "")
     if kind in ("ask", "reassigned", "overdue") and conflicts:
@@ -1222,17 +1277,17 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
     from .ladder import records_line
     named = records_line(row.get("named_records") or [])
     if named:
-        lines.append("Records it names: " + named + ".")
+        lines.append("Records it names: " + transport_text(named) + ".")
     options = []
     try:
         options = json.loads(row.get("options") or "[]")
     except ValueError:
         pass
-    context = _message_context(row.get("context") or "", bool(options), bool(task_link))
+    context = _message_context(row.get("context") or "")
     if context:
-        # The agent's own words, the part a withheld brief leaves to be read:
-        # whole up to a length a message holds, else cut at a word and said so.
-        lines.append("Context: " + _clip(context, 1500, rest))
+        # The complete root context is part of the review. If it cannot
+        # fit, the final budget below sends a non-approvable online notice.
+        lines.append("Context: " + context)
     if kind in ("signoff", "review", "answered") and row.get("answer"):
         # A signature covers the whole answer. Split it across Slack blocks
         # rather than requiring an inbox account to read the rest.
@@ -1254,7 +1309,7 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
         # message itself; the routing evidence behind an ask is on the
         # task page, said plainly, when there is one.
         if evidence:
-            lines.append("Why you: " + "; ".join(evidence))
+            lines.append("Why you: " + transport_text("; ".join(evidence)))
     if kind in ("ask", "reassigned", "overdue") and row.get("prediction"):
         lines.append(f"How you decided before: {_clip(row['prediction'], 800, 'the rest is in the inbox')} "
                      "(a prediction from your earlier answers; confirm or correct it)")
@@ -1268,7 +1323,7 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
     if kind == "ask" and found:
         lines.append(f"What Raven found: {found}")
     if options:
-        lines.append("Options: " + " | ".join(str(o) for o in options))
+        lines.append("Options: " + " | ".join(transport_text(str(o)) for o in options))
     if kind == 'escalation':
         lines.append('This is a coordination request, not an ownership transfer. Reply `context: <who is available or what helps>` '
                      'to inform the agent. Only someone with existing authority may approve or reassign this decision.')
@@ -1289,8 +1344,18 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
     # Slack shows the blocks, not the text, and one section holds 3000
     # characters: a long message goes out as several sections rather than
     # one cut off at the limit.
-    return {"text": text, "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": part}}
-                                     for part in _sections(text, 2900)]}
+    complete = complete_chat_text(text)
+    if not complete:
+        # This is a routing notice, never an approvable shortened proposal.
+        text = (heads.get(kind, heads['ask']) + '\nThe complete decision scope and answer are too large for chat. '
+                'Nothing can be approved from this notice. Open the decision in Raven and review the full scope before answering.')
+        if task_link:
+            text += f'\n<{task_link}|Open the task for the complete review>'
+        elif link:
+            text += f'\nOpen Raven: {link}'
+    return {"text": text, "review_complete": complete,
+            "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": part}}
+                       for part in _sections(text, 2900)]}
 
 
 def prediction_scope(evidence: str) -> str:
@@ -1310,26 +1375,27 @@ def _clip(text: str, limit: int, rest: str) -> str:
     return f"{cut} … _[cut here: {rest}]_"
 
 
+def complete_chat_text(text):
+    """Final escaped text must fit both supported chat delivery shapes."""
+    from .readback import MAX_PROMPT_BYTES
+    return len(text.encode('utf-8')) <= MAX_PROMPT_BYTES and len(_sections(text, 2900)) <= 50
+
+
 def _sections(text: str, size: int) -> list[str]:
-    """Split a message into Slack section texts at line breaks; a single
-    line longer than a section is split at a space."""
-    parts, cur = [], ""
-    for line in text.split("\n"):
-        while len(line) > size:
-            head = line[:size].rsplit(" ", 1)[0] or line[:size]
-            if cur:
-                parts.append(cur)
-                cur = ""
-            parts.append(head)
-            line = line[len(head):].lstrip()
-        if cur and len(cur) + 1 + len(line) > size:
-            parts.append(cur)
-            cur = line
-        else:
-            cur = f"{cur}\n{line}" if cur else line
-    if cur:
-        parts.append(cur)
-    return parts[:50] or [""]
+    """Lossless section boundaries; callers enforce the provider block budget."""
+    parts = []
+    while text:
+        if len(text) <= size:
+            parts.append(text)
+            break
+        # Prefer a natural boundary but keep every delimiter in the payload.
+        at = text.rfind('\n', 0, size) + 1
+        if not at:
+            at = text.rfind(' ', 0, size) + 1
+        at = at or size
+        parts.append(text[:at])
+        text = text[at:]
+    return parts or ['']
 
 
 # ---------------- Slack ----------------

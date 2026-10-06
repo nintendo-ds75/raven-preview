@@ -50,8 +50,12 @@ def _decisions(store, task_id):
         except (TypeError, ValueError):
             record['signature_records'] = []
         record["citations"] = [{"kind": "decision", "id": source_id}]
+        record['sources'] = [{k: v for k, v in source.items() if k not in ('current', 'head_id', 'stale')}
+                             for source in node.get('sources', [])]
         record["citations"].extend({"kind": link.get("kind"), "id": link.get("id"),
-                                    "detail": link.get("detail", "")} for link in node.get("related", []))
+                                    "detail": link.get("detail", ""),
+                                    **{key: link[key] for key in ('source_decision_id', 'source_version_id', 'decision_id', 'decision_version_id') if key in link}}
+                                   for link in node.get("related", []))
         records.append(record)
     return tree, sorted(records, key=lambda item: item["node_id"])
 
@@ -69,6 +73,11 @@ def _reported_checks(store, task_id):
 
 
 def create(store, task_id, diff, checks=None):
+    with store.graph.transaction():
+        return _create_snapshot(store, task_id, diff, checks)
+
+
+def _create_snapshot(store, task_id, diff, checks=None):
     """Snapshot a completed, unblocked task and the exact submitted diff."""
     from . import canvas
     run = canvas._task(store, task_id)
@@ -155,6 +164,11 @@ def _review_comparison(saved, current):
 
 
 def export(store, data):
+    with store.graph.transaction():
+        return _export_snapshot(store, data)
+
+
+def _export_snapshot(store, data):
     """Return the saved finish proof, with an explicit live staleness check."""
     from . import canvas
     task_id = field(data, "task_id", limit=100)
@@ -164,7 +178,11 @@ def export(store, data):
         raise Invalid("No change proof saved; call bridge_finish_task with the complete diff first")
     tree, records = _decisions(store, task_id)
     reasons = []
-    if records != bundle["payload"]["decisions"]:
+    # Additive source metadata was absent in older v1 proofs. Compare absence
+    # to an empty edge set without modifying the saved payload or inventing
+    # historical provenance. Actual new pins still differ and are surfaced.
+    comparable = lambda rows: [{**row, 'sources': row.get('sources', [])} for row in rows]
+    if comparable(records) != comparable(bundle["payload"]["decisions"]):
         reasons.append("A decision, signature, authority, or scope changed since this proof")
     if run["status"] != "completed" or tree.get("needs_review"):
         reasons.append("The task is no longer completed and current")
@@ -187,7 +205,15 @@ def export(store, data):
                      "and export again. The current bundle has not been rewritten.")
     else:
         next_step = "Attach the bundle and summary to the code review; review and tests remain required"
+    from . import context_memory as cm
+    current_reuse = {node['node_id']: {
+        'requires_source_review': node.get('source_reuse_requires_review', False)}
+        for node in canvas._flatten(tree['nodes'])}
+    for state in current_reuse.values():
+        state['notice'] = cm.LEGACY_REUSE_NOTICE if state['requires_source_review'] else ''
     return {"bundle": bundle, "integrity": verify(bundle), "stale": bool(reasons),
+            "current_reuse": current_reuse,
+            "current_sources": {record['node_id']: cm.edges(store.graph.db, record['source_decision_id']) for record in records},
             "stale_reasons": reasons, "markdown": markdown(bundle), "review": review,
             "review_pending": review_pending, "review_snapshot_current": review_snapshot_current,
             "review_comparison": _review_comparison(bundle["payload"].get("review"), review),
@@ -209,6 +235,8 @@ def markdown(bundle):
                       quote("By: " + (node["signed_by"] or node["answered_by"] or "not recorded")),
                       quote("Scope: " + json.dumps(node["facts"], sort_keys=True)),
                       quote("Evidence: " + (node["evidence"] or "No external evidence recorded"))])
+        for source in node.get('sources', []):
+            lines.append(quote(f"Source: {source['ref']} ({source['role']}), version {source['sequence']} / {source['source_version_id']}; {source['url']}"))
     lines.extend(["", "## Host-reported checks", quote(payload["checks"]["text"]), "",
                   "## Trust limits", *["- " + text for text in payload["limitations"]]])
     return "\n".join(lines) + "\n"

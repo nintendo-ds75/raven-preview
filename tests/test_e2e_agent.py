@@ -216,7 +216,19 @@ class TheLoopTests(E2ECase):
         observed = agent2.call("bridge_get_tree", task_id=task)["observed_at"]
 
         # Priya signs in the thread; the waiting agent sees it and finishes.
-        handle_slack_event(delivery2, thread_reply("DUPRI", signoff["ts"], "UPRI", "sign off", "Ev2"))
+        def source_reply(text, number):
+            event = thread_reply("DUPRI", signoff["ts"], "UPRI", text, "Ev2-" + str(number))
+            event['event']['ts'] = f'2000000000.{number:06d}'
+            handle_slack_event(delivery2, event)
+        source_reply('sign off', 1)
+        held = delivery2._reading('DUPRI', signoff['ts'], self.priya)
+        self.assertIsNotNone(held)
+        self.assertTrue(held['source_review'])
+        self.assertIn('confirm ' + held['proposal_id'], self.slack.messages[-1]['text'])
+        self.assertFalse(canvas.node_view(delivery2.store, child['node_id'])['authorized'])
+        source_reply('yes', 2)
+        self.assertFalse(canvas.node_view(delivery2.store, child['node_id'])['authorized'])
+        source_reply('confirm ' + held['proposal_id'], 3)
         self.assertIn("Signed off by Priya Natarajan", self.slack.messages[-1]["text"])
         signed = agent2.call("bridge_wait", task_id=task, timeout="5", since=observed)
         self.assertEqual([c["node_id"] for c in signed["changed"]], [child["node_id"]])
@@ -321,8 +333,17 @@ class CorrectionTests(E2ECase):
         self.assertIn(node_b["node_id"], str(refused.exception))
 
         # Priya corrects B in the thread with the new answer; B finishes.
-        handle_slack_event(self.delivery, thread_reply("DUPRI", review["ts"], "UPRI",
-                                                       "The list rate: 0.03 per unit because the rate card was renegotiated", "Ev9"))
+        request = thread_reply("DUPRI", review["ts"], "UPRI",
+                               "The list rate: 0.03 per unit because the rate card was renegotiated", "Ev9")
+        request['event']['ts'] = '2000000000.000001'
+        handle_slack_event(self.delivery, request)
+        held = self.delivery._reading('DUPRI', review['ts'], self.priya)
+        self.assertIsNotNone(held)
+        self.assertTrue(held['source_review'])
+        self.assertIn('confirm ' + held['proposal_id'], self.slack.messages[-1]['text'])
+        confirmation = thread_reply('DUPRI', review['ts'], 'UPRI', 'confirm ' + held['proposal_id'], 'Ev9-confirm')
+        confirmation['event']['ts'] = '2000000000.000002'
+        handle_slack_event(self.delivery, confirmation)
         self.assertIn("Corrected and signed by Priya Natarajan", self.slack.messages[-1]["text"])
         fixed = second.call("bridge_wait", task_id=task_b, timeout="5", since=doubt["observed_at"])
         self.assertTrue(fixed["changed"][0]["authorized"])

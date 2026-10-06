@@ -94,7 +94,7 @@ def rule_expiry(raw) -> str:
     return expires.isoformat()
 
 
-def check_revision(data, row):
+def check_revision(data, row, db=None):
     """Optimistic concurrency for a human action on a decision: the
     caller names the revision it reviewed (the row's updated_at), and a
     row that moved on since is refused rather than signed blind."""
@@ -103,6 +103,22 @@ def check_revision(data, row):
         raise Invalid("expected_updated_at is required: name the revision you reviewed (the decision's updated_at)")
     if not isinstance(expected, str) or expected != row["updated_at"]:
         raise Invalid("This decision changed while you were reviewing it. Reopen it before acting on it.")
+    check_scope(data, row, db=db)
+
+
+def check_scope(data, row, db=None):
+    if 'expected_scope' in data:
+        from .approval_scope import scope_hash
+        if not data['expected_scope'] or data['expected_scope'] != scope_hash(row):
+            raise Invalid('This decision scope changed while you were reviewing it. Reopen it before acting on it.')
+    if 'expected_content' in data:
+        from .approval_scope import revision
+        current = dict(row)
+        if db is None:
+            raise Invalid('A complete notification review requires the selected writer transaction')
+        current['events'] = [dict(e) for e in db.execute('SELECT id,kind FROM events WHERE decision_id=? ORDER BY id', (current['id'],))]
+        if data['expected_content'] != revision(current):
+            raise Invalid('This decision changed while you were reviewing it. Reopen the complete decision before acting on it.')
 
 
 def check_not_abandoned(db, run_id, decision=None):
@@ -500,6 +516,9 @@ class Store:
             if db.execute("SELECT 1 FROM executions WHERE run_id=?", (run_id,)).fetchone():
                 raise Invalid("Managed run status comes from the execution provider")
             if status == "completed":
+                from . import context_memory as cm
+                for d in db.execute('SELECT id FROM decisions WHERE run_id=?', (run_id,)):
+                    cm.check_current(db, d['id'])
                 if db.execute("SELECT 1 FROM scope_clarifications WHERE task_id=?", (run_id,)).fetchone():
                     raise Invalid("Refused: missing scope facts must be clarified before this task can finish. "
                                   "Read scope_clarifications on bridge_get_tree, then retry bridge_add_node "
@@ -578,11 +597,13 @@ class Store:
                           and applicability_status(source, path, stated_facts)[0]]
             prior = candidates[0] if candidates else None
             decision_id, timestamp = uuid.uuid4().hex[:12], now()
+            observed = db.execute("SELECT updated_at FROM decisions WHERE id=?", (prior['id'],)).fetchone() if prior else None
+            source_revision = observed['updated_at'] if observed else ''
             db.execute("""INSERT INTO decisions(id, run_id, question, context, path, owner_id, routing_reason,
-                status, prediction, source_id, answer, rationale, answered_by, created_at, updated_at,
-                kind, category, repo) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
+                status, prediction, source_id, source_revision, answer, rationale, answered_by, created_at, updated_at,
+                kind, category, repo) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
                 decision_id, run_id, question, context, path, owner_id, reason, "pending",
-                prior["answer"] if prior else None, prior["id"] if prior else None,
+                prior["answer"] if prior else None, prior["id"] if prior else None, source_revision,
                 None, None, None, timestamp, timestamp,
                 "prediction" if prior else "new", field(data, "category", "policy", 40),
                 scope))
@@ -598,7 +619,8 @@ class Store:
 
     def get_decision(self, decision_id):
         with self.connect() as db:
-            row = db.execute("""SELECT d.*,o.name AS owner_name,o.team AS owner_team,
+            from .context_memory import reuse_uncertainty_sql
+            row = db.execute("SELECT d.*, " + reuse_uncertainty_sql() + " AS source_reuse_uncertain, " + """o.name AS owner_name,o.team AS owner_team,
                 r.title AS run_title,r.agent,r.repo FROM decisions d
                 LEFT JOIN owners o ON o.id=d.owner_id JOIN runs r ON r.id=d.run_id WHERE d.id=?""", (decision_id,)).fetchone()
             if not row:
@@ -623,6 +645,15 @@ class Store:
             result["authorized"] = authorized(probe)
             from .execution_store import revision
             result["revision"] = revision(db, decision_id)
+            from . import context_memory as cm
+            result['sources'] = cm.edges(db, decision_id)
+            result['context_history'] = cm.history(db, decision_id)
+            result['source_provenance'] = 'versioned' if result['sources'] and not result['source_reuse_uncertain'] else 'unknown'
+            result['source_reuse_requires_review'] = bool(result['source_reuse_uncertain'])
+            result['source_notice'] = cm.provenance_notice(result.get('source'), result['sources'], result['source_reuse_uncertain'])
+            result['source_revalidation'] = cm.source_revalidation(db, decision_id)
+            from .approval_scope import render as render_scope
+            result["approval_scope_text"] = render_scope(result)
             return result
 
     def assign(self, decision_id, data, actor=None):
@@ -853,63 +884,62 @@ class Store:
         required signer, verified for its scope, or an admin overriding."""
         from . import authz
         from .graph import rule_conditions
-        decision = self.get_decision(decision_id)
-        if data.get("expected_updated_at"):
-            check_revision(data, decision)
-        basis = authz.check(self.graph, actor, decision, "rule")
-        by = (actor.name if actor is not None and actor.id else field(data, "by", limit=100))[:100]
+        reviewed = self.get_decision(decision_id)
         graph = self.graph
-        stamp = now()
-        if data.get("end") in (True, 1, "1", "true", "on", "yes"):
-            if not decision.get("reusable"):
-                raise Invalid("This decision is not a rule")
-            with graph.transaction():
-                graph.db.execute("UPDATE decisions SET reusable=0, rule_ended_at=?, updated_at=? WHERE id=?",
-                                 (stamp, stamp, decision_id))
-                graph.append_event("rule_ended", {"task_id": decision["run_id"], "decision_id": decision_id, "by": by,
-                                                  "basis": basis})
-                flagged = graph.invalidate_rule_dependents(decision_id, f"the rule from decision {decision_id} was ended by {by}")
-            for nid in flagged:
-                self.notify(nid, "review")
-            row = self.get_decision(decision_id)
-            row["notice"] = (f"No longer a rule ({by}); from now on this answer is evidence that wants sign-off"
-                             + (f"; {len(flagged)} outstanding node{'s' if len(flagged) != 1 else ''} it authorized "
-                                "now wait for a person again" if flagged else ""))
-            row["invalidated"] = flagged
-            return row
-        if not (decision.get("signoff") in ("signed", "rule") and (decision.get("answer") or "").strip()):
-            raise Invalid("Only a signed answer can be a rule: answer or sign the decision first")
+        by = (actor.name if actor is not None and actor.id else field(data, "by", limit=100))[:100]
+        ending = data.get("end") in (True, 1, "1", "true", "on", "yes")
         conditions = "; ".join(rule_conditions(str(data.get("conditions") or "")))
         if len(conditions) > 500:
-            # Refused, not cut: a condition cut short ("customer=ac") is a
-            # different condition, and the rule would apply where nobody said.
             raise Invalid("A rule's conditions must fit in 500 characters; name fewer or shorter ones")
-        expires = rule_expiry(data.get("expires"))
+        expires = '' if ending else rule_expiry(data.get("expires"))
         scope = "any" if str(data.get("scope") or "").strip().lower() in ("any", "anywhere", "all") else "same"
-        with graph.transaction():
-            graph.db.execute("UPDATE decisions SET reusable=1, rule_conditions=?, rule_expires=?, rule_by=?, rule_at=?, "
-                             "rule_scope=?, rule_ended_at='', updated_at=? WHERE id=?",
-                             (conditions, expires, by, stamp, scope, stamp, decision_id))
-            graph.append_event("rule_made", {"task_id": decision["run_id"], "decision_id": decision_id, "by": by,
-                                             "conditions": conditions, "expires": expires, "scope": scope,
-                                             "basis": basis})
-            graph.note_rule_expiry(expires)
-            changed = decision.get("reusable") and any((decision.get(key) or "") != value for key, value in (
-                ("rule_conditions", conditions), ("rule_expires", expires), ("rule_scope", scope)))
-            flagged = (graph.invalidate_rule_dependents(decision_id, f"the rule from decision {decision_id} was changed by {by}")
-                       if changed else [])
+        with graph.transaction() as db:
+            row = db.execute("SELECT d.*,o.name AS owner_name FROM decisions d LEFT JOIN owners o ON o.id=d.owner_id WHERE d.id=?", (decision_id,)).fetchone()
+            if row is None:
+                raise Invalid('Decision not found')
+            decision = dict(row)
+            check_not_abandoned(db, decision['run_id'], decision)
+            check_revision({**data, 'expected_updated_at': data.get('expected_updated_at') or reviewed['updated_at']}, decision, db=db)
+            # Both ending and regranting check current standing under the same
+            # writer lock as the grant mutation. Never rebase a stale grant.
+            basis = authz.check(graph, actor, decision, 'rule')
+            stamp = now()
+            if ending:
+                if not decision.get('reusable'):
+                    raise Invalid('This decision is not a rule')
+                db.execute('UPDATE decisions SET reusable=0,rule_ended_at=?,updated_at=? WHERE id=?', (stamp, stamp, decision_id))
+                graph.append_event('rule_ended', {'task_id': decision['run_id'], 'decision_id': decision_id,
+                                                'by': by, 'basis': basis}, db=db)
+                flagged = graph.invalidate_rule_dependents(decision_id,
+                    f'the rule from decision {decision_id} was ended by {by}', db=db)
+            else:
+                if (decision.get('needs_review') or decision.get('signoff') not in ('signed', 'rule')
+                        or not (decision.get('answer') or '').strip()):
+                    raise Invalid('Only a signed answer can be a rule: answer or sign the decision first')
+                db.execute("UPDATE decisions SET reusable=1,rule_conditions=?,rule_expires=?,rule_by=?,rule_at=?,"
+                           "rule_scope=?,rule_ended_at='',updated_at=? WHERE id=?",
+                           (conditions, expires, by, stamp, scope, stamp, decision_id))
+                graph.append_event('rule_made', {'task_id': decision['run_id'], 'decision_id': decision_id,
+                    'by': by, 'conditions': conditions, 'expires': expires, 'scope': scope, 'basis': basis}, db=db)
+                graph.note_rule_expiry(expires)
+                changed = decision.get('reusable') and any((decision.get(key) or '') != value for key, value in (
+                    ('rule_conditions', conditions), ('rule_expires', expires), ('rule_scope', scope)))
+                flagged = graph.invalidate_rule_dependents(decision_id,
+                    f'the rule from decision {decision_id} was changed by {by}', db=db) if changed else []
         for nid in flagged:
-            self.notify(nid, "review")
-        auto = graph.get_setting("auto_rules") == "1"
+            self.notify(nid, 'review')
         row = self.get_decision(decision_id)
-        row["invalidated"] = flagged
-        row["notice"] = (f"Rule made by {by}: a question memory matches to this answer"
-                         + (f" whose stated facts and words satisfy {conditions}" if conditions else "")
-                         + (" in any scope" if scope == "any" else " in the same scope (other customers or files still ask)")
-                         + (" resolves without a fresh signature" if auto else
-                            " is shown as covered by this rule and still wants a signature, because automatic rule "
-                            "authorization is off (settings.auto_rules)")
-                         + (f" until {expires[:10]}" if expires else "") + ". End the rule to go back to sign-off.")
+        row['invalidated'] = flagged
+        if ending:
+            row['notice'] = (f'No longer a rule ({by}); from now on this answer is evidence that wants sign-off'
+                + (f"; {len(flagged)} outstanding node{'s' if len(flagged) != 1 else ''} it authorized now wait for a person again" if flagged else ''))
+            return row
+        auto = graph.get_setting('auto_rules') == '1'
+        row['notice'] = (f'Rule made by {by}: a question memory matches to this answer'
+            + (f' whose stated facts and words satisfy {conditions}' if conditions else '')
+            + (' in any scope' if scope == 'any' else ' in the same scope (other customers or files still ask)')
+            + (' resolves without a fresh signature' if auto else ' is shown as covered by this rule and still wants a signature, because automatic rule authorization is off (settings.auto_rules)')
+            + (f' until {expires[:10]}' if expires else '') + '. End the rule to go back to sign-off.')
         return row
 
     def answer(self, decision_id, data, actor=None, transaction_hook=None, transaction_db=None):
@@ -944,6 +974,32 @@ class Store:
                 raise Invalid("Managed decisions require expected_updated_at to prevent concurrent review conflicts")
             if data.get("expected_updated_at") and data["expected_updated_at"] != decision["updated_at"]:
                 raise Invalid("This decision changed while you were reviewing it. Reopen it before answering.")
+            check_scope(data, decision, db=db)
+            from . import context_memory as cm
+            evidence_mode = data.get('evidence_mode', 'retain')
+            if evidence_mode not in ('retain', 'independent'):
+                raise Invalid('evidence_mode must be retain or independent')
+            cm.snapshot_decision(db, decision_id, reason='before-human-answer')
+            cm.validate_decision_pins(db, data.get('source_decision_pins', []))
+            replacement_pins = None
+            if evidence_mode == 'retain':
+                if data.get('source_evidence') is not None:
+                    if not data['source_evidence'] and cm.edges(db, decision_id):
+                        raise Invalid('Use evidence_mode=independent to retire source reliance explicitly')
+                    replacement_pins = data['source_evidence']
+                cm.require_retained_premises(db, decision_id, replacement_pins)
+                cm.review_legacy_reuse(db, decision_id, replacement_pins, data.get('source_decision_pins', []), data.get('expected_updated_at'))
+                reviewed_human_sources, _ = cm.rebind_reviewed_human_sources(db, decision_id, replacement_pins, data.get('source_decision_pins', []), data.get('expected_updated_at'))
+                cm.revalidate_historical_context(db, decision_id, replacement_pins, data.get('source_decision_pins', []))
+                cm.check_current(db, decision_id, pins=replacement_pins, reviewed_human_sources=reviewed_human_sources)
+            else:
+                # This explicit human action retires prior derivation. Equal
+                # text or source author identity never implies independence.
+                retained = data.get('source_evidence') or []
+                cm.validate(db, decision_id, retained, current_roles=cm.RELIANCE)
+                replacement_pins = retained
+                db.execute("DELETE FROM decision_links WHERE decision_id=? AND kind='derived'", (decision_id,))
+                db.execute('UPDATE decisions SET independent_source_replacement=1 WHERE id=?', (decision_id,))
             # Internal-only hook: provenance is committed with the answer, after
             # authority and revision checks. Never supplied by a client payload.
             if transaction_hook is not None:
@@ -990,7 +1046,23 @@ class Store:
             # raised by an earlier correction is cleared by this answer.
             # The answer is the signer's signature on this exact text; every
             # earlier signature covered other text and is dropped.
-            signature = json.dumps([{"by": signer, "at": stamp, "revision": stamp, "hash": answer_hash(answer)}])
+            from .approval_scope import snapshot as approval_scope
+            retired_rule = bool(decision['reusable'])
+            scope_after = {**dict(decision), 'applicability': applicability}
+            if retired_rule:
+                # An answer authorizes this decision, not a replacement of its
+                # earlier standing grant. Only an explicit make_rule regrants
+                # future reuse. Keep the old grant and signatures in history.
+                db.execute('UPDATE decisions SET reusable=0,rule_ended_at=? WHERE id=?', (stamp, decision_id))
+                self.event(db, 'rule_ended', json.dumps({'by': signer, 'basis': basis,
+                    'reason': 'A new human answer replaces the prior standing grant; explicit regrant required.',
+                    'previous_rule': {key: decision[key] for key in ('reusable', 'rule_conditions', 'rule_scope',
+                                      'rule_expires', 'rule_by', 'rule_at', 'rule_ended_at', 'signatures')}}),
+                    decision_id, decision['run_id'])
+                scope_after.update(reusable=0, rule_ended_at=stamp)
+            signed_scope = approval_scope(scope_after)
+            signature = json.dumps([{"by": signer, "at": stamp, "revision": stamp, "hash": answer_hash(answer),
+                                     "scope": signed_scope}])
             # What the ladder wrote while it looked for an answer (the memory
             # it scored, the records it rejected) is not where this answer
             # came from, and is cleared. Measured live on eb9d22d: signed
@@ -1008,7 +1080,7 @@ class Store:
             self.event(db, kind, json.dumps({"answer": answer, "rationale": rationale, "owner": decision["owner_name"],
                                              "actor": signer, "basis": basis,
                                              **authz.event_provenance(actor, data.get("source")),
-                                             "applicability": applicability}), decision_id, decision["run_id"])
+                                             "applicability": applicability, "scope": signed_scope}), decision_id, decision["run_id"])
             # Several required approvers: the answer is one signature, and
             # the decision is evidence until every one of them has signed.
             keys = decision.keys()
@@ -1023,8 +1095,7 @@ class Store:
                 # and not evidence either.
                 db.execute("UPDATE decisions SET status='resolved', signoff='required', kind='answer', "
                            "signatures=?, signed_by=? WHERE id=?",
-                           (json.dumps([{"by": signer, "at": stamp, "revision": stamp, "hash": answer_hash(answer)}]),
-                            signer, decision_id))
+                           (signature, signer, decision_id))
                 self.event(db, "signature", json.dumps({"by": signer, "remaining": remaining,
                                                        **authz.event_provenance(actor, data.get("source"))}),
                            decision_id, decision["run_id"])
@@ -1035,6 +1106,7 @@ class Store:
             managed = db.execute("SELECT 1 FROM executions WHERE run_id=?", (decision["run_id"],)).fetchone()
             if not pending and not managed:
                 db.execute("UPDATE runs SET status=CASE WHEN status='completed' THEN status ELSE 'working' END,updated_at=? WHERE id=?", (now(), decision["run_id"]))
+            cm.snapshot_decision(db, decision_id, pins=replacement_pins, reason='human-answer')
             # Publish the human revision, supersession, and the complete
             # invalidation chain under the very same writer lock. This also
             # applies when read-back confirmation owns transaction_db.
@@ -1042,6 +1114,12 @@ class Store:
             if corrects:
                 flagged = self.graph.flag_dependents(decision_id,
                     f"the answer of decision {decision_id} was corrected", db=db)
+            elif retired_rule:
+                # A same-text answer to a signed agent resolution can retire
+                # a grant without correcting its evidence. Only active rule
+                # consumers lose permission; completed history stays intact.
+                flagged = self.graph.invalidate_rule_dependents(decision_id,
+                    f'the standing rule from decision {decision_id} was retired by a new human answer', db=db)
             if supersedes:
                 flagged.extend(self.graph.flag_dependents(supersedes,
                     f"decision {supersedes} was superseded by {decision_id}", exclude=(decision_id,), db=db))
@@ -1325,12 +1403,17 @@ class Store:
         if kind in ("pr", "merge", "commit", "review"):
             raise Invalid("kinds pr, merge, commit and review come from git and GitHub; use ticket, doc, slack or note")
         ref = field(data, "ref", limit=200)
+        for key, limit in (('title', 300), ('body', 20000), ('author', 100), ('created_at', 40), ('url', 1000),
+                           ('status', 40), ('namespace', 1000), ('external_id', 500), ('updated_at', 40),
+                           ('source_version', 500), ('access_scope', 2000)):
+            if key in data and (not isinstance(data[key], str) or len(data[key]) > limit):
+                raise Invalid(f'{key} must be text of at most {limit} characters; source content is never silently truncated')
         title = str(data.get("title") or "")[:300]
         body = str(data.get("body") or "")[:20000]
         if not title and not body:
             raise Invalid("A record needs a title or a body")
         author = str(data.get("author") or "")[:100]
-        created = str(data.get("created_at") or now())[:40]
+        created = str(data.get("created_at") or "")[:40]
         url = str(data.get("url") or "")[:1000]
         status = str(data.get("status") or "")[:40]
         from .record_state import resolved_value, state_settled
@@ -1343,15 +1426,93 @@ class Store:
             paths = [p.strip().lstrip("/") for p in re.split(r"[,\s]+", paths) if p.strip()]
         if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
             raise Invalid("paths must be a string or an array of strings")
+        if len(paths) > 40:
+            raise Invalid('paths exceeds the 40-path snapshot limit; no paths were imported')
         graph = self.graph
+        from . import context_memory as cm
+        provider = str(data.get("provider") or "legacy").strip().lower()
+        namespace = str(data.get("namespace") or "legacy").strip()
+        if provider not in ("legacy", "github", "jira", "slack", "generic"):
+            raise Invalid("provider must be github, jira, slack, generic, or legacy")
+        if provider != "legacy" and (not namespace or namespace == "legacy"):
+            raise Invalid("An explicit source installation/workspace namespace is required")
+        if str(data.get("retrieval_mode") or "").lower() in ("slack_realtime_search", "realtime_search", "transient"):
+            raise Invalid("Transient search results cannot be imported as durable records")
+        external_id = str(data.get("external_id") or ref).strip()
+        # Opaque internal ref avoids altering the established unique legacy key.
+        # No legacy row is silently claimed by a newly scoped source.
+        stored_ref = ref if provider == "legacy" and namespace == "legacy" else "source:" + cm.digest([provider, namespace, kind, external_id])
+        if data.get('source_sequence') is not None and not (
+                isinstance(data['source_sequence'], int) and not isinstance(data['source_sequence'], bool)
+                or isinstance(data['source_sequence'], str) and re.fullmatch(r'\d+', data['source_sequence'].strip())):
+            raise Invalid('source_sequence must be an integer or an integer string')
+        try:
+            source_sequence = int(data["source_sequence"]) if data.get("source_sequence") is not None else None
+        except (TypeError, ValueError) as error:
+            raise Invalid("source_sequence must be an integer") from error
+        if isinstance(data.get('source_sequence'), bool) or source_sequence is not None and source_sequence < 0:
+            raise Invalid('source_sequence must be a nonnegative integer')
+        availability = str(data.get("availability") or "available")
+        if availability not in ("available", "deleted", "inaccessible"):
+            raise Invalid("availability must be available, deleted, or inaccessible")
         with graph.transaction():
-            graph.upsert_intent(repo, kind, ref, title, body, author, created, status=status, resolved=resolved)
-            if "paths" in data:
-                graph.replace_intent_paths(repo, kind, ref, paths[:40])
-            if url:
-                graph.set_source(repo, f"url:{kind}:{ref}", url)
+            previous = graph.db.execute("SELECT * FROM intents WHERE repo=? AND kind=? AND ref=?", (repo, kind, stored_ref)).fetchone()
+            if previous is not None:
+                if "author" not in data:
+                    author = previous['author']
+                if "created_at" not in data:
+                    created = previous['created_at']
+                prior_version = graph.db.execute('SELECT v.snapshot FROM source_records s JOIN source_versions v ON v.id=s.head_id WHERE s.intent_id=?', (previous['id'],)).fetchone()
+                prior_snapshot = json.loads(prior_version['snapshot']) if prior_version else {}
+                if 'availability' not in data:
+                    availability = prior_snapshot.get('availability', 'available')
+            else:
+                prior_snapshot = {}
+            if "url" in data:
+                graph.set_source(repo, f"url:{kind}:{stored_ref}", url)
+            else:
+                url = graph.get_source(repo, f"url:{kind}:{stored_ref}")
+            observed = graph.upsert_intent(repo, kind, stored_ref, title, body, author, created,
+                status=status, resolved=resolved, paths=paths[:40] if "paths" in data else None,
+                metadata={"provider": provider, "namespace": namespace, "external_id": external_id,
+                          "object_kind": kind, "display_ref": ref, "url": url, "source_created_at": created,
+                          "source_updated_at": str(data.get("updated_at") or ""),
+                          "source_version": str(data.get("source_version") or ""), "source_sequence": source_sequence,
+                          "availability": availability, "access_scope": str(data.get("access_scope", prior_snapshot.get('access_scope', '')) or "")})
+            if data.get("task_id"):
+                cm.add_anchor(graph.db, str(data["task_id"]), observed['id'], observed['version_id'], str(data.get('anchor_role') or 'work_item'))
             graph.append_event("record_added", {"repo": repo, "kind": kind, "ref": ref, "url": url, "author": author})
-        return {"repo": repo, "kind": kind, "ref": ref, "url": url, "paths": paths[:40]}
+        return {"repo": repo, "kind": kind, "ref": ref, "url": url,
+                "paths": graph.paths_of_intents(repo, [(kind, stored_ref)]).get((kind, stored_ref), []),
+                "source": cm.citation(graph.db, observed['id'], observed['version_id']), "changed": observed['changed'],
+                "affected_decisions": observed.get('affected_decisions', []),
+                "latest_observation": cm.latest_observation(graph.db.execute('SELECT * FROM source_records WHERE id=?', (observed['id'],)).fetchone())}
+
+    def get_record(self, record_id, repo):
+        from . import context_memory as cm
+        with self.connect() as db:
+            row = db.execute('SELECT * FROM source_records WHERE id=? AND repo=?', (record_id, repo_key(repo))).fetchone()
+            if row is None:
+                raise Invalid('Source record not found in this repository')
+            if row['availability'] != 'available':
+                raise Invalid('Source is unavailable; retained history is not exposed through source reads')
+            versions = [dict(v) for v in db.execute('SELECT * FROM source_versions WHERE record_id=? ORDER BY sequence', (record_id,))]
+            for version in versions:
+                version['snapshot'] = json.loads(version['snapshot'])
+            return {'source': cm.citation(db, record_id, row['head_id']), 'versions': versions,
+                    'latest_observation': cm.latest_observation(row),
+                    'identities': [dict(identity) for identity in db.execute('SELECT provider,namespace,object_kind,external_id FROM source_identities WHERE record_id=? ORDER BY provider,namespace,external_id', (record_id,))],
+                    'source_ordering': 'provided' if (row['newest_sequence'] is not None or row['newest_updated_at'] or any(v['source_sequence'] is not None or v['source_updated_at'] for v in versions)) else 'unknown; revisions order local observations only'}
+
+    def lookup_record(self, **query):
+        """Resolve an exact external key without requiring a prior import or internal ID."""
+        from . import source_lookup
+        with self.connect() as db:
+            # One consistent, non-mutating snapshot on both backends. No writer
+            # lock or provider call; a concurrent source change cannot mix heads.
+            db.execute('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY'
+                       if getattr(db, 'dialect', '') == 'postgres' else 'BEGIN')
+            return source_lookup.lookup(db, **query)
 
     def ownership(self, repo="", limit=200):
         """The live ownership rows, of one repository when named; limit 0

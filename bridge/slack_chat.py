@@ -352,11 +352,13 @@ def recipient(delivery, name, message='', speaker=''):
     return delivery.store.graph.find_person(_POSSESSIVE_RE.sub('', name or '').strip('@ '))
 
 
-def apply(delivery, d, person, action, actor):
+def apply(delivery, d, person, action, actor, review_data=None):
     store = delivery.store
     transaction_db = store.graph.db if store.graph.db.in_transaction else None
     kind = action['kind']
-    by = {'by':person['name'], 'expected_updated_at':d['updated_at']}
+    by = {'by':person['name'], 'expected_updated_at':d['updated_at'], **(review_data or {})}
+    if review_data:
+        by['source'] = f"{delivery.channel}: {person['name']} (read back and confirmed)"
     if kind in ('handoff','claim'):
         # The proposed reading already resolved the recipient before this
         # writer transaction. Keep that exact identity: reparsing the old
@@ -377,7 +379,7 @@ def apply(delivery, d, person, action, actor):
         # other people's valid signatures or changes the decision's owner.
         if (d['status'] != 'pending' and not action.get('rationale')
                 and action['answer'].strip() == (d.get('answer') or '').strip()):
-            canvas.sign_off(store, d['id'], by, actor=actor)
+            canvas.sign_off(store, d['id'], by, actor=actor, transaction_db=transaction_db)
             return f"Signed by {person['name']}. The coding agent can now read it."
         data = {**by, 'answer':action['answer'], 'rationale':action.get('rationale') or f'No reason given in the {delivery.channel.title()} conversation',
                 'signed_by':person['name'],'source':f"{delivery.channel}: {person['name']} (read back and confirmed)"}
@@ -385,7 +387,7 @@ def apply(delivery, d, person, action, actor):
         else: canvas.sign_off(store,d['id'],data,actor=actor,transaction_db=transaction_db)
         return f"Recorded and signed as {person['name']}'s answer. The coding agent can now read it."
     if kind == 'signoff':
-        canvas.sign_off(store,d['id'],by,actor=actor)
+        canvas.sign_off(store,d['id'],by,actor=actor,transaction_db=transaction_db)
         return f"Signed by {person['name']}. The coding agent can now read it."
     if kind == 'followup':
         canvas.add_followups(store, load(), d['id'], {**by,'questions':[action['answer']], 'required':action.get('required') is True}, actor=actor)
@@ -403,7 +405,7 @@ def apply(delivery, d, person, action, actor):
 def respond(delivery, note, d, person, text, actor, action_token='', occurrence=None, event_id=''):
     """None leaves explicit commands and installations without a model to the existing parser."""
     from .delivery import _ACK_ONLY_RE, _what_it_says, _signed_as_it_stands
-    from . import readback
+    from . import readback, approval_scope
     graph = delivery.store.graph
     channel, thread = note['external_ref'].split(':',1)
     held = delivery._reading(channel,thread,person['id'])
@@ -425,8 +427,10 @@ def respond(delivery, note, d, person, text, actor, action_token='', occurrence=
         # words, however, deserve a new reading against the current decision.
         if readback.confirming(text) or readback.declining(text):
             return 'The decision changed since my read-back. Nothing was applied. Please review the current answer before confirming again.'
-    stale = delivery._stale(note,d,person)
-    if stale and not pending:
+    # Conversation can offer a fresh complete readback of today's scope.
+    # Direct shortcuts still require the original notification's review.
+    stale = delivery._stale(note, d, person)
+    if stale and not pending and stale.startswith(('the question changed', 'the answer changed', 'this decision was answered by')):
         delivery.store.notify(d['id'], 'signoff' if d.get('answer') else 'ask', to=person['name'])
         return 'This decision changed since the message above. I will show you its current state before asking for a signature.'
     history = [dict(r) for r in graph.db.execute('SELECT role,text FROM slack_conversation WHERE channel=? AND thread_ts=? AND person_id=? ORDER BY created_at DESC LIMIT 10', (channel,thread,person['id']))][::-1]
@@ -445,6 +449,7 @@ def respond(delivery, note, d, person, text, actor, action_token='', occurrence=
         sources=[]; search_notice=''
         payload={'question':d['question'],'answer_on_table':d.get('answer',''), 'status':d['status'],
                  'task':{k:run.get(k,'') for k in ('title','goal','facts','repo')},
+                 'decision_scope':approval_scope.snapshot(d),
                  'context':d.get('context',''),'routing':d.get('owner_evidence') or d.get('routing_reason',''),
                  'evidence':d.get('evidence',''),'rationale':d.get('rationale',''),
                  'owner':d.get('owner_name',''),'authorized':d.get('authorized',False),
@@ -501,6 +506,10 @@ def respond(delivery, note, d, person, text, actor, action_token='', occurrence=
             if not _forget_snapshot(delivery, channel, thread, person['id'], held):
                 return 'The read-back changed while I was reading your reply. Nothing was applied. Please review the latest read-back.'
             readback.record_confirmation(delivery, held, person, occurrence)
+            from .source_review import parameters
+            review_data = parameters(delivery, held)
+            if review_data:
+                return apply(delivery,d,person,pending,actor,review_data=review_data)
             return apply(delivery,d,person,pending,actor)
     if kind=='decline':
         with graph.transaction():
@@ -550,4 +559,4 @@ def respond(delivery, note, d, person, text, actor, action_token='', occurrence=
             return 'The decision changed while I was reading your answer. Nothing was applied. Please review the current decision and send your answer again.'
         return readback.save(delivery, channel, thread, person['id'], occurrence, event_id,
             {'decision_id': d['id'], 'revision': revision, 'kind': 'conversation',
-             'answer': json.dumps(action), 'rationale': '', 'recipient': '', 'created_at': now_iso()}, summary)
+             'answer': json.dumps(action), 'rationale': '', 'recipient': '', 'created_at': now_iso()}, summary, snapshot=d)

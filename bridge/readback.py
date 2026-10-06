@@ -13,12 +13,14 @@ from datetime import datetime, timezone
 
 _SIGNOFF_COMMAND = re.compile(
     r"^(sign(?:ed)?[- ]?off|approve[d]?|lgtm|yes,? sign(?:ed)?(?: off)?|ok(?:ay)?,? sign(?:ed)?(?: off)?)\W*$", re.I)
+MAX_PROMPT_BYTES = 12000
+
 _TOKEN = re.compile(r'^\s*(confirm|yes|decline|no)\s+([0-9a-f]{12})\s*[.!]?\s*$', re.I)
 
 
 def migrate(db):
     have = {r['name'] for r in db.execute('PRAGMA table_info(reply_readings)')}
-    for name in ('proposal_id', 'source_occurrence', 'source_event_id', 'delivered_ref', 'prompt'):
+    for name in ('proposal_id', 'source_occurrence', 'source_event_id', 'delivered_ref', 'prompt', 'source_review'):
         if name not in have:
             db.execute(f"ALTER TABLE reply_readings ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
     if 'delivered_at' not in have:
@@ -70,6 +72,10 @@ def intent(text, include_signoff=False):
     return '', ''
 
 
+def signoff_request(text):
+    return bool(_SIGNOFF_COMMAND.fullmatch(text or ''))
+
+
 def confirming(text):
     return intent(text, include_signoff=True)[0] == 'confirm'
 
@@ -114,7 +120,7 @@ def current(graph, platform, channel, thread, person_id, occurrence):
     return bool(row and row['occurrence_id'] == occurrence['id'] and row['occurred_at'] == stamp)
 
 
-def save(delivery, channel, thread, person_id, occurrence, event_id, values, summary):
+def save(delivery, channel, thread, person_id, occurrence, event_id, values, summary, snapshot=None):
     """Called under the writer transaction after semantic/snapshot checks."""
     graph = delivery.store.graph
     if not current(graph, delivery.channel, channel, thread, person_id, occurrence) or not event_id:
@@ -123,11 +129,43 @@ def save(delivery, channel, thread, person_id, occurrence, event_id, values, sum
     held = delivery._reading(channel, thread, person_id)
     if held and held.get('source_event_id') == event_id:
         return held['prompt']  # A resumed occurrence cannot create a different proposal.
+    from . import source_review
+    kind = json.loads(values['answer']).get('kind') if values['kind'] == 'conversation' else values['kind']
+    review, summary, error = source_review.prepare(delivery, values['decision_id'], kind, summary, snapshot)
+    if error:
+        delivery._forget_reading(channel, thread, person_id)
+        return error
     proposal = uuid.uuid4().hex[:12]
-    prompt = summary + '\nNothing applied yet. ' + guidance({'proposal_id': proposal})
+    from .approval_scope import render, transport_text
+    decision = delivery.store.get_decision(values['decision_id'])
+    action = json.loads(values['answer']) if values['kind'] == 'conversation' else values
+    # An identical semantic answer without a rationale is a co-signature.
+    # All other answer proposals use Store.answer's explicit empty default,
+    # not an inferred or inherited reusable applicability grant.
+    replacement = (action['kind'] == 'answer' and not (
+        values['kind'] == 'conversation' and decision['status'] != 'pending'
+        and not action.get('rationale') and action['answer'].strip() == (decision.get('answer') or '').strip()))
+    effect = ('\nProposed answer applicability: {} (no additional reuse boundaries declared).'
+              if replacement else '')
+    source_rebind = bool(review and decision['source_revalidation'].get('retires_rule'))
+    if (replacement or source_rebind) and decision.get('reusable'):
+        effect += ('\nThis approval will retire the existing standing rule. It approves this decision only. '
+                   'Future automatic reuse requires a fresh explicit make-rule action.')
+    # A source review already contains the complete root and escaped data.
+    # Preserve its trusted framing; do not duplicate the root or escape twice.
+    displayed = summary if review else transport_text(summary) + '\n' + transport_text(render(decision))
+    prompt = displayed + effect + '\nNothing applied yet. ' + guidance({'proposal_id': proposal})
+    # Measure the complete escaped prompt, including its confirmation code.
+    # A provider-truncated message cannot constitute reviewed consent.
+    from .delivery import complete_chat_text
+    if not complete_chat_text(prompt):
+        delivery._forget_reading(channel, thread, person_id)
+        return ('Nothing recorded: the complete answer and decision scope are too large for one chat read-back. '
+                'No shortened read-back can be confirmed. Open this decision in Raven to review its full scope and answer.')
     values = {**values, 'channel': channel, 'thread_ts': thread, 'person_id': person_id,
               'proposal_id': proposal, 'source_occurrence': json.dumps(occurrence, sort_keys=True),
-              'source_event_id': event_id, 'delivered_ref': '', 'delivered_at': 0, 'prompt': prompt}
+              'source_event_id': event_id, 'delivered_ref': '', 'delivered_at': 0, 'prompt': prompt,
+              'source_review': review}
     columns = list(values)
     updates = ','.join(f'{key}=excluded.{key}' for key in columns if key not in ('channel', 'thread_ts', 'person_id'))
     graph.db.execute(f"INSERT INTO reply_readings({','.join(columns)}) VALUES({','.join('?' for _ in columns)}) "
@@ -173,6 +211,8 @@ def refusal(delivery, channel, thread, person_id, held, text, occurrence):
     kind, token = intent(text, include_signoff=True)
     if not kind or (token and token != held.get('proposal_id')):
         return 'Not recorded: that confirmation does not identify the current read-back. ' + guidance(held)
+    if not token and held.get('source_review'):
+        return 'Not recorded: reviewing current sources requires the exact read-back code. ' + guidance(held)
     if not token and occurrence.get('reply_to') != held['delivered_ref']:
         return 'Not recorded: a bare reply could refer to a different read-back. ' + guidance(held)
     return ''
@@ -180,12 +220,22 @@ def refusal(delivery, channel, thread, person_id, held, text, occurrence):
 
 def record_confirmation(delivery, held, person, occurrence):
     """Append exact consent provenance in the transaction that applies it."""
-    delivery.store.graph.append_event('readback_confirmed', {
-        'decision_id': held['decision_id'], 'task_id': delivery.store.get_decision(held['decision_id'])['run_id'],
+    from .approval_scope import revision
+    from .store import Invalid
+    graph = delivery.store.graph
+    if not graph.db.in_transaction:
+        raise Invalid('Read-back confirmation requires its selected writer transaction')
+    current = dict(graph.db.execute('SELECT * FROM decisions WHERE id=?', (held['decision_id'],)).fetchone())
+    current['events'] = [dict(e) for e in graph.db.execute(
+        'SELECT id,kind FROM events WHERE decision_id=? ORDER BY id', (held['decision_id'],))]
+    if held['revision'] != revision(current):
+        raise Invalid('The decision changed since this read-back. Nothing was recorded; review it again.')
+    graph.append_event('readback_confirmed', {
+        'decision_id': held['decision_id'], 'task_id': current['run_id'],
         'proposal_id': held['proposal_id'],
         'actor_id': person['id'], 'actor_name': person['name'], 'channel': delivery.channel,
         'thread': held['thread_ts'], 'source_event_id': held['source_event_id'],
         'source_occurrence': json.loads(held['source_occurrence']), 'confirmation_occurrence': occurrence,
         'delivered_ref': held['delivered_ref'], 'delivered_at': held['delivered_at'],
-        'proposal': {key: held[key] for key in ('revision', 'kind', 'answer', 'rationale', 'recipient', 'prompt')},
+        'proposal': {key: held[key] for key in ('revision', 'kind', 'answer', 'rationale', 'recipient', 'prompt', 'source_review')},
     })

@@ -8,7 +8,7 @@ const row = () => ({id:'interview', task_id:'task', decision_id:'decision', vers
   decision_revision:'rev', transcript:'', answer:'Keep five seconds.', rationale:'Compatibility.',
   pending_response:'', capture_method:'typed', turns:[], guidance:{}, applicability:{requires:{client:'new'}},
   interviewer:'deterministic-guided-prompts', prompts:['Which timeout?', 'Which exceptions?'],
-  scope:{task_id:'task',question:'Which timeout?',context:'Keep old clients.',repo:'org/repo',path:'src/client.py',paths:['src/client.py']}});
+  scope:{decision_scope_text:'Facts: customer=Synthetic North; environment=staging; release=r17; <script>unsafe()</script>', task_id:'task',question:'Which timeout?',context:'Keep old clients.',repo:'org/repo',path:'src/client.py',paths:['src/client.py']}});
 function harness(link = false) {
   const handlers = {document:{}, window:{}, dialog:{}};
   const elements = new Map();
@@ -43,9 +43,14 @@ function harness(link = false) {
     assert(h.dialog.open);
     assert.match(h.dialog.innerHTML,/Start microphone/);
     assert.match(h.dialog.innerHTML,/model provider/);
+    assert.match(h.dialog.innerHTML,/customer=Synthetic North; environment=staging; release=r17/);
+    assert(!h.dialog.innerHTML.includes('<script>unsafe'));
     h.run('interviewBody(interviewSession, true)');
     assert.match(h.dialog.innerHTML,link ? /personal task link/ : /signed-in identity/);
     assert.equal(h.calls.filter(c=>c.url.endsWith('/confirm')).length,0);
+    h.run('interviewSession.row.scope.decision_scope = {reusable: 1}; interviewBody(interviewSession, true)');
+    assert.match(h.dialog.innerHTML,/retires the existing standing rule/);
+    assert.match(h.dialog.innerHTML,/customer=Synthetic North; environment=staging; release=r17/);
     h.run('interviewSession.row.answer = "<script>unsafe()</script>"; interviewBody(interviewSession, true)');
     assert(!h.dialog.innerHTML.includes('<script>unsafe'));
     assert(h.dialog.innerHTML.includes('&lt;script&gt;'));
@@ -112,6 +117,9 @@ function harness(link = false) {
     h.run('interviewSession.writes = Promise.resolve().then(() => { interviewSession.row.version = 2; interviewSession.row.answer = "Bill everything."; })');
     await click();
     assert.equal(h.calls.filter(c=>c.url.endsWith('/confirm')).length,0);
+    h.run('interviewSession.row.scope.decision_scope = {reusable: 1}; interviewBody(interviewSession, true)');
+    assert.match(h.dialog.innerHTML,/retires the existing standing rule/);
+    assert.match(h.dialog.innerHTML,/customer=Synthetic North; environment=staging; release=r17/);
     assert(h.dialog.open);
   }
   // An old button is inert after replacement, editing, or another active interview.
@@ -124,6 +132,9 @@ function harness(link = false) {
     h.run('interviewBody(interviewSession, true)');
     const {click} = clickConfirm(h); h.run(mutation); await click();
     assert.equal(h.calls.filter(c=>c.url.endsWith('/confirm')).length,0);
+    h.run('interviewSession.row.scope.decision_scope = {reusable: 1}; interviewBody(interviewSession, true)');
+    assert.match(h.dialog.innerHTML,/retires the existing standing rule/);
+    assert.match(h.dialog.innerHTML,/customer=Synthetic North; environment=staging; release=r17/);
   }
   // Navigation while waiting cancels submission; a late result never closes a newer interview.
   {
@@ -135,6 +146,7 @@ function harness(link = false) {
     const pending = click();
     h.run('interviewSession = null; ++interviewGeneration'); release(); await pending;
     assert.equal(h.calls.filter(c=>c.url.endsWith('/confirm')).length,0);
+    assert.equal(h.run('interviewSession'),null);
   }
   {
     const h = harness(); await h.run("openInterview('task','decision')");

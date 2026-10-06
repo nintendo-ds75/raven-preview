@@ -78,7 +78,12 @@ def _wire_fakes(case, json_map=None, text_map=None):
 
     def complete(self, purpose, system, prompt, **kw):
         if purpose in text_map:
-            return text_map[purpose]
+            value = text_map[purpose]
+            if purpose == "compose_joint" and "USED_SOURCES:" not in value:
+                labels = __import__('re').findall(r"(?:^|\n)(r\d+) \(", prompt)
+                marker = "\nUSED_SOURCES: " + ",".join(labels) + "\n"
+                value = value.replace("COVERAGE:", marker + "COVERAGE:") if "COVERAGE:" in value else value + marker
+            return value
         if purpose == "conflict":
             return "UNRELATED"
         if purpose == "compose_joint":
@@ -368,7 +373,9 @@ class NotAdoptedRecordTests(LadderCase):
 
         def complete(self, purpose, system, prompt, **kw):
             prompts.append((system, prompt))
-            return reply
+            labels = __import__('re').findall(r"(?:^|\n)(r\d+) \(", prompt)
+            marker = "\nUSED_SOURCES: " + ",".join(labels) + "\n"
+            return reply.replace("COVERAGE:", marker + "COVERAGE:") if "COVERAGE:" in reply else reply + marker
         self.patch(llm_mod.Client, "complete", complete)
         return ladder_mod._compose_joint(self.cfg, question, [dict(r) for r in self.ROWS]), prompts
 
@@ -815,6 +822,8 @@ class RecordTests(LadderCase):
         self.assertIn(d.status, ("partial", "resolved"))
         self.assertTrue("5242" in (d.answer or "") or "5242" in d.evidence)
         self.assertFalse(r.open)
+        from bridge.context_memory import edges
+        self.assertEqual([(source['ref'], source['role']) for source in edges(g.db, d.id)], [('5242', 'context')])
 
     def test_retro_pointer_requires_topical_record(self):
         g = self.graph
@@ -1117,6 +1126,8 @@ class ModelRungTests(LadderCase):
         self.assertEqual(d.status, "partial")
         self.assertTrue(d.answer.startswith("CONFLICTED"))
         self.assertIn("AVOPS-455", d.answer)
+        from bridge.context_memory import edges
+        self.assertEqual([(source['ref'], source['role']) for source in edges(g.db, d.id)], [('AVOPS-455', 'contradiction')])
 
     def test_followup_ref_in_prior_answer_reaches_memory(self):
         g = self.graph
@@ -1193,16 +1204,19 @@ class ModelRungTests(LadderCase):
         g = self.graph
         t = g.create_task("prior")
         q1 = "Should unused prepaid credits expire at annual contract renewal?"
-        g.add_decision(t, q1, "policy", "approved", source="human", answered_by="Tomas Lindqvist",
+        first_source = g.add_decision(t, q1, "policy", "approved", source="human", answered_by="Tomas Lindqvist",
                        answer="No. For annual contracts, unused prepaid credits roll over.", embedding=llm_mod.embed(q1), repo="acme")
         q2 = "Do rolled-over prepaid credits apply to add-on SKUs such as GPU burst?"
-        g.add_decision(t, q2, "policy", "approved", source="human", answered_by="Tomas Lindqvist",
+        second_source = g.add_decision(t, q2, "policy", "approved", source="human", answered_by="Tomas Lindqvist",
                        answer="No. Rollover covers the base platform SKU only.", embedding=llm_mod.embed(q2), repo="acme")
         q = "A customer on an annual plan has 4,000 unused prepaid credits at renewal, 1,500 bought for GPU burst. How many carry over?"
         r = run_task(g, Config(), "credits", repo="acme", decisions=[{"question": q, "category": "policy"}])
         d = self.first(r)
         self.assertEqual(d.status, "resolved", d.evidence)
         self.assertIn("2,500", d.answer)
+        linked = [link for link in g.links_for([d.id])[d.id] if link['kind'] == 'derived']
+        self.assertEqual({link['id'] for link in linked}, {first_source, second_source})
+        self.assertTrue(all(link.get('source_version_id') for link in linked))
 
 
 class TwinClosingTests(LadderCase):

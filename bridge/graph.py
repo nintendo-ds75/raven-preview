@@ -32,6 +32,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .llm import clip_marked
+from .context_memory import LOCAL_ORIGINS, reuse_uncertainty_sql
 
 MATERIAL_WEIGHT_DELTA = 0.15
 MEMO_ENTRIES = 64
@@ -232,6 +233,12 @@ _DECISION_COLUMNS = [
     # A follow-up question the person who added it marked required: the
     # task cannot finish until the agent adopts it and it is answered.
     ("followup_required", "INTEGER NOT NULL DEFAULT 0"),
+    # Current reuse provenance is separate from immutable signatures/history.
+    ("source_reuse_state", "TEXT NOT NULL DEFAULT ''"),
+    # Explicit human replacement can retire inherited source derivation while
+    # keeping the node's structural position on the task tree.
+    ("independent_source_replacement", "INTEGER NOT NULL DEFAULT 0"),
+    ("historical_parent_revalidated", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 _RUN_COLUMNS = [
@@ -314,6 +321,8 @@ def migrate(db: sqlite3.Connection) -> None:
     db.executescript(_SCHEMA)
     from .routing_memory import migrate as migrate_routes
     migrate_routes(db)
+    from .context_memory import migrate as migrate_context
+    migrate_context(db)
     if fts_available(db):
         db.executescript(_FTS)
 
@@ -322,6 +331,8 @@ def backfill(db: sqlite3.Connection) -> None:
     """The columns and rows older databases lack. Runs inside Store's
     migration transaction so two processes opening at once (the inbox
     and an MCP server) migrate serially."""
+    from .context_memory import backfill as backfill_context
+    backfill_context(db)
     cols = {r["name"] for r in db.execute("PRAGMA table_info(decisions)")}
     for name, decl in _DECISION_COLUMNS:
         if name not in cols:
@@ -372,6 +383,8 @@ def backfill(db: sqlite3.Connection) -> None:
     db.execute("CREATE INDEX IF NOT EXISTS events_run ON events(run_id, id)")
     db.execute("CREATE INDEX IF NOT EXISTS ownership_key "
                "ON ownership(repo, path_prefix, engineer, source, valid_to)")
+    from .context_memory import backfill_reuse
+    backfill_reuse(db)
     if fts_available(db):
         # Backfill rows created before the index existed.
         missing = db.execute(
@@ -455,7 +468,7 @@ RECENT_STATUSES = ("approved", "resolved", "partial")
 UNSIGNED_STATUSES = ("resolved", "partial", "assumed", "proposed")
 # SQL for "a person authorized this row": the inbox recorded a human
 # answer, or a person signed the row (or a reusable rule covers it).
-AUTHORIZED_SQL = "(d.status = 'approved' OR d.signoff IN ('signed', 'rule'))"
+AUTHORIZED_SQL = "(d.needs_review=0 AND (d.status = 'approved' OR d.signoff IN ('signed', 'rule')))"
 # What memory is made of: a person's own answer or signature on this
 # very decision. A row a rule authorized is the rule's, not a fresh
 # human answer, and never becomes memory in its own right: reuse would
@@ -552,6 +565,7 @@ class Decision:
     rule_by: str = ""
     rule_scope: str = ""
     applicability: dict = field(default_factory=dict)
+    source_reuse_uncertain: bool = False
 
     @property
     def authorized(self) -> bool:
@@ -611,6 +625,7 @@ def _row_to_decision(row: sqlite3.Row) -> Decision:
         rule_expires=(row["rule_expires"] if "rule_expires" in keys else "") or "",
         rule_by=(row["rule_by"] if "rule_by" in keys else "") or "",
         rule_scope=(row["rule_scope"] if "rule_scope" in keys else "") or "",
+        source_reuse_uncertain=bool(row["source_reuse_uncertain"]) if "source_reuse_uncertain" in keys else False,
         applicability=parse_applicability((row["applicability"] if "applicability" in keys else "") or ""),
     )
 
@@ -778,6 +793,9 @@ def rule_status(d: "Decision", question: str, context: str = "", facts: dict | N
     phrases satisfy its conditions."""
     if not d.reusable or not d.authorized:
         return False, ""
+    if d.source_reuse_uncertain:
+        from .context_memory import LEGACY_REUSE_NOTICE
+        return False, LEGACY_REUSE_NOTICE
     if d.rule_expires:
         try:
             expires = datetime.fromisoformat(d.rule_expires.replace("Z", "+00:00"))
@@ -808,7 +826,7 @@ def rule_status(d: "Decision", question: str, context: str = "", facts: dict | N
     return True, ""
 
 
-_DECISION_SELECT = ("SELECT d.*, o.name AS owner_name FROM decisions d "
+_DECISION_SELECT = ("SELECT d.*, " + reuse_uncertainty_sql() + " AS source_reuse_uncertain, o.name AS owner_name FROM decisions d "
                     "LEFT JOIN owners o ON o.id = d.owner_id")
 
 
@@ -1008,16 +1026,26 @@ class Graph:
         self._bump(repo)
 
     def upsert_intent(self, repo: str, kind: str, ref: str, title: str, body: str,
-                      author: str, created_at: str, status: str = "", resolved: bool = True) -> None:
-        self.db.execute(
+                      author: str, created_at: str, status: str = "", resolved: bool = True,
+                      *, paths=None, metadata=None) -> dict:
+        from .context_memory import observe
+        with self.transaction():
+            self.db.execute(
             """INSERT INTO intents(id, repo, kind, ref, title, body, author, created_at, status, resolved)
                VALUES(?,?,?,?,?,?,?,?,?,?)
                ON CONFLICT(repo, kind, ref) DO UPDATE SET
                  title=excluded.title, body=excluded.body, status=excluded.status,
-                 resolved=excluded.resolved""",
+                 resolved=excluded.resolved, author=excluded.author, created_at=excluded.created_at""",
             (uuid.uuid4().hex, repo, kind, ref, title or "", body or "", author or "",
              created_at or "", status, 1 if resolved else 0))
+            if paths is not None:
+                self.db.execute("DELETE FROM intent_paths WHERE repo=? AND kind=? AND ref=?", (repo, kind, ref))
+                self.db.executemany("INSERT OR IGNORE INTO intent_paths(repo,kind,ref,path) VALUES(?,?,?,?)",
+                                    [(repo, kind, ref, p) for p in paths])
+            row = self.db.execute("SELECT * FROM intents WHERE repo=? AND kind=? AND ref=?", (repo, kind, ref)).fetchone()
+            observed = observe(self.db, row, metadata, provenance="import" if metadata else "native-observation")
         self._bump(repo)
+        return observed
 
     def set_ownership(self, repo: str, path_prefix: str, engineer: str, source: str,
                       weight: float, evidence: str) -> None:
@@ -1129,14 +1157,20 @@ class Graph:
                                (repo,)).fetchall()
 
     def add_intent_paths(self, repo: str, kind: str, ref: str, paths: Iterable[str]) -> None:
-        self.db.executemany("INSERT OR IGNORE INTO intent_paths(repo, kind, ref, path) VALUES(?,?,?,?)",
+        from .context_memory import observe
+        with self.transaction():
+            self.db.executemany("INSERT OR IGNORE INTO intent_paths(repo, kind, ref, path) VALUES(?,?,?,?)",
                             [(repo, kind, ref, p) for p in paths])
+            row = self.db.execute("SELECT * FROM intents WHERE repo=? AND kind=? AND ref=?", (repo, kind, ref)).fetchone()
+            if row:
+                observe(self.db, row)
         self._bump(repo)
 
     def replace_intent_paths(self, repo: str, kind: str, ref: str, paths: Iterable[str]) -> None:
         """Replace an explicitly supplied import snapshot; [] clears it."""
-        self.db.execute("DELETE FROM intent_paths WHERE repo=? AND kind=? AND ref=?", (repo, kind, ref))
-        self.add_intent_paths(repo, kind, ref, paths)
+        with self.transaction():
+            self.db.execute("DELETE FROM intent_paths WHERE repo=? AND kind=? AND ref=?", (repo, kind, ref))
+            self.add_intent_paths(repo, kind, ref, paths)
 
     def paths_of_intents(self, repo: str, refs: Iterable[tuple[str, str]]) -> dict[tuple[str, str], list[str]]:
         out: dict[tuple[str, str], list[str]] = {}
@@ -1210,12 +1244,39 @@ class Graph:
     def _intent_corpus(self, repo: str) -> tuple[list[tuple[sqlite3.Row, str]], dict[str, int]]:
         """Every record in scope with its lowered text, read once per
         repo generation, and the document frequencies found in it so far."""
-        sql, args = "SELECT * FROM intents", ()
+        sql, args = ("SELECT i.*,s.id AS record_id,s.head_id AS source_version_id,s.display_ref FROM intents i "
+                     "LEFT JOIN source_records s ON s.intent_id=i.id"), ()
         if repo:
-            sql += " WHERE repo=?"
+            sql += " WHERE i.repo=?"
             args = (repo,)
-        return self.memo(repo, "intents", (), lambda: self.db.execute(sql, args).fetchall(),
+        scopes = tuple(getattr(self._local, 'source_scopes', ()))
+        restriction, values = self._source_scope_sql()
+        sql += (" AND " if repo else " WHERE ") + restriction
+        args = (*args, *values)
+        return self.memo(repo, "intents", scopes, lambda: self.db.execute(sql, args).fetchall(),
                          lambda rows: ([(row, (row["title"] + " " + row["body"]).lower()) for row in rows], {}))
+
+    def _source_scope_sql(self):
+        """Selected task anchors disambiguate source installations. Without
+        them, colliding canonical keys are withheld rather than guessed."""
+        scopes = tuple(getattr(self._local, 'source_scopes', ()))
+        if scopes:
+            clauses = ' OR '.join('(s.provider=? AND s.namespace=?)' for _ in scopes)
+            return f"(s.id IS NULL OR (s.availability='available' AND (s.provider IN ('legacy','git') OR (s.provider='github' AND s.namespace='github.com') OR {clauses})))", [x for pair in scopes for x in pair]
+        return ("(s.id IS NULL OR (s.availability='available' AND NOT EXISTS (SELECT 1 FROM source_records other WHERE other.repo=s.repo "
+                "AND other.provider=s.provider AND other.object_kind=s.object_kind "
+                "AND (other.external_id=s.external_id OR (s.display_ref<>'' AND other.display_ref=s.display_ref)) "
+                "AND other.namespace<>s.namespace)))"), []
+
+    @contextmanager
+    def source_scope(self, task_id):
+        previous = getattr(self._local, 'source_scopes', ())
+        self._local.source_scopes = tuple(sorted({(r['provider'], r['namespace']) for r in self.db.execute(
+            'SELECT s.provider,s.namespace FROM task_source_anchors a JOIN source_records s ON s.id=a.record_id WHERE a.task_id=?', (task_id,))}))
+        try:
+            yield
+        finally:
+            self._local.source_scopes = previous
 
     def term_dfs(self, terms: Iterable[str], repo: str = "") -> dict[str, int]:
         """Document frequency of each term over the records in scope."""
@@ -1297,11 +1358,16 @@ class Graph:
         if not refs:
             return []
         marks = ",".join("?" for _ in refs)
-        sql, args = f"SELECT * FROM intents WHERE ref IN ({marks})", list(refs)
+        sql, args = ("SELECT i.*,s.id AS record_id,s.head_id AS source_version_id,s.display_ref FROM intents i "
+                     "LEFT JOIN source_records s ON s.intent_id=i.id "
+                     f"WHERE (i.ref IN ({marks}) OR s.external_id IN ({marks}) OR s.display_ref IN ({marks}))"), list(refs) * 3
         if repo:
-            sql += " AND repo=?"
+            sql += " AND i.repo=?"
             args.append(repo)
-        return list(self.db.execute(sql + " ORDER BY created_at DESC", args))
+        restriction, values = self._source_scope_sql()
+        sql += ' AND ' + restriction
+        args.extend(values)
+        return list(self.db.execute(sql + " ORDER BY i.created_at DESC", args))
 
     def record_routing_answer(self, repo: str, topic: str, owner: str) -> None:
         self.set_ownership(repo, topic, owner, "user", 1.0, "you told Raven this owner directly")
@@ -1887,26 +1953,116 @@ class Graph:
                 continue
             sets.append(f"{k}=?")
             vals.append(v)
+        if fields.get('source') is not None and fields['source'] not in LOCAL_ORIGINS:
+            sets.extend(["source_reuse_state=''", "independent_source_replacement=0"])
         sets.append("updated_at=?")
         vals.append(now_iso())
         vals.append(decision_id)
-        self.db.execute(f"UPDATE decisions SET {', '.join(sets)} WHERE id=?", vals)
+        with self.transaction():
+            current = self.db.execute('SELECT * FROM decisions WHERE id=?', (decision_id,)).fetchone()
+            if current is not None and current['reusable']:
+                from .approval_scope import scope_hash
+                material = (scope_hash(current) != scope_hash({**dict(current), **fields})
+                    or any(key in fields and fields[key] != current[key]
+                           for key in ('answer', 'source', 'source_id', 'source_revision', 'kind')))
+                if material:
+                    self.retire_replaced_rule(decision_id,
+                        'A materially changed answer or source replaces the previous standing grant; explicit regrant required.')
+            self.db.execute(f"UPDATE decisions SET {', '.join(sets)} WHERE id=?", vals)
+
+    def retire_replaced_rule(self, decision_id, reason, *, by='', basis='', db=None):
+        """Retire a grant alongside replacement evidence on the same writer."""
+        db = self.db if db is None else db
+        if not db.in_transaction:
+            raise ValueError('Standing-grant retirement requires its replacement transaction')
+        row = db.execute('SELECT * FROM decisions WHERE id=?', (decision_id,)).fetchone()
+        if row is None or not row['reusable']:
+            return []
+        from . import context_memory as cm
+        cm.snapshot_decision(db, decision_id, reason='before-standing-grant-retirement')
+        db.execute('UPDATE decisions SET reusable=0,rule_ended_at=? WHERE id=?', (now_iso(), decision_id))
+        self.append_event('rule_ended', {'task_id': row['run_id'], 'decision_id': decision_id,
+            'by': by, 'basis': basis, 'reason': reason,
+            'previous_rule': {key: row[key] for key in ('reusable', 'rule_conditions', 'rule_scope',
+                'rule_expires', 'rule_by', 'rule_at', 'rule_ended_at', 'signatures')}}, db=db)
+        return self.invalidate_rule_dependents(decision_id,
+            f'the standing rule from decision {decision_id} was retired by replacement evidence', db=db)
+
+    def publish_evidence(self, decision_id: str, rows, **fields) -> None:
+        """Publish exact used source versions and answer in one write boundary."""
+        from . import context_memory as cm
+        pins = [p for row in rows if (p := cm.pin(row, dict(row).get('_evidence_role', 'support')))]
+        with self.transaction():
+            cm.validate(self.db, decision_id, pins)
+            current = self.db.execute('SELECT * FROM decisions WHERE id=?', (decision_id,)).fetchone()
+            old_pins = [cm.pin(e, e['role']) for e in cm.edges(self.db, decision_id)]
+            from .approval_scope import scope_hash
+            replacement_changed = (scope_hash(current) != scope_hash({**dict(current), **fields})
+                or any(key in fields and fields[key] != current[key]
+                       for key in ('answer', 'source', 'source_id', 'source_revision', 'kind'))
+                or sorted(map(cm.encoded, pins)) != sorted(map(cm.encoded, old_pins)))
+            if current['reusable']:
+                cm.snapshot_decision(self.db, decision_id, reason='before-evidence-replacement')
+            for row in rows:
+                if dict(row).get('decision_source_id'):
+                    previous = self.db.execute('SELECT updated_at,needs_review FROM decisions WHERE id=?', (row['decision_source_id'],)).fetchone()
+                    if previous is None or previous['updated_at'] != row['decision_source_revision'] or previous['needs_review']:
+                        from .store import Invalid
+                        raise Invalid('Source decision changed during composition; re-read it')
+                    cm.check_current(self.db, row['decision_source_id'])
+                    source_version = cm.snapshot_decision(self.db, row['decision_source_id'], reason='used-as-source')
+                    if fields.get('signoff') == 'rule' and cm.reuse_uncertain(self.db, row['decision_source_id']):
+                        from .store import Invalid
+                        raise Invalid(cm.LEGACY_REUSE_NOTICE)
+                    linked = self.db.execute("SELECT source_version_id FROM decision_links WHERE decision_id=? AND related_id=? AND kind='derived'", (decision_id, row['decision_source_id'])).fetchone()
+                    replacement_changed = replacement_changed or linked is None or linked['source_version_id'] != source_version
+                    self.add_link(decision_id, row['decision_source_id'], 'derived', 'Version-pinned joint composition')
+                    self.db.execute("UPDATE decision_links SET source_version_id=? WHERE decision_id=? AND related_id=? AND kind='derived'", (source_version, decision_id, row['decision_source_id']))
+            if replacement_changed:
+                self.retire_replaced_rule(decision_id,
+                    'A newly composed answer replaces the previous standing grant; explicit regrant required.')
+            self.update_decision(decision_id, **fields)
+            # A newly composed answer may claim complete version tracking only
+            # when every supplied object has an exact source or decision pin.
+            complete = bool(rows) and all(cm.pin(row) or dict(row).get('decision_source_id') for row in rows)
+            self.db.execute('UPDATE decisions SET source_reuse_state=? WHERE id=?',
+                            ('tracked' if complete else 'unknown' if fields.get('source') in ('record','memory') else '', decision_id))
+            cm.attach(self.db, decision_id, pins, replace=True)
 
     def recent_answered(self, repo: str = "", limit: int = 4) -> list[Decision]:
-        sql = (_DECISION_SELECT + " WHERE d.status IN ('approved','resolved','partial') "
-               "AND d.superseded_by='' AND d.draft=0 AND coalesce(d.answer,'') != ''"
-               f" AND ({PERSONALLY_SIGNED_SQL} OR d.source NOT IN ('memory', 'record', 'human'))")
-        args: tuple = ()
-        if repo:
-            sql += " AND (d.repo=? OR d.repo='')"
-            args = (repo,)
-        sql += " ORDER BY d.updated_at DESC LIMIT ?"
-        return [_row_to_decision(r) for r in self.db.execute(sql, args + (limit,)).fetchall()]
+        scope, args = self._memory_filter(RECENT_STATUSES, repo)
+        sql = _DECISION_SELECT + " WHERE " + scope + " ORDER BY d.updated_at DESC LIMIT ?"
+        return [_row_to_decision(r) for r in self.db.execute(sql, args + [limit]).fetchall()]
+
+    def _memory_scope_sql(self):
+        """A signature does not erase active reliance on another installation.
+        Follow exact live derivations, including inherited parents, rather than
+        inferring scope from the answer's author or prose. An explicit independent
+        replacement retires those paths but retains any selected supporting pins.
+        """
+        allowed, args = self._source_scope_sql()
+        return ("d.id NOT IN (WITH RECURSIVE incompatible(id) AS ("
+                "SELECT e.decision_id FROM decision_source_edges e JOIN source_records s ON s.id=e.record_id "
+                "WHERE e.active=1 AND e.role IN ('support','contradiction') AND NOT " + allowed +
+                " UNION SELECT links.decision_id FROM ("
+                "SELECT id AS decision_id,source_id AS related_id FROM decisions WHERE coalesce(source_id,'')<>'' "
+                "UNION SELECT id,parent_id FROM decisions WHERE parent_id<>'' AND independent_source_replacement=0 AND historical_parent_revalidated=0 "
+                "UNION SELECT decision_id,related_id FROM decision_links WHERE kind IN ('derived','depends')"
+                ") links JOIN incompatible blocked ON blocked.id=links.related_id) SELECT id FROM incompatible)"), args
 
     def _memory_filter(self, statuses: tuple, repo: str) -> tuple[str, list]:
         """One eligibility predicate for counting, ranking and fetching memory."""
         marks = ",".join("?" for _ in statuses)
-        sql = f"d.status IN ({marks}) AND d.superseded_by='' AND d.draft=0"
+        sql = f"d.status IN ({marks})"
+        if "resolved" in statuses:
+            # Older pure sign-offs retained status='proposed'. Recall only
+            # their completed personal approval, without rewriting historic
+            # rows/proofs or admitting unsigned/rule-propagated proposals.
+            # Use this same branch before FTS/recent candidate limits too.
+            sql = ("(" + sql + " OR (d.status='proposed' AND d.signoff='signed' "
+                   "AND d.needs_review=0 AND d.signed_by!='' AND d.signed_revision!='' "
+                   "AND d.signed_hash!='' AND d.signatures NOT IN ('', '[]')))")
+        sql += " AND d.superseded_by='' AND d.draft=0 AND d.needs_review=0"
         args: list = list(statuses)
         excluded = getattr(self._local, 'model_exclude', '')
         if excluded:
@@ -1918,6 +2074,9 @@ class Graph:
         if repo:
             sql += " AND (d.repo=? OR d.repo='')"
             args.append(repo)
+        restriction, scoped_args = self._memory_scope_sql()
+        sql += ' AND ' + restriction
+        args.extend(scoped_args)
         return sql, args
 
     def _memory_rows(self, statuses: tuple, repo: str, ids: set[str] | None = None) -> list[sqlite3.Row]:
@@ -2021,22 +2180,26 @@ class Graph:
             part = ids[chunk:chunk + 400]
             marks = ",".join("?" for _ in part)
             for r in self.db.execute(
-                    f"SELECT decision_id, related_id, kind, note FROM decision_links WHERE decision_id IN ({marks}) "
+                    f"SELECT decision_id, related_id, kind, note,source_version_id,decision_version_id FROM decision_links WHERE decision_id IN ({marks}) "
                     f"OR related_id IN ({marks})", part + part):
                 for a, b in ((r["decision_id"], r["related_id"]), (r["related_id"], r["decision_id"])):
                     if a in part or a in ids:
-                        out.setdefault(a, []).append({"id": b, "kind": r["kind"], "note": r["note"]})
+                        pin = ({'source_decision_id': r['related_id'], 'source_version_id': r['source_version_id'],
+                                'decision_id': r['decision_id'], 'decision_version_id': r['decision_version_id']}
+                               if r['source_version_id'] else {})
+                        out.setdefault(a, []).append({"id": b, "kind": r["kind"], "note": r["note"], **pin})
         return out
 
-    def rule_dependents(self, rule_id: str) -> list[sqlite3.Row]:
+    def rule_dependents(self, rule_id: str, *, db=None) -> list[sqlite3.Row]:
         """The outstanding nodes a rule authorized: on tasks not yet
         finished, still standing on the rule."""
-        return self.db.execute(
+        db = self.db if db is None else db
+        return db.execute(
             "SELECT d.id, d.run_id FROM decisions d JOIN runs r ON r.id=d.run_id WHERE d.source_id=? "
             "AND d.signoff='rule' AND r.status != 'completed'", (rule_id,)).fetchall()
 
     def invalidate_rule_dependents(self, rule_id: str, reason: str,
-                                   decision_ids: Iterable[str] | None = None) -> list[str]:
+                                   decision_ids: Iterable[str] | None = None, *, db=None) -> list[str]:
         """Withdraw outstanding authorization, including its dependent chain.
 
         Finished tasks keep their history: the rule applied when they acted.
@@ -2045,11 +2208,12 @@ class Graph:
         """
         wanted = set(decision_ids) if decision_ids is not None else None
         flagged: list[str] = []
-        for row in self.rule_dependents(rule_id):
+        db = self.db if db is None else db
+        for row in self.rule_dependents(rule_id, db=db):
             if wanted is not None and row["id"] not in wanted:
                 continue
             for decision_id in self.flag_dependents(row["id"], reason, include_root=True,
-                                                   outstanding_only=True, source_id=rule_id):
+                                                   outstanding_only=True, source_id=rule_id, db=db):
                 if decision_id not in flagged:
                     flagged.append(decision_id)
         return flagged
@@ -2168,12 +2332,15 @@ class Graph:
                 if not same:
                     return f"source decision {source} changed since its recorded revision; review and answer afresh"
                 queue.append(source)
-            if row["parent_id"]:
+            from . import context_memory as cm
+            if reason := cm.human_source_reason(db, current):
+                return reason
+            if row["parent_id"] and not row["independent_source_replacement"] and not row["historical_parent_revalidated"]:
                 queue.append(row["parent_id"])
             if row["status"] == "duplicate" and row["superseded_by"]:
                 queue.append(row["superseded_by"])
             queue.extend(link["related_id"] for link in db.execute(
-                "SELECT related_id FROM decision_links WHERE decision_id=? AND kind='depends'", (current,)))
+                "SELECT related_id FROM decision_links WHERE decision_id=? AND kind IN ('derived','depends')", (current,)))
         return ""
 
     def blocking_nodes(self, task_id: str, sweep: bool = True, *, db=None) -> list[dict]:
@@ -2262,8 +2429,8 @@ class Graph:
                 rows = db.execute("SELECT * FROM decisions WHERE id=?", (src,)).fetchall()
             else:
                 rows = db.execute(
-                    "SELECT * FROM decisions WHERE source_id=? OR parent_id=? OR id IN "
-                    "(SELECT decision_id FROM decision_links WHERE related_id=? AND kind='depends')",
+                    "SELECT * FROM decisions WHERE source_id=? OR (parent_id=? AND independent_source_replacement=0 AND historical_parent_revalidated=0) OR id IN "
+                    "(SELECT decision_id FROM decision_links WHERE related_id=? AND kind IN ('derived','depends'))",
                     (src, src, src)).fetchall()
             for r in rows:
                 if r["id"] in seen:

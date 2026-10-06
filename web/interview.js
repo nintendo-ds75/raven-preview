@@ -79,12 +79,12 @@ function interviewBody(session, reviewing = false) {
   // Bind the button to exactly what this render showed, never a later save.
   session.review = reviewing ? {id: row.id, version: row.version, revision: row.decision_revision} : null;
   const title = reviewing ? 'Review your decision' : 'Talk through this decision';
-  const context = `<div class="context-box"><strong>${esc(scope.question)}</strong><p>${esc(scope.context)}</p><p class="context">${esc(scope.repo)} · ${esc(scope.paths.join(', ') || scope.path)} · Task ${esc(scope.task_id)}</p></div>`;
+  const context = `<div class="context-box"><strong>${esc(scope.question)}</strong><p>${esc(scope.context)}</p><p class="context">${esc(scope.repo)} · ${esc(scope.paths.join(', ') || scope.path)} · Task ${esc(scope.task_id)}</p><pre>${esc(scope.decision_scope_text || "This older draft has no bound structured scope. Start a new interview before confirming.")}</pre></div>`;
   const canSpeak = !!window.speechSynthesis && !!window.SpeechSynthesisUtterance;
   let body;
   if (reviewing) {
     const spec = row.applicability;
-    body = `${context}<button class="button small" data-interview-action="readback" ${canSpeak ? '' : 'disabled'}>Read decision aloud</button><h3>The exact answer you will sign</h3><p class="task-answer">${esc(row.answer)}</p><h3>Why</h3><p>${esc(row.rationale)}</p><details class="history"><summary>Reviewed transcript</summary><p>${esc(row.transcript || 'No transcript supplied; answer entered directly.')}</p></details><h3>Reuse boundaries</h3><pre>${esc(JSON.stringify(spec, null, 2))}</pre><p class="context">${Object.keys(spec).length ? 'Other tasks must satisfy these boundaries; a fresh signature is still required unless an enabled standing rule applies.' : 'No extra reuse boundaries declared. This signs this decision; it does not create a standing rule.'} Other required approvers must still sign.</p><p class="context">Recorded as ${esc(interviewUser().name)} using ${window.ravenInterviewBridge ? 'your personal task link' : 'your signed-in identity'}. Speech recognition does not verify who spoke.</p><div class="modal-actions"><button class="button" data-interview-action="edit">Back to edit</button><button class="button primary" data-interview-action="confirm" data-interview-id="${esc(row.id)}" data-interview-version="${row.version}">Confirm and sign as ${esc(interviewUser().name)}</button></div>`;
+    body = `${context}${scope.decision_scope?.reusable ? '<p class="context">Confirming this interview answer retires the existing standing rule. Future automatic reuse needs a fresh explicit make-rule action.</p>' : ''}<button class="button small" data-interview-action="readback" ${canSpeak ? '' : 'disabled'}>Read decision aloud</button><h3>The exact answer you will sign</h3><p class="task-answer">${esc(row.answer)}</p><h3>Why</h3><p>${esc(row.rationale)}</p><details class="history"><summary>Reviewed transcript</summary><p>${esc(row.transcript || 'No transcript supplied; answer entered directly.')}</p></details><h3>Reuse boundaries</h3><pre>${esc(JSON.stringify(spec, null, 2))}</pre><p class="context">${Object.keys(spec).length ? 'Other tasks must satisfy these boundaries; a fresh signature is still required unless an enabled standing rule applies.' : 'No extra reuse boundaries declared. This signs this decision; it does not create a standing rule.'} Other required approvers must still sign.</p><p class="context">Recorded as ${esc(interviewUser().name)} using ${window.ravenInterviewBridge ? 'your personal task link' : 'your signed-in identity'}. Speech recognition does not verify who spoke.</p><div class="modal-actions"><button class="button" data-interview-action="edit">Back to edit</button><button class="button primary" data-interview-action="confirm" data-interview-id="${esc(row.id)}" data-interview-version="${row.version}">Confirm and sign as ${esc(interviewUser().name)}</button></div>`;
   } else {
     const available = !!(window.SpeechRecognition || window.webkitSpeechRecognition) && window.isSecureContext;
     const index = session.turns.length;
@@ -105,7 +105,7 @@ async function openInterview(task, decision) {
   let row = existing.interviews.find(r => r.decision_id === decision && ['draft', 'failed'].includes(r.status));
   if (!row) row = await interviewRequest(base, {decision_id: decision, client_key: crypto.randomUUID()});
   if (generation !== interviewGeneration) return;
-  if ($('#modal')?.open) $('#modal').close();
+  if ($('#modal')?.open) closeModal();
   interviewSession = {row, base: `${base}/${row.id}`, writes: Promise.resolve(), captureMethod: row.capture_method, turns: row.turns, recognition: null, editVersion: 0};
   interviewBody(interviewSession);
   interviewDialog.showModal();
@@ -196,7 +196,7 @@ interviewDialog.addEventListener('click', async event => {
     else if (action === 'speak' || action === 'readback') {
       stopInterviewSpeech();
       const row = interviewSession.row;
-      const text = action === 'speak' ? row.prompts[interviewSession.turns.length] : `Your decision: ${row.answer}. Your reasoning and constraints: ${row.rationale}. Reuse boundaries: ${JSON.stringify(row.applicability)}. This has not been confirmed yet.`;
+      const text = action === 'speak' ? row.prompts[interviewSession.turns.length] : `${row.scope.decision_scope_text || "No bound structured scope is available."} Your decision: ${row.answer}. Your reasoning and constraints: ${row.rationale}. Reuse boundaries: ${JSON.stringify(row.applicability)}. ${row.scope.decision_scope?.reusable ? "Confirming this answer retires the existing standing rule. Future automatic reuse needs an explicit make-rule action." : ""} This has not been confirmed yet.`;
       window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
     }
     else if (action === 'next') {

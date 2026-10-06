@@ -1196,12 +1196,6 @@ def _place_node(store, graph, run, row, did, task_id, question, context, ctx, ca
          signoff, did))
     if deferred:
         graph.db.execute('UPDATE decisions SET model_pending=1 WHERE id=?', (did,))
-    # The person it waits on hears about it: a question to answer, or an
-    # answer to sign.
-    if status == "pending" and not deferred:
-        store.notify(did, "ask")
-    elif signoff == "required" and not deferred:
-        store.notify(did, "signoff")
     for rid in related_ids:
         graph.add_link(did, rid, "related", "the same question in another scope on this tree")
     # What this decision depends on: nodes of the same task it cannot be
@@ -1241,6 +1235,13 @@ def _place_node(store, graph, run, row, did, task_id, question, context, ctx, ca
                 for name in missing:
                     if not deferred:
                         store.notify(did, "signoff", to=name)
+    # Snapshot the complete published scope, including required signers.
+    # The person it waits on hears about it: a question to answer, or an
+    # answer to sign.
+    if status == "pending" and not deferred:
+        store.notify(did, "ask")
+    elif signoff == "required" and not deferred:
+        store.notify(did, "signoff")
     if adopted is not None:
         graph.db.execute("UPDATE decisions SET status='adopted', superseded_by=?, updated_at=? WHERE id=?",
                          (did, now(), adopted.id))
@@ -1351,7 +1352,8 @@ def _next_for_node(status: str, d: dict) -> str:
         waiting = [n for n in dict.fromkeys([d.get("owner_name") or ""] + required)
                    if n and n.lower() not in {x.lower() for x in signed}]
         signer = " and ".join(waiting) if waiting else (d.get("owner_name") or "the owner")
-        began = ("" if status != "predicted" else " (it began as a default Raven assumed)"
+        began = ("" if status != "predicted" and d.get("kind") != "prediction"
+                 else " (it began as a default Raven assumed)"
                  if d.get("status") == "assumed" else " (it began as a prediction from an earlier answer)")
         if (d.get("signoff") or "") == "required" and required and signed:
             remaining = [r for r in required if r.lower() not in {x.lower() for x in signed}]
@@ -1408,6 +1410,11 @@ def node_view(store, decision_id: str, repeated: bool = False) -> dict:
     if row["status"] == "duplicate" and row["superseded_by"]:
         canonical = store.graph.db.execute(_DECISION_SELECT + " WHERE d.id=?", (row["superseded_by"],)).fetchone()
     view = _view(row, repeated, canonical)
+    from . import context_memory as cm
+    view['sources'] = cm.edges(store.graph.db, canonical['id'] if canonical else decision_id)
+    view['source_reuse_requires_review'] = bool((canonical if canonical else row)['source_reuse_uncertain'])
+    view['source_provenance'] = 'versioned' if view['sources'] and not view['source_reuse_requires_review'] else 'unknown'
+    view['source_notice'] = cm.provenance_notice((canonical if canonical else row)['source'], view['sources'], (canonical if canonical else row)['source_reuse_uncertain'])
     view["related"] = _related(store.graph.links_for([decision_id]).get(decision_id, []))
     view["depends_on"] = [r["related_id"] for r in store.graph.db.execute(
         "SELECT related_id FROM decision_links WHERE kind='depends' AND decision_id=?", (decision_id,))]
@@ -1464,6 +1471,7 @@ def _view(row, repeated: bool = False, canonical=None) -> dict:
             "facts": _json_dict(d.get("facts")),
             "required_signers": _json_list(d.get("required_signers")),
             "signatures": _live_signatures(d),
+            "historical_signatures": _signature_names(d) if d.get('needs_review') else [],
             "followup_required": bool(d.get("followup_required")),
             # An answer the evidence supports only in part reads "resolved"
             # like any other, and says so here. Measured live on eb9d22d:
@@ -1514,6 +1522,10 @@ def _live_signatures(d: dict) -> list[str]:
     """The people whose signature covers the answer as it stands now: a
     signature is bound to the text it was given for, so a corrected or
     re-settled answer has none until people sign it again."""
+    return [] if d.get('needs_review') else _signature_names(d)
+
+
+def _signature_names(d: dict) -> list[str]:
     content = answer_hash(d.get("answer") or "")
     return [x.get("by", "") for x in _json_list(d.get("signatures"))
             if isinstance(x, dict) and x.get("by") and x.get("hash") == content]
@@ -1585,6 +1597,12 @@ def get_tree(store, task_id: str) -> dict:
     nodes = [_view(r, canonical=loaded.get(r["superseded_by"]) if r["status"] == "duplicate" else None)
              for r in rows]
     for node in nodes:
+        from . import context_memory as cm
+        node['sources'] = cm.edges(graph.db, node.get('duplicate_of') or node['node_id'])
+        source_row = loaded.get(node.get('duplicate_of') or node['node_id'])
+        node['source_reuse_requires_review'] = bool(source_row and source_row['source_reuse_uncertain'])
+        node['source_provenance'] = 'versioned' if node['sources'] and not node['source_reuse_requires_review'] else 'unknown'
+        node['source_notice'] = cm.provenance_notice(source_row['source'] if source_row else '', node['sources'], bool(source_row and source_row['source_reuse_uncertain']))
         parent = loaded.get(node['parent_id'])
         if parent is not None and parent['run_id'] == task_id and not parent['draft']:
             _with_parent_context(store, node, parent, compact=True)
@@ -1708,7 +1726,8 @@ def get_tree(store, task_id: str) -> dict:
                      f"{len(review['stale'])} decision{'s' if len(review['stale']) != 1 else ''} ({ids}): call "
                      "bridge_finish_task again with your current diff to read it against the questions and answers as they stand, "
                      "and do not report the change as following them until then")
-    return {"task_id": task_id, "title": run["title"], "goal": run["goal"] or "", "repo": run["repo"],
+    from . import context_memory as cm
+    return {"source_anchors": cm.anchors(graph.db, task_id), "task_id": task_id, "title": run["title"], "goal": run["goal"] or "", "repo": run["repo"],
             "requester": run["requester"] or "", "facts": _json_dict(run["facts"] if "facts" in run.keys() else ""),
             "status": run["status"], "verdict": run["verdict"] or "",
             "verdict_why": run["verdict_why"] or "", "counts": dict(counts),
@@ -1788,7 +1807,8 @@ def trace(store, task_id: str) -> dict:
     nodes = [{k: n[k] for k in ("node_id", "question", "status", "kind", "authorized", "blocking", "signoff", "signed_by",
                                  "answered_by", "required_signers", "signatures", "needs_review", "reusable")}
              for n in _flatten(get_tree(store, task_id)["nodes"])]
-    return {"task_id": task_id, "title": run["title"], "status": run["status"], "events": events,
+    from . import context_memory as cm
+    return {"source_anchors": cm.anchors(graph.db, task_id), "task_id": task_id, "title": run["title"], "status": run["status"], "events": events,
             "notifications": notifications, "nodes": nodes, "notes": task_notes(store, task_id)}
 
 
@@ -2707,11 +2727,14 @@ def sign_off(store, decision_id: str, data, actor=None, transaction_db=None) -> 
         with (nullcontext(transaction_db) if transaction_db is not None else graph.transaction()) as db:
             current = db.execute("SELECT * FROM decisions WHERE id=?", (d.id,)).fetchone()
             check_not_abandoned(db, current["run_id"], current)
-            check_revision(data, current)
+            check_revision(data, current, db=db)
             owner_id = graph.owner_id_for(by)
             db.execute("UPDATE decisions SET owner_id=? WHERE id=?", (owner_id, d.id))
             store.answer(d.id, {"answer": answer, "rationale": _text(data, "rationale") or "corrected at sign-off",
                                 "applicability": data.get("applicability") or {},
+                                "evidence_mode": data.get('evidence_mode', 'retain'),
+                                **({'source_evidence': data['source_evidence']} if 'source_evidence' in data else {}),
+                                'source_decision_pins': data.get('source_decision_pins', []),
                                 "source": data.get("source"), "signed_by": by,
                                 "expected_updated_at": current["updated_at"]}, actor=actor, transaction_db=db)
         view = node_view(store, d.id)
@@ -2730,7 +2753,18 @@ def sign_off(store, decision_id: str, data, actor=None, transaction_db=None) -> 
         current = db.execute("SELECT * FROM decisions WHERE id=?",
                                    (d.id,)).fetchone()
         check_not_abandoned(db, current["run_id"], current)
-        check_revision(data, current)
+        check_revision(data, current, db=db)
+        from . import context_memory as cm
+        replacement_pins = data.get('source_evidence')
+        if replacement_pins == [] and cm.edges(db, d.id):
+            raise Invalid('A sign-off cannot discard source reliance; write an explicit independent replacement instead')
+        cm.validate_decision_pins(db, data.get('source_decision_pins', []))
+        cm.require_retained_premises(db, d.id, replacement_pins)
+        cm.snapshot_decision(db, d.id, reason='before-signoff')
+        legacy_reviewed = cm.review_legacy_reuse(db, d.id, replacement_pins, data.get('source_decision_pins', []), data.get('expected_updated_at'))
+        reviewed_human_sources, human_sources_changed = cm.rebind_reviewed_human_sources(db, d.id, replacement_pins, data.get('source_decision_pins', []), data.get('expected_updated_at'))
+        cm.revalidate_historical_context(db, d.id, replacement_pins, data.get('source_decision_pins', []))
+        cm.check_current(db, d.id, pins=replacement_pins, reviewed_human_sources=reviewed_human_sources)
         source_reason = graph.source_review_reason(d.id, db=db, allow_root_review=True)
         if source_reason:
             raise Invalid("Cannot sign this answer: " + source_reason)
@@ -2739,8 +2773,22 @@ def sign_off(store, decision_id: str, data, actor=None, transaction_db=None) -> 
         content = answer_hash(current["answer"] or "")
         required = _json_list(current["required_signers"])
         signatures = [x for x in _json_list(current["signatures"]) if isinstance(x, dict) and x.get("hash") == content]
+        old_pins = [cm.pin(e, e['role']) for e in cm.edges(db, d.id)]
+        evidence_changed = legacy_reviewed or human_sources_changed or (replacement_pins is not None and sorted(map(cm.encoded, replacement_pins)) != sorted(map(cm.encoded, old_pins)))
+        if evidence_changed:
+            signatures = []  # old co-signatures did not cover these source versions
+            db.execute("UPDATE decisions SET signoff='required',signed_revision='',signed_hash='',signed_by='' WHERE id=?", (d.id,))
+        retired_rule = bool(evidence_changed and current['reusable'])
+        if retired_rule:
+            graph.retire_replaced_rule(d.id,
+                'A current-source review replaces the previous standing grant; explicit regrant required.',
+                by=by, basis=basis, db=db)
+            # The new signature records the actual post-action scope.
+            current = db.execute('SELECT * FROM decisions WHERE id=?', (d.id,)).fetchone()
         if by.lower() not in {x.get("by", "").lower() for x in signatures}:
-            signatures.append({"by": by, "at": stamp, "revision": stamp, "hash": content})
+            from .approval_scope import snapshot as approval_scope
+            signatures.append({"by": by, "at": stamp, "revision": stamp, "hash": content,
+                               "scope": approval_scope(current)})
         remaining = [r for r in required if r.lower() not in {x.get("by", "").lower() for x in signatures}]
         if remaining:
             # One of several required approvers: recorded, not yet authorized.
@@ -2754,17 +2802,19 @@ def sign_off(store, decision_id: str, data, actor=None, transaction_db=None) -> 
         else:
             # A person's answer, now signed by everyone it needed, is a
             # recorded answer like any other, not something resolved from
-            # evidence.
+            # evidence. A fully signed evidence proposal also leaves its
+            # provisional state, while keeping its source and answer intact.
             db.execute("UPDATE decisions SET signoff='signed', signed_by=?, signed_revision=?, signed_hash=?, "
                              "signatures=?, needs_review=0, review_reason='', updated_at=?, actor_id=?, actor_name=?, "
                              "actor_basis=?, status=CASE WHEN source='human' AND kind='answer' THEN 'approved' "
-                             "ELSE status END WHERE id=?",
+                             "WHEN status='proposed' THEN 'resolved' ELSE status END WHERE id=?",
                              (by if len(signatures) < 2 else ", ".join(x["by"] for x in signatures), stamp,
                               content, json.dumps(signatures), stamp,
                               actor.id if actor is not None else "", by, basis, d.id))
             graph.append_event("signoff", {"task_id": d.task_id, "decision_id": d.id, "by": by, "corrected": False,
                                            "revision": stamp, "basis": basis,
                                            **authz.event_provenance(actor, data.get("source"))}, db=db)
+        cm.snapshot_decision(db, d.id, pins=replacement_pins, reason='human-signoff')
         if not remaining:
             from .execution_store import record_answer
             record_answer(db, {"id": d.id, "run_id": d.task_id, "owner_name": by}, current["answer"] or "",
@@ -3047,19 +3097,24 @@ def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, or
         with graph.transaction():
             current = dict(graph.db.execute('SELECT * FROM decisions WHERE id=?', (did,)).fetchone())
             if current['updated_at'] == scheduled_revision and current['model_pending'] and _task(store, run['id'])['status'] != 'abandoned':
+                from . import context_memory as cm
+                source_pins = [cm.pin(e, e['role']) for e in cm.edges(graph.db, scratch)]
+                cm.validate(graph.db, did, source_pins)
+                cm.validate_derivations(graph.db, scratch)
                 fields = ['status','answer','rationale','source','source_id','evidence','kind','prediction','owner_id',
-                          'owner_evidence','answered_by','signoff','signed_by','signed_hash','signed_revision','signatures','brief','superseded_by']
+                          'owner_evidence','answered_by','signoff','signed_by','signed_hash','signed_revision','signatures','brief','superseded_by','source_reuse_state']
                 fields = [f for f in fields if f in outcome]
                 graph.db.execute('UPDATE decisions SET ' + ','.join(f+'=?' for f in fields) + ', updated_at=? WHERE id=?',
                                  (*[outcome[f] for f in fields], now(), did))
-                graph.db.execute('INSERT OR IGNORE INTO decision_links(decision_id, related_id, kind, note, created_at) '
-                                 'SELECT ?, related_id, kind, note, created_at FROM decision_links WHERE decision_id=?', (did, scratch))
+                graph.db.execute('INSERT OR IGNORE INTO decision_links(decision_id, related_id, kind, note, created_at, source_version_id) '
+                                 'SELECT ?, related_id, kind, note, created_at, source_version_id FROM decision_links WHERE decision_id=?', (did, scratch))
                 for event in graph.db.execute('SELECT id, detail FROM events WHERE decision_id=?', (scratch,)).fetchall():
                     detail = _json_dict(event['detail'])
                     if detail.get('decision_id') == scratch:
                         detail['decision_id'] = did
                     graph.db.execute('UPDATE events SET decision_id=?, detail=? WHERE id=?', (did, json.dumps(detail), event['id']))
                 graph.append_event('model_read', {'task_id': run['id'], 'decision_id': did})
+                cm.attach(graph.db, did, source_pins, replace=True)
     except Exception as error:
         graph.append_event('model_read_failed', {'task_id': run['id'], 'decision_id': did, 'error': type(error).__name__})
     finally:

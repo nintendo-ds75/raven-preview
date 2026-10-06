@@ -1,3 +1,4 @@
+from bridge.approval_scope import transport_text
 """Conversation, durable callbacks and scoped routing learned from real human actions."""
 import json
 import time
@@ -11,7 +12,7 @@ from bridge.config import Config
 from bridge.delivery import handle_slack_event, SlackTransport
 from bridge.llm import LLMError
 from bridge.routing import route_ranked
-from bridge.store import Store
+from bridge.store import Invalid, Store
 
 
 class ConversationTests(DeliveryCase):
@@ -38,7 +39,7 @@ class ConversationTests(DeliveryCase):
                 {'kind': 'answer', 'answer': {'text': policy}}, {'kind': 'answer', 'answer': policy}]) as model:
             response = self.reply(self.message, 'UWES', policy)
         self.assertEqual(model.call_count, 2)
-        self.assertIn(policy, response)
+        self.assertIn(transport_text(policy), response)
         self.assertIn('reply `confirm ', response)
         row = self.store.get_decision(self.n['node_id'])
         self.assertFalse(row['authorized'])
@@ -86,7 +87,7 @@ class ConversationTests(DeliveryCase):
     def review_source(self, policy):
         task = self.store.get_decision(self.n['node_id'])['run_id']
         with self.graph.transaction():
-            parent = self.graph.add_decision(task, 'Which upstream constraint applies?', '', 'pending', owner='Wes Chen')
+            parent = self.graph.add_decision(task, 'Which upstream constraint applies?', '', 'pending', owner='Wes Chen', repo='acme/platform')
             self.graph.add_link(self.n['node_id'], parent, 'depends')
         self.store.answer(parent, {'answer': 'Keep the original upstream constraint.'})
         self.say(policy, {'kind': 'answer', 'answer': policy})
@@ -120,9 +121,16 @@ class ConversationTests(DeliveryCase):
                 self.assertIn(parent, payload['review_reason'])
                 self.assertIn('fresh', payload['validation_error'])
                 self.assertIn('reply `confirm ', result)
-                self.assertIn(policy, result)
+                self.assertIn(transport_text(policy), result)
                 self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
-                self.say('yes')
+                held = self.delivery._reading(self.message['channel'], self.message['ts'], self.wes)
+                self.assertTrue(held['source_review'])
+                # A bare yes is not a source review. Bypass the convenience
+                # fixture's code expansion to exercise the real refusal.
+                refused = self.reply(self.message, 'UWES', 'yes', literal=True)
+                self.assertIn('confirm ' + held['proposal_id'], refused)
+                self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+                self.say('confirm ' + held['proposal_id'])
                 restored = self.store.get_decision(self.n['node_id'])
                 self.assertTrue(restored['authorized'])
                 self.assertFalse(restored['needs_review'])
@@ -133,6 +141,44 @@ class ConversationTests(DeliveryCase):
                     row = self.store.get_decision(parent)
                     self.store.answer(parent, {'answer': 'A further corrected constraint.',
                                               'expected_updated_at': row['updated_at']})
+
+    def test_blocked_human_source_chain_offers_actionable_fallback_without_foreign_content(self):
+        policy = 'Bill two units.'
+        parent = self.review_source(policy)
+        self.invalidate_review(parent)
+        for invalid_source in ('foreign', 'missing'):
+            with self.subTest(source=invalid_source):
+                if invalid_source == 'foreign':
+                    self.graph.db.execute('UPDATE decisions SET repo=?,answer=? WHERE id=?',
+                        ('foreign/private', 'FOREIGN-CONTENT-CANARY', parent))
+                else:
+                    self.graph.db.execute('UPDATE decision_links SET related_id=? WHERE decision_id=?',
+                        ('missing-source-decision', self.n['node_id']))
+                row = self.store.get_decision(self.n['node_id'])
+                self.assertTrue(row['source_revalidation']['has_reliance'])
+                self.assertFalse(row['source_revalidation']['available'])
+                result = self.say('sign off')
+                self.assertIn('authenticated Raven review page', result)
+                self.assertIn('/#runs/' + row['run_id'], result)
+                self.assertNotIn('FOREIGN-CONTENT-CANARY', result)
+                self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+                with self.assertRaises(Invalid):
+                    self.store.answer(row['id'], {'answer': policy, 'expected_updated_at': row['updated_at']})
+                self.assertFalse(self.store.get_decision(row['id'])['authorized'])
+
+    def test_unknown_legacy_reliance_uses_review_fallback_without_inventing_pins(self):
+        did = self.n['node_id']
+        self.graph.db.execute("UPDATE decisions SET source='record',source_reuse_state='unknown',answer='Old cited answer',status='resolved',signoff='required',evidence='legacy citation string' WHERE id=?", (did,))
+        row = self.store.get_decision(did)
+        self.assertTrue(row['source_revalidation']['has_reliance'])
+        self.assertFalse(row['source_revalidation']['available'])
+        self.assertEqual(row['source_revalidation']['pins'], [])
+        result = self.say('sign off')
+        self.assertIn('authenticated Raven review page', result)
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+        self.assertFalse(self.store.get_decision(did)['authorized'])
+        self.assertEqual(self.store.get_decision(did)['sources'], [])
+        self.assertFalse(self.graph.db.execute('SELECT 1 FROM decision_links WHERE decision_id=?', (did,)).fetchone())
 
     def test_repeated_review_noop_fails_closed_without_reusing_old_approval(self):
         policy = 'Bill two units for this task only.'
@@ -186,7 +232,9 @@ class ConversationTests(DeliveryCase):
         self.say(policy, {'kind': 'answer', 'answer': policy})
         self.invalidate_review(parent)
         row = self.store.get_decision(self.n['node_id'])
-        self.store.answer(self.n['node_id'], {'answer': policy, 'expected_updated_at': row['updated_at']})
+        self.store.answer(self.n['node_id'], {'answer': policy, 'expected_updated_at': row['updated_at'],
+            'source_evidence': row['source_revalidation']['pins'],
+            'source_decision_pins': row['source_revalidation']['decision_pins']})
         before = self.store.get_decision(self.n['node_id'])
         self.assertTrue(before['authorized'])
         result = self.say('yes')
@@ -202,7 +250,9 @@ class ConversationTests(DeliveryCase):
         self.invalidate_review(parent)
         row = self.store.get_decision(self.n['node_id'])
         held_revision = _what_it_says(row)
-        self.store.answer(self.n['node_id'], {'answer': policy, 'expected_updated_at': row['updated_at']})
+        self.store.answer(self.n['node_id'], {'answer': policy, 'expected_updated_at': row['updated_at'],
+            'source_evidence': row['source_revalidation']['pins'],
+            'source_decision_pins': row['source_revalidation']['decision_pins']})
         approved = self.store.get_decision(self.n['node_id'])
         self.assertEqual(_what_it_says(approved), held_revision)
         # An ordinary co-signature changes neither the answer nor the review epoch.
@@ -268,7 +318,7 @@ class ConversationTests(DeliveryCase):
         model.assert_called_once()
         self.assertIsNone(model.call_args.args[1]['pending_readback'])
         self.assertIn('No additional constraint', model.call_args.args[1]['answer_on_table'])
-        self.assertIn(scoped, offered)
+        self.assertIn(transport_text(scoped), offered)
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
         self.say('yes')
         row = self.store.get_decision(self.n['node_id'])
@@ -341,7 +391,7 @@ class ConversationTests(DeliveryCase):
         self.assertFalse(payload['needs_review'])
         self.assertTrue(payload['repeats_previous_answer'])
         self.assertFalse(payload['speaker_signed_current_answer'])
-        self.assertIn(policy, offered)
+        self.assertIn(transport_text(policy), offered)
         self.assertIn('reply `confirm ', offered)
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
         self.say('yes')
@@ -370,7 +420,7 @@ class ConversationTests(DeliveryCase):
                 {'kind': 'signoff'}, {'kind': 'answer', 'answer': policy}]) as model:
             response = self.reply(self.message, 'UWES', policy)
         self.assertEqual(model.call_count, 2)
-        self.assertIn(policy, response)
+        self.assertIn(transport_text(policy), response)
         self.assertNotIn('Sign the complete answer', response)
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
 
@@ -404,7 +454,7 @@ class ConversationTests(DeliveryCase):
             response = self.reply(self.message, 'UWES', policy)
         self.assertEqual(model.call_count, 2)
         self.assertFalse(model.call_args.args[1]['needs_review'])
-        self.assertIn(policy, response)
+        self.assertIn(transport_text(policy), response)
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
         self.say('yes')
         self.assertTrue(self.store.get_decision(self.n['node_id'])['authorized'])
@@ -442,7 +492,7 @@ class ConversationTests(DeliveryCase):
         self.assertIsNone(model.call_args.args[1]['pending_readback'])
         self.assertIn('no pending read-back', model.call_args.args[1]['validation_error'])
         self.assertIn('complete policy or instruction is an answer', model.call_args.args[1]['validation_error'])
-        self.assertIn(policy, response)
+        self.assertIn(transport_text(policy), response)
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
         self.say('yes')
         self.assertEqual(self.store.get_decision(self.n['node_id'])['answer'], policy)
@@ -537,7 +587,7 @@ class ConversationTests(DeliveryCase):
         self.assertEqual(repair['question'], before['question'])
         self.assertIn('Record your decision as:', offered)
         self.assertNotIn('Replace the current question', offered)
-        self.assertIn(policy, offered)
+        self.assertIn(transport_text(policy), offered)
         self.assertEqual(self.store.get_decision(self.n['node_id'])['answer'], old)
         held = self.delivery._reading(self.message['channel'], self.message['ts'], self.wes)
         self.assertEqual(json.loads(held['answer'])['kind'], 'answer')
@@ -683,7 +733,7 @@ class ConversationTests(DeliveryCase):
             offered = self.reply(self.message, 'UWES', policy)
         self.assertEqual(model.call_count, 2)
         self.assertIn('task_only', model.call_args.args[1]['validation_error'])
-        self.assertIn(policy, offered)
+        self.assertIn(transport_text(policy), offered)
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
         self.say('yes')
         row = self.store.get_decision(self.n['node_id'])

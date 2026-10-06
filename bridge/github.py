@@ -281,7 +281,7 @@ def _pull_row(api: GitHubAPI, owner: str, name: str, pr: dict) -> dict:
         user = (r.get("user") or {}).get("login") or ""
         reviews.append({"id": r.get("id"), "user": user, "state": (r.get("state") or "").upper(),
                         "body": (r.get("body") or "")[:MAX_REVIEW_BODY], "submitted_at": r.get("submitted_at") or ""})
-    return {"number": number, "merge_sha": pr.get("merge_commit_sha") or "", "title": pr.get("title") or "",
+    return {"source_repo": f"{owner}/{name}", "number": number, "merge_sha": pr.get("merge_commit_sha") or "", "title": pr.get("title") or "",
             "body": (pr.get("body") or "")[:MAX_BODY], "author": (pr.get("user") or {}).get("login") or "",
             "merged_by": (pr.get("merged_by") or {}).get("login") or "", "merged_at": pr.get("merged_at") or "",
             "updated_at": pr.get("updated_at") or "", "files": files, "reviews": reviews, "truncated": truncated}
@@ -344,11 +344,15 @@ def apply_pull(store: Graph, target: str, row: dict) -> dict:
         if people:
             store.add_change(target, sha, row["merged_at"], files[:200], people)
     ref = str(row["number"])
+    source_repo = row.get('source_repo') or row.get('repo') or target
     body = row["body"].strip()
     if body or row["title"]:
         store.upsert_intent(target, "pr", ref, row["title"].strip(), body, author_name, row["merged_at"],
-                            status="merged", resolved=True)
-        store.add_intent_paths(target, "pr", ref, files[:40])
+                            status="merged", resolved=True, paths=files[:40],
+                            metadata={"provider": "github", "namespace": "github.com", "object_kind": "pr",
+                                      "external_id": f"{source_repo}/pull/{ref}", "display_ref": ref,
+                                      "source_created_at": "", "source_updated_at": row.get('updated_at', ''),
+                                      "url": f"https://github.com/{source_repo}/pull/{ref}"})
         stats["records"] += 1
     for r in row["reviews"]:
         text = (r["body"] or "").strip()
@@ -357,8 +361,11 @@ def apply_pull(store: Graph, target: str, row: dict) -> dict:
         name, _email = resolve_login(store, r["user"])
         rref = f"{ref}:{r['id']}"
         store.upsert_intent(target, "review", rref, f"Review of #{ref}: {row['title'].strip()}", text, name,
-                            r["submitted_at"] or row["merged_at"], status=(r["state"] or "").lower(), resolved=True)
-        store.add_intent_paths(target, "review", rref, files[:40])
+                            r["submitted_at"] or row["merged_at"], status=(r["state"] or "").lower(), resolved=True,
+                            paths=files[:40], metadata={"provider": "github", "namespace": "github.com", "object_kind": "review",
+                            "external_id": f"{source_repo}/pull/{ref}/review/{r['id']}", "display_ref": rref,
+                            "source_created_at": r['submitted_at'],
+                            "url": f"https://github.com/{source_repo}/pull/{ref}#pullrequestreview-{r['id']}"})
         stats["records"] += 1
     return stats
 

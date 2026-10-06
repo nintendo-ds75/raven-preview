@@ -40,13 +40,17 @@ class RecordStateTests(OfflineCase):
         with self.assertRaises(Invalid):
             self.store.add_record({**self.base, 'resolved': 'maybe'})
 
-    def test_paths_replace_clear_and_omit_without_changing_identity_metadata(self):
+    def test_paths_replace_clear_and_omit_with_versioned_metadata(self):
         self.store.add_record({**self.base, 'paths': ['old/a.py'], 'author': 'Original', 'created_at': '2025-01-01'})
         first = self.row()
         self.store.add_record({**self.base, 'paths': ['new/b.py'], 'author': 'Later', 'created_at': '2026-01-01'})
         second = self.row()
-        self.assertEqual([second[k] for k in ('id', 'repo', 'kind', 'ref', 'author', 'created_at')],
-                         [first[k] for k in ('id', 'repo', 'kind', 'ref', 'author', 'created_at')])
+        self.assertEqual([second[k] for k in ('id', 'repo', 'kind', 'ref')],
+                         [first[k] for k in ('id', 'repo', 'kind', 'ref')])
+        self.assertEqual((second['author'], second['created_at']), ('Later', '2026-01-01'))
+        versions = self.store.get_record(second['record_id'], self.base['repo'])['versions']
+        self.assertEqual(versions[0]['snapshot']['author'], 'Original')
+        self.assertEqual(versions[0]['snapshot']['created_at'], '2025-01-01')
         def paths():
             return self.store.graph.paths_of_intents(self.base['repo'], [('jira', 'POL-1')]).get(('jira', 'POL-1'), [])
         self.assertEqual(paths(), ['new/b.py'])

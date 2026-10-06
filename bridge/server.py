@@ -13,6 +13,7 @@ an agent token.
 
 import json
 import mimetypes
+import re
 import secrets
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -210,6 +211,22 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     file = WEB / files[url.path]
                     return self.send(200, file.read_bytes(), (mimetypes.guess_type(str(file))[0] or "text/plain") + "; charset=utf-8")
                 self.require("viewer")
+                if url.path == '/api/records/lookup':
+                    query = parse_qs(url.query, keep_blank_values=True)
+                    allowed = {'repo', 'external_id', 'ref', 'provider', 'namespace', 'object_kind', 'limit'}
+                    if any(key not in allowed or len(values) != 1 for key, values in query.items()):
+                        raise Invalid('Lookup requires one value per supported query parameter')
+                    args = {key: values[0] for key, values in query.items()}
+                    if 'repo' not in args:
+                        raise Invalid('repo is required')
+                    if 'limit' in args:
+                        if not re.fullmatch(r'[0-9]{1,3}', args['limit']):
+                            raise Invalid('limit must be an integer from 1 to 100')
+                        args['limit'] = int(args['limit'])
+                    return self.send(200, store.lookup_record(**args))
+                if url.path == '/api/records':
+                    query = parse_qs(url.query)
+                    return self.send(200, store.get_record(query.get('record_id', [''])[0], query.get('repo', [''])[0]))
                 if url.path == "/api/state":
                     return self.send(200, {**store.state(), "execution_config": {
                         "enabled": executions is not None,
@@ -335,7 +352,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
             except Refused as error:
                 self.send(403, {"error": str(error)})
             except Invalid as error:
-                self.send(404, {"error": str(error)})
+                self.send(400 if url.path == "/api/records/lookup" else 404, {"error": str(error)})
             except Exception as error:
                 print(f"Raven: {type(error).__name__}: {error}", file=sys.stderr)
                 self.send(500, {"error": "Raven could not complete this request; see the server log"})

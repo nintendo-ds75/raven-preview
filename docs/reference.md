@@ -175,7 +175,7 @@ Embeddings are always local (a hashed bag of stemmed words); no embedding API is
 - Ownership: an ownership graph ingested from Git history, blame, CODEOWNERS, reviews and imported record authors, linked to Slack contacts. Answers and referrals teach scoped first contacts; explicit ownership overrides remain optional.
 - Decision memory: search signed and evidence-resolved answers by stemmed lexical overlap, hashed-embedding cosine, and backend-native text search (SQLite FTS5 or PostgreSQL), over question, context, answer, and rationale, recency-weighted, with superseded rows excluded and the newest of a same-subject pair ranked first.
 - The ladder: applicable prior answers and model-checked records can resolve with a citation; without answerability checking, retrieved records remain context for a person. Predictions are labeled as such and never sign-off; corrections withdraw dependent suggestions and supersede.
-- MCP: thirteen tools for tasks, source import, connection status and evidence export over the standard HTTP transport share the same data with the web inbox. None of them approves anything.
+- MCP: fifteen tools for tasks, source import, connection status and evidence export over the standard HTTP transport share the same data with the web inbox. None of them approves anything.
 - Visibility: activity feed, live inbox refresh, per-decision event history including every rung's verdict, the ownership graph, and full JSON history export.
 - Local protections: Host/Origin validation, CSRF tokens for REST writes, HTML escaping, a restrictive content security policy, and optimistic concurrency checks for inbox answers.
 
@@ -274,7 +274,7 @@ If a relevant learned route depends on material facts missing from the current t
 
 **With inference configured**, a fast model (`BRIDGE_FAST_MODEL`) can map a question with no path to the tree's directories, write the brief the owner reads and advise the kickoff verdict from the same digest the rules saw. A prior decision or pending question on the paths still engages. Without inference the deterministic protocol remains available.
 
-The thirteen tools exposed to agents (the running server's `tools/list` is the authoritative schema):
+The fifteen tools exposed to agents (the running server's `tools/list` is the authoritative schema):
 
 | Tool | Purpose |
 | --- | --- |
@@ -289,6 +289,8 @@ The thirteen tools exposed to agents (the running server's `tools/list` is the a
 | `bridge_list_owners` | Configured owners plus the ownership graph, optionally by `repo`. |
 | `bridge_ingest_repo` | Build or refresh the graph from a local checkout at `path`. |
 | `bridge_import_record` | Import a ticket, document, Slack message or note the agent retrieved through its own connected tools (`repo`, `kind`, `ref`, optional `title`, `body`, `author`, `url`, `status`, `paths`, `created_at`) as a record the ladder can cite: evidence, never sign-off. |
+| `bridge_get_record` | Read an exact scoped durable record and its immutable observed versions; no source status confers authority. |
+| `bridge_lookup_record` | Find an exact external work-item/source identity or current display ref in one repository. Returns explicit ambiguity or bounded observed-version metadata and typed task/decision links, without an import or an internal ID prerequisite; lookup never approves anything. |
 | `bridge_connection_status` | What is connected and what is not: readiness findings, ingested sources and records, GitHub sync per repository with how to make it current, Slack contact discovery, failed deliveries and replies, and the triage channel. |
 | `bridge_export_proof` | Export the saved finish bundle: submitted diff and SHA-256, signed decision revisions, scope, attribution, citations, host-reported checks and integrity/staleness indicators. A digest is not a human digital signature or proof that tests ran. |
 
@@ -407,3 +409,7 @@ not a test result or a new approval.
 
 Resume a task by passing only `task_id` to `bridge_start_task`. A mistaken task nobody has
 acted on can be closed with `bridge_finish_task(status="abandoned", reason="...")`.
+
+See [versioned context memory](context-memory.md) for scoped source identities, revision-pinned evidence, task anchors, and source-change revalidation.
+
+External-reference handover is also available through `GET /api/records/lookup`; use the exact stored repository and either `external_id` or `ref`, optionally narrowed by `provider`, `namespace`, and `object_kind`. See [exact lookup outcomes and bounded relationships](context-memory.md#exact-external-reference-handover).

@@ -1,3 +1,4 @@
+from bridge.approval_scope import transport_text
 """Reaching the person: the outbox, Slack messages, replies in the
 thread, hand-offs that teach routing, and what the answer teaches.
 
@@ -77,7 +78,7 @@ class DeliveryCase(OfflineCase):
                                                  "context": "Usage jumped 11x on enterprise-two during the rollout.",
                                                  "options": "Bill it | Exclude the load test", **extra})
 
-    def reply(self, message, user, text, event_id=""):
+    def reply(self, message, user, text, event_id="", literal=False):
         """Unit-level person replies adopt the displayed generation code.
 
         Transport-level tests exercise the real queue/delivery proof instead.
@@ -94,7 +95,7 @@ class DeliveryCase(OfflineCase):
         person = self.graph.find_person(user)
         held = self.delivery._reading(message['channel'], message['ts'], person['id']) if person else None
         kind, token = readback.intent(text)
-        if kind and not token and held and held.get('proposal_id'):
+        if not literal and kind and not token and held and held.get('proposal_id'):
             text = ('confirm' if kind == 'confirm' else 'decline') + ' ' + held['proposal_id']
         # Preserve the exact already-emitted callback when testing duplicate IDs.
         receipt = self.graph.db.execute('SELECT payload FROM webhook_receipts WHERE id=?', (event_id,)).fetchone()
@@ -132,7 +133,7 @@ class QuietTests(DeliveryCase):
         child = self.node(task)['node_id']
         self.delivery.deliver_now()
         with self.graph.transaction():
-            parent = self.graph.add_decision(task, 'Which upstream constraint applies?', '', 'pending', owner='Wes Chen')
+            parent = self.graph.add_decision(task, 'Which upstream constraint applies?', '', 'pending', owner='Wes Chen', repo='acme/platform')
         self.store.answer(parent, {'answer': 'Original upstream policy.'})
         self.store.answer(child, {'answer': 'Keep this downstream answer unchanged.'})
         with self.graph.transaction():
@@ -153,7 +154,9 @@ class QuietTests(DeliveryCase):
         self.assertEqual(len(self.review_notes(child)), 1)
         self.assertEqual(self.delivery.deliver_now(), 1)
         prior = self.store.get_decision(child)
-        self.store.answer(child, {'answer': prior['answer'], 'expected_updated_at': prior['updated_at']})
+        self.store.answer(child, {'answer': prior['answer'], 'expected_updated_at': prior['updated_at'],
+            'source_evidence': prior['source_revalidation']['pins'],
+            'source_decision_pins': prior['source_revalidation']['decision_pins']})
         self.revise_parent(parent, 'Second upstream correction.')
         notes = self.review_notes(child)
         self.assertEqual(len(notes), 2)
@@ -369,9 +372,9 @@ class QuietTests(DeliveryCase):
                   context="NET-201 settled the ceiling; UTF-8 names nothing.")
         self.delivery.deliver_now()
         text = self.slack.messages[-1]["text"]
-        self.assertIn("Records it names: NET-102 [Cancelled] \u201cRejected proposal subtract jitter\u201d: not in force, "
+        self.assertIn(transport_text("Records it names: NET-102 [Cancelled] \u201cRejected proposal subtract jitter\u201d: not in force, "
                       "so it is history, not current policy; NET-201 [Done] \u201cRetry-After jitter hard total "
-                      "ceiling\u201d.", text)
+                      "ceiling\u201d."), text)
 
     def test_a_reply_about_a_question_that_changed_is_still_refused(self):
         n = self.node(self.task())
@@ -401,16 +404,16 @@ class OutboxTests(DeliveryCase):
         self.assertIn("enterprise-two", text)
         self.assertIn("Options: Bill it | Exclude the load test", text)
         self.assertIn("not me @person", text)
-        # The task page link comes right under the question; the options
-        # are said once; why Wes, and the inbox he has no login for, are
-        # on the page instead. Measured on prometheus/prometheus: the link
-        # was the second-to-last line, under options said twice.
+        # The task link stays prominent. Complete stored context retains
+        # its generated options as well as the structured options line;
+        # unproven presentation deduplication must never hide constraints.
+        # Why Wes and the inbox he has no login for remain on the task page.
         lines = text.split("\n")
         question_line = lines.index(f"*{n['question']}*")
         task_line = next(i for i, line in enumerate(lines) if line.startswith("Task: "))
         self.assertEqual(task_line, question_line + 1)
         self.assertIn("https://bridge.acme.test/brief#rvn_", lines[task_line + 1])
-        self.assertEqual(text.count("Exclude the load test"), 1)
+        self.assertEqual(text.count("Exclude the load test"), 2)
         self.assertNotIn("Why you:", text)
         self.assertNotIn("#inbox", text)
         sent = self.delivery.list("sent")[0]
@@ -424,9 +427,9 @@ class OutboxTests(DeliveryCase):
         n = self.node(self.task())
         self.delivery.deliver_now()
         text = self.slack.messages[-1]["text"]
-        self.assertIn("Why you: verified: Wes Chen decides for billing/*", text)
+        self.assertIn(transport_text("Why you: verified: Wes Chen decides for billing/*"), text)
         self.assertIn(f"https://bridge.acme.test/#inbox (decision {n['node_id']})", text)
-        self.assertEqual(text.count("Exclude the load test"), 1)
+        self.assertEqual(text.count("Exclude the load test"), 2)
 
     def test_a_person_with_a_login_gets_the_inbox_beside_the_task_page(self):
         with self.graph.transaction():
@@ -590,7 +593,7 @@ class ReplyTests(DeliveryCase):
         parts = _sections(message, 2900)
         self.assertGreater(len(parts), 1)
         self.assertTrue(all(len(p) <= 2900 for p in parts))
-        self.assertEqual("\n".join(parts), message)
+        self.assertEqual("".join(parts), message)
 
     def test_a_reply_read_back_for_confirmation_is_never_cut(self):
         """The person confirms the reading as their answer; it was cut at 700
@@ -643,8 +646,8 @@ class ReplyTests(DeliveryCase):
         self.assertEqual(self.slack.messages[-1]["channel"], "DUMAR")
         self.assertIn("Handed to you, Marisol Vega", self.slack.messages[-1]["text"])
         # Why her: the hand-on, in Wes's words, not the authority that made it his.
-        self.assertIn('Why you: handed on by Wes Chen: "not me @Marisol Vega"; once you answer, Raven routes '
-                      "billing decisions", self.slack.messages[-1]["text"])
+        self.assertIn(transport_text('Why you: handed on by Wes Chen: "not me @Marisol Vega"; once you answer, Raven routes '
+                      "billing decisions"), self.slack.messages[-1]["text"])
         self.assertNotIn("verified: Wes Chen", self.slack.messages[-1]["text"])
         # Her answer accepts the referral; from then on she decides billing.
         ack = self.reply(self.slack.messages[-1], "UMAR", "Exclude it because it was our load test")
@@ -684,7 +687,7 @@ class RenderTests(unittest.TestCase):
                "options": json.dumps(["a", "b"]), "answer": "", "answered_by": "", "kind": "new"}
         out = render(row, "ask", "Wes", "https://b", "")
         self.assertIn("Two accounts spiked.", out["text"])
-        self.assertIn("Why you: verified: Wes decides for billing/* (config); area: x", out["text"])
+        self.assertIn(transport_text("Why you: verified: Wes decides for billing/* (config); area: x"), out["text"])
         self.assertIn("Options: a | b", out["text"])
         self.assertEqual(out["blocks"][0]["type"], "section")
 
@@ -695,8 +698,8 @@ class RenderTests(unittest.TestCase):
                "reviewed billing/usage.py); verified: Lena decides for billing/* [config; area: x]; fourth line",
                "evidence": "memory: none", "options": "[]", "answer": "", "answered_by": "", "kind": "new"}
         out = render(row, "ask", "Lena", "https://b", "")
-        self.assertIn("Why you: signs off; the signals name Theo Marsh (approved 3 changes under billing/; "
-                      "reviewed billing/usage.py); verified: Lena decides for billing/* [config; area: x]", out["text"])
+        self.assertIn(transport_text("Why you: signs off; the signals name Theo Marsh (approved 3 changes under billing/; "
+                      "reviewed billing/usage.py); verified: Lena decides for billing/* [config; area: x]"), out["text"])
         self.assertNotIn("fourth line", out["text"])
         self.assertEqual(split_evidence("a; b (c; d); e"), ["a", "b (c; d)", "e"])
         self.assertEqual(split_evidence(""), [])

@@ -182,16 +182,18 @@ class AtomicSourceCorrectionTests(OfflineCase):
             current = self.store.get_decision(node)
             self.assertTrue(current['needs_review'])
             self.assertFalse(current['authorized'])
-            with self.assertRaisesRegex(Invalid, 'review|corrected'):
+            with self.assertRaisesRegex(Invalid, 'review|revalidation|corrected'):
                 self.sign(node)
         with self.assertRaises(Invalid):
             self.store.update_run(task, {'status': 'completed'})
 
     def test_parent_and_explicit_edges_cannot_hide_a_stale_pinned_ancestor(self):
-        _, source = self.source()
-        _, middle = self.derived(source)
-        self.sign(middle)
         for kind in ('parent', 'depends'):
+            # Each case starts current; the first case deliberately corrupts
+            # its source revision and must not seed the next case's authority.
+            _, source = self.source()
+            _, middle = self.derived(source)
+            self.sign(middle)
             task, leaf = self.node('What should the ' + kind + ' consumer do?')
             if kind == 'parent':
                 self.graph.update_decision(leaf, parent_id=middle)

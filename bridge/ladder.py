@@ -449,8 +449,9 @@ def _close_open_twins(store: Graph, source_id: str, question: str, repo: str,
         if any(not applicability_status(spec, twin.path or "", twin_facts)[0] for spec in bounds):
             unfit.add(twin.id)
             continue
-        store.update_decision(
-            twin.id, status="resolved", source=source, answer=answer, answered_by=answered_by,
+        source_decision = store.get_decision(source_id, exact=True)
+        store.publish_evidence(
+            twin.id, [_as_record(source_decision)] if source_decision else [], status="resolved", source=source, answer=answer, answered_by=answered_by,
             kind="evidence", signoff="required", source_id=source_id, source_revision=revision,
             evidence=(f"settled by the same answer as decision {source_id} "
                       f"(\"{_word_trunc(question, 60)}\"); this question was open in an earlier run"
@@ -540,7 +541,7 @@ def _disagrees(cfg: Config, question: str, answer: str, record) -> bool:
         verdict = llm_mod.Client(cfg).complete(
             "conflict", llm_mod.CONFLICT_SYSTEM,
             f"Question: {question}\n\nAnswer on file: {answer}\n\n"
-            f"Record {record['kind']} {record['ref']}: {record['title']}\n{record['body'][:800]}",
+            f"Record {record['kind']} {_ref(record)}: {record['title']}\n{record['body'][:800]}",
             max_tokens=16).strip().upper()
     except llm_mod.LLMError:
         return False
@@ -629,6 +630,14 @@ def _field(row, key: str) -> str:
         return ""
 
 
+def _ref(row) -> str:
+    return _field(row, 'display_ref') or _field(row, 'ref')
+
+
+def _evidence_role(row, role):
+    return {**dict(row), '_evidence_role': role}
+
+
 def _void(row) -> str:
     """Why a record states something that was not adopted, or empty: its
     status (cancelled, won't do, rejected, obsolete, superseded), a title
@@ -676,7 +685,7 @@ def named_records(graph: Graph, repo: str, *texts: str) -> list[dict]:
     out: list[dict] = []
     seen: set[tuple[str, str]] = set()
     for row in graph.intents_by_ref(keys[:8], scope):
-        kind, ref = _field(row, "kind"), _field(row, "ref")
+        kind, ref = _field(row, "kind"), _ref(row)
         if (kind, ref) in seen or kind in ("commit", "review"):
             continue
         seen.add((kind, ref))
@@ -749,6 +758,7 @@ def _as_record(item) -> dict:
     """A memory decision viewed as a record, for joint composition: kind
     'decision', its id as the reference, the signer as author."""
     return {"kind": "decision", "ref": item.id, "title": item.question,
+            "decision_source_id": item.id, "decision_source_revision": ts_to_iso(item.updated_at),
             "body": _memory_body(item), "author": item.answered_by or "",
             "created_at": ts_to_iso(item.updated_at) if item.updated_at else "",
             "status": "", "resolved": 1}
@@ -781,7 +791,7 @@ def _selector_pick(cfg: Config, question: str, cands: dict[str, tuple[str, objec
             else:
                 status = _ticket_state(item)
             by = item["author"] or "unknown"
-            lines.append(f"{key} [{item['kind']} {item['ref']}, {item['created_at'] or 'undated'}, "
+            lines.append(f"{key} [{item['kind']} {_ref(item)}, {item['created_at'] or 'undated'}, "
                          f"by/assignee {by}]{status} {item['title']}: {item['body'][:300]}")
     try:
         raw = llm_mod.Client(cfg).complete_json(
@@ -1078,7 +1088,7 @@ def _compose_joint(cfg: Config, question: str, rows: list, given: str = ""):
         # asks about history. Measured live: given a cancelled proposal
         # marked NOT ADOPTED, the composer still reversed which option it
         # had rejected, and the owner was asked to sign that.
-        left_out = [f"{r['kind']} {r['ref']}{_ticket_state(r)}" for r in rows if _void(r)]
+        left_out = [f"{r['kind']} {_ref(r)}{_ticket_state(r)}" for r in rows if _void(r)]
         rows = [r for r in rows if not _void(r)]
     rows = rows[:4]
     if len(rows) < 2 or not cfg.semantic_retrieval:
@@ -1087,7 +1097,7 @@ def _compose_joint(cfg: Config, question: str, rows: list, given: str = ""):
         return None
     labeled, cits = [], []
     for i, r in enumerate(rows, 1):
-        cit = f"{r['kind']} {r['ref']}{_ticket_state(r)}"
+        cit = f"{r['kind']} {_ref(r)}{_ticket_state(r)}"
         cits.append(cit)
         labeled.append(
             f"r{i} ({cit}, author/assignee {r['author'] or 'unknown'}, {r['created_at'] or 'undated'}"
@@ -1095,7 +1105,7 @@ def _compose_joint(cfg: Config, question: str, rows: list, given: str = ""):
             + f"): {r['title']}\n{(r['body'] or '')[:900]}")
     try:
         text = llm_mod.Client(cfg).complete(
-            "compose_joint", llm_mod.JOINT_COMPOSER_SYSTEM,
+            "compose_joint", llm_mod.JOINT_COMPOSER_SYSTEM + "\nBefore COVERAGE, output USED_SOURCES: r1,r2 listing exactly the input records actually used. Omit rejected or irrelevant records.",
             f"Question: {question}\n\nRecords:\n" + "\n\n".join(labeled)).strip()
     except llm_mod.LLMError:
         return None
@@ -1113,6 +1123,21 @@ def _compose_joint(cfg: Config, question: str, rows: list, given: str = ""):
         text = text[:coverage.start()].rstrip()
     if not text:
         return None
+    used = re.search(r"(?:^|\n)USED_SOURCES:\s*([r0-9, ]+)\s*(?:$|\n)", text)
+    if not used:
+        return None
+    if not re.fullmatch(r'r[1-9]\d*(?:\s*,\s*r[1-9]\d*)*', used.group(1).strip()):
+        return None
+    labels = re.findall(r"r(\d+)", used.group(1))
+    if not labels or any(not 1 <= int(n) <= len(rows) for n in labels):
+        return None
+    selected = sorted({int(n) - 1 for n in labels})
+    text = (text[:used.start()] + text[used.end():]).strip()
+    if _is_pure_refusal(text):
+        return None
+    rows = [rows[i] for i in selected]
+    cits = [cits[i] for i in selected]
+    labeled = [labeled[i] for i in selected]
     text = re.sub(r"\s*\((?:r\d)(?:,\s*r\d)*\)", "", text)
     text = re.sub(r"\s*\([^()]*\br\d\b[^()]*\)", "", text)
     text = re.sub(r"\s*\b(?:and |in |per |from )?r\d\b", "", text)
@@ -1126,7 +1151,7 @@ def _compose_joint(cfg: Config, question: str, rows: list, given: str = ""):
     if text is None:
         return None
     cited = "; ".join(cits) + (f"; left out, not adopted: {', '.join(left_out)}" if left_out else "")
-    return text, cited, partial or _states_a_gap(text)
+    return text, cited, partial or _states_a_gap(text), rows
 
 
 _CHANGE_VERBS = {"add", "remov", "remove", "fix", "use", "make", "drop", "move", "updat", "update", "chang", "change",
@@ -1357,7 +1382,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                       f"{historical.answer}\n\nRecorded rationale: "
                       f"{historical.rationale or 'No rationale was recorded.'}")
             evidence = f"historical attribution from decision {historical.id}; not authorization for new work"
-            store.update_decision(did, status="resolved", source="memory", kind="evidence", answer=answer,
+            store.publish_evidence(did, [_as_record(historical)], status="resolved", source="memory", kind="evidence", answer=answer,
                                   answered_by=historical.answered_by, source_id=historical.id,
                                   source_revision=ts_to_iso(historical.updated_at), evidence=evidence)
             store.add_link(did, historical.id, "derived", "historical attribution of this recorded answer")
@@ -1374,6 +1399,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
         # A signed answer and a settled record that disagree on a figure:
         # set when that is found, and then neither is served or proposed.
         conflict = None
+        memory_used_rows = []
 
         # a. memory
         mem_pick = None
@@ -1688,7 +1714,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                             "retrieved records are context, not approval for the reversal")
             context_rows = ref_rows or ([rec_best] if rec_best is not None else matches[:3])
             for row in context_rows[:3]:
-                why_open.append(f"records: retrieved context {row['kind']} {row['ref']}: "
+                why_open.append(f"records: retrieved context {row['kind']} {_ref(row)}: "
                                 f"{row['title']}; excerpt: {_excerpt(row['body'], 240, 'the record has the rest')}")
 
         # arbitration
@@ -1800,8 +1826,10 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 if joint is not None:
                     j_answer, j_cited, *j_more = joint
                     j_partial = bool(j_more and j_more[0]) or _states_a_gap(j_answer)
-                    store.update_decision(did, status="partial" if j_partial else "resolved", source="record",
-                                          answer=j_answer, kind="evidence",
+                    used_rows = j_more[1] if len(j_more) > 1 else []
+                    joint_open = any(not _is_settled(r) for r in used_rows)
+                    store.publish_evidence(did, used_rows, status="proposed" if joint_open else "partial" if j_partial else "resolved", source="record",
+                                          answer=j_answer, kind="prediction" if joint_open else "evidence",
                                           evidence=f"composed across records: {j_cited}"
                                           + ("; answers this only in part" if j_partial else ""))
                     store.append_event("resolve", {"task_id": task_id, "decision_id": did, "source": "record",
@@ -1818,7 +1846,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
         # record into approval to reverse it. Keep its citation for the owner.
         if reversal_request and pick is not None and pick[0] == "record":
             row = pick[1]
-            why_open.append(f"records: selected {row['kind']} {row['ref']}: {row['title']}; "
+            why_open.append(f"records: selected {row['kind']} {_ref(row)}: {row['title']}; "
                             f"excerpt: {_excerpt(row['body'], 240, 'the record has the rest')}; "
                             "does not authorize the requested reversal")
             pick = None
@@ -1879,7 +1907,9 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                                        given=m_given) if others else None
                 if joint is not None:
                     joint_partial = len(joint) > 2 and bool(joint[2])
-                    pick = ("memory", replace(pick[1], answer=joint[0]))
+                    memory_used_rows = joint[3] if len(joint) > 3 else []
+                    primary = next((p for p in [pick[1]] + others if memory_used_rows and p.id == memory_used_rows[0].get('decision_source_id')), pick[1])
+                    pick = ("memory", replace(primary, answer=joint[0]))
                     pick_note = (pick_note + "; " if pick_note else "") + f"composed with {joint[1]}"
                 elif grounded is not None:
                     pick = ("memory", replace(pick[1], answer=grounded))
@@ -1908,7 +1938,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 conflict = (mem, rival)
         if conflict is not None:
             mem, rival = conflict
-            clash = f"{rival['kind']} {rival['ref']}{_ticket_state(rival)}"
+            clash = f"{rival['kind']} {_ref(rival)}{_ticket_state(rival)}"
             why_open.append(f"conflict: decision {mem.id}, signed by {mem.answered_by or 'a person'}, says \""
                             f"{_excerpt(mem.answer, 200, 'the decision has the rest')}\", and {clash} says \""
                             f"{_excerpt(_row_text(rival), 200, 'the record has the rest')}\"; they state "
@@ -1945,7 +1975,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     # An unsettled record, or an unsigned answer: the figures
                     # still disagree, and the answer says so rather than one
                     # side quietly replacing the other.
-                    clash = f"{rival['kind']} {rival['ref']}{_ticket_state(rival)}"
+                    clash = f"{rival['kind']} {_ref(rival)}{_ticket_state(rival)}"
                     mem_partial = True
                     item = replace(item, answer=(
                         f"CONFLICTED, do not act on either side alone: "
@@ -1956,13 +1986,13 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                                                                   "memory": item.id, "record": clash,
                                                                   "surfaced": True})
                 elif rival is not None and _is_settled(rival) and not item.authorized:
-                    clash = f"{rival['kind']} {rival['ref']}{_ticket_state(rival)}"
+                    clash = f"{rival['kind']} {_ref(rival)}{_ticket_state(rival)}"
                     store.append_event("memory_record_conflict", {"task_id": task_id, "decision_id": did,
                                                                   "memory": item.id, "record": clash,
                                                                   "escalated": True})
                     kind, item = "record", rival
                 elif rival is not None and _is_settled(rival):
-                    clash = f"{rival['kind']} {rival['ref']}{_ticket_state(rival)}"
+                    clash = f"{rival['kind']} {_ref(rival)}{_ticket_state(rival)}"
                     mem_partial = True
                     item = replace(item, answer=(
                         f"CONFLICTED, do not act on either side alone: "
@@ -1974,7 +2004,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                                                                   "memory": item.id, "record": clash,
                                                                   "surfaced": True})
                 elif rival is not None:
-                    clash = f"{rival['kind']} {rival['ref']}{_ticket_state(rival)}"
+                    clash = f"{rival['kind']} {_ref(rival)}{_ticket_state(rival)}"
                     whose = "the signed answer" if item.authorized else "the earlier resolution"
                     mem_conflict = (f"{clash} covers this too and does not agree; the answer above is {whose}, "
                                     "check which should stand")
@@ -2000,6 +2030,9 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                                             if signed else ("", False))
                 rule_ok, rule_why = (rule_status(item, question, d_context, facts=d_facts)
                                      if signed and item.reusable else (False, ""))
+                if len(memory_used_rows) > 1 or mem_conflict:
+                    rule_ok = False
+                    rule_why = 'The answer combines or contrasts premises; it requires a fresh human sign-off'
                 if rule_ok and other_scope and item.rule_scope != "any":
                     # Another customer, other files: the rule was made for
                     # its own scope and its owner did not say anywhere.
@@ -2047,8 +2080,9 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     evidence = (f"prediction: reused from decision {item.id}, {who}, which no human has signed "
                                 f"({detail}); confirm with the owner before acting on it")
                 status = ("partial" if mem_partial else "resolved") if signed else "proposed"
-                store.update_decision(
-                    did, status=status, source=origin, answer=item.answer,
+                store.publish_evidence(
+                    did, (memory_used_rows or [_as_record(item)]) + ([_evidence_role(rival, 'contradiction')] if mem_conflict and rival is not None else []),
+                    status=status, source=origin, answer=item.answer,
                     answered_by=item.answered_by if signed else "",
                     prediction=None if signed else item.answer,
                     kind=_kind_for(status, origin, mkind) if signed else "prediction",
@@ -2079,10 +2113,10 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             newer = _superseded_by_newer(store, repo, item)
             if newer is not None:
                 store.append_event("superseded_record", {"task_id": task_id, "decision_id": did,
-                                                         "stale": f"{item['kind']} {item['ref']}",
-                                                         "current": f"{newer['kind']} {newer['ref']}"})
+                                                         "stale": f"{item['kind']} {_ref(item)}",
+                                                         "current": f"{newer['kind']} {_ref(newer)}"})
                 item = newer
-            citation = f"{item['kind']} {item['ref']}{_ticket_state(item)}: {item['title']}"
+            citation = f"{item['kind']} {_ref(item)}{_ticket_state(item)}: {item['title']}"
             body = item["body"].strip() or item["title"].strip()
             if not cfg.semantic_retrieval:
                 why_open.append(f"records: retrieved {citation} as context; no answerability check is available "
@@ -2090,7 +2124,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 if _RECENCY_Q_RE.search(question.lower()):
                     contest = _contested_by_newer(store, repo, item)
                     if contest is not None:
-                        why_open.append(f"records: contested by newer {contest['kind']} {contest['ref']}: "
+                        why_open.append(f"records: contested by newer {contest['kind']} {_ref(contest)}: "
                                         f"{contest['title']}; confirm what is in effect")
                     else:
                         why_open.append("records: no newer indexed record revisits this; the indexed set may be incomplete")
@@ -2127,7 +2161,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 pointer = (f"Not stated in the indexed record. The change itself is {citation}, by "
                            f"{item['author']}; the reasoning likely lives in that item's description or "
                            f"discussion, which Raven could not read from here.")
-                store.update_decision(did, status="partial", source="record", answer=pointer,
+                store.publish_evidence(did, [_evidence_role(item, 'context')], status="partial", source="record", answer=pointer,
                                       answered_by=item["author"], kind="evidence",
                                       evidence=f"{citation}; states the change, not the reasoning")
                 store.append_event("resolve", {"task_id": task_id, "decision_id": did, "source": "record",
@@ -2161,8 +2195,10 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 if joint2 is not None:
                     j_answer2, j_cited2, *j_more2 = joint2
                     j_partial2 = bool(j_more2 and j_more2[0]) or _states_a_gap(j_answer2)
-                    store.update_decision(did, status="partial" if j_partial2 else "resolved", source="record",
-                                          answer=j_answer2, kind="evidence",
+                    used_rows = j_more2[1] if len(j_more2) > 1 else []
+                    joint_open = any(not _is_settled(r) for r in used_rows)
+                    store.publish_evidence(did, used_rows, status="proposed" if joint_open else "partial" if j_partial2 else "resolved", source="record",
+                                          answer=j_answer2, kind="prediction" if joint_open else "evidence",
                                           evidence=f"composed across records: {j_cited2}"
                                           + ("; answers this only in part" if j_partial2 else ""))
                     store.append_event("resolve", {"task_id": task_id, "decision_id": did, "source": "record",
@@ -2173,7 +2209,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 if cfg.semantic_retrieval:
                     why_open.append(f"records: {citation} was the best candidate but does not state the answer")
             elif not _is_settled(item):
-                store.update_decision(did, status="proposed", source="record", answer=answer,
+                store.publish_evidence(did, [item], status="proposed", source="record", answer=answer,
                                       answered_by=item["author"], kind="prediction",
                                       evidence=f"{citation}; not ratified, the ticket is still {item['status'] or 'open'}")
                 store.append_event("proposed", {"task_id": task_id, "decision_id": did, "cited": citation,
@@ -2184,10 +2220,12 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             else:
                 partial = _states_a_gap(answer)
                 extra_ev = ""
+                record_used_rows = [item]
                 if _RECENCY_Q_RE.search(question.lower()):
                     contest = _contested_by_newer(store, repo, item)
                     if contest is not None:
-                        c_ref = f"{contest['kind']} {contest['ref']}{_ticket_state(contest)}"
+                        record_used_rows.append(_evidence_role(contest, 'contradiction'))
+                        c_ref = f"{contest['kind']} {_ref(contest)}{_ticket_state(contest)}"
                         answer += (f" (note: {c_ref}, filed after this change, reports the same subject as "
                                    f"unsettled: \"{contest['title']}\". Confirm the change still holds.)")
                         extra_ev = f"; contested by newer {c_ref}"
@@ -2202,7 +2240,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                         extra_ev += "; record names pending follow-up work"
                         partial = True
                 status = "partial" if partial else "resolved"
-                store.update_decision(did, status=status, source="record", answer=answer,
+                store.publish_evidence(did, record_used_rows, status=status, source="record", answer=answer,
                                       answered_by=item["author"], kind="evidence",
                                       evidence=citation + ("; answers this only in part" if partial else "")
                                       + extra_ev + (f"; {pick_note}" if pick_note else ""))
@@ -2242,7 +2280,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     and sum(1 for t in a_terms if t in (m["title"] + " " + m["body"]).lower()) >= a_required]
                 if cfg.semantic_retrieval and a_cands:
                     labeled = "\n".join(
-                        f"r{i}: {m['kind']} {m['ref']}{_ticket_state(m)}: {m['title']} | "
+                        f"r{i}: {m['kind']} {_ref(m)}{_ticket_state(m)}: {m['title']} | "
                         + " ".join((m["body"] or "").split())[:200]
                         for i, m in enumerate(a_cands, 1))
                     try:
@@ -2266,7 +2304,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     newer = _superseded_by_newer(store, repo, m)
                     if newer is not None:
                         m = newer
-                    cited = f"{m['kind']} {m['ref']}{_ticket_state(m)}: {m['title']}"
+                    cited = f"{m['kind']} {_ref(m)}{_ticket_state(m)}: {m['title']}"
                     composed = _compose_assumption(cfg, question, cited, m["body"])
                     if composed == ASSUME_GAP:
                         cited, assume_gap = "", True
@@ -2302,7 +2340,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                                      "this is a plain default, not a pattern from your history")
                         default += (" (no relevant precedent in this repo; this is a default, not something "
                                     "your team has decided)")
-                    store.update_decision(did, status="assumed", source="assumption", answer=default,
+                    store.publish_evidence(did, [m] if cited else [], status="assumed", source="assumption", answer=default,
                                           prediction=default, kind="prediction",
                                           evidence=f"low-stakes {category} decision, {certainty} "
                                                    f"({precedent} records indexed); confirm or correct in the inbox")
@@ -2320,18 +2358,20 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
         if (not reversal_request and category == "data-source" and retro_cand is not None and _is_settled(retro_cand)
                 and any(t in _RETRO_MACHINERY for t in _meaningful_terms(question))):
             item2 = retro_cand
-            cit2 = f"{item2['kind']} {item2['ref']}{_ticket_state(item2)}: {item2['title']}"
+            retro_used_rows = [_evidence_role(item2, 'context')]
+            cit2 = f"{item2['kind']} {_ref(item2)}{_ticket_state(item2)}: {item2['title']}"
             answer2 = (f"Not stated in the indexed record. The closest recorded change is {cit2}, by "
                        f"{item2['author']}; the reasoning likely lives in that item's description or "
                        f"discussion, which Raven could not read from here.")
             if _RECENCY_Q_RE.search(question.lower()):
                 contest2 = _contested_by_newer(store, repo, item2)
                 if contest2 is not None:
-                    answer2 += (f" Newer {contest2['kind']} {contest2['ref']}{_ticket_state(contest2)} "
+                    retro_used_rows.append(_evidence_role(contest2, 'context'))
+                    answer2 += (f" Newer {contest2['kind']} {_ref(contest2)}{_ticket_state(contest2)} "
                                 f"revisits this: \"{contest2['title']}\".")
                 else:
                     answer2 += " No newer indexed record revisits the decision."
-            store.update_decision(did, status="partial", source="record", answer=answer2,
+            store.publish_evidence(did, retro_used_rows, status="partial", source="record", answer=answer2,
                                   answered_by=item2["author"], kind="evidence",
                                   evidence=cit2 + "; states the change, not the reasoning")
             store.append_event("resolve", {"task_id": task_id, "decision_id": did, "source": "record",
@@ -2416,18 +2456,30 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
         owner, evidence, score = owner_info
         # How this owner has decided before: their own signed answers on
         # related decisions, as a prediction they confirm or correct.
+        proposal_observations = {}
         proposal, proposal_from, proposal_why = (_how_they_decide(store, cfg, repo, question, d_context, emb, owner,
                                                                   path=d_path if d_path != "unknown" else "",
-                                                                  facts=d_facts)
+                                                                  facts=d_facts, observations=proposal_observations)
                                                  if conflict is None else ("", "", ""))
-        store.update_decision(did, status=OPEN, owner=owner, kind="prediction" if proposal else "new",
-                              owner_evidence="; ".join(evidence),
-                              evidence="; ".join(why_open + ([proposal_why] if proposal_why else [])),
-                              **({"prediction": proposal, "source_id": proposal_from} if proposal else {}))
-        if proposal:
-            store.add_link(did, proposal_from, "how-they-decide", "the owner's earlier answer the proposal rests on")
-            store.append_event("proposal_composed", {"task_id": task_id, "decision_id": did, "owner": owner,
-                                                     "from": proposal_from})
+        with store.transaction():
+            from .context_memory import _same_source_revision
+            if proposal:
+                for source_id, observed_revision in proposal_observations.items():
+                    current = store.db.execute('SELECT updated_at,needs_review FROM decisions WHERE id=?', (source_id,)).fetchone()
+                    if not current or current['needs_review'] or not _same_source_revision(observed_revision, current['updated_at']):
+                        proposal, proposal_from, proposal_why = '', '', ''
+                        break
+                if proposal_from not in proposal_observations:
+                    proposal, proposal_from, proposal_why = '', '', ''
+            store.update_decision(did, status=OPEN, owner=owner, kind="prediction" if proposal else "new",
+                                  owner_evidence="; ".join(evidence),
+                                  evidence="; ".join(why_open + ([proposal_why] if proposal_why else [])),
+                                  **({"prediction": proposal, "source_id": proposal_from,
+                                      "source_revision": proposal_observations[proposal_from]} if proposal else {}))
+            if proposal:
+                store.add_link(did, proposal_from, "how-they-decide", "the owner's earlier answer the proposal rests on")
+                store.append_event("proposal_composed", {"task_id": task_id, "decision_id": did, "owner": owner,
+                                                         "from": proposal_from})
         store.append_event("ask_drafted", {"task_id": task_id, "decision_id": did, "owner": owner,
                                            "score": score})
         result.open.append({"id": did, "question": question, "owner": owner, "ranked": _ranked_view(ranked),
@@ -2484,7 +2536,8 @@ def _takes_a_choice(proposal: str, choices: list[str]) -> bool:
 
 
 def _how_they_decide(store: Graph, cfg, repo: str, question: str, context: str, emb: list[float],
-                     owner: str, path: str = "", facts: dict | None = None) -> tuple[str, str, str]:
+                     owner: str, path: str = "", facts: dict | None = None,
+                     observations: dict | None = None) -> tuple[str, str, str]:
     """(prediction, source decision id, why): how the routed owner has
     decided related questions before, from their own signed answers
     only. The prediction is answer text the owner can confirm as is;
@@ -2516,6 +2569,8 @@ def _how_they_decide(store: Graph, cfg, repo: str, question: str, context: str, 
         return "", "", ""
     priors.sort(key=lambda x: -x[0])
     best_score, best, best_scope = priors[0]
+    if observations is not None:
+        observations.update({prior.id: ts_to_iso(prior.updated_at) for _, prior, _ in priors})
     # The scope it was given for travels with the prediction, not only in
     # the evidence around it: measured live, out-of-scope predictions
     # repeated the answer assertively and left the evidence to explain.
@@ -2584,8 +2639,8 @@ def _wide_select(store: Graph, cfg: Config, question: str, emb: list[float], ter
         if m["ref"] not in seen:
             rows.append(m)
             seen.add(m["ref"])
-    newest_sql = "SELECT * FROM intents" + (" WHERE repo=?" if repo else "") + " ORDER BY created_at DESC LIMIT 3"
-    for m in store.db.execute(newest_sql, (repo,) if repo else ()):
+    recent_rows = sorted((row for row, _ in store._intent_corpus(repo)[0]), key=lambda row: row["created_at"] or "", reverse=True)[:3]
+    for m in recent_rows:
         if m["ref"] not in seen:
             rows.append(m)
             seen.add(m["ref"])
@@ -2613,11 +2668,12 @@ def ask(store, cfg: Config, run_id: str, question: str, context: str = "",
     if not run or run["status"] in ("completed", "abandoned"):
         raise Invalid("An active run is required")
     repo = graph.resolve_repo(repo_key(run["repo"]))
-    result = run_task(graph, cfg, run["title"], repo=repo, run_id=run_id, keep_draft=True, scratch=scratch,
-                      decisions=[{"question": question, "category": category, "context": context,
-                                  "path": path or "unknown", "requester": requester or "",
-                                  "hints": list(hints or []), "facts": facts or {},
-                                  "also_paths": list(also_paths or [])}])
+    with graph.source_scope(run_id):
+        result = run_task(graph, cfg, run["title"], repo=repo, run_id=run_id, keep_draft=True, scratch=scratch,
+                          decisions=[{"question": question, "category": category, "context": context,
+                                      "path": path or "unknown", "requester": requester or "",
+                                      "hints": list(hints or []), "facts": facts or {},
+                                      "also_paths": list(also_paths or [])}])
     ids = result.decision_ids
     if not ids:
         publish_drafts(graph, result.drafts)
@@ -2672,6 +2728,7 @@ def _inbox_route(store, graph: Graph, row: dict, owner_id: str | None, run, repo
                     if pattern and fnmatch.fnmatchcase((row["path"] or "").lstrip("/"), pattern):
                         chosen, reason = owner["id"], f"Path {row['path']} matches {pattern}"
         prediction, source_id, kind = row["prediction"], row["source_id"], row["kind"] or "new"
+        source_revision = row.get("source_revision") or ""
         # A suggestion only when a prior answer from the same owner really
         # matches (the ladder's own memory floor), and never for a who or
         # why question, whose answer is a name and a reason, not a rule.
@@ -2689,14 +2746,18 @@ def _inbox_route(store, graph: Graph, row: dict, owner_id: str | None, run, repo
                      and _takes_a_choice(c["answer"] or "", choices)]
             if cands:
                 prediction, source_id, kind = cands[0]["answer"], cands[0]["id"], "prediction"
+                # Pin only this fresh observation, on the same writer snapshot.
+                # Do not manufacture missing revisions on older hints.
+                observed = db.execute("SELECT updated_at FROM decisions WHERE id=?", (source_id,)).fetchone()
+                source_revision = observed['updated_at'] if observed else ''
                 # Same connection as the transaction: a write through the
                 # graph's connection here would wait on our own lock.
                 store.event(db, "prediction_suggested",
                             f"Unapproved suggestion from decision {cands[0]['id']}; hybrid similarity "
                             f"{cands[0]['similarity']}", row["id"], run["id"])
-        db.execute("UPDATE decisions SET owner_id=?,routing_reason=?,prediction=?,source_id=?,kind=?,updated_at=? WHERE id=?",
+        db.execute("UPDATE decisions SET owner_id=?,routing_reason=?,prediction=?,source_id=?,source_revision=?,kind=?,updated_at=? WHERE id=?",
                    (chosen, reason if chosen else "No matching owner. Assign someone in the inbox.",
-                    prediction, source_id, kind, now(), row["id"]))
+                    prediction, source_id, source_revision, kind, now(), row["id"]))
         db.execute("UPDATE runs SET status='needs_judgment',updated_at=? WHERE id=?", (now(), run["id"]))
         store.event(db, "judgment_requested", reason if chosen else "No matching owner. Assign someone in the inbox.",
                     row["id"], run["id"])
