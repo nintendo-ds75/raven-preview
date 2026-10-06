@@ -12,7 +12,8 @@ from unittest.mock import patch
 from fixtures import ROOT
 from bridge import llm
 from evals.live_workflow_acceptance import (
-    PROVIDER_URL, RequestBudget, check_expression, check_guidance, novel_scenario, run,
+    PROVIDER_URL, AcceptanceFailure, RequestBudget, check_expression, check_guidance,
+    human_post, novel_scenario, record_interview_guidance, reuse_scenario, run, run_interview_only,
 )
 
 
@@ -87,7 +88,7 @@ class LiveWorkflowDriverTests(unittest.TestCase):
             scenario = novel_scenario()
             expression = f"not is_internal or (cohort == {scenario['cohort']!r} and calls > {scenario['threshold']})"
             self.assertEqual(len(check_expression(expression, scenario)), 16)
-            with self.assertRaisesRegex(AssertionError, 'contradicts'):
+            with self.assertRaisesRegex(AssertionError, 'contradicts_signed_boundary'):
                 check_expression(expression.replace(' > ', ' >= '), scenario)
             with self.assertRaises(AssertionError):
                 check_expression("__import__('os').system('whoami')", scenario)
@@ -103,6 +104,136 @@ class LiveWorkflowDriverTests(unittest.TestCase):
             check_guidance({**guidance, 'question_quote': 'invented evidence'}, scenario)
         with self.assertRaises(AssertionError):
             check_guidance({**guidance, 'question': 'What is your name?'}, scenario)
+
+
+    def test_failed_interview_keeps_sanitized_guidance_scenario_and_fixed_code(self):
+        secret = 'fixture-key-never-print-this'
+        class Harness:
+            def __init__(self, **kwargs):
+                pass
+            def __enter__(self):
+                return self
+            def __exit__(self, *_):
+                pass
+        def workflow(harness, agent, scenario, report, timeout):
+            report['stage'] = 'adaptive_interview'
+            report['interview_http'] = [{'operation': 'advance', 'status': 200}]
+            quote = f"I have not decided whether the {scenario['staging']} environment should use that exception."
+            record_interview_guidance({'mode': 'model-assisted', 'status': 'unapproved',
+                'question': 'What is your name?', 'question_quote': quote,
+                'proposed_answer': secret, 'caveats': [{'text': 'Unresolved staging', 'quote': quote}],
+                'unexpected_header': 'must-not-copy-this-field'}, scenario, report)
+        with patch.dict(os.environ, {'ANTHROPIC_API_KEY': secret, 'BRIDGE_MODEL_API': 'anthropic',
+                                    'BRIDGE_SEMANTIC': '1'}), \
+             patch('urllib.request.urlopen', side_effect=AssertionError('Network forbidden')) as network:
+            result = run(run_live=True, harness_factory=Harness, workflow=workflow)
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['failure_code'], 'interview_question_misses_novel_environment')
+        self.assertEqual(result['stage'], 'adaptive_interview')
+        self.assertEqual(result['interview']['status'], 'unapproved')
+        self.assertEqual(result['interview']['question'], 'What is your name?')
+        self.assertIn(result['scenario']['staging'], result['interview']['question_quote'])
+        self.assertEqual(result['interview']['proposed_answer'], '[redacted]')
+        self.assertNotIn(secret, json.dumps(result))
+        self.assertNotIn('unexpected_header', json.dumps(result))
+        self.assertNotIn('must-not-copy-this-field', json.dumps(result))
+        network.assert_not_called()
+
+    def test_interview_http_failure_records_status_without_body_headers_or_token(self):
+        class Harness:
+            url = 'http://127.0.0.1:1234'
+            request_timeout = 15
+        report = {}
+        with patch('evals.live_workflow_acceptance.http_json', return_value=(403,
+                   {'error': 'raw-provider-detail-canary'}, {'X-Diagnostic': 'private-header-canary'})):
+            with self.assertRaisesRegex(AcceptanceFailure, 'interview_http_refused'):
+                human_post(Harness(), 'human-token-canary', '/api/tasks/fixture/interviews', {},
+                           report=report, operation='create')
+        self.assertEqual(report, {'interview_http': [{'operation': 'create', 'status': 403}]})
+        for excluded in ('raw-provider-detail-canary', 'private-header-canary', 'human-token-canary'):
+            self.assertNotIn(excluded, json.dumps(report))
+
+    def test_production_validator_fallback_is_preserved_without_weakening_rejection(self):
+        report = {}
+        with self.assertRaisesRegex(AcceptanceFailure, 'interview_not_validated_unapproved_model_draft'):
+            record_interview_guidance({'mode': 'deterministic-guided-prompts',
+                'reason': 'invalid_model_response'}, novel_scenario(), report)
+        self.assertEqual(report['interview'], {'mode': 'deterministic-guided-prompts',
+                                              'reason': 'invalid_model_response'})
+
+
+    def test_previous_readback_reuses_known_values_and_discloses_missing_nonce(self):
+        prior = {'readback': 'For cohort pilot_e46c6eb4: more than 795 calls remains billable; at or below 795 calls excluded.'}
+        scenario, provenance = reuse_scenario(prior)
+        self.assertEqual((scenario['cohort'], scenario['threshold']), ('pilot_e46c6eb4', 795))
+        self.assertFalse(provenance['staging_reused'])
+        self.assertIn('fresh staging nonce', provenance['note'])
+        self.assertRegex(scenario['staging'], r'^staging_[0-9a-f]{8}$')
+        preserved, provenance = reuse_scenario({'scenario': scenario})
+        self.assertEqual(preserved, scenario)
+        self.assertTrue(provenance['staging_reused'])
+        with self.assertRaises(AcceptanceFailure):
+            reuse_scenario({'readback': 'The threshold might be unknown.'})
+
+    def test_interview_only_driver_uses_real_http_and_one_injected_provider_request(self):
+        import re
+        import urllib.parse
+        from bridge import canvas
+        from evals.slack_contract_harness import REFERRED
+        actual_open = urllib.request.urlopen
+        provider_requests = []
+        def gateway(request, *args, **kwargs):
+            url = request.full_url if isinstance(request, urllib.request.Request) else str(request)
+            if url != PROVIDER_URL:
+                self.assertIn(urllib.parse.urlsplit(url).hostname, ('127.0.0.1', 'localhost', '::1'))
+                return actual_open(request, *args, **kwargs)
+            provider_requests.append(url)  # No headers or credential-bearing request object retained.
+            payload = json.loads(request.data)
+            prompt = json.loads(payload['messages'][0]['content'])
+            staging = re.search(r'staging_[0-9a-f]{8}', prompt['transcript'])[0]
+            quote = f"I have not decided whether the {staging} environment should use that exception."
+            output = {'question': f"Should {staging} use the production exception?",
+                      'question_quote': quote, 'proposed_answer': '', 'proposed_rationale': '',
+                      'answer_quotes': [], 'caveats': [{'text': 'Staging remains unresolved', 'quote': quote}]}
+            return Response(json.dumps({'type': 'message', 'stop_reason': 'end_turn',
+                'content': [{'type': 'text', 'text': json.dumps(output)}],
+                'usage': {'input_tokens': 33, 'output_tokens': 42}}).encode())
+        def driver(harness, agent, scenario, report, timeout):
+            original_id = harness.store.graph.find_person(REFERRED)['id']
+            self.assertFalse(canvas.background_running())
+            result = run_interview_only(harness, agent, scenario, report, timeout=timeout)
+            self.assertEqual(harness.store.graph.find_person(REFERRED)['id'], original_id)
+            self.assertEqual(sum(p['name'] == 'Marisol Contract' for p in harness.store.graph.people()), 1)
+            row = harness.store.graph.db.execute('SELECT d.owner_id,o.person_id FROM decisions d '
+                                                 'JOIN owners o ON o.id=d.owner_id').fetchone()
+            self.assertEqual(row['person_id'], original_id)
+            self.assertFalse(canvas.background_running())
+            return result
+        previous = {'readback': 'Cohort pilot_e46c6eb4: more than 795 calls is billable; at or below 795 is excluded.'}
+        with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'fixture-only-not-a-real-key',
+                                    'BRIDGE_MODEL_API': 'anthropic', 'BRIDGE_SEMANTIC': '1'}), \
+             patch('urllib.request.urlopen', side_effect=gateway):
+            report = run(run_live=True, interview_only=True, previous_result=previous, workflow=driver)
+        self.assertEqual(report['status'], 'passed', report)
+        self.assertEqual(report['stage'], 'interview_diagnostic_complete')
+        self.assertEqual(report['physical_http_requests'], 1)
+        self.assertEqual(report['max_physical_http_requests'], 3)
+        self.assertEqual(provider_requests, [PROVIDER_URL])
+        self.assertEqual((report['input_tokens'], report['output_tokens']), (33, 42))
+        self.assertTrue(report['diagnostic_only'])
+        self.assertTrue(report['diagnostic_setup']['simulated'])
+        self.assertTrue(report['diagnostic_setup']['unsigned'])
+        self.assertEqual(report['interview_http'], [{'operation': step, 'status': 200}
+                                                  for step in ('create', 'draft', 'advance')])
+        self.assertEqual(report['interview']['status'], 'unapproved')
+        self.assertNotIn('fixture-only-not-a-real-key', json.dumps(report))
+
+    def test_non_object_guidance_has_fixed_code_and_safe_shape(self):
+        for guidance in (None, [], 'not-an-object'):
+            report = {}
+            with self.assertRaisesRegex(AcceptanceFailure, 'interview_guidance_not_object'):
+                record_interview_guidance(guidance, novel_scenario(), report)
+            self.assertEqual(report['interview'], {'shape': type(guidance).__name__})
 
 
 if __name__ == '__main__':
