@@ -49,6 +49,9 @@ def import_database(source, target):
                         count += 1
                     counts[table] = count
                     pending.remove(table)
+            # Event IDs are local storage identities, not portable proof of
+            # what a host read. An imported task must be read in this store.
+            dst.execute("UPDATE runs SET agent_read_events='{}', agent_read_at=''")
             for table, column in (("events", "id"), ("ownership", "rowid"),
                                   ("decisions", "rowid"), ("decision_revisions", "rowid")):
                 dst.execute(f"SELECT setval(pg_get_serial_sequence(?, ?), "

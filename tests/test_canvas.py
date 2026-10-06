@@ -2341,8 +2341,13 @@ class ProtocolTests(CanvasCase):
         refused, text = call("bridge_finish_task", {"task_id": task})
         self.assertTrue(refused)
         self.assertIn(other["node_id"], text)
-        # A wait on the whole task is a read; so is the tree.
-        call("bridge_wait", {"task_id": task, "timeout": "0"})
+        # An empty whole-task wait cannot acknowledge answers that arrived
+        # before the call and were not returned. A full tree can.
+        _, text = call("bridge_wait", {"task_id": task, "timeout": "0"})
+        self.assertFalse(json.loads(text)['read_acknowledged'])
+        refused, text = call("bridge_finish_task", {"task_id": task})
+        self.assertTrue(refused)
+        call('bridge_get_tree', {'task_id': task})
         refused, text = call("bridge_finish_task", {"task_id": task})
         self.assertFalse(refused, text)
         self.assertEqual(json.loads(text)["status"], "completed")

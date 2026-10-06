@@ -305,6 +305,11 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     return self.send(200, result)
                 if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "tree":
                     from .canvas import get_tree
+                    if self.me is not None and self.me.is_agent:
+                        from .mcp import call_tool
+                        # A full authenticated agent REST read acknowledges the
+                        # same actual decision revisions as the MCP tree tool.
+                        return self.send(200, call_tool(store, "bridge_get_tree", {"task_id": parts[2]}))
                     return self.send(200, get_tree(store, parts[2]))
                 if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "trace":
                     from .canvas import trace
@@ -844,11 +849,21 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         from . import canvas
                         from .config import load
                         payload = {**data, "task_id": parts[2]}
+                        if parts[3] == "finish" and self.me is not None and self.me.is_agent:
+                            canvas.require_agent_read(store, payload)
                         result = (canvas.add_node(store, load(), payload) if parts[3] == "nodes"
                                   else canvas.settle_node(store, payload) if parts[3] == "settle"
                                   else canvas.finish_task(store, payload))
                     elif len(parts) == 4 and parts[:2] == ["api", "runs"] and parts[3] == "status":
-                        result = store.update_run(parts[2], data)
+                        if data.get("status") == "completed" and self.me is not None and self.me.is_agent:
+                            from .canvas import finish_task, require_agent_read
+                            payload = {**data, "task_id": parts[2]}
+                            require_agent_read(store, payload)
+                            # This marks the same task complete, not separate
+                            # telemetry. Preserve all canonical finish gates.
+                            result = finish_task(store, payload)
+                        else:
+                            result = store.update_run(parts[2], data)
                     elif len(parts) == 4 and parts[:2] == ["api", "authority"] and parts[3] == "end":
                         self.require("admin")
                         result = store.end_authority(parts[2])

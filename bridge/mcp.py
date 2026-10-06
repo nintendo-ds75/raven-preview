@@ -267,10 +267,8 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None):
             raise Invalid(f"Argument {key} must be a string")
     # A node still waiting on a person is refused by the finish itself,
     # naming who; an answer the agent has not read is the next gate.
-    if name == "bridge_finish_task" and args.get("status") != "abandoned" and not store.graph.blocking_nodes(args.get("task_id", "")):
-        unread = canvas.unread_by_agent(store, args.get("task_id", ""))
-        if unread:
-            raise Invalid(canvas.unread_refusal(unread))
+    if name == "bridge_finish_task":
+        canvas.require_agent_read(store, args)
     if name == "bridge_wait":
         result = canvas.wait(store, args, cap=canvas.call_budget() if wait_cap is None else min(wait_cap, canvas.call_budget()), sleep=sleep,
                              stop=stop)
@@ -292,7 +290,12 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None):
                 (result["node_id"],))]
     # A read of the whole tree: a wait on one node shows only that node.
     if name == "bridge_get_tree" or (name == "bridge_wait" and not args.get("node_id")):
-        canvas.note_agent_read(store, args.get("task_id", ""), result.get("observed_at", ""))
+        shown = canvas._flatten(result.get('nodes') or []) if name == 'bridge_get_tree' else result.get('changed') or []
+        result['read_acknowledged'] = canvas.note_agent_read(
+            store, args.get('task_id', ''), result.get('observed_at', ''), result.get('observed_revision'),
+            {n['node_id'] for n in shown if n.get('node_id') and 'answer' in n})
+        if not result['read_acknowledged']:
+            result['next'] += ' This response omitted unread decisions; read bridge_get_tree before finishing.'
     return result
 
 

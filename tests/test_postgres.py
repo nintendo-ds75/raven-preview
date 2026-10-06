@@ -124,16 +124,46 @@ class PostgresSpecific(PostgresIsolation, unittest.TestCase):
                 old = Store(path)
                 old.seed()
                 old.graph.upsert_intent("acme/platform", "doc", "policy", "Credit policy", "Preserve prepaid credits", "owner", "2026-09-20")
+                old.graph.db.execute("UPDATE runs SET agent_read_at='2999-01-01T00:00:00+00:00', "
+                                     "agent_read_events=?", ('{"stale":{"max_event_id":999999,"event_count":99}}',))
                 expected = old.state()
                 old.graph.close()
             counts = import_database(path, self.store.path)
             self.assertEqual(counts["decisions"], len(expected["decisions"]))
             actual = self.store.state()
             self.assertEqual([d["id"] for d in actual["decisions"]], [d["id"] for d in expected["decisions"]])
+            receipts = self.store.graph.db.execute('SELECT agent_read_at,agent_read_events FROM runs').fetchall()
+            self.assertTrue(receipts)
+            self.assertTrue(all(r['agent_read_at'] == '' and r['agent_read_events'] == '{}' for r in receipts))
             self.assertTrue(self.store.graph._fts_ids("intents_fts", ["prepaid"]))
             self.store.add_run({"title": "After import"})  # events sequence advanced
             with self.assertRaisesRegex(ValueError, "not empty"):
                 import_database(path, self.store.path)
+
+    def test_late_lower_id_commit_on_same_decision_invalidates_read_receipt(self):
+        from bridge import canvas
+        from bridge.mcp import call_tool
+        graph = self.store.graph
+        graph.add_person('Receipt Owner')
+        task = self.store.add_run({'title': 'Concurrent read receipt', 'repo': 'receipt/test'})['id']
+        node = graph.add_decision(task, 'What is the task-only policy?', 'policy', 'pending', owner='Receipt Owner')
+        self.store.answer(node, {'answer': 'Keep the current behavior.'})
+        with self.store.connect() as lower:
+            # Use a raw transaction to model a writer outside the adapter's
+            # advisory lock. A sequence allocation is not a commit ordering.
+            lower.raw.execute('BEGIN')
+            low_id = lower.raw.execute(
+                'INSERT INTO events(decision_id,run_id,kind,detail,created_at) '
+                'VALUES(%s,%s,%s,%s,%s) RETURNING id',
+                (node, task, 'answer_corrected', '{}', '2026-10-06T10:00:00+00:00')).fetchone()[0]
+            graph.append_event('answer_corrected', {'task_id': task, 'decision_id': node})
+            seen = call_tool(self.store, 'bridge_get_tree', {'task_id': task})['observed_revision'][node]
+            self.assertGreater(seen['max_event_id'], low_id)
+            lower.raw.commit()
+        current = canvas.human_revisions(self.store, task)[node]
+        self.assertEqual(current['max_event_id'], seen['max_event_id'])
+        self.assertEqual(current['event_count'], seen['event_count'] + 1)
+        self.assertIn(node, [n['node_id'] for n in canvas.unread_by_agent(self.store, task)])
 
 
 def load_tests(loader, tests, pattern):
@@ -142,7 +172,7 @@ def load_tests(loader, tests, pattern):
     suite = loader.loadTestsFromTestCase(PostgresSpecific)
     # Reuse the same expectations on both backends, rather than implementing
     # weaker PostgreSQL copies of the authorization and lifecycle tests.
-    for name in ("test_contract", "test_rules", "test_rule_invalidation", "test_delivery", "test_auth", "test_authority",
+    for name in ("test_contract", "test_rules", "test_rule_invalidation", "test_delivery", "test_auth", "test_authority", "test_agent_rest_reads",
                  "test_trust", "test_github", "test_execution", "test_accounts", "test_minimal_e2e_regressions",
                  "test_slack_discovery", "test_discovery_guidance", "test_slack_conversation", "test_reconstructed_fixes", "test_routing_peers", "test_brief",
                  "test_proof", "test_finish_diff_integrity", "test_finish_disconnect", "test_review_invariants", "test_bounded_review",

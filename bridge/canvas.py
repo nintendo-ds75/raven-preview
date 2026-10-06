@@ -1528,6 +1528,11 @@ def get_tree(store, task_id: str) -> dict:
     # the tree says what is authorized.
     graph.expire_rules()
     graph.expire_drafts()
+    # A correction committed while this response is being assembled was not
+    # necessarily in the rows below. Never acknowledge it with an end-of-read
+    # timestamp merely because rendering the old snapshot took longer.
+    observed_revision = human_revisions(store, task_id)
+    observed_at = now()
     rows = graph.db.execute(_DECISION_SELECT + " WHERE d.run_id=? AND d.draft=0 ORDER BY d.created_at, d.rowid",
                             (task_id,)).fetchall()
     recovered = False
@@ -1695,7 +1700,8 @@ def get_tree(store, task_id: str) -> dict:
             "verdict_why": run["verdict_why"] or "", "counts": dict(counts),
             "needs_review": bool(run["needs_review"]) if "needs_review" in run.keys() else False,
             "model_pending": bool(_json_dict(run["discovery"]).get("model_pending")) or any(n.get("model_pending") for n in nodes),
-            "nodes": nest(""), "followups": followups, "observed_at": now(), "notes": notes,
+            "nodes": nest(""), "followups": followups, "observed_at": observed_at,
+            "observed_revision": observed_revision, "notes": notes,
             "scope_clarifications": scope_clarifications,
             "next": "; ".join(parts) if parts else ("no node waits on anyone" if nodes else _nothing_yet(run)),
             **({"review": review} if review is not None else {})}
@@ -2340,6 +2346,7 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
     watched = [node_id] if node_id else [nid for nid, n in before.items() if n["blocking"]]
     result = {"task_id": task_id, "timed_out": False, "waited_seconds": 0.0, "changed": [], "waiting_on": [],
               "counts": tree["counts"], "timeout_applied": timeout, "observed_at": tree["observed_at"],
+              "observed_revision": tree.get('observed_revision', {}),
               **({"review": tree["review"]} if tree.get("review") is not None else {})}
     if tree.get('scope_clarifications'):
         return {**result, 'scope_clarifications': tree['scope_clarifications'], 'next': tree['next']}
@@ -2417,6 +2424,7 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
     result["changed"] = changed
     result["counts"] = tree["counts"]
     result["observed_at"] = tree["observed_at"]
+    result['observed_revision'] = tree.get('observed_revision', {})
     if tree.get("review") is not None:
         result["review"] = tree["review"]
     still = [n for n in _flatten(tree["nodes"]) if n["blocking"] and (not node_id or n["node_id"] == node_id)]
@@ -2448,13 +2456,49 @@ PEOPLE_EVENTS = ("owner_approved", "answer_corrected", "signoff", "signature", "
                  "question_reframed")
 
 
-def note_agent_read(store, task_id: str, observed_at: str) -> None:
-    """The agent read the whole tree as it stood at observed_at."""
-    if not task_id or not observed_at:
-        return
+def human_revisions(store, task_id: str) -> dict:
+    """Snapshot the append-only human-event log before reading decision rows.
+
+    IDs alone are not a commit watermark on PostgreSQL: a transaction with a
+    smaller allocated ID can commit later, including for the same decision.
+    Its arrival changes the count even when the greatest ID stays unchanged.
+    """
+    marks = ','.join('?' for _ in PEOPLE_EVENTS)
+    return {r['decision_id']: {'max_event_id': int(r['max_id']), 'event_count': int(r['event_count'])}
+            for r in store.graph.db.execute(
+                'SELECT decision_id, max(id) AS max_id, count(*) AS event_count FROM events '
+                f'WHERE run_id=? AND decision_id IS NOT NULL AND kind IN ({marks}) GROUP BY decision_id',
+                (task_id, *PEOPLE_EVENTS))}
+
+
+def _receipt_covers(seen, revision) -> bool:
+    return isinstance(seen, dict) and all(type(seen.get(key)) is int and seen[key] >= revision[key]
+                                         for key in ('max_event_id', 'event_count'))
+
+
+def note_agent_read(store, task_id: str, observed_at: str, observed_revision: dict,
+                    full_node_ids: set[str]) -> bool:
+    """Acknowledge only a complete set of unread, fully returned decisions.
+
+    A whole-task wait may return no answers, or only the new changes while an
+    older unread sibling is omitted. Neither its timestamp nor a client's
+    `since` cursor is evidence that those omitted answers were read.
+    """
+    if not task_id or not observed_at or not isinstance(observed_revision, dict):
+        return False
     with store.graph.transaction():
-        store.graph.db.execute("UPDATE runs SET agent_read_at=? WHERE id=? AND agent_read_at < ?",
-                               (observed_at, task_id, observed_at))
+        run = _task(store, task_id)
+        receipts = _json_dict(run['agent_read_events'])
+        unread = {did: revision for did, revision in observed_revision.items()
+                  if not _receipt_covers(receipts.get(did), revision)}
+        if set(unread) - full_node_ids:
+            return False
+        receipts.update(unread)
+        store.graph.db.execute(
+            'UPDATE runs SET agent_read_events=?, agent_read_at=CASE WHEN agent_read_at < ? '
+            'THEN ? ELSE agent_read_at END WHERE id=?',
+            (json.dumps(receipts, sort_keys=True), observed_at, observed_at, task_id))
+    return True
 
 
 def unread_by_agent(store, task_id: str) -> list[dict]:
@@ -2466,16 +2510,29 @@ def unread_by_agent(store, task_id: str) -> list[dict]:
     to read before finishing; nothing made it, and with no model to read
     the diff the finish would have said only that the decision was
     authorized."""
-    row = store.graph.db.execute("SELECT agent_read_at FROM runs WHERE id=?", (task_id,)).fetchone()
+    row = store.graph.db.execute("SELECT agent_read_events FROM runs WHERE id=?", (task_id,)).fetchone()
     if row is None:
         return []
-    marks = ",".join("?" * len(PEOPLE_EVENTS))
+    receipts = _json_dict(row['agent_read_events'])
     out = []
-    for hit in graph_events(store, task_id, row["agent_read_at"] or "", marks):
-        n = node_view(store, hit["decision_id"])
+    for did, revision in human_revisions(store, task_id).items():
+        if _receipt_covers(receipts.get(did), revision):
+            continue
+        n = node_view(store, did)
         who = n.get("signed_by") or n.get("answered_by") or n.get("owner") or "a person"
         out.append({"node_id": n["node_id"], "question": n["question"], "by": who, "status": n["status"]})
     return out
+
+
+def require_agent_read(store, data) -> None:
+    """The same observed-answer gate for every authenticated agent finish path."""
+    task_id = data.get('task_id', '')
+    # Preserve the existing pending-authorization refusal before the unread
+    # check, and permit an accidental unanswered task to be abandoned.
+    if data.get('status') != 'abandoned' and not store.graph.blocking_nodes(task_id):
+        unread = unread_by_agent(store, task_id)
+        if unread:
+            raise Invalid(unread_refusal(unread))
 
 
 def unread_refusal(unread: list[dict]) -> str:

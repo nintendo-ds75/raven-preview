@@ -246,6 +246,10 @@ _RUN_COLUMNS = [
     # When the agent last read the tree over MCP: what people did after
     # that is news to it, and the finish waits until it has read it.
     ("agent_read_at", "TEXT NOT NULL DEFAULT ''"),
+    # Per-decision receipts for committed human events. Timestamps can tie and
+    # PostgreSQL sequence IDs can commit out of order; retain both count and
+    # greatest ID. Legacy/imported tasks require a fresh complete read.
+    ("agent_read_events", "TEXT NOT NULL DEFAULT '{}'"),
     # What holds for the whole task (release, customer), as JSON: every
     # node inherits it unless it states its own value.
     ("facts", "TEXT NOT NULL DEFAULT ''"),

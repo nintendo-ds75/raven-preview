@@ -14,6 +14,7 @@ from unittest.mock import patch
 from fixtures import OfflineCase
 from bridge import canvas
 from bridge.config import Config
+from bridge.mcp import call_tool
 from bridge.store import Store
 
 
@@ -259,6 +260,159 @@ class DiscoveryGuidanceTests(OfflineCase):
             self.assertIn('same complete diff and checks', guidance)
             self.assertIn('proof', guidance)
         self.assertIn('this same task', result['task']['next'])
+
+    def test_correction_after_tree_rows_were_read_remains_unread(self):
+        parent = self.node(context=GOAL)
+        self.store.answer(parent['node_id'], {'answer': ANSWER})
+        child = self.node('What monitoring is needed?', parent_id=parent['node_id'], category='ops')
+        self.store.answer(child['node_id'], {'answer': 'Record errors only.'})
+        call_tool(self.store, 'bridge_get_tree', {'task_id': self.task})
+        original_view = canvas._view
+        corrected = False
+        replacement = 'Correction: keep the existing API; do not add the formatter.'
+
+        def correct_after_snapshot(row, *args, **kwargs):
+            nonlocal corrected
+            if row['id'] == parent['node_id'] and not corrected:
+                corrected = True
+                self.store.answer(parent['node_id'], {'answer': replacement})
+            return original_view(row, *args, **kwargs)
+
+        with patch('bridge.canvas._view', side_effect=correct_after_snapshot):
+            tree = call_tool(self.store, 'bridge_get_tree', {'task_id': self.task})
+        self.assertTrue(corrected)
+        self.assertEqual(tree['nodes'][0]['answer'], ANSWER)
+        self.assertNotIn('answer', tree['nodes'][0]['children'][0]['parent'])
+        self.assertNotIn(replacement, json.dumps(tree))
+        current = self.store.get_decision(parent['node_id'])
+        self.assertLess(tree['observed_at'], current['updated_at'])
+        self.assertIn(parent['node_id'], [n['node_id'] for n in canvas.unread_by_agent(self.store, self.task)])
+        # The next complete tree carries the correction and may acknowledge it.
+        reread = call_tool(self.store, 'bridge_get_tree', {'task_id': self.task})
+        self.assertEqual(reread['nodes'][0]['answer'], replacement)
+        self.assertEqual(canvas.unread_by_agent(self.store, self.task), [])
+
+    def test_truncated_resume_does_not_acknowledge_an_omitted_parent_correction(self):
+        for i in range(20):
+            self.graph.add_decision(self.task, f'Other question {i}?', 'ops', 'pending')
+        parent = self.node(context=GOAL)
+        self.store.answer(parent['node_id'], {'answer': ANSWER})
+        call_tool(self.store, 'bridge_get_tree', {'task_id': self.task})
+        observed = self.graph.get_task(self.task)['agent_read_at']
+        replacement = 'Correction after the first twenty nodes: preserve the original API.'
+        self.store.answer(parent['node_id'], {'answer': replacement})
+        resumed = call_tool(self.store, 'bridge_start_task', {'task_id': self.task})
+        self.assertEqual(len(resumed['existing_nodes']), 20)
+        self.assertFalse(resumed['existing_nodes_complete'])
+        self.assertNotIn(replacement, json.dumps(resumed))
+        self.assertEqual(self.graph.get_task(self.task)['agent_read_at'], observed)
+        self.assertIn(parent['node_id'], [n['node_id'] for n in canvas.unread_by_agent(self.store, self.task)])
+
+    def test_standalone_child_and_node_wait_do_not_acknowledge_the_whole_task(self):
+        parent = self.node(context=GOAL)
+        self.store.answer(parent['node_id'], {'answer': ANSWER})
+        child = self.node('What monitoring is needed?', parent_id=parent['node_id'], category='ops')
+        self.store.answer(child['node_id'], {'answer': 'Record errors only.'})
+        call_tool(self.store, 'bridge_get_tree', {'task_id': self.task})
+        observed = self.graph.get_task(self.task)['agent_read_at']
+        replacement = 'Correction: preserve the original API.'
+        self.store.answer(parent['node_id'], {'answer': replacement})
+        alone = canvas.node_view(self.store, child['node_id'])
+        self.assertEqual(alone['parent']['answer'], replacement)
+        waited = call_tool(self.store, 'bridge_wait', {
+            'task_id': self.task, 'node_id': child['node_id'], 'timeout': '0', 'since': observed})
+        self.assertEqual(waited['changed'][0]['parent']['answer'], replacement)
+        self.assertEqual(self.graph.get_task(self.task)['agent_read_at'], observed)
+        self.assertIn(parent['node_id'], [n['node_id'] for n in canvas.unread_by_agent(self.store, self.task)])
+
+    def _assert_empty_wait_cannot_acknowledge_an_unseen_answer(self, since=None):
+        node = self.node()
+        self.store.answer(node['node_id'], {'answer': ANSWER})
+        args = {'task_id': self.task, 'timeout': '0'}
+        if since is not None:
+            args['since'] = since
+        result = call_tool(self.store, 'bridge_wait', args)
+        self.assertEqual(result['changed'], [])
+        self.assertEqual(self.graph.get_task(self.task)['agent_read_at'], '')
+        self.assertIn(node['node_id'], [n['node_id'] for n in canvas.unread_by_agent(self.store, self.task)])
+
+    def test_whole_wait_without_since_cannot_acknowledge_an_omitted_answer(self):
+        self._assert_empty_wait_cannot_acknowledge_an_unseen_answer()
+
+    def test_whole_wait_with_future_since_cannot_acknowledge_an_omitted_answer(self):
+        self._assert_empty_wait_cannot_acknowledge_an_unseen_answer('2999-01-01T00:00:00+00:00')
+
+    def test_whole_wait_does_not_acknowledge_a_previous_unread_sibling(self):
+        current = self.node('What monitoring should run?', category='ops')
+        earlier = self.node('What is the rollout window?', category='rollout')
+        self.store.answer(earlier['node_id'], {'answer': 'The rollout window is Tuesday.'})
+
+        def answer_current(_seconds):
+            self.store.answer(current['node_id'], {'answer': 'Monitor failures.'})
+
+        result = call_tool(self.store, 'bridge_wait', {'task_id': self.task, 'timeout': '5'},
+                           sleep=answer_current)
+        self.assertEqual([n['node_id'] for n in result['changed']], [current['node_id']])
+        self.assertEqual(self.graph.get_task(self.task)['agent_read_at'], '')
+        self.assertIn(earlier['node_id'], [n['node_id'] for n in canvas.unread_by_agent(self.store, self.task)])
+
+    def test_whole_wait_acknowledges_a_genuinely_complete_changed_set(self):
+        nodes = [self.node('What monitoring should run?', category='ops'),
+                 self.node('What is the rollout window?', category='rollout')]
+
+        def answer_both(_seconds):
+            for i, node in enumerate(nodes):
+                self.store.answer(node['node_id'], {'answer': f'Task-only decision {i}.'})
+
+        result = call_tool(self.store, 'bridge_wait', {'task_id': self.task, 'timeout': '5'}, sleep=answer_both)
+        self.assertEqual({n['node_id'] for n in result['changed']}, {n['node_id'] for n in nodes})
+        self.assertTrue(all(n['answer'] for n in result['changed']))
+        self.assertEqual(canvas.unread_by_agent(self.store, self.task), [])
+
+    def test_same_timestamp_correction_is_still_unread(self):
+        stamp = '2026-10-06T10:00:00.000000+00:00'
+        with patch('bridge.store.now', return_value=stamp), patch('bridge.graph.now_iso', return_value=stamp), \
+                patch('bridge.canvas.now', return_value=stamp):
+            node = self.node()
+            self.store.answer(node['node_id'], {'answer': ANSWER})
+            first = call_tool(self.store, 'bridge_get_tree', {'task_id': self.task})
+            self.assertEqual(canvas.unread_by_agent(self.store, self.task), [])
+            self.store.answer(node['node_id'], {'answer': 'Correction at the same timestamp.'})
+            self.assertEqual(self.store.get_decision(node['node_id'])['updated_at'], first['observed_at'])
+            self.assertIn(node['node_id'], [n['node_id'] for n in canvas.unread_by_agent(self.store, self.task)])
+
+    def test_late_lower_id_human_event_is_still_unread_on_the_same_decision(self):
+        node = self.node()
+        self.store.answer(node['node_id'], {'answer': ANSWER})
+        highest = self.graph.db.execute('SELECT max(id) FROM events').fetchone()[0]
+        stamp = '2026-10-06T10:00:00.000000+00:00'
+        insert = 'INSERT INTO events(id,decision_id,run_id,kind,detail,created_at) VALUES(?,?,?,?,?,?)'
+        # Simulate PostgreSQL allocating N before N+1 but committing N later.
+        self.graph.db.execute(insert, (highest + 2, node['node_id'], self.task, 'answer_corrected', '{}', stamp))
+        before = call_tool(self.store, 'bridge_get_tree', {'task_id': self.task})['observed_revision'][node['node_id']]
+        self.graph.db.execute(insert, (highest + 1, node['node_id'], self.task, 'answer_corrected', '{}', stamp))
+        after = canvas.human_revisions(self.store, self.task)[node['node_id']]
+        self.assertEqual(after['max_event_id'], before['max_event_id'])
+        self.assertEqual(after['event_count'], before['event_count'] + 1)
+        self.assertIn(node['node_id'], [n['node_id'] for n in canvas.unread_by_agent(self.store, self.task)])
+
+    def test_human_revision_snapshot_uses_one_grouped_query_for_many_nodes(self):
+        for i in range(24):
+            did = self.graph.add_decision(self.task, f'Decision {i}?', 'ops', 'pending', owner='Nisha Bell')
+            self.store.answer(did, {'answer': f'Task-only answer {i}.'})
+        connection = self.graph.db
+        statements = []
+
+        class CountedConnection:
+            def execute(self, sql, *args):
+                statements.append(sql)
+                return connection.execute(sql, *args)
+
+        with patch.object(self.graph._local, 'db', CountedConnection()):
+            revisions = canvas.human_revisions(self.store, self.task)
+        self.assertEqual(len(revisions), 24)
+        self.assertEqual(len(statements), 1)
+        self.assertIn('GROUP BY decision_id', statements[0])
 
 
 if __name__ == '__main__':
