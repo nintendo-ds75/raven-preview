@@ -1250,24 +1250,41 @@ class Graph:
         scored.sort(key=lambda x: (-x[0], x[1]["created_at"] or ""))
         return [r for _, r in scored[:limit]]
 
-    def _fts_ids(self, table: str, terms: Iterable[str], limit: int = 20) -> set[str]:
+    def _fts_ids(self, table: str, terms: Iterable[str], limit: int = 20, *,
+                 repo: str = "", statuses: tuple | None = None) -> set[str]:
+        """Rank eligible rows before taking the candidate budget.
+
+        A global top-N followed by scope filtering can lose every local
+        match. Decision retrieval uses the same eligibility predicate as
+        its final row read, on both backends; irrelevant repositories or
+        retired/unsigned-derived rows never consume that budget.
+        """
         if not self.has_fts:
             return set()
         words = [t for t in terms if t.replace("_", "").isalnum() and len(t) > 2]
         if not words:
             return set()
+        relation = {"decisions_fts": "decisions", "intents_fts": "intents"}[table]
+        scope, args = "", []
+        if relation == "decisions" and statuses is not None:
+            scope, args = self._memory_filter(statuses, repo)
+        elif repo:
+            scope = "(d.repo=? OR d.repo='')" if relation == "decisions" else "d.repo=?"
+            args = [repo]
+        where = " AND " + scope if scope else ""
         if self.postgres:
-            relation = {"decisions_fts": "decisions", "intents_fts": "intents"}[table]
             rows = self.db.execute(
-                f"SELECT id FROM {relation}, websearch_to_tsquery('english', ?) AS query "
-                "WHERE search_vector @@ query ORDER BY ts_rank(search_vector, query) DESC LIMIT ?",
-                (" OR ".join(words[:24]), limit)).fetchall()
+                f"SELECT d.id FROM {relation} d, websearch_to_tsquery('english', ?) AS query "
+                "WHERE d.search_vector @@ query" + where +
+                " ORDER BY ts_rank(d.search_vector, query) DESC LIMIT ?",
+                [" OR ".join(words[:24]), *args, limit]).fetchall()
             return {r["id"] for r in rows}
         query = " OR ".join('"' + w.replace('"', '') + '"' for w in words[:24])
         try:
             rows = self.db.execute(
-                f"SELECT id FROM {table} WHERE {table} MATCH ? ORDER BY bm25({table}) LIMIT ?",
-                (query, limit)).fetchall()
+                f"SELECT d.id FROM {table} JOIN {relation} d ON d.id={table}.id "
+                f"WHERE {table} MATCH ?" + where + f" ORDER BY bm25({table}) LIMIT ?",
+                [query, *args, limit]).fetchall()
         except sqlite3.OperationalError:
             return set()
         return {r["id"] for r in rows}
@@ -1883,16 +1900,10 @@ class Graph:
         sql += " ORDER BY d.updated_at DESC LIMIT ?"
         return [_row_to_decision(r) for r in self.db.execute(sql, args + (limit,)).fetchall()]
 
-    def _memory_rows(self, statuses: tuple, repo: str, ids: set[str] | None = None) -> list[sqlite3.Row]:
-        """The rows memory is made of. A row that was itself derived from
-        memory or a record, and that no person signed here, is left out:
-        it adds nothing its source does not, and it would let one reuse
-        breed another (a rule's authorization included, under a name
-        that never reviewed this question). An unsigned answer the agent
-        settled stays in, as a prediction the ladder labels as such.
-        With `ids`, only those rows."""
+    def _memory_filter(self, statuses: tuple, repo: str) -> tuple[str, list]:
+        """One eligibility predicate for counting, ranking and fetching memory."""
         marks = ",".join("?" for _ in statuses)
-        sql = (_DECISION_SELECT + f" WHERE d.status IN ({marks}) AND d.superseded_by='' AND d.draft=0")
+        sql = f"d.status IN ({marks}) AND d.superseded_by='' AND d.draft=0"
         args: list = list(statuses)
         excluded = getattr(self._local, 'model_exclude', '')
         if excluded:
@@ -1904,6 +1915,18 @@ class Graph:
         if repo:
             sql += " AND (d.repo=? OR d.repo='')"
             args.append(repo)
+        return sql, args
+
+    def _memory_rows(self, statuses: tuple, repo: str, ids: set[str] | None = None) -> list[sqlite3.Row]:
+        """The rows memory is made of. A row that was itself derived from
+        memory or a record, and that no person signed here, is left out:
+        it adds nothing its source does not, and it would let one reuse
+        breed another (a rule's authorization included, under a name
+        that never reviewed this question). An unsigned answer the agent
+        settled stays in, as a prediction the ladder labels as such.
+        With `ids`, only those rows."""
+        scope, args = self._memory_filter(statuses, repo)
+        sql = _DECISION_SELECT + " WHERE " + scope
         if ids is not None:
             out: list[sqlite3.Row] = []
             wanted = list(ids)
@@ -1914,13 +1937,8 @@ class Graph:
         return self.db.execute(sql, args).fetchall()
 
     def _memory_count(self, statuses: tuple, repo: str) -> int:
-        marks = ",".join("?" for _ in statuses)
-        sql = f"SELECT count(*) c FROM decisions d WHERE d.status IN ({marks}) AND d.superseded_by='' AND d.draft=0"
-        args: list = list(statuses)
-        if repo:
-            sql += " AND (d.repo=? OR d.repo='')"
-            args.append(repo)
-        return int(self.db.execute(sql, args).fetchone()["c"])
+        scope, args = self._memory_filter(statuses, repo)
+        return int(self.db.execute("SELECT count(*) c FROM decisions d WHERE " + scope, args).fetchone()["c"])
 
     def _bounded_rows(self, statuses: tuple, repo: str, query: str = "") -> list[sqlite3.Row]:
         """The candidate rows one similarity pass scores. A memory under
@@ -1929,8 +1947,9 @@ class Graph:
         terms (BM25 order, CANDIDATE_FTS of them), plus the newest
         CANDIDATE_RECENT rows, so a question is still matched against
         what it shares words with and against what was decided lately,
-        in time that does not grow with the memory. Without FTS5 or a
-        query the newest rows alone bound the pass."""
+        with bounded scoring work. Both budgets apply after repository
+        and memory-eligibility filtering. Without FTS5 or a query the
+        newest eligible rows alone bound the pass."""
         if self._memory_count(statuses, repo) <= FULL_SCAN_MAX:
             return self._memory_rows(statuses, repo)
         ids: set[str] = set()
@@ -1938,13 +1957,10 @@ class Graph:
             import re as _re
             from .llm import stem
             terms = sorted({stem(t) for t in _re.findall(r"[a-z0-9]{3,}", query.lower())} - _STOP)
-            ids |= self._fts_ids("decisions_fts", terms, limit=CANDIDATE_FTS)
-        marks = ",".join("?" for _ in statuses)
-        sql = f"SELECT id FROM decisions d WHERE d.status IN ({marks}) AND d.superseded_by='' AND d.draft=0"
-        args: list = list(statuses)
-        if repo:
-            sql += " AND (d.repo=? OR d.repo='')"
-            args.append(repo)
+            ids |= self._fts_ids("decisions_fts", terms, limit=CANDIDATE_FTS,
+                                 repo=repo, statuses=statuses)
+        scope, args = self._memory_filter(statuses, repo)
+        sql = "SELECT d.id FROM decisions d WHERE " + scope
         ids |= {r["id"] for r in self.db.execute(sql + " ORDER BY updated_at DESC LIMIT ?", args + [CANDIDATE_RECENT])}
         return self._memory_rows(statuses, repo, ids=ids)
 
@@ -2271,7 +2287,9 @@ class Graph:
         floor 0.7) so recency breaks more than exact ties. Rows superseded
         by a correction, an overturn, or an explicit supersedes link are
         never returned, and when two candidates are the same decision
-        (question overlap at least 0.7) only the newest survives.
+        (question overlap at least 0.7 and compatible recorded scope)
+        only the newest survives. Distinct or uncertain historical scopes
+        stay visible; retrieval does not establish facts about this query.
         """
         from .llm import embed, stem
         import re
@@ -2280,7 +2298,8 @@ class Graph:
         if not qset:
             return []
         qemb = embed(query)
-        fts_hits = self._fts_ids("decisions_fts", sorted(qset), limit=limit * 4 + 10)
+        fts_hits = self._fts_ids("decisions_fts", sorted(qset), limit=limit * 4 + 10,
+                                 repo=repo, statuses=MEMORY_STATUSES)
         rows = self._bounded_rows(MEMORY_STATUSES, repo, query)
         superseded_ids = {r["supersedes"] for r in rows if r["supersedes"]}
         scored: list[tuple[float, float, sqlite3.Row, float]] = []
@@ -2304,15 +2323,17 @@ class Graph:
             scored.append((sim * (0.7 + 0.3 * recency), sim, row, iso_to_ts(row["updated_at"])))
         scored.sort(key=lambda x: (-x[0], -x[3]))
         # Newest link governs: when two candidates share the subject (at
-        # least half the question's terms) and the newer one is a real
-        # match, the older one never outranks it, whatever its overlap.
+        # least half the question's terms) within the same recorded scope
+        # and the newer one is a real match, the older one never outranks
+        # it, whatever its overlap. Another customer is not a correction.
         subj = [({stem(t) for t in re.findall(r"[a-z0-9]{3,}", row["question"].lower())} - _STOP, ts)
                 for _, _, row, ts in scored]
+        scopes = [_memory_scope_signature(row) for _, _, row, _ in scored]
         eff = [x[0] for x in scored]
         demoted: dict[int, str] = {}
         for i in range(len(scored)):
             for j in range(len(scored)):
-                if i == j or subj[j][1] <= subj[i][1]:
+                if i == j or subj[j][1] <= subj[i][1] or scopes[i] != scopes[j]:
                     continue
                 a, b = subj[i][0], subj[j][0]
                 if a and b and len(a & b) / min(len(a), len(b)) >= 0.5 and scored[j][1] >= 0.5:
@@ -2322,17 +2343,18 @@ class Graph:
                   for k in range(len(scored))]
         scored.sort(key=lambda x: (-x[0], -x[3]))
         out: list[dict] = []
-        kept_terms: list[set[str]] = []
+        kept_scopes: list[tuple[set[str], tuple]] = []
         for eff, sim, row, ts, demoted_by in scored:
             terms = {stem(t) for t in re.findall(r"[a-z0-9]{3,}", row["question"].lower())} - _STOP
+            scope = _memory_scope_signature(row)
             same = False
-            for kt in kept_terms:
-                if kt and terms and len(kt & terms) / min(len(kt), len(terms)) >= 0.7:
+            for kt, kept_scope in kept_scopes:
+                if scope == kept_scope and kt and terms and len(kt & terms) / min(len(kt), len(terms)) >= 0.7:
                     same = True
                     break
             if same:
                 continue
-            kept_terms.append(terms)
+            kept_scopes.append((terms, scope))
             item = dict(row)
             item.pop("embedding", None)
             item["similarity"] = round(sim, 2)
@@ -2345,6 +2367,34 @@ class Graph:
             if len(out) >= limit:
                 break
         return out
+
+
+def _memory_scope_signature(row) -> tuple:
+    """Conservative equivalence for suppressing historical candidates.
+
+    Similar questions alone do not identify the same decision. Compare
+    recorded scope, including missing versus stated facts, without mining
+    an answer or context for facts about the current task. Context-only
+    legacy rows remain distinct unless their recorded context agrees.
+    Explicit supersession is handled separately by the memory predicate.
+    """
+    def text(value):
+        return " ".join((value or "").lower().split())
+
+    def structured(value):
+        try:
+            return json.dumps(json.loads(value or "null"), sort_keys=True, separators=(",", ":"))
+        except (ValueError, TypeError):
+            return str(value or "")
+
+    facts = parse_facts(row["facts"])
+    fact_key = tuple(sorted((key, text(value)) for key, value in facts.items()))
+    # Malformed legacy scope is uncertainty, not proof of an empty scope.
+    if not facts and row["facts"] and structured(row["facts"]) != "{}":
+        fact_key = (("", str(row["facts"])),)
+    return (row["repo"], row["scope_key"], fact_key, text(row["context"]),
+            (row["path"] or "").strip().lstrip("/"), structured(row["scope_paths"]),
+            structured(row["applicability"]))
 
 
 _STOP = {"the", "and", "for", "this", "that", "does", "with", "from", "are", "what",
