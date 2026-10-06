@@ -81,6 +81,69 @@ def missing_scope_qualifiers(action, message):
             if marker.search(message or '') and not marker.search(action.get('answer') or '')]
 
 
+# A narrow contradiction check, not an intent classifier: only an explicit
+# first-person answer amendment can challenge a model-proposed reframe.
+# Anchoring excludes quoted examples, task/source text and other speakers.
+_ANSWER_AMENDMENT = re.compile(
+    r"\A\s*(?:(?:actually|correction)[,:]\s*)?(?:"
+    r"(?:i\s+(?:(?:need|want|intend)\s+to\s+|would\s+like\s+to\s+)?|please\s+)"
+    r"(?:correct|amend|revise|replace|update|change)\s+my\s+"
+    r"(?:(?:earlier|previous|prior|original|last)\s+)?(?:answer|decision)\b"
+    r"|my\s+(?:corrected|amended|revised|replacement|updated)\s+(?:answer|decision)\s*(?:is\b|:))", re.I)
+_QUESTION_EDIT = re.compile(
+    r"\b(?:correct|amend|revise|replace|update|change|reframe)\s+"
+    r"(?:(?:the|this|our|your|my)\s+)?(?:(?:current|original|earlier|previous)\s+)?question\b"
+    r"|\b(?:the|this|our|your|my)\s+(?:(?:current|original|earlier|previous)\s+)?question\s+"
+    r"(?:is\s+(?:wrong|mistaken|incorrect)|should\s+(?:be|ask)|needs\s+(?:correction|reframing))\b", re.I)
+
+
+def explicit_answer_amendment(message):
+    text = message or ''
+    if not _ANSWER_AMENDMENT.match(text):
+        return False
+    # Mixed requests which explicitly correct the question still need ordinary
+    # inference. A negated question edit is not such a request.
+    for edit in _QUESTION_EDIT.finditer(text):
+        if not re.search(r"\b(?:not|never|don['’]t)\s+$", text[:edit.start()], re.I):
+            return False
+    return True
+
+
+def validated_reading(cfg, payload):
+    """One repair budget across intent and scope guards; never repair a repair."""
+    from .delivery import _CONFIRM_RE
+    require_answer = False
+    for attempt in range(2):
+        action = reading(cfg, payload)
+        kind = action['kind']
+        error = ''
+        if kind == 'reframe' and explicit_answer_amendment(payload['message']):
+            require_answer = True
+            error = ('The person explicitly amended their answer, not the question. Return an answer '
+                     'preserving the complete replacement or all unaffected requirements of the earlier answer. '
+                     'Do not reframe the question or sign off the old answer.')
+        elif require_answer and (kind != 'answer' or not action.get('answer', '').strip()):
+            error = 'The repair must supply the complete amended answer, not another action or an empty answer.'
+        elif kind == 'confirm' and not _CONFIRM_RE.match(payload['message']):
+            # Code recognizes confirmations before calling the model.
+            error = ('This message was not an explicit confirmation. Re-read it as an amendment, '
+                     'question, context or chat. Preserve all unaffected requirements when amending the pending answer.')
+        if not error:
+            missing = missing_scope_qualifiers(action, payload['message'])
+            if missing:
+                require_answer = True
+                error = ('The answer omitted explicit human scope restrictions: ' + ', '.join(missing) +
+                         '. Return an answer preserving those restrictions verbatim and every other qualification. '
+                         'Task-only approval must not become a standing or reusable rule.')
+        if not error:
+            return action
+        if attempt:
+            raise LLMError(error)
+        # Only original evidence goes back to the model, not its rejected
+        # proposal. A repeated defect clears any older read-back in respond.
+        payload = {**payload, 'validation_error': error}
+
+
 def migrate(db):
     db.executescript('''CREATE TABLE IF NOT EXISTS slack_conversation (
         id TEXT PRIMARY KEY, decision_id TEXT NOT NULL, channel TEXT NOT NULL, thread_ts TEXT NOT NULL,
@@ -286,27 +349,7 @@ def respond(delivery, note, d, person, text, actor, action_token=''):
                  'history':history,'pending_readback':pending,'message':text,'sources':sources,
                  'today':now_iso()[:10]}
         try:
-            action=reading(cfg,payload); kind=action['kind']
-            if kind == 'confirm' and not _CONFIRM_RE.match(text):
-                # Confirmation is recognized by code. Ask for a new reading,
-                # never invite the person to sign a read-back that missed an edit.
-                payload['validation_error'] = ('This message was not an explicit confirmation. Re-read it as an amendment, '
-                    'question, context or chat. Preserve all unaffected requirements when amending the pending answer.')
-                action=reading(cfg,payload); kind=action['kind']
-                if kind == 'confirm':
-                    raise LLMError('The model could not distinguish this message from confirmation')
-            missing = missing_scope_qualifiers(action, text)
-            if missing:
-                # Retry once with the original human evidence, never with the
-                # rejected answer as a source. A second omission clears any
-                # older readback rather than inviting an overbroad confirmation.
-                payload['validation_error'] = (
-                    'The answer omitted explicit human scope restrictions: ' + ', '.join(missing) +
-                    '. Return an answer preserving those restrictions verbatim and every other qualification. '
-                    'Task-only approval must not become a standing or reusable rule.')
-                action = reading(cfg, payload); kind = action['kind']
-                if kind != 'answer' or missing_scope_qualifiers(action, text):
-                    raise LLMError('The conversation model omitted explicit answer scope restrictions')
+            action=validated_reading(cfg,payload); kind=action['kind']
             # Interpret the person's intent before introducing transient search
             # content. A polite referral or answer can also contain a question
             # mark; search must neither discard it nor supply its authorization.

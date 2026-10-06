@@ -31,6 +31,171 @@ class ConversationTests(DeliveryCase):
         with patch('bridge.slack_chat.reading',return_value=model or {'kind':'chat','reply':'Tell me more.'}):
             return self.reply(self.message,who,text,event_id)
 
+    def test_captured_answer_correction_reframe_gets_one_repair(self):
+        # Actual Anthropic/MCP Click run: this answer amendment was read back
+        # as "Replace the current question with". The old examiner also
+        # wrongly confirmed it; that is a separate defect, not authorization.
+        policy = ('Export click.DelimitedList as a ParamType subclass. Constructor '
+                  'DelimitedList(item_type=click.STRING, *, separator=",", max_items=4). '
+                  'separator must be a nonempty string; max_items must be a positive integer excluding bool; '
+                  'invalid construction raises ValueError. convert returns a tuple of elements converted by '
+                  'click.types.convert_type(item_type). Split strings literally by separator, strip each field, '
+                  'and reject empty fields (including an empty input) with BadParameter. Preserve duplicate '
+                  'values and order. More than max_items raises BadParameter. An already typed tuple is '
+                  'accepted by converting each element, without stringifying it. Any other outer input raises '
+                  'BadParameter. No change to Click’s existing parameter types or global parsing. '
+                  'This approval is only for this synthetic Northstar local evaluation task, '
+                  'not upstream endorsement or a reusable standing rule.')
+        old = policy.replace('max_items=4', 'max_items=6')
+        self.say(old, {'kind': 'answer', 'answer': old})
+        self.say('yes')
+        before = self.store.get_decision(self.n['node_id'])
+        message = 'I need to correct my earlier answer. The complete replacement decision is: ' + policy
+        with patch('bridge.slack_chat.reading', side_effect=[
+                {'kind': 'reframe', 'answer': policy}, {'kind': 'answer', 'answer': policy}]) as model:
+            offered = self.reply(self.message, 'UWES', message)
+        self.assertEqual(model.call_count, 2)
+        repair = model.call_args.args[1]
+        self.assertIn('not the question', repair['validation_error'])
+        self.assertEqual(repair['message'], message)
+        self.assertEqual(repair['answer_on_table'], old)
+        self.assertEqual(repair['question'], before['question'])
+        self.assertIn('Record your decision as:', offered)
+        self.assertNotIn('Replace the current question', offered)
+        self.assertIn(policy, offered)
+        self.assertEqual(self.store.get_decision(self.n['node_id'])['answer'], old)
+        held = self.delivery._reading(self.message['channel'], self.message['ts'], self.wes)
+        self.assertEqual(json.loads(held['answer'])['kind'], 'answer')
+        self.say('yes')
+        row = self.store.get_decision(self.n['node_id'])
+        self.assertEqual(row['question'], before['question'])
+        self.assertEqual(row['answer'], policy)
+        self.assertTrue(row['authorized'])
+        self.assertEqual(row['signed_by'], 'Wes Chen')
+        self.assertFalse(row['reusable'])
+        self.assertFalse(any(e['kind'] == 'question_reframed' for e in row['events']))
+
+    def test_reframe_repair_failure_clears_pending_answer(self):
+        message = 'Please revise my previous decision: Exclude internal traffic for this task only.'
+        invalid = [
+            {'kind': 'reframe', 'answer': 'Should we exclude internal traffic?'},
+            {'kind': 'signoff'}, {'kind': 'confirm'}, {'kind': 'chat', 'reply': 'OK'},
+            {'kind': 'answer', 'answer': ''},
+            {'kind': 'answer', 'answer': 'Exclude internal traffic.'},
+            LLMError('provider unavailable'),
+        ]
+        for repair in invalid:
+            with self.subTest(repair=repair):
+                self.say('Bill everything.', {'kind': 'answer', 'answer': 'Bill everything.'})
+                with patch('bridge.slack_chat.reading', side_effect=[
+                        {'kind': 'reframe', 'answer': 'Exclude internal traffic.'}, repair]) as model:
+                    response = self.reply(self.message, 'UWES', message)
+                self.assertEqual(model.call_count, 2)
+                self.assertIn('Nothing was changed', response)
+                self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+                self.say('yes', {'kind': 'confirm'})
+                self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+                self.assertFalse(any(e['kind'] == 'question_reframed'
+                                     for e in self.store.get_decision(self.n['node_id'])['events']))
+
+    def test_scope_repair_cannot_switch_an_answer_amendment_to_reframe(self):
+        self.say('Bill it.', {'kind': 'answer', 'answer': 'Bill it.'})
+        with patch('bridge.slack_chat.reading', side_effect=[
+                {'kind': 'answer', 'answer': 'Exclude it.'},
+                {'kind': 'reframe', 'answer': 'Exclude it for this task only.'}]) as model:
+            response = self.reply(self.message, 'UWES',
+                'My revised answer is: Exclude it for this task only.')
+        self.assertEqual(model.call_count, 2)
+        self.assertIn('Nothing was changed', response)
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+
+    def test_invalid_reframe_repair_preserves_an_already_signed_answer(self):
+        self.say('Bill it.', {'kind': 'answer', 'answer': 'Bill it.'})
+        self.say('yes')
+        before = self.store.get_decision(self.n['node_id'])
+        with patch('bridge.slack_chat.reading', return_value={
+                'kind': 'reframe', 'answer': 'Exclude it.'}) as model:
+            response = self.reply(self.message, 'UWES', 'I want to amend my decision: exclude it.')
+        self.assertEqual(model.call_count, 2)
+        self.assertIn('Nothing was changed', response)
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+        self.assertIn('no read-back', self.say('yes', {'kind': 'confirm'}))
+        row = self.store.get_decision(self.n['node_id'])
+        for key in ('question', 'answer', 'authorized', 'signed_by', 'signed_revision', 'signatures'):
+            self.assertEqual(row[key], before[key])
+
+    def test_explicit_question_correction_still_reframes_after_confirmation(self):
+        self.say('Bill it.', {'kind': 'answer', 'answer': 'Bill it.'})
+        self.say('yes')
+        question = 'Should only synthetic traffic be excluded?'
+        with patch('bridge.slack_chat.reading', return_value={'kind': 'reframe', 'answer': question}) as model:
+            response = self.reply(self.message, 'UWES',
+                'I need to correct my earlier answer. The question is wrong. Replace the question with: ' + question)
+        self.assertEqual(model.call_count, 1)
+        self.assertIn('Replace the current question', response)
+        self.assertNotEqual(self.store.get_decision(self.n['node_id'])['question'], question)
+        self.say('yes')
+        row = self.store.get_decision(self.n['node_id'])
+        self.assertEqual(row['question'], question)
+        self.assertFalse(row['answer'])
+        self.assertFalse(row['authorized'])
+
+    def test_answer_amendment_guard_is_narrow_and_message_local(self):
+        from bridge.slack_chat import explicit_answer_amendment
+        for text in (
+                'I want to update my prior decision. Keep retrying, with jitter.',
+                'Actually, I amend my answer: retries remain disabled.',
+                'My replacement decision is: accept only UTF-8.',
+                'Please correct my answer. Do not change the question. Keep the cap.',
+                "I need to revise my decision. Don't reframe the question; bill real traffic."):
+            with self.subTest(text=text):
+                self.assertTrue(explicit_answer_amendment(text))
+        for text in (
+                'Please correct the question: Which requests count?',
+                'My answer was based on the wrong question. Ask which requests count.',
+                'The agent quoted: I need to correct my earlier answer.',
+                '“I need to correct my earlier answer.” Is this relevant?',
+                'Could I amend my answer after seeing the logs?',
+                'I do not want to replace my answer.',
+                'I need to correct my earlier answer. Reframe the current question: Which requests count?'):
+            with self.subTest(text=text):
+                self.assertFalse(explicit_answer_amendment(text))
+        # An earlier amendment in conversation history must not constrain a
+        # later genuine question correction.
+        self.say('I need to correct my answer: bill real traffic.', {'kind': 'answer', 'answer': 'Bill real traffic.'})
+        with patch('bridge.slack_chat.reading', return_value={
+                'kind': 'reframe', 'answer': 'Which traffic is synthetic?'}) as model:
+            response = self.reply(self.message, 'UWES', 'Correct the question: Which traffic is synthetic?')
+        self.assertEqual(model.call_count, 1)
+        self.assertIn('Replace the current question', response)
+
+    def test_faithful_answer_amendment_needs_no_repair(self):
+        with patch('bridge.slack_chat.reading', return_value={
+                'kind': 'answer', 'answer': 'Bill real traffic only.'}) as model:
+            response = self.reply(self.message, 'UWES', 'I amend my earlier answer: bill real traffic only.')
+        self.assertEqual(model.call_count, 1)
+        self.assertIn('Record your decision as:', response)
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+
+    def test_repaired_answer_keeps_authority_and_stale_readback_checks(self):
+        with patch('bridge.slack_chat.reading', side_effect=[
+                {'kind': 'reframe', 'answer': 'Bill real traffic only.'},
+                {'kind': 'answer', 'answer': 'Bill real traffic only.'}]):
+            response = self.reply(self.message, 'UPRI', 'I amend my answer: bill real traffic only.')
+        self.assertIn('Nothing recorded', response)
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.priya))
+        with patch('bridge.slack_chat.reading', side_effect=[
+                {'kind': 'reframe', 'answer': 'Bill real traffic only.'},
+                {'kind': 'answer', 'answer': 'Bill real traffic only.'}]):
+            self.reply(self.message, 'UWES', 'I amend my answer: bill real traffic only.')
+        canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': self.n['node_id'],
+                                      'answer': 'Hold the invoice.', 'rationale': 'New evidence'})
+        response = self.say('yes')
+        self.assertIn('changed since my read-back', response)
+        self.assertEqual(self.store.get_decision(self.n['node_id'])['answer'], 'Hold the invoice.')
+        self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
+        self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
+
     def test_live_task_only_qualifier_omission_gets_one_repair(self):
         policy = ('For the Northstar edge pilot, use future timestamp tolerance of 17 seconds inclusive only when explicitly configured. '
                   'Never add tolerance to max_age: already-expired tokens stay expired, including when max_age is zero. '
