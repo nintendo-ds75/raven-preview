@@ -163,7 +163,7 @@ Embeddings are always local (a hashed bag of stemmed words); no embedding API is
 - Ownership: an ownership graph ingested from Git history, blame, CODEOWNERS, reviews and imported record authors, linked to Slack contacts. Answers and referrals teach scoped first contacts; explicit ownership overrides remain optional.
 - Decision memory: search signed and evidence-resolved answers by stemmed lexical overlap, hashed-embedding cosine, and backend-native text search (SQLite FTS5 or PostgreSQL), over question, context, answer, and rationale, recency-weighted, with superseded rows excluded and the newest of a same-subject pair ranked first.
 - The ladder: applicable prior answers and model-checked records can resolve with a citation; without answerability checking, retrieved records remain context for a person. Predictions are labeled as such and never sign-off; corrections withdraw dependent suggestions and supersede.
-- MCP: task, source-import, connection-status and evidence-export tools over the standard HTTP transport share the same data with the web inbox. None of them approves anything.
+- MCP: thirteen tools for tasks, source import, connection status and evidence export over the standard HTTP transport share the same data with the web inbox. None of them approves anything.
 - Visibility: activity feed, live inbox refresh, per-decision event history including every rung's verdict, the ownership graph, and full JSON history export.
 - Local protections: Host/Origin validation, CSRF tokens for REST writes, HTML escaping, a restrictive content security policy, and optimistic concurrency checks for inbox answers.
 
@@ -216,7 +216,7 @@ SLACK_BOT_TOKEN=xoxb-... SLACK_SIGNING_SECRET=... SLACK_FALLBACK_CHANNEL=C012345
 python3 -m bridge --host 0.0.0.0 --port 7333 --public-url https://bridge.acme.internal --db /srv/bridge/bridge.db
 ```
 
-Use the required scopes and Events API subscriptions in the supplied [manifest and setup guide](slack.md), including `assistant:write` and `search:read.public` for supported public-channel search. `SLACK_API_BASE` (default `https://slack.com/api`) points Raven at a Slack-compatible Web API instead, such as an egress proxy or an explicitly simulated test service. Subscribe to `message.im`, `message.channels` and `app_mention` at `<public-url>/webhooks/slack`; that URL must be reachable by Slack over HTTPS. The endpoint checks the signature and connected workspace. The fallback channel can also be set from the inbox (`slack_fallback_channel` under settings).
+Use all required bot scopes from the supplied [manifest and setup guide](slack.md): `chat:write`, `im:write`, `im:history`, `app_mentions:read`, `channels:history`, `users:read`, `users:read.email`, `assistant:write` and `search:read.public`. The last two enable supported public-channel search. `SLACK_API_BASE` (default `https://slack.com/api`) points Raven at a Slack-compatible Web API instead, such as an egress proxy or an explicitly simulated test service. Subscribe to `message.im`, `message.channels` and `app_mention` at `<public-url>/webhooks/slack`; that URL must be reachable by Slack over HTTPS. The endpoint checks the signature and connected workspace. The fallback channel can also be set from the inbox (`slack_fallback_channel` under settings).
 
 People reply in the thread Raven started. With inference enabled, they can ask for context, give or amend an answer, or refer the question in ordinary language. Raven reads the proposed action back for confirmation; a casual acknowledgement such as “OK” is not signoff. Explicit command shortcuts remain available:
 
@@ -258,7 +258,7 @@ If a relevant learned route depends on material facts missing from the current t
 
 **With inference configured**, a fast model (`BRIDGE_FAST_MODEL`) can map a question with no path to the tree's directories, write the brief the owner reads and advise the kickoff verdict from the same digest the rules saw. A prior decision or pending question on the paths still engages. Without inference the deterministic protocol remains available.
 
-The agent tools (the running server's `tools/list` is the authoritative schema):
+The thirteen tools exposed to agents (the running server's `tools/list` is the authoritative schema):
 
 | Tool | Purpose |
 | --- | --- |
