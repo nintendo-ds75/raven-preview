@@ -31,7 +31,7 @@ READ_ONLY_TOOLS = frozenset({
 
 def tool(name, description, properties, required):
     return {"name": name, "description": description, "inputSchema": {
-        "type": "object", "properties": {key: {"type": "string", "description": value} for key, value in properties.items()},
+        "type": "object", "properties": {key: value if isinstance(value, dict) else {"type": "string", "description": value} for key, value in properties.items()},
         "required": required, "additionalProperties": False}}
 
 
@@ -63,10 +63,12 @@ TOOLS = [
     tool("bridge_ingest_repo", "Build or refresh the ownership map and record graph from a local git checkout (shared HTTP instances require an operator credential; ordinary agent credentials use the checkout ingested during setup): git log, blame shares, CODEOWNERS, Reviewed-by trailers, merged and squashed PRs.",
          {"path": "Absolute path to a local git checkout", "repo": "Optional repository name override", "max_commits": "Optional history depth (0 = all)"}, ["path"]),
     tool("bridge_import_record", "Import a ticket, document or Slack record retrieved through your connected tools. Copy the source accurately, including status, author and permalink. This is evidence and a routing signal, never human authorization. Do not import secrets, unrelated private records, or Slack Real-time Search results (they must stay transient).",
-         {"repo": "Repository owner/name", "kind": "ticket, doc, slack or note", "ref": "Stable source identifier such as NET-102",
+         {"repo": "Repository owner/name", "kind": "ticket, jira, issue, doc, slack or note; kinds retain separate identities", "ref": "Stable source identifier such as NET-102",
           "title": "Source title", "body": "Source text", "author": "Source author's email, Slack member ID or full name",
           "url": "Original permalink", "status": "Source status including Cancelled, Superseded or Won't Do",
-          "paths": "Related repository paths, comma separated", "created_at": "Source timestamp in ISO format"}, ["repo", "kind", "ref"]),
+          "resolved": {"type": ["boolean", "string", "integer"], "description": "Source resolution flag, never Raven approval. False prevents settled evidence; open or unknown status also prevents it."},
+          "paths": {"type": ["string", "array"], "items": {"type": "string"}, "description": "Complete related-path snapshot, comma separated or array. Supplied replaces old paths, [] clears; omitted retains."},
+          "created_at": "Source timestamp in ISO format"}, ["repo", "kind", "ref"]),
     tool("bridge_connection_status", "Check ingestion, Slack contact discovery and delivery problems without opening the web UI. No manual ownership map or recipient accounts are required.", {}, []),
 ]
 
@@ -263,8 +265,12 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None):
         if key not in args:
             raise Invalid(f"Missing required argument: {key}")
     for key, value in args.items():
-        if not isinstance(value, str):
-            raise Invalid(f"Argument {key} must be a string")
+        spec = schema["properties"][key]
+        allowed = spec["type"] if isinstance(spec["type"], list) else [spec["type"]]
+        actual = ("boolean" if isinstance(value, bool) else "string" if isinstance(value, str)
+                  else "integer" if isinstance(value, int) else "array" if isinstance(value, list) else "unknown")
+        if actual not in allowed or actual == "array" and not all(isinstance(v, str) for v in value):
+            raise Invalid(f"Argument {key} must be {' or '.join(allowed)}")
     # A node still waiting on a person is refused by the finish itself,
     # naming who; an answer the agent has not read is the next gate.
     if name == "bridge_finish_task":

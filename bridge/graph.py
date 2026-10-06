@@ -1130,6 +1130,11 @@ class Graph:
                             [(repo, kind, ref, p) for p in paths])
         self._bump(repo)
 
+    def replace_intent_paths(self, repo: str, kind: str, ref: str, paths: Iterable[str]) -> None:
+        """Replace an explicitly supplied import snapshot; [] clears it."""
+        self.db.execute("DELETE FROM intent_paths WHERE repo=? AND kind=? AND ref=?", (repo, kind, ref))
+        self.add_intent_paths(repo, kind, ref, paths)
+
     def paths_of_intents(self, repo: str, refs: Iterable[tuple[str, str]]) -> dict[tuple[str, str], list[str]]:
         out: dict[tuple[str, str], list[str]] = {}
         for kind, ref in refs:

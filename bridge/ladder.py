@@ -589,7 +589,7 @@ def _contested_by_newer(store: Graph, repo: str, chosen) -> object | None:
     best, best_ts = None, chosen_ts
     for m in store.intents_matching(focus, limit=8, repo=repo):
         # A cancelled ticket on the same subject contests nothing.
-        if m["ref"] == chosen_ref or m["kind"] != "ticket" or _void(m):
+        if m["ref"] == chosen_ref or m["kind"] not in ("ticket", "jira", "issue") or _void(m):
             continue
         ts = _parse_ts(m["created_at"])
         if ts <= best_ts:
@@ -694,16 +694,19 @@ def records_line(records: list[dict]) -> str:
 
 
 def _is_settled(row) -> bool:
-    """The record states a decision that stands: not one that was never
-    adopted, and for a ticket, one marked resolved."""
-    if _void(row):
+    """Eligible settled evidence, for every source kind; never approval.
+
+    Explicit false and nonterminal/unknown states override optimistic defaults.
+    """
+    from .record_state import resolved_value, state_settled
+    if _void(row) or not state_settled(_field(row, "status")):
         return False
     try:
-        if row["kind"] != "ticket":
-            return True
-        return bool(row["resolved"])
+        return resolved_value(row["resolved"])
     except (IndexError, KeyError):
         return True
+    except ValueError:
+        return False
 
 
 def _ticket_state(row) -> str:

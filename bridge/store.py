@@ -1307,7 +1307,8 @@ class Store:
     def add_record(self, data):
         """A record from outside git: a ticket, a document, a chat decision.
         Kind and ref identify it (the same pair updates it), the url is its
-        immutable locator, the paths tie it to the areas it is about. It is
+        locator, the paths tie it to the areas it is about. Supplied paths
+        replace the snapshot (including []); omitted paths are unchanged. It is
         evidence the ladder can cite, never sign-off."""
         repo = repo_key(str(data.get("repo") or ""))
         kind = re.sub(r"[^a-z0-9_-]", "", str(data.get("kind") or "note").lower())[:30] or "note"
@@ -1322,15 +1323,21 @@ class Store:
         created = str(data.get("created_at") or now())[:40]
         url = str(data.get("url") or "")[:1000]
         status = str(data.get("status") or "")[:40]
-        resolved = data.get("resolved", True) not in (False, 0, "0", "false", "no")
+        from .record_state import resolved_value, state_settled
+        try:
+            resolved = resolved_value(data["resolved"]) if "resolved" in data else state_settled(status)
+        except ValueError as error:
+            raise Invalid(str(error)) from error
         paths = data.get("paths") or []
         if isinstance(paths, str):
             paths = [p.strip().lstrip("/") for p in re.split(r"[,\s]+", paths) if p.strip()]
+        if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
+            raise Invalid("paths must be a string or an array of strings")
         graph = self.graph
         with graph.transaction():
             graph.upsert_intent(repo, kind, ref, title, body, author, created, status=status, resolved=resolved)
-            if paths:
-                graph.add_intent_paths(repo, kind, ref, paths[:40])
+            if "paths" in data:
+                graph.replace_intent_paths(repo, kind, ref, paths[:40])
             if url:
                 graph.set_source(repo, f"url:{kind}:{ref}", url)
             graph.append_event("record_added", {"repo": repo, "kind": kind, "ref": ref, "url": url, "author": author})
