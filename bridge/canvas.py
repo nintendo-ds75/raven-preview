@@ -2002,6 +2002,7 @@ def _conformance(store, task_id: str, signed: list[dict], diff: str) -> list[dic
         out.append({"node_id": n["node_id"], "question": n.get("question") or "",
                     "verdict": read["verdict"], "why": read["why"],
                     "requirements": list(read.get("requirements") or []),
+                    **({"incomplete": True} if read.get("incomplete") else {}),
                     **({"unexamined": list(read["unexamined"])} if read.get("unexamined") else {})})
     return out
 
@@ -2234,7 +2235,8 @@ def _run_review(store, task_id: str, rid: str, diff_hash: str, signed: list[dict
         # any completed findings; an explicit finish retry can recover.
         from .config import load as load_config
         expected = {n["node_id"] for n in signed[:8] if (n.get("answer") or "").strip()}
-        if load_config().semantic_retrieval and expected - {r["node_id"] for r in follows}:
+        if load_config().semantic_retrieval and (expected - {r["node_id"] for r in follows}
+                                                 or any(r.get('incomplete') for r in follows)):
             status = "failed"
             print(f"Raven: reading the diff for task {task_id} returned incomplete model results", file=sys.stderr)
     except Exception as error:

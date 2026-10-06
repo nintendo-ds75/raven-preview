@@ -178,11 +178,37 @@ class ReviewRecoveryTests(ContractCase):
             first = self.finish(task)
         self.assertEqual(provider.call_count, 1)
         self.assertEqual(first["review"]["status"], "failed")
-        self.assertEqual(first["follows"], [])
+        self.assertEqual(first["follows"][0]["verdict"], "unclear")
+        self.assertTrue(first["follows"][0]["incomplete"])
+        self.assertIn("inconclusive", first["follows"][0]["why"])
         with patch("bridge.llm.check_conformance", return_value={
                 "verdict": "follows", "why": "The signed rate is present", "requirements": []}):
             recovered = self.finish(task)
         self.assertEqual(recovered["review"]["status"], "done")
+
+    def test_incomplete_structured_review_is_saved_with_findings_and_can_be_retried(self):
+        task, _ = self.signed_task()
+        finding = {'needs': 'Preserve the signed rate', 'state': 'unclear',
+                   'counterexample': {'what': 'A concrete path needs checking.', 'at': 'rate = 2', 'located': True}}
+        partial = {'verdict': 'unclear', 'why': 'The search is inconclusive.', 'requirements': [finding],
+                   'unexamined': ['The remaining paths were not checked.'], 'incomplete': True}
+        with patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1"}), \
+                patch("bridge.llm.check_conformance", return_value=partial) as reader:
+            first = self.finish(task)
+        self.assertEqual(reader.call_count, 1)
+        self.assertEqual(first['review']['status'], 'failed')
+        self.assertEqual(first['follows'][0]['requirements'], [finding])
+        self.assertTrue(first['follows'][0]['incomplete'])
+        self.assertIn('call bridge_finish_task again with the same diff', first['caveat'])
+        exported = proof.export(self.store, {'task_id': task})['bundle']
+        self.assertEqual(exported['payload']['review']['status'], 'failed')
+        self.assertTrue(exported['payload']['review']['follows'][0]['incomplete'])
+        with patch('bridge.llm.check_conformance', return_value={
+                'verdict': 'follows', 'why': 'Complete advisory read.', 'requirements': []}) as retry:
+            recovered = self.finish(task)
+        self.assertEqual(retry.call_count, 1)
+        self.assertEqual(recovered['review']['status'], 'done')
+        self.assertEqual(exported['payload']['review']['status'], 'failed')
 
     def test_partial_review_keeps_findings_and_names_retry(self):
         task, node = self.signed_task()

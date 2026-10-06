@@ -303,8 +303,8 @@ class FinishTests(CanvasCase):
                   "tests assert both the default and the jittered path with a seeded random source.")
         long = " ".join(["The requirement about copying the setting through new() is met by the change to new()."] * 30)
         needs = "every " * 120
-        replies = [{"requirements": [{"needs": "default stays 0.0", "kind": "must", "found": "honored"}], "why": medium},
-                   {"requirements": [{"needs": needs, "kind": "must", "found": "honored"}], "why": long}]
+        replies = [{"status": "complete", "requirements": [{"needs": "default stays 0.0", "kind": "must", "found": "honored"}], "why": medium},
+                   {"status": "complete", "requirements": [{"needs": needs, "kind": "must", "found": "honored"}], "why": long}]
         with patch.object(llm.Client, "complete_json", lambda self, *a, **k: replies.pop(0)):
             whole = llm.check_conformance(Config(), "q", "a", "+ diff")
             cut = llm.check_conformance(Config(), "q", "a", "+ diff")
@@ -332,13 +332,13 @@ class FinishTests(CanvasCase):
         env = patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1", "BRIDGE_CLAUDE_BIN": "/nonexistent/claude"})
         env.start()
         self.addCleanup(env.stop)
-        reply = {"requirements": [{"needs": "negatives stay invalid", "kind": "must", "found": "honored",
+        reply = {"status": "complete", "requirements": [{"needs": "negatives stay invalid", "kind": "must", "found": "honored",
                                    "at": "if value < 0: raise InvalidHeader(value)"},
                                   {"needs": "zero stays the default", "kind": "must", "found": "honored",
                                    "at": "default: float = 0"}], "why": ""}
         diff = "+    default: float = 0\n+    if value < 0: raise InvalidHeader(value)\n"
         with patch.object(llm.Client, "complete_json",
-                          lambda self, purpose, *a, **k: reply if purpose == "conformance" else ({"conditions": []} if purpose == "conditions" else {"checks": []})):
+                          lambda self, purpose, *a, **k: reply if purpose == "conformance" else ({"status": "complete", "conditions": []} if purpose == "conditions" else {"status": "complete", "checks": []})):
             read = llm.check_conformance(Config(), "Should -1 be accepted?", "Keep negatives invalid", diff)
         self.assertEqual(read["verdict"], "follows")
         self.assertEqual(read["why"], "Read as doing each thing it requires: negatives stay invalid; zero stays the default")
@@ -349,11 +349,11 @@ class FinishTests(CanvasCase):
 
         def complete_json(self, purpose, system, prompt, **kw):
             if purpose == "conditions":
-                return {"conditions": []}
+                return {"status": "complete", "conditions": []}
             prompts.append(prompt)
             if purpose == "counterexample":
-                return {"checks": [{"n": 1, "counterexample": "", "at": "", "not_shown": ""}]}
-            return {"requirements": [{"needs": "negatives stay invalid", "kind": "must", "found": "present",
+                return {"status": "complete", "checks": [{"n": 1, "counterexample": "", "at": "", "not_shown": ""}]}
+            return {"status": "complete", "requirements": [{"needs": "negatives stay invalid", "kind": "must", "found": "present",
                                       "at": "if value < 0: raise InvalidHeader(value)"}], "why": ""}
         env = patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1", "BRIDGE_CLAUDE_BIN": "/nonexistent/claude"})
         env.start()
@@ -380,10 +380,10 @@ class FinishTests(CanvasCase):
 
         def complete_json(self, purpose, system, prompt, **kw):
             if purpose == "conditions":
-                return {"conditions": []}
+                return {"status": "complete", "conditions": []}
             if purpose == "counterexample":
-                return {"checks": []}
-            return {"requirements": replies.pop(0), "why": ""}
+                return {"status": "complete", "checks": []}
+            return {"status": "complete", "requirements": replies.pop(0), "why": ""}
         env = patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1", "BRIDGE_CLAUDE_BIN": "/nonexistent/claude"})
         env.start()
         self.addCleanup(env.stop)
@@ -437,7 +437,7 @@ class FinishTests(CanvasCase):
                 '     params.update(kw)\n'
                 'diff --git a/tests/test_retry.py b/tests/test_retry.py\n'
                 '+assert retry.increment().jitter == 4\n')
-        raw = {'requirements':[{'needs':'Thread jitter through `increment()`',
+        raw = {'status': 'complete', 'requirements':[{'needs':'Thread jitter through `increment()`',
                'kind':'must','found':'missing','at':'params.update(kw)'}],
                'why':'increment() does not copy jitter.'}
         with patch.object(llm.Client,'complete_json',return_value=raw):
@@ -453,7 +453,7 @@ class FinishTests(CanvasCase):
                 '@@ -1,2 +1,3 @@ def increment(self):\n'
                 '+    params["total"] = total\n'
                 '     params.update(kw)\n')
-        raw = {'requirements':[{'needs':'Thread jitter through `increment()`',
+        raw = {'status': 'complete', 'requirements':[{'needs':'Thread jitter through `increment()`',
                'kind':'must','found':'missing','at':'params.update(kw)'}]}
         with patch.object(llm.Client,'complete_json',return_value=raw):
             read = llm.check_conformance(Config(),'Copy the option?', 'Carry jitter through increment().',diff)
@@ -482,9 +482,9 @@ class FinishTests(CanvasCase):
             ("", "must_not", "follows", "no line of the diff quoted for it; read as the diff not doing it"),
         ]
         for at, kind, want, note in cases:
-            reply = {"requirements": [{"needs": need, "kind": kind, "at": at, "found": "honored"}], "why": "w"}
+            reply = {"status": "complete", "requirements": [{"needs": need, "kind": kind, "at": at, "found": "honored"}], "why": "w"}
             with patch.object(llm.Client, "complete_json",
-                              lambda self, purpose, *a, **k: reply if purpose == "conformance" else ({"conditions": []} if purpose == "conditions" else {"checks": []})):
+                              lambda self, purpose, *a, **k: reply if purpose == "conformance" else ({"status": "complete", "conditions": []} if purpose == "conditions" else {"status": "complete", "checks": []})):
                 read = llm.check_conformance(Config(), "q", "a", self.DEADLINE_DIFF)
             self.assertEqual(read["verdict"], want, at)
             self.assertEqual(read["requirements"][0].get("note", ""), note, at)
@@ -510,9 +510,9 @@ class FinishTests(CanvasCase):
             ("Negative values raise ValueError", "must", header, "unclear"),
         ]
         for needs, kind, at, want in cases:
-            reply = {"requirements": [{"needs": needs, "kind": kind, "at": at, "found": "honored"}], "why": "w"}
+            reply = {"status": "complete", "requirements": [{"needs": needs, "kind": kind, "at": at, "found": "honored"}], "why": "w"}
             with patch.object(llm.Client, "complete_json",
-                              lambda self, purpose, *a, **k: reply if purpose == "conformance" else ({"conditions": []} if purpose == "conditions" else {"checks": []})):
+                              lambda self, purpose, *a, **k: reply if purpose == "conformance" else ({"status": "complete", "conditions": []} if purpose == "conditions" else {"status": "complete", "checks": []})):
                 read = llm.check_conformance(Config(), "q", "a", diff)
             self.assertEqual(read["verdict"], want, (needs, at))
             self.assertNotIn("note", read["requirements"][0]) if want == "follows" else None
@@ -523,13 +523,13 @@ class FinishTests(CanvasCase):
         from bridge import llm
         self._conformance_env()
         need = "When time left is zero or negative, no further retry is permitted"
-        first = {"requirements": [
+        first = {"status": "complete", "requirements": [
             {"needs": need, "kind": "must", "found": "honored",
              "at": "if remaining is not None and duration >= remaining:"},
             {"needs": "Use the existing MaxRetryError exhaustion path", "kind": "must", "found": "honored",
              "at": "raise MaxRetryError(None, None, ResponseError(\"backoff_deadline would be exceeded\"))"}],
             "why": "The diff raises MaxRetryError when the wait would not fit."}
-        broke = {"checks": [
+        broke = {"status": "complete", "checks": [
             {"n": 1, "counterexample": "sleep() with a zero backoff after the budget ran out returns at the early "
                                        "return and never reaches _sleep_within_deadline, so the next attempt goes ahead",
              "at": "if backoff <= 0:", "not_shown": "the connection pool loop that calls increment() and sleep()"},
@@ -538,9 +538,9 @@ class FinishTests(CanvasCase):
 
         def complete_json(self, purpose, system, prompt, **kw):
             if purpose == "conditions":
-                return {"conditions": []}
+                return {"status": "complete", "conditions": []}
             prompts[purpose] = (system, prompt)
-            return first if purpose == "conformance" else ({"conditions": []} if purpose == "conditions" else broke)
+            return first if purpose == "conformance" else ({"status": "complete", "conditions": []} if purpose == "conditions" else broke)
         with patch.object(llm.Client, "complete_json", complete_json):
             read = llm.check_conformance(Config(), "When the budget is spent, how does that surface?",
                                          "Through MaxRetryError; when time left is zero or negative, no further "
@@ -576,18 +576,18 @@ class FinishTests(CanvasCase):
         diff = (self.DEADLINE_DIFF + "diff --git a/test/test_retry.py b/test/test_retry.py\n"
                 "+++ b/test/test_retry.py\n@@ -1,0 +1,2 @@\n+def test_spent_budget_refuses_the_sleep(self):\n"
                 "+    assert refused\n")
-        first = {"requirements": [{"needs": "n", "kind": "must", "found": "honored",
+        first = {"status": "complete", "requirements": [{"needs": "n", "kind": "must", "found": "honored",
                                    "at": "if remaining is not None and duration >= remaining:"}], "why": "w"}
         for at in ("def test_spent_budget_refuses_the_sleep(self):", "elif error: other -= 1"):
-            broke = {"checks": [{"n": 1, "counterexample": "an SSLError goes to the other branch", "at": at}]}
+            broke = {"status": "complete", "checks": [{"n": 1, "counterexample": "an SSLError goes to the other branch", "at": at}]}
             with patch.object(llm.Client, "complete_json",
-                              lambda self, purpose, *a, **k: first if purpose == "conformance" else ({"conditions": []} if purpose == "conditions" else broke)):
+                              lambda self, purpose, *a, **k: first if purpose == "conformance" else ({"status": "complete", "conditions": []} if purpose == "conditions" else broke)):
                 read = llm.check_conformance(Config(), "q", "a", diff)
-            self.assertEqual(read["verdict"], "follows", at)
+            self.assertEqual(read["verdict"], "unclear", at)
             self.assertFalse(read["requirements"][0]["counterexample"]["located"], at)
             self.assertEqual(read["unexamined"], ["a possible counterexample whose line is not in the change's code: "
                                                   "an SSLError goes to the other branch"])
-            self.assertEqual(read["why"], "w")
+            self.assertIn("inconclusive", read["why"])
 
     def test_an_early_exit_judged_to_let_a_requirement_through_is_a_counterexample(self):
         """Measured live: asked for counterexamples in general, the search
@@ -596,18 +596,18 @@ class FinishTests(CanvasCase):
         from bridge import llm
         self._conformance_env()
         need = "When time left is zero or negative, no further retry is permitted"
-        first = {"requirements": [
+        first = {"status": "complete", "requirements": [
             {"needs": "Use the existing MaxRetryError exhaustion path", "kind": "must", "found": "honored",
              "at": "raise MaxRetryError(None, None, ResponseError(\"backoff_deadline would be exceeded\"))"},
             {"needs": need, "kind": "must", "found": "honored",
              "at": "if remaining is not None and duration >= remaining:"}], "why": "w"}
-        judged = {"checks": [{"n": 1, "counterexample": ""}, {"n": 2, "counterexample": ""}],
+        judged = {"status": "complete", "checks": [{"n": 1, "counterexample": ""}, {"n": 2, "counterexample": ""}],
                   "exits": [{"exit": 1, "breaks": 2, "how": "sleep() with backoff 0 after the budget ran out returns "
                                                             "here and the next attempt goes ahead"},
                             {"exit": 9, "breaks": 1, "how": "no such exit"},
                             {"exit": 1, "breaks": 0, "how": ""}]}
         with patch.object(llm.Client, "complete_json",
-                          lambda self, purpose, *a, **k: first if purpose == "conformance" else ({"conditions": []} if purpose == "conditions" else judged)):
+                          lambda self, purpose, *a, **k: first if purpose == "conformance" else ({"status": "complete", "conditions": []} if purpose == "conditions" else judged)):
             read = llm.check_conformance(Config(), "q", "a", self.DEADLINE_DIFF)
         self.assertEqual(read["verdict"], "unclear")
         path, spent = read["requirements"]
@@ -620,12 +620,12 @@ class FinishTests(CanvasCase):
     def test_a_failed_counterexample_search_cannot_report_follows(self):
         from bridge import llm
         self._conformance_env()
-        first = {"requirements": [{"needs": "n", "kind": "must", "found": "honored",
+        first = {"status": "complete", "requirements": [{"needs": "n", "kind": "must", "found": "honored",
                                    "at": "if remaining is not None and duration >= remaining:"}], "why": "w"}
 
         def complete_json(self, purpose, system, prompt, **kw):
             if purpose == "conditions":
-                return {"conditions": []}
+                return {"status": "complete", "conditions": []}
             if purpose == "counterexample":
                 raise llm.LLMError("timed out")
             return first
@@ -639,7 +639,7 @@ class FinishTests(CanvasCase):
         from bridge import llm
         self._conformance_env()
         diff = self.DEADLINE_DIFF + "+# padding\n" * 3000
-        reply = {"requirements": [{"needs": "n", "kind": "must", "found": "missing"}], "why": "w"}
+        reply = {"status": "complete", "requirements": [{"needs": "n", "kind": "must", "found": "missing"}], "why": "w"}
         with patch.object(llm.Client, "complete_json", lambda self, *a, **k: reply):
             read = llm.check_conformance(Config(), "q", "a", diff)
         self.assertEqual(read["unexamined"], [f"the diff past its first {llm.DIFF_READ} characters ({len(diff)} given)"])

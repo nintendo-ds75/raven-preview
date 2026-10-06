@@ -166,9 +166,9 @@ class BackgroundTests(DeliveryCase):
 class ExtraConditionTests(OfflineCase):
     def check(self, condition):
         def complete(client,purpose,*args,**kwargs):
-            if purpose=='conformance':return {'requirements':[{'needs':'Exempt enterprise','kind':'must','found':'honored','at':'if enterprise: return 0'}]}
-            if purpose=='counterexample':return {'checks':[]}
-            return {'conditions':[condition]} if condition else {'conditions':[]}
+            if purpose=='conformance':return {'status': 'complete', 'requirements':[{'needs':'Exempt enterprise','kind':'must','found':'honored','at':'if enterprise: return 0'}]}
+            if purpose=='counterexample':return {'status': 'complete', 'checks':[]}
+            return {'status': 'complete', 'conditions':[condition]} if condition else {'status': 'complete', 'conditions':[]}
         diff='+if enterprise: return 0\n+if pro and override: return 0\n+return overage * 2\n'
         with patch.dict(os.environ,BRIDGE_SEMANTIC='1'),patch.object(llm.Client,'complete_json',complete):
             return llm.check_conformance(Config(model_api='none'),'Who is exempt?','Only enterprise is exempt',diff)

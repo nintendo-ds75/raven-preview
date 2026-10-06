@@ -62,6 +62,13 @@ def embed(text: str) -> list[float]:
 
 JSON_MAX_TOKENS = 8000
 
+# Advisory reads keep the existing 1200-token visible-answer target. Sparse
+# findings fit that target; thinking has its separate existing allowance.
+# These are output/transport limits, not a quota on requirements to examine.
+REVIEW_MAX_TOKENS = 1200
+REVIEW_MAX_CHARS = 6000
+REVIEW_MAX_FINDINGS = 4
+
 
 class LLMError(RuntimeError):
     pass
@@ -170,7 +177,7 @@ class Client:
                        f"requests right now.")
 
     def complete(self, purpose: str, system: str, prompt: str,
-                 max_tokens: int = 2000) -> str:
+                 max_tokens: int = 2000, *, bounded: bool = False) -> str:
         if self.cfg.model_api == "none":
             raise NoAPIKey("model backend disabled (BRIDGE_MODEL_API=none)")
         if self.cfg.model_api == "claude-cli":
@@ -196,6 +203,12 @@ class Client:
             thinks = True
             payload = self._messages(system, prompt, max_tokens + THINKING_ROOM)
         if payload.get("stop_reason") == "max_tokens":
+            if bounded:
+                # An advisory reading is allowed to be inconclusive. Repeating
+                # the same search with ever more room can consume minutes and
+                # still yield no usable evidence. Keep the one-time thinking
+                # discovery above, but do not double this stage's budget.
+                raise LLMError(f"the model's {purpose} reading exhausted its budget; inconclusive")
             # The answer itself ran out of room. It is asked once more with
             # twice the room, and a text still cut short is never returned as
             # if it were whole: a caller would store it as the answer.
@@ -215,11 +228,14 @@ class Client:
         return payload
 
     def complete_json(self, purpose: str, system: str, prompt: str,
-                      max_tokens: int = JSON_MAX_TOKENS) -> object:
-        text = self.complete(purpose, system, prompt, max_tokens=max_tokens)
+                      max_tokens: int = JSON_MAX_TOKENS, *, bounded: bool = False) -> object:
+        text = self.complete(purpose, system, prompt, max_tokens=max_tokens,
+                             **({'bounded': True} if bounded else {}))
         try:
             return _extract_json(text)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as error:
+            if bounded:
+                raise LLMError(f"the model's {purpose} reading returned incomplete JSON; inconclusive") from error
             text = self.complete(
                 purpose, system,
                 prompt + "\n\nReturn ONLY the raw JSON, no prose, no fences.",
@@ -960,9 +976,36 @@ _STOP_FROM = {"this", "that", "task", "says", "the", "and", "with", "from", "int
               "which", "what", "when", "where", "there", "their", "them", "then", "than", "task's"}
 
 
+TEMPORAL_REVIEW_GUIDANCE = (
+    "Requirements about once-only processing, duplicates, retries or ordered streams are temporal invariants. "
+    "Distinguish an item being seen, attempted and successfully processed; follow exactly which history the "
+    "authorized words require. Current membership or mutable state does not by itself prove that history. "
+    "For an iterator, generator or callback allowed by the shown interface, trace permitted state changes "
+    "between successive inputs, including a repeat after success and a repeat after an initial miss. Do not "
+    "assume a fixed list or monotonic state unless the decision or code guarantees it. Identify the actual "
+    "history guard or expose the limitation instead of treating a present-state check as once-only tracking. "
+    "Do not invent unsupported concurrency or behavior outside the stated contract. "
+)
+
+
+REVIEW_OUTPUT_GUIDANCE = (
+    "Keep the structured answer concise: at most 6000 characters of JSON total, requirement labels "
+    "at most 160 characters, each explanation at most 240, and each quote at most 160. Quote a short "
+    "exact line or an exact contiguous fragment, never a whole function. Do not print an analysis "
+    "transcript, a path-by-path narrative, or explanations of successful checks. Examine every signed "
+    "requirement and the relevant shown paths before composing the compact result. The output limits "
+    "do not permit skipping requirements or assuming they pass. Set status to complete only if this "
+    "stage examined its whole supplied scope and all findings fit; otherwise use inconclusive and name "
+    "the remaining scope briefly in unexamined. Preserve concrete findings even when inconclusive. "
+    "If the examination cannot be completed within the available budget, return an inconclusive JSON "
+    "result promptly, rather than expanding the search or writing a long explanation. "
+)
+
+
 CONFORMANCE_SYSTEM = (
     "You are given one decision a person authorized, in their words, and a diff. Work in two steps and do "
-    "not skip the first. FIRST, break the answer into the separate things it requires of the code: every "
+    "not skip the first. " + TEMPORAL_REVIEW_GUIDANCE + REVIEW_OUTPUT_GUIDANCE +
+    "FIRST, break the answer into the separate things it requires of the code: every "
     "named value, state, default, table, column, flag, file or behaviour it says the change must have. A "
     "sentence like \"three states, off, log and block, defaulting to off\" requires all three states AND the "
     "default, which is four requirements and not one. Mark each requirement \"must\" when the answer says "
@@ -989,7 +1032,8 @@ CONFORMANCE_SYSTEM = (
     "that does it, or for something ruled out the line that keeps clear of it; for violated, the line that "
     "does what was ruled out; for missing, the nearest line that works on that thing; empty for unseen. A "
     "requirement you cannot point at a line for is not honored. Do not give an overall verdict; report what "
-    "you saw and it will be worked out from that. Return ONLY JSON: {\"requirements\": [{\"needs\": \"...\", "
+    "you saw and it will be worked out from that. Return ONLY JSON: {\"status\": \"complete\" or \"inconclusive\", "
+    "\"unexamined\": \"\" or a short limitation, \"requirements\": [{\"needs\": \"...\", "
     "\"kind\": \"must\" or \"must_not\", \"at\": \"the line\", \"found\": \"honored\" or \"missing\" or "
     "\"violated\" or \"unseen\"}], \"why\": one sentence naming what is missing or where you read it}. No em "
     "dashes or en dashes."
@@ -1006,11 +1050,13 @@ CONFORMANCE_SYSTEM = (
 COUNTEREXAMPLE_SYSTEM = (
     "You are checking a reading of a diff, and your job is to break it. You get one decision a person "
     "authorized, in their words, the diff, and numbered requirements a first reader said the diff honors, "
-    "each with the line it pointed at. For each requirement, trace every path the code in the diff can take "
-    "through what the requirement governs: every caller of the line that enforces it and every branch before "
-    "it, every early return or continue that skips it, every boundary value (zero, a negative number, None or "
-    "null, an empty string or list, a value exactly equal to a limit), every exception path, and every other "
-    "place the same thing is done without going through that line. Context lines count: the unchanged code "
+    "each with the line it pointed at. " + TEMPORAL_REVIEW_GUIDANCE + REVIEW_OUTPUT_GUIDANCE +
+    "Make one focused adversarial pass over every requirement. Challenge its cited line using relevant "
+    "shown callers and branches, every early return or continue that can skip it, boundary values (zero, "
+    "negative, None or null, empty input, exactly a limit), exception paths, and other shown places doing "
+    "the same thing without that line. These are checks to apply where relevant, not a request to enumerate "
+    "all combinations or to prove the whole program correct. Stop searching a requirement after one "
+    "concrete counterexample and continue with the remaining requirements. Context lines count: the unchanged code "
     "around a change is the code it runs in. A counterexample is a concrete call or input for which the code "
     "shown does what the decision rules out or skips what it requires: say which call, with what value, and "
     "what the code then does. Something the decision itself allows is not a counterexample (when the answer "
@@ -1018,12 +1064,17 @@ COUNTEREXAMPLE_SYSTEM = (
     "anything another listed decision authorized, style, naming, tests or docs. A later check that would "
     "catch it afterwards does not rescue a path: when the decision says something is refused or never done, "
     "the path that lets it happen once breaks it. When early exits are listed, go through them one by one: "
-    "for each, work out when it is taken and what then happens that the requirements speak of, and say which "
-    "requirement it lets through, or 0 when it lets none through. Only report a path you can "
+    "for each, work out when it is taken and what then happens that the requirements speak of. Report only "
+    "exits with a concrete counterexample, identifying the requirement they break. Only report a path you can "
     "follow in the diff; when a requirement depends on code the diff does not show, such as a caller or a "
     "function defined elsewhere, name that code in not_shown instead of guessing what it does. Most "
-    "requirements have no counterexample: leave it empty rather than stretch. Return ONLY JSON: "
-    "{\"checks\": [{\"n\": the requirement's number, \"counterexample\": \"\" or one sentence, \"at\": the line "
+    "requirements have no counterexample: omit their entries rather than stretch. Inspect ALL numbered "
+    "requirements and listed exits, but return at most four checks and four exits, with at most one concrete "
+    "counterexample per requirement. Do not repeat a check in exits. Omit empty/no-finding entries entirely; "
+    "status complete explicitly attests that the omitted requirements and exits were examined too. If more "
+    "findings exist than fit, preserve the strongest concrete findings and use inconclusive. Return ONLY JSON: "
+    "{\"status\": \"complete\" or \"inconclusive\", \"unexamined\": \"\" or a short limitation, "
+    "\"checks\": [{\"n\": the requirement's number, \"counterexample\": \"\" or one sentence, \"at\": the line "
     "of the diff it goes through, copied exactly, \"not_shown\": \"\" or the code it depends on that the diff "
     "does not show}], \"exits\": [{\"exit\": the exit's number, \"breaks\": the requirement's number or 0, "
     "\"how\": \"\" or one sentence: the call, the value, and what then happens}]}. No em dashes or en dashes."
@@ -1188,30 +1239,36 @@ def located(quote: str, kept: str) -> bool:
 
 
 UNSTATED_CONDITIONS_SYSTEM = (
+    REVIEW_OUTPUT_GUIDANCE +
     "Read the authorized decisions and the diff. Find additional policy conditions or exemptions "
     "the change introduces which none of those decisions authorizes. Look for extra customer, plan, "
     "region, account or feature-flag branches that change who gets the behavior. Do not invent "
     "requirements, treat ordinary validation as policy, or report conditions that the other signed "
     "decisions allow. Quote an exact line of production code for each finding. Return ONLY JSON: "
-    '{"conditions": [{"condition": "the extra condition and its effect", "at": "exact code line"}]}. '
+    '{"status": "complete" or "inconclusive", "unexamined": "" or a short limitation, '
+    '"conditions": [{"condition": "the extra condition and its effect", "at": "exact code line"}]}. '
+    "Return at most four conditions; if more exist, retain concrete findings and use inconclusive. "
     "Return an empty conditions list when there is no such addition. Test expectations alone are not evidence."
 )
 
 
-def _unstated_conditions(reader, context: str, shown: str, code: str, seen: list[dict]) -> list[str]:
+def _unstated_conditions(reader, context: str, shown: str, code: str, seen: list[dict]) -> tuple[list[str], bool]:
     try:
         raw = Client(reader).complete_json('conditions', UNSTATED_CONDITIONS_SYSTEM,
-                                            context + "\nDIFF:\n" + shown, max_tokens=1200)
+                                           context + "\nDIFF:\n" + shown, max_tokens=REVIEW_MAX_TOKENS, bounded=True)
     except LLMError:
         raw = None
-    if not isinstance(raw, dict) or not isinstance(raw.get('conditions'), list):
-        seen.append({'needs': 'No additional policy conditions without authorization', 'kind': 'must_not',
-                     'found': 'unseen', 'state': 'unclear', 'note': 'the extra-condition search did not complete'})
-        return ['the extra-condition search did not complete']
+    rows = raw.get('conditions') if isinstance(raw, dict) else None
+    conditions = [row for row in rows if _condition_shape(row)] if isinstance(rows, list) else []
+    complete = (_review_complete(raw, 'conditions') and len(conditions) == len(rows)
+                and len(rows) <= REVIEW_MAX_FINDINGS)
     unexamined = []
-    for condition in raw['conditions']:
-        if not isinstance(condition, dict):
-            continue
+    if not complete:
+        limitation = _review_limitation(raw, 'the extra-condition search did not complete')
+        seen.append({'needs': 'No additional policy conditions without authorization', 'kind': 'must_not',
+                     'found': 'unseen', 'state': 'unclear', 'note': limitation})
+        unexamined.append(limitation)
+    for condition in conditions[:REVIEW_MAX_FINDINGS]:
         what = clip_marked(str(condition.get('condition') or ''), 500, 'the condition ran on')
         at = clip_marked(str(condition.get('at') or ''), 300, 'the line ran on')
         if not what:
@@ -1223,13 +1280,13 @@ def _unstated_conditions(reader, context: str, shown: str, code: str, seen: list
                              'the extra condition was not located in the change'})
         if not found:
             unexamined.append(what)
-    return unexamined
+    return unexamined, complete
 
 
 def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple = ()) -> dict:
     """Whether a diff does what one authorized decision says, as
-    {verdict, why, requirements, unexamined}. Empty when there is no
-    backend or the model fails.
+    {verdict, why, requirements, unexamined, incomplete}. Empty when
+    disabled; an unsuccessful model reading is explicitly inconclusive.
 
     Three readings. The first breaks the answer into requirements and
     quotes the line of the diff each is judged by; a requirement read as
@@ -1269,14 +1326,15 @@ def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple 
     context = f"DECISION: {question}\nWHAT WAS AUTHORIZED: {answer}\n" + _other_decisions(others)
     try:
         raw = Client(reader).complete_json("conformance", CONFORMANCE_SYSTEM, context + f"\nDIFF:\n{shown}",
-                                           max_tokens=1200)
+                                           max_tokens=REVIEW_MAX_TOKENS, bounded=True)
     except LLMError:
-        return {}
-    if not isinstance(raw, dict):
-        return {}
-    reqs = [r for r in (raw.get("requirements") or []) if isinstance(r, dict)]
+        raw = None
+    raw_reqs = raw.get('requirements') if isinstance(raw, dict) else None
+    reqs = [r for r in raw_reqs if _requirement_shape(r)] if isinstance(raw_reqs, list) else []
+    first_complete = (_review_complete(raw, 'requirements') and bool(reqs)
+                      and len(reqs) == len(raw_reqs))
     if not reqs:
-        return {}
+        return _inconclusive_review('the requirement reading did not complete')
     # The model reports what it saw; the verdict is worked out here. Told
     # to judge directly it blessed a change that dropped two of the three
     # values an owner signed for, and told to weigh its own observations
@@ -1338,23 +1396,35 @@ def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple 
             item["note"] = note
         seen.append(item)
     unexamined = []
+    if not first_complete:
+        limitation = _review_limitation(raw, 'the requirement reading did not complete')
+        unexamined.append(limitation)
+        seen.append({'needs': 'Every signed requirement examined', 'kind': 'must', 'found': 'unseen',
+                     'state': 'unclear', 'note': limitation})
     if len(diff) > DIFF_READ:
         cut = _unread_files(diff, DIFF_READ)
         unexamined.append(f"the diff past its first {DIFF_READ} characters ({len(diff)} given)"
                           + (f": {', '.join(cut[:8])}" + (f" and {len(cut) - 8} more" if len(cut) > 8 else "")
                              if cut else ""))
+    complete = first_complete
     if any(item['state'] == 'ok' for item in seen):
-        unexamined += _counterexamples(reader, context, shown, diff_kept(shown, tests=False), seen)
+        limitations, stage_complete = _counterexamples(reader, context, shown, diff_kept(shown, tests=False), seen)
+        unexamined += limitations
+        complete = complete and stage_complete
     if any(item['state'] == 'ok' for item in seen):
-        unexamined += _unstated_conditions(reader, context, shown, diff_kept(shown, tests=False), seen)
+        limitations, stage_complete = _unstated_conditions(reader, context, shown, diff_kept(shown, tests=False), seen)
+        unexamined += limitations
+        complete = complete and stage_complete
     states = {s["state"] for s in seen}
-    verdict = "departs" if "departs" in states else ("unclear" if "unclear" in states else "follows")
+    verdict = "departs" if "departs" in states else ("unclear" if "unclear" in states or unexamined else "follows")
     # Whole, or cut at a word and marked. Measured live on a397f1c: five of
     # seven reasons ended mid-word at 300 characters ("used by sleep_for_r").
     why = str(raw.get("why", "")).strip()
     unsupported = [s for s in seen if s.get("note", "").startswith("missing behavior was claimed")]
     if unsupported and verdict == "unclear":
         why = "The diff does not establish whether these requirements are met: " + '; '.join(s["needs"] for s in unsupported)
+    if not first_complete:
+        why = "The requirement reading is inconclusive. " + why
     if any(s.get("note") == "counterexample search did not complete" for s in seen):
         why = "The counterexample search did not complete; the first reading is inconclusive. " + why
     if not why:
@@ -1376,8 +1446,12 @@ def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple 
     additions = [item['needs'] for item in seen if item.get('note') == 'the diff adds a condition no signed answer states']
     if additions:
         why = 'The diff adds a condition no signed answer states: ' + '; '.join(additions)
+    if verdict == 'unclear' and unexamined and not countered:
+        why = 'The review is inconclusive: ' + '; '.join(unexamined[:2]) + '. ' + why
     why = clip_marked(why, 1200, "the requirements list what was read")
     out = {"verdict": verdict, "why": why, "requirements": seen}
+    if not complete:
+        out['incomplete'] = True
     if unexamined:
         out["unexamined"] = unexamined
     return out
@@ -1388,15 +1462,82 @@ def check_conformance(cfg, question: str, answer: str, diff: str, others: tuple 
 DIFF_READ = 20000
 
 
-def _counterexamples(reader, context: str, shown: str, code: str, seen: list[dict]) -> list[str]:
+def _review_complete(raw, collection):
+    """Only an explicit, bounded completion can support an all-clear."""
+    return (isinstance(raw, dict) and raw.get('status') == 'complete'
+            and isinstance(raw.get(collection), list)
+            and isinstance(raw.get('unexamined', ''), str) and not raw.get('unexamined', '').strip()
+            and len(json.dumps(raw, ensure_ascii=False)) <= REVIEW_MAX_CHARS)
+
+
+def _review_limitation(raw, fallback):
+    value = raw.get('unexamined') if isinstance(raw, dict) else None
+    return clip_marked(value, 300, 'the limitation ran on') if isinstance(value, str) and value.strip() else fallback
+
+
+def _inconclusive_review(reason):
+    return {'verdict': 'unclear', 'why': reason + '; the advisory reading is inconclusive.',
+            'requirements': [], 'unexamined': [reason], 'incomplete': True}
+
+
+def _requirement_shape(row):
+    return (isinstance(row, dict) and isinstance(row.get('needs'), str) and bool(row['needs'].strip())
+            and row.get('kind') in ('must', 'must_not')
+            and row.get('found') in ('honored', 'missing', 'violated', 'unseen', 'present')
+            and isinstance(row.get('at', ''), str))
+
+
+def _condition_shape(row):
+    return (isinstance(row, dict) and isinstance(row.get('condition'), str) and bool(row['condition'].strip())
+            and isinstance(row.get('at'), str))
+
+
+def _has_finding(value):
+    return bool(value.strip()) and value.strip().lower().rstrip('.') not in ('none', 'no', 'n/a')
+
+
+def _counterexample_shape(raw, requirements, exits):
+    """Malformed model output cannot establish a successful adversarial read."""
+    if not isinstance(raw, dict) or not isinstance(raw.get('checks'), list):
+        return False
+    if 'exits' in raw and not isinstance(raw['exits'], list):
+        return False
+    for check in raw['checks']:
+        if not isinstance(check, dict):
+            return False
+        try:
+            number = int(str(check.get('n', '')).strip().rstrip('.'))
+        except ValueError:
+            return False
+        if not 1 <= number <= requirements or not any(key in check for key in ('counterexample', 'not_shown')):
+            return False
+        if any(key in check and (not isinstance(check[key], str) or len(check[key]) > limit)
+               for key, limit in (('counterexample', 500), ('at', 300), ('not_shown', 300))):
+            return False
+    for check in raw.get('exits', []):
+        if (not isinstance(check, dict) or 'breaks' not in check or not isinstance(check.get('how'), str)
+                or len(check['how']) > 500):
+            return False
+        try:
+            position = int(str(check.get('exit', '')).strip())
+            number = int(str(check.get('breaks', '0')).strip() or 0)
+        except ValueError:
+            return False
+        if not 1 <= position <= exits or not 0 <= number <= requirements:
+            return False
+    return True
+
+
+def _counterexamples(reader, context: str, shown: str, code: str, seen: list[dict]) -> tuple[list[str], bool]:
     """Try to break each requirement read as met, in place: one with a
     counterexample through a line of the change's own code stops reading
     as met and carries it. One whose line is not there (a paraphrase, a
     test, code the diff does not show) is kept beside the requirement and
-    listed as unexamined, without turning it. Returns what is unexamined."""
+    listed as unexamined; uncertainty cannot support an all-clear. Returns
+    the unexamined scope and whether the structured search completed."""
     met = [s for s in seen if s["state"] == "ok"]
     if not met:
-        return []
+        return [], True
     listed = "\n".join(f"{i}. {s['needs']} ({'must not' if s['kind'] == 'must_not' else 'must'})"
                        + (f" at: {s['at']}" if s.get("at") else "") for i, s in enumerate(met, 1))
     exits = early_exits(shown)
@@ -1405,19 +1546,37 @@ def _counterexamples(reader, context: str, shown: str, code: str, seen: list[dic
     try:
         raw = Client(reader).complete_json(
             "counterexample", COUNTEREXAMPLE_SYSTEM,
-            context + f"\nREQUIREMENTS READ AS HONORED:\n{listed}\n{exits_text}\nDIFF:\n{shown}", max_tokens=1200)
+            context + f"\nREQUIREMENTS READ AS HONORED:\n{listed}\n{exits_text}\nDIFF:\n{shown}",
+            max_tokens=REVIEW_MAX_TOKENS, bounded=True)
     except LLMError:
         raw = None
-    if not isinstance(raw, dict):
-        # A failed second reading cannot support a "follows" verdict.
-        # A real host's zero-delay bug passed the first reading; this
-        # safety check then failed, leaving a reassuring verdict behind.
+    unexamined = []
+    complete = (_review_complete(raw, 'checks') and _counterexample_shape(raw, len(met), len(exits))
+                and len(raw['checks']) <= REVIEW_MAX_FINDINGS
+                and len(raw.get('exits', [])) <= REVIEW_MAX_FINDINGS)
+    if not complete:
+        # A failed or malformed second reading cannot support a "follows"
+        # verdict. Keep independently valid counterexamples from a partial
+        # reply, rather than throwing away a concrete finding with bad data.
         for item in met:
             item["state"] = "unclear"
             item["note"] = "counterexample search did not complete"
-        return ["no search for counterexamples: the model did not answer"]
-    unexamined = []
-    for check in raw.get("checks") or []:
+        if not isinstance(raw, dict):
+            return ["no search for counterexamples: the model did not answer"], False
+        unexamined.append(_review_limitation(raw, "the counterexample search returned malformed or incomplete data"))
+        checks = raw.get('checks') if isinstance(raw.get('checks'), list) else []
+        judged_exits = raw.get('exits') if isinstance(raw.get('exits'), list) else []
+        raw = {
+            'checks': [check for check in checks
+                       if _counterexample_shape({'checks': [check]}, len(met), len(exits))],
+            'exits': [check for check in judged_exits
+                      if _counterexample_shape({'checks': [], 'exits': [check]}, len(met), len(exits))],
+        }
+    # Empty legacy entries are not findings and must not crowd a concrete
+    # counterexample out of a partial/oversized response.
+    findings = [check for check in raw.get('checks', [])
+                if any(_has_finding(check.get(field, '')) for field in ('counterexample', 'not_shown'))]
+    for check in findings[:REVIEW_MAX_FINDINGS]:
         if not isinstance(check, dict):
             continue
         try:
@@ -1428,25 +1587,27 @@ def _counterexamples(reader, context: str, shown: str, code: str, seen: list[dic
             continue
         item = met[n - 1]
         what = clip_marked(str(check.get("counterexample") or ""), 500, "the counterexample ran on")
-        if what and what.lower().rstrip(".") not in ("none", "no", "n/a"):
+        if _has_finding(what):
             at = clip_marked(str(check.get("at") or ""), 300, "the line ran on")
             found = located(at, code) or bool(_STRUCTURAL_RE.search(item["needs"]) and located_header(at, shown))
-            item["counterexample"] = {"what": what, "at": at, "located": found}
-            if found:
-                item["state"] = "unclear"
-            else:
+            if found or not (item.get('counterexample') or {}).get('located'):
+                item["counterexample"] = {"what": what, "at": at, "located": found}
+            item["state"] = "unclear"
+            if not found:
                 # Measured live on the conformance panel: a path through a
                 # branch the diff does not show, pinned to a test's name.
                 unexamined.append(f"a possible counterexample whose line is not in the change's code: {what}")
         not_shown = clip_marked(str(check.get("not_shown") or ""), 300, "it ran on")
-        if not_shown and not_shown.lower().rstrip(".") not in ("none", "no", "n/a"):
+        if _has_finding(not_shown):
+            item["state"] = "unclear"
             item["not_shown"] = not_shown
             if not_shown not in unexamined:
                 unexamined.append(not_shown)
     # Each early exit judged on its own. Measured live on the eb9d22d
     # patch: asked for counterexamples in general, the search named the
     # zero-backoff return in one run of four.
-    for judged in raw.get("exits") or []:
+    exit_findings = [check for check in raw.get('exits', []) if _has_finding(check.get('how', ''))]
+    for judged in exit_findings[:REVIEW_MAX_FINDINGS]:
         if not isinstance(judged, dict):
             continue
         try:
@@ -1462,7 +1623,7 @@ def _counterexamples(reader, context: str, shown: str, code: str, seen: list[dic
         # The exit came from the diff, so its line is there by construction.
         item["state"] = "unclear"
         item["counterexample"] = {"what": how, "at": exits[e - 1].split(" -> ")[0], "located": True}
-    return unexamined[:6]
+    return unexamined[:6], complete
 
 
 def _other_decisions(others) -> str:
