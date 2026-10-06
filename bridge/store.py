@@ -889,8 +889,15 @@ class Store:
                                              "conditions": conditions, "expires": expires, "scope": scope,
                                              "basis": basis})
             graph.note_rule_expiry(expires)
+            changed = decision.get("reusable") and any((decision.get(key) or "") != value for key, value in (
+                ("rule_conditions", conditions), ("rule_expires", expires), ("rule_scope", scope)))
+            flagged = (graph.invalidate_rule_dependents(decision_id, f"the rule from decision {decision_id} was changed by {by}")
+                       if changed else [])
+        for nid in flagged:
+            self.notify(nid, "review")
         auto = graph.get_setting("auto_rules") == "1"
         row = self.get_decision(decision_id)
+        row["invalidated"] = flagged
         row["notice"] = (f"Rule made by {by}: a question memory matches to this answer"
                          + (f" whose stated facts and words satisfy {conditions}" if conditions else "")
                          + (" in any scope" if scope == "any" else " in the same scope (other customers or files still ask)")
@@ -1023,10 +1030,14 @@ class Store:
         # doubt: pending suggestions were withdrawn above, answered and
         # signed dependents are marked for review, transitively.
         flagged: list = []
-        if corrects:
+        if corrects or supersedes:
             with self.graph.transaction():
-                flagged = self.graph.flag_dependents(decision_id, f"the answer of decision {decision_id} was corrected")
-        for dependent_id in flagged:
+                if corrects:
+                    flagged = self.graph.flag_dependents(decision_id, f"the answer of decision {decision_id} was corrected")
+                if supersedes:
+                    flagged.extend(self.graph.flag_dependents(supersedes,
+                        f"decision {supersedes} was superseded by {decision_id}", exclude=(decision_id,)))
+        for dependent_id in set(flagged):
             self.notify(dependent_id, "review")
         # The answer teaches routing: a referral to this person is accepted
         # by their answering, and a decision routed on inference alone

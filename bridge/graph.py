@@ -342,8 +342,23 @@ def backfill(db: sqlite3.Connection) -> None:
     if "kind" not in {r["name"] for r in db.execute("PRAGMA table_info(api_tokens)")}:
         db.execute("ALTER TABLE api_tokens ADD COLUMN kind TEXT NOT NULL DEFAULT 'agent'")
     db.execute("CREATE INDEX IF NOT EXISTS decisions_parent ON decisions(run_id, parent_id)")
+    db.execute("CREATE INDEX IF NOT EXISTS decisions_parent_lookup ON decisions(parent_id)")
     db.execute("CREATE INDEX IF NOT EXISTS decisions_source ON decisions(source_id)")
     db.execute("CREATE INDEX IF NOT EXISTS decisions_status ON decisions(status, signoff, needs_review)")
+    db.execute("CREATE INDEX IF NOT EXISTS decisions_rule_source ON decisions(signoff, source_id)")
+    # No decision scan on ordinary tree reads in workspaces that never used
+    # rules. Backfill once for existing databases; rule creation sets it too.
+    marker = db.execute("SELECT value FROM settings WHERE key='rule_checks_needed'").fetchone()
+    if marker is None or marker["value"] != "1":
+        exists = db.execute("SELECT 1 FROM decisions WHERE reusable=1 OR signoff='rule' LIMIT 1").fetchone()
+        if exists:
+            db.execute("INSERT INTO settings(key,value,updated_at) VALUES('rule_checks_needed','1',?) "
+                       "ON CONFLICT(key) DO UPDATE SET value='1',updated_at=excluded.updated_at", (now_iso(),))
+        elif marker is not None:
+            # An absent marker already means no rules. Do not populate an
+            # empty import destination, or retain a pre-import negative cache
+            # that could hide legacy rule rows copied in afterward.
+            db.execute("DELETE FROM settings WHERE key='rule_checks_needed'")
     db.execute("CREATE INDEX IF NOT EXISTS decisions_draft ON decisions(draft) WHERE draft=1")
     # A kickoff retried with the same client key is one task, atomically.
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS runs_client_key ON runs(client_key) WHERE client_key != ''")
@@ -1967,27 +1982,68 @@ class Graph:
             "SELECT d.id, d.run_id FROM decisions d JOIN runs r ON r.id=d.run_id WHERE d.source_id=? "
             "AND d.signoff='rule' AND r.status != 'completed'", (rule_id,)).fetchall()
 
-    def invalidate_rule_dependents(self, rule_id: str, reason: str) -> list[str]:
-        """A rule ended or expired: every outstanding node it authorized
-        wants a person again (signoff required, needs review, its task
-        with it). Finished tasks keep their history: the rule did apply
-        when they acted."""
-        ts = now_iso()
+    def invalidate_rule_dependents(self, rule_id: str, reason: str,
+                                   decision_ids: Iterable[str] | None = None) -> list[str]:
+        """Withdraw outstanding authorization, including its dependent chain.
+
+        Finished tasks keep their history: the rule applied when they acted.
+        ``decision_ids`` restricts a live applicability check to the nodes that
+        no longer satisfy the rule; other covered work remains authorized.
+        """
+        wanted = set(decision_ids) if decision_ids is not None else None
         flagged: list[str] = []
-        for r in self.rule_dependents(rule_id):
-            self.db.execute("UPDATE decisions SET signoff='required', signed_by='', needs_review=1, review_reason=?, "
-                            "updated_at=? WHERE id=?", (clip_marked(reason, 500, "the rule's history has the rest"),
-                                                       ts, r["id"]))
-            self.db.execute("UPDATE runs SET needs_review=1, updated_at=? WHERE id=?", (ts, r["run_id"]))
-            self.append_event("dependent_flagged", {"task_id": r["run_id"], "decision_id": r["id"],
-                                                    "source": rule_id,
-                                                    "reason": clip_marked(reason, 300, "the rule's history has the rest")})
-            flagged.append(r["id"])
+        for row in self.rule_dependents(rule_id):
+            if wanted is not None and row["id"] not in wanted:
+                continue
+            for decision_id in self.flag_dependents(row["id"], reason, include_root=True,
+                                                   outstanding_only=True, source_id=rule_id):
+                if decision_id not in flagged:
+                    flagged.append(decision_id)
         return flagged
+
+    def _refresh_rule_dependents(self, now: float | None = None) -> None:
+        """Revalidate standing permission before returning live authorization.
+
+        A source's structured expiry can precede its rule expiry. Conditions,
+        scope and supersession may also change after an unfinished task reused
+        it; creation-time applicability is not continuing permission.
+        """
+        if self.get_setting("rule_checks_needed") != "1":
+            return
+        from .ladder import _scope_difference
+        rows = self.db.execute(
+            "SELECT d.id, d.source_id, d.question, d.context, d.path, d.facts, d.repo "
+            "FROM decisions d JOIN runs r ON r.id=d.run_id "
+            "WHERE d.signoff='rule' AND r.status != 'completed'").fetchall()
+        for row in rows:
+            source = self.get_decision(row["source_id"], exact=True)
+            reason = ""
+            facts = parse_facts(row["facts"])
+            if source is None or source.superseded_by or source.needs_review:
+                reason = "the source rule was superseded or needs review"
+            else:
+                applies, why = rule_status(source, row["question"], row["context"], facts, now=now)
+                if not applies:
+                    reason = why or "the source is no longer an authorized reusable rule"
+                if not reason:
+                    applies, why = applicability_status(source, row["path"], facts, now=now)
+                    if not applies:
+                        reason = why
+                if not reason and source.rule_scope != "any":
+                    source_row = self.db.execute("SELECT facts FROM decisions WHERE id=?", (source.id,)).fetchone()
+                    difference, _ = _scope_difference(row["question"], row["context"], row["path"], source,
+                        facts, parse_facts(source_row["facts"]), row["repo"])
+                    if difference:
+                        reason = "the source rule no longer covers this scope: " + difference
+            if reason:
+                with self.transaction():
+                    self.invalidate_rule_dependents(row["source_id"], reason, [row["id"]])
 
     def note_rule_expiry(self, expires: str) -> None:
         """Remember the earliest live rule expiry, so the sweep before a
         read costs one settings lookup until a rule is actually due."""
+        if self.get_setting("rule_checks_needed") != "1":
+            self.set_setting("rule_checks_needed", "1")
         current = self.get_setting("rule_next_expiry")
         if expires and (not current or expires < current):
             self.set_setting("rule_next_expiry", expires)
@@ -1995,25 +2051,26 @@ class Graph:
     def expire_rules(self, now: str = "") -> list[str]:
         """Rules past their expiry stop being rules, and what they still
         authorized wants a person again. Run before anything that reads
-        authorization (a node, the tree, the wait, the finish); one
-        settings lookup until the earliest expiry is due. The clock is
-        the one rule_status reads, so time moves for both together."""
+        authorization (a node, the tree, the wait, the finish). The expiry
+        sweep retains its deadline fast path; live derived nodes also check
+        their source's applicability. Both use the same clock."""
         stamp = now or ts_to_iso(time.time())
         due_at = self.get_setting("rule_next_expiry")
-        if not due_at or due_at > stamp:
-            return []
-        due = self.db.execute("SELECT id, rule_expires FROM decisions WHERE reusable=1 AND rule_expires != '' "
-                              "AND rule_expires <= ?", (stamp,)).fetchall()
+        due = (self.db.execute("SELECT id, rule_expires FROM decisions WHERE reusable=1 AND rule_expires != '' "
+                               "AND rule_expires <= ?", (stamp,)).fetchall()
+               if due_at and due_at <= stamp else [])
         ended: list[str] = []
-        with self.transaction():
-            for r in due:
-                self.db.execute("UPDATE decisions SET reusable=0, rule_ended_at=? WHERE id=?", (stamp, r["id"]))
-                self.append_event("rule_ended", {"task_id": "", "decision_id": r["id"], "by": "expiry",
-                                                 "expired": r["rule_expires"]})
-                self.invalidate_rule_dependents(r["id"], f"the rule from decision {r['id']} expired on {r['rule_expires'][:10]}")
-                ended.append(r["id"])
-            nxt = self.db.execute("SELECT min(rule_expires) m FROM decisions WHERE reusable=1 AND rule_expires != ''").fetchone()
-            self.set_setting("rule_next_expiry", (nxt["m"] if nxt and nxt["m"] else "") or "")
+        if due_at and due_at <= stamp:
+            with self.transaction():
+                for r in due:
+                    self.db.execute("UPDATE decisions SET reusable=0, rule_ended_at=? WHERE id=?", (stamp, r["id"]))
+                    self.append_event("rule_ended", {"task_id": "", "decision_id": r["id"], "by": "expiry",
+                                                     "expired": r["rule_expires"]})
+                    self.invalidate_rule_dependents(r["id"], f"the rule from decision {r['id']} expired on {r['rule_expires'][:10]}")
+                    ended.append(r["id"])
+                nxt = self.db.execute("SELECT min(rule_expires) m FROM decisions WHERE reusable=1 AND rule_expires != ''").fetchone()
+                self.set_setting("rule_next_expiry", (nxt["m"] if nxt and nxt["m"] else "") or "")
+        self._refresh_rule_dependents(now=iso_to_ts(stamp))
         return ended
 
     def blocking_nodes(self, task_id: str, sweep: bool = True) -> list[dict]:
@@ -2073,24 +2130,44 @@ class Graph:
                         "canonical": r["c_id"] or ""})
         return out
 
-    def flag_dependents(self, decision_id: str, reason: str, exclude: Iterable[str] = ()) -> list[str]:
-        """A decision's answer changed: every decision derived from it (and
-        from those, transitively) is put in doubt. Pending rows lose the
-        suggestion they carried; answered and signed rows keep their text
-        but are marked for review, and their tasks with them. Returns the
-        ids flagged."""
-        seen: set[str] = set(exclude) | {decision_id}
+    def flag_dependents(self, decision_id: str, reason: str, exclude: Iterable[str] = (),
+                        *, include_root: bool = False, outstanding_only: bool = False,
+                        source_id: str = "") -> list[str]:
+        """Put an invalidated premise and its complete dependent chain in doubt.
+
+        Source reuse, parent/child questions and explicit dependencies can mix.
+        Pending suggestions are withdrawn; signed answers keep their historical
+        text but lose live signatures. Rule lifecycle changes preserve completed
+        history, while corrections and supersession also flag completed proofs.
+        """
+        source_id = source_id or decision_id
+        seen: set[str] = set(exclude)
         queue = [decision_id]
         flagged: list[str] = []
         ts = now_iso()
+        if not include_root:
+            seen.add(decision_id)
         while queue:
             src = queue.pop()
-            for r in self.db.execute("SELECT id, run_id, status, prediction FROM decisions WHERE source_id = ?",
-                                     (src,)).fetchall():
+            if include_root and src == decision_id and src not in seen:
+                rows = self.db.execute("SELECT * FROM decisions WHERE id=?", (src,)).fetchall()
+            else:
+                rows = self.db.execute(
+                    "SELECT * FROM decisions WHERE source_id=? OR parent_id=? OR id IN "
+                    "(SELECT decision_id FROM decision_links WHERE related_id=? AND kind='depends')",
+                    (src, src, src)).fetchall()
+            for r in rows:
                 if r["id"] in seen:
                     continue
                 seen.add(r["id"])
-                why = f"{reason} (source decision {src})"
+                queue.append(r["id"])
+                if r["status"] in ("withdrawn", "adopted"):
+                    continue
+                if outstanding_only:
+                    run = self.db.execute("SELECT status FROM runs WHERE id=?", (r["run_id"],)).fetchone()
+                    if run is not None and run["status"] == "completed":
+                        continue
+                why = f"{reason} (source decision {source_id})"
                 if r["status"] == "pending":
                     self.db.execute("UPDATE decisions SET prediction=NULL, source_id=NULL, source_revision='', "
                                     "updated_at=? WHERE id=?", (ts, r["id"]))
@@ -2098,16 +2175,20 @@ class Graph:
                                                                "reason": why})
                     continue
                 self.db.execute("UPDATE decisions SET needs_review=1, review_reason=?, "
+                                "status=CASE WHEN status='approved' THEN 'resolved' ELSE status END, "
                                 "signoff=CASE WHEN signoff IN ('signed','rule') THEN 'required' ELSE signoff END, "
+                                "signatures='[]', signed_by='', signed_hash='', signed_revision='', "
                                 "updated_at=? WHERE id=?", (clip_marked(why, 500, "the source decision has the rest"),
                                                            ts, r["id"]))
                 self.db.execute("UPDATE runs SET needs_review=1, updated_at=? WHERE id=?", (ts, r["run_id"]))
                 self.append_event("dependent_flagged", {"task_id": r["run_id"], "decision_id": r["id"],
-                                                        "source": src,
+                                                        "source": source_id,
+                                                        "previous_authorization": {key: r[key] for key in (
+                                                            "status", "signoff", "signatures", "signed_by",
+                                                            "signed_hash", "signed_revision")},
                                                         "reason": clip_marked(reason, 300,
                                                                               "the source decision has the rest")})
                 flagged.append(r["id"])
-                queue.append(r["id"])
         return flagged
 
     def _row_embedding(self, row: sqlite3.Row) -> list[float]:
