@@ -226,14 +226,7 @@ def _existing_task(store, client_key: str, title: str, repo: str, goal: str = ""
         raise Invalid(f"client_key {client_key!r} already names the task {row['title'][:80]!r} in {row['repo']}. "
                       "If this is that task, call again with that title or the goal as it was given; if it is a "
                       "different task, use a new key")
-    try:
-        discovery = json.loads(row["discovery"] or "{}")
-    except ValueError:
-        discovery = {}
-    proposed = candidates(discovery, row["title"], row["goal"] or "")
-    return {"task_id": row["id"], "title": row["title"], "repo": row["repo"], "verdict": row["verdict"] or "",
-            "why": row["verdict_why"] or "", "discovery": discovery, "candidates": proposed,
-            "next": _next_for_verdict(row["verdict"] or "pass", discovery, proposed), "repeated": True}
+    return _task_as_started(store, row)
 
 
 def start_task(store, cfg, data) -> dict:
@@ -270,7 +263,7 @@ def _start_task(store, cfg, data) -> dict:
     if resume:
         existing = store.graph.get_task(resume)
         if existing is not None:
-            return _task_as_started(existing)
+            return _task_as_started(store, existing)
     title = field(data, "title", limit=300)
     goal = _text(data, "goal")
     repo = field(data, "repo", "local", 300)
@@ -282,7 +275,7 @@ def _start_task(store, cfg, data) -> dict:
     if client_key:
         row = graph.db.execute("SELECT * FROM runs WHERE client_key=?", (client_key,)).fetchone()
         if row is not None and row['status'] == 'abandoned':
-            return _task_as_started(row)
+            return _task_as_started(store, row)
         if row is not None and _same_task(row, title, goal) and row["repo"] != repo \
                 and _corrects_the_repo(graph, row, repo):
             # Same task, properly named at last: take the correction and
@@ -1406,7 +1399,24 @@ def node_view(store, decision_id: str, repeated: bool = False) -> dict:
         "SELECT related_id FROM decision_links WHERE kind='depends' AND decision_id=?", (decision_id,))]
     view["dependents"] = [r["decision_id"] for r in store.graph.db.execute(
         "SELECT decision_id FROM decision_links WHERE kind='depends' AND related_id=?", (decision_id,))]
+    if row['parent_id']:
+        parent = store.graph.db.execute(
+            _DECISION_SELECT + ' WHERE d.id=? AND d.run_id=? AND d.draft=0',
+            (row['parent_id'], row['run_id'])).fetchone()
+        _with_parent_context(store, view, parent)
     return view
+
+
+def _with_parent_context(store, view, parent, compact=False):
+    if parent is not None:
+        context = _decision_context(store, parent)
+        # The whole tree already carries the parent's complete answer once.
+        # Repeating it in every sibling multiplies response size by fan-out.
+        view['parent'] = ({key: context[key] for key in (
+            'node_id', 'status', 'authorized', 'needs_review', 'updated_at')} if compact else context)
+        view['next'] += (f" Read parent node {parent['id']} (its current context is here or in bridge_get_tree) "
+                         'before adding more questions; reconcile what its answer already covers. Parent context does not '
+                         'authorize this child or transfer its owner\'s authority.')
 
 
 def _related(links: list[dict]) -> list[dict]:
@@ -1555,6 +1565,10 @@ def get_tree(store, task_id: str) -> dict:
             loaded[r["id"]] = r
     nodes = [_view(r, canonical=loaded.get(r["superseded_by"]) if r["status"] == "duplicate" else None)
              for r in rows]
+    for node in nodes:
+        parent = loaded.get(node['parent_id'])
+        if parent is not None and parent['run_id'] == task_id and not parent['draft']:
+            _with_parent_context(store, node, parent, compact=True)
     links = graph.links_for([n["node_id"] for n in nodes])
     depends_of: dict[str, list[str]] = defaultdict(list)
     marks = ",".join("?" for _ in nodes) or "''"
@@ -2343,19 +2357,19 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
         for nid, n in before.items():
             if nid not in touched or (node_id and nid != node_id and n.get("parent_id") != node_id):
                 continue
-            changed.append({**_change(n), "from": "", "new": n["created_at"] > since})
+            changed.append({**_change(store, n), "from": "", "new": n["created_at"] > since})
         result["notes"] = task_notes(store, task_id, since)
     # Required follow-ups are work for the agent, not unanswered requests
     # for a person. Return them even when the host omitted a since cursor.
     actionable = [n for n in before.values() if n["status"] == "suggested" and n.get("followup_required")
                   and (not node_id or n["node_id"] == node_id or n.get("parent_id") == node_id)]
     seen = {n["node_id"] for n in changed}
-    changed.extend({**_change(n), "from": "", "new": False} for n in actionable if n["node_id"] not in seen)
+    changed.extend({**_change(store, n), "from": "", "new": False} for n in actionable if n["node_id"] not in seen)
     # A node-specific wait without a cursor asks for its answer. If that
     # answer landed before the call, return it rather than awaiting a
     # second human action that nobody is expected to take.
     if node_id and not since and not before[node_id]["blocking"] and node_id not in {n["node_id"] for n in changed}:
-        changed.append({**_change(before[node_id]), "from": "", "new": False})
+        changed.append({**_change(store, before[node_id]), "from": "", "new": False})
     notes_before = len(tree.get("notes") or [])
     review_pending = not node_id and (tree.get('review') or {}).get('status') == 'running'
     reading = (bool(_json_dict(_task(store, task_id)['discovery']).get('model_pending'))
@@ -2386,15 +2400,15 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
                        or any(n.get('model_pending') for n in after.values())
                        or (not node_id and (tree.get('review') or {}).get('status') == 'running'))
         if tree.get('verdict') != verdict_before or (reading and not reading_now):
-            result['task'] = _task_as_started(_task(store, task_id))
+            result['task'] = _task_as_started(store, _task(store, task_id))
         for nid, n in after.items():
             old = before.get(nid)
             if node_id and nid != node_id and n.get("parent_id") != node_id:
                 continue
             if old is None:
-                changed.append({**_change(n), "from": "", "new": True})
+                changed.append({**_change(store, n), "from": "", "new": True})
             elif _watch_key(old) != _watch_key(n):
-                changed.append({**_change(n), "from": old["status"]})
+                changed.append({**_change(store, n), "from": old["status"]})
         if len(tree.get("notes") or []) > notes_before:
             result["notes"] = (tree.get("notes") or [])[notes_before:]
         if changed or result["notes"] or result.get("task"):
@@ -2478,11 +2492,21 @@ def graph_events(store, task_id: str, since: str, marks: str):
         "AND decision_id IS NOT NULL", (task_id, since, *PEOPLE_EVENTS)).fetchall()
 
 
-def _change(n: dict) -> dict:
+def _change(store, n: dict) -> dict:
+    # A wait returns changed nodes without the rest of the tree. Include the
+    # full current parent context here, not just the tree's compact reference.
+    parent_context = {}
+    if n.get('parent_id'):
+        parent = store.graph.db.execute(
+            _DECISION_SELECT + ' WHERE d.id=? AND d.run_id=? AND d.draft=0',
+            (n['parent_id'], n['task_id'])).fetchone()
+        if parent is not None:
+            parent_context = {'parent': _decision_context(store, parent)}
     return {"node_id": n["node_id"], "question": n["question"], "to": n["status"], "authorized": n["authorized"],
             "blocking": n["blocking"], "needs_review": n["needs_review"], "answer": n["answer"],
             "answered_by": n["answered_by"], "signed_by": n.get("signed_by") or "", "owner": n["owner"],
-            "rationale": n.get("rationale") or "", "next": n["next"]}
+            "rationale": n.get("rationale") or "", "next": n["next"],
+            **parent_context}
 
 
 # ---------------- what people add ----------------
@@ -2653,14 +2677,91 @@ def sign_off(store, decision_id: str, data, actor=None) -> dict:
     return node_view(store, d.id)
 
 
-def _task_as_started(row):
+def _decision_context(store, row):
+    """Current, attributed context only; never copy its standing to another node."""
+    canonical = None
+    if row['status'] == 'duplicate' and row['superseded_by']:
+        canonical = store.graph.db.execute(
+            _DECISION_SELECT + ' WHERE d.id=?', (row['superseded_by'],)).fetchone()
+    view = _view(row, canonical=canonical)
+    keys = ('node_id', 'parent_id', 'question', 'status', 'kind', 'partial', 'owner', 'answer', 'rationale',
+            'evidence', 'answered_by', 'signed_by', 'signatures',
+            'signoff', 'authorized', 'blocking', 'needs_review', 'review_reason', 'model_pending',
+            'updated_at', 'facts', 'required_signers', 'reusable', 'rule_conditions', 'rule_scope', 'rule_expires')
+    return {**{key: view[key] for key in keys}, 'context': row['context'] or '',
+            'paths': _json_list(row['scope_paths']) or ([row['path']] if row['path'] else []),
+            'applicability': _json_dict(row['applicability'])}
+
+
+def _candidate_represented(graph, run, candidate, row):
+    """Only an exact question in the same stated scope is already represented.
+
+    Broader parents and semantic overlap are deliberately not suppressed: the
+    host must read their answers and decide what remains to ask.
+    """
+    normalize = lambda text: ' '.join((text or '').casefold().split())
+    if normalize(candidate['question']) != normalize(row['question']):
+        return False
+    if row['status'] in ('suggested', 'adopted', 'withdrawn') or row['superseded_by']:
+        return False
+    paths = set(_paths(candidate.get('paths')))
+    node = _row_to_decision(row)
+    if not paths or paths != set(_scope_paths_of(graph, node)):
+        return False
+    facts = _json_dict(run['facts'])
+    if {k: normalize(str(v)) for k, v in facts.items()} != {
+            k: normalize(str(v)) for k, v in _json_dict(row['facts']).items()}:
+        return False
+    # The key preserves the original context before generated Paths/Options
+    # lines were appended. Do not strip user prose or infer scope equivalence:
+    # another customer, environment or exception may be written in any language.
+    # Uncertain or legacy scope stays a candidate for the host to reconcile.
+    return row['scope_key'] in {scope_key('', list(paths)), scope_key(run['goal'], list(paths))}
+
+
+def _task_as_started(store, row):
+    # Kickoff discovery is a historical reading of the goal, not a fresh work
+    # list. In the deep=1 humanize campaign, wait returned its two candidates
+    # after a broad parent already asked both, and the host copied them into
+    # children without first reading that parent's answer.
+    store.graph.expire_rules()
     discovery = _json_dict(row['discovery'])
     proposed = candidates(discovery, row['title'], row['goal'] or '')
+    nodes = store.graph.db.execute(
+        _DECISION_SELECT + ' WHERE d.run_id=? AND d.draft=0 ORDER BY d.created_at, d.rowid',
+        (row['id'],)).fetchall()
+    represented, remaining = [], []
+    for candidate in proposed:
+        matches = [n['id'] for n in nodes if _candidate_represented(store.graph, row, candidate, n)]
+        if matches:
+            represented.append({**candidate, 'node_ids': matches})
+        else:
+            remaining.append(candidate)
+    represented_questions = {c['question'] for c in represented}
+    if 'named_decisions' in discovery:
+        discovery['named_decisions'] = [c for c in discovery['named_decisions']
+                                        if c.get('question') not in represented_questions]
+    next_step = _next_for_verdict(row['verdict'], discovery, remaining)
+    if nodes:
+        next_step = ('Read existing_nodes and bridge_get_tree before adding more questions. Reconcile the '
+                     'kickoff candidates with the questions and answers already on this task; they may overlap '
+                     'or already be covered. Add only genuinely new or uncovered decisions in their actual '
+                     'scope. Existing answers and referrals do not authorize a new node or transfer ownership. '
+                     'Read bridge_get_tree before an irreversible step.')
+    if row['status'] in ('abandoned', 'completed'):
+        next_step = 'This task is closed; start a new task for new work.'
+        if row['status'] == 'completed':
+            next_step = ('This task is closed to new decision nodes. After the advisory review, call '
+                         'bridge_finish_task on this same task with the same complete diff and checks to '
+                         'refresh its proof, then bridge_export_proof. Start a new task only for new work.')
+        remaining = []
+        discovery['named_decisions'] = []
     return {'task_id': row['id'], 'title': row['title'], 'repo': row['repo'], 'status': row['status'],
             'verdict': row['verdict'], 'why': row['verdict_why'], 'discovery': discovery,
-            'candidates': proposed, 'repeated': True, 'model_pending': bool(discovery.get('model_pending')),
-            'next': 'This task is closed; start a new task.' if row['status'] == 'abandoned' else
-                    _next_for_verdict(row['verdict'], discovery, proposed)}
+            'candidates': remaining, 'represented_candidates': represented,
+            'existing_nodes': [_decision_context(store, n) for n in nodes[:20]],
+            'existing_node_count': len(nodes), 'existing_nodes_complete': len(nodes) <= 20,
+            'repeated': True, 'model_pending': bool(discovery.get('model_pending')), 'next': next_step}
 
 
 def people_acted(store, task_id):

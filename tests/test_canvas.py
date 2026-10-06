@@ -1731,7 +1731,10 @@ class TreeReadTests(CanvasCase):
         self.assertEqual(len(flat), 10)
         for n in flat:
             alone = canvas.node_view(self.store, n["node_id"])
-            self.assertEqual({k: v for k, v in n.items() if k not in ("children", "parent_changed_after")}, alone)
+            self.assertEqual({k: v for k, v in n.items() if k not in ("children", "parent_changed_after", "parent")},
+                             {k: v for k, v in alone.items() if k != "parent"})
+            if n.get('parent'):
+                self.assertEqual(n['parent'], {key: alone['parent'][key] for key in n['parent']})
         with self.assertRaises(Invalid):
             canvas.node_view(self.store, "nope")
 
