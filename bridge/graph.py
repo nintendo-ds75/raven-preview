@@ -168,6 +168,8 @@ _DECISION_COLUMNS = [
     ("source", "TEXT NOT NULL DEFAULT ''"),
     ("evidence", "TEXT NOT NULL DEFAULT ''"),
     ("owner_evidence", "TEXT NOT NULL DEFAULT ''"),
+    ("contact_person_id", "TEXT NOT NULL DEFAULT ''"),
+    ("contact_candidate", "TEXT NOT NULL DEFAULT ''"),
     ("superseded_by", "TEXT NOT NULL DEFAULT ''"),
     ("supersedes", "TEXT NOT NULL DEFAULT ''"),
     ("options", "TEXT NOT NULL DEFAULT ''"),

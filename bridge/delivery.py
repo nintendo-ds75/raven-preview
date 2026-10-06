@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 from .llm import drop_absence
 from .store import Invalid, answer_hash
 
-KINDS = ("ask", "signoff", "review", "reassigned", "answered", "overdue", "escalation")
+KINDS = ("ask", "signoff", "review", "reassigned", "answered", "overdue", "escalation", "contact")
 BACKOFF = (30, 120, 600, 3600, 21600)
 MAX_ATTEMPTS = 20
 
@@ -287,6 +287,9 @@ class Delivery:
         # the question asked. A reply is checked against it.
         content_hash = (answer_hash(row["answer"] or "") if kind in ("signoff", "review", "answered")
                         else answer_hash((row["question"] or "") + "\n" + (row["context"] or "")))
+        if kind == 'contact':
+            from .contact_invitation import revision as contact_revision
+            content_hash = contact_revision(dict(row))
         # A reminder is one per day, whatever the revision. Everything
         # else is one per thing said: a decision touched twice without
         # changing what this person would read is not two messages. A
@@ -309,8 +312,8 @@ class Delivery:
             return None
         nid = uuid.uuid4().hex[:12]
         payload = render(self._with_records(row), kind, person_name, self.base_url, note,
-                         task_link=self._task_link(person_id if dest_kind == "dm" else "", row["run_id"],
-                                                   decision_id, nid),
+                         task_link=("" if kind == "contact" else self._task_link(
+                             person_id if dest_kind == "dm" else "", row["run_id"], decision_id, nid)),
                          has_account=self._has_login(person_id), rule_hint=self._answered_in_slack(person_name))
         state = "queued" if destination else "failed"
         error = "" if destination else (f"{person_name} has no Slack id yet and no triage channel is configured")
@@ -440,6 +443,18 @@ class Delivery:
                                "ORDER BY created_at LIMIT ?", (time.time(), limit)).fetchall()
         sent = 0
         for row in due:
+            if row['kind'] == 'contact':
+                from .contact_invitation import revision as contact_revision
+                current = self.store.get_decision(row['decision_id'])
+                person = graph.get_person(row['person_id'])
+                task = graph.db.execute('SELECT status FROM runs WHERE id=?', (row['run_id'],)).fetchone()
+                if (not person or not person['active'] or person['role'] == 'viewer' or not person['slack_id']
+                        or not task or task['status'] in ('completed', 'abandoned') or current.get('owner_id')
+                        or current.get('contact_person_id') != row['person_id'] or current.get('model_pending')
+                        or current.get('status') == 'withdrawn' or row['content_hash'] != contact_revision(current)):
+                    graph.db.execute("UPDATE notifications SET state='superseded',last_error=? WHERE id=? AND state='queued'",
+                                     ('Contact invitation no longer current or reachable; assign the question explicitly', row['id']))
+                    continue
             payload = json.loads(row["payload"])
             try:
                 channel = row["destination"]
@@ -797,6 +812,9 @@ class Delivery:
         if decision.get('status') == 'withdrawn':
             return 'This question was withdrawn because its task was closed. Nothing was recorded.'
         text = (text or "").strip()
+        if note.get('kind') == 'contact':
+            from .contact_invitation import respond as respond_contact
+            return respond_contact(self, note, decision, person, actor, text)
         lowered = text.lower()
         reply = ""
         if note.get('kind') == 'escalation' and re.match(r'^context\s*:', text, re.I):
@@ -1120,7 +1138,7 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
     account (`has_account`), for whom it opened a sign-in page.
     `rule_hint` adds how to make an answer a rule, for a person who has
     answered in Slack before."""
-    link = f"{base_url}/#inbox" if base_url and (has_account or not task_link) else ""
+    link = f"{base_url}/#inbox" if kind != "contact" and base_url and (has_account or not task_link) else ""
     question = row.get("question") or ""
     title = row.get("run_title") or ""
     heads = {
@@ -1131,13 +1149,16 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
         "answered": f"*Your question was answered, {person_name}.*",
         "overdue": f"*Still waiting on you, {person_name}: an agent's task is blocked on this decision.*",
         "escalation": f"*Can you help unblock this question, {person_name}?*",
+        "contact": f"*Are you the right contact for this question, {person_name}?*",
     }
     lines = [heads.get(kind, heads["ask"])]
     if not person_name:
         lines = ["*Who can help with this decision?*",
                  "Raven has not identified a reachable contact. Reply `I'll take this` or `ask @person` "
                  "using a Slack mention. This routes the question; it does not approve anything."]
-    lines.append("_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._")
+    lines.append("_Raven is an AI coordination assistant. This is a contact check, not a request for approval._"
+                 if kind == "contact" else
+                 "_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._")
     if note:
         lines.append(f"_{note}_")
     lines.append(f"*{question}*")
@@ -1215,7 +1236,20 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
         lines.append(f"What Raven found: {found}")
     if options:
         lines.append("Options: " + " | ".join(str(o) for o in options))
-    if kind == 'escalation':
+    if kind == 'contact':
+        try:
+            contact = json.loads(row.get('contact_candidate') or '{}')
+        except (ValueError, TypeError):
+            contact = {}
+        escape = lambda text: str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        for claim in contact.get('claims', [])[:3]:
+            source = claim.get('source') or {}
+            lines.append('Unverified source: ' + escape(source.get('ref', '')) + ' ' + escape(source.get('url', ''))
+                         + '\n' + escape(_clip(claim.get('evidence', ''), 700, 'the source record has the rest')))
+        lines.append('Sources suggest you as a first contact, not a verified owner. Reply `claim` to take responsibility '
+                     'for this question or `ask @person` to refer it. I will request explicit confirmation before '
+                     'assigning anyone. Delivery, acknowledgment, and source text do not grant signing rights or approve anything.')
+    elif kind == 'escalation':
         lines.append('This is a coordination request, not an ownership transfer. Reply `context: <who is available or what helps>` '
                      'to inform the agent. Only someone with existing authority may approve or reassign this decision.')
     elif not _conversational() and kind in ('ask', 'reassigned', 'overdue', 'signoff', 'review') and person_name:

@@ -791,11 +791,14 @@ def triage(discovery: dict, title: str, goal: str) -> tuple[str, str]:
     if words and in_scope:
         # Quote the words' own sentence: a reason that cannot be checked
         # against the task is not a reason somebody can act on.
+        # A routing candidate may be only an author or a backup contact.
+        # Recency and reachability do not establish decision authority.
         inside = people[0].get("inside", "") if people else ""
         reasons.append(f"the task speaks of {', '.join(words[:4])}, in \"{_clip(signals[0][1])}\", "
                        "which is a call for "
                        + ((f"{who}, who decides for {inside} in this area; name the files to route to them" if inside
-                           else f"{who}, who owns the area") if known else "a person" + nobody))
+                           else f"{who} as a first contact; ask them to confirm who decides or refer")
+                          if known else "a person" + nobody))
     text = f"{title}\n{task_statement(goal)}"
     if _QUESTION_RE.search(text) and in_scope:
         reasons.append("the task itself poses a question a person has to answer"
@@ -807,8 +810,8 @@ def triage(discovery: dict, title: str, goal: str) -> tuple[str, str]:
                         "about other changes; Raven passes, and the agent may still add a node if the edit turns "
                         "out to change behaviour")
     if people:
-        why = (f"nothing here calls for a person: {people[0]['name']} owns the area and no prior decision, "
-               f"pending question, or policy word touches it")
+        why = (f"nothing here calls for a person: {people[0]['name']} is a first contact for the area and no "
+               "prior decision, pending question, or policy word touches it")
     elif discovery.get("areas"):
         why = "nothing here calls for a person: no clear owner, prior decision, or pending question relates to it"
     else:
@@ -1050,7 +1053,8 @@ def add_node(store, cfg, data) -> dict:
         did = row.get("duplicate_stub") or row["id"]
         view = _place_node(store, graph, run, row, did, task_id, question, context, ctx, category, paths,
                            options, parent_id, client_ref, adopted, depth, scope, related_ids, depends_on,
-                           first_pass, requester, hints, drafts, scope_paths=scope_paths, deferred=background)
+                           first_pass, requester, hints, drafts, scope_paths=scope_paths, deferred=background,
+                           explicit_owner=bool(owner_id))
     except Exception:
         # A node that could not be placed is still a decision somebody
         # asked: published, not hidden. The claim follows it, so a retry
@@ -1131,7 +1135,7 @@ def _approvers(graph, repo: str, question: str, ctx: str, category: str, scope_p
 
 def _place_node(store, graph, run, row, did, task_id, question, context, ctx, category, paths,
                 options, parent_id, client_ref, adopted, depth, scope, related_ids, depends_on,
-                effective, requester, hints, drafts, scope_paths=(), deferred=False) -> dict:
+                effective, requester, hints, drafts, scope_paths=(), deferred=False, explicit_owner=False) -> dict:
     """The second half of add_node: the node is routed; give it its place
     on the tree, its scope, its signers and its notifications, then
     publish it. Split out so a failure anywhere in here still publishes
@@ -1180,14 +1184,23 @@ def _place_node(store, graph, run, row, did, task_id, question, context, ctx, ca
         (parent_id, client_ref, depth, "human" if adopted else "agent",
          json.dumps(options) if options else "", scope, json.dumps(scope_paths) if scope_paths else "",
          signoff, did))
+    from . import contact_invitation
+    contact_row = dict(graph.db.execute('SELECT * FROM decisions WHERE id=?', (did,)).fetchone())
+    contact_fields = contact_invitation.prepare(graph, contact_row, run, scope_paths, requester,
+                                                explicit_owner=explicit_owner, channel=store.delivery.channel)
+    if contact_fields:
+        graph.db.execute('UPDATE decisions SET ' + ','.join(k + '=?' for k in contact_fields) + ' WHERE id=?',
+                         (*contact_fields.values(), did))
     if deferred:
         graph.db.execute('UPDATE decisions SET model_pending=1 WHERE id=?', (did,))
     # The person it waits on hears about it: a question to answer, or an
     # answer to sign.
-    if status == "pending" and not deferred:
-        store.notify(did, "ask")
-    elif signoff == "required" and not deferred:
-        store.notify(did, "signoff")
+    if not deferred and status != "duplicate":
+        contact_sent = contact_invitation.notify(store, store.get_decision(did))
+        if not contact_sent and status == "pending":
+            store.notify(did, "ask")
+        elif not contact_sent and signoff == "required":
+            store.notify(did, "signoff")
     for rid in related_ids:
         graph.add_link(did, rid, "related", "the same question in another scope on this tree")
     # What this decision depends on: nodes of the same task it cannot be
@@ -1320,6 +1333,9 @@ def _next_for_node(status: str, d: dict) -> str:
         return "This question was withdrawn when its mistaken task was closed."
     if d.get("model_pending"):
         return "Still reading the evidence in the background; use bridge_wait or bridge_get_tree. "
+    if d.get("contact_person_id") and not d.get("owner_id"):
+        return ("A contact invitation is waiting for an explicit human claim or referral. No owner or signer standing "
+                "comes from the source suggestion; use bridge_wait or bridge_get_tree.")
     if d.get("needs_review"):
         return ("needs review: " + (d.get("review_reason") or "an answer it was derived from was corrected")
                 + "; do not act on it until a person confirms or corrects it in the inbox")
@@ -1454,7 +1470,8 @@ def _view(row, repeated: bool = False, canonical=None) -> dict:
             # An answer the evidence supports only in part reads "resolved"
             # like any other, and says so here. Measured live on eb9d22d:
             # stored as partial, shown to the agent as plain resolved.
-            "partial": d.get("status") == "partial", "model_pending": bool(d.get("model_pending"))}
+            "partial": d.get("status") == "partial", "model_pending": bool(d.get("model_pending")),
+            "contact_candidate": _json_dict(d.get("contact_candidate")) if not d.get("owner_id") else {}}
     try:
         view["options"] = json.loads(d.get("options") or "[]")
     except ValueError:
@@ -3003,11 +3020,21 @@ def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, or
                                                options=_json_list(live.get('options')), why=withheld) or ''
             if withheld:
                 graph.append_event('brief_withheld', {'task_id': run['id'], 'decision_id': did, 'why': withheld[0]})
+        from . import contact_invitation
+        if contact_invitation.enabled() and store.delivery.channel == 'slack' and not owner_id:
+            from .contact_claims import suggest_contacts
+            contact_paths = _json_list(live.get('scope_paths')) or paths or hints
+            reading = suggest_contacts(graph, cfg, graph.resolve_repo(repo_key(run['repo'])), live['question'], contact_paths,
+                context=original_context, category=live.get('category') or '',
+                facts=_json_dict(live.get('facts')), requester=requester)
+            outcome.update(contact_invitation.prepare(graph, outcome, run, contact_paths, requester, reading=reading,
+                                                       channel=store.delivery.channel))
         with graph.transaction():
             current = dict(graph.db.execute('SELECT * FROM decisions WHERE id=?', (did,)).fetchone())
             if current['updated_at'] == scheduled_revision and current['model_pending'] and _task(store, run['id'])['status'] != 'abandoned':
                 fields = ['status','answer','rationale','source','source_id','evidence','kind','prediction','owner_id',
-                          'owner_evidence','answered_by','signoff','signed_by','signed_hash','signed_revision','signatures','brief','superseded_by']
+                          'owner_evidence','answered_by','signoff','signed_by','signed_hash','signed_revision','signatures','brief','superseded_by',
+                          'contact_person_id','contact_candidate','routing_reason']
                 fields = [f for f in fields if f in outcome]
                 graph.db.execute('UPDATE decisions SET ' + ','.join(f+'=?' for f in fields) + ', updated_at=? WHERE id=?',
                                  (*[outcome[f] for f in fields], now(), did))
@@ -3036,6 +3063,9 @@ def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, or
 
 
 def _notify_model_ready(store, row):
+    from .contact_invitation import notify as notify_contact
+    if notify_contact(store, row):
+        return
     if row['status'] == 'pending':
         store.notify(row['id'], 'ask')
     elif row.get('signoff') == 'required':

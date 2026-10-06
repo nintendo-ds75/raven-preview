@@ -1,3 +1,6 @@
+> **Experimental archive: known validation failures; not merge-ready or deployable.**
+> See the [validation status](docs/source-contact-claims-validation.md). Use `main` for current validated code.
+
 # Raven
 
 **Your agents do the work. They come to you for judgment.**
