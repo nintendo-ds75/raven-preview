@@ -108,11 +108,28 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.equal(independent.source_id,null);
     assert.equal(independent.source_revalidation.has_reliance,false);
 
+    // A Slack recipient reviews a large source through their existing personal
+    // task link, with no Raven account and no workspace-wide API access.
+    const longBody = 'Updated retention applies to partner archives. '.repeat(360) + 'Final requirement: thirty days.';
+    await update(longBody);
+    await page.setViewportSize({width:390,height:844});
+    await page.goto(fixture.url + '/brief#' + fixture.personal_link);
+    await page.locator('#brief-source-confirm').waitFor();
+    assert((await page.locator('.brief-source-body').first().innerText()).includes('Final requirement: thirty days.'));
+    await page.locator('#answer-text').fill('Keep partner archives for thirty days.');
+    await page.locator('#brief-source-confirm').check();
+    const fromLink = page.waitForResponse(r => r.url().endsWith('/api/brief/answer') && r.request().method() === 'POST');
+    await page.locator('#answer-form button[type="submit"]').click();
+    const fromLinkResponse = await fromLink;
+    assert.equal(fromLinkResponse.status(), 200, await fromLinkResponse.text());
+    assert.equal((await read()).authorized, true);
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+
     assert.deepEqual(errors,[]);
     const artifacts = process.env.BRIDGE_TEST_ARTIFACTS || path.join(root,'test-results');
     fs.mkdirSync(artifacts,{recursive:true});
     await page.screenshot({path:path.join(artifacts,'context-revalidated-owner.png'),fullPage:true});
-    console.log(JSON.stringify({ok:true,checks:['complete current source display','close is not approval','deliberate bound revalidation','retains source dependence','source race refused','reopen and revalidate current head','human-only independent owner replacement','pure-human complete scope display','exact human version rebound'],decision_id:fixture.decision_id}));
+    console.log(JSON.stringify({ok:true,checks:['complete current source display','close is not approval','deliberate bound revalidation','retains source dependence','source race refused','reopen and revalidate current head','human-only independent owner replacement','pure-human complete scope display','exact human version rebound','accountless full source review on phone'],decision_id:fixture.decision_id}));
   } finally {
     if (browser) await browser.close();
     if (child.exitCode === null && child.signalCode === null) {

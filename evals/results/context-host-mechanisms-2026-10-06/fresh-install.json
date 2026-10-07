@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "tools": 17,
+  "single_task": true,
+  "exact_prompt": true,
+  "connection_status": true,
+  "database": "PostgreSQL 17",
+  "fresh_schema": true,
+  "finish_status": "completed"
+}

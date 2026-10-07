@@ -58,7 +58,7 @@ function taskTimeline(trace, nodes) {
       if (typeof d === 'string') body = `<p>${esc(d)}</p>`;
       else {
         const by = d.actor_name || d.actor || d.by || d.answered_by || d.requester || d.owner || '';
-        const text = d.text || d.answer || d.reason || d.why || d.question || d.summary || '';
+        const text = d.text || d.answer || d.reason || d.why || d.question || d.summary || d.query || d.prompt || '';
         body = `${by ? `<p><strong>${esc(by)}</strong></p>` : ''}${text ? `<p>${esc(text)}</p>` : ''}<details><summary>Recorded details</summary><dl class="task-event-details">${Object.entries(d).map(([key,value]) => `<dt>${esc(key.replaceAll('_', ' '))}</dt><dd>${esc(typeof value === 'object' ? JSON.stringify(value, null, 2) : value)}</dd>`).join('')}</dl></details>`;
       }
     }

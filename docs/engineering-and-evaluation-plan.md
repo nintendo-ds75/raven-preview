@@ -5,9 +5,7 @@ host lifecycle explicit, and evaluate the whole interaction under a controlled
 information boundary. Do not build another Glean before a team can complete one
 task comfortably through its coding agent and Slack.
 
-This document separates implemented evaluation tooling from proposed product
-work. It is not a claim that hooks, a new connector platform, or automatic host
-wakeup have shipped.
+This document records the design and evaluation criteria. The follow-on implementation adds [local host hooks and a resume supervisor](host-adapters.md), [an optional Airweave adapter into the same graph](context-connectors.md), and complete source review through personal task links. Those guides distinguish shipped behavior from remaining live-host and connector validation.
 
 ## 1. What exists and what this change adds
 
@@ -52,7 +50,7 @@ and records uncertain decisions. Raven suggests a first contact using permitted
 static evidence, asks a compact question, accepts a referral, and learns a scoped
 contact. A learned contact is not an authorization grant. Slack recipients should
 finish ordinary replies and source revalidation without opening a full account.
-The previous live run's oversized-review fallback remains a concrete blocker.
+Complete source review is now available through the existing personal task link when a Slack readback is too large. The same exact revision and authorization checks apply.
 
 Offer the stakeholder a read-only task view with the requester, who has been
 asked, each answer and its revision, sources read, unresolved questions and the
@@ -248,17 +246,11 @@ Use customer shadow pilots to establish real organizational authority.
    Promote only after correctness and human-effort checks hold. No automatic
    production edits or source mutation by an evaluation judge.
 
-Implementation order after this tooling:
+Current implementation and remaining rollout order:
 
-* **Next:** direct-byte patch submission/attestation, accountless complete source
-  review, readable Slack readbacks and truthful inherited-provenance labels.
-* **Then:** one supported host adapter with durable session binding and an
-  idempotent resume queue; capability onboarding for GitHub and Slack. For a Work
-  pilot use MCP Events; for a local coding-host pilot use hooks and a supervisor.
-* **Then:** connector access/revocation contract and source freshness tracing;
-  evaluate Airweave on a small controlled corpus before adding it as a dependency.
-* **Then:** a customer-owned read-only trace export with explicit, previewable
-  redaction and expiring support access. No automatic outbound telemetry.
+* **Implemented:** direct-byte submission with explicit base, task-scoped complete source review, versioned source/answer graph retrieval, expiry/revocation checks, host hooks, durable session binding and an opt-in local resume worker.
+* **Validate in a customer environment:** real host hook loading and permission prompts, idle-session recovery, real Airweave connector identities/ACLs and permission-change latency. HTTP contract fixtures are not a live connector certification.
+* **Remaining:** ChatGPT Work MCP Events, automatic per-reader source identity/group mapping, independent test-process attestation and narrower, expiring support access. No automatic outbound telemetry.
 
 For Lunabotics, ask Elizabeth for one repository, one test channel and permission
 to install the bot, then run a guided task with the actual people. Historical OSS

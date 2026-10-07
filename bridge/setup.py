@@ -139,6 +139,7 @@ def _mcp_clients(project: Path, url: str, token: str, clients: list[str]) -> lis
             chunks.append(original[start:])
             kept = "".join(chunks).rstrip()
             entry = (f'[mcp_servers.bridge]\nurl = {json.dumps(url)}\n'
+                     'required = true\n'
                      f'http_headers = {{ Authorization = {json.dumps("Bearer " + token)} }}\n')
             _save_text(path, (kept + "\n\n" if kept else "") + entry)
         written.append(str(path))
@@ -149,9 +150,64 @@ def connect_mcp(settings, project, token, host_path=""):
     clients = [n for n in settings.get("BRIDGE_MCP_CLIENTS", "").split(",") if n]
     url = align_public_url(settings).rstrip('/') + '/mcp'
     written = _mcp_clients(project, url, token, clients)
+    if settings.get('BRIDGE_HOST_HOOKS', '1') != '0' and any(c in ('claude', 'codex') for c in clients):
+        written.extend(install_host_hooks(project, host_path or str(project.resolve()), url, token,
+                                         clients, settings.get('BRIDGE_INGEST_REPO', '')))
     if host_path:
         save_settings(Path('.env'), {'BRIDGE_AGENT_PROJECT': host_path})
     return [str(Path(host_path) / Path(p).relative_to(project)) if host_path else p for p in written]
+
+
+def install_host_hooks(project, host_path, url, token, clients, repo=''):
+    """Preserve user hooks; keep adapter credentials out of tracked files."""
+    import shlex
+    from urllib.parse import urlsplit
+    project = Path(project)
+    if not repo:
+        remote = subprocess.run(['git', '-C', str(project), 'remote', 'get-url', 'origin'],
+                                capture_output=True, text=True)
+        value = remote.stdout.strip().removesuffix('.git')
+        repo = value.split(':', 1)[1] if value.startswith('git@github.com:') else urlsplit(value).path.strip('/')
+    if not repo or len(repo.split('/')) != 2 or any(x in repo for x in ('..', '\\', '\n')):
+        raise ValueError('Set BRIDGE_INGEST_REPO=owner/name to install task hooks for a checkout without a repository remote')
+    destinations = [project / '.raven/host.py', project / '.raven/host-config.json']
+    hooks = {}
+    for client in clients:
+        if client not in ('claude', 'codex'):
+            continue
+        path = project / ('.claude/settings.local.json' if client == 'claude' else '.codex/hooks.json')
+        config = json.loads(path.read_text()) if path.exists() else {}
+        if not isinstance(config, dict) or not isinstance(config.get('hooks', {}), dict):
+            raise ValueError(f'Invalid existing hook configuration: {path}')
+        command = 'python3 ' + shlex.quote(str(Path(host_path) / '.raven/host.py')) + ' hook --host ' + client
+        for event_name in ('SessionStart', 'UserPromptSubmit'):
+            current = config.setdefault('hooks', {}).setdefault(event_name, [])
+            if not isinstance(current, list):
+                raise ValueError(f'Invalid existing {event_name} hooks: {path}')
+            if not any(h.get('command') == command for group in current if isinstance(group, dict)
+                       for h in group.get('hooks', []) if isinstance(h, dict)):
+                current.append({'hooks': [{'type': 'command', 'command': command, 'timeout': 60}]})
+        hooks[path] = json.dumps(config, indent=2) + '\n'
+        destinations.append(path)
+    for path in destinations:
+        rel = path.relative_to(project).as_posix()
+        if subprocess.run(['git', '-C', str(project), 'ls-files', '--error-unmatch', '--', rel],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+            raise ValueError(f'Refusing to replace tracked host-adapter configuration: {path}')
+    git_dir = subprocess.check_output(['git', '-C', str(project), 'rev-parse', '--absolute-git-dir'], text=True).strip()
+    exclude = Path(git_dir) / 'info/exclude'
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    original = exclude.read_text() if exclude.exists() else ''
+    additions = ['/' + p.relative_to(project).as_posix() for p in destinations]
+    additions = [p for p in additions if p not in original.splitlines()]
+    if additions:
+        exclude.write_text(original + ('\n' if original and not original.endswith('\n') else '') + '\n'.join(additions) + '\n')
+    _save_text(project / '.raven/host.py', Path(__file__).with_name('host_client.py').read_text())
+    _save_text(project / '.raven/host-config.json', json.dumps({'url': url, 'token': token,
+        'repo': repo, 'project': str(Path(host_path))}, indent=2) + '\n')
+    for path, body in hooks.items():
+        _save_text(path, body)
+    return [str(p) for p in destinations]
 
 
 def configure(args, path: Path, interactive: bool) -> None:

@@ -1,0 +1,25 @@
+{
+  "base_commit": "bdd83b759b103f62981d063aa6e17da6b90d1f70",
+  "kind": "deterministic product mechanism validation",
+  "open_source_fixture": {
+    "repo": "urllib3/urllib3",
+    "sha": "3d934808397b9cee14c6f399a4e6c9ddeb17a00d",
+    "history": "sealed historical checkout; identities pseudonymized before routing"
+  },
+  "airweave_contract": {
+    "url": "https://docs.airweave.ai/openapi.json",
+    "sha256": "ba8cfd86fa435d27aeec72a1f38be430f0d37aaed4fd9baca2979d6d003359ca",
+    "transport": "local HTTP schema fixture, not a live Airweave deployment"
+  },
+  "hosts": {
+    "hook": "real installed Python subprocess and MCP HTTP",
+    "coding_process": "substituted for deterministic supervisor tests; no live inference this run"
+  },
+  "slack": "simulated in OSS walkthrough",
+  "limitations": [
+    "No live customer connectors or upstream ACL revocation experiment",
+    "No actual Claude/Codex hook-loader or resumed coding-process certification",
+    "No new held-out feature implementation or model quality measurement",
+    "Signer-identity review remains unresolved"
+  ]
+}

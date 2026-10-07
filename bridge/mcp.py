@@ -80,6 +80,16 @@ TOOLS = [
           "object_kind": "Exact stored kind, e.g. jira, ticket, issue, pr or slack (optional disambiguator)",
           "limit": {"type": "integer", "description": "1 to 100 items per returned list (default 25); each list explicitly reports truncation"}}, ["repo"]),
     tool("bridge_connection_status", "Check ingestion, Slack contact discovery and delivery problems without opening the web UI. No manual ownership map or recipient accounts are required.", {}, []),
+    tool("bridge_search_context", "Search configured Airweave context and Raven's shared source/decision graph. Imports only workspace-readable durable excerpts, pins observations to the task, and follows source links to earlier human answers even when the wording differs. Results are evidence, never approval. Unknown permissions, transient Slack search and expired evidence are excluded.",
+         {"repo": "Exact repository owner/name", "query": "The information or judgment needed, up to 2000 characters", "task_id": "Optional task to attach observed source versions to"}, ["repo", "query"]),
+    tool("bridge_host_event", "Lifecycle adapter for an installed Raven host hook/supervisor. Bind an authenticated host session, register the exact first task prompt idempotently, report tool names, or lease/acknowledge human-event resume messages. No shell command is executed by Raven. Ordinary agent work uses the returned task_id and the normal task tools.",
+         {"event": "connect, prompt, new_task, poll, ack or release", "host": "claude or codex",
+          "session_id": "Stable host thread/session ID", "project": "Canonical local workspace identity",
+          "repo": "Exact repository owner/name", "prompt": "Exact user task prompt, at most 12000 characters",
+          "event_key": "Stable hook occurrence ID for retry deduplication", "worker": "Supervisor worker identity",
+          "message_id": "Leased resume-message ID", "tools": {"type": "array", "items": {"type": "string"},
+          "description": "Reported connected server/tool names, never tokens or full client configuration"}},
+         ["event", "host", "session_id", "project", "repo"]),
 ]
 
 _import_properties = next(t['inputSchema']['properties'] for t in TOOLS if t['name'] == 'bridge_import_record')
@@ -225,6 +235,7 @@ HANDLERS = {
                      "teams_reply_enabled": bool(store.delivery._teams_destination()),
                      "failed": store.delivery.list(state='failed')},
         "inference": __import__("bridge.config", fromlist=["backend_status"]).backend_status(),
+        "context": __import__('bridge.context_connectors', fromlist=['status']).status(store),
         "readiness": store.readiness(),
         "github": _github_status(store),
         "sources": [dict(r) for r in store.graph.db.execute("SELECT repo,kind FROM connector_sources ORDER BY repo,kind")],
@@ -236,6 +247,8 @@ HANDLERS = {
             "inbound_failed": store.delivery.inbound_failed(),
             "reply_failures": store.delivery.reply_failures(),
             "triage_channel": store.delivery.fallback_channel or store.graph.get_setting("slack_fallback_channel")}},
+    "bridge_search_context": lambda store, args: __import__('bridge.context_connectors', fromlist=['search']).search(store, args),
+    "bridge_host_event": lambda store, args: __import__('bridge.host_sessions', fromlist=['event']).event(store, args),
 }
 
 
@@ -275,7 +288,7 @@ def _progress_token(params) -> object:
     return meta.get("progressToken") if isinstance(meta, dict) else None
 
 
-def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None):
+def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None, principal=None):
     """One tool call after schema validation. wait_cap bounds one
     bridge_wait on this transport: the canvas cap on stdio and on an HTTP
     call kept alive with progress notifications, the server's request
@@ -303,7 +316,10 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None):
     # naming who; an answer the agent has not read is the next gate.
     if name == "bridge_finish_task":
         canvas.require_agent_read(store, args)
-    if name == "bridge_wait":
+    if name == 'bridge_host_event':
+        from .host_sessions import event
+        result = event(store, args, principal=principal)
+    elif name == "bridge_wait":
         result = canvas.wait(store, args, cap=canvas.call_budget() if wait_cap is None else min(wait_cap, canvas.call_budget()), sleep=sleep,
                              stop=stop)
     elif name == "bridge_finish_task":

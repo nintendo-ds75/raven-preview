@@ -57,6 +57,19 @@ class TrackedFilesTests(unittest.TestCase):
 
 
 class PseudonymTests(OfflineCase):
+    def test_aliases_that_share_a_pseudonym_do_not_break_ingestion(self):
+        from bridge.store import Store
+        store = Store(Path(self.temp.name) / 'aliases.db')
+        self.addCleanup(store.graph.close)
+        store.graph.db.execute("INSERT INTO engineers(id,name,email) VALUES('one','Ada M. Example','Ada@example.invalid')")
+        store.graph.db.execute("INSERT INTO engineers(id,name,email) VALUES('two','Ada Example','ada@example.invalid')")
+        pseudonyms.pseudonymize(store.graph)
+        rows = store.graph.db.execute('SELECT * FROM engineers').fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['name'], pseudonyms.label('Ada Example'))
+        pseudonyms.pseudonymize(store.graph)
+        self.assertEqual(store.graph.db.execute('SELECT count(*) n FROM engineers').fetchone()['n'], 1)
+
     def test_source_versions_and_search_survive_pseudonymization(self):
         import json
         from bridge import context_memory as cm

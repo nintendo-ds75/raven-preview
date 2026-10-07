@@ -177,6 +177,14 @@ function handonForm(f) {
     </form></details>`;
 }
 
+function sourceReview(f) {
+  const r = f.source_revalidation;
+  if (!r?.has_reliance) return '';
+  const sources = (r.sources || []).map(s => `<details class="brief-why" open><summary>${esc(s.snapshot?.title || s.record_id)} · ${esc(s.role)}</summary><p>${esc(s.snapshot?.author || 'Author not supplied')} · ${esc(s.snapshot?.status || 'Status not supplied')}</p><pre class="brief-source-body">${esc(s.snapshot?.body || 'Source unavailable')}</pre><p class="muted">Source revision ${esc(s.source_version_id)}</p></details>`).join('');
+  const dependencies = (r.dependencies || []).map(s => `<details class="brief-why"><summary>${s.historical ? 'Historical decision' : 'Source decision'}: ${esc(s.question)}</summary><p>${prose(s.answer)}</p><pre class="brief-source-body">${esc(JSON.stringify(s.reviewed_snapshot || s, null, 2))}</pre></details>`).join('');
+  return `<section class="brief-source-review"><h3>Evidence for this answer</h3><p>${esc(r.notice)}</p>${r.retires_rule ? '<p>Reapproving changed evidence retires the old standing rule. This signature applies here.</p>' : ''}${sources}${dependencies}${r.available ? '<label><input id="brief-source-confirm" type="checkbox" required> I reviewed the sources and source decisions shown here. Bind my answer to these exact revisions.</label>' : '<p>Current evidence is unavailable. Signing waits until it can be reviewed.</p>'}</section>`;
+}
+
 function focusCard(f) {
   if (!f) return '';
   const standing = focusStanding(f);
@@ -193,6 +201,7 @@ function focusCard(f) {
       <textarea id="answer-text" class="brief-grow" maxlength="12000" ${open || mine ? 'required' : ''} placeholder="${open ? 'State the decision the agent should follow.' : mine ? 'The answer the agent should follow instead.' : 'Only if the answer above is wrong.'}"></textarea>
       <label for="answer-why"${why}>Why <span class="muted">(shown to the next person asked something similar)</span></label>
       <textarea id="answer-why" class="short brief-grow" maxlength="4000" placeholder="The reason, constraint or policy behind it."${why}></textarea>
+      ${sourceReview(f)}
       <p class="error" id="answer-error" role="alert" hidden></p>
       <div class="brief-answer-foot"><button class="button ${open || standing === 'sign' ? 'primary' : ''}" type="submit"${open || mine ? '' : ` data-plain="${cosign ? 'Add my signature' : 'Sign off'}"`}>${open ? 'Record my decision' : mine ? 'Save correction' : cosign ? 'Add my signature' : 'Sign off'}</button><span class="brief-answer-note">Recorded as ${esc(data.viewer.name)}. The agent picks it up on its own.</span></div>
     </form>`;
@@ -640,7 +649,12 @@ document.addEventListener('submit', async event => {
   const form = event.target;
   if (form.id === 'answer-form') {
     try {
+      const review = data.focus?.source_revalidation;
+      if (review?.has_reliance && (!review.available || !$('#brief-source-confirm')?.checked)) {
+        throw new Error('Review the complete current evidence before signing. If unavailable, wait for the source to refresh.');
+      }
       const result = await call('/api/brief/answer', {decision_id: form.dataset.id, expected_updated_at: form.dataset.rev,
+        ...(review?.has_reliance ? {source_evidence: review.pins, source_decision_pins: review.decision_pins} : {}),
         answer: $('#answer-text').value.trim(), rationale: $('#answer-why').hidden ? '' : $('#answer-why').value.trim()});
       clearDrafts('answer-text', 'answer-why'); toast(result.notice); await load();
     } catch (e) { await refused(e, '#answer-error'); }

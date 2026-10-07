@@ -156,6 +156,9 @@ def main():
                     repos=[r.strip() for r in os.environ.get("BRIDGE_GITHUB_REPOS", "").split(",") if r.strip()],
                     minutes=float(os.environ.get("BRIDGE_GITHUB_SYNC_MINUTES", "15") or 15))
     syncer.start()
+    from .context_connectors import Refresher
+    context_refresher = Refresher(store)
+    context_refresher.start()
     try:
         server = make_server(store, args.port, executions, host=args.host, auth=auth, public_url=args.public_url,
                              github_app=github_app, github_syncer=syncer, teams_adapter=teams_adapter)
@@ -191,6 +194,7 @@ def main():
         server.server_close()
         if syncer:
             syncer.close()
+        context_refresher.close()
         if delivery:
             delivery.close()
         if webhook:

@@ -128,7 +128,10 @@ def learn_graph(graph):
 
 
 def pseudonymize(graph):
-    """Rewrite ingested identities, preserving row IDs and all graph links."""
+    """Rewrite ingested identities, retaining source IDs and graph links.
+
+    Duplicate engineer spelling rows coalesce; their IDs have no inbound links.
+    """
     from bridge import context_memory as cm
     scrub = learn_graph(graph)
     tables = ('engineers', 'change_people', 'blame_lines', 'listings', 'ownership', 'gh_users',
@@ -146,12 +149,26 @@ def pseudonymize(graph):
             keyed = 'id' in rows[0]
             if not keyed:
                 graph.db.execute(f'DELETE FROM {table}')
+            engineer_keys = {}
             for row in rows:
                 # PostgreSQL maintains this generated FTS column itself.
                 row.pop('search_vector', None)
                 for col, value in row.items():
                     if isinstance(value, str) and col not in {'id', 'repo', 'sha', 'ref', 'path', 'path_prefix', 'slack_id', 'person_id'}:
                         row[col] = scrub.scrub(value)
+                if table == 'engineers':
+                    # Spelling/email-case aliases can become one natural key.
+                    # Engineer IDs have no inbound foreign keys; history and
+                    # ownership join by names/emails, transformed below too.
+                    key = (row['name'], row['email'])
+                    prior = engineer_keys.get(key)
+                    if prior:
+                        graph.db.execute('UPDATE engineers SET active=CASE WHEN active=1 OR ?=1 THEN 1 ELSE 0 END, '
+                            "github_username=CASE WHEN github_username='' THEN ? ELSE github_username END WHERE id=?",
+                            (row['active'], row['github_username'], prior))
+                        graph.db.execute('DELETE FROM engineers WHERE id=?', (row['id'],))
+                        continue
+                    engineer_keys[key] = row['id']
                 if table == 'blame_lines':
                     old = graph.db.execute('SELECT lines FROM blame_lines WHERE repo=? AND rev=? AND path=? AND engineer=?',
                                            tuple(row[k] for k in ('repo','rev','path','engineer'))).fetchone()

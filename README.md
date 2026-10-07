@@ -26,7 +26,7 @@ A company can explicitly enable already-approved standing rules to authorize mat
 
 ## Less coordination, more useful autonomy
 
-Raven remembers the answer, who gave it, why, the scope it applies to, and its signoff. A referral teaches it who to ask. A correction changes what later tasks should rely on.
+Raven remembers the answer, who gave it, why, the scope it applies to, and its signoff. A referral teaches it who to ask. A correction changes what later tasks should rely on. Sources and interactions share one graph: a reused answer keeps the source versions and scope behind it. Connected search can retrieve a past decision through that relationship, and changed or expired evidence blocks stale reuse.
 
 The goal is for more of the next task to start with the answer its owner would have given. More decisions become a cache hit. More proposals are right the first time. Agents can keep preparing work in the background, with fewer interruptions and less work to redo after review. People spend more of their attention on the genuinely new calls.
 
@@ -66,7 +66,7 @@ Manual ownership overrides and additional required approvers are available for t
 
 ## Install locally with Docker
 
-You need Docker Desktop, or Docker Engine with Compose v2, running on your machine. The first build needs internet access. No host Python, Node, or AWS account is required.
+You need Docker Desktop, or Docker Engine with Compose v2, running on your machine. The first build needs internet access. No host Node or AWS account is required. The optional deterministic coding-host hooks use Python 3 on the host; the Docker app itself does not need it.
 
 Clone the public preview:
 
@@ -79,9 +79,9 @@ cd raven-preview
 Setup builds the app, starts PostgreSQL, and prints the local URL. It normally opens the browser for you. If port 7333 is in use, run `./setup --port 7444` instead.
 
 1. **Connect Slack.** Install your workspace’s Raven app and run `./setup --configure --project /path/to/your/code` to save its bot token, signing secret, and triage channel. Follow [Slack setup](docs/slack.md), including its required scopes and Events API URL. Raven imports the member directory automatically. Nobody needs to enter Slack IDs or set up owners.
-2. **Give Raven context.** Connect GitHub, ingest a local clone, or have your host agent import records from its connected Jira and document tools. Slack search provides live context during a Slack conversation. Raven uses CODEOWNERS, commits, reviews, record authors, and earlier answers to infer who to ask. No hand-built ownership map is required.
-3. **Connect your coding agent over MCP.** `./setup --configure --project /path/to/your/code` can configure Claude Code, Codex, or Cursor. Add the supplied Raven instruction to the project’s `CLAUDE.md` or `AGENTS.md`. You then give the agent ordinary tasks; it discovers paths and decisions itself.
-4. **Run one real task.** Raven DMs the inferred contact with the question and evidence. They answer, sign off, or refer it in Slack. The agent waits, reads the answer, and continues. You can watch in the browser, but you do not need to.
+2. **Give Raven context.** Connect GitHub, ingest a local clone, use the optional [Airweave connection](docs/context-connectors.md) for shared documents and tickets, or have your host agent import records from its connected tools. Slack search provides live context during a Slack conversation. Raven uses CODEOWNERS, commits, reviews, record authors, and earlier answers to infer who to ask. No hand-built ownership map is required.
+3. **Connect your coding agent over MCP.** `./setup --configure --project /path/to/your/code` can configure Claude Code, Codex, or Cursor. For Claude Code and Codex, setup also installs [task hooks](docs/host-adapters.md): the first ordinary prompt registers a task once, and follow-ups stay on it. Restart the host and verify it loads the hooks. Cursor uses the supplied project instruction. The agent discovers paths and decisions itself.
+4. **Run one real task.** Raven DMs the inferred contact with the question and evidence. They answer, sign off, or refer it in Slack. The agent waits, reads the answer, and continues. An explicitly enabled [local supervisor](docs/host-adapters.md#resume-an-idle-coding-session-after-a-person-replies) can resume an idle Claude or Codex session after replies. You can watch in the browser, but you do not need to.
 
 For setup without creating a personal account or opening the browser:
 
@@ -128,9 +128,9 @@ Configured inference providers and connectors receive the context needed for the
 
 Raven proposes candidate decisions from the task, earlier decisions, and ownership signals. The host agent builds the tree as it explores the work. Discovery is not complete or guaranteed: an important question can still go unrecorded. Routing and reuse can also need correction.
 
-The task view records what reaches Raven. The finish gate governs Raven's protocol, not your deployment system. Its model review compares a submitted diff with signed decisions; it does not prove the implementation correct or replace tests and code review. This preview is intended for a supervised pilot. See [what we have tested](docs/verification.md).
+The task view records what reaches Raven. The finish gate governs Raven's protocol, not your deployment system. Its model review compares a submitted diff with signed decisions; it does not prove the implementation correct or replace tests and code review. This preview is intended for a supervised pilot. See [what we have tested](docs/verification.md) and the latest [context and host validation](docs/context-host-validation-2026-10-06.md).
 
-Slack is the normal notification and reply channel. Teams incoming webhooks are outbound only; an optional [verified channel-bot reply preview](docs/teams.md) requires a separate bot registration, pinned tenant/channel and explicit identity mapping. Its signed-fixture tests are not a live Teams certification. GitHub sync is built in. Jira records can be ingested through `bridge_import_record` from your host agent’s connectors, or through `POST /api/records`. The customer installs Raven as an internal Slack bot. Public-channel search uses Slack’s Real-time Search API during user interactions; results are transient and are never copied into Raven’s memory. Raven remembers the decisions people explicitly give it and their referrals. It does not backfill Slack or include a Jira polling connector. Browser voice interviews are described below; native Slack calls and telephone integration are not shipped.
+Slack is the normal notification and reply channel. Teams incoming webhooks are outbound only; an optional [verified channel-bot reply preview](docs/teams.md) requires a separate bot registration, pinned tenant/channel and explicit identity mapping. Its signed-fixture tests are not a live Teams certification. GitHub sync is built in. Jira records can be ingested through `bridge_import_record` from your host agent’s connectors, or through `POST /api/records`. The customer installs Raven as an internal Slack bot. Public-channel search uses Slack’s Real-time Search API during user interactions; results are transient and are never copied into Raven’s memory. Raven remembers the decisions people explicitly give it and their referrals. It does not backfill Slack or include a native Jira poller. An optional customer-managed Airweave connection can supply synchronized ticket and document excerpts under its own source permissions; [setup and limits](docs/context-connectors.md). Browser voice interviews are described below; native Slack calls and telephone integration are not shipped.
 
 Browser voice interviews are available from a decision: spoken or typed answers,
 grounded adaptive follow-ups when inference is configured, an editable readback,

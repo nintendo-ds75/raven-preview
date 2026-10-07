@@ -406,6 +406,35 @@ class AnswerTests(BriefCase, Http):
                     if n["node_id"] == self.a["node_id"])
         self.assertTrue(node["authorized"])
 
+    def test_personal_link_can_review_complete_changed_sources_without_an_account(self):
+        source_data = {'repo': 'acme/platform', 'kind': 'doc', 'ref': 'POL-1',
+                       'body': 'Exclude internal load tests.', 'paths': ['billing/usage.py']}
+        source = self.store.add_record(source_data)
+        did = self.a['node_id']
+        row = self.graph.intents_by_ref(['POL-1'], 'acme/platform')[0]
+        self.graph.publish_evidence(did, [row], status='resolved', source='record',
+                                    answer='Exclude internal load tests.', kind='evidence', signoff='required')
+        self.answer(self.token, did, answer='')
+        self.store.add_record({**source_data, 'body': 'Exclude synthetic traffic including partner sandboxes.'})
+        page = briefing.overview(self.store, self.link(self.token))
+        review = page['focus']['source_revalidation']
+        self.assertIn('partner sandboxes', review['sources'][0]['snapshot']['body'])
+        with self.assertRaises(Invalid): self.answer(self.token, did, answer='')
+        self.answer(self.token, did, answer='Exclude synthetic traffic including partner sandboxes.',
+                    source_evidence=review['pins'], source_decision_pins=review['decision_pins'])
+        self.assertTrue(self.decision(did)['authorized'])
+        self.assertFalse(self.decision(did)['needs_review'])
+        self.assertEqual(self.graph.db.execute('SELECT count(*) n FROM account_passwords').fetchone()['n'], 0)
+
+    def test_personal_link_rejects_source_change_after_page_was_read(self):
+        self.test_personal_link_can_review_complete_changed_sources_without_an_account()
+        did = self.a['node_id']
+        review = briefing.overview(self.store, self.link(self.token))['focus']['source_revalidation']
+        self.store.add_record({'repo':'acme/platform','kind':'doc','ref':'POL-1','body':'New incompatible policy.'})
+        with self.assertRaises(Invalid):
+            self.answer(self.token, did, answer='', source_evidence=review['pins'], source_decision_pins=review['decision_pins'])
+        self.assertFalse(self.decision(did)['authorized'])
+
     def test_a_stale_revision_is_refused(self):
         with self.assertRaisesRegex(Invalid, "changed while you were reviewing"):
             self.answer(self.token, self.a["node_id"], expected="2020-01-01T00:00:00+00:00")

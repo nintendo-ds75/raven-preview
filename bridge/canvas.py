@@ -334,7 +334,15 @@ def kickoff(store, cfg, task_id: str, title: str, goal: str, repo: str, paths: l
     starts on the same canvas."""
     graph = store.graph
     scope = graph.resolve_repo(repo_key(repo))
+    from . import context_connectors
+    context_result = None
+    if context_connectors._connection(store, scope):
+        context_result = context_connectors.search(store, {'repo': scope, 'query': (goal or title)[:2000], 'task_id': task_id})
     discovery = discover(store, cfg.without_models() if cfg else None, scope, title, goal, paths, requester)
+    if context_result is not None:
+        discovery['context_retrieval'] = {**context_result['external'],
+            'source_ids': [r.get('record_id') for r in context_result['sources']],
+            'related_decision_ids': [r['decision_id'] for r in context_result['related_decisions']]}
     narrow = narrow_edit(title, goal, paths or [a.get("path", "") for a in (discovery.get("areas") or [])])
     if narrow:
         discovery["narrow_edit"] = narrow
@@ -1045,6 +1053,9 @@ def add_node(store, cfg, data) -> dict:
     if options:
         ctx = (ctx + "\n" if ctx else "") + "Options: " + " | ".join(options)
     effective = cfg if cfg is not None else load()
+    from . import context_connectors
+    if context_connectors._connection(store, run['repo']):
+        context_connectors.search(store, {'repo': run['repo'], 'query': question[:2000], 'task_id': task_id})
     background = effective.semantic_retrieval
     first_pass = effective.without_models() if background else effective
     graph.expire_rules()
@@ -1596,6 +1607,8 @@ def get_tree(store, task_id: str) -> dict:
             loaded[r["id"]] = r
     nodes = [_view(r, canonical=loaded.get(r["superseded_by"]) if r["status"] == "duplicate" else None)
              for r in rows]
+    from .context_connectors import blocked_decisions
+    context_blocked = blocked_decisions(graph.db, run['repo'])
     for node in nodes:
         from . import context_memory as cm
         node['sources'] = cm.edges(graph.db, node.get('duplicate_of') or node['node_id'])
@@ -1603,6 +1616,11 @@ def get_tree(store, task_id: str) -> dict:
         node['source_reuse_requires_review'] = bool(source_row and source_row['source_reuse_uncertain'])
         node['source_provenance'] = 'versioned' if node['sources'] and not node['source_reuse_requires_review'] else 'unknown'
         node['source_notice'] = cm.provenance_notice(source_row['source'] if source_row else '', node['sources'], bool(source_row and source_row['source_reuse_uncertain']))
+        if (node.get('duplicate_of') or node['node_id']) in context_blocked:
+            node['authorized'] = False
+            node['blocking'] = True
+            node['source_refresh_required'] = True
+            node['next'] = 'External evidence needs a successful refresh before this answer can authorize work. Check bridge_connection_status.'
         parent = loaded.get(node['parent_id'])
         if parent is not None and parent['run_id'] == task_id and not parent['draft']:
             _with_parent_context(store, node, parent, compact=True)
@@ -1657,6 +1675,8 @@ def get_tree(store, task_id: str) -> dict:
             counts["parent_changed_after"] += 1
     followups = [n for n in nodes if n["status"] == "suggested"]
     parts: list[str] = []
+    if any(n.get('source_refresh_required') for n in nodes):
+        parts.append('External evidence is awaiting refresh; earlier signatures do not authorize work while its current access or content is unverified')
     from .routing_memory import pending_scopes
     scope_clarifications = pending_scopes(graph, task_id)
     if scope_clarifications:

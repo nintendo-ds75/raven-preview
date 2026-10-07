@@ -340,8 +340,10 @@ def backfill(db):
 
 
 def citation(db, record_id, version_id):
-    row = db.execute('SELECT s.*,v.sequence,v.snapshot,v.observed_at,v.provenance,v.fingerprint FROM source_records s '
-                     'JOIN source_versions v ON v.record_id=s.id WHERE s.id=? AND v.id=?', (record_id, version_id)).fetchone()
+    from .context_connectors import freshness_sql
+    current, current_args = freshness_sql()
+    row = db.execute('SELECT s.*,v.sequence,v.snapshot,v.observed_at,v.provenance,v.fingerprint,' + current + ' AS retrieval_current FROM source_records s '
+                     'JOIN source_versions v ON v.record_id=s.id WHERE s.id=? AND v.id=?', [*current_args, record_id, version_id]).fetchone()
     if not row:
         return None
     snapshot = json.loads(row['snapshot'])
@@ -354,7 +356,7 @@ def citation(db, record_id, version_id):
             'source_version': snapshot['source_version'], 'observed_at': row['observed_at'],
             'provenance': row['provenance'], 'fingerprint': row['fingerprint'],
             'availability': snapshot['availability'], 'head_id': row['head_id'],
-            'current': version_id == row['head_id']}
+            'current': version_id == row['head_id'] and bool(row['retrieval_current'])}
 
 
 def edges(db, decision_id):
@@ -560,9 +562,10 @@ def validate_derivations(db, decision_id):
         check_current(db, row['related_id'])
 
 
-def invalidate(db, record_id, new_head):
+def invalidate(db, record_id, new_head, *, include_current=False, reason_override=''):
     """Withdraw current reliance transitively while preserving signed history."""
-    roots = [r['decision_id'] for r in db.execute("SELECT DISTINCT decision_id FROM decision_source_edges WHERE record_id=? AND active=1 AND role IN ('support','contradiction') AND source_version_id<>?", (record_id, new_head))]
+    roots = [r['decision_id'] for r in db.execute("SELECT DISTINCT decision_id FROM decision_source_edges WHERE record_id=? AND active=1 AND role IN ('support','contradiction')" +
+        ('' if include_current else ' AND source_version_id<>?'), (record_id,) if include_current else (record_id, new_head))]
     queue, seen = list(roots), set()
     at = stamp()
     current_source = citation(db, record_id, new_head)
@@ -575,7 +578,7 @@ def invalidate(db, record_id, new_head):
         if not row:
             continue
         snapshot_decision(db, did, reason='before-source-change')
-        reason = f"Source {current_source['ref']} changed to version {current_source['sequence']}; review the current sources before confirming this answer"
+        reason = reason_override or f"Source {current_source['ref']} changed to version {current_source['sequence']}; review the current sources before confirming this answer"
         run = db.execute('SELECT status FROM runs WHERE id=?', (row['run_id'],)).fetchone()
         completed = run is not None and run['status'] == 'completed'
         if completed:
@@ -695,7 +698,8 @@ def source_revalidation(db, decision_id):
                 continue
             snapshot = json.loads(version['snapshot'])
             head = db.execute('SELECT availability FROM source_records WHERE id=?', (old['record_id'],)).fetchone()
-            if head is None or head['availability'] != 'available':
+            from .context_connectors import fresh
+            if head is None or head['availability'] != 'available' or not fresh(db, old['record_id']):
                 blockers.append(f"Source {old['ref']} is unavailable; restore access before revalidation")
                 # Retained context is referenced by ID only, without exposing lost content.
                 snapshot = {'availability': 'inaccessible', 'body': '', 'title': ''}

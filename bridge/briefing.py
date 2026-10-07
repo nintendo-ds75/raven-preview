@@ -739,6 +739,7 @@ def _focus(store, link: Link, nodes: list[dict], decision_id: str = "") -> dict 
     can_refer = (_open(d) and d["status"] in ("pending", "resolved", "partial", "assumed", "proposed")
                  and bool(authz.basis_for(graph, link.actor, d, "refer")[0]))
     return {"node_id": d["id"], "question": d["question"], "context": context, "paths": paths,
+            "source_revalidation": d.get("source_revalidation"),
             "approval_scope_text": d["approval_scope_text"], "replacement_ends_rule": bool(d.get("reusable")),
             "brief": drop_absence(d.get("brief") or ""), "options": options, "status": d["status"],
             "prediction": d.get("prediction") or "", "found": _found(store, d, link.person["name"]),
@@ -1043,6 +1044,9 @@ def act(store, link: Link, data) -> dict:
     rationale = str(data.get("rationale") or "").strip()[:4000]
     actor = link.actor
     name = link.person["name"]
+    # The task link permits only this task's decision, on this person's
+    # standing. The same complete revision checks used by the inbox still run.
+    reviewed = {k: data[k] for k in ('source_evidence', 'source_decision_pins') if k in data}
     if decision["status"] == "pending":
         if not answer:
             raise Invalid("Write the decision you are making")
@@ -1063,16 +1067,16 @@ def act(store, link: Link, data) -> dict:
         # page" showed under Why in Decisions and Memory as if it were
         # theirs. Without one the store records that none was given.
         store.answer(decision_id, {"answer": answer, **({"rationale": rationale} if rationale else {}),
-                                   "expected_updated_at": expected, "signed_by": name, "source": f"link: {name}"},
+                                   "expected_updated_at": expected, "signed_by": name, "source": f"link: {name}", **reviewed},
                      actor=actor)
         notice = f"Recorded as {name}'s answer. {SEEN}"
     elif answer:
         canvas.sign_off(store, decision_id, {"by": name, "answer": answer,
                                              **({"rationale": rationale} if rationale else {}),
-                                             "expected_updated_at": expected}, actor=actor)
+                                             "expected_updated_at": expected, **reviewed}, actor=actor)
         notice = f"Corrected and signed by {name}. {SEEN}"
     else:
-        canvas.sign_off(store, decision_id, {"by": name, "expected_updated_at": expected}, actor=actor)
+        canvas.sign_off(store, decision_id, {"by": name, "expected_updated_at": expected, **reviewed}, actor=actor)
         notice = f"Signed off by {name}. {SEEN}"
     return {"notice": notice, "decision_id": decision_id}
 

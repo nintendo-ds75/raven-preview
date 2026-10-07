@@ -222,7 +222,9 @@ def run(repo: Path, work: Path, w: Walkthrough) -> int:
     probe = Host(db)
     expected_tools = {"bridge_start_task", "bridge_add_node", "bridge_settle_node", "bridge_get_tree",
                       "bridge_wait", "bridge_finish_task", "bridge_get_decision", "bridge_search_decisions",
-                      "bridge_list_owners", "bridge_ingest_repo", "bridge_import_record", "bridge_connection_status"}
+                      "bridge_list_owners", "bridge_ingest_repo", "bridge_import_record", "bridge_connection_status",
+                      "bridge_export_proof", "bridge_get_record", "bridge_lookup_record",
+                      "bridge_search_context", "bridge_host_event"}
     w.check("the MCP server starts and offers the protocol", set(probe.tools) == expected_tools, ", ".join(probe.tools))
     w.check("its instructions tell an agent what to do first",
             "bridge_start_task" in probe.instructions)

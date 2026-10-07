@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.update(BRIDGE_MODEL_API='none', BRIDGE_SEMANTIC='0', BRIDGE_LIVE='0')
-from bridge import canvas, ladder
+from bridge import canvas, ladder, briefing
 from bridge.graph import ts_to_iso
 from bridge.server import make_server
 from bridge.store import Store
@@ -44,5 +44,9 @@ canvas.sign_off(store, human_child, {'by': 'Ada Example', 'expected_updated_at':
 store.answer(parent, {'answer': 'Seven days.', 'rationale': 'Northstar contract limitation',
                       'expected_updated_at': store.get_decision(parent)['updated_at']})
 server = make_server(store, host='127.0.0.1', port=0)
-print(json.dumps({'url': f'http://127.0.0.1:{server.server_port}', 'decision_id': did, 'task_id': run, 'source_data': source_data, 'human_child': human_child, 'human_parent': parent}), flush=True)
+with graph.transaction():
+    person = graph.find_person('Ada Example')
+    person_id = person['id'] if person else graph.add_person('Ada Example', slack_id='UEXAMPLE')
+    personal_link = briefing.mint(graph, person_id, run, did)
+print(json.dumps({'url': f'http://127.0.0.1:{server.server_port}', 'decision_id': did, 'task_id': run, 'source_data': source_data, 'human_child': human_child, 'human_parent': parent, 'personal_link': personal_link}), flush=True)
 server.serve_forever()

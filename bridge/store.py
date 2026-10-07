@@ -652,6 +652,12 @@ class Store:
             result['source_reuse_requires_review'] = bool(result['source_reuse_uncertain'])
             result['source_notice'] = cm.provenance_notice(result.get('source'), result['sources'], result['source_reuse_uncertain'])
             result['source_revalidation'] = cm.source_revalidation(db, decision_id)
+            from .context_connectors import blocked_decisions
+            if probe['id'] in blocked_decisions(db, row['repo']):
+                result['authorized'] = False
+                result['approval_pending'] = True
+                result['source_refresh_required'] = True
+                result['source_notice'] = 'External evidence needs a successful refresh before this answer can authorize work.'
             from .approval_scope import render as render_scope
             result["approval_scope_text"] = render_scope(result)
             return result
@@ -1494,7 +1500,8 @@ class Store:
             row = db.execute('SELECT * FROM source_records WHERE id=? AND repo=?', (record_id, repo_key(repo))).fetchone()
             if row is None:
                 raise Invalid('Source record not found in this repository')
-            if row['availability'] != 'available':
+            from .context_connectors import fresh
+            if row['availability'] != 'available' or not fresh(db, record_id):
                 raise Invalid('Source is unavailable; retained history is not exposed through source reads')
             versions = [dict(v) for v in db.execute('SELECT * FROM source_versions WHERE record_id=? ORDER BY sequence', (record_id,))]
             for version in versions:

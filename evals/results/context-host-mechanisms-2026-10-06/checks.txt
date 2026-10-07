@@ -1,0 +1,64 @@
+production-tests.log
+FAIL: test_mcp_tools_do_not_offer_agent_approval (test_bridge.StoreTests.test_mcp_tools_do_not_offer_agent_approval)
+FAIL: test_the_tree_reads_ten_nodes_with_one_query_on_decisions (test_canvas.TreeReadTests.test_the_tree_reads_ten_nodes_with_one_query_on_decisions)
+Ran 1713 tests in 428.439s
+FAILED (failures=2, skipped=132)
+
+production-final.log
+Ran 1716 tests in 350.510s
+OK (skipped=132)
+
+postgres-tests.log
+Ran 1190 tests in 574.408s
+OK (skipped=113)
+
+final-focused.log
+Ran 229 tests in 48.115s
+OK
+
+host-final.log
+Ran 17 tests in 4.942s
+OK
+
+final-regressions.log
+Ran 157 tests in 40.640s
+OK
+
+postgres-last.log
+Ran 118 tests in 69.588s
+OK (skipped=2)
+
+docs-tests.log
+Ran 12 tests in 3.630s
+OK
+
+hygiene-tests.log
+Ran 9 tests in 3.599s
+OK
+
+oss-walkthrough.log
+37 of 37 promises held
+
+browser.cjs.log
+Browser checks passed: seeded canvas task, sign-off from Needs review, routing, approval → MCP retrieval, corrections, persistence, export, escaping, setup copy, and five mobile views.
+
+brief-browser.cjs.log
+Task page checks passed: 70 steps across 1440px and 390px.
+
+browser-context-memory.cjs.log
+{"ok":true,"checks":["complete current source display","close is not approval","deliberate bound revalidation","retains source dependence","source race refused","reopen and revalidate current head","human-only independent owner replacement","pure-human complete scope display","exact human version rebound","accountless full source review on phone"],"decision_id":"26568a3d3a6d"}
+
+browser-interview.cjs.log
+Interview browser checks passed (mocked speech APIs; no real microphone/provider test).
+
+browser-agents.cjs.log
+Agents browser checks passed: task intake, routed review, delivery with browser closed, run output, escaping, mobile.
+
+browser-final.log
+Browser checks passed: seeded canvas task, sign-off from Needs review, routing, approval → MCP retrieval, corrections, persistence, export, escaping, setup copy, and five mobile views.
+
+Additional DOM checks: web-setup, interview-ui-unit, modal-lifecycle-ui-unit (18 assertions), audit-viewer (6 assertions) all passed.
+
+Fresh final Docker/PostgreSQL startup: authenticated MCP initialization, 17 tools, idempotent kickoff, exact prompt, connection status and finish all passed. First probe used an overridden operator credential and received 401; the documented generated limited agent credential succeeded. No runtime credential is included.
+
+Final staged-checkout docs/fixture hygiene: 13 tests passed. New staged lines have no credential-pattern hits. Repository-wide scan found one unchanged synthetic Slack contract canary, verified in its fixture context.

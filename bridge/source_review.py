@@ -43,7 +43,9 @@ def fallback(delivery, decision, review, reason):
     reason = escape_text(reason)
     if len(reason.encode('utf-8')) > 1024:
         reason = 'The complete source review is unavailable in chat. The review page shows what must be resolved.'
-    return ('Nothing recorded: ' + reason + '\nOpen the authenticated Raven review page: ' + link +
+    return ('Nothing recorded: ' + reason + '\nIf this question arrived in a Slack DM, open your personal task link in that message. '
+            'It shows the complete source review without requiring a Raven account. Do not forward that personal link. '
+            '\nOr open the authenticated Raven review page: ' + link +
             '\nSelect this decision, review every current source and source decision, then use the source-review checkbox to sign or correct it. '
             'This link requires your existing Raven access; it does not grant access. '
             'An independent replacement is a separate, deliberate choice in that form.')

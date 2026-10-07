@@ -323,6 +323,10 @@ def migrate(db: sqlite3.Connection) -> None:
     migrate_routes(db)
     from .context_memory import migrate as migrate_context
     migrate_context(db)
+    from .context_connectors import migrate as migrate_connectors
+    migrate_connectors(db)
+    from .host_sessions import migrate as migrate_hosts
+    migrate_hosts(db)
     if fts_available(db):
         db.executescript(_FTS)
 
@@ -1253,30 +1257,38 @@ class Graph:
         restriction, values = self._source_scope_sql()
         sql += (" AND " if repo else " WHERE ") + restriction
         args = (*args, *values)
-        return self.memo(repo, "intents", scopes, lambda: self.db.execute(sql, args).fetchall(),
+        # An external evidence lease can expire without a database write.
+        # Recheck scoped rows on the next second when a connector is present.
+        clock = int(time.time()) if self.db.execute('SELECT 1 FROM context_connections' + (' WHERE repo=?' if repo else '') + ' LIMIT 1', (repo,) if repo else ()).fetchone() else 0
+        return self.memo(repo, "intents", (scopes, clock), lambda: self.db.execute(sql, args).fetchall(),
                          lambda rows: ([(row, (row["title"] + " " + row["body"]).lower()) for row in rows], {}))
 
     def _source_scope_sql(self):
         """Selected task anchors disambiguate source installations. Without
         them, colliding canonical keys are withheld rather than guessed."""
         scopes = tuple(getattr(self._local, 'source_scopes', ()))
+        from .context_connectors import freshness_sql
+        fresh, fresh_args = freshness_sql()
         if scopes:
             clauses = ' OR '.join('(s.provider=? AND s.namespace=?)' for _ in scopes)
-            return f"(s.id IS NULL OR (s.availability='available' AND (s.provider IN ('legacy','git') OR (s.provider='github' AND s.namespace='github.com') OR {clauses})))", [x for pair in scopes for x in pair]
+            return f"(s.id IS NULL OR (s.availability='available' AND {fresh} AND (s.provider IN ('legacy','git') OR (s.provider='github' AND s.namespace='github.com') OR {clauses})))", [*fresh_args, *[x for pair in scopes for x in pair]]
         return ("(s.id IS NULL OR (s.availability='available' AND NOT EXISTS (SELECT 1 FROM source_records other WHERE other.repo=s.repo "
                 "AND other.provider=s.provider AND other.object_kind=s.object_kind "
                 "AND (other.external_id=s.external_id OR (s.display_ref<>'' AND other.display_ref=s.display_ref)) "
-                "AND other.namespace<>s.namespace)))"), []
+                "AND other.namespace<>s.namespace) AND " + fresh + "))"), fresh_args
 
     @contextmanager
     def source_scope(self, task_id):
         previous = getattr(self._local, 'source_scopes', ())
+        previous_task = getattr(self._local, 'source_task', '')
+        self._local.source_task = task_id
         self._local.source_scopes = tuple(sorted({(r['provider'], r['namespace']) for r in self.db.execute(
             'SELECT s.provider,s.namespace FROM task_source_anchors a JOIN source_records s ON s.id=a.record_id WHERE a.task_id=?', (task_id,))}))
         try:
             yield
         finally:
             self._local.source_scopes = previous
+            self._local.source_task = previous_task
 
     def term_dfs(self, terms: Iterable[str], repo: str = "") -> dict[str, int]:
         """Document frequency of each term over the records in scope."""
@@ -2034,6 +2046,28 @@ class Graph:
         sql = _DECISION_SELECT + " WHERE " + scope + " ORDER BY d.updated_at DESC LIMIT ?"
         return [_row_to_decision(r) for r in self.db.execute(sql, args + [limit]).fetchall()]
 
+    def linked_answers(self, record_ids, repo, limit=12):
+        """Retrieve signed memories by graph relationship, before lexical ranking.
+
+        Follow source -> decision -> derived decision edges. This nominates
+        candidates only; all ordinary freshness and applicability gates remain.
+        """
+        ids = list(dict.fromkeys(record_ids))[:40]
+        if not ids:
+            return []
+        scope, args = self._memory_filter(MEMORY_STATUSES, repo)
+        sql = ("WITH RECURSIVE linked(id) AS (SELECT decision_id FROM decision_source_edges "
+               f"WHERE active=1 AND stale=0 AND role IN ('support','contradiction') AND record_id IN ({','.join('?' for _ in ids)}) "
+               "UNION SELECT l.decision_id FROM decision_links l JOIN linked x ON x.id=l.related_id WHERE l.kind='derived') "
+               + _DECISION_SELECT + " WHERE d.id IN (SELECT id FROM linked) AND " + scope +
+               " ORDER BY d.updated_at DESC LIMIT ?")
+        return [_row_to_decision(r) for r in self.db.execute(sql, [*ids, *args, limit])]
+
+    def anchored_answers(self, repo):
+        task_id = getattr(self._local, 'source_task', '')
+        ids = [r['record_id'] for r in self.db.execute('SELECT DISTINCT record_id FROM task_source_anchors WHERE task_id=?', (task_id,))]
+        return self.linked_answers(ids, repo)
+
     def _memory_scope_sql(self):
         """A signature does not erase active reliance on another installation.
         Follow exact live derivations, including inherited parents, rather than
@@ -2114,7 +2148,7 @@ class Graph:
         newest eligible rows alone bound the pass."""
         if self._memory_count(statuses, repo) <= FULL_SCAN_MAX:
             return self._memory_rows(statuses, repo)
-        ids: set[str] = set()
+        ids: set[str] = {d.id for d in self.anchored_answers(repo)} if statuses == MEMORY_STATUSES else set()
         if query:
             import re as _re
             from .llm import stem
@@ -2315,6 +2349,13 @@ class Graph:
                 return row["review_reason"] or f"source decision {current} needs review"
             if row["superseded_by"] and row["status"] != "duplicate":
                 return f"source decision {current} was superseded; review and answer afresh"
+            from .context_connectors import freshness_sql
+            fresh, fresh_args = freshness_sql()
+            expired = db.execute("SELECT 1 FROM decision_source_edges e JOIN source_records s ON s.id=e.record_id "
+                "WHERE e.decision_id=? AND e.active=1 AND e.role IN ('support','contradiction') AND NOT " + fresh + ' LIMIT 1',
+                [current, *fresh_args]).fetchone()
+            if expired:
+                return 'External evidence needs a successful refresh before this answer can authorize work'
             source = row["source_id"]
             if source:
                 revision = row["source_revision"]

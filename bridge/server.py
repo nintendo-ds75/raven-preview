@@ -941,7 +941,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
             try:
                 with waits.open():
                     return {"result": call_tool(store, name, args, wait_cap=wait_cap if cap is None else cap,
-                                                sleep=sleep, stop=waits.stopping),
+                                                sleep=sleep, stop=waits.stopping, principal=self.me),
                             "isError": False}
             except Invalid as error:
                 return {"result": str(error), "isError": True}

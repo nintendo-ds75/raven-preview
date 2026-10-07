@@ -2616,7 +2616,10 @@ def _wide_select(store: Graph, cfg: Config, question: str, emb: list[float], ter
                  extra_rows: list | None = None, extra_emb: list[float] | None = None,
                  extra_mems: list | None = None):
     cands: dict[str, tuple[str, object]] = {}
-    mems: list = [p for _, p in store.similar_answered(emb, top_k=6, min_score=0.02, repo=repo, query=question)]
+    mems: list = store.anchored_answers(repo)
+    for _, past in store.similar_answered(emb, top_k=6, min_score=0.02, repo=repo, query=question):
+        if past.id not in {p.id for p in mems}:
+            mems.append(past)
     seen_m = {p.id for p in mems}
     if extra_emb is not None:
         for _, p in store.similar_answered(extra_emb, top_k=4, min_score=0.02, repo=repo, query=question):
