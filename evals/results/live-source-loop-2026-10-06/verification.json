@@ -1,0 +1,14 @@
+{
+  "product_commit": "68b98b8840831a6f4206f11069c8e0953ce54fe2",
+  "v1_proof_matches_patch": false,
+  "v3_proof_matches_patch": true,
+  "v3_patch_sha256": "8476a8c3570cf8f16cda7fab39538f71ad68c16beabeead5e8f49db1c99a65b0",
+  "v3_review_hash_matches": true,
+  "v3_integrity_valid": true,
+  "v3_stale": false,
+  "v3_review_snapshot_current": true,
+  "a_historical_bundle_unchanged": true,
+  "a_currently_stale": true,
+  "slack_contract_violations": 0,
+  "proof_exports_byte_identical": true
+}

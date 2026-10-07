@@ -1,0 +1,135 @@
+{
+  "source_anchors": [],
+  "task_id": "27f7e97f3e2d",
+  "title": "Revalidate Northstar Retry-After rollout",
+  "goal": "Confirm the existing Retry-After interoperability change still matches current Northstar staging policy before rollout.",
+  "repo": "urllib3/urllib3",
+  "requester": "Engineer 177b2c",
+  "facts": {
+    "customer": "Northstar",
+    "environment": "staging"
+  },
+  "status": "working",
+  "verdict": "engage",
+  "verdict_why": "the org already decided something close: \"Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging\u2026\" (Wes Contract); the task speaks of rollout, policy, in \"Revalidate Northstar Retry-After rollout\", which is a call for Wes Contract as a first contact; ask them to confirm who decides or refer (the model agrees: Rollout decision requires confirmation from Wes Contract that current staging policy still aligns with prior decision on non-RFC-strict Retry-After format acceptance before production rollout.)",
+  "counts": {
+    "answered": 1,
+    "unrouted": 0,
+    "needs_review": 0,
+    "parent_changed_after": 0,
+    "signoff_required": 0,
+    "blocking": 0
+  },
+  "needs_review": false,
+  "model_pending": false,
+  "nodes": [
+    {
+      "node_id": "653b31567c31",
+      "task_id": "27f7e97f3e2d",
+      "parent_id": "",
+      "depth": 0,
+      "client_ref": "current-policy",
+      "origin": "agent",
+      "question": "Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?",
+      "status": "answered",
+      "kind": "evidence",
+      "answer": "For Northstar staging, accept unsigned finite decimals such as 0.5. Reject leading plus signs including +3 and +0.5 with InvalidHeader. Reject negatives, exponents, NaN and infinity. Preserve ordinary integer return types, HTTP dates, retry_after_max clamping, existing retry methods and backoff. Add regression tests only. This approval is for this task only.",
+      "prediction": "",
+      "evidence": "",
+      "owner": "Wes Contract",
+      "owner_evidence": "handed on by Engineer b01026: \"not me @Wes Contract just this one\"",
+      "answered_by": "Wes Contract",
+      "rationale": "The current policy withdrew support for plus-prefixed values after compatibility review.",
+      "signoff": "signed",
+      "signed_by": "Wes Contract",
+      "brief": "",
+      "path": "src/urllib3/util/retry.py",
+      "category": "policy",
+      "created_at": "2026-10-07T01:10:20.070044+00:00",
+      "updated_at": "2026-10-07T01:15:10.830210+00:00",
+      "needs_review": false,
+      "review_reason": "",
+      "authorized": true,
+      "blocking": false,
+      "duplicate_of": "",
+      "reusable": false,
+      "rule_conditions": "",
+      "rule_expires": "",
+      "rule_scope": "",
+      "facts": {
+        "customer": "Northstar",
+        "environment": "staging",
+        "file": "src/urllib3/util/retry.py",
+        "method": "parse_retry_after"
+      },
+      "required_signers": [],
+      "signatures": [
+        "Wes Contract"
+      ],
+      "historical_signatures": [],
+      "followup_required": false,
+      "partial": false,
+      "model_pending": false,
+      "options": [],
+      "next": "act on the answer from Wes Contract; follow-up questions they added are children of this node in bridge_get_tree",
+      "sources": [
+        {
+          "record_id": "348020de08f642ecadb44145b3969760",
+          "source_version_id": "5dcc9c61cde3479f8cf85424d857f9bb",
+          "sequence": 3,
+          "provider": "jira",
+          "namespace": "northstar-fixture",
+          "external_id": "POL-RETRY",
+          "kind": "jira",
+          "repo": "urllib3/urllib3",
+          "ref": "POL-RETRY",
+          "url": "https://example.invalid/jira/POL-RETRY",
+          "title": "Clarified Retry-After interoperability policy for Northstar staging",
+          "author": "Wes Contract",
+          "source_created_at": "",
+          "source_updated_at": "2026-10-06T11:00:00Z",
+          "source_version": "policy-v3",
+          "observed_at": "2026-10-07T01:14:37.928346+00:00",
+          "provenance": "import",
+          "fingerprint": "e9ea95fadff6b727aa4afa30c2275d86ccfcec430c1e30a9acc7124826950530",
+          "availability": "available",
+          "head_id": "5dcc9c61cde3479f8cf85424d857f9bb",
+          "current": true,
+          "role": "support",
+          "decision_version_id": "e19b56f001b24c3c87b8008b71924a7e",
+          "stale": false
+        }
+      ],
+      "source_reuse_requires_review": false,
+      "source_provenance": "versioned",
+      "source_notice": "",
+      "related": [
+        {
+          "id": "fd8642fc9a10",
+          "kind": "related",
+          "note": "Historical signed precedent; current premises explicitly revalidated on this task",
+          "source_decision_id": "fd8642fc9a10",
+          "source_version_id": "a17753a189a84ae59d166d17579436f9",
+          "decision_id": "653b31567c31",
+          "decision_version_id": "e19b56f001b24c3c87b8008b71924a7e"
+        }
+      ],
+      "depends_on": [],
+      "dependents": [],
+      "parent_changed_after": false,
+      "children": []
+    }
+  ],
+  "followups": [],
+  "observed_at": "2026-10-07T01:15:46.264387+00:00",
+  "observed_revision": {
+    "653b31567c31": {
+      "max_event_id": 213,
+      "event_count": 3
+    }
+  },
+  "notes": [],
+  "scope_clarifications": [],
+  "next": "no node waits on anyone",
+  "read_acknowledged": true
+}

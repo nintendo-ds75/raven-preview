@@ -1,0 +1,16 @@
+{
+  "patch-v1-final.diff": {
+    "applies": true,
+    "diagnostics": "",
+    "tree": "0340befd6a39955086a6842b68c396abe54e6e76"
+  },
+  "patch-v1-submitted.diff": {
+    "applies": false,
+    "diagnostics": "error: patch failed: test/test_retry.py:414\nerror: test/test_retry.py: patch does not apply\n"
+  },
+  "patch-v3-final.diff": {
+    "applies": true,
+    "diagnostics": "",
+    "tree": "d2f94d0c7591ac18575143dae8deac39ea36ae84"
+  }
+}

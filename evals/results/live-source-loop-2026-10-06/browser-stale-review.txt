@@ -1,0 +1,204 @@
+- link "Skip to content":
+  - /url: "#main"
+- complementary:
+  - link "Raven PREVIEW":
+    - /url: "#inbox"
+    - generic: Raven
+    - generic: PREVIEW
+  - strong: Northstar local test
+  - navigation "Workspace navigation":
+    - link "Judgment inbox":
+      - /url: "#inbox"
+      - text: Inbox
+      - generic: "2"
+    - link "Tasks":
+      - /url: "#runs"
+      - text: Tasks
+    - link "Decision memory":
+      - /url: "#memory"
+      - text: Memory
+    - link "People and ownership":
+      - /url: "#owners"
+      - text: People & ownership
+  - link "Connections & setup":
+    - /url: "#connect"
+    - text: Connections & setup
+  - generic: WC
+  - strong: Wes Contract
+  - text: member ·
+  - link "Sign out":
+    - /url: /auth/logout
+- banner:
+  - text: Workspace
+  - generic: /
+  - strong: Tasks
+  - generic: Shared workspace
+  - button "Setup and help":
+- main:
+  - link "← All tasks":
+    - /url: "#runs"
+  - button "Refresh"
+  - button "Copy app link"
+  - button "Open task page"
+  - heading "Revalidate Northstar Retry-After rollout" [level=1]
+  - generic "Read the task brief"
+  - generic: Review needed
+  - generic: Requested by Engineer 177b2c
+  - generic: urllib3/urllib3
+  - text: Current status
+  - heading "Review needed" [level=2]
+  - paragraph: 1 decision still blocks completion. Waiting on Wes Contract.
+  - strong: 0 / 1
+  - generic: signed
+  - navigation "Task sections":
+    - button "Overview"
+    - button "Decisions (1)" [pressed]
+    - button "History"
+    - button "Code review"
+    - generic: Updated Oct 6, 6:13 PM
+  - article:
+    - generic: Needs another look
+    - generic: Wes Contract
+    - heading "Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams — fractional seconds ('0.5') and a leading '+' sign ('+3') — instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?" [level=3]
+    - paragraph: For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry_after_max clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only
+    - paragraph: External source provenance is unknown for this answer. Existing human authority is separate. A new sign-off approves the exact answer and scope; it does not verify or reconstruct legacy source citations.
+    - paragraph: Source POL-RETRY changed to version 2; review the current sources before confirming this answer
+    - text: Not authorized for use
+    - code: src/urllib3/util/retry.py
+    - button "Open decision":
+      - text: Open decision
+  - paragraph:
+    - text: Visible to signed-in workspace members and viewers. A link does not grant access. Agent completion is a report, not verification of the patch.
+- dialog "Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams — fractional seconds ('0.5') and a leading '+' sign ('+3') — instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?":
+  - heading "Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams — fractional seconds ('0.5') and a leading '+' sign ('+3') — instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?" [level=2]
+  - paragraph: Docker local MCP agent · Revalidate Northstar Retry-After rollout
+  - button "Close dialog":
+  - generic: "Decision scope (recorded fields; no facts inferred from prose): Decision: 653b31567c31 Task: 27f7e97f3e2d Repository: urllib3/urllib3 Question: Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams — fractional seconds ('0.5') and a leading '+' sign ('+3') — instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged? Context: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch. Paths: src/urllib3/util/retry.py, test/test_retry.py Path: src/urllib3/util/retry.py Scope paths: [\"src/urllib3/util/retry.py\", \"test/test_retry.py\"] Scope key: 73c6386633aaa26c60bb Category: policy Facts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse_retry_after\"} Applicability: {}"
+  - generic: Needs review
+  - generic: Evidence
+  - generic: Sign-off wanted
+  - generic: urllib3/urllib3 / src/urllib3/util/retry.py
+  - paragraph: External source provenance is unknown for this answer. Existing human authority is separate. A new sign-off approves the exact answer and scope; it does not verify or reconstruct legacy source citations.
+  - generic "Context and constraints"
+  - strong: Prefer to talk it through?
+  - paragraph: Use an attributed interview, with optional browser dictation. Review and confirm the exact decision before the agent can use it.
+  - button "Start or resume interview"
+  - generic: Needs review
+  - text: Source POL-RETRY changed to version 2; review the current sources before confirming this answer Confirm the answer below by signing it, or correct it.
+  - generic "Why this owner"
+  - generic: Resolved from evidence · evidence, not sign-off · your signature is wanted
+  - text: For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry_after_max clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only
+  - paragraph:
+    - strong: "Evidence:"
+    - text: Wes Contract answered this (direct, decision fd8642fc9a10, similarity 1.00, decayed score 1.00)
+  - paragraph: The agent prepares on this answer and cannot finish its task until you sign it or correct it.
+  - heading "Review current source evidence" [level=3]
+  - paragraph: Review the complete displayed source snapshots and source decisions before confirming these exact pins. A newer source change will refuse this review; nothing is refreshed by an ordinary yes.
+  - generic "Historical signed precedent fd8642fc9a10"
+  - generic "POL-RETRY · support · changed revision"
+  - paragraph: Retry-After interoperability policy for Northstar staging
+  - paragraph: Wes Contract · Current · 2026-10-06T10:00:00Z
+  - generic: "Wes Contract decides Retry-After interoperability for Northstar staging. Revised decision: accept unsigned finite decimal seconds such as 0.5, but reject every leading plus sign including +3 and +0.5 with InvalidHeader. A compatibility review found plus signs must stay invalid. Keep ordinary integer return types, HTTP dates, retry_after_max clamping, backoff and retry methods unchanged. Reject negatives, exponents, NaN and infinity. Add regression tests only. This source is evidence and the rollout requires fresh owner signoff."
+  - paragraph:
+    - text: "Paths: src/urllib3/util/retry.py, test/test_retry.py"
+    - text: "Exact source version: 45a13ac2089c4110b066537171f3c82a"
+  - checkbox "I reviewed these complete source snapshots and source decisions. Bind this answer to these exact revisions."
+  - text: I reviewed these complete source snapshots and source decisions. Bind this answer to these exact revisions.
+  - button "Sign off as Wes Contract":
+    - text: Sign off as Wes Contract
+  - generic: Or correct it
+  - textbox "Or correct it":
+    - /placeholder: The answer the agent should act on instead.
+    - text: For Northstar staging, accept unsigned finite decimals such as 0.5. Reject leading plus signs including +3 and +0.5 with InvalidHeader. Reject negatives, exponents, NaN and infinity. Preserve ordinary integer return types, HTTP dates, retry_after_max clamping, existing retry methods and backoff. Add regression tests only. This approval is for this task only.
+  - generic: Why this correction?
+  - textbox "Why this correction?":
+    - /placeholder: Capture the reasoning for future tasks.
+    - text: The current policy withdrew support for plus-prefixed values after compatibility review.
+  - generic "Where this answer applies (optional)"
+  - heading "Review current source evidence" [level=3]
+  - paragraph: Review the complete displayed source snapshots and source decisions before confirming these exact pins. A newer source change will refuse this review; nothing is refreshed by an ordinary yes.
+  - generic "Historical signed precedent fd8642fc9a10"
+  - generic "POL-RETRY · support · changed revision"
+  - paragraph: Retry-After interoperability policy for Northstar staging
+  - paragraph: Wes Contract · Current · 2026-10-06T10:00:00Z
+  - generic: "Wes Contract decides Retry-After interoperability for Northstar staging. Revised decision: accept unsigned finite decimal seconds such as 0.5, but reject every leading plus sign including +3 and +0.5 with InvalidHeader. A compatibility review found plus signs must stay invalid. Keep ordinary integer return types, HTTP dates, retry_after_max clamping, backoff and retry methods unchanged. Reject negatives, exponents, NaN and infinity. Add regression tests only. This source is evidence and the rollout requires fresh owner signoff."
+  - paragraph:
+    - text: "Paths: src/urllib3/util/retry.py, test/test_retry.py"
+    - text: "Exact source version: 45a13ac2089c4110b066537171f3c82a"
+  - checkbox "I reviewed these complete source snapshots and source decisions. Bind this answer to these exact revisions." [checked]
+  - text: I reviewed these complete source snapshots and source decisions. Bind this answer to these exact revisions.
+  - checkbox "This is my independent replacement decision. Retire the previous source reliance and preserve it in history."
+  - text: This is my independent replacement decision. Retire the previous source reliance and preserve it in history.
+  - paragraph: A correction is a signed answer recorded on behalf of Wes Contract; the agent reads it on the tree, and every decision that leaned on the old answer is marked for review.
+  - alert: This decision changed while you were reviewing it. Reopen it before acting on it.
+  - button "Close"
+  - button "Record correction":
+    - text: Record correction
+  - generic: WC
+  - combobox "Decision owner":
+    - option "Select an owner"
+    - option "Engineer 177b2c ·"
+    - option "Wes Contract ·" [selected]
+    - option "Marisol Contract ·"
+    - option "Contract Requester ·"
+    - option "No Email Contact ·"
+    - option "Engineer 072732 ·"
+    - option "Engineer 10be1f ·"
+    - option "Engineer 15bf58 ·"
+    - option "Engineer 19647c ·"
+    - option "Engineer 3781db ·"
+    - option "Engineer 4a7f3b ·"
+    - option "Engineer 595663 ·"
+    - option "Engineer 654255 ·"
+    - option "Engineer 68d961 ·"
+    - option "engineer-739742 ·"
+    - option "Engineer 73fe49 ·"
+    - option "Engineer 753dac ·"
+    - option "Engineer 7729a9 ·"
+    - option "Engineer 84f954 ·"
+    - option "Engineer 85f2a5 ·"
+    - option "Engineer 8dfdf0 ·"
+    - option "engineer-8f66af ·"
+    - option "Engineer 92708e ·"
+    - option "Engineer 93b0ad ·"
+    - option "Engineer 952b13 ·"
+    - option "Engineer 966f9b ·"
+    - option "Engineer a53613 ·"
+    - option "Engineer a73549 ·"
+    - option "Engineer ac3bb9 ·"
+    - option "Engineer ad2b50 ·"
+    - option "Engineer b01026 ·"
+    - option "Engineer b58bfb ·"
+    - option "Engineer b7053a ·"
+    - option "Engineer b798c8 ·"
+    - option "Engineer b92d11 ·"
+    - option "Engineer ba8dbd ·"
+    - option "Engineer ba9592 ·"
+    - option "Engineer c4f2b6 ·"
+    - option "Engineer d092ca ·"
+    - option "Engineer daa724 ·"
+    - option "Engineer dfeb55 ·"
+    - option "Engineer e67de9 ·"
+    - option "Engineer e73f0d ·"
+    - option "Engineer e81a4f ·"
+    - option "Engineer e9d0fa ·"
+    - option "Engineer f4e2f7 ·"
+    - option "Engineer f604e0 ·"
+    - option "Engineer fadd72 ·"
+    - option "Engineer fbe883 ·"
+  - button "Assign this one"
+  - button "Hand on & learn"
+  - text: Hand on teaches Raven that they decide
+  - combobox "What handing on teaches":
+    - option "rollout decisions" [selected]
+    - option "decisions on src/urllib3/util/*"
+    - option "this question only"
+  - paragraph: Referred to Wes Contract by Engineer b01026. Assign moves this request only; Hand on also teaches Raven the scope above, once the person answers.
+  - generic "Is this the wrong question?"
+  - generic: Follow-up questions for the agent · the right questions for the next level
+  - textbox "Follow-up questions":
+    - /placeholder: One question per line. They appear on the agent's tree under this decision.
+  - 'checkbox "Required: the task cannot finish until the agent takes these up and they are answered"'
+  - text: "Required: the task cannot finish until the agent takes these up and they are answered"
+  - button "Add follow-up questions"
+  - generic "Decision history · 15 events"

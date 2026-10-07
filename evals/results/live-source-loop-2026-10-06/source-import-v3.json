@@ -1,0 +1,45 @@
+{
+  "repo": "urllib3/urllib3",
+  "kind": "jira",
+  "ref": "POL-RETRY",
+  "url": "https://example.invalid/jira/POL-RETRY",
+  "paths": [
+    "src/urllib3/util/retry.py",
+    "test/test_retry.py"
+  ],
+  "source": {
+    "record_id": "348020de08f642ecadb44145b3969760",
+    "source_version_id": "5dcc9c61cde3479f8cf85424d857f9bb",
+    "sequence": 3,
+    "provider": "jira",
+    "namespace": "northstar-fixture",
+    "external_id": "POL-RETRY",
+    "kind": "jira",
+    "repo": "urllib3/urllib3",
+    "ref": "POL-RETRY",
+    "url": "https://example.invalid/jira/POL-RETRY",
+    "title": "Clarified Retry-After interoperability policy for Northstar staging",
+    "author": "Wes Contract",
+    "source_created_at": "",
+    "source_updated_at": "2026-10-06T11:00:00Z",
+    "source_version": "policy-v3",
+    "observed_at": "2026-10-07T01:14:37.928346+00:00",
+    "provenance": "import",
+    "fingerprint": "e9ea95fadff6b727aa4afa30c2275d86ccfcec430c1e30a9acc7124826950530",
+    "availability": "available",
+    "head_id": "5dcc9c61cde3479f8cf85424d857f9bb",
+    "current": true
+  },
+  "changed": true,
+  "affected_decisions": [
+    "653b31567c31",
+    "fd8642fc9a10"
+  ],
+  "latest_observation": {
+    "observed_at": "2026-10-07T01:14:37.928346+00:00",
+    "source_updated_at": "2026-10-06T11:00:00Z",
+    "source_sequence": 3,
+    "source_version": "policy-v3",
+    "meaning": "Latest accepted local import; not a provider fetch, policy adoption or approval"
+  }
+}

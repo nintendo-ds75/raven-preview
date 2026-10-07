@@ -1,0 +1,26 @@
+{
+  "task_id": "27f7e97f3e2d",
+  "timed_out": false,
+  "waited_seconds": 0.0,
+  "changed": [],
+  "waiting_on": [],
+  "counts": {
+    "answered": 1,
+    "unrouted": 0,
+    "needs_review": 0,
+    "parent_changed_after": 0,
+    "signoff_required": 0,
+    "blocking": 0
+  },
+  "timeout_applied": 50.0,
+  "observed_at": "2026-10-07T01:15:46.295591+00:00",
+  "observed_revision": {
+    "653b31567c31": {
+      "max_event_id": 213,
+      "event_count": 3
+    }
+  },
+  "notes": [],
+  "next": "nothing on this task waits on a person; no node waits on anyone",
+  "read_acknowledged": true
+}

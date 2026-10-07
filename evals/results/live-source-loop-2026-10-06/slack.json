@@ -1,0 +1,729 @@
+{
+  "messages": [
+    {
+      "channel": "D67DDF6",
+      "text": "*Sign-off wanted from Engineer b01026.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Support fractional/+-prefixed Retry-After delays for Northstar staging (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: fd8642fc9a10\nTask: 3850d9c6dde9\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: a71e971a4a40fb328966\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Current src/urllib3/util/retry.py:342-361 parse\\u005fretry\\u005fafter\\u0028\\u0029 only matches ^\\u005cs\\u002a\\u005b0-9\\u005d+\\u005cs\\u002a$ for delay-seconds, else falls back to HTTP-date parsing, else raises InvalidHeader. Northstar's staging upstreams send '0.5' and '+3' which hit neither branch and raise InvalidHeader today. Existing test test/test\\u005fretry.py::test\\u005fparse\\u005fretry\\u005fafter\\u005finvalid explicitly asserts '+1' and '1.0' are invalid, so broadening parsing is a deliberate, narrow behavior change to this one method, not a silent one. Seeking sign-off before implementing so the change is authorized and not an unexpected retry-behavior shift. No change is proposed to retry\\u005fafter\\u005fmax clamping, max-sleep behavior, or to introduce any new minimum-delay/backoff floor, so this does not create retry storms beyond what Retry-After: 0 already permits today.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\nRaven's guess (a prediction, not a record): POL-RETRY proposes accepting fractional seconds like 0.5 and a leading plus sign like +3 in Retry-After for the Northstar staging rollout, while keeping integer and HTTP-date parsing, retry\\u005fafter\\u005fmax clamping, and negative/exponent/NaN/infinity rejection intact. It is explicitly marked as a proposal still needing owner confirmation and is still open. The records do not establish: Has the parsing logic in src/urllib3/util/retry.py:342-361 been updated since POL-RETRY was created; Has owner confirmation been given for the POL-RETRY proposal; Are there implementation records, commits, or closed issues documenting the change beyond POL-RETRY.\n_Bridge did not find this decided anywhere. It is a guess for you to confirm or correct, not something your team settled._\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Sign-off wanted from Engineer b01026.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Support fractional/+-prefixed Retry-After delays for Northstar staging (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: fd8642fc9a10\nTask: 3850d9c6dde9\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: a71e971a4a40fb328966\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Current src/urllib3/util/retry.py:342-361 parse\\u005fretry\\u005fafter\\u0028\\u0029 only matches ^\\u005cs\\u002a\\u005b0-9\\u005d+\\u005cs\\u002a$ for delay-seconds, else falls back to HTTP-date parsing, else raises InvalidHeader. Northstar's staging upstreams send '0.5' and '+3' which hit neither branch and raise InvalidHeader today. Existing test test/test\\u005fretry.py::test\\u005fparse\\u005fretry\\u005fafter\\u005finvalid explicitly asserts '+1' and '1.0' are invalid, so broadening parsing is a deliberate, narrow behavior change to this one method, not a silent one. Seeking sign-off before implementing so the change is authorized and not an unexpected retry-behavior shift. No change is proposed to retry\\u005fafter\\u005fmax clamping, max-sleep behavior, or to introduce any new minimum-delay/backoff floor, so this does not create retry storms beyond what Retry-After: 0 already permits today.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Raven's guess (a prediction, not a record): POL-RETRY proposes accepting fractional seconds like 0.5 and a leading plus sign like +3 in Retry-After for the Northstar staging rollout, while keeping integer and HTTP-date parsing, retry\\u005fafter\\u005fmax clamping, and negative/exponent/NaN/infinity rejection intact. It is explicitly marked as a proposal still needing owner confirmation and is still open. The records do not establish: Has the parsing logic in src/urllib3/util/retry.py:342-361 been updated since POL-RETRY was created; Has owner confirmation been given for the POL-RETRY proposal; Are there implementation records, commits, or closed issues documenting the change beyond POL-RETRY.\n_Bridge did not find this decided anywhere. It is a guess for you to confirm or correct, not something your team settled._\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer."
+          }
+        }
+      ],
+      "ts": "1700000000.000001",
+      "at": 31572.400854708
+    },
+    {
+      "channel": "D67DDF6",
+      "text": "Pass this question to Wes Contract for this question only; do not change future ownership or learned contacts\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: fd8642fc9a10\nTask: 3850d9c6dde9\nRepository: urllib3/urllib3\nQuestion: Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?\nContext: Current src/urllib3/util/retry.py:342-361 parse\\u005fretry\\u005fafter\\u0028\\u0029 only matches ^\\u005cs\\u002a\\u005b0-9\\u005d+\\u005cs\\u002a$ for delay-seconds, else falls back to HTTP-date parsing, else raises InvalidHeader. Northstar's staging upstreams send '0.5' and '+3' which hit neither branch and raise InvalidHeader today. Existing test test/test\\u005fretry.py::test\\u005fparse\\u005fretry\\u005fafter\\u005finvalid explicitly asserts '+1' and '1.0' are invalid, so broadening parsing is a deliberate, narrow behavior change to this one method, not a silent one. Seeking sign-off before implementing so the change is authorized and not an unexpected retry-behavior shift. No change is proposed to retry\\u005fafter\\u005fmax clamping, max-sleep behavior, or to introduce any new minimum-delay/backoff floor, so this does not create retry storms beyond what Retry-After: 0 already permits today.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: a71e971a4a40fb328966\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nOptions: \\u005b\"Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029\", \"Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029\", \"Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029\", \"Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\"\\u005d\nApplicability: {}\nNothing applied yet. Review the read-back and reply `confirm 41f3a42e67dc` (or `decline 41f3a42e67dc`).",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Pass this question to Wes Contract for this question only; do not change future ownership or learned contacts\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: fd8642fc9a10\nTask: 3850d9c6dde9\nRepository: urllib3/urllib3\nQuestion: Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?\nContext: Current src/urllib3/util/retry.py:342-361 parse\\u005fretry\\u005fafter\\u0028\\u0029 only matches ^\\u005cs\\u002a\\u005b0-9\\u005d+\\u005cs\\u002a$ for delay-seconds, else falls back to HTTP-date parsing, else raises InvalidHeader. Northstar's staging upstreams send '0.5' and '+3' which hit neither branch and raise InvalidHeader today. Existing test test/test\\u005fretry.py::test\\u005fparse\\u005fretry\\u005fafter\\u005finvalid explicitly asserts '+1' and '1.0' are invalid, so broadening parsing is a deliberate, narrow behavior change to this one method, not a silent one. Seeking sign-off before implementing so the change is authorized and not an unexpected retry-behavior shift. No change is proposed to retry\\u005fafter\\u005fmax clamping, max-sleep behavior, or to introduce any new minimum-delay/backoff floor, so this does not create retry storms beyond what Retry-After: 0 already permits today.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: a71e971a4a40fb328966\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Options: \\u005b\"Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029\", \"Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029\", \"Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029\", \"Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\"\\u005d\nApplicability: {}\nNothing applied yet. Review the read-back and reply `confirm 41f3a42e67dc` (or `decline 41f3a42e67dc`)."
+          }
+        }
+      ],
+      "thread_ts": "1700000000.000001",
+      "client_msg_id": "bacb4a1e-a892-54ca-aa9d-7d3075b003b2",
+      "unfurl_links": false,
+      "ts": "1700000000.000002",
+      "at": 31596.907553791
+    },
+    {
+      "channel": "D67DDF6",
+      "text": "Handed to Wes Contract for this question only; Raven learned no route from it",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Handed to Wes Contract for this question only; Raven learned no route from it"
+          }
+        }
+      ],
+      "thread_ts": "1700000000.000001",
+      "client_msg_id": "6b121f2a-daf0-5be3-9326-10694d166d14",
+      "unfurl_links": false,
+      "ts": "1700000000.000003",
+      "at": 31618.289221333
+    },
+    {
+      "channel": "D012OWNER",
+      "text": "*Handed to you, Wes Contract.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Support fractional/+-prefixed Retry-After delays for Northstar staging (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: fd8642fc9a10\nTask: 3850d9c6dde9\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: a71e971a4a40fb328966\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Current src/urllib3/util/retry.py:342-361 parse\\u005fretry\\u005fafter\\u0028\\u0029 only matches ^\\u005cs\\u002a\\u005b0-9\\u005d+\\u005cs\\u002a$ for delay-seconds, else falls back to HTTP-date parsing, else raises InvalidHeader. Northstar's staging upstreams send '0.5' and '+3' which hit neither branch and raise InvalidHeader today. Existing test test/test\\u005fretry.py::test\\u005fparse\\u005fretry\\u005fafter\\u005finvalid explicitly asserts '+1' and '1.0' are invalid, so broadening parsing is a deliberate, narrow behavior change to this one method, not a silent one. Seeking sign-off before implementing so the change is authorized and not an unexpected retry-behavior shift. No change is proposed to retry\\u005fafter\\u005fmax clamping, max-sleep behavior, or to introduce any new minimum-delay/backoff floor, so this does not create retry storms beyond what Retry-After: 0 already permits today.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\nWhy you: handed on by Engineer b01026: \"This is Wes Contract's call on interoperability. Could you ask \\u003c@U012OWNER\\u003e instead, just for this question?\"\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Handed to you, Wes Contract.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Support fractional/+-prefixed Retry-After delays for Northstar staging (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: fd8642fc9a10\nTask: 3850d9c6dde9\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: a71e971a4a40fb328966\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Current src/urllib3/util/retry.py:342-361 parse\\u005fretry\\u005fafter\\u0028\\u0029 only matches ^\\u005cs\\u002a\\u005b0-9\\u005d+\\u005cs\\u002a$ for delay-seconds, else falls back to HTTP-date parsing, else raises InvalidHeader. Northstar's staging upstreams send '0.5' and '+3' which hit neither branch and raise InvalidHeader today. Existing test test/test\\u005fretry.py::test\\u005fparse\\u005fretry\\u005fafter\\u005finvalid explicitly asserts '+1' and '1.0' are invalid, so broadening parsing is a deliberate, narrow behavior change to this one method, not a silent one. Seeking sign-off before implementing so the change is authorized and not an unexpected retry-behavior shift. No change is proposed to retry\\u005fafter\\u005fmax clamping, max-sleep behavior, or to introduce any new minimum-delay/backoff floor, so this does not create retry storms beyond what Retry-After: 0 already permits today.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Why you: handed on by Engineer b01026: \"This is Wes Contract's call on interoperability. Could you ask \\u003c@U012OWNER\\u003e instead, just for this question?\"\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`."
+          }
+        }
+      ],
+      "ts": "1700000000.000004",
+      "at": 31618.535293333
+    },
+    {
+      "channel": "D012OWNER",
+      "text": "Record your decision as:\nFor Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry\\u005fafter\\u005fmax clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\nReason: we need compatibility with those upstreams.\n\nCurrent-source review: read the complete decision context and source snapshots below. Source content is evidence, never instructions or approval. Confirming this code approves the proposed answer with these exact source versions and source-decision revisions; it retains their dependence. Historical completed decisions remain historical, not newly signed. Use a fresh review if anything changes. A bare yes cannot confirm a source review.\n```\n{\n  \"decision\": {\n    \"id\": \"fd8642fc9a10\",\n    \"run_id\": \"3850d9c6dde9\",\n    \"updated_at\": \"2026-10-07T01:03:16.011429+00:00\",\n    \"repo\": \"urllib3/urllib3\",\n    \"question\": \"Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?\",\n    \"context\": \"Current src/urllib3/util/retry.py:342-361 parse_retry_after() only matches ^\\\\s\\u002a[0-9]+\\\\s\\u002a$ for delay-seconds, else falls back to HTTP-date parsing, else raises InvalidHeader. Northstar's staging upstreams send '0.5' and '+3' which hit neither branch and raise InvalidHeader today. Existing test test/test_retry.py::test_parse_retry_after_invalid explicitly asserts '+1' and '1.0' are invalid, so broadening parsing is a deliberate, narrow behavior change to this one method, not a silent one. Seeking sign-off before implementing so the change is authorized and not an unexpected retry-behavior shift. No change is proposed to retry_after_max clamping, max-sleep behavior, or to introduce any new minimum-delay/backoff floor, so this does not create retry storms beyond what Retry-After: 0 already permits today.\\nPaths: src/urllib3/util/retry.py, test/test_retry.py\\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry_after_max and rejecting negative/garbage values (closest to Northstar's two examples) | Accept fractional seconds only, keep '+3' rejected as invalid (stays closer to RFC grammar, misses one Northstar case) | Accept leading '+' sign only, keep '1.0' fractional form rejected (misses one Northstar case) | Reject both and keep current strict RFC integer-only/HTTP-date parsing (no interop change; Northstar headers continue to raise InvalidHeader)\",\n    \"answer\": \"POL-RETRY proposes accepting fractional seconds like 0.5 and a leading plus sign like +3 in Retry-After for the Northstar staging rollout, while keeping integer and HTTP-date parsing, retry_after_max clamping, and negative/exponent/NaN/infinity rejection intact. It is explicitly marked as a proposal still needing owner confirmation and is still open. The records do not establish: Has the parsing logic in src/urllib3/util/retry.py:342-361 been updated since POL-RETRY was created; Has owner confirmation been given for the POL-RETRY proposal; Are there implementation records, commits, or closed issues documenting the change beyond POL-RETRY.\",\n    \"path\": \"src/urllib3/util/retry.py\",\n    \"scope_paths\": \"[\\\"src/urllib3/util/retry.py\\\", \\\"test/test_retry.py\\\"]\",\n    \"scope_key\": \"a71e971a4a40fb328966\",\n    \"category\": \"policy\",\n    \"facts\": \"{\\\"customer\\\": \\\"Northstar\\\", \\\"environment\\\": \\\"staging\\\", \\\"file\\\": \\\"src/urllib3/util/retry.py\\\", \\\"method\\\": \\\"parse_retry_after\\\"}\",\n    \"options\": \"[\\\"Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry_after_max and rejecting negative/garbage values (closest to Northstar's two examples)\\\", \\\"Accept fractional seconds only, keep '+3' rejected as invalid (stays closer to RFC grammar, misses one Northstar case)\\\", \\\"Accept leading '+' sign only, keep '1.0' fractional form rejected (misses one Northstar case)\\\", \\\"Reject both and keep current strict RFC integer-only/HTTP-date parsing (no interop change; Northstar headers continue to raise InvalidHeader)\\\"]\",\n    \"applicability\": \"\",\n    \"required_signers\": \"\",\n    \"followup_required\": 0,\n    \"reusable\": 0,\n    \"rule_conditions\": \"\",\n    \"rule_scope\": \"\",\n    \"rule_expires\": \"\",\n    \"rule_ended_at\": \"\"\n  },\n  \"dependencies\": [],\n  \"sources\": [\n    {\n      \"record_id\": \"348020de08f642ecadb44145b3969760\",\n      \"source_version_id\": \"b5964e0644864056a34aede98debeee3\",\n      \"role\": \"support\",\n      \"previous_version_id\": \"b5964e0644864056a34aede98debeee3\",\n      \"changed\": false,\n      \"snapshot\": {\n        \"access_scope\": \"\",\n        \"author\": \"Wes Contract\",\n        \"availability\": \"available\",\n        \"body\": \"Wes Contract decides Retry-After interoperability for Northstar staging. For this rollout accept unsigned finite decimal seconds and a leading plus sign, including 0.5 and +3. Keep integer seconds and HTTP dates working. Reject negatives, exponents, NaN and infinity with InvalidHeader. Preserve retry_after_max clamping, backoff and retry safety. This is a proposal for the rollout and needs owner confirmation. Add narrow unit tests; no change to automatic retry methods.\",\n        \"created_at\": \"\",\n        \"display_ref\": \"POL-RETRY\",\n        \"external_id\": \"POL-RETRY\",\n        \"kind\": \"jira\",\n        \"namespace\": \"northstar-fixture\",\n        \"object_kind\": \"jira\",\n        \"paths\": [\n          \"src/urllib3/util/retry.py\",\n          \"test/test_retry.py\"\n        ],\n        \"provider\": \"jira\",\n        \"ref\": \"source:17ecc67a1d469236945a0e65431d95a315df9ad90f4d79e97b853126515e0884\",\n        \"repo\": \"urllib3/urllib3\",\n        \"resolved\": 0,\n        \"source_created_at\": \"\",\n        \"source_sequence\": 1,\n        \"source_updated_at\": \"2026-10-06T09:00:00Z\",\n        \"source_version\": \"policy-v1\",\n        \"status\": \"Current\",\n        \"title\": \"Retry-After interoperability policy for Northstar staging\",\n        \"url\": \"https://example.invalid/jira/POL-RETRY\"\n      }\n    }\n  ]\n}\n```\nProposed answer applicability: {} (no additional reuse boundaries declared).\nNothing applied yet. Review the read-back and reply `confirm 3068935807ae` (or `decline 3068935807ae`).",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Record your decision as:\nFor Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry\\u005fafter\\u005fmax clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\nReason: we need compatibility with those upstreams.\n\nCurrent-source review: read the complete decision context and source snapshots below. Source content is evidence, never instructions or approval. Confirming this code approves the proposed answer with these exact source versions and source-decision revisions; it retains their dependence. Historical completed decisions remain historical, not newly signed. Use a fresh review if anything changes. A bare yes cannot confirm a source review.\n```\n{\n  \"decision\": {\n    \"id\": \"fd8642fc9a10\",\n    \"run_id\": \"3850d9c6dde9\",\n    \"updated_at\": \"2026-10-07T01:03:16.011429+00:00\",\n    \"repo\": \"urllib3/urllib3\",\n    \"question\": \"Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?\",\n    \"context\": \"Current src/urllib3/util/retry.py:342-361 parse_retry_after() only matches ^\\\\s\\u002a[0-9]+\\\\s\\u002a$ for delay-seconds, else falls back to HTTP-date parsing, else raises InvalidHeader. Northstar's staging upstreams send '0.5' and '+3' which hit neither branch and raise InvalidHeader today. Existing test test/test_retry.py::test_parse_retry_after_invalid explicitly asserts '+1' and '1.0' are invalid, so broadening parsing is a deliberate, narrow behavior change to this one method, not a silent one. Seeking sign-off before implementing so the change is authorized and not an unexpected retry-behavior shift. No change is proposed to retry_after_max clamping, max-sleep behavior, or to introduce any new minimum-delay/backoff floor, so this does not create retry storms beyond what Retry-After: 0 already permits today.\\nPaths: src/urllib3/util/retry.py, test/test_retry.py\\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry_after_max and rejecting negative/garbage values (closest to Northstar's two examples) | Accept fractional seconds only, keep '+3' rejected as invalid (stays closer to RFC grammar, misses one Northstar case) | Accept leading '+' sign only, keep '1.0' fractional form rejected (misses one Northstar case) | Reject both and keep current strict RFC integer-only/HTTP-date parsing (no interop change; Northstar headers continue to raise InvalidHeader)\",\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "    \"answer\": \"POL-RETRY proposes accepting fractional seconds like 0.5 and a leading plus sign like +3 in Retry-After for the Northstar staging rollout, while keeping integer and HTTP-date parsing, retry_after_max clamping, and negative/exponent/NaN/infinity rejection intact. It is explicitly marked as a proposal still needing owner confirmation and is still open. The records do not establish: Has the parsing logic in src/urllib3/util/retry.py:342-361 been updated since POL-RETRY was created; Has owner confirmation been given for the POL-RETRY proposal; Are there implementation records, commits, or closed issues documenting the change beyond POL-RETRY.\",\n    \"path\": \"src/urllib3/util/retry.py\",\n    \"scope_paths\": \"[\\\"src/urllib3/util/retry.py\\\", \\\"test/test_retry.py\\\"]\",\n    \"scope_key\": \"a71e971a4a40fb328966\",\n    \"category\": \"policy\",\n    \"facts\": \"{\\\"customer\\\": \\\"Northstar\\\", \\\"environment\\\": \\\"staging\\\", \\\"file\\\": \\\"src/urllib3/util/retry.py\\\", \\\"method\\\": \\\"parse_retry_after\\\"}\",\n    \"options\": \"[\\\"Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry_after_max and rejecting negative/garbage values (closest to Northstar's two examples)\\\", \\\"Accept fractional seconds only, keep '+3' rejected as invalid (stays closer to RFC grammar, misses one Northstar case)\\\", \\\"Accept leading '+' sign only, keep '1.0' fractional form rejected (misses one Northstar case)\\\", \\\"Reject both and keep current strict RFC integer-only/HTTP-date parsing (no interop change; Northstar headers continue to raise InvalidHeader)\\\"]\",\n    \"applicability\": \"\",\n    \"required_signers\": \"\",\n    \"followup_required\": 0,\n    \"reusable\": 0,\n    \"rule_conditions\": \"\",\n    \"rule_scope\": \"\",\n    \"rule_expires\": \"\",\n    \"rule_ended_at\": \"\"\n  },\n  \"dependencies\": [],\n  \"sources\": [\n    {\n      \"record_id\": \"348020de08f642ecadb44145b3969760\",\n      \"source_version_id\": \"b5964e0644864056a34aede98debeee3\",\n      \"role\": \"support\",\n      \"previous_version_id\": \"b5964e0644864056a34aede98debeee3\",\n      \"changed\": false,\n      \"snapshot\": {\n        \"access_scope\": \"\",\n        \"author\": \"Wes Contract\",\n        \"availability\": \"available\",\n        \"body\": \"Wes Contract decides Retry-After interoperability for Northstar staging. For this rollout accept unsigned finite decimal seconds and a leading plus sign, including 0.5 and +3. Keep integer seconds and HTTP dates working. Reject negatives, exponents, NaN and infinity with InvalidHeader. Preserve retry_after_max clamping, backoff and retry safety. This is a proposal for the rollout and needs owner confirmation. Add narrow unit tests; no change to automatic retry methods.\",\n        \"created_at\": \"\",\n        \"display_ref\": \"POL-RETRY\",\n        \"external_id\": \"POL-RETRY\",\n        \"kind\": \"jira\",\n        \"namespace\": \"northstar-fixture\",\n        \"object_kind\": \"jira\",\n        \"paths\": [\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "          \"src/urllib3/util/retry.py\",\n          \"test/test_retry.py\"\n        ],\n        \"provider\": \"jira\",\n        \"ref\": \"source:17ecc67a1d469236945a0e65431d95a315df9ad90f4d79e97b853126515e0884\",\n        \"repo\": \"urllib3/urllib3\",\n        \"resolved\": 0,\n        \"source_created_at\": \"\",\n        \"source_sequence\": 1,\n        \"source_updated_at\": \"2026-10-06T09:00:00Z\",\n        \"source_version\": \"policy-v1\",\n        \"status\": \"Current\",\n        \"title\": \"Retry-After interoperability policy for Northstar staging\",\n        \"url\": \"https://example.invalid/jira/POL-RETRY\"\n      }\n    }\n  ]\n}\n```\nProposed answer applicability: {} (no additional reuse boundaries declared).\nNothing applied yet. Review the read-back and reply `confirm 3068935807ae` (or `decline 3068935807ae`)."
+          }
+        }
+      ],
+      "thread_ts": "1700000000.000004",
+      "client_msg_id": "4fcbd4a1-840f-591f-8b73-4bd6d013c8b0",
+      "unfurl_links": false,
+      "ts": "1700000000.000005",
+      "at": 31640.966701625
+    },
+    {
+      "channel": "D012OWNER",
+      "text": "Corrected and signed by Wes Contract. The agent sees it on the tree (task 3850d9c6dde9; it reads the answer with bridge_get_tree).",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Corrected and signed by Wes Contract. The agent sees it on the tree (task 3850d9c6dde9; it reads the answer with bridge_get_tree)."
+          }
+        }
+      ],
+      "thread_ts": "1700000000.000004",
+      "client_msg_id": "c7e8abef-583c-5e78-b290-10a9a3916b98",
+      "unfurl_links": false,
+      "ts": "1700000000.000006",
+      "at": 31667.972704625
+    },
+    {
+      "channel": "D67DDF6",
+      "text": "*Sign-off wanted from Engineer b01026.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Revalidate Northstar Retry-After rollout (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 653b31567c31\nTask: 27f7e97f3e2d\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: 73c6386633aaa26c60bb\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nAnswer on the table (from Wes Contract): For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry\\u005fafter\\u005fmax clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Sign-off wanted from Engineer b01026.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Revalidate Northstar Retry-After rollout (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 653b31567c31\nTask: 27f7e97f3e2d\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: 73c6386633aaa26c60bb\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nAnswer on the table (from Wes Contract): For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry\\u005fafter\\u005fmax clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer."
+          }
+        }
+      ],
+      "ts": "1700000000.000007",
+      "at": 32047.628437041
+    },
+    {
+      "channel": "D67DDF6",
+      "text": "Handed to Wes Contract for this question only; Raven learned no route from it (task 27f7e97f3e2d; it reads the answer with bridge_get_tree).",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Handed to Wes Contract for this question only; Raven learned no route from it (task 27f7e97f3e2d; it reads the answer with bridge_get_tree)."
+          }
+        }
+      ],
+      "thread_ts": "1700000000.000007",
+      "client_msg_id": "8ca8f0b2-b142-56c3-ae29-13129404852a",
+      "unfurl_links": false,
+      "ts": "1700000000.000008",
+      "at": 32071.346915916
+    },
+    {
+      "channel": "D012OWNER",
+      "text": "*Handed to you, Wes Contract.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Revalidate Northstar Retry-After rollout (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 653b31567c31\nTask: 27f7e97f3e2d\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: 73c6386633aaa26c60bb\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nWhy you: handed on by Engineer b01026: \"not me @Wes Contract just this one\"\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Handed to you, Wes Contract.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Revalidate Northstar Retry-After rollout (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 653b31567c31\nTask: 27f7e97f3e2d\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: 73c6386633aaa26c60bb\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nWhy you: handed on by Engineer b01026: \"not me @Wes Contract just this one\"\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`."
+          }
+        }
+      ],
+      "ts": "1700000000.000009",
+      "at": 32071.725749333
+    },
+    {
+      "channel": "D012OWNER",
+      "text": "Nothing recorded: The complete source review is too large for one chat read-back. No shortened source review can be confirmed here.\nOpen the authenticated Raven review page: http://localhost:17436/#runs/27f7e97f3e2d\nSelect this decision, review every current source and source decision, then use the source-review checkbox to sign or correct it. This link requires your existing Raven access; it does not grant access. An independent replacement is a separate, deliberate choice in that form.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Nothing recorded: The complete source review is too large for one chat read-back. No shortened source review can be confirmed here.\nOpen the authenticated Raven review page: http://localhost:17436/#runs/27f7e97f3e2d\nSelect this decision, review every current source and source decision, then use the source-review checkbox to sign or correct it. This link requires your existing Raven access; it does not grant access. An independent replacement is a separate, deliberate choice in that form."
+          }
+        }
+      ],
+      "thread_ts": "1700000000.000009",
+      "client_msg_id": "843e52d4-7c3b-5859-ae6a-c853477ab550",
+      "unfurl_links": false,
+      "ts": "1700000000.000010",
+      "at": 32107.399966708
+    },
+    {
+      "channel": "D012OWNER",
+      "text": "*Needs your review, Wes Contract: an answer this decision leaned on was corrected.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n_Source evidence changed. Review the current sources before confirming this answer._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Revalidate Northstar Retry-After rollout (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 653b31567c31\nTask: 27f7e97f3e2d\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: 73c6386633aaa26c60bb\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nAnswer on the table (from Wes Contract): For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry\\u005fafter\\u005fmax clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\nWhy: Source POL-RETRY changed to version 2; review the current sources before confirming this answer\nTell me what changed or ask for context. I will read corrections back for confirmation. Reply `sign off` if the complete answer still stands.\nOptional web inbox: http://localhost:17436/#inbox (decision 653b31567c31). You can answer here without a Raven account.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Needs your review, Wes Contract: an answer this decision leaned on was corrected.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n_Source evidence changed. Review the current sources before confirming this answer._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Revalidate Northstar Retry-After rollout (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 653b31567c31\nTask: 27f7e97f3e2d\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: 73c6386633aaa26c60bb\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nAnswer on the table (from Wes Contract): For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry\\u005fafter\\u005fmax clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\nWhy: Source POL-RETRY changed to version 2; review the current sources before confirming this answer\nTell me what changed or ask for context. I will read corrections back for confirmation. Reply `sign off` if the complete answer still stands.\nOptional web inbox: http://localhost:17436/#inbox (decision 653b31567c31). You can answer here without a Raven account."
+          }
+        }
+      ],
+      "ts": "1700000000.000011",
+      "at": 32246.286689916
+    },
+    {
+      "channel": "D012OWNER",
+      "text": "*Needs your review, Wes Contract: an answer this decision leaned on was corrected.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n_Source evidence changed. Review the current sources before confirming this answer._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Revalidate Northstar Retry-After rollout (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 653b31567c31\nTask: 27f7e97f3e2d\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: 73c6386633aaa26c60bb\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nAnswer on the table (from Wes Contract): For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry\\u005fafter\\u005fmax clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\nWhy: Source POL-RETRY changed to version 3; review the current sources before confirming this answer\nTell me what changed or ask for context. I will read corrections back for confirmation. Reply `sign off` if the complete answer still stands.\nOptional web inbox: http://localhost:17436/#inbox (decision 653b31567c31). You can answer here without a Raven account.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Needs your review, Wes Contract: an answer this decision leaned on was corrected.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n_Source evidence changed. Review the current sources before confirming this answer._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Revalidate Northstar Retry-After rollout (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 653b31567c31\nTask: 27f7e97f3e2d\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: 73c6386633aaa26c60bb\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nAnswer on the table (from Wes Contract): For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry\\u005fafter\\u005fmax clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\nWhy: Source POL-RETRY changed to version 3; review the current sources before confirming this answer\nTell me what changed or ask for context. I will read corrections back for confirmation. Reply `sign off` if the complete answer still stands.\nOptional web inbox: http://localhost:17436/#inbox (decision 653b31567c31). You can answer here without a Raven account."
+          }
+        }
+      ],
+      "ts": "1700000000.000012",
+      "at": 32300.467641875
+    }
+  ],
+  "requests": [
+    {
+      "method": "auth.test",
+      "payload": {},
+      "at": 31437.97392025,
+      "response_status": 200
+    },
+    {
+      "method": "users.list",
+      "payload": {
+        "limit": 200
+      },
+      "at": 31437.979858,
+      "response_status": 200
+    },
+    {
+      "method": "users.list",
+      "payload": {
+        "limit": 200,
+        "cursor": "dXNlcjpDMg=="
+      },
+      "at": 31437.984742958,
+      "response_status": 200
+    },
+    {
+      "method": "users.list",
+      "payload": {
+        "limit": 200,
+        "cursor": "dXNlcjpDNA=="
+      },
+      "at": 31437.9900555,
+      "response_status": 200
+    },
+    {
+      "method": "auth.test",
+      "payload": {},
+      "at": 31473.553417958,
+      "response_status": 200
+    },
+    {
+      "method": "users.list",
+      "payload": {
+        "limit": 200
+      },
+      "at": 31473.557681458,
+      "response_status": 200
+    },
+    {
+      "method": "users.list",
+      "payload": {
+        "limit": 200,
+        "cursor": "dXNlcjpDMg=="
+      },
+      "at": 31473.560691416,
+      "response_status": 200
+    },
+    {
+      "method": "users.list",
+      "payload": {
+        "limit": 200,
+        "cursor": "dXNlcjpDNA=="
+      },
+      "at": 31473.5682045,
+      "response_status": 200
+    },
+    {
+      "method": "conversations.open",
+      "payload": {
+        "users": "U67DDF6"
+      },
+      "at": 31572.394279458,
+      "response_status": 200
+    },
+    {
+      "method": "chat.postMessage",
+      "payload": {
+        "channel": "D67DDF6",
+        "text": "*Sign-off wanted from Engineer b01026.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Support fractional/+-prefixed Retry-After delays for Northstar staging (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: fd8642fc9a10\nTask: 3850d9c6dde9\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: a71e971a4a40fb328966\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Current src/urllib3/util/retry.py:342-361 parse\\u005fretry\\u005fafter\\u0028\\u0029 only matches ^\\u005cs\\u002a\\u005b0-9\\u005d+\\u005cs\\u002a$ for delay-seconds, else falls back to HTTP-date parsing, else raises InvalidHeader. Northstar's staging upstreams send '0.5' and '+3' which hit neither branch and raise InvalidHeader today. Existing test test/test\\u005fretry.py::test\\u005fparse\\u005fretry\\u005fafter\\u005finvalid explicitly asserts '+1' and '1.0' are invalid, so broadening parsing is a deliberate, narrow behavior change to this one method, not a silent one. Seeking sign-off before implementing so the change is authorized and not an unexpected retry-behavior shift. No change is proposed to retry\\u005fafter\\u005fmax clamping, max-sleep behavior, or to introduce any new minimum-delay/backoff floor, so this does not create retry storms beyond what Retry-After: 0 already permits today.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\nRaven's guess (a prediction, not a record): POL-RETRY proposes accepting fractional seconds like 0.5 and a leading plus sign like +3 in Retry-After for the Northstar staging rollout, while keeping integer and HTTP-date parsing, retry\\u005fafter\\u005fmax clamping, and negative/exponent/NaN/infinity rejection intact. It is explicitly marked as a proposal still needing owner confirmation and is still open. The records do not establish: Has the parsing logic in src/urllib3/util/retry.py:342-361 been updated since POL-RETRY was created; Has owner confirmation been given for the POL-RETRY proposal; Are there implementation records, commits, or closed issues documenting the change beyond POL-RETRY.\n_Bridge did not find this decided anywhere. It is a guess for you to confirm or correct, not something your team settled._\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.",
+        "unfurl_links": false,
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*Sign-off wanted from Engineer b01026.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Support fractional/+-prefixed Retry-After delays for Northstar staging (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: fd8642fc9a10\nTask: 3850d9c6dde9\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: a71e971a4a40fb328966\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Current src/urllib3/util/retry.py:342-361 parse\\u005fretry\\u005fafter\\u0028\\u0029 only matches ^\\u005cs\\u002a\\u005b0-9\\u005d+\\u005cs\\u002a$ for delay-seconds, else falls back to HTTP-date parsing, else raises InvalidHeader. Northstar's staging upstreams send '0.5' and '+3' which hit neither branch and raise InvalidHeader today. Existing test test/test\\u005fretry.py::test\\u005fparse\\u005fretry\\u005fafter\\u005finvalid explicitly asserts '+1' and '1.0' are invalid, so broadening parsing is a deliberate, narrow behavior change to this one method, not a silent one. Seeking sign-off before implementing so the change is authorized and not an unexpected retry-behavior shift. No change is proposed to retry\\u005fafter\\u005fmax clamping, max-sleep behavior, or to introduce any new minimum-delay/backoff floor, so this does not create retry storms beyond what Retry-After: 0 already permits today.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\n"
+            }
+          },
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Raven's guess (a prediction, not a record): POL-RETRY proposes accepting fractional seconds like 0.5 and a leading plus sign like +3 in Retry-After for the Northstar staging rollout, while keeping integer and HTTP-date parsing, retry\\u005fafter\\u005fmax clamping, and negative/exponent/NaN/infinity rejection intact. It is explicitly marked as a proposal still needing owner confirmation and is still open. The records do not establish: Has the parsing logic in src/urllib3/util/retry.py:342-361 been updated since POL-RETRY was created; Has owner confirmation been given for the POL-RETRY proposal; Are there implementation records, commits, or closed issues documenting the change beyond POL-RETRY.\n_Bridge did not find this decided anywhere. It is a guess for you to confirm or correct, not something your team settled._\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer."
+            }
+          }
+        ]
+      },
+      "at": 31572.400835666,
+      "response_status": 200
+    },
+    {
+      "method": "users.info",
+      "payload": {
+        "user": "U67DDF6"
+      },
+      "at": 31595.486967041,
+      "response_status": 200
+    },
+    {
+      "method": "users.info",
+      "payload": {
+        "user": "U012OWNER"
+      },
+      "at": 31596.861527333,
+      "response_status": 200
+    },
+    {
+      "method": "chat.postMessage",
+      "payload": {
+        "channel": "D67DDF6",
+        "text": "Pass this question to Wes Contract for this question only; do not change future ownership or learned contacts\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: fd8642fc9a10\nTask: 3850d9c6dde9\nRepository: urllib3/urllib3\nQuestion: Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?\nContext: Current src/urllib3/util/retry.py:342-361 parse\\u005fretry\\u005fafter\\u0028\\u0029 only matches ^\\u005cs\\u002a\\u005b0-9\\u005d+\\u005cs\\u002a$ for delay-seconds, else falls back to HTTP-date parsing, else raises InvalidHeader. Northstar's staging upstreams send '0.5' and '+3' which hit neither branch and raise InvalidHeader today. Existing test test/test\\u005fretry.py::test\\u005fparse\\u005fretry\\u005fafter\\u005finvalid explicitly asserts '+1' and '1.0' are invalid, so broadening parsing is a deliberate, narrow behavior change to this one method, not a silent one. Seeking sign-off before implementing so the change is authorized and not an unexpected retry-behavior shift. No change is proposed to retry\\u005fafter\\u005fmax clamping, max-sleep behavior, or to introduce any new minimum-delay/backoff floor, so this does not create retry storms beyond what Retry-After: 0 already permits today.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: a71e971a4a40fb328966\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nOptions: \\u005b\"Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029\", \"Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029\", \"Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029\", \"Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\"\\u005d\nApplicability: {}\nNothing applied yet. Review the read-back and reply `confirm 41f3a42e67dc` (or `decline 41f3a42e67dc`).",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Pass this question to Wes Contract for this question only; do not change future ownership or learned contacts\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: fd8642fc9a10\nTask: 3850d9c6dde9\nRepository: urllib3/urllib3\nQuestion: Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?\nContext: Current src/urllib3/util/retry.py:342-361 parse\\u005fretry\\u005fafter\\u0028\\u0029 only matches ^\\u005cs\\u002a\\u005b0-9\\u005d+\\u005cs\\u002a$ for delay-seconds, else falls back to HTTP-date parsing, else raises InvalidHeader. Northstar's staging upstreams send '0.5' and '+3' which hit neither branch and raise InvalidHeader today. Existing test test/test\\u005fretry.py::test\\u005fparse\\u005fretry\\u005fafter\\u005finvalid explicitly asserts '+1' and '1.0' are invalid, so broadening parsing is a deliberate, narrow behavior change to this one method, not a silent one. Seeking sign-off before implementing so the change is authorized and not an unexpected retry-behavior shift. No change is proposed to retry\\u005fafter\\u005fmax clamping, max-sleep behavior, or to introduce any new minimum-delay/backoff floor, so this does not create retry storms beyond what Retry-After: 0 already permits today.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: a71e971a4a40fb328966\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\n"
+            }
+          },
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Options: \\u005b\"Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029\", \"Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029\", \"Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029\", \"Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\"\\u005d\nApplicability: {}\nNothing applied yet. Review the read-back and reply `confirm 41f3a42e67dc` (or `decline 41f3a42e67dc`)."
+            }
+          }
+        ],
+        "thread_ts": "1700000000.000001",
+        "client_msg_id": "bacb4a1e-a892-54ca-aa9d-7d3075b003b2",
+        "unfurl_links": false
+      },
+      "at": 31596.90754425,
+      "response_status": 200
+    },
+    {
+      "method": "users.info",
+      "payload": {
+        "user": "U67DDF6"
+      },
+      "at": 31618.186459541,
+      "response_status": 200
+    },
+    {
+      "method": "chat.postMessage",
+      "payload": {
+        "channel": "D67DDF6",
+        "text": "Handed to Wes Contract for this question only; Raven learned no route from it",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Handed to Wes Contract for this question only; Raven learned no route from it"
+            }
+          }
+        ],
+        "thread_ts": "1700000000.000001",
+        "client_msg_id": "6b121f2a-daf0-5be3-9326-10694d166d14",
+        "unfurl_links": false
+      },
+      "at": 31618.289204916,
+      "response_status": 200
+    },
+    {
+      "method": "conversations.open",
+      "payload": {
+        "users": "U012OWNER"
+      },
+      "at": 31618.529558375,
+      "response_status": 200
+    },
+    {
+      "method": "chat.postMessage",
+      "payload": {
+        "channel": "D012OWNER",
+        "text": "*Handed to you, Wes Contract.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Support fractional/+-prefixed Retry-After delays for Northstar staging (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: fd8642fc9a10\nTask: 3850d9c6dde9\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: a71e971a4a40fb328966\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Current src/urllib3/util/retry.py:342-361 parse\\u005fretry\\u005fafter\\u0028\\u0029 only matches ^\\u005cs\\u002a\\u005b0-9\\u005d+\\u005cs\\u002a$ for delay-seconds, else falls back to HTTP-date parsing, else raises InvalidHeader. Northstar's staging upstreams send '0.5' and '+3' which hit neither branch and raise InvalidHeader today. Existing test test/test\\u005fretry.py::test\\u005fparse\\u005fretry\\u005fafter\\u005finvalid explicitly asserts '+1' and '1.0' are invalid, so broadening parsing is a deliberate, narrow behavior change to this one method, not a silent one. Seeking sign-off before implementing so the change is authorized and not an unexpected retry-behavior shift. No change is proposed to retry\\u005fafter\\u005fmax clamping, max-sleep behavior, or to introduce any new minimum-delay/backoff floor, so this does not create retry storms beyond what Retry-After: 0 already permits today.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\nWhy you: handed on by Engineer b01026: \"This is Wes Contract's call on interoperability. Could you ask \\u003c@U012OWNER\\u003e instead, just for this question?\"\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`.",
+        "unfurl_links": false,
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*Handed to you, Wes Contract.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Support fractional/+-prefixed Retry-After delays for Northstar staging (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: fd8642fc9a10\nTask: 3850d9c6dde9\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: a71e971a4a40fb328966\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Current src/urllib3/util/retry.py:342-361 parse\\u005fretry\\u005fafter\\u0028\\u0029 only matches ^\\u005cs\\u002a\\u005b0-9\\u005d+\\u005cs\\u002a$ for delay-seconds, else falls back to HTTP-date parsing, else raises InvalidHeader. Northstar's staging upstreams send '0.5' and '+3' which hit neither branch and raise InvalidHeader today. Existing test test/test\\u005fretry.py::test\\u005fparse\\u005fretry\\u005fafter\\u005finvalid explicitly asserts '+1' and '1.0' are invalid, so broadening parsing is a deliberate, narrow behavior change to this one method, not a silent one. Seeking sign-off before implementing so the change is authorized and not an unexpected retry-behavior shift. No change is proposed to retry\\u005fafter\\u005fmax clamping, max-sleep behavior, or to introduce any new minimum-delay/backoff floor, so this does not create retry storms beyond what Retry-After: 0 already permits today.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\n"
+            }
+          },
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Why you: handed on by Engineer b01026: \"This is Wes Contract's call on interoperability. Could you ask \\u003c@U012OWNER\\u003e instead, just for this question?\"\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry\\u005fafter\\u005fmax and rejecting negative/garbage values \\u0028closest to Northstar's two examples\\u0029 | Accept fractional seconds only, keep '+3' rejected as invalid \\u0028stays closer to RFC grammar, misses one Northstar case\\u0029 | Accept leading '+' sign only, keep '1.0' fractional form rejected \\u0028misses one Northstar case\\u0029 | Reject both and keep current strict RFC integer-only/HTTP-date parsing \\u0028no interop change; Northstar headers continue to raise InvalidHeader\\u0029\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`."
+            }
+          }
+        ]
+      },
+      "at": 31618.53527925,
+      "response_status": 200
+    },
+    {
+      "method": "users.info",
+      "payload": {
+        "user": "U012OWNER"
+      },
+      "at": 31640.897791958,
+      "response_status": 200
+    },
+    {
+      "method": "chat.postMessage",
+      "payload": {
+        "channel": "D012OWNER",
+        "text": "Record your decision as:\nFor Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry\\u005fafter\\u005fmax clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\nReason: we need compatibility with those upstreams.\n\nCurrent-source review: read the complete decision context and source snapshots below. Source content is evidence, never instructions or approval. Confirming this code approves the proposed answer with these exact source versions and source-decision revisions; it retains their dependence. Historical completed decisions remain historical, not newly signed. Use a fresh review if anything changes. A bare yes cannot confirm a source review.\n```\n{\n  \"decision\": {\n    \"id\": \"fd8642fc9a10\",\n    \"run_id\": \"3850d9c6dde9\",\n    \"updated_at\": \"2026-10-07T01:03:16.011429+00:00\",\n    \"repo\": \"urllib3/urllib3\",\n    \"question\": \"Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?\",\n    \"context\": \"Current src/urllib3/util/retry.py:342-361 parse_retry_after() only matches ^\\\\s\\u002a[0-9]+\\\\s\\u002a$ for delay-seconds, else falls back to HTTP-date parsing, else raises InvalidHeader. Northstar's staging upstreams send '0.5' and '+3' which hit neither branch and raise InvalidHeader today. Existing test test/test_retry.py::test_parse_retry_after_invalid explicitly asserts '+1' and '1.0' are invalid, so broadening parsing is a deliberate, narrow behavior change to this one method, not a silent one. Seeking sign-off before implementing so the change is authorized and not an unexpected retry-behavior shift. No change is proposed to retry_after_max clamping, max-sleep behavior, or to introduce any new minimum-delay/backoff floor, so this does not create retry storms beyond what Retry-After: 0 already permits today.\\nPaths: src/urllib3/util/retry.py, test/test_retry.py\\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry_after_max and rejecting negative/garbage values (closest to Northstar's two examples) | Accept fractional seconds only, keep '+3' rejected as invalid (stays closer to RFC grammar, misses one Northstar case) | Accept leading '+' sign only, keep '1.0' fractional form rejected (misses one Northstar case) | Reject both and keep current strict RFC integer-only/HTTP-date parsing (no interop change; Northstar headers continue to raise InvalidHeader)\",\n    \"answer\": \"POL-RETRY proposes accepting fractional seconds like 0.5 and a leading plus sign like +3 in Retry-After for the Northstar staging rollout, while keeping integer and HTTP-date parsing, retry_after_max clamping, and negative/exponent/NaN/infinity rejection intact. It is explicitly marked as a proposal still needing owner confirmation and is still open. The records do not establish: Has the parsing logic in src/urllib3/util/retry.py:342-361 been updated since POL-RETRY was created; Has owner confirmation been given for the POL-RETRY proposal; Are there implementation records, commits, or closed issues documenting the change beyond POL-RETRY.\",\n    \"path\": \"src/urllib3/util/retry.py\",\n    \"scope_paths\": \"[\\\"src/urllib3/util/retry.py\\\", \\\"test/test_retry.py\\\"]\",\n    \"scope_key\": \"a71e971a4a40fb328966\",\n    \"category\": \"policy\",\n    \"facts\": \"{\\\"customer\\\": \\\"Northstar\\\", \\\"environment\\\": \\\"staging\\\", \\\"file\\\": \\\"src/urllib3/util/retry.py\\\", \\\"method\\\": \\\"parse_retry_after\\\"}\",\n    \"options\": \"[\\\"Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry_after_max and rejecting negative/garbage values (closest to Northstar's two examples)\\\", \\\"Accept fractional seconds only, keep '+3' rejected as invalid (stays closer to RFC grammar, misses one Northstar case)\\\", \\\"Accept leading '+' sign only, keep '1.0' fractional form rejected (misses one Northstar case)\\\", \\\"Reject both and keep current strict RFC integer-only/HTTP-date parsing (no interop change; Northstar headers continue to raise InvalidHeader)\\\"]\",\n    \"applicability\": \"\",\n    \"required_signers\": \"\",\n    \"followup_required\": 0,\n    \"reusable\": 0,\n    \"rule_conditions\": \"\",\n    \"rule_scope\": \"\",\n    \"rule_expires\": \"\",\n    \"rule_ended_at\": \"\"\n  },\n  \"dependencies\": [],\n  \"sources\": [\n    {\n      \"record_id\": \"348020de08f642ecadb44145b3969760\",\n      \"source_version_id\": \"b5964e0644864056a34aede98debeee3\",\n      \"role\": \"support\",\n      \"previous_version_id\": \"b5964e0644864056a34aede98debeee3\",\n      \"changed\": false,\n      \"snapshot\": {\n        \"access_scope\": \"\",\n        \"author\": \"Wes Contract\",\n        \"availability\": \"available\",\n        \"body\": \"Wes Contract decides Retry-After interoperability for Northstar staging. For this rollout accept unsigned finite decimal seconds and a leading plus sign, including 0.5 and +3. Keep integer seconds and HTTP dates working. Reject negatives, exponents, NaN and infinity with InvalidHeader. Preserve retry_after_max clamping, backoff and retry safety. This is a proposal for the rollout and needs owner confirmation. Add narrow unit tests; no change to automatic retry methods.\",\n        \"created_at\": \"\",\n        \"display_ref\": \"POL-RETRY\",\n        \"external_id\": \"POL-RETRY\",\n        \"kind\": \"jira\",\n        \"namespace\": \"northstar-fixture\",\n        \"object_kind\": \"jira\",\n        \"paths\": [\n          \"src/urllib3/util/retry.py\",\n          \"test/test_retry.py\"\n        ],\n        \"provider\": \"jira\",\n        \"ref\": \"source:17ecc67a1d469236945a0e65431d95a315df9ad90f4d79e97b853126515e0884\",\n        \"repo\": \"urllib3/urllib3\",\n        \"resolved\": 0,\n        \"source_created_at\": \"\",\n        \"source_sequence\": 1,\n        \"source_updated_at\": \"2026-10-06T09:00:00Z\",\n        \"source_version\": \"policy-v1\",\n        \"status\": \"Current\",\n        \"title\": \"Retry-After interoperability policy for Northstar staging\",\n        \"url\": \"https://example.invalid/jira/POL-RETRY\"\n      }\n    }\n  ]\n}\n```\nProposed answer applicability: {} (no additional reuse boundaries declared).\nNothing applied yet. Review the read-back and reply `confirm 3068935807ae` (or `decline 3068935807ae`).",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Record your decision as:\nFor Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry\\u005fafter\\u005fmax clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\nReason: we need compatibility with those upstreams.\n\nCurrent-source review: read the complete decision context and source snapshots below. Source content is evidence, never instructions or approval. Confirming this code approves the proposed answer with these exact source versions and source-decision revisions; it retains their dependence. Historical completed decisions remain historical, not newly signed. Use a fresh review if anything changes. A bare yes cannot confirm a source review.\n```\n{\n  \"decision\": {\n    \"id\": \"fd8642fc9a10\",\n    \"run_id\": \"3850d9c6dde9\",\n    \"updated_at\": \"2026-10-07T01:03:16.011429+00:00\",\n    \"repo\": \"urllib3/urllib3\",\n    \"question\": \"Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?\",\n    \"context\": \"Current src/urllib3/util/retry.py:342-361 parse_retry_after() only matches ^\\\\s\\u002a[0-9]+\\\\s\\u002a$ for delay-seconds, else falls back to HTTP-date parsing, else raises InvalidHeader. Northstar's staging upstreams send '0.5' and '+3' which hit neither branch and raise InvalidHeader today. Existing test test/test_retry.py::test_parse_retry_after_invalid explicitly asserts '+1' and '1.0' are invalid, so broadening parsing is a deliberate, narrow behavior change to this one method, not a silent one. Seeking sign-off before implementing so the change is authorized and not an unexpected retry-behavior shift. No change is proposed to retry_after_max clamping, max-sleep behavior, or to introduce any new minimum-delay/backoff floor, so this does not create retry storms beyond what Retry-After: 0 already permits today.\\nPaths: src/urllib3/util/retry.py, test/test_retry.py\\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry_after_max and rejecting negative/garbage values (closest to Northstar's two examples) | Accept fractional seconds only, keep '+3' rejected as invalid (stays closer to RFC grammar, misses one Northstar case) | Accept leading '+' sign only, keep '1.0' fractional form rejected (misses one Northstar case) | Reject both and keep current strict RFC integer-only/HTTP-date parsing (no interop change; Northstar headers continue to raise InvalidHeader)\",\n"
+            }
+          },
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "    \"answer\": \"POL-RETRY proposes accepting fractional seconds like 0.5 and a leading plus sign like +3 in Retry-After for the Northstar staging rollout, while keeping integer and HTTP-date parsing, retry_after_max clamping, and negative/exponent/NaN/infinity rejection intact. It is explicitly marked as a proposal still needing owner confirmation and is still open. The records do not establish: Has the parsing logic in src/urllib3/util/retry.py:342-361 been updated since POL-RETRY was created; Has owner confirmation been given for the POL-RETRY proposal; Are there implementation records, commits, or closed issues documenting the change beyond POL-RETRY.\",\n    \"path\": \"src/urllib3/util/retry.py\",\n    \"scope_paths\": \"[\\\"src/urllib3/util/retry.py\\\", \\\"test/test_retry.py\\\"]\",\n    \"scope_key\": \"a71e971a4a40fb328966\",\n    \"category\": \"policy\",\n    \"facts\": \"{\\\"customer\\\": \\\"Northstar\\\", \\\"environment\\\": \\\"staging\\\", \\\"file\\\": \\\"src/urllib3/util/retry.py\\\", \\\"method\\\": \\\"parse_retry_after\\\"}\",\n    \"options\": \"[\\\"Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry_after_max and rejecting negative/garbage values (closest to Northstar's two examples)\\\", \\\"Accept fractional seconds only, keep '+3' rejected as invalid (stays closer to RFC grammar, misses one Northstar case)\\\", \\\"Accept leading '+' sign only, keep '1.0' fractional form rejected (misses one Northstar case)\\\", \\\"Reject both and keep current strict RFC integer-only/HTTP-date parsing (no interop change; Northstar headers continue to raise InvalidHeader)\\\"]\",\n    \"applicability\": \"\",\n    \"required_signers\": \"\",\n    \"followup_required\": 0,\n    \"reusable\": 0,\n    \"rule_conditions\": \"\",\n    \"rule_scope\": \"\",\n    \"rule_expires\": \"\",\n    \"rule_ended_at\": \"\"\n  },\n  \"dependencies\": [],\n  \"sources\": [\n    {\n      \"record_id\": \"348020de08f642ecadb44145b3969760\",\n      \"source_version_id\": \"b5964e0644864056a34aede98debeee3\",\n      \"role\": \"support\",\n      \"previous_version_id\": \"b5964e0644864056a34aede98debeee3\",\n      \"changed\": false,\n      \"snapshot\": {\n        \"access_scope\": \"\",\n        \"author\": \"Wes Contract\",\n        \"availability\": \"available\",\n        \"body\": \"Wes Contract decides Retry-After interoperability for Northstar staging. For this rollout accept unsigned finite decimal seconds and a leading plus sign, including 0.5 and +3. Keep integer seconds and HTTP dates working. Reject negatives, exponents, NaN and infinity with InvalidHeader. Preserve retry_after_max clamping, backoff and retry safety. This is a proposal for the rollout and needs owner confirmation. Add narrow unit tests; no change to automatic retry methods.\",\n        \"created_at\": \"\",\n        \"display_ref\": \"POL-RETRY\",\n        \"external_id\": \"POL-RETRY\",\n        \"kind\": \"jira\",\n        \"namespace\": \"northstar-fixture\",\n        \"object_kind\": \"jira\",\n        \"paths\": [\n"
+            }
+          },
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "          \"src/urllib3/util/retry.py\",\n          \"test/test_retry.py\"\n        ],\n        \"provider\": \"jira\",\n        \"ref\": \"source:17ecc67a1d469236945a0e65431d95a315df9ad90f4d79e97b853126515e0884\",\n        \"repo\": \"urllib3/urllib3\",\n        \"resolved\": 0,\n        \"source_created_at\": \"\",\n        \"source_sequence\": 1,\n        \"source_updated_at\": \"2026-10-06T09:00:00Z\",\n        \"source_version\": \"policy-v1\",\n        \"status\": \"Current\",\n        \"title\": \"Retry-After interoperability policy for Northstar staging\",\n        \"url\": \"https://example.invalid/jira/POL-RETRY\"\n      }\n    }\n  ]\n}\n```\nProposed answer applicability: {} (no additional reuse boundaries declared).\nNothing applied yet. Review the read-back and reply `confirm 3068935807ae` (or `decline 3068935807ae`)."
+            }
+          }
+        ],
+        "thread_ts": "1700000000.000004",
+        "client_msg_id": "4fcbd4a1-840f-591f-8b73-4bd6d013c8b0",
+        "unfurl_links": false
+      },
+      "at": 31640.966693458,
+      "response_status": 200
+    },
+    {
+      "method": "users.info",
+      "payload": {
+        "user": "U012OWNER"
+      },
+      "at": 31667.868205625,
+      "response_status": 200
+    },
+    {
+      "method": "chat.postMessage",
+      "payload": {
+        "channel": "D012OWNER",
+        "text": "Corrected and signed by Wes Contract. The agent sees it on the tree (task 3850d9c6dde9; it reads the answer with bridge_get_tree).",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Corrected and signed by Wes Contract. The agent sees it on the tree (task 3850d9c6dde9; it reads the answer with bridge_get_tree)."
+            }
+          }
+        ],
+        "thread_ts": "1700000000.000004",
+        "client_msg_id": "c7e8abef-583c-5e78-b290-10a9a3916b98",
+        "unfurl_links": false
+      },
+      "at": 31667.972697791,
+      "response_status": 200
+    },
+    {
+      "method": "chat.postMessage",
+      "payload": {
+        "channel": "D67DDF6",
+        "text": "*Sign-off wanted from Engineer b01026.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Revalidate Northstar Retry-After rollout (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 653b31567c31\nTask: 27f7e97f3e2d\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: 73c6386633aaa26c60bb\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nAnswer on the table (from Wes Contract): For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry\\u005fafter\\u005fmax clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.",
+        "unfurl_links": false,
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*Sign-off wanted from Engineer b01026.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Revalidate Northstar Retry-After rollout (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 653b31567c31\nTask: 27f7e97f3e2d\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: 73c6386633aaa26c60bb\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nAnswer on the table (from Wes Contract): For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry\\u005fafter\\u005fmax clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\nAsk a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer."
+            }
+          }
+        ]
+      },
+      "at": 32047.628397666,
+      "response_status": 200
+    },
+    {
+      "method": "users.info",
+      "payload": {
+        "user": "U67DDF6"
+      },
+      "at": 32071.250667375,
+      "response_status": 200
+    },
+    {
+      "method": "users.info",
+      "payload": {
+        "user": "U012OWNER"
+      },
+      "at": 32071.275827041,
+      "response_status": 200
+    },
+    {
+      "method": "chat.postMessage",
+      "payload": {
+        "channel": "D67DDF6",
+        "text": "Handed to Wes Contract for this question only; Raven learned no route from it (task 27f7e97f3e2d; it reads the answer with bridge_get_tree).",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Handed to Wes Contract for this question only; Raven learned no route from it (task 27f7e97f3e2d; it reads the answer with bridge_get_tree)."
+            }
+          }
+        ],
+        "thread_ts": "1700000000.000007",
+        "client_msg_id": "8ca8f0b2-b142-56c3-ae29-13129404852a",
+        "unfurl_links": false
+      },
+      "at": 32071.346909416,
+      "response_status": 200
+    },
+    {
+      "method": "chat.postMessage",
+      "payload": {
+        "channel": "D012OWNER",
+        "text": "*Handed to you, Wes Contract.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Revalidate Northstar Retry-After rollout (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 653b31567c31\nTask: 27f7e97f3e2d\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: 73c6386633aaa26c60bb\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nWhy you: handed on by Engineer b01026: \"not me @Wes Contract just this one\"\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`.",
+        "unfurl_links": false,
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*Handed to you, Wes Contract.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Revalidate Northstar Retry-After rollout (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 653b31567c31\nTask: 27f7e97f3e2d\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: 73c6386633aaa26c60bb\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nWhy you: handed on by Engineer b01026: \"not me @Wes Contract just this one\"\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`."
+            }
+          }
+        ]
+      },
+      "at": 32071.725714083,
+      "response_status": 200
+    },
+    {
+      "method": "users.info",
+      "payload": {
+        "user": "U012OWNER"
+      },
+      "at": 32105.97256075,
+      "response_status": 200
+    },
+    {
+      "method": "chat.postMessage",
+      "payload": {
+        "channel": "D012OWNER",
+        "text": "Nothing recorded: The complete source review is too large for one chat read-back. No shortened source review can be confirmed here.\nOpen the authenticated Raven review page: http://localhost:17436/#runs/27f7e97f3e2d\nSelect this decision, review every current source and source decision, then use the source-review checkbox to sign or correct it. This link requires your existing Raven access; it does not grant access. An independent replacement is a separate, deliberate choice in that form.",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Nothing recorded: The complete source review is too large for one chat read-back. No shortened source review can be confirmed here.\nOpen the authenticated Raven review page: http://localhost:17436/#runs/27f7e97f3e2d\nSelect this decision, review every current source and source decision, then use the source-review checkbox to sign or correct it. This link requires your existing Raven access; it does not grant access. An independent replacement is a separate, deliberate choice in that form."
+            }
+          }
+        ],
+        "thread_ts": "1700000000.000009",
+        "client_msg_id": "843e52d4-7c3b-5859-ae6a-c853477ab550",
+        "unfurl_links": false
+      },
+      "at": 32107.399952583,
+      "response_status": 200
+    },
+    {
+      "method": "chat.postMessage",
+      "payload": {
+        "channel": "D012OWNER",
+        "text": "*Needs your review, Wes Contract: an answer this decision leaned on was corrected.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n_Source evidence changed. Review the current sources before confirming this answer._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Revalidate Northstar Retry-After rollout (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 653b31567c31\nTask: 27f7e97f3e2d\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: 73c6386633aaa26c60bb\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nAnswer on the table (from Wes Contract): For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry\\u005fafter\\u005fmax clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\nWhy: Source POL-RETRY changed to version 2; review the current sources before confirming this answer\nTell me what changed or ask for context. I will read corrections back for confirmation. Reply `sign off` if the complete answer still stands.\nOptional web inbox: http://localhost:17436/#inbox (decision 653b31567c31). You can answer here without a Raven account.",
+        "unfurl_links": false,
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*Needs your review, Wes Contract: an answer this decision leaned on was corrected.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n_Source evidence changed. Review the current sources before confirming this answer._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Revalidate Northstar Retry-After rollout (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 653b31567c31\nTask: 27f7e97f3e2d\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: 73c6386633aaa26c60bb\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nAnswer on the table (from Wes Contract): For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry\\u005fafter\\u005fmax clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\nWhy: Source POL-RETRY changed to version 2; review the current sources before confirming this answer\nTell me what changed or ask for context. I will read corrections back for confirmation. Reply `sign off` if the complete answer still stands.\nOptional web inbox: http://localhost:17436/#inbox (decision 653b31567c31). You can answer here without a Raven account."
+            }
+          }
+        ]
+      },
+      "at": 32246.286534416,
+      "response_status": 200
+    },
+    {
+      "method": "chat.postMessage",
+      "payload": {
+        "channel": "D012OWNER",
+        "text": "*Needs your review, Wes Contract: an answer this decision leaned on was corrected.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n_Source evidence changed. Review the current sources before confirming this answer._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Revalidate Northstar Retry-After rollout (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 653b31567c31\nTask: 27f7e97f3e2d\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: 73c6386633aaa26c60bb\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nAnswer on the table (from Wes Contract): For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry\\u005fafter\\u005fmax clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\nWhy: Source POL-RETRY changed to version 3; review the current sources before confirming this answer\nTell me what changed or ask for context. I will read corrections back for confirmation. Reply `sign off` if the complete answer still stands.\nOptional web inbox: http://localhost:17436/#inbox (decision 653b31567c31). You can answer here without a Raven account.",
+        "unfurl_links": false,
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*Needs your review, Wes Contract: an answer this decision leaned on was corrected.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n_Source evidence changed. Review the current sources before confirming this answer._\n*Should Retry.parse\\u005fretry\\u005fafter\\u0028\\u0029 accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds \\u0028'0.5'\\u0029 and a leading '+' sign \\u0028'+3'\\u0029 \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry\\u005fafter\\u005fmax clamping, and negative-value rejection unchanged?*\nTask: Revalidate Northstar Retry-After rollout (urllib3/urllib3), requested by Engineer 177b2c via Docker local MCP agent\n<http://localhost:17436/brief#[local-test-credential]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 653b31567c31\nTask: 27f7e97f3e2d\nRepository: urllib3/urllib3\nPath: src/urllib3/util/retry.py\nScope paths: \\u005b\"src/urllib3/util/retry.py\", \"test/test\\u005fretry.py\"\\u005d\nScope key: 73c6386633aaa26c60bb\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse\\u005fretry\\u005fafter\"}\nApplicability: {}\nContext: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test\\u005fretry.py\nAnswer on the table (from Wes Contract): For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry\\u005fafter\\u005fmax clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\nWhy: Source POL-RETRY changed to version 3; review the current sources before confirming this answer\nTell me what changed or ask for context. I will read corrections back for confirmation. Reply `sign off` if the complete answer still stands.\nOptional web inbox: http://localhost:17436/#inbox (decision 653b31567c31). You can answer here without a Raven account."
+            }
+          }
+        ]
+      },
+      "at": 32300.467628166,
+      "response_status": 200
+    },
+    {
+      "method": "auth.test",
+      "payload": {},
+      "at": 32338.573461125,
+      "response_status": 200
+    },
+    {
+      "method": "users.list",
+      "payload": {
+        "limit": 200
+      },
+      "at": 32338.578970791,
+      "response_status": 200
+    },
+    {
+      "method": "users.list",
+      "payload": {
+        "limit": 200,
+        "cursor": "dXNlcjpDMg=="
+      },
+      "at": 32338.584048458,
+      "response_status": 200
+    },
+    {
+      "method": "users.list",
+      "payload": {
+        "limit": 200,
+        "cursor": "dXNlcjpDNA=="
+      },
+      "at": 32338.587725875,
+      "response_status": 200
+    },
+    {
+      "method": "auth.test",
+      "payload": {},
+      "at": 32377.159300416,
+      "response_status": 200
+    },
+    {
+      "method": "users.list",
+      "payload": {
+        "limit": 200
+      },
+      "at": 32377.163635916,
+      "response_status": 200
+    },
+    {
+      "method": "users.list",
+      "payload": {
+        "limit": 200,
+        "cursor": "dXNlcjpDMg=="
+      },
+      "at": 32377.16788325,
+      "response_status": 200
+    },
+    {
+      "method": "users.list",
+      "payload": {
+        "limit": 200,
+        "cursor": "dXNlcjpDNA=="
+      },
+      "at": 32377.172095,
+      "response_status": 200
+    }
+  ],
+  "violations": []
+}

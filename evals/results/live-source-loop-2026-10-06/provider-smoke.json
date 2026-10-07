@@ -1,0 +1,34 @@
+{
+  "status": "passed",
+  "provider": "anthropic",
+  "model": "claude-haiku-4-5-20251001",
+  "synthetic_data": true,
+  "live_slack": false,
+  "human_approval": false,
+  "slack_interpretation": {
+    "kind": "answer",
+    "answer": "Exclude the 600000 internal load-test calls. Keep real customer traffic billable."
+  },
+  "interview": {
+    "question": "You mentioned a migration cohort that may need an exception\u2014can you describe which clients are in that cohort and what exception they would need?",
+    "question_quote": "There is a migration cohort that may need an exception; ask me about that.",
+    "proposed_answer": "",
+    "proposed_rationale": "",
+    "answer_quotes": [],
+    "caveats": [
+      {
+        "text": "A migration cohort may need an exception to the standard timeout policy, but the scope and nature of that exception has not yet been defined.",
+        "quote": "There is a migration cohort that may need an exception; ask me about that."
+      }
+    ],
+    "mode": "model-assisted",
+    "model": "claude-haiku-4-5-20251001",
+    "status": "unapproved"
+  },
+  "decision_authorized": false,
+  "limits": "Two synthetic model operations; this is not voice capture, an actual human decision, or a full live coding run.",
+  "physical_http_requests": 2,
+  "successful_completions": 2,
+  "input_tokens": 2328,
+  "output_tokens": 268
+}

@@ -1,0 +1,12 @@
+test_cap_kept (__main__.PolicyContract.test_cap_kept) ... ok
+test_fractional_and_ordinary_delays (__main__.PolicyContract.test_fractional_and_ordinary_delays) ... ok
+test_http_date_unchanged (__main__.PolicyContract.test_http_date_unchanged) ... ok
+test_no_new_retry_methods (__main__.PolicyContract.test_no_new_retry_methods) ... ok
+test_nonfinite_negative_exponent_rejected (__main__.PolicyContract.test_nonfinite_negative_exponent_rejected) ... ok
+test_plus_policy_revision (__main__.PolicyContract.test_plus_policy_revision) ... ok
+test_zero_still_falls_back_to_backoff (__main__.PolicyContract.test_zero_still_falls_back_to_backoff) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.001s
+
+OK

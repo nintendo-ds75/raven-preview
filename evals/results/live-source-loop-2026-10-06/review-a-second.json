@@ -1,0 +1,107 @@
+{
+  "id": "1d78cd9c0958",
+  "status": "done",
+  "follows": [
+    {
+      "node_id": "fd8642fc9a10",
+      "question": "Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?",
+      "requirements": [
+        {
+          "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+          "found": "honored",
+          "kind": "must",
+          "needs": "Accept finite unsigned decimal delay-seconds like '0.5'",
+          "state": "ok"
+        },
+        {
+          "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+          "found": "honored",
+          "kind": "must",
+          "needs": "Accept leading '+' sign like '+3'",
+          "state": "ok"
+        },
+        {
+          "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+          "found": "honored",
+          "kind": "must",
+          "needs": "Reject negative values with InvalidHeader",
+          "state": "ok"
+        },
+        {
+          "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+          "found": "honored",
+          "kind": "must",
+          "needs": "Reject exponent notation with InvalidHeader",
+          "state": "ok"
+        },
+        {
+          "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+          "found": "honored",
+          "kind": "must",
+          "needs": "Reject NaN with InvalidHeader",
+          "state": "ok"
+        },
+        {
+          "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+          "found": "honored",
+          "kind": "must",
+          "needs": "Reject infinity with InvalidHeader",
+          "state": "ok"
+        },
+        {
+          "at": "if re.match(r\"^\\s*[0-9]+\\s*$\", retry_after):",
+          "found": "honored",
+          "kind": "must",
+          "needs": "Keep plain integer parsing returning int unchanged",
+          "state": "ok"
+        },
+        {
+          "at": "retry_date_tuple = email.utils.parsedate_tz(retry_after)",
+          "found": "honored",
+          "kind": "must",
+          "needs": "Keep HTTP-date parsing branch unchanged",
+          "state": "ok"
+        },
+        {
+          "at": "assert retry.parse_retry_after(\"+2\") == 1",
+          "found": "honored",
+          "kind": "must",
+          "needs": "Keep retry_after_max clamping unchanged",
+          "state": "ok"
+        },
+        {
+          "found": "unseen",
+          "kind": "must",
+          "needs": "Keep existing retry methods/backoff unchanged",
+          "state": "unclear"
+        },
+        {
+          "at": "assert retry.parse_retry_after(\"0.5\") == 0.5",
+          "found": "honored",
+          "kind": "must",
+          "needs": "Add regression tests only (no unrelated production code changes)",
+          "state": "ok"
+        },
+        {
+          "at": "# small fractional delays below the maximum are preserved as-is (no new minimum delay is enforced).",
+          "found": "honored",
+          "kind": "must_not",
+          "needs": "No new minimum delay enforced",
+          "note": "no line of the diff quoted for it; read as the diff not doing it",
+          "state": "ok"
+        }
+      ],
+      "verdict": "unclear",
+      "why": "The diff adds a regex branch accepting unsigned decimals and a leading plus, leaving integer, date, clamping and other retry logic untouched, with rejection of negative/exponent/NaN/infinity achieved by falling through to the unchanged date branch; backoff/other retry methods are not touched by the diff and thus unseen."
+    }
+  ],
+  "diff_hash": "625d28c765c92e30",
+  "seconds": 128.4,
+  "finished_at": "2026-10-07T01:12:41.428801+00:00",
+  "revisions": {
+    "fd8642fc9a10": "689a464e8801f00a"
+  },
+  "review_inputs": {
+    "fd8642fc9a10": "1c3f8b2212a996189ef8820a112bb874ff4a6dbe2fdcc2e927397e8aef679391"
+  }
+}

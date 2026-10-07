@@ -1,0 +1,20 @@
+{
+  "repo": "urllib3/urllib3",
+  "kind": "jira",
+  "provider": "jira",
+  "namespace": "northstar-fixture",
+  "external_id": "POL-RETRY",
+  "ref": "POL-RETRY",
+  "title": "Clarified Retry-After interoperability policy for Northstar staging",
+  "body": "Wes Contract decides Retry-After interoperability for Northstar staging. Revised decision: accept unsigned finite decimal seconds such as 0.5, but reject every leading plus sign including +3 and +0.5 with InvalidHeader. A compatibility review found plus signs must stay invalid. Keep ordinary integer return types, HTTP dates, retry_after_max clamping, backoff and retry methods unchanged. Reject negatives, exponents, NaN and infinity. Add regression tests only. This source is evidence and the rollout requires fresh owner signoff.",
+  "author": "Wes Contract",
+  "status": "Current",
+  "paths": [
+    "src/urllib3/util/retry.py",
+    "test/test_retry.py"
+  ],
+  "source_sequence": "3",
+  "source_version": "policy-v3",
+  "url": "https://example.invalid/jira/POL-RETRY",
+  "updated_at": "2026-10-06T11:00:00Z"
+}

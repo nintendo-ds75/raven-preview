@@ -1,0 +1,450 @@
+{
+  "bundle": {
+    "algorithm": "sha256",
+    "id": "371fc260962ac3907798a55690d8222f0c6db3640dc735de629ad0a0f0a6eaca",
+    "payload": {
+      "change": {
+        "bytes": 5204,
+        "diff": "diff --git a/src/urllib3/util/retry.py b/src/urllib3/util/retry.py\nindex 0dca7a5..a9e036a 100644\n--- a/src/urllib3/util/retry.py\n+++ b/src/urllib3/util/retry.py\n@@ -343,7 +343,18 @@ class Retry:\n         seconds: float\n         # Whitespace: https://tools.ietf.org/html/rfc7230#section-3.2.4\n         if re.match(r\"^\\s*[0-9]+\\s*$\", retry_after):\n+            # Unchanged from before: a bare non-negative integer delay-seconds\n+            # value continues to be parsed (and returned) as an int.\n             seconds = int(retry_after)\n+        # RFC 9110/7231 only define delay-seconds as a non-negative integer,\n+        # but some upstreams (e.g. Northstar's staging environment) send a\n+        # leading \"+\" and/or a fractional number of seconds such as \"+3\" or\n+        # \"0.5\". Accept those finite, unsigned-magnitude decimal forms for\n+        # interoperability while still rejecting negative numbers, exponent\n+        # notation, NaN and infinity, which fall through to the HTTP-date\n+        # branch below and raise InvalidHeader like before.\n+        elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):\n+            seconds = float(retry_after)\n         else:\n             retry_date_tuple = email.utils.parsedate_tz(retry_after)\n             if retry_date_tuple is None:\ndiff --git a/test/test_retry.py b/test/test_retry.py\nindex 48ca072..e2a6ab3 100644\n--- a/test/test_retry.py\n+++ b/test/test_retry.py\n@@ -193,6 +193,14 @@ class TestRetry:\n         assert retry.parse_retry_after(str(1)) == 1\n         assert retry.parse_retry_after(str(2)) == 1\n \n+        # Fractional and \"+\"-prefixed delays are still clamped to the\n+        # configured maximum, and small fractional delays below the\n+        # maximum are preserved as-is (no new minimum delay is enforced).\n+        retry = Retry(retry_after_max=1)\n+        assert retry.parse_retry_after(\"+2\") == 1\n+        assert retry.parse_retry_after(\"1.5\") == 1\n+        assert retry.parse_retry_after(\"0.5\") == 0.5\n+\n     def test_backoff_jitter(self) -> None:\n         \"\"\"Backoff with jitter is computed correctly\"\"\"\n         max_backoff = 1\n@@ -375,19 +383,68 @@ class TestRetry:\n \n         assert retry.remove_headers_on_redirect == {\"x-api-secret\"}\n \n-    @pytest.mark.parametrize(\"value\", [\"-1\", \"+1\", \"1.0\", \"\\xb2\"])  # \\xb2 = ^2\n+    @pytest.mark.parametrize(\n+        \"value\",\n+        [\n+            \"-1\",\n+            \"-0.5\",\n+            \"+1e1\",\n+            \"1e1\",\n+            \"nan\",\n+            \"+nan\",\n+            \"inf\",\n+            \"+inf\",\n+            \"infinity\",\n+            \"\\xb2\",  # \\xb2 = ^2\n+        ],\n+    )\n     def test_parse_retry_after_invalid(self, value: str) -> None:\n         retry = Retry()\n         with pytest.raises(InvalidHeader):\n             retry.parse_retry_after(value)\n \n     @pytest.mark.parametrize(\n-        \"value, expected\", [(\"0\", 0), (\"1000\", 1000), (\"\\t42 \", 42)]\n+        \"value, expected\",\n+        [\n+            (\"0\", 0),\n+            (\"1000\", 1000),\n+            (\"\\t42 \", 42),\n+            # Interoperability with upstreams (e.g. Northstar's staging\n+            # environment) that send fractional seconds and/or a leading\n+            # \"+\" sign, per POL-RETRY.\n+            (\"0.5\", 0.5),\n+            (\"+3\", 3),\n+            (\"+3.5\", 3.5),\n+            (\"1.0\", 1.0),\n+            (\"\\t+0.5 \", 0.5),\n+        ],\n     )\n-    def test_parse_retry_after(self, value: str, expected: int) -> None:\n+    def test_parse_retry_after(self, value: str, expected: float) -> None:\n         retry = Retry()\n         assert retry.parse_retry_after(value) == expected\n \n+    @pytest.mark.parametrize(\n+        \"value, expected_type\",\n+        [\n+            # Plain integer delay-seconds must keep returning an int, as\n+            # before this change, and must not be widened to float just\n+            # because fractional/\"+\"-prefixed forms are now also accepted.\n+            (\"0\", int),\n+            (\"1000\", int),\n+            (\"\\t42 \", int),\n+            # New accepted interoperability forms (fractional seconds\n+            # and/or a leading \"+\") return a float.\n+            (\"0.5\", float),\n+            (\"+3\", float),\n+            (\"1.0\", float),\n+        ],\n+    )\n+    def test_parse_retry_after_return_type_unchanged_for_integers(\n+        self, value: str, expected_type: type\n+    ) -> None:\n+        retry = Retry()\n+        assert type(retry.parse_retry_after(value)) is expected_type\n+\n     @pytest.mark.parametrize(\"respect_retry_after_header\", [True, False])\n     def test_respect_retry_after_header_propagated(\n         self, respect_retry_after_header: bool\n@@ -414,6 +471,13 @@ class TestRetry:\n             (\"Monday, 03-Jun-19 11:30:12 GMT\", True, 1812),\n             # Assume that datetimes without a timezone are in UTC per RFC 7231\n             (\"Mon Jun  3 11:30:12 2019\", True, 1812),\n+            # Interoperability with upstreams (e.g. Northstar's staging\n+            # environment) sending fractional seconds and/or a leading \"+\"\n+            # sign, per POL-RETRY.\n+            (\"0.5\", True, 0.5),\n+            (\"0.5\", False, None),\n+            (\"+3\", True, 3),\n+            (\"+3\", False, None),\n        ],\n    )\n    @pytest.mark.parametrize(\n",
+        "sha256": "625d28c765c92e30c78479bc3c557191b776e16f30149f84bbfe867f9d547d91"
+      },
+      "checks": {
+        "independently_verified": false,
+        "provenance": "coding-host-reported",
+        "text": "/private/tmp/raven-live-1006/venv/bin/python -m pytest test/test_retry.py -q (PYTHONPATH set per instructions): 93 passed, 0 failed. This includes a new regression test (test_parse_retry_after_return_type_unchanged_for_integers) added specifically to pin the integer-vs-float return type distinction flagged by the prior advisory review as unclear."
+      },
+      "decisions": [
+        {
+          "answer": "For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry_after_max clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only",
+          "answer_sha256": "689a464e8801f00a9e38a211680e96f1cad09a1b55aba780c44495cc230ecb03",
+          "answered_by": "Wes Contract",
+          "applicability": "{}",
+          "attribution": {
+            "actor_basis": "owner",
+            "actor_id": "dc041d7fee0a",
+            "actor_name": "Wes Contract",
+            "answered_at": "",
+            "signed_hash": "689a464e8801f00a",
+            "signed_revision": "2026-10-07T01:04:05.681449+00:00"
+          },
+          "authority_evidence": "handed on by Engineer b01026: \"This is Wes Contract's call on interoperability. Could you ask <@U012OWNER> instead, just for this question?\"",
+          "authorized": true,
+          "blocking": false,
+          "category": "policy",
+          "citations": [
+            {
+              "id": "fd8642fc9a10",
+              "kind": "decision"
+            },
+            {
+              "decision_id": "653b31567c31",
+              "decision_version_id": "bf41980b8b5d46d1ae19ba86db621f9e",
+              "detail": "",
+              "id": "653b31567c31",
+              "kind": "derived",
+              "source_decision_id": "fd8642fc9a10",
+              "source_version_id": "d0e303b7c3ab4ba492b39ca76f7397af"
+            }
+          ],
+          "duplicate_of": "",
+          "evidence": "",
+          "facts": {
+            "customer": "Northstar",
+            "environment": "staging",
+            "file": "src/urllib3/util/retry.py",
+            "method": "parse_retry_after"
+          },
+          "needs_review": false,
+          "node_id": "fd8642fc9a10",
+          "parent_id": "",
+          "path": "src/urllib3/util/retry.py",
+          "question": "Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?",
+          "rationale": "we need compatibility with those upstreams.",
+          "required_signers": [],
+          "resolution": null,
+          "reusable": false,
+          "rule_conditions": "",
+          "rule_expires": "",
+          "rule_scope": "",
+          "signature_records": [
+            {
+              "at": "2026-10-07T01:04:05.681449+00:00",
+              "by": "Wes Contract",
+              "hash": "689a464e8801f00a",
+              "revision": "2026-10-07T01:04:05.681449+00:00",
+              "scope": {
+                "applicability": {},
+                "category": "policy",
+                "context": "Current src/urllib3/util/retry.py:342-361 parse_retry_after() only matches ^\\s*[0-9]+\\s*$ for delay-seconds, else falls back to HTTP-date parsing, else raises InvalidHeader. Northstar's staging upstreams send '0.5' and '+3' which hit neither branch and raise InvalidHeader today. Existing test test/test_retry.py::test_parse_retry_after_invalid explicitly asserts '+1' and '1.0' are invalid, so broadening parsing is a deliberate, narrow behavior change to this one method, not a silent one. Seeking sign-off before implementing so the change is authorized and not an unexpected retry-behavior shift. No change is proposed to retry_after_max clamping, max-sleep behavior, or to introduce any new minimum-delay/backoff floor, so this does not create retry storms beyond what Retry-After: 0 already permits today.\nPaths: src/urllib3/util/retry.py, test/test_retry.py\nOptions: Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry_after_max and rejecting negative/garbage values (closest to Northstar's two examples) | Accept fractional seconds only, keep '+3' rejected as invalid (stays closer to RFC grammar, misses one Northstar case) | Accept leading '+' sign only, keep '1.0' fractional form rejected (misses one Northstar case) | Reject both and keep current strict RFC integer-only/HTTP-date parsing (no interop change; Northstar headers continue to raise InvalidHeader)",
+                "facts": {
+                  "customer": "Northstar",
+                  "environment": "staging",
+                  "file": "src/urllib3/util/retry.py",
+                  "method": "parse_retry_after"
+                },
+                "followup_required": 0,
+                "id": "fd8642fc9a10",
+                "options": [
+                  "Accept both fractional seconds and leading '+' sign, parse as non-negative float, keep clamping to retry_after_max and rejecting negative/garbage values (closest to Northstar's two examples)",
+                  "Accept fractional seconds only, keep '+3' rejected as invalid (stays closer to RFC grammar, misses one Northstar case)",
+                  "Accept leading '+' sign only, keep '1.0' fractional form rejected (misses one Northstar case)",
+                  "Reject both and keep current strict RFC integer-only/HTTP-date parsing (no interop change; Northstar headers continue to raise InvalidHeader)"
+                ],
+                "path": "src/urllib3/util/retry.py",
+                "question": "Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?",
+                "repo": "urllib3/urllib3",
+                "required_signers": [],
+                "reusable": 0,
+                "rule_conditions": "",
+                "rule_ended_at": "",
+                "rule_expires": "",
+                "rule_scope": "",
+                "run_id": "3850d9c6dde9",
+                "scope_key": "a71e971a4a40fb328966",
+                "scope_paths": [
+                  "src/urllib3/util/retry.py",
+                  "test/test_retry.py"
+                ]
+              }
+            }
+          ],
+          "signatures": [
+            "Wes Contract"
+          ],
+          "signed_by": "Wes Contract",
+          "signoff": "signed",
+          "source_decision_id": "fd8642fc9a10",
+          "source_revision": "2026-10-07T01:04:05.681449+00:00",
+          "sources": [
+            {
+              "author": "Wes Contract",
+              "availability": "available",
+              "decision_version_id": "d0e303b7c3ab4ba492b39ca76f7397af",
+              "external_id": "POL-RETRY",
+              "fingerprint": "a52e422fc028a980bb25121804819d061fa6a33e3fee80b200b6b82be4575f00",
+              "kind": "jira",
+              "namespace": "northstar-fixture",
+              "observed_at": "2026-10-07T01:00:51.392711+00:00",
+              "provenance": "import",
+              "provider": "jira",
+              "record_id": "348020de08f642ecadb44145b3969760",
+              "ref": "POL-RETRY",
+              "repo": "urllib3/urllib3",
+              "role": "support",
+              "sequence": 1,
+              "source_created_at": "",
+              "source_updated_at": "2026-10-06T09:00:00Z",
+              "source_version": "policy-v1",
+              "source_version_id": "b5964e0644864056a34aede98debeee3",
+              "title": "Retry-After interoperability policy for Northstar staging",
+              "url": "https://example.invalid/jira/POL-RETRY"
+            }
+          ],
+          "status": "answered",
+          "updated_at": "2026-10-07T01:04:05.681449+00:00"
+        }
+      ],
+      "limitations": [
+        "SHA-256 protects integrity, not the identity of the exporter or a human digital signature.",
+        "Human signoffs and authority are assertions recorded by this Raven workspace.",
+        "Test results are reported by the coding host; Raven did not independently execute them.",
+        "A model diff review is advisory and does not prove code correctness.",
+        "This bundle grants no authority for another task or a different scope."
+      ],
+      "review": {
+        "diff_hash": "625d28c765c92e30",
+        "finished_at": "2026-10-07T01:12:41.428801+00:00",
+        "follows": [
+          {
+            "node_id": "fd8642fc9a10",
+            "question": "Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?",
+            "requirements": [
+              {
+                "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Accept finite unsigned decimal delay-seconds like '0.5'",
+                "state": "ok"
+              },
+              {
+                "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Accept leading '+' sign like '+3'",
+                "state": "ok"
+              },
+              {
+                "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Reject negative values with InvalidHeader",
+                "state": "ok"
+              },
+              {
+                "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Reject exponent notation with InvalidHeader",
+                "state": "ok"
+              },
+              {
+                "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Reject NaN with InvalidHeader",
+                "state": "ok"
+              },
+              {
+                "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Reject infinity with InvalidHeader",
+                "state": "ok"
+              },
+              {
+                "at": "if re.match(r\"^\\s*[0-9]+\\s*$\", retry_after):",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Keep plain integer parsing returning int unchanged",
+                "state": "ok"
+              },
+              {
+                "at": "retry_date_tuple = email.utils.parsedate_tz(retry_after)",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Keep HTTP-date parsing branch unchanged",
+                "state": "ok"
+              },
+              {
+                "at": "assert retry.parse_retry_after(\"+2\") == 1",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Keep retry_after_max clamping unchanged",
+                "state": "ok"
+              },
+              {
+                "found": "unseen",
+                "kind": "must",
+                "needs": "Keep existing retry methods/backoff unchanged",
+                "state": "unclear"
+              },
+              {
+                "at": "assert retry.parse_retry_after(\"0.5\") == 0.5",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Add regression tests only (no unrelated production code changes)",
+                "state": "ok"
+              },
+              {
+                "at": "# small fractional delays below the maximum are preserved as-is (no new minimum delay is enforced).",
+                "found": "honored",
+                "kind": "must_not",
+                "needs": "No new minimum delay enforced",
+                "note": "no line of the diff quoted for it; read as the diff not doing it",
+                "state": "ok"
+              }
+            ],
+            "verdict": "unclear",
+            "why": "The diff adds a regex branch accepting unsigned decimals and a leading plus, leaving integer, date, clamping and other retry logic untouched, with rejection of negative/exponent/NaN/infinity achieved by falling through to the unchanged date branch; backoff/other retry methods are not touched by the diff and thus unseen."
+          }
+        ],
+        "id": "1d78cd9c0958",
+        "review_inputs": {
+          "fd8642fc9a10": "1c3f8b2212a996189ef8820a112bb874ff4a6dbe2fdcc2e927397e8aef679391"
+        },
+        "revisions": {
+          "fd8642fc9a10": "689a464e8801f00a"
+        },
+        "seconds": 128.4,
+        "status": "done"
+      },
+      "schema": "raven-proof-v1",
+      "task": {
+        "goal": "Some of Northstar's staging upstreams send Retry-After delays such as 0.5 and +3, which currently produce InvalidHeader. Improve interoperability without unexpectedly changing existing retry behavior or creating retry storms. Investigate the implementation and available team records, obtain needed policy decisions, implement a narrow change, and add regression tests. Preserve customer=Northstar and environment=staging as the task facts.",
+        "id": "3850d9c6dde9",
+        "repo": "urllib3/urllib3",
+        "requester": "Engineer 177b2c",
+        "status": "completed",
+        "title": "Support fractional/+-prefixed Retry-After delays for Northstar staging"
+      }
+    }
+  },
+  "integrity": {
+    "valid": true,
+    "errors": [],
+    "authenticity_verified": false
+  },
+  "stale": true,
+  "current_reuse": {
+    "fd8642fc9a10": {
+      "requires_source_review": false,
+      "notice": ""
+    }
+  },
+  "current_sources": {
+    "fd8642fc9a10": [
+      {
+        "record_id": "348020de08f642ecadb44145b3969760",
+        "source_version_id": "b5964e0644864056a34aede98debeee3",
+        "sequence": 1,
+        "provider": "jira",
+        "namespace": "northstar-fixture",
+        "external_id": "POL-RETRY",
+        "kind": "jira",
+        "repo": "urllib3/urllib3",
+        "ref": "POL-RETRY",
+        "url": "https://example.invalid/jira/POL-RETRY",
+        "title": "Retry-After interoperability policy for Northstar staging",
+        "author": "Wes Contract",
+        "source_created_at": "",
+        "source_updated_at": "2026-10-06T09:00:00Z",
+        "source_version": "policy-v1",
+        "observed_at": "2026-10-07T01:00:51.392711+00:00",
+        "provenance": "import",
+        "fingerprint": "a52e422fc028a980bb25121804819d061fa6a33e3fee80b200b6b82be4575f00",
+        "availability": "available",
+        "head_id": "45a13ac2089c4110b066537171f3c82a",
+        "current": false,
+        "role": "support",
+        "decision_version_id": "f13a1afdfb9e41558e5f791a7d8157d0",
+        "stale": true
+      }
+    ]
+  },
+  "stale_reasons": [
+    "A decision, signature, authority, or scope changed since this proof",
+    "The task is no longer completed and current"
+  ],
+  "markdown": "# Raven change proof\n\nTask: 3850d9c6dde9\nRepository: urllib3/urllib3\n\n> Support fractional/+-prefixed Retry-After delays for Northstar staging\n\nProof SHA-256: 371fc260962ac3907798a55690d8222f0c6db3640dc735de629ad0a0f0a6eaca\nDiff SHA-256: 625d28c765c92e30c78479bc3c557191b776e16f30149f84bbfe867f9d547d91\n\n## Decision record\n\n### fd8642fc9a10\n> Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?\n\n> For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry_after_max clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\n\nRecorded signoff: signed\n> By: Wes Contract\n> Scope: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse_retry_after\"}\n> Evidence: No external evidence recorded\n> Source: POL-RETRY (support), version 1 / b5964e0644864056a34aede98debeee3; https://example.invalid/jira/POL-RETRY\n\n## Host-reported checks\n> /private/tmp/raven-live-1006/venv/bin/python -m pytest test/test_retry.py -q (PYTHONPATH set per instructions): 93 passed, 0 failed. This includes a new regression test (test_parse_retry_after_return_type_unchanged_for_integers) added specifically to pin the integer-vs-float return type distinction flagged by the prior advisory review as unclear.\n\n## Trust limits\n- SHA-256 protects integrity, not the identity of the exporter or a human digital signature.\n- Human signoffs and authority are assertions recorded by this Raven workspace.\n- Test results are reported by the coding host; Raven did not independently execute them.\n- A model diff review is advisory and does not prove code correctness.\n- This bundle grants no authority for another task or a different scope.\n",
+  "review": {
+    "id": "1d78cd9c0958",
+    "status": "stale",
+    "follows": [
+      {
+        "node_id": "fd8642fc9a10",
+        "question": "Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?",
+        "requirements": [
+          {
+            "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Accept finite unsigned decimal delay-seconds like '0.5'",
+            "state": "ok"
+          },
+          {
+            "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Accept leading '+' sign like '+3'",
+            "state": "ok"
+          },
+          {
+            "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Reject negative values with InvalidHeader",
+            "state": "ok"
+          },
+          {
+            "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Reject exponent notation with InvalidHeader",
+            "state": "ok"
+          },
+          {
+            "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Reject NaN with InvalidHeader",
+            "state": "ok"
+          },
+          {
+            "at": "elif re.match(r\"^\\s*\\+?[0-9]+(?:\\.[0-9]+)?\\s*$\", retry_after):",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Reject infinity with InvalidHeader",
+            "state": "ok"
+          },
+          {
+            "at": "if re.match(r\"^\\s*[0-9]+\\s*$\", retry_after):",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Keep plain integer parsing returning int unchanged",
+            "state": "ok"
+          },
+          {
+            "at": "retry_date_tuple = email.utils.parsedate_tz(retry_after)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Keep HTTP-date parsing branch unchanged",
+            "state": "ok"
+          },
+          {
+            "at": "assert retry.parse_retry_after(\"+2\") == 1",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Keep retry_after_max clamping unchanged",
+            "state": "ok"
+          },
+          {
+            "found": "unseen",
+            "kind": "must",
+            "needs": "Keep existing retry methods/backoff unchanged",
+            "state": "unclear"
+          },
+          {
+            "at": "assert retry.parse_retry_after(\"0.5\") == 0.5",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Add regression tests only (no unrelated production code changes)",
+            "state": "ok"
+          },
+          {
+            "at": "# small fractional delays below the maximum are preserved as-is (no new minimum delay is enforced).",
+            "found": "honored",
+            "kind": "must_not",
+            "needs": "No new minimum delay enforced",
+            "note": "no line of the diff quoted for it; read as the diff not doing it",
+            "state": "ok"
+          }
+        ],
+        "verdict": "unclear",
+        "why": "The diff adds a regex branch accepting unsigned decimals and a leading plus, leaving integer, date, clamping and other retry logic untouched, with rejection of negative/exponent/NaN/infinity achieved by falling through to the unchanged date branch; backoff/other retry methods are not touched by the diff and thus unseen.",
+        "stale": true
+      }
+    ],
+    "diff_hash": "625d28c765c92e30",
+    "seconds": 128.4,
+    "finished_at": "2026-10-07T01:12:41.428801+00:00",
+    "revisions": {
+      "fd8642fc9a10": "689a464e8801f00a"
+    },
+    "review_inputs": {
+      "fd8642fc9a10": "1c3f8b2212a996189ef8820a112bb874ff4a6dbe2fdcc2e927397e8aef679391"
+    },
+    "read_status": "done",
+    "stale": [
+      {
+        "node_id": "fd8642fc9a10",
+        "question": "Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?",
+        "why": "it is no longer signed: it was reopened, corrected or put in doubt after this reading"
+      }
+    ]
+  },
+  "review_pending": false,
+  "review_snapshot_current": false,
+  "review_comparison": {
+    "saved": {
+      "id": "1d78cd9c0958",
+      "status": "done"
+    },
+    "current": {
+      "id": "1d78cd9c0958",
+      "status": "stale"
+    },
+    "same_review_id": true,
+    "description": "Saved bundle.payload.review: id=1d78cd9c0958, status=done. Current top-level review: id=1d78cd9c0958, status=stale. The review IDs match. A status change alone does not establish a new attempt or pass; an ID can be reused on retry and does not identify a unique attempt. The saved snapshot differs from the current reading and has not been rewritten."
+  },
+  "next": "Reread the tree and finish with the current complete diff"
+}

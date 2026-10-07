@@ -129,10 +129,13 @@ def learn_graph(graph):
 
 def pseudonymize(graph):
     """Rewrite ingested identities, preserving row IDs and all graph links."""
+    from bridge import context_memory as cm
     scrub = learn_graph(graph)
     tables = ('engineers', 'change_people', 'blame_lines', 'listings', 'ownership', 'gh_users',
               'gh_pulls', 'intents', 'people', 'changes', 'owners')
     with graph.transaction():
+        if graph.db.execute('SELECT 1 FROM decisions LIMIT 1').fetchone():
+            raise ValueError('Pseudonymize a fresh evaluation graph before creating decisions')
         for table in tables:
             rows = [dict(row) for row in graph.db.execute(f'SELECT * FROM {table}')]
             if not rows:
@@ -140,9 +143,12 @@ def pseudonymize(graph):
                 continue
             # Rebuild tables with natural keys because spelling variants can
             # coalesce to one identity. Foreign links refer to preserved IDs.
-            graph.db.execute(f'DELETE FROM {table}')
+            keyed = 'id' in rows[0]
+            if not keyed:
+                graph.db.execute(f'DELETE FROM {table}')
             for row in rows:
-                original = dict(row)
+                # PostgreSQL maintains this generated FTS column itself.
+                row.pop('search_vector', None)
                 for col, value in row.items():
                     if isinstance(value, str) and col not in {'id', 'repo', 'sha', 'ref', 'path', 'path_prefix', 'slack_id', 'person_id'}:
                         row[col] = scrub.scrub(value)
@@ -153,9 +159,22 @@ def pseudonymize(graph):
                         graph.db.execute('UPDATE blame_lines SET lines=lines+? WHERE repo=? AND rev=? AND path=? AND engineer=?',
                                          (row['lines'], *[row[k] for k in ('repo','rev','path','engineer')]))
                         continue
-                cols = ','.join(row)
-                graph.db.execute(f'INSERT OR IGNORE INTO {table} ({cols}) VALUES ({",".join("?" for _ in row)})', tuple(row.values()))
+                if keyed:
+                    values = {k: v for k, v in row.items() if k != 'id'}
+                    graph.db.execute(f'UPDATE {table} SET {",".join(k + "=?" for k in values)} WHERE id=?',
+                                     (*values.values(), row['id']))
+                else:
+                    cols = ','.join(row)
+                    graph.db.execute(f'INSERT OR IGNORE INTO {table} ({cols}) VALUES ({",".join("?" for _ in row)})', tuple(row.values()))
             scrub.counts[table] = len(rows)
+        # These are still unconsumed evaluation fixtures, not customer history.
+        # Retain source/version identities while transforming their content too.
+        for row in graph.db.execute('SELECT id,snapshot FROM source_versions').fetchall():
+            snapshot = scrub.scrub_json(json.loads(row['snapshot']))
+            fingerprint = cm.digest({k: v for k, v in snapshot.items()
+                                     if k not in ('source_updated_at', 'source_version', 'source_sequence')})
+            graph.db.execute('UPDATE source_versions SET snapshot=?,fingerprint=? WHERE id=?',
+                             (cm.encoded(snapshot), fingerprint, row['id']))
         graph.db.execute('DELETE FROM model_cache')
         graph.set_setting('eval_pseudonyms', '1')
     for repo in graph.known_repos():

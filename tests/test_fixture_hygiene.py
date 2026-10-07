@@ -57,6 +57,37 @@ class TrackedFilesTests(unittest.TestCase):
 
 
 class PseudonymTests(OfflineCase):
+    def test_source_versions_and_search_survive_pseudonymization(self):
+        import json
+        from bridge import context_memory as cm
+        store = self.warm_store('qemulike')
+        g = store.graph
+        source = store.add_record({'repo': 'qemulike', 'kind': 'doc', 'ref': 'pseudonym-policy',
+            'title': 'Example review policy', 'body': PEOPLE['oriel'][0] + ' approved this proposal.',
+            'author': PEOPLE['oriel'][0], 'paths': ['hw/riscv/virt.c']})
+        before = g.db.execute('SELECT count(*) FROM source_versions').fetchone()[0]
+        pseudonyms.pseudonymize(g)
+        row = g.db.execute('SELECT * FROM source_versions WHERE id=?',
+                          (source['source']['source_version_id'],)).fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(g.db.execute('SELECT count(*) FROM source_versions').fetchone()[0], before)
+        snap = json.loads(row['snapshot'])
+        self.assertEqual(snap['author'], pseudonyms.label(PEOPLE['oriel'][0]))
+        self.assertNotIn(PEOPLE['oriel'][0], snap['body'])
+        self.assertEqual(row['fingerprint'], cm.digest({k: v for k, v in snap.items()
+            if k not in ('source_updated_at', 'source_version', 'source_sequence')}))
+        self.assertTrue(g._fts_ids('intents_fts', ['proposal']))
+        pseudonyms.pseudonymize(g)
+        self.assertEqual(g.db.execute('SELECT snapshot FROM source_versions WHERE id=?',
+            (row['id'],)).fetchone()[0], row['snapshot'])
+
+    def test_refuses_to_rewrite_decision_history(self):
+        store = self.warm_store('qemulike')
+        task = store.add_run({'title': 'An evaluation already started'})['id']
+        store.graph.add_decision(task, 'Keep current behavior?', 'policy', 'pending')
+        with self.assertRaisesRegex(ValueError, 'before creating decisions'):
+            pseudonyms.pseudonymize(store.graph)
+
     def test_labels_are_stable_across_spellings_and_keep_their_links(self):
         self.assertEqual(pseudonyms.label("Rafaela M. Núñez"), pseudonyms.label("rafaela nunez"))
         self.assertNotEqual(pseudonyms.label("Rafaela Nunez"), pseudonyms.label("Rafaela Vance"))

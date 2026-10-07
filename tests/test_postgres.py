@@ -170,6 +170,9 @@ def load_tests(loader, tests, pattern):
     if os.environ.get("BRIDGE_TEST_POSTGRES") != "1":
         return unittest.TestSuite()
     suite = loader.loadTestsFromTestCase(PostgresSpecific)
+    from test_fixture_hygiene import PseudonymTests
+    fixture_case = type('PostgresPseudonymTests', (PostgresIsolation, PseudonymTests), {'__module__': __name__})
+    suite.addTests(loader.loadTestsFromTestCase(fixture_case))
     # Reuse the same expectations on both backends, rather than implementing
     # weaker PostgreSQL copies of the authorization and lifecycle tests.
     for name in ("test_source_scope_integration", "test_notification_scope", "test_answer_rule_retirement", "test_approval_scope", "test_source_recall_interaction", "test_signed_proposed_memory", "test_human_source_revalidation", "test_source_observation", "test_source_lookup", "test_context_memory", "test_legacy_source_reuse", "test_source_review_readbacks", "test_answer_provenance", "test_record_state", "test_readback_generations", "test_contract", "test_kickoff_scope", "test_rules", "test_rule_invalidation", "test_delivery", "test_auth", "test_authority", "test_agent_rest_reads", "test_atomic_source_corrections", "test_memory_scope_retrieval",

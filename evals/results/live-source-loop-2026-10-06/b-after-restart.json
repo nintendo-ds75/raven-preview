@@ -1,0 +1,364 @@
+{
+  "id": "653b31567c31",
+  "run_id": "27f7e97f3e2d",
+  "question": "Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?",
+  "context": "Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test_retry.py",
+  "path": "src/urllib3/util/retry.py",
+  "owner_id": "eb7f51d4ed53",
+  "routing_reason": "Referred to Wes Contract by Engineer b01026",
+  "status": "approved",
+  "prediction": null,
+  "source_id": null,
+  "answer": "For Northstar staging, accept unsigned finite decimals such as 0.5. Reject leading plus signs including +3 and +0.5 with InvalidHeader. Reject negatives, exponents, NaN and infinity. Preserve ordinary integer return types, HTTP dates, retry_after_max clamping, existing retry methods and backoff. Add regression tests only. This approval is for this task only.",
+  "rationale": "The current policy withdrew support for plus-prefixed values after compatibility review.",
+  "answered_by": "Wes Contract",
+  "created_at": "2026-10-07T01:10:20.070044+00:00",
+  "updated_at": "2026-10-07T01:15:10.830210+00:00",
+  "model_pending": 0,
+  "category": "policy",
+  "source": "human",
+  "evidence": "",
+  "owner_evidence": "handed on by Engineer b01026: \"not me @Wes Contract just this one\"",
+  "superseded_by": "",
+  "supersedes": "",
+  "options": "",
+  "repo": "urllib3/urllib3",
+  "kind": "evidence",
+  "parent_id": "",
+  "client_ref": "current-policy",
+  "depth": 0,
+  "origin": "agent",
+  "signoff": "signed",
+  "signed_by": "Wes Contract",
+  "brief": "",
+  "source_revision": "",
+  "needs_review": 0,
+  "review_reason": "",
+  "signed_revision": "2026-10-07T01:15:10.830210+00:00",
+  "reusable": 0,
+  "rule_conditions": "",
+  "rule_expires": "",
+  "rule_by": "",
+  "rule_at": "",
+  "rule_scope": "",
+  "rule_ended_at": "",
+  "required_signers": "",
+  "signatures": "[{\"by\": \"Wes Contract\", \"at\": \"2026-10-07T01:15:10.830210+00:00\", \"revision\": \"2026-10-07T01:15:10.830210+00:00\", \"hash\": \"db7139880755c5ab\", \"scope\": {\"id\": \"653b31567c31\", \"run_id\": \"27f7e97f3e2d\", \"repo\": \"urllib3/urllib3\", \"question\": \"Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \\u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \\u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?\", \"context\": \"Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\\nPaths: src/urllib3/util/retry.py, test/test_retry.py\", \"path\": \"src/urllib3/util/retry.py\", \"scope_paths\": [\"src/urllib3/util/retry.py\", \"test/test_retry.py\"], \"scope_key\": \"73c6386633aaa26c60bb\", \"category\": \"policy\", \"facts\": {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse_retry_after\"}, \"options\": [], \"applicability\": {}, \"required_signers\": [], \"followup_required\": 0, \"reusable\": 0, \"rule_conditions\": \"\", \"rule_scope\": \"\", \"rule_expires\": \"\", \"rule_ended_at\": \"\"}}]",
+  "actor_id": "dc041d7fee0a",
+  "actor_name": "Wes Contract",
+  "actor_basis": "owner",
+  "facts": "{\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse_retry_after\"}",
+  "applicability": "{}",
+  "draft": 0,
+  "signed_hash": "db7139880755c5ab",
+  "scope_key": "73c6386633aaa26c60bb",
+  "scope_paths": "[\"src/urllib3/util/retry.py\", \"test/test_retry.py\"]",
+  "followup_required": 0,
+  "source_reuse_state": "tracked",
+  "independent_source_replacement": 0,
+  "historical_parent_revalidated": 0,
+  "rowid": 3,
+  "search_vector": "'+0.5':89 '+3':29,87 '0.5':24,81 'accept':5,75 'add':114 'approv':119 'backoff':113 'clamp':45,108 'compat':136 'current':126 'date':40,104 'decim':78 'decis':59 'delay':14 'delay-second':13 'exist':109 'expon':94 'finit':77 'format':16,41 'fraction':22 'http':39,103 'http-date':38 'includ':86 'infin':97 'instead':30 'integ':36,100 'invalidhead':33,91 'latest':62 'lead':27,83 'leav':35 'max':44,107 'method':111 'nan':95 'negat':48,93 'negative-valu':47 'non':7 'non-rfc-strict':6 'northstar':19,53,73 'ordinari':99 'patch':68 'path':69 'plus':84,132 'plus-prefix':131 'polici':63,127 'prefix':133 'prepar':67 'preserv':98 'prior':58 'rais':32 'recheck':56 'regress':115 'reject':50,82,92 'retri':3,11,42,105,110 'retry-aft':10 'retry.parse':2 'return':101 'review':137 'rfc':8 'rollout':55 'second':15,23 'seen':17 'sign':28,85 'src/urllib3/util/retry.py':70 'stage':20,54,74 'strict':9 'support':129 'task':123 'test':116 'test/test_retry.py':71 'type':102 'unchang':51 'unsign':76 'upstream':21 'use':65 'valu':49,134 'withdrew':128",
+  "source_reuse_uncertain": false,
+  "owner_name": "Wes Contract",
+  "owner_team": "",
+  "run_title": "Revalidate Northstar Retry-After rollout",
+  "agent": "Docker local MCP agent",
+  "events": [
+    {
+      "id": 177,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "resolve",
+      "detail": "{\"answered_by\": \"Wes Contract\", \"cited\": \"fd8642fc9a10\", \"decision_id\": \"653b31567c31\", \"kind\": \"direct\", \"signed\": true, \"source\": \"memory\", \"task_id\": \"27f7e97f3e2d\"}",
+      "created_at": "2026-10-07T01:10:20.124399+00:00"
+    },
+    {
+      "id": 179,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "node_added",
+      "detail": "{\"adopted\": \"\", \"client_ref\": \"current-policy\", \"decision_id\": \"653b31567c31\", \"depth\": 0, \"parent_id\": \"\", \"status\": \"resolved\", \"task_id\": \"27f7e97f3e2d\"}",
+      "created_at": "2026-10-07T01:10:20.208002+00:00"
+    },
+    {
+      "id": 180,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "resolve",
+      "detail": "{\"answered_by\": \"Wes Contract\", \"cited\": \"fd8642fc9a10\", \"decision_id\": \"653b31567c31\", \"kind\": \"direct\", \"signed\": true, \"source\": \"memory\", \"task_id\": \"27f7e97f3e2d\"}",
+      "created_at": "2026-10-07T01:10:24.665308+00:00"
+    },
+    {
+      "id": 182,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "model_read",
+      "detail": "{\"decision_id\": \"653b31567c31\", \"task_id\": \"27f7e97f3e2d\"}",
+      "created_at": "2026-10-07T01:10:24.737283+00:00"
+    },
+    {
+      "id": 183,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "notification_queued",
+      "detail": "{\"decision_id\": \"653b31567c31\", \"destination\": \"dm\", \"error\": \"\", \"kind\": \"signoff\", \"task_id\": \"27f7e97f3e2d\", \"to\": \"Engineer b01026\"}",
+      "created_at": "2026-10-07T01:10:24.760862+00:00"
+    },
+    {
+      "id": 184,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "notification_sent",
+      "detail": "{\"decision_id\": \"653b31567c31\", \"kind\": \"signoff\", \"task_id\": \"27f7e97f3e2d\", \"to\": \"Engineer b01026\"}",
+      "created_at": "2026-10-07T01:10:25.383412+00:00"
+    },
+    {
+      "id": 188,
+      "decision_id": "653b31567c31",
+      "run_id": null,
+      "kind": "route_learning_optout",
+      "detail": "{\"by\": \"Engineer b01026\", \"decision_id\": \"653b31567c31\"}",
+      "created_at": "2026-10-07T01:10:49.063669+00:00"
+    },
+    {
+      "id": 189,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "owner_changed",
+      "detail": "{\"by\": \"Engineer b01026\", \"decision_id\": \"653b31567c31\", \"referral\": true, \"task_id\": \"27f7e97f3e2d\", \"to\": \"Wes Contract\"}",
+      "created_at": "2026-10-07T01:10:49.064454+00:00"
+    },
+    {
+      "id": 190,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "route_learned",
+      "detail": "{\"authority_ids\": [], \"by\": \"Engineer b01026\", \"decision_id\": \"653b31567c31\", \"person\": \"Wes Contract\", \"scopes\": [], \"task_id\": \"27f7e97f3e2d\"}",
+      "created_at": "2026-10-07T01:10:49.064964+00:00"
+    },
+    {
+      "id": 191,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "notification_queued",
+      "detail": "{\"decision_id\": \"653b31567c31\", \"destination\": \"dm\", \"error\": \"\", \"kind\": \"reassigned\", \"task_id\": \"27f7e97f3e2d\", \"to\": \"Wes Contract\"}",
+      "created_at": "2026-10-07T01:10:49.070532+00:00"
+    },
+    {
+      "id": 192,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "reply_received",
+      "detail": "{\"by\": \"Engineer b01026\", \"channel\": \"slack\", \"decision_id\": \"653b31567c31\", \"task_id\": \"27f7e97f3e2d\"}",
+      "created_at": "2026-10-07T01:10:49.086584+00:00"
+    },
+    {
+      "id": 193,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "notification_sent",
+      "detail": "{\"decision_id\": \"653b31567c31\", \"kind\": \"reassigned\", \"task_id\": \"27f7e97f3e2d\", \"to\": \"Wes Contract\"}",
+      "created_at": "2026-10-07T01:10:49.478812+00:00"
+    },
+    {
+      "id": 201,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "source_review_required",
+      "detail": "{\"head_id\":\"45a13ac2089c4110b066537171f3c82a\",\"reason\":\"Source POL-RETRY changed to version 2; review the current sources before confirming this answer\",\"record_id\":\"348020de08f642ecadb44145b3969760\"}",
+      "created_at": "2026-10-07T01:13:43.134360+00:00"
+    },
+    {
+      "id": 204,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "notification_queued",
+      "detail": "{\"decision_id\": \"653b31567c31\", \"destination\": \"dm\", \"error\": \"\", \"kind\": \"review\", \"task_id\": \"27f7e97f3e2d\", \"to\": \"Wes Contract\"}",
+      "created_at": "2026-10-07T01:13:44.026084+00:00"
+    },
+    {
+      "id": 205,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "notification_sent",
+      "detail": "{\"decision_id\": \"653b31567c31\", \"kind\": \"review\", \"task_id\": \"27f7e97f3e2d\", \"to\": \"Wes Contract\"}",
+      "created_at": "2026-10-07T01:13:44.049503+00:00"
+    },
+    {
+      "id": 207,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "source_review_required",
+      "detail": "{\"head_id\":\"5dcc9c61cde3479f8cf85424d857f9bb\",\"reason\":\"Source POL-RETRY changed to version 3; review the current sources before confirming this answer\",\"record_id\":\"348020de08f642ecadb44145b3969760\"}",
+      "created_at": "2026-10-07T01:14:37.929384+00:00"
+    },
+    {
+      "id": 210,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "notification_queued",
+      "detail": "{\"decision_id\": \"653b31567c31\", \"destination\": \"dm\", \"error\": \"\", \"kind\": \"review\", \"task_id\": \"27f7e97f3e2d\", \"to\": \"Wes Contract\"}",
+      "created_at": "2026-10-07T01:14:38.243372+00:00"
+    },
+    {
+      "id": 211,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "notification_sent",
+      "detail": "{\"decision_id\": \"653b31567c31\", \"kind\": \"review\", \"task_id\": \"27f7e97f3e2d\", \"to\": \"Wes Contract\"}",
+      "created_at": "2026-10-07T01:14:38.253617+00:00"
+    },
+    {
+      "id": 212,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "previous_answer",
+      "detail": "{\"answer\": \"For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry_after_max clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\", \"rationale\": null, \"owner\": \"Wes Contract\", \"applicability\": {}}",
+      "created_at": "2026-10-07T01:15:10.829886+00:00"
+    },
+    {
+      "id": 213,
+      "decision_id": "653b31567c31",
+      "run_id": "27f7e97f3e2d",
+      "kind": "owner_approved",
+      "detail": "{\"answer\": \"For Northstar staging, accept unsigned finite decimals such as 0.5. Reject leading plus signs including +3 and +0.5 with InvalidHeader. Reject negatives, exponents, NaN and infinity. Preserve ordinary integer return types, HTTP dates, retry_after_max clamping, existing retry methods and backoff. Add regression tests only. This approval is for this task only.\", \"rationale\": \"The current policy withdrew support for plus-prefixed values after compatibility review.\", \"owner\": \"Wes Contract\", \"actor\": \"Wes Contract\", \"basis\": \"owner\", \"source\": \"session: Wes Contract\", \"actor_id\": \"dc041d7fee0a\", \"actor_kind\": \"session\", \"applicability\": {}, \"scope\": {\"id\": \"653b31567c31\", \"run_id\": \"27f7e97f3e2d\", \"repo\": \"urllib3/urllib3\", \"question\": \"Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \\u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \\u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?\", \"context\": \"Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\\nPaths: src/urllib3/util/retry.py, test/test_retry.py\", \"path\": \"src/urllib3/util/retry.py\", \"scope_paths\": [\"src/urllib3/util/retry.py\", \"test/test_retry.py\"], \"scope_key\": \"73c6386633aaa26c60bb\", \"category\": \"policy\", \"facts\": {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse_retry_after\"}, \"options\": [], \"applicability\": {}, \"required_signers\": [], \"followup_required\": 0, \"reusable\": 0, \"rule_conditions\": \"\", \"rule_scope\": \"\", \"rule_expires\": \"\", \"rule_ended_at\": \"\"}}",
+      "created_at": "2026-10-07T01:15:10.831816+00:00"
+    }
+  ],
+  "approval_pending": false,
+  "authorized": true,
+  "revision": {
+    "id": "333858888a214e5a81a467271d087af4",
+    "decision_id": "653b31567c31",
+    "answer": "For Northstar staging, accept unsigned finite decimals such as 0.5. Reject leading plus signs including +3 and +0.5 with InvalidHeader. Reject negatives, exponents, NaN and infinity. Preserve ordinary integer return types, HTTP dates, retry_after_max clamping, existing retry methods and backoff. Add regression tests only. This approval is for this task only.",
+    "rationale": "The current policy withdrew support for plus-prefixed values after compatibility review.",
+    "responder": "Wes Contract",
+    "provenance": "recorded by local operator",
+    "created_at": "2026-10-07T01:15:10.832263+00:00",
+    "rowid": 2
+  },
+  "sources": [
+    {
+      "record_id": "348020de08f642ecadb44145b3969760",
+      "source_version_id": "5dcc9c61cde3479f8cf85424d857f9bb",
+      "sequence": 3,
+      "provider": "jira",
+      "namespace": "northstar-fixture",
+      "external_id": "POL-RETRY",
+      "kind": "jira",
+      "repo": "urllib3/urllib3",
+      "ref": "POL-RETRY",
+      "url": "https://example.invalid/jira/POL-RETRY",
+      "title": "Clarified Retry-After interoperability policy for Northstar staging",
+      "author": "Wes Contract",
+      "source_created_at": "",
+      "source_updated_at": "2026-10-06T11:00:00Z",
+      "source_version": "policy-v3",
+      "observed_at": "2026-10-07T01:14:37.928346+00:00",
+      "provenance": "import",
+      "fingerprint": "e9ea95fadff6b727aa4afa30c2275d86ccfcec430c1e30a9acc7124826950530",
+      "availability": "available",
+      "head_id": "5dcc9c61cde3479f8cf85424d857f9bb",
+      "current": true,
+      "role": "support",
+      "decision_version_id": "e19b56f001b24c3c87b8008b71924a7e",
+      "stale": false
+    }
+  ],
+  "context_history": [
+    {
+      "id": "052aa15ee4ba47d58f56ff1257ba3fd5",
+      "sequence": 1,
+      "snapshot": "{\"decision\":{\"actor_basis\":\"\",\"actor_id\":\"\",\"actor_name\":\"\",\"answer\":\"For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry_after_max clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\",\"answered_by\":\"Wes Contract\",\"applicability\":\"\",\"brief\":\"\",\"category\":\"policy\",\"client_ref\":\"\",\"context\":\"Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\\nPaths: src/urllib3/util/retry.py, test/test_retry.py\",\"created_at\":\"2026-10-07T01:10:20.070044+00:00\",\"depth\":0,\"draft\":1,\"evidence\":\"Wes Contract answered this (direct, decision fd8642fc9a10, similarity 1.00, decayed score 1.00)\",\"facts\":\"{\\\"customer\\\": \\\"Northstar\\\", \\\"environment\\\": \\\"staging\\\", \\\"file\\\": \\\"src/urllib3/util/retry.py\\\", \\\"method\\\": \\\"parse_retry_after\\\"}\",\"followup_required\":0,\"historical_parent_revalidated\":0,\"id\":\"653b31567c31\",\"independent_source_replacement\":0,\"kind\":\"evidence\",\"model_pending\":0,\"needs_review\":0,\"options\":\"\",\"origin\":\"\",\"owner_evidence\":\"\",\"owner_id\":null,\"parent_id\":\"\",\"path\":\"src/urllib3/util/retry.py\",\"prediction\":null,\"question\":\"Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?\",\"rationale\":null,\"repo\":\"urllib3/urllib3\",\"required_signers\":\"\",\"reusable\":0,\"review_reason\":\"\",\"routing_reason\":\"resolution ladder\",\"rule_at\":\"\",\"rule_by\":\"\",\"rule_conditions\":\"\",\"rule_ended_at\":\"\",\"rule_expires\":\"\",\"rule_scope\":\"\",\"run_id\":\"27f7e97f3e2d\",\"scope_key\":\"\",\"scope_paths\":\"\",\"signatures\":\"\",\"signed_by\":\"\",\"signed_hash\":\"\",\"signed_revision\":\"\",\"signoff\":\"\",\"source\":\"memory\",\"source_id\":\"fd8642fc9a10\",\"source_revision\":\"2026-10-07T01:04:05.681449+00:00\",\"status\":\"resolved\",\"superseded_by\":\"\",\"supersedes\":\"\",\"updated_at\":\"2026-10-07T01:10:20.120312+00:00\"},\"derivations\":[{\"created_at\":\"2026-10-07T01:10:20.119339+00:00\",\"kind\":\"derived\",\"note\":\"Version-pinned joint composition\",\"related_id\":\"fd8642fc9a10\",\"source_version_id\":\"d0e303b7c3ab4ba492b39ca76f7397af\"}],\"provenance\":\"human-or-local\",\"reason\":\"evidence-attached\",\"sources\":[]}",
+      "recorded_at": "2026-10-07T01:10:20.122443+00:00"
+    },
+    {
+      "id": "bf41980b8b5d46d1ae19ba86db621f9e",
+      "sequence": 2,
+      "snapshot": "{\"decision\":{\"actor_basis\":\"\",\"actor_id\":\"\",\"actor_name\":\"\",\"answer\":\"For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry_after_max clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\",\"answered_by\":\"Wes Contract\",\"applicability\":\"\",\"brief\":\"\",\"category\":\"policy\",\"client_ref\":\"current-policy\",\"context\":\"Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\\nPaths: src/urllib3/util/retry.py, test/test_retry.py\",\"created_at\":\"2026-10-07T01:10:20.070044+00:00\",\"depth\":0,\"draft\":0,\"evidence\":\"Wes Contract answered this (direct, decision fd8642fc9a10, similarity 1.00, decayed score 1.00)\",\"facts\":\"{\\\"customer\\\": \\\"Northstar\\\", \\\"environment\\\": \\\"staging\\\", \\\"file\\\": \\\"src/urllib3/util/retry.py\\\", \\\"method\\\": \\\"parse_retry_after\\\"}\",\"followup_required\":0,\"historical_parent_revalidated\":0,\"id\":\"653b31567c31\",\"independent_source_replacement\":0,\"kind\":\"evidence\",\"model_pending\":1,\"needs_review\":0,\"options\":\"\",\"origin\":\"agent\",\"owner_evidence\":\"inferred first contact; confirm or refer in Slack; inferred first contact: authored pr 5182 for src/urllib3/util/retry.py; confirm or refer\",\"owner_id\":\"678287c03597\",\"parent_id\":\"\",\"path\":\"src/urllib3/util/retry.py\",\"prediction\":null,\"question\":\"Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?\",\"rationale\":null,\"repo\":\"urllib3/urllib3\",\"required_signers\":\"\",\"reusable\":0,\"review_reason\":\"\",\"routing_reason\":\"resolution ladder\",\"rule_at\":\"\",\"rule_by\":\"\",\"rule_conditions\":\"\",\"rule_ended_at\":\"\",\"rule_expires\":\"\",\"rule_scope\":\"\",\"run_id\":\"27f7e97f3e2d\",\"scope_key\":\"73c6386633aaa26c60bb\",\"scope_paths\":\"[\\\"src/urllib3/util/retry.py\\\", \\\"test/test_retry.py\\\"]\",\"signatures\":\"\",\"signed_by\":\"\",\"signed_hash\":\"\",\"signed_revision\":\"\",\"signoff\":\"required\",\"source\":\"memory\",\"source_id\":\"fd8642fc9a10\",\"source_revision\":\"2026-10-07T01:04:05.681449+00:00\",\"status\":\"resolved\",\"superseded_by\":\"\",\"supersedes\":\"\",\"updated_at\":\"2026-10-07T01:10:24.735991+00:00\"},\"derivations\":[{\"created_at\":\"2026-10-07T01:10:20.119339+00:00\",\"kind\":\"derived\",\"note\":\"Version-pinned joint composition\",\"related_id\":\"fd8642fc9a10\",\"source_version_id\":\"d0e303b7c3ab4ba492b39ca76f7397af\"}],\"provenance\":\"human-or-local\",\"reason\":\"evidence-attached\",\"sources\":[]}",
+      "recorded_at": "2026-10-07T01:10:24.738813+00:00"
+    },
+    {
+      "id": "2bf08ac339e84d599dabcc62bacfdfd0",
+      "sequence": 3,
+      "snapshot": "{\"decision\":{\"actor_basis\":\"owner\",\"actor_id\":\"2d63723b3edd\",\"actor_name\":\"Engineer b01026\",\"answer\":\"For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry_after_max clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\",\"answered_by\":\"Wes Contract\",\"applicability\":\"\",\"brief\":\"\",\"category\":\"policy\",\"client_ref\":\"current-policy\",\"context\":\"Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\\nPaths: src/urllib3/util/retry.py, test/test_retry.py\",\"created_at\":\"2026-10-07T01:10:20.070044+00:00\",\"depth\":0,\"draft\":0,\"evidence\":\"Wes Contract answered this (direct, decision fd8642fc9a10, similarity 1.00, decayed score 1.00)\",\"facts\":\"{\\\"customer\\\": \\\"Northstar\\\", \\\"environment\\\": \\\"staging\\\", \\\"file\\\": \\\"src/urllib3/util/retry.py\\\", \\\"method\\\": \\\"parse_retry_after\\\"}\",\"followup_required\":0,\"historical_parent_revalidated\":0,\"id\":\"653b31567c31\",\"independent_source_replacement\":0,\"kind\":\"evidence\",\"model_pending\":0,\"needs_review\":0,\"options\":\"\",\"origin\":\"agent\",\"owner_evidence\":\"handed on by Engineer b01026: \\\"not me @Wes Contract just this one\\\"\",\"owner_id\":\"eb7f51d4ed53\",\"parent_id\":\"\",\"path\":\"src/urllib3/util/retry.py\",\"prediction\":null,\"question\":\"Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?\",\"rationale\":null,\"repo\":\"urllib3/urllib3\",\"required_signers\":\"\",\"reusable\":0,\"review_reason\":\"\",\"routing_reason\":\"Referred to Wes Contract by Engineer b01026\",\"rule_at\":\"\",\"rule_by\":\"\",\"rule_conditions\":\"\",\"rule_ended_at\":\"\",\"rule_expires\":\"\",\"rule_scope\":\"\",\"run_id\":\"27f7e97f3e2d\",\"scope_key\":\"73c6386633aaa26c60bb\",\"scope_paths\":\"[\\\"src/urllib3/util/retry.py\\\", \\\"test/test_retry.py\\\"]\",\"signatures\":\"\",\"signed_by\":\"\",\"signed_hash\":\"\",\"signed_revision\":\"\",\"signoff\":\"required\",\"source\":\"memory\",\"source_id\":null,\"source_revision\":\"2026-10-07T01:04:05.681449+00:00\",\"status\":\"resolved\",\"superseded_by\":\"\",\"supersedes\":\"\",\"updated_at\":\"2026-10-07T01:10:49.063982+00:00\"},\"derivations\":[{\"created_at\":\"2026-10-07T01:10:20.119339+00:00\",\"kind\":\"derived\",\"note\":\"Version-pinned joint composition\",\"related_id\":\"fd8642fc9a10\",\"source_version_id\":\"d0e303b7c3ab4ba492b39ca76f7397af\"}],\"provenance\":\"human-or-local\",\"reason\":\"before-source-change\",\"sources\":[]}",
+      "recorded_at": "2026-10-07T01:13:43.146844+00:00"
+    },
+    {
+      "id": "0123307e2aa94401b295ee99c98791d7",
+      "sequence": 4,
+      "snapshot": "{\"decision\":{\"actor_basis\":\"owner\",\"actor_id\":\"2d63723b3edd\",\"actor_name\":\"Engineer b01026\",\"answer\":\"For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry_after_max clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\",\"answered_by\":\"Wes Contract\",\"applicability\":\"\",\"brief\":\"\",\"category\":\"policy\",\"client_ref\":\"current-policy\",\"context\":\"Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\\nPaths: src/urllib3/util/retry.py, test/test_retry.py\",\"created_at\":\"2026-10-07T01:10:20.070044+00:00\",\"depth\":0,\"draft\":0,\"evidence\":\"Wes Contract answered this (direct, decision fd8642fc9a10, similarity 1.00, decayed score 1.00)\",\"facts\":\"{\\\"customer\\\": \\\"Northstar\\\", \\\"environment\\\": \\\"staging\\\", \\\"file\\\": \\\"src/urllib3/util/retry.py\\\", \\\"method\\\": \\\"parse_retry_after\\\"}\",\"followup_required\":0,\"historical_parent_revalidated\":0,\"id\":\"653b31567c31\",\"independent_source_replacement\":0,\"kind\":\"evidence\",\"model_pending\":0,\"needs_review\":1,\"options\":\"\",\"origin\":\"agent\",\"owner_evidence\":\"handed on by Engineer b01026: \\\"not me @Wes Contract just this one\\\"\",\"owner_id\":\"eb7f51d4ed53\",\"parent_id\":\"\",\"path\":\"src/urllib3/util/retry.py\",\"prediction\":null,\"question\":\"Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?\",\"rationale\":null,\"repo\":\"urllib3/urllib3\",\"required_signers\":\"\",\"reusable\":0,\"review_reason\":\"Source POL-RETRY changed to version 2; review the current sources before confirming this answer\",\"routing_reason\":\"Referred to Wes Contract by Engineer b01026\",\"rule_at\":\"\",\"rule_by\":\"\",\"rule_conditions\":\"\",\"rule_ended_at\":\"\",\"rule_expires\":\"\",\"rule_scope\":\"\",\"run_id\":\"27f7e97f3e2d\",\"scope_key\":\"73c6386633aaa26c60bb\",\"scope_paths\":\"[\\\"src/urllib3/util/retry.py\\\", \\\"test/test_retry.py\\\"]\",\"signatures\":\"[]\",\"signed_by\":\"\",\"signed_hash\":\"\",\"signed_revision\":\"\",\"signoff\":\"required\",\"source\":\"memory\",\"source_id\":null,\"source_revision\":\"2026-10-07T01:04:05.681449+00:00\",\"status\":\"resolved\",\"superseded_by\":\"\",\"supersedes\":\"\",\"updated_at\":\"2026-10-07T01:13:43.134360+00:00\"},\"derivations\":[{\"created_at\":\"2026-10-07T01:10:20.119339+00:00\",\"kind\":\"derived\",\"note\":\"Version-pinned joint composition\",\"related_id\":\"fd8642fc9a10\",\"source_version_id\":\"d0e303b7c3ab4ba492b39ca76f7397af\"}],\"provenance\":\"human-or-local\",\"reason\":\"source-review-required\",\"sources\":[]}",
+      "recorded_at": "2026-10-07T01:13:43.149577+00:00"
+    },
+    {
+      "id": "2757ade3ff83410a86cb29781b1aea05",
+      "sequence": 5,
+      "snapshot": "{\"decision\":{\"actor_basis\":\"owner\",\"actor_id\":\"2d63723b3edd\",\"actor_name\":\"Engineer b01026\",\"answer\":\"For Northstar staging I approve finite unsigned decimals and a leading plus sign, including 0.5 and +3. Reject negatives, exponent notation, NaN and infinity with InvalidHeader. Keep integers, HTTP dates, retry_after_max clamping and existing retry methods/backoff unchanged. Add regression tests only; no new minimum delay. This approval is for this task only\",\"answered_by\":\"Wes Contract\",\"applicability\":\"\",\"brief\":\"\",\"category\":\"policy\",\"client_ref\":\"current-policy\",\"context\":\"Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\\nPaths: src/urllib3/util/retry.py, test/test_retry.py\",\"created_at\":\"2026-10-07T01:10:20.070044+00:00\",\"depth\":0,\"draft\":0,\"evidence\":\"Wes Contract answered this (direct, decision fd8642fc9a10, similarity 1.00, decayed score 1.00)\",\"facts\":\"{\\\"customer\\\": \\\"Northstar\\\", \\\"environment\\\": \\\"staging\\\", \\\"file\\\": \\\"src/urllib3/util/retry.py\\\", \\\"method\\\": \\\"parse_retry_after\\\"}\",\"followup_required\":0,\"historical_parent_revalidated\":0,\"id\":\"653b31567c31\",\"independent_source_replacement\":0,\"kind\":\"evidence\",\"model_pending\":0,\"needs_review\":1,\"options\":\"\",\"origin\":\"agent\",\"owner_evidence\":\"handed on by Engineer b01026: \\\"not me @Wes Contract just this one\\\"\",\"owner_id\":\"eb7f51d4ed53\",\"parent_id\":\"\",\"path\":\"src/urllib3/util/retry.py\",\"prediction\":null,\"question\":\"Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?\",\"rationale\":null,\"repo\":\"urllib3/urllib3\",\"required_signers\":\"\",\"reusable\":0,\"review_reason\":\"Source POL-RETRY changed to version 3; review the current sources before confirming this answer\",\"routing_reason\":\"Referred to Wes Contract by Engineer b01026\",\"rule_at\":\"\",\"rule_by\":\"\",\"rule_conditions\":\"\",\"rule_ended_at\":\"\",\"rule_expires\":\"\",\"rule_scope\":\"\",\"run_id\":\"27f7e97f3e2d\",\"scope_key\":\"73c6386633aaa26c60bb\",\"scope_paths\":\"[\\\"src/urllib3/util/retry.py\\\", \\\"test/test_retry.py\\\"]\",\"signatures\":\"[]\",\"signed_by\":\"\",\"signed_hash\":\"\",\"signed_revision\":\"\",\"signoff\":\"required\",\"source\":\"memory\",\"source_id\":null,\"source_revision\":\"2026-10-07T01:04:05.681449+00:00\",\"status\":\"resolved\",\"superseded_by\":\"\",\"supersedes\":\"\",\"updated_at\":\"2026-10-07T01:14:37.929384+00:00\"},\"derivations\":[{\"created_at\":\"2026-10-07T01:10:20.119339+00:00\",\"kind\":\"derived\",\"note\":\"Version-pinned joint composition\",\"related_id\":\"fd8642fc9a10\",\"source_version_id\":\"d0e303b7c3ab4ba492b39ca76f7397af\"}],\"provenance\":\"human-or-local\",\"reason\":\"source-review-required\",\"sources\":[]}",
+      "recorded_at": "2026-10-07T01:14:37.940875+00:00"
+    },
+    {
+      "id": "e19b56f001b24c3c87b8008b71924a7e",
+      "sequence": 6,
+      "snapshot": "{\"decision\":{\"actor_basis\":\"owner\",\"actor_id\":\"dc041d7fee0a\",\"actor_name\":\"Wes Contract\",\"answer\":\"For Northstar staging, accept unsigned finite decimals such as 0.5. Reject leading plus signs including +3 and +0.5 with InvalidHeader. Reject negatives, exponents, NaN and infinity. Preserve ordinary integer return types, HTTP dates, retry_after_max clamping, existing retry methods and backoff. Add regression tests only. This approval is for this task only.\",\"answered_by\":\"Wes Contract\",\"applicability\":\"{}\",\"brief\":\"\",\"category\":\"policy\",\"client_ref\":\"current-policy\",\"context\":\"Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\\nPaths: src/urllib3/util/retry.py, test/test_retry.py\",\"created_at\":\"2026-10-07T01:10:20.070044+00:00\",\"depth\":0,\"draft\":0,\"evidence\":\"\",\"facts\":\"{\\\"customer\\\": \\\"Northstar\\\", \\\"environment\\\": \\\"staging\\\", \\\"file\\\": \\\"src/urllib3/util/retry.py\\\", \\\"method\\\": \\\"parse_retry_after\\\"}\",\"followup_required\":0,\"historical_parent_revalidated\":0,\"id\":\"653b31567c31\",\"independent_source_replacement\":0,\"kind\":\"evidence\",\"model_pending\":0,\"needs_review\":0,\"options\":\"\",\"origin\":\"agent\",\"owner_evidence\":\"handed on by Engineer b01026: \\\"not me @Wes Contract just this one\\\"\",\"owner_id\":\"eb7f51d4ed53\",\"parent_id\":\"\",\"path\":\"src/urllib3/util/retry.py\",\"prediction\":null,\"question\":\"Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?\",\"rationale\":\"The current policy withdrew support for plus-prefixed values after compatibility review.\",\"repo\":\"urllib3/urllib3\",\"required_signers\":\"\",\"reusable\":0,\"review_reason\":\"\",\"routing_reason\":\"Referred to Wes Contract by Engineer b01026\",\"rule_at\":\"\",\"rule_by\":\"\",\"rule_conditions\":\"\",\"rule_ended_at\":\"\",\"rule_expires\":\"\",\"rule_scope\":\"\",\"run_id\":\"27f7e97f3e2d\",\"scope_key\":\"73c6386633aaa26c60bb\",\"scope_paths\":\"[\\\"src/urllib3/util/retry.py\\\", \\\"test/test_retry.py\\\"]\",\"signatures\":\"[{\\\"by\\\": \\\"Wes Contract\\\", \\\"at\\\": \\\"2026-10-07T01:15:10.830210+00:00\\\", \\\"revision\\\": \\\"2026-10-07T01:15:10.830210+00:00\\\", \\\"hash\\\": \\\"db7139880755c5ab\\\", \\\"scope\\\": {\\\"id\\\": \\\"653b31567c31\\\", \\\"run_id\\\": \\\"27f7e97f3e2d\\\", \\\"repo\\\": \\\"urllib3/urllib3\\\", \\\"question\\\": \\\"Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \\\\u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \\\\u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?\\\", \\\"context\\\": \\\"Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\\\\nPaths: src/urllib3/util/retry.py, test/test_retry.py\\\", \\\"path\\\": \\\"src/urllib3/util/retry.py\\\", \\\"scope_paths\\\": [\\\"src/urllib3/util/retry.py\\\", \\\"test/test_retry.py\\\"], \\\"scope_key\\\": \\\"73c6386633aaa26c60bb\\\", \\\"category\\\": \\\"policy\\\", \\\"facts\\\": {\\\"customer\\\": \\\"Northstar\\\", \\\"environment\\\": \\\"staging\\\", \\\"file\\\": \\\"src/urllib3/util/retry.py\\\", \\\"method\\\": \\\"parse_retry_after\\\"}, \\\"options\\\": [], \\\"applicability\\\": {}, \\\"required_signers\\\": [], \\\"followup_required\\\": 0, \\\"reusable\\\": 0, \\\"rule_conditions\\\": \\\"\\\", \\\"rule_scope\\\": \\\"\\\", \\\"rule_expires\\\": \\\"\\\", \\\"rule_ended_at\\\": \\\"\\\"}}]\",\"signed_by\":\"Wes Contract\",\"signed_hash\":\"db7139880755c5ab\",\"signed_revision\":\"2026-10-07T01:15:10.830210+00:00\",\"signoff\":\"signed\",\"source\":\"human\",\"source_id\":null,\"source_revision\":\"\",\"status\":\"approved\",\"superseded_by\":\"\",\"supersedes\":\"\",\"updated_at\":\"2026-10-07T01:15:10.830210+00:00\"},\"derivations\":[{\"created_at\":\"2026-10-07T01:15:10.826920+00:00\",\"kind\":\"related\",\"note\":\"Historical signed precedent; current premises explicitly revalidated on this task\",\"related_id\":\"fd8642fc9a10\",\"source_version_id\":\"a17753a189a84ae59d166d17579436f9\"}],\"provenance\":\"versioned\",\"reason\":\"human-answer\",\"sources\":[{\"author\":\"Wes Contract\",\"availability\":\"available\",\"external_id\":\"POL-RETRY\",\"fingerprint\":\"e9ea95fadff6b727aa4afa30c2275d86ccfcec430c1e30a9acc7124826950530\",\"kind\":\"jira\",\"namespace\":\"northstar-fixture\",\"observed_at\":\"2026-10-07T01:14:37.928346+00:00\",\"provenance\":\"import\",\"provider\":\"jira\",\"record_id\":\"348020de08f642ecadb44145b3969760\",\"ref\":\"POL-RETRY\",\"repo\":\"urllib3/urllib3\",\"role\":\"support\",\"sequence\":3,\"source_created_at\":\"\",\"source_updated_at\":\"2026-10-06T11:00:00Z\",\"source_version\":\"policy-v3\",\"source_version_id\":\"5dcc9c61cde3479f8cf85424d857f9bb\",\"stale\":false,\"title\":\"Clarified Retry-After interoperability policy for Northstar staging\",\"url\":\"https://example.invalid/jira/POL-RETRY\"}]}",
+      "recorded_at": "2026-10-07T01:15:10.836046+00:00"
+    }
+  ],
+  "source_provenance": "versioned",
+  "source_reuse_requires_review": false,
+  "source_notice": "",
+  "source_revalidation": {
+    "available": true,
+    "has_reliance": true,
+    "sources": [
+      {
+        "record_id": "348020de08f642ecadb44145b3969760",
+        "source_version_id": "5dcc9c61cde3479f8cf85424d857f9bb",
+        "role": "support",
+        "previous_version_id": "5dcc9c61cde3479f8cf85424d857f9bb",
+        "changed": false,
+        "snapshot": {
+          "access_scope": "",
+          "author": "Wes Contract",
+          "availability": "available",
+          "body": "Wes Contract decides Retry-After interoperability for Northstar staging. Revised decision: accept unsigned finite decimal seconds such as 0.5, but reject every leading plus sign including +3 and +0.5 with InvalidHeader. A compatibility review found plus signs must stay invalid. Keep ordinary integer return types, HTTP dates, retry_after_max clamping, backoff and retry methods unchanged. Reject negatives, exponents, NaN and infinity. Add regression tests only. This source is evidence and the rollout requires fresh owner signoff.",
+          "created_at": "",
+          "display_ref": "POL-RETRY",
+          "external_id": "POL-RETRY",
+          "kind": "jira",
+          "namespace": "northstar-fixture",
+          "object_kind": "jira",
+          "paths": [
+            "src/urllib3/util/retry.py",
+            "test/test_retry.py"
+          ],
+          "provider": "jira",
+          "ref": "source:17ecc67a1d469236945a0e65431d95a315df9ad90f4d79e97b853126515e0884",
+          "repo": "urllib3/urllib3",
+          "resolved": 0,
+          "source_created_at": "",
+          "source_sequence": 3,
+          "source_updated_at": "2026-10-06T11:00:00Z",
+          "source_version": "policy-v3",
+          "status": "Current",
+          "title": "Clarified Retry-After interoperability policy for Northstar staging",
+          "url": "https://example.invalid/jira/POL-RETRY"
+        }
+      }
+    ],
+    "retires_rule": false,
+    "pins": [
+      {
+        "record_id": "348020de08f642ecadb44145b3969760",
+        "source_version_id": "5dcc9c61cde3479f8cf85424d857f9bb",
+        "role": "support"
+      }
+    ],
+    "decision_pins": [],
+    "dependencies": [],
+    "notice": "Review the complete displayed source snapshots and source decisions before confirming these exact pins. A newer source change will refuse this review; nothing is refreshed by an ordinary yes.",
+    "blocked_on_unknown_provenance_only": false,
+    "review_path": "/#runs/27f7e97f3e2d"
+  },
+  "approval_scope_text": "Decision scope (recorded fields; no facts inferred from prose):\nDecision: 653b31567c31\nTask: 27f7e97f3e2d\nRepository: urllib3/urllib3\nQuestion: Should Retry.parse_retry_after() accept non-RFC-strict Retry-After delay-seconds formats seen from Northstar staging upstreams \u2014 fractional seconds ('0.5') and a leading '+' sign ('+3') \u2014 instead of raising InvalidHeader, while leaving integer and HTTP-date formats, retry_after_max clamping, and negative-value rejection unchanged?\nContext: Same Northstar staging rollout; recheck the prior decision against the latest policy before using the prepared patch.\nPaths: src/urllib3/util/retry.py, test/test_retry.py\nPath: src/urllib3/util/retry.py\nScope paths: [\"src/urllib3/util/retry.py\", \"test/test_retry.py\"]\nScope key: 73c6386633aaa26c60bb\nCategory: policy\nFacts: {\"customer\": \"Northstar\", \"environment\": \"staging\", \"file\": \"src/urllib3/util/retry.py\", \"method\": \"parse_retry_after\"}\nApplicability: {}"
+}
