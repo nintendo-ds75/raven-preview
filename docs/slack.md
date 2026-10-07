@@ -102,9 +102,13 @@ Raven reads an answer, correction, referral, follow-up or rule back before apply
 
 With no pending read-back, command shortcuts still work: `answer: <decision> because <reason>`, `sign off`, or `not me @person`. If a read-back is pending, approval shortcuts also require its code or an exact reply-to binding. Add `just this one` to a referral to avoid teaching a reusable route. Signable answers are shown in full across Slack blocks. No inbox account is required.
 
+Reply `context: <note>` to put context directly on the task for the coding agent, including in ordinary ask, reassignment, sign-off, and escalation threads. It is handled before inference or source-answer review, even if the body contains `because`, approval words, or other command-looking text. It does not approve, sign, assign, or make a rule, and a separate pending read-back keeps its existing semantics. The note body preserves the person's words after removing the prefix and outer whitespace (at most 4,000 characters); the full command including whitespace is limited to 4,096 characters. The task note keeps the original command and transport event/occurrence alongside the authenticated author and originating decision. Private clarification and chat are not automatically forwarded to the task.
+
 If no contact matches the available evidence, Raven posts the question in the triage channel. Reply `I'll take this` or `ask @person`. This assigns the question only. The chosen person then answers or signs off; claiming it does not approve it or create broad authority.
 
 The host calls `bridge_wait` and reads the answer through `bridge_get_tree`. It can continue independent work while it waits. `bridge_finish_task` refuses outstanding required answers and signatures. Evidence reuse still requires a signature unless an explicitly enabled, matching standing rule covers it.
+
+Task notes are always in `bridge_get_tree.notes`. A wait returns notes added while it is running; pass the previous `observed_at` as `since` to also receive notes that arrived between calls. A wait without `since` does not replay existing notes. On an ordinary timeout, the guidance says “no new decision or forwarded task note is observable” and “this does not prove that nobody replied privately.” That is a generic visibility boundary, not a report about any particular private conversation.
 
 ## Check it from your host agent
 

@@ -42,6 +42,8 @@ Existing Raven commands are supported, for example `answer: Exclude the load tes
 
 Initial routing of unassigned questions uses the Raven inbox. New unsolicited threads are acknowledged and ignored. An unknown or inactive mapped person, different tenant/channel/bot, stale activity timestamp, or invalid authentication is refused. Message updates and other activity types do not alter decisions.
 
+In an existing assigned task thread, `context: <note>` follows the same deterministic task-note path as Slack, including ask, reassignment, sign-off, and escalation notifications. Approval-looking words or `because` remain context; no decision, signature, assignment, or rule changes. The note retains its authenticated author, original command, originating decision, and verified activity occurrence. The body is limited to 4,000 characters and the full command including whitespace to 4,096. Private question/chat is not automatically forwarded. `bridge_get_tree.notes` includes these notes, and `bridge_wait` returns new notes while waiting or since the prior `observed_at` cursor. Timeout guidance says “no new decision or forwarded task note is observable” and “this does not prove that nobody replied privately”; it reveals no particular private reply.
+
 All notifications go to the pinned channel and address the intended person by name. This is a shared-channel deployment: install it only where the task details may be shared with channel members. No person-specific sign-in link is embedded in these channel messages.
 
 ## Authentication and persistence

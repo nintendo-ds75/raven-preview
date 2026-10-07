@@ -896,9 +896,22 @@ class Delivery:
         decision = self.store.get_decision(note["decision_id"])
         if decision.get('status') == 'withdrawn':
             return 'This question was withdrawn because its task was closed. Nothing was recorded.'
+        original_text = text
         text = (text or "").strip()
         lowered = text.lower()
         reply = ""
+        # Explicit context is a task note, even when its words look like an
+        # answer or approval. Keep it ahead of source review and inference.
+        if re.match(r'^context\s*:', text, re.I):
+            from .canvas import add_note
+            try:
+                add_note(self.store, decision['run_id'],
+                         {'text': re.sub(r'^context\s*:\s*', '', text, flags=re.I)}, actor=actor,
+                         reply_source=_context_reply_source(self.channel, channel, thread_ts,
+                                                            decision['id'], event_id, occurrence, original_text))
+            except (Refused, Invalid) as error:
+                return f"Nothing recorded: {error}"
+            return 'Context added for the coding agent. The decision owner and approval requirements have not changed.'
         from . import source_review
         if source_review.has_sources(decision) and (_explicit_answer(text) or readback.signoff_request(text)
                 or re.search(r'\b(?:because|rationale:|reason:)\b', text, re.I)):
@@ -906,10 +919,6 @@ class Delivery:
                 return source_review.offer_command(self, decision, person, actor, text, channel, thread_ts, occurrence, event_id)
             except (Refused, Invalid) as error:
                 return f"Nothing recorded: {error}"
-        if note.get('kind') == 'escalation' and re.match(r'^context\s*:', text, re.I):
-            from .canvas import add_note
-            add_note(self.store, decision['run_id'], {'text': re.sub(r'^context\s*:\s*', '', text, flags=re.I)}, actor=actor)
-            return 'Context added for the coding agent. The decision owner and approval requirements have not changed.'
         from .slack_chat import respond
         try:
             conversational = respond(self, note, decision, person, text, actor, action_token,
@@ -1069,6 +1078,31 @@ _DECLINE_RE = re.compile(r"^\s*(?:no|nope|not quite|wrong|nah)\W*$", re.IGNORECA
 # acknowledged.
 _ACK_ONLY_RE = re.compile(r"^\s*(?:ok(?:ay)?|k|sure|thanks?|thx|ty|got it|gotcha|noted|seen|ack|"
                           r"understood|makes sense|fair enough|right(?:o)?|cool|nice|\W+)\W*$", re.IGNORECASE)
+
+
+def _context_reply_source(platform, channel, thread_ts, decision_id, event_id, occurrence, text):
+    """Bound the verified delivery metadata without interpreting message prose.
+
+    The body retains add_note's 4000-character limit. The original command has
+    a small formatting allowance, never unbounded stripped whitespace.
+    Missing legacy occurrence fields stay missing; no timestamp is invented.
+    """
+    source = {'platform': platform, 'channel': channel, 'thread_ts': thread_ts,
+              'decision_id': decision_id, 'event_id': event_id, 'text': text}
+    limits = {'platform': 20, 'channel': 2048, 'thread_ts': 2048,
+              'decision_id': 100, 'event_id': 1024, 'text': 4096}
+    for key, limit in limits.items():
+        if not isinstance(source[key], str) or len(source[key]) > limit:
+            raise Invalid(f'Context reply {key} must be text of at most {limit} characters')
+    if occurrence is not None:
+        if not isinstance(occurrence, dict):
+            raise Invalid('Context reply occurrence must be transport metadata')
+        limits = {'platform': 20, 'id': 1024, 'timestamp': 64, 'reply_to': 2048}
+        occurrence = {key: occurrence[key] for key in limits if key in occurrence}
+        for key, value in occurrence.items():
+            if not isinstance(value, str) or len(value) > limits[key]:
+                raise Invalid(f'Context reply occurrence {key} is invalid or too long')
+    return {**source, 'occurrence': occurrence}
 
 
 def _signed_as_it_stands(decision: dict, person: dict) -> bool:

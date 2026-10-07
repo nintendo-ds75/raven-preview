@@ -1830,14 +1830,18 @@ def task_notes(store, task_id: str, since: str = "") -> list[dict]:
             d = json.loads(r["detail"])
         except ValueError:
             continue
-        out.append({"by": d.get("by", ""), "text": d.get("text", ""), "at": r["created_at"]})
+        note = {"by": d.get("by", ""), "text": d.get("text", ""), "at": r["created_at"]}
+        if 'reply_source' in d:
+            note.update({key: d[key] for key in ('reply_source', 'source', 'actor_id', 'actor_kind') if key in d})
+        out.append(note)
     return out
 
 
-def add_note(store, task_id: str, data, actor=None) -> dict:
+def add_note(store, task_id: str, data, actor=None, *, reply_source=None) -> dict:
     """A person adds context to a running task: it lands on the tree for
     the agent (bridge_get_tree notes, bridge_wait returns it) and in the
-    task's trace. Any person may; an agent may not."""
+    task's trace. Any person may; an agent may not. Transport reply provenance
+    is supplied internally, never taken from the caller's note data."""
     from . import authz
     _task(store, task_id)
     text = field(data, "text", limit=4000)
@@ -1845,7 +1849,22 @@ def add_note(store, task_id: str, data, actor=None) -> dict:
         authz.check(store.graph, actor, {"owner_id": "", "repo": ""}, "note")
     by = (actor.name if actor is not None and actor.id else field(data, "by", limit=100))[:100]
     with store.graph.transaction():
-        store.graph.append_event("task_note", {"task_id": task_id, "by": by, "text": text})
+        detail = {"task_id": task_id, "by": by, "text": text}
+        if reply_source is not None:
+            detail.update(reply_source=reply_source, **authz.event_provenance(actor))
+            # A retry can resume after the note committed but before its
+            # transport receipt was marked applied. Keep that one note.
+            if reply_source.get('event_id'):
+                for prior in task_notes(store, task_id):
+                    source = prior.get('reply_source') or {}
+                    if (source.get('platform'), source.get('event_id')) != (
+                            reply_source.get('platform'), reply_source['event_id']):
+                        continue
+                    if (source != reply_source or prior['text'] != text
+                            or prior.get('actor_id') != detail['actor_id']):
+                        raise Invalid('Context event ID was reused with different content or attribution')
+                    return {"task_id": task_id, "notes": task_notes(store, task_id)}
+        store.graph.append_event("task_note", detail)
     return {"task_id": task_id, "notes": task_notes(store, task_id)}
 
 
@@ -2580,7 +2599,9 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
         result["next"] = tree["next"]
     else:
         who = sorted({n["owner"] for n in still if n["owner"]})
-        result["next"] = (f"nothing changed in {result['waited_seconds']:g}s; {len(still)} node"
+        result["next"] = (f"no new decision or forwarded task note is observable after {result['waited_seconds']:g}s; "
+                          "this does not prove that nobody replied privately; "
+                          f"{len(still)} node"
                           f"{'s' if len(still) != 1 else ''} still wait{'s' if len(still) == 1 else ''} on "
                           f"{', '.join(who) if who else 'nobody yet (unrouted: assign in the inbox or settle yourself)'}"
                           "; continue independent work, then wait again or read bridge_get_tree; an answer that "
