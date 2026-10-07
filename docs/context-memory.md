@@ -402,6 +402,15 @@ not retire its sources. Co-signers review fresh decision revisions separately.
 Completed predecessors retain their historical signatures and proof while the
 active child receives its own reviewed current source pins.
 
+The personal review page preserves opened and closed source disclosures through
+responsive layout changes and redraws, keyed to the exact source version or
+source-decision snapshot. An identical quiet poll already leaves the page in
+place. The source-review checkbox is remembered only in the current page and
+only while the complete displayed focus projection is identical; changed
+evidence, scope, answer, availability or selected decision clears it. This
+presentation state neither signs an answer nor changes the submitted version
+checks, and no source text or pins are shortened to preserve reading position.
+
 `tests/test_source_review_readbacks.py` exercises synthetic Slack and verified
 Teams callbacks without real messages, provider requests, or model calls. The
 same cases are registered for the PostgreSQL loader.

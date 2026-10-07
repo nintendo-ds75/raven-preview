@@ -111,8 +111,48 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.locator('#source-review-signoff').check();
     await sign(fixture.race);
     assert.equal((await read(fixture.race)).authorized,true);
+
+    // Normal responsive redraws replace the personal review DOM. Exact
+    // disclosures and acknowledgment survive only the same displayed focus.
+    // This is a synthetic browser, not a script run on a live owner's page.
+    const owner=await browser.newPage({viewport:{width:1280,height:900}});
+    owner.on('pageerror',error=>errors.push(error.message));
+    await owner.goto(fixture.url+'/brief#'+fixture.links.disclosure);
+    await owner.locator('#brief-source-confirm').waitFor();
+    const metadata=owner.getByText('Complete source metadata',{exact:true});
+    await metadata.click();
+    await owner.locator('#brief-source-confirm').check();
+    await owner.setViewportSize({width:390,height:844});
+    await owner.locator('.brief-stack').waitFor();
+    assert.equal(await metadata.evaluate(el=>el.parentElement.open),true);
+    assert.equal(await owner.locator('#brief-source-confirm').isChecked(),true);
+    const outer=owner.locator('.brief-source-review .source-snapshot');
+    await outer.locator(':scope > summary').click();
+    await owner.setViewportSize({width:1280,height:900});
+    await owner.locator('.brief-columns').waitFor();
+    assert.equal(await outer.evaluate(el=>el.open),false);
+    await outer.locator(':scope > summary').click();
+    assert.equal(await metadata.evaluate(el=>el.parentElement.open),true);
+    assert.equal(await owner.locator('#brief-source-confirm').isChecked(),true);
+    await owner.screenshot({path:path.join(artifacts,'synthetic-source-review-disclosures.png'),fullPage:true});
+    assert.equal(await metadata.evaluate(el=>el.parentElement.open),true);
+    assert.equal(await owner.locator('#brief-source-confirm').isChecked(),true);
+    assert.equal((await read(fixture.disclosure)).authorized,false);
+
+    // A real source update followed by the ordinary note-form refresh must
+    // show its new version and require a fresh source acknowledgment.
+    const changed=await update(fixture.records[3],'A new exact source revision requires a fresh review.');
+    await owner.locator('#note-text').fill('Synthetic context-only note to refresh this task.');
+    const noteResponse=owner.waitForResponse(r=>r.url().endsWith('/api/brief/note')&&r.request().method()==='POST');
+    await owner.getByRole('button',{name:'Add note',exact:true}).click();
+    assert.equal((await noteResponse).status(),200);
+    await owner.waitForFunction(version=>document.querySelector('.brief-source-review')?.textContent.includes(version),changed.source.source_version_id);
+    assert.equal(await owner.locator('#brief-source-confirm').isChecked(),false);
+    assert.equal(await metadata.evaluate(el=>el.parentElement.open),false);
+    assert.equal((await read(fixture.disclosure)).authorized,false);
+    await owner.close();
     assert.deepEqual(errors,[]);
-    console.log(JSON.stringify({ok:true,checks:['fresh complete snapshots and exact pins','literal escaped source text','full source metadata','close/reopen preserves unsigned proposal','ordinary signoff unchanged','context-only stale snapshot stays informational','phone context snapshot display','stale second source refused','existing explicit revalidation still works']}));
+    console.log(JSON.stringify({ok:true,checks:['fresh complete snapshots and exact pins','literal escaped source text','full source metadata','close/reopen preserves unsigned proposal','ordinary signoff unchanged','context-only stale snapshot stays informational','phone context snapshot display','stale second source refused','existing explicit revalidation still works','responsive redraw preserves open and closed source disclosures','identical focus preserves source acknowledgment','changed source clears acknowledgment without signing']}));
   } finally {
     if(browser) await browser.close();
     if(child.exitCode===null&&child.signalCode===null){child.kill('SIGTERM');await once(child,'exit').catch(()=>{});}

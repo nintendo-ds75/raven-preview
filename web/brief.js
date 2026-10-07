@@ -55,6 +55,9 @@ const SEEN = 'The coding agent sees it the next time it checks this task.';
 let data = null, error = '', errorStatus = 0, historyAll = false, resent = '';
 // The last read as it came: the quiet refresh redraws only when it differs.
 let lastRead = '';
+// Acknowledgment belongs to the exact evidence and decision last rendered,
+// not the fresh response assigned to data before render replaces the DOM.
+let renderedSourceReviewKey = '';
 // A decision opened from the list; '' is the one the link names.
 let focusId = '';
 
@@ -182,10 +185,22 @@ function sourceReview(f) {
   if (!r || (!r.has_reliance && !r.sources?.length && !r.dependencies?.length)) return '';
   const sources = (r.sources || []).map(s => {
     const {body, ...metadata} = s.snapshot || {};
-    return `<details class="brief-why source-snapshot" open><summary>${esc(s.snapshot?.title || s.record_id)} · ${esc(s.role)}</summary><p>${esc(s.snapshot?.author || 'Author not supplied')} · ${esc(s.snapshot?.status || 'Status not supplied')}</p><pre class="brief-source-body">${esc(body || '')}</pre><p class="muted">Record ID: ${esc(s.record_id)}<br>Exact source version: ${esc(s.source_version_id)}<br>Role: ${esc(s.role)}</p><details class="brief-why"><summary>Complete source metadata</summary><pre class="brief-source-body">${esc(JSON.stringify(metadata, null, 2))}</pre></details></details>`;
+    const key = JSON.stringify(['source', f.node_id, s.record_id, s.source_version_id, s.role]);
+    return `<details class="brief-why source-snapshot" data-keep="${esc(key)}" open><summary>${esc(s.snapshot?.title || s.record_id)} · ${esc(s.role)}</summary><p>${esc(s.snapshot?.author || 'Author not supplied')} · ${esc(s.snapshot?.status || 'Status not supplied')}</p><pre class="brief-source-body">${esc(body || '')}</pre><p class="muted">Record ID: ${esc(s.record_id)}<br>Exact source version: ${esc(s.source_version_id)}<br>Role: ${esc(s.role)}</p><details class="brief-why" data-keep="${esc(key + ':metadata')}"><summary>Complete source metadata</summary><pre class="brief-source-body">${esc(JSON.stringify(metadata, null, 2))}</pre></details></details>`;
   }).join('');
-  const dependencies = (r.dependencies || []).map(s => `<details class="brief-why"><summary>${s.historical ? 'Historical decision' : 'Source decision'}: ${esc(s.question)}</summary><p>${prose(s.answer)}</p><pre class="brief-source-body">${esc(JSON.stringify(s.reviewed_snapshot || s, null, 2))}</pre></details>`).join('');
+  const dependencies = (r.dependencies || []).map(s => {
+    const key = JSON.stringify(['source-decision', f.node_id, s.decision_id, s.source_version_id,
+      s.source_snapshot_sha256 || s.reviewed_snapshot || s]);
+    return `<details class="brief-why" data-keep="${esc(key)}"><summary>${s.historical ? 'Historical decision' : 'Source decision'}: ${esc(s.question)}</summary><p>${prose(s.answer)}</p><pre class="brief-source-body">${esc(JSON.stringify(s.reviewed_snapshot || s, null, 2))}</pre></details>`;
+  }).join('');
   return `<section class="brief-source-review"><h3>Evidence for this answer</h3><p>${esc(r.notice)}</p>${r.retires_rule ? '<p>Reapproving changed evidence retires the old standing rule. This signature applies here.</p>' : ''}${sources}${dependencies}${r.has_reliance ? (r.available ? '<label><input id="brief-source-confirm" type="checkbox" required> I reviewed the sources and source decisions shown here. Bind my answer to these exact revisions.</label>' : '<p>Current evidence is unavailable. Signing waits until it can be reviewed.</p>') : '<p>These context and work-item snapshots are informational. They do not require source revalidation.</p>'}</section>`;
+}
+
+function sourceAcknowledgmentKey(f) {
+  if (!f?.source_revalidation?.available || !f.source_revalidation.has_reliance) return '';
+  // Exact serialized values, not a short display hash. Any changed displayed
+  // scope or source snapshot requires another deliberate acknowledgment.
+  return JSON.stringify(f);
 }
 
 function workItemContext(f) {
@@ -423,7 +438,8 @@ function keepDrafts() {
   return {answerFor: $('#answer-form')?.dataset.id || '', values: DRAFTS.map(id => [id, document.getElementById(id)?.value || '']),
     picked: document.querySelector('input[name="answer-option"]:checked')?.value || '',
     handonPerson: $('#handon-person')?.value || '', menu: $('.brief-viewer-menu')?.open || false,
-    open: [...document.querySelectorAll('details[data-keep][open]')].map(el => el.dataset.keep),
+    disclosures: [...document.querySelectorAll('details[data-keep]')].map(el => [el.dataset.keep, el.open]),
+    sourceReview: {key: renderedSourceReviewKey, checked: $('#brief-source-confirm')?.checked === true},
     shown: [...document.querySelectorAll('blockquote[data-keep]:not(.is-clamped)')].map(el => el.dataset.keep)};
 }
 
@@ -434,7 +450,14 @@ function restoreDrafts(kept) {
     const el = document.getElementById(id);
     if (el && !el.value) el.value = value;
   }
-  for (const el of document.querySelectorAll('details[data-keep]')) if (kept.open.includes(el.dataset.keep)) el.open = true;
+  const disclosures = new Map(kept.disclosures);
+  for (const el of document.querySelectorAll('details[data-keep]')) {
+    if (disclosures.has(el.dataset.keep)) el.open = disclosures.get(el.dataset.keep);
+  }
+  const sourceConfirm = $('#brief-source-confirm');
+  const sourceKey = sourceAcknowledgmentKey(data.focus);
+  if (sourceConfirm) sourceConfirm.checked = Boolean(sameForm && sourceKey &&
+    sourceKey === kept.sourceReview.key && kept.sourceReview.checked);
   for (const el of document.querySelectorAll('blockquote[data-keep].is-clamped')) {
     if (kept.shown.includes(el.dataset.keep)) { el.classList.remove('is-clamped'); el.nextElementSibling?.matches('.brief-more') && el.nextElementSibling.remove(); }
   }
@@ -554,6 +577,7 @@ function render() {
     </section>
     ${body}`;
   restoreDrafts(kept);
+  renderedSourceReviewKey = sourceAcknowledgmentKey(f);
   fitQuotes();
   const side = $('.brief-side');
   sideSize.disconnect();
