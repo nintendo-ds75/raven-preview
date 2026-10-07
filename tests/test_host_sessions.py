@@ -1,6 +1,9 @@
 import json
 import subprocess
 import sys
+import threading
+import time
+import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
@@ -11,6 +14,58 @@ from bridge.auth import Identity
 from bridge.setup import install_host_hooks
 from bridge.store import Store, Invalid
 from test_auth import SharedServer, BOOTSTRAP
+
+
+class HookDeadlineTests(unittest.TestCase):
+    def test_each_request_uses_only_the_remaining_cumulative_budget(self):
+        clock = [100.0]
+        observed = []
+
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def read(self, limit):
+                clock[0] += 15
+                return b'{"result": {}}'
+
+        class Opener:
+            def open(self, request, timeout):
+                observed.append(timeout)
+                return Response()
+
+        with patch.object(hc.time, 'monotonic', side_effect=lambda: clock[0]), \
+                patch.object(hc, 'build_opener', return_value=Opener()):
+            config = {'url': 'http://localhost/mcp', 'token': 'synthetic-test'}
+            hc.rpc(config, 'initialize', deadline=145)
+            hc.rpc(config, 'tools/list', deadline=145)
+            with self.assertRaisesRegex(ValueError, 'deadline'):
+                hc.rpc(config, 'tools/call', deadline=145)
+            with self.assertRaisesRegex(ValueError, 'deadline'):
+                hc.rpc(config, 'tools/call', deadline=145)
+        self.assertEqual(observed, [45, 30, 15])
+
+    def test_outer_deadline_bounds_a_nonreturning_network_operation(self):
+        released = threading.Event()
+        began = time.monotonic()
+        try:
+            with self.assertRaisesRegex(ValueError, 'deadline'):
+                hc.bounded_hook(lambda deadline: released.wait(5), budget=.05)
+            self.assertLess(time.monotonic() - began, 1)
+        finally:
+            released.set()
+
+    def test_git_inspection_receives_remaining_budget(self):
+        with patch.object(hc.subprocess, 'check_output', return_value=b'/example/checkout\n') as command, \
+                patch.object(hc.time, 'monotonic', return_value=100):
+            hc.verify_project({'project': '/example/checkout'}, '/example/checkout', deadline=112)
+        self.assertEqual(command.call_args.kwargs['timeout'], 12)
+
+    def test_no_operation_starts_with_an_expired_budget(self):
+        with patch.object(hc, 'build_opener') as opener:
+            with self.assertRaisesRegex(ValueError, 'deadline'):
+                hc.rpc({'url': 'http://localhost/mcp', 'token': 'synthetic-test'},
+                       'initialize', deadline=time.monotonic() - 1)
+        opener.return_value.open.assert_not_called()
 
 
 class HostCases:
@@ -147,6 +202,76 @@ class HostHTTPTests(SharedServer):
         self.config = {'url': self.base + '/mcp', 'token': token, 'project': str(self.project), 'repo': 'example/service'}
         self.payload = {'hook_event_name': 'UserPromptSubmit', 'session_id': 'session-real-http',
                         'cwd': str(self.project), 'prompt': 'Fix the typo without changing behavior.'}
+
+    def deadline_command(self, budget):
+        install_host_hooks(self.project, str(self.project), self.config['url'], self.config['token'],
+                           ['claude'], repo=self.config['repo'])
+        script = self.project / '.raven/host.py'
+        # Execute the unchanged installed module with a shorter test-only clock
+        # budget. Production setup always uses the fixed 45-second budget.
+        bootstrap = ('import runpy,sys; path=sys.argv[1]; budget=float(sys.argv[2]); '
+            'loaded=runpy.run_path(path); loaded["main"].__globals__["HOOK_BUDGET_SECONDS"]=budget; '
+            'sys.argv=[path,"hook","--host","claude"]; loaded["main"]()')
+        return [sys.executable, '-c', bootstrap, str(script), str(budget)]
+
+    def test_installed_hook_deadline_blocks_and_retry_recovers_completed_registration(self):
+        from bridge import canvas
+        original = canvas.start_task
+        created, release = threading.Event(), threading.Event()
+
+        def delayed(*args, **kwargs):
+            result = original(*args, **kwargs)
+            created.set()
+            release.wait(5)
+            return result
+
+        command = self.deadline_command(.4)
+        began = time.monotonic()
+        try:
+            with patch.object(canvas, 'start_task', side_effect=delayed):
+                result = subprocess.run(command, input=json.dumps(self.payload), capture_output=True,
+                                        text=True, cwd=self.project, timeout=3)
+                self.assertTrue(created.is_set(), 'The deadline must interrupt the registered-request response')
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(json.loads(result.stdout)['decision'], 'block')
+                self.assertIn('deadline', result.stderr)
+                self.assertLess(time.monotonic() - began, 2)
+                self.assertNotIn(self.config['token'], result.stdout + result.stderr)
+        finally:
+            release.set()
+        first = self.store.graph.db.execute('SELECT id,goal FROM runs').fetchone()
+        retry = hc.hook(self.config, 'claude', self.payload)
+        self.assertIn(first['id'], retry['hookSpecificOutput']['additionalContext'])
+        self.assertEqual(first['goal'], self.payload['prompt'])
+        self.assertEqual(self.store.graph.db.execute('SELECT count(*) n FROM runs').fetchone()['n'], 1)
+
+    def test_default_budget_leaves_time_for_explicit_block_before_host_ceiling(self):
+        self.deadline_command(.1)
+        settings = json.loads((self.project / '.claude/settings.local.json').read_text())
+        for event in ('SessionStart', 'UserPromptSubmit'):
+            self.assertLess(hc.HOOK_BUDGET_SECONDS, settings['hooks'][event][0]['hooks'][0]['timeout'])
+        self.assertEqual(hc.HOOK_BUDGET_SECONDS, 45)
+
+    def test_installed_command_exits_two_even_if_response_read_never_returns(self):
+        command = self.deadline_command(.15)
+        prefix = ('import runpy,sys,threading,types; path=sys.argv[1]; '
+            'loaded=runpy.run_path(path); scope=loaded["main"].__globals__; '
+            'scope["HOOK_BUDGET_SECONDS"]=float(sys.argv[2]); '
+            'response=type("SlowBody",(),{"__enter__":lambda self:self,'
+            '"__exit__":lambda self,*args:False,'
+            '"read":lambda self,limit:threading.Event().wait(10)}); '
+            'scope["build_opener"]=lambda *args:types.SimpleNamespace(open=lambda *a,**kw:response()); '
+            'sys.argv=[path,"hook","--host","claude"]; loaded["main"]()')
+        command[2] = prefix
+        began = time.monotonic()
+        result = subprocess.run(command, input=json.dumps(self.payload), capture_output=True,
+                                text=True, cwd=self.project, timeout=3)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(json.loads(result.stdout)['decision'], 'block')
+        self.assertIn('deadline', result.stderr)
+        self.assertLess(time.monotonic() - began, 2)
+        self.assertNotIn(self.config['token'], result.stdout + result.stderr)
+        self.assertEqual(self.store.graph.db.execute('SELECT count(*) n FROM runs').fetchone()['n'], 0)
 
     def test_actual_hook_http_handshake_registration_and_no_evidence_as_instructions(self):
         response = hc.hook(self.config, 'claude', self.payload)

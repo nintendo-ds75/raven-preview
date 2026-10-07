@@ -6,6 +6,57 @@ author, assignee, status, and claims of approval remain evidence only. A human
 must still approve the actual question and scope through Raven's existing
 identity and authority checks.
 
+## Unsigned agent proposals
+
+`bridge_settle_node` and `POST /api/tasks/:id/settle` accept optional
+`source_evidence`: at most 64 objects containing exactly `record_id`,
+`source_version_id`, and `role` (`support`, `contradiction`, `context`, or
+`work_item`). Copy the opaque IDs from an actual `bridge_get_record` reading;
+refs, URLs, citations in rationale, and claims of approval cannot create pins.
+For example:
+
+```json
+{
+  "task_id": "the-task-id",
+  "node_id": "the-node-id",
+  "answer": "Apply the retention policy to this scoped archive.",
+  "rationale": "The current source describes this archive's retention period.",
+  "source_evidence": [
+    {"record_id": "the-record-id", "source_version_id": "the-observed-version-id", "role": "support"}
+  ]
+}
+```
+
+The answer and pins publish in one writer transaction. Every supplied pin must
+identify the exact current, available source in the node's repository and
+selected source namespace, with a fresh retrieval lease where applicable. A
+stale second pin rejects the entire proposal. A concurrent later source change
+invalidates the published reliance normally. This records the agent's stated
+sources; it does not attest that the host read them or that its reasoning follows
+from them.
+
+Pins are additive. Omitting a prior pin, supplying an empty array, or adding a
+`context` pin cannot remove or downgrade existing support, contradiction, or
+source-decision dependencies. Existing stale dependencies must receive a
+person's complete current-source review first; an agent cannot refresh them or
+claim an independent human replacement. Unknown legacy provenance stays unknown.
+Without `source_evidence`, a new unsupported manual proposal remains possible,
+and prose alone establishes no external provenance. Existing review flags and
+dependencies are retained even in that mode.
+
+The proposal stays `source=agent`, `kind=agent`, unsigned, with sign-off required.
+It clears prior partial signatures and answer attribution and supersedes a pending background model
+reading. Neither exact pins nor settling authorizes a task or creates a standing
+grant: use `bridge_wait` for the required human decision. The existing human
+notification contains the scoped answer and task link; the source-review
+readback displays every exact pin, complete source snapshot, and decision scope
+before a generation-specific confirmation. The human web review also shows the
+complete source bodies, metadata, and exact record/version/role pins for fresh
+proposals, even when no source revalidation is pending. This display does not
+change ordinary sign-off or make context-only links blocking. A changed or
+oversized chat source review is refused rather than shortened into an approvable
+answer. A new pin set on the same answer creates a fresh notification review epoch.
+
 ## Import and source identity
 
 `bridge_import_record` and `POST /api/records` share one implementation. Legacy
@@ -44,8 +95,10 @@ it is never interpreted as an external work-item ID. Anchors are returned on
 the task tree and trace and do not independently block or authorize the task.
 
 GitHub and local Git ingestion continue to supply records natively. Jira/Slack
-records imported by a host are generic durable imports, not native Jira sync
-or full Slack backfill. Slack Real-time Search remains transient; imports
+records imported by a host are generic durable imports and remain caller-refreshed,
+not native Jira sync or full Slack backfill. The bot's explicit `record:` captures
+have a separate, bounded [edit/delete callback path](slack.md); generic and legacy
+imports do not enroll in it. Slack Real-time Search remains transient; imports
 labeled `slack_realtime_search`, `realtime_search`, or `transient` are rejected.
 This does not add OAuth, credentials, third-party access, or new fetches.
 
@@ -68,6 +121,17 @@ still advance the ordering watermark. Older supplied source sequences or update
 timestamps are rejected atomically; conflicting content for an already observed
 sequence is rejected. Opaque source-version tokens are recorded, not sorted.
 Without source ordering data, local revision order means observation order only.
+
+`latest_observation` means the latest observation accepted locally by Raven. It
+is not proof of an upstream synchronization, source freshness or complete event
+delivery. Generic Jira, Slack and other caller imports change only when the
+caller submits another snapshot. The optional Airweave adapter's separate
+freshness lease and upstream sync limits still apply. For enrolled Slack captures,
+a durably accepted newer callback creates immediate current-source uncertainty
+until its import commits. This blocks supporting reuse, source reads, sign-off
+and finish even while the worker is stopped. The receipt still names the last
+applied observation; queue acknowledgement is not source application. No-op
+recovery preserves immutable versions and existing signatures.
 
 A separate `latest_observation` receipt on import, exact-record read and canonical
 lookup reports the most recent accepted local import time plus the latest known supplied source

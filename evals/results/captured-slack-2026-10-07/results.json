@@ -1,0 +1,412 @@
+{
+  "base_commit": "80ede34d04fa7314951e1477f881f7f2d80945d4",
+  "base_tree": "5f4151878f3f2ef8460303339ff72b99228c4385",
+  "started_at_utc": "2026-10-07T05:12:07.390013+00:00",
+  "duration_seconds": 7.392,
+  "backend": "SQLite",
+  "status": "passed",
+  "tests_run": 91,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "selection": [
+    "test_slack_capture",
+    "test_context_memory",
+    "test_source_observation",
+    "test_record_state",
+    "test_slack_conversation.SlackIngressTests",
+    "test_slack_conversation.DurabilityTests",
+    "test_portal.RecordsAndTeamsTests.test_records_from_outside_git_by_api_and_from_slack"
+  ],
+  "tests": [
+    {
+      "test": "test_slack_capture.CapturedSlackHTTPTests.test_full_mutation_queue_returns_retryable_http_error_without_losing_first_callback",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackHTTPTests.test_signed_callback_tracks_only_explicit_capture_and_ignores_wrong_signature",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_accepted_original_survives_temporary_workspace_disconnect",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_authenticated_event_workspace_is_carried_past_mutable_setting_change",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_deleted_message_does_not_resurrect_from_later_edit",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_deletion_invalidates_active_source_support",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_disconnected_workspace_does_not_starve_other_workspace_pending_updates",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_duplicate_event_id_cannot_enroll_a_different_message",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_duplicate_original_message_and_mention_do_not_reimport_or_restore",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_explicit_capture_is_canonical_and_receipt_is_atomic_with_import",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_import_that_raises_after_writing_rolls_back_source_enrollment_and_receipt",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_legacy_and_caller_imports_do_not_autoenroll",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_malformed_clocks_do_not_borrow_original_edited_or_receipt_time",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_metadata_only_edit_preserves_evidence_and_material_edit_invalidates_with_immutable_proof",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_mutation_failure_is_durable_atomic_and_retried_after_restart",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_nested_edit_identity_and_deleted_ts_are_distinct_from_event_clock",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_old_applied_capture_receipt_does_not_enroll_during_redelivery",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_operator_retry_clears_mutation_backoff",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_order_is_lossless_above_float_precision_and_rejects_stale_or_tied_content",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_oversized_mutation_is_rejected_whole_without_truncation_or_storage",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_pending_before_capture_survives_restart_and_original_job_exhaustion",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_pending_mutation_survives_failed_original_without_another_job_until_operator_retry",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_pending_workspace_mismatch_is_retained_and_applied_only_after_reconnect",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_queue_capacity_never_evicts_an_accepted_update_and_allows_same_identity_replacement",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_queue_coalesces_newest_in_any_order_and_applies_a_bounded_batch",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_removing_record_marker_retires_source_and_later_marker_restores_same_identity",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_reply_failure_after_import_recovers_receipt_without_second_version",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_restarted_background_worker_drains_accepted_mutation_without_new_callback",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_two_mutation_workers_commit_one_version_and_receipt",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_unknown_edits_do_not_capture_even_with_record_marker_or_previous_message",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_capture.CapturedSlackTests.test_workspace_channel_and_accepted_repo_are_bound_to_capture_identity",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_atomic_publication_rejects_second_source_changed_during_composition",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_background_update_does_not_make_completed_proof_inapplicable",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_completed_GH104_history_stays_signed_while_active_GH105_revalidates",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_completed_revalidation_requires_fresh_cosigners_for_new_premises",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_context_and_work_item_updates_are_not_blocking_premises",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_current_source_readback_race_refuses_stale_confirmation",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_duplicate_concurrent_imports_create_one_logical_version",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_explicit_current_source_readback_revalidates_without_claiming_independence",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_human_answer_retains_dependencies_by_default",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_import_revisions_noops_reverts_and_exact_metadata",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_inaccessible_source_withdraws_reliance_and_source_read",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_independent_human_action_retires_reliance_even_when_text_identical",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_independent_human_policy_survives_source_namespace_filter",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_independent_human_replacement_retires_inherited_parent_reliance",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_independent_replacement_retires_decision_derivation_links",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_joint_composer_pins_only_declared_used_input_objects",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_joint_second_human_source_correction_invalidates_its_derived_answer",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_legacy_citation_reuse_surfaces_unknown_without_revoking_human_authority",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_legacy_proof_without_additive_sources_field_is_not_falsely_stale",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_malformed_joint_source_labels_are_rejected",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_mcp_returns_canonical_source_and_exact_version_history",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_missing_access_or_stale_parent_has_no_available_revalidation",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_namespaced_same_refs_and_repository_scopes_do_not_merge",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_noop_event_advances_ordering_watermark_without_revision_churn",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_out_of_order_rejected_atomically_and_source_time_not_ingestion_time",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_parent_only_descendant_revalidates_after_material_source_change",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_proof_is_immutable_but_live_export_reports_stale_sources",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_public_mcp_namespace_anchor_disambiguates_the_actual_ladder",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_public_mcp_slack_message_ids_isolate_workspaces",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_reapproval_requires_explicit_current_pins_and_fresh_revision",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_repinning_never_attaches_old_signatures_to_new_source_versions_in_history",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_restart_and_legacy_observation_never_fabricate_old_answer_links",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_second_support_update_invalidates_signoff_and_descendants",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_selected_namespace_filters_direct_and_transitive_signed_memory",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_signoff_racing_update_is_serialized_and_live_answer_ends_stale",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_source_A_B_A_revert_never_revives_the_signature_on_A",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_source_notifications_queue_after_commit_and_dedupe_noops",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_source_sequence_rejects_nonintegral_rest_values_without_rounding",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_source_update_rollback_keeps_head_paths_and_signoff_together",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_transient_slack_search_rejected_and_closed_author_never_approves",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_unchanged_snapshot_read_does_not_churn_signed_version",
+      "status": "passed"
+    },
+    {
+      "test": "test_context_memory.ContextMemoryTests.test_unstructured_joint_cache_output_cannot_acquire_fabricated_links",
+      "status": "passed"
+    },
+    {
+      "test": "test_source_observation.SourceObservationTests.test_additive_migration_does_not_invent_recent_observation",
+      "status": "passed"
+    },
+    {
+      "test": "test_source_observation.SourceObservationTests.test_current_receipt_is_exposed_separately_by_both_read_tools",
+      "status": "passed"
+    },
+    {
+      "test": "test_source_observation.SourceObservationTests.test_identical_and_metadata_only_syncs_preserve_approval_history_and_proof",
+      "status": "passed"
+    },
+    {
+      "test": "test_source_observation.SourceObservationTests.test_lookup_does_not_echo_private_url_in_provider_version_metadata",
+      "status": "passed"
+    },
+    {
+      "test": "test_source_observation.SourceObservationTests.test_material_body_state_and_path_changes_still_revoke_approval",
+      "status": "passed"
+    },
+    {
+      "test": "test_source_observation.SourceObservationTests.test_rejected_and_rolled_back_observations_do_not_advance_receipt",
+      "status": "passed"
+    },
+    {
+      "test": "test_record_state.RecordStateTests.test_false_normalization_and_closed_are_evidence_only",
+      "status": "passed"
+    },
+    {
+      "test": "test_record_state.RecordStateTests.test_mcp_typed_schema_and_rest_have_same_import_state_contract",
+      "status": "passed"
+    },
+    {
+      "test": "test_record_state.RecordStateTests.test_open_or_unknown_state_never_settled_for_any_import_kind",
+      "status": "passed"
+    },
+    {
+      "test": "test_record_state.RecordStateTests.test_paths_replace_clear_and_omit_with_versioned_metadata",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_conversation.SlackIngressTests.test_bot_search_uses_only_supported_public_scope_and_action_token",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_conversation.SlackIngressTests.test_failed_ack_is_retried_without_reapplying_the_answer",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_conversation.SlackIngressTests.test_webhook_enqueue_does_not_wait_for_model_and_survives_restart",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_conversation.DurabilityTests.test_exhausted_event_is_visible_and_retryable",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_conversation.DurabilityTests.test_expired_event_recovers_and_later_reply_waits",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_conversation.DurabilityTests.test_search_retry_does_not_post_a_second_response",
+      "status": "passed"
+    },
+    {
+      "test": "test_slack_conversation.DurabilityTests.test_two_reply_workers_do_not_send_the_same_ack",
+      "status": "passed"
+    },
+    {
+      "test": "test_portal.RecordsAndTeamsTests.test_records_from_outside_git_by_api_and_from_slack",
+      "status": "passed"
+    }
+  ],
+  "file_sha256": {
+    "bridge/slack_capture.py": "f79bf4e6d8804628ebcdabc651107248d830918a8266fe0491f270bf5be62845",
+    "bridge/slack_events.py": "5c205b9089069ba9add36448506e6d4155470693bea7af56f98619d421255cee",
+    "bridge/delivery.py": "4040ad1a7ea998574a89de9eef7cb11534d869e4e99ad7aca9c6606f934d4c6b",
+    "bridge/server.py": "279c0a87cde14c829584dddfd59880b025bf7c7647498df9b86ba8abf32f6178",
+    "docs/slack.md": "9fcb6cedb96b6e6746ebebf1622023bac5cf87e29e83b2e3d1799b173fd27cdc",
+    "docs/context-memory.md": "f5495a3dcb9ab779c53e58ccf96a66c9ba5b005d2068de35de936d1e95cc7d26",
+    "docs/context-connectors.md": "6b97f5c4a66f656b2aab2ff39fff1f261124003db6c59817c0e1f8e213bb9ac2",
+    "tests/test_slack_capture.py": "4c44ebc025fb2f8991a60f6b01cd08a9001dadeae6da912435aa43d9fa1bdd77",
+    "tests/test_portal.py": "07a5aecbc49ee5b2ffa35880aae259ba51cbfaff2ca540c5e4d8f5e4aebfa178",
+    "tests/test_postgres.py": "84d7cfa2c6e11497044cf1662d79a716d2087779afe84f06f08b2d08c92ad0b8"
+  },
+  "test_log": "...........................................................................................\n----------------------------------------------------------------------\nRan 91 tests in 7.319s\n\nOK\n",
+  "verification_limits": [
+    "Synthetic Slack callbacks and transport only; no real Slack/provider calls.",
+    "PostgreSQL is registered for these tests but was not executed; server/client/container tools are absent.",
+    "No full aggregate suite or live Slack certification was performed.",
+    "Signer-identity validation remains incomplete; these ingestion tests do not certify broader authorization."
+  ],
+  "slack_documentation_verified": [
+    "https://docs.slack.dev/reference/events/message/message_changed/",
+    "https://docs.slack.dev/reference/events/message/message_deleted/"
+  ],
+  "validated_commit": "1a9cb7c8fc281617c17eff584d008f0e893a37f3",
+  "validated_tree": "bc309a1c989c7a80596de12b6a3c54c9063c6ff3"
+}

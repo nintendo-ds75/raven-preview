@@ -179,10 +179,13 @@ function handonForm(f) {
 
 function sourceReview(f) {
   const r = f.source_revalidation;
-  if (!r?.has_reliance) return '';
-  const sources = (r.sources || []).map(s => `<details class="brief-why" open><summary>${esc(s.snapshot?.title || s.record_id)} · ${esc(s.role)}</summary><p>${esc(s.snapshot?.author || 'Author not supplied')} · ${esc(s.snapshot?.status || 'Status not supplied')}</p><pre class="brief-source-body">${esc(s.snapshot?.body || 'Source unavailable')}</pre><p class="muted">Source revision ${esc(s.source_version_id)}</p></details>`).join('');
+  if (!r || (!r.has_reliance && !r.sources?.length && !r.dependencies?.length)) return '';
+  const sources = (r.sources || []).map(s => {
+    const {body, ...metadata} = s.snapshot || {};
+    return `<details class="brief-why source-snapshot" open><summary>${esc(s.snapshot?.title || s.record_id)} · ${esc(s.role)}</summary><p>${esc(s.snapshot?.author || 'Author not supplied')} · ${esc(s.snapshot?.status || 'Status not supplied')}</p><pre class="brief-source-body">${esc(body || '')}</pre><p class="muted">Record ID: ${esc(s.record_id)}<br>Exact source version: ${esc(s.source_version_id)}<br>Role: ${esc(s.role)}</p><details class="brief-why"><summary>Complete source metadata</summary><pre class="brief-source-body">${esc(JSON.stringify(metadata, null, 2))}</pre></details></details>`;
+  }).join('');
   const dependencies = (r.dependencies || []).map(s => `<details class="brief-why"><summary>${s.historical ? 'Historical decision' : 'Source decision'}: ${esc(s.question)}</summary><p>${prose(s.answer)}</p><pre class="brief-source-body">${esc(JSON.stringify(s.reviewed_snapshot || s, null, 2))}</pre></details>`).join('');
-  return `<section class="brief-source-review"><h3>Evidence for this answer</h3><p>${esc(r.notice)}</p>${r.retires_rule ? '<p>Reapproving changed evidence retires the old standing rule. This signature applies here.</p>' : ''}${sources}${dependencies}${r.available ? '<label><input id="brief-source-confirm" type="checkbox" required> I reviewed the sources and source decisions shown here. Bind my answer to these exact revisions.</label>' : '<p>Current evidence is unavailable. Signing waits until it can be reviewed.</p>'}</section>`;
+  return `<section class="brief-source-review"><h3>Evidence for this answer</h3><p>${esc(r.notice)}</p>${r.retires_rule ? '<p>Reapproving changed evidence retires the old standing rule. This signature applies here.</p>' : ''}${sources}${dependencies}${r.has_reliance ? (r.available ? '<label><input id="brief-source-confirm" type="checkbox" required> I reviewed the sources and source decisions shown here. Bind my answer to these exact revisions.</label>' : '<p>Current evidence is unavailable. Signing waits until it can be reviewed.</p>') : '<p>These context and work-item snapshots are informational. They do not require source revalidation.</p>'}</section>`;
 }
 
 function focusCard(f) {

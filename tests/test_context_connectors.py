@@ -63,6 +63,90 @@ class ConnectorCases:
         # Same observed source does not accumulate duplicate revisions.
         self.assertEqual(len(self.store.get_record(source['record_id'], REPO)['versions']), 1)
 
+    def test_realistic_github_jira_missing_access_is_explicitly_incompatible(self):
+        # Pinned upstream1ebe1af GitHub/Jira sources leave BaseEntity.access
+        # unset. A public-looking URL is not emitted permission metadata.
+        for source, omitted in (('github', False), ('jira', True)):
+            with self.subTest(source=source):
+                item = result('SOURCE_CONTENT_MUST_NOT_ENTER_REJECTION_DIAGNOSTICS')
+                item['airweave_system_metadata']['source_name'] = source
+                item['web_url'] = 'https://github.com/example/public-repository'
+                if omitted:
+                    item.pop('access')
+                else:
+                    item['access'] = None
+                self.client.results = [item]
+                answer = self.search()
+                self.assertEqual(answer['external']['imported'], 0)
+                self.assertEqual(answer['external']['rejected'], 1)
+                reason = answer['external']['rejections'][0]
+                self.assertEqual(reason['reason'], 'missing_access_metadata')
+                self.assertEqual(reason['count'], 1)
+                self.assertIn('not compatible', reason['message'])
+                self.assertTrue(answer['external']['error'])
+                self.assertEqual(self.g.db.execute('SELECT count(*) n FROM source_records').fetchone()['n'], 0)
+                status = cc.status(self.store, REPO)
+                self.assertEqual(status['connections'][0]['state'], 'needs_attention')
+                self.assertIn('not proof', status['last_success_means'])
+                event = self.g.db.execute("SELECT detail FROM events WHERE kind='context_searched' ORDER BY id DESC LIMIT 1").fetchone()['detail']
+                self.assertNotIn('SOURCE_CONTENT_MUST_NOT_ENTER_REJECTION_DIAGNOSTICS', event)
+                self.assertEqual(json.loads(event)['rejections'], answer['external']['rejections'])
+
+    def test_partial_compatible_search_keeps_each_rejection_visible(self):
+        denied = result('Rejected private excerpt')
+        denied['airweave_system_metadata']['original_entity_id'] = 'other-private-source'
+        denied['access'] = None
+        self.client.results = [result(), denied]
+        answer = self.search()['external']
+        self.assertEqual(answer['imported'], 1)
+        self.assertEqual(answer['rejected'], 1)
+        self.assertEqual(answer['rejections'][0]['reason'], 'missing_access_metadata')
+        self.assertEqual(answer['error'], '')
+
+    def test_empty_search_does_not_claim_acl_incompatibility(self):
+        self.client.results = []
+        answer = self.search()['external']
+        self.assertEqual(answer['imported'], 0)
+        self.assertEqual(answer['rejected'], 0)
+        self.assertEqual(answer['rejections'], [])
+        self.assertEqual(answer['error'], '')
+
+    def test_transient_slack_is_not_presented_as_fixable_missing_permissions(self):
+        self.client.results[0]['airweave_system_metadata']['source_name'] = 'slack'
+        self.client.results[0]['access'] = None
+        answer = self.search()['external']
+        self.assertEqual(answer['imported'], 0)
+        self.assertEqual(answer['rejections'][0]['reason'], 'transient_or_unsynced')
+
+    def test_unverified_and_disabled_configuration_are_not_reported_as_healthy(self):
+        self.assertEqual(cc.status(self.store, REPO)['connections'][0]['state'], 'configured_unverified')
+        cc.configure(self.store, REPO, 'workspace-docs', ['member-a', 'member-b'], shared=True, enabled=False)
+        self.assertEqual(cc.status(self.store, REPO)['connections'][0]['state'], 'disabled')
+
+    def test_compatible_observation_clears_the_previous_diagnostic(self):
+        self.client.results[0]['access'] = None
+        self.search()
+        self.assertTrue(cc.status(self.store, REPO)['connections'][0]['last_error'])
+        self.client.results = [result()]
+        self.search()
+        connection = cc.status(self.store, REPO)['connections'][0]
+        self.assertEqual(connection['last_error'], '')
+        self.assertEqual(connection['state'], 'search_observed')
+
+    def test_observation_status_belongs_to_the_current_connection_generation(self):
+        self.search()
+        original = cc.status(self.store, REPO)['connections'][0]
+        self.assertEqual(original['state'], 'search_observed')
+        self.connect()
+        same = cc.status(self.store, REPO)['connections'][0]
+        self.assertEqual(same['generation'], original['generation'])
+        self.assertEqual(same['last_success'], original['last_success'])
+        for collection, audience in (('new-docs', ['member-a', 'member-b']),
+                                     ('new-docs', ['member-a', 'member-b', 'member-c'])):
+            updated = cc.configure(self.store, REPO, collection, audience, shared=True)['connections'][0]
+            self.assertEqual(updated['state'], 'configured_unverified')
+            self.assertEqual(updated['last_success'], '')
+
     def test_changed_external_source_invalidates_signed_memory_transitively(self):
         did, source = self.signed()
         old_history = self.store.get_decision(did)['context_history']

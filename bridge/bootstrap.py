@@ -2,12 +2,11 @@
 import os
 import shutil
 import subprocess
-from contextlib import contextmanager
 from pathlib import Path
 
 from .auth import Auth
 from .database import connect
-from .ingest import index_repo
+from .ingest import _git as _read_git, index_repo
 from .store import Store
 
 
@@ -36,39 +35,17 @@ def _demo_checkout() -> Path:
     return repo
 
 
-@contextmanager
-def _trusted_checkout(repo: Path):
-    """Trust only the user-selected read-only mount, without persisting Git config."""
-    count = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
-    key = f"GIT_CONFIG_KEY_{count}"
-    value = f"GIT_CONFIG_VALUE_{count}"
-    old_count = os.environ.get("GIT_CONFIG_COUNT")
-    os.environ[key] = "safe.directory"
-    os.environ[value] = str(repo.resolve())
-    os.environ["GIT_CONFIG_COUNT"] = str(count + 1)
-    try:
-        yield
-    finally:
-        os.environ.pop(key, None)
-        os.environ.pop(value, None)
-        if old_count is None:
-            os.environ.pop("GIT_CONFIG_COUNT", None)
-        else:
-            os.environ["GIT_CONFIG_COUNT"] = old_count
-
-
 def _ingest_if_changed(store: Store, repo: Path, name: str) -> None:
     if not (repo / ".git").exists():
         raise RuntimeError(f"{repo} is not a Git checkout")
-    with _trusted_checkout(repo):
-        head = _git(repo, "rev-parse", "HEAD")
-        key = f"bootstrap_ingest:{name}"
-        fingerprint = f"v2:{repo.resolve()}:{head}"
-        if store.graph.get_setting(key) == fingerprint:
-            return
-        stats = index_repo(store.graph, repo, repo_name=name, rev=head)
-        store.graph.set_setting(key, fingerprint)
-        print(f"Indexed {name}: {stats['files']} files, {stats['commits']} commits")
+    head = _read_git(repo, "rev-parse", "HEAD").strip()
+    key = f"bootstrap_ingest:{name}"
+    fingerprint = f"v2:{repo.resolve()}:{head}"
+    if store.graph.get_setting(key) == fingerprint:
+        return
+    stats = index_repo(store.graph, repo, repo_name=name, rev=head)
+    store.graph.set_setting(key, fingerprint)
+    print(f"Indexed {name}: {stats['files']} files, {stats['commits']} commits")
 
 
 def _ingest_configured(store: Store, repo: Path, name: str) -> bool:

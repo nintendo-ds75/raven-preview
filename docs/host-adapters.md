@@ -32,6 +32,25 @@ compaction recover that task. No paths, owner names or decision list are require
 from the user. Unavailable Raven blocks prompt submission visibly in hosts that
 honor the hook's failure response. Codex also marks the MCP server required.
 
+The command adapter shares a 45-second budget across checkout verification,
+MCP initialization, tool discovery and task registration, below the installed
+60-second host timeout. It returns an explicit blocking failure when that
+budget expires, including when a response body stalls. Socket timeouts alone
+would let several slow calls exceed the host's ceiling. Retry the same prompt
+after checking the connection; if the server completed an interrupted request,
+the same session/event identity recovers its task rather than creating another.
+The budget starts when the host has delivered the callback input. A frozen or
+terminated host process remains outside the adapter's guarantees.
+
+The first-prompt gate is `UserPromptSubmit`. `SessionStart` is a connection and
+recovery check; Claude does not block a session on its exit-2 error. Claude also
+lets a command-hook timeout proceed without the hook's context, which is why
+the adapter must report its own error before that timeout. Hook files must be
+loaded and trusted by the actual host. Codex project hooks additionally require
+trust of their current definition; cloud-orchestrated Work/dot does not run
+project-local command hooks. An installed configuration alone is not a verified
+connection.
+
 For a separate task in the same conversation, start a prompt with:
 
 ```text

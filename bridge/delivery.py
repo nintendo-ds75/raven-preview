@@ -656,6 +656,9 @@ class Delivery:
             if r['id'] not in known:
                 rows.append({'id': r['id'], 'channel': 'slack', 'state': r['state'], 'attempts': r['attempts'],
                              'error': r['error'], 'received_at': r['created_at'], 'updated_at': r['created_at']})
+        for r in self.store.graph.db.execute("SELECT * FROM slack_capture_mutations WHERE error!='' ORDER BY accepted_at LIMIT 200"):
+            rows.append({'id': r['event_id'], 'channel': 'slack', 'state': 'queued', 'attempts': r['attempts'],
+                         'error': r['error'], 'received_at': r['accepted_at'], 'updated_at': r['accepted_at']})
         return rows
 
     def reply_failures(self) -> list[dict]:
@@ -665,9 +668,10 @@ class Delivery:
     def retry_inbound(self, event_id: str) -> dict:
         """Apply a failed inbound event again from what it carried."""
         with self.store.graph.transaction():
+            mutation = self.store.graph.db.execute("UPDATE slack_capture_mutations SET next_attempt=0,error='' WHERE event_id=? AND error!=''", (event_id,))
             queued = self.store.graph.db.execute("UPDATE slack_ingress SET state='queued',next_attempt=0,attempts=0,error='' "
                                                 "WHERE id=? AND state IN ('failed','queued') AND error!=''", (event_id,))
-        if queued.rowcount:
+        if queued.rowcount or mutation.rowcount:
             self.inbox.start()
             return {'id': event_id, 'state': 'queued'}
         row = self.store.graph.db.execute("SELECT * FROM webhook_receipts WHERE id=?", (event_id,)).fetchone()
@@ -1583,29 +1587,14 @@ def _named_mentions(graph, text: str) -> str:
 _CAPTURE_RE = re.compile(r"^\s*(?:<@[A-Z0-9]+>\s*)?(?:(?:bridge|raven)[,:]?\s*)?record\s*[:\-]\s*(.+)$", re.IGNORECASE | re.DOTALL)
 
 
-def capture_record(delivery: Delivery, channel: str, ts: str, user_id: str, text: str, event_id: str = "") -> str:
-    """A decision written in a channel, `record: <what was decided>`,
-    becomes a record: evidence the ladder can cite with its Slack
-    permalink as locator, never sign-off. Returns the acknowledgement."""
-    graph = delivery.store.graph
-    m = _CAPTURE_RE.match(text or "")
-    if not m:
-        return "To capture a decision, write `record: <what was decided>`; it becomes evidence Raven can cite, not sign-off."
-    if event_id:
-        if graph.db.execute("SELECT 1 FROM webhook_receipts WHERE id=?", (event_id,)).fetchone():
-            return ""
-        with graph.transaction():
-            graph.db.execute("INSERT INTO webhook_receipts(id, channel, received_at, state, updated_at) "
-                             "VALUES(?,?,?,'applied',?)", (event_id, delivery.channel, now_iso(), now_iso()))
-    person = graph.find_person(user_id)
-    body = _named_mentions(graph, m.group(1).strip())
-    ref = f"{channel}:{ts}"
-    record = delivery.store.add_record({
-        "repo": graph.get_setting("slack_capture_repo") or "", "kind": "slack", "ref": ref,
-        "title": body[:120], "body": body, "author": person["name"] if person else user_id,
-        "url": f"https://slack.com/archives/{channel}/p{ts.replace('.', '')}", "created_at": now_iso()})
-    return (f"Recorded as decision record slack {record['ref']}"
-            + (f" by {person['name']}" if person else "") + "; Raven cites it as evidence, not as sign-off.")
+def capture_record(delivery: Delivery, channel: str, ts: str, user_id: str, text: str,
+                   event_id: str = "", *, workspace_id: str = "") -> str:
+    """Import the explicitly captured message and its receipt atomically."""
+    from . import slack_capture
+    key = slack_capture.identity(workspace_id, channel, ts)
+    if not key or not isinstance(text, str) or len(text) > slack_capture.MAX_TEXT or not _CAPTURE_RE.match(text):
+        return "To capture a decision, send a fresh `record: <what was decided>` message with valid Slack metadata."
+    return slack_capture.capture(delivery, key, user_id, text, event_id)
 
 
 class TeamsTransport:
@@ -1642,19 +1631,34 @@ def handle_slack_event(delivery: Delivery, event: dict) -> dict:
     if event.get("type") != "event_callback":
         return {}
     inner = event.get("event") or {}
-    if inner.get("bot_id") or inner.get("subtype"):
+    if not isinstance(inner, dict):
+        return {}
+    mutation = inner.get("type") == "message" and inner.get("subtype") in ("message_changed", "message_deleted")
+    if inner.get("bot_id") or (inner.get("subtype") and not mutation):
         return {}
     from .slack_events import accepts_workspace
     if not accepts_workspace(delivery, event):
         return {"ok": True, "ignored": "workspace_mismatch"}
+    if mutation:
+        from . import slack_capture
+        result = slack_capture.queue_mutation(delivery.store.graph, event)
+        slack_capture.process(delivery)
+        return result
     text = inner.get("text") or ""
+    if not isinstance(text, str):
+        return {"ok": True, "ignored": "invalid_message_text"}
     channel = inner.get("channel", "")
     thread_ts = inner.get("thread_ts", "")
     eid = event.get("event_id", "")
-    if _CAPTURE_RE.match(text) and not thread_ts:
-        ack = capture_record(delivery, channel, inner.get("ts", ""), inner.get("user", ""), text, event_id=eid)
+    if inner.get("type") in ("message", "app_mention") and _CAPTURE_RE.match(text) and not thread_ts:
+        ack = capture_record(delivery, channel, inner.get("ts", ""), inner.get("user", ""), text,
+                             event_id=eid, workspace_id=event.get("team_id", ""))
+        captured = bool(ack and ack.startswith("Recorded"))
+        if not ack and eid:
+            receipt = delivery.store.graph.db.execute("SELECT reply FROM webhook_receipts WHERE id=? AND state='applied'", (eid,)).fetchone()
+            ack = receipt['reply'] if receipt else ''
         delivery.inbox.ack(eid, channel, inner.get("ts", ""), ack)
-        return {"ok": True, "captured": bool(ack and ack.startswith("Recorded"))}
+        return {"ok": True, "captured": captured}
     if inner.get("type") not in ("message", "app_mention"):
         return {}
     if not thread_ts:

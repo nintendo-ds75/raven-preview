@@ -37,6 +37,8 @@ def accepts_workspace(delivery, event):
 
 
 def migrate(db):
+    from .slack_capture import migrate as capture_migrate
+    capture_migrate(db)
     db.executescript('''CREATE TABLE IF NOT EXISTS slack_ingress (
         id TEXT PRIMARY KEY, payload TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'queued',
         attempts INTEGER NOT NULL DEFAULT 0, next_attempt REAL NOT NULL DEFAULT 0,
@@ -63,10 +65,24 @@ class Inbox:
         if event.get('type') == 'url_verification':
             return {'challenge': event.get('challenge', '')}
         inner = event.get('event') or {}
-        if event.get('type') != 'event_callback' or inner.get('bot_id') or inner.get('subtype'):
+        if event.get('type') != 'event_callback' or not isinstance(inner, dict):
+            return {'ok': True}
+        mutation = inner.get('type') == 'message' and inner.get('subtype') in ('message_changed', 'message_deleted')
+        if inner.get('bot_id') or (inner.get('subtype') and not mutation):
             return {'ok': True}
         if not accepts_workspace(self.delivery, event):
             return {'ok': True, 'ignored': 'workspace_mismatch'}
+        from . import slack_capture
+        if mutation:
+            result = slack_capture.queue_mutation(self.graph, event)
+            if result.get('queued'):
+                self.start()
+            return result
+        capture_key = slack_capture.original(event)
+        from .delivery import _CAPTURE_RE
+        if (isinstance(inner.get('text'), str) and _CAPTURE_RE.match(inner['text'])
+                and not inner.get('thread_ts') and capture_key is None):
+            return {'ok': True, 'ignored': 'invalid_capture_original'}
         clean = copy.deepcopy(event)
         token = clean.pop('action_token', '') or clean['event'].pop('action_token', '')
         clean['event'].pop('action_token', None)
@@ -75,9 +91,11 @@ class Inbox:
         # A whole DM is serialized, including messages sent outside its thread.
         conversation = inner.get('channel', '')
         with self.graph.transaction():
-            self.graph.db.execute('''INSERT INTO slack_ingress(id,payload,created_at,conversation_key)
+            inserted = self.graph.db.execute('''INSERT INTO slack_ingress(id,payload,created_at,conversation_key)
                 VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING''',
                 (event_id, json.dumps(clean), now_iso(), conversation))
+            if inserted.rowcount == 1 and capture_key and not self.graph.db.execute("SELECT 1 FROM webhook_receipts WHERE id=? AND state='applied'", (event_id,)).fetchone():
+                slack_capture.enroll(self.graph, capture_key)
         with self.lock:
             self.tokens = {k: v for k, v in self.tokens.items() if v[1] > time.time()}
             if token:
@@ -188,7 +206,10 @@ class Inbox:
                 if token and until > time.time():
                     event['event']['action_token'] = token
                 with self._keep_lease(row['id']):
-                    handle_slack_event(self.delivery, event)
+                    result = handle_slack_event(self.delivery, event)
+                    from .slack_capture import original
+                    if result.get('ignored') == 'workspace_mismatch' and original(event):
+                        raise RuntimeError('Captured Slack workspace is disconnected')
                 with self.graph.transaction():
                     self.graph.db.execute("UPDATE slack_ingress SET state='done',payload='{}',error='' WHERE id=?", (row['id'],))
                 done += 1
@@ -199,6 +220,8 @@ class Inbox:
                     self.graph.db.execute('''UPDATE slack_ingress SET state=?,lease_until=0,next_attempt=?,error=? WHERE id=?''',
                         (state, time.time() + retry_delay(error, min(300, 2 ** (row['attempts'] + 1))),
                          type(error).__name__, row['id']))
+        from . import slack_capture
+        slack_capture.process(self.delivery, limit)
         self.flush()
         return done
 

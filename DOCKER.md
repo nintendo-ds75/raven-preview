@@ -165,8 +165,20 @@ containing it, `BRIDGE_INGEST_REPO_DIR` to its directory name, and optionally
 ./dev up
 ```
 
-Checkouts are mounted read-only at `/repos`. Startup scopes Git's safe-directory
-exception to the selected checkout and refreshes the graph only when HEAD changes.
+Checkouts are mounted read-only at `/repos`. Startup refreshes the graph only
+when HEAD changes. Startup, repeat ingestion, and later local history reads use
+the same [command-scoped Git safe-directory exception](https://git-scm.com/docs/git-config#Documentation/git-config.txt-safedirectory)
+for the exact selected checkout, so host/container ownership differences work
+without changing global Git configuration or repository permissions. Git helpers
+(hooks, filesystem monitors, external diff/text conversion, and signature
+verification) are disabled for those reads. Ingestion never fetches missing
+objects: materialize the needed history and listing-file objects in your checkout
+before retrying. Git without `--no-lazy-fetch` support (before Git 2.45) accepts
+full checkouts without partial-clone/promisor configuration; configured partial
+clones require a supporting Git version. The installed capability is checked
+before reading objects. A failed history read leaves the previous graph intact.
+Unpinned ownership listings must resolve inside the selected checkout; an
+external symlink is rejected.
 The bundled example remains available when `BRIDGE_DEMO=1`.
 
 GitHub and Slack credentials can be supplied through `.env`; Compose passes the

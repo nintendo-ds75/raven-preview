@@ -656,7 +656,11 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     event = json.loads(raw)
                     if not isinstance(event, dict):
                         raise Invalid("Expected a JSON object")
-                    return self.send(200, store.delivery.inbox.enqueue(event))
+                    from .slack_capture import CaptureQueueFull
+                    try:
+                        return self.send(200, store.delivery.inbox.enqueue(event))
+                    except CaptureQueueFull as error:
+                        return self.send(503, {"error": str(error)})
                 if path.startswith("/auth/"):
                     if content_type == "application/x-www-form-urlencoded":
                         data = {k: v[0] for k, v in parse_qs(raw.decode()).items()}

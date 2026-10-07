@@ -91,6 +91,15 @@ python3 -m bridge ingest /path/to/checkout --db .bridge/work.db
 
 Ingestion reads a local git checkout, on this machine only: authors and per-path touch counts, blame shares (all-time and recency-weighted with a 90-day half-life), CODEOWNERS entries, Reviewed-by trailers, merge commits, squashed PRs, and commits with a real body as records. Bots are dropped from ownership signals. Re-running refreshes the map; a material change in a share closes the old ownership row and opens a new one so history stays auditable. The same command is available as the `bridge_ingest_repo` MCP tool, as `POST /api/ingest`, and from **People & ownership** in the inbox. The repository's name (the last path segment) scopes the graph; a run whose repository is `acme/platform` uses the graph ingested from a checkout named `platform`.
 
+Native maintainer-file ingestion recognizes the literal filename `MAINTAINERS`
+in the kernel/QEMU section format (`M:` maintainers, `R:` reviewers, `F:` path
+patterns, and `X:` exclusions). Arbitrary Markdown lists, including
+`MAINTAINERS.md`, are not parsed as this format. For an unsupported maintainer
+document, explicitly import its accurate text, source URL, and version through
+`bridge_import_record` or `POST /api/records`; see [versioned context memory](context-memory.md).
+Imported prose remains evidence and contact context. It does not create new
+approval authority.
+
 ### Keep it current from GitHub
 
 A squash merge carries no trailer, a CODEOWNERS line often names a team, and the pull request said more than its commit. With a token that can read the repository, its pull requests and the organization's teams:
@@ -280,7 +289,7 @@ The seventeen tools exposed to agents (the running server's `tools/list` is the 
 | --- | --- |
 | `bridge_start_task` | Start with `title`, `repo`, the original `goal`, optional `agent`, `requester`, discovered `paths`, `client_key` and task `facts`. Returns `task_id`, a verdict (`engage`, `pass` or `unplaced`) and discovery. Resume an existing task with `task_id` alone. |
 | `bridge_add_node` | One decision as a node: `task_id`, `question`, optional `context`, `parent_id`, `paths`, `options`, `category`, `client_ref`, `requester`, `adopt`, `depends_on`. Idempotent. |
-| `bridge_settle_node` | The answer the agent settled a node with, and why; stays on the tree for sign-off. |
+| `bridge_settle_node` | An unsigned agent proposal and rationale, with optional additive `source_evidence` containing exact current record/version/role pins; retains existing dependencies and requires human sign-off. See [the source contract](context-memory.md#unsigned-agent-proposals). |
 | `bridge_get_tree` | The whole canvas: verdict, nested nodes with status and answers, what each depends on, follow-ups people added, notes people wrote on the task, what to do next. |
 | `bridge_wait` | Wait for the people: blocks up to `timeout` seconds until a person acts on the task (an answer, a sign-off, a correction, a hand-on, a follow-up question) and returns what changed; with `since` (the `observed_at` of the last read) what happened meanwhile comes back at once. |
 | `bridge_finish_task` | Finish with the complete diff and claimed checks; refused while decisions, unread changes, required follow-ups or scope clarifications remain. Close an unused mistaken task with `status=abandoned` and `reason`. |

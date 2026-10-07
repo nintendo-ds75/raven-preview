@@ -22,6 +22,28 @@ only the sources the customer has approved. This repository does not deploy
 Airweave or silently configure OAuth grants. Its setup and resource requirements
 are separate from Raven's two-container installation.
 
+### Connector compatibility comes before configuration
+
+A connector's presence in Airweave does not establish compatibility with this
+adapter. Raven needs each durable result to carry a stable sync identity and
+explicit access metadata. At upstream Airweave revision
+[`1ebe1af`](https://github.com/airweave-ai/airweave/tree/1ebe1af2dbfb90f3334410721e69997e4f02b320),
+the [GitHub connector](https://github.com/airweave-ai/airweave/blob/1ebe1af2dbfb90f3334410721e69997e4f02b320/backend/airweave/platform/sources/github.py)
+and [Jira connector](https://github.com/airweave-ai/airweave/blob/1ebe1af2dbfb90f3334410721e69997e4f02b320/backend/airweave/platform/sources/jira.py)
+do not populate the required access field. The upstream
+[base entity](https://github.com/airweave-ai/airweave/blob/1ebe1af2dbfb90f3334410721e69997e4f02b320/backend/airweave/platform/entities/_base.py)
+defaults that field to `null`. Such results are rejected, including results with
+a public-looking GitHub URL. Do not fill in `is_public: true` or invent viewer
+IDs merely to make an import succeed. Raven's native GitHub ingestion is a
+separate supported path. Generic Jira imports remain caller-refreshed.
+
+The repository's ACL-bearing HTTP fixtures validate Raven's admission contract;
+they do not certify those upstream connectors. Before choosing a collection,
+check an actual result from the exact deployed connector version. If it omits
+access metadata, that connector is not currently usable through this durable
+adapter. Airweave's federated Slack search remains transient and is excluded
+regardless of its access fields.
+
 1. Create a collection containing material shared with **every reader of this
    Raven workspace**, including people who receive personal task links.
 2. In Raven's private `.env`, set `BRIDGE_AIRWEAVE_URL` to the API base URL and
@@ -51,6 +73,14 @@ workspace-sharing contract, not automatic per-user permission synchronization.
 5. Check a result before the pilot. It must contain the expected text, source
    identity, update time and access metadata. A successful HTTP response alone
    does not demonstrate useful retrieval or correct source permissions.
+
+Search returns bounded rejection reasons and counts, including
+`missing_access_metadata`, `access_not_shared` and `transient_or_unsynced`.
+When every returned excerpt is rejected, the error also appears in connection
+status as `needs_attention`; it is not a healthy retrieval result. Mixed results
+retain the accepted excerpts and explicit rejection diagnostics. An empty search
+is distinct from an incompatible response. Diagnostics never include rejected
+source bodies or credentials.
 
 Disable with the same registration command and `--disable`. Changing collection,
 audience or enabled state retires the old retrieval grant. Credentials stay in
@@ -82,8 +112,12 @@ are rejected whole rather than truncated.
 
 Slack search is transient. Federated results, results without a sync identity,
 and Slack excerpts are not imported by this adapter. Raven's own Slack bot still
-records the decisions people explicitly give it. It does not turn their search
-results into durable company memory.
+records the decisions people explicitly give it. Its bounded [capture callback
+path](slack.md) follows edits/deletions only for those explicitly enrolled message
+identities. It does not turn search results into durable company memory or
+backfill Slack. Generic caller-imported Jira and other records remain
+caller-refreshed; their `latest_observation` is local acceptance, not proof of an
+upstream synchronization.
 
 ## What is visible
 
@@ -91,6 +125,12 @@ results into durable company memory.
 answers, rejected-result count and failure state. The task graph and source
 history show which evidence an answer relied on. `bridge_connection_status`
 reports the collection, generation, last successful search and errors.
+
+Connection state distinguishes `configured_unverified`, `search_observed`,
+`needs_attention` and `disabled`. The backward-compatible `last_success` timestamp
+means a successful search transport, not proof that any result was admitted or
+that permissions were independently checked. Configuration and the operator's
+reader list are declared prerequisites, not live connector certification.
 
 An owner can review complete current evidence from the personal task link in
 Raven's Slack DM. The link remains scoped to its task and its recipient's

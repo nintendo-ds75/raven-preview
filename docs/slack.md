@@ -22,7 +22,61 @@ Raven imports active full members through Slack's paginated directory API when t
 
 Connect GitHub or ingest a local clone for CODEOWNERS, commits, blame, and review history. The host agent can also call `bridge_import_record` with a ticket or document it retrieved through its own connected tools. Include the original author, status, permalink, and related paths. A matched record's author can be an inferred first contact. Imported text is evidence, never signoff.
 
-Raven captures `record: <decision text>` in channels the bot can see. Set `slack_capture_repo` in workspace settings for that capture. It does not backfill your whole Slack workspace automatically. Jira currently uses record ingestion rather than a built-in Jira polling connector.
+Raven captures `record: <decision text>` in channels the bot can already see. Set
+`slack_capture_repo` in workspace settings for that capture. Only an explicit,
+non-thread `message` or `app_mention` enrolls its exact workspace/channel/message
+identity. The authenticated event's workspace and the repository selected when
+that original is accepted remain bound to it. Changing the capture repository
+does not move an existing capture.
+
+For those enrolled messages, subsequent edit callbacks update the same canonical
+versioned source. Removing `record:` retires the evidence; adding it back in a
+later edit restores the same source with a new revision. Deletion retires it
+permanently. Material changes invalidate dependent decisions through the ordinary
+source graph, while prior versions and completed proof bundles remain immutable.
+Identical text advances only the local observation/ordering receipt. Imported
+text never supplies a human sign-off.
+
+Edits use the `ts` field inside Slack's nested message; deletions use `deleted_ts`. The separate
+mutation occurrence (`event_ts`, or the envelope `ts` when absent) orders updates
+as exact integer microseconds, with no float conversion or local-time fallback.
+Missing, malformed, out-of-order or tied clocks do not replace the current
+source. An edit cannot revive a deleted message.
+
+A mutation arriving after an explicit original was accepted but before its import
+commits waits durably under that exact message identity. It survives restart,
+original-import retry exhaustion and duplicate original `message`/`app_mention`
+deliveries. Retrying the failed original through the existing inbound retry action
+can complete the capture. A failed original is never treated as a successful
+import merely because its webhook was acknowledged.
+
+Once a newer edit/delete is durably accepted, the previous captured snapshot is
+immediately uncertain for current use. Source retrieval, automatic answer reuse,
+sign-off and task completion refuse that supporting evidence until processing
+commits, including during retry backoff, worker downtime or a disconnected
+workspace. The gate follows source dependencies through completed historical
+decisions to active consumers. It does not rewrite old signatures, versions or
+proofs. Identical-content processing restores their usability without a new
+material version or approval; changed content/deletion uses normal invalidation.
+Older, duplicate and malformed callbacks do not create a new pending gate.
+
+The queue retains at most 1,000 pending identities, with one newest mutation per
+identity and at most 20,000 text characters per callback. Intermediate pending
+edits may be coalesced; this is not a complete Slack edit history. Existing queued
+updates are never evicted for capacity: a new identity receives HTTP 503 and must
+be retried. Import failures remain visible in connection status and retry with
+backoff, capped at five minutes. Disconnected-workspace updates wait for that
+same workspace to reconnect. Invalid or oversized mutation callbacks are ignored
+whole, never truncated into evidence.
+
+Messages imported by callers or captured by older versions are not automatically
+enrolled. Deliberately repost `record: ...` to create a fresh enrolled capture;
+replaying an old applied callback or editing an unenrolled message cannot enroll
+it. Explicit fresh capture retains old unscoped legacy sources as separate
+history. Raven makes no history/channel reads, adds no subscriptions or scopes,
+and never archives transient search results through this path. It cannot detect
+missed callbacks or upstream changes while disconnected. Jira and other generic
+imports still require a caller to refresh them; no Jira poller is added.
 
 ## Natural conversations and live search
 
@@ -60,7 +114,7 @@ An operator can refresh contacts with `POST /api/slack/sync` or the optional Con
 
 Directory matching and inferred routing can still pick the wrong first person. The reply and referral loop is how Raven corrects this. You do not need to configure owners in advance, and inferred contact evidence does not grant that person permanent authority over unrelated questions.
 
-Slack API references: [directory pagination](https://docs.slack.dev/reference/methods/users.list/), [email scope](https://docs.slack.dev/reference/scopes/users.read.email/), [Events API](https://docs.slack.dev/apis/events-api/), [Real-time Search](https://docs.slack.dev/apis/web-api/real-time-search-api/), [app manifest](https://docs.slack.dev/reference/app-manifest/).
+Slack API references: [directory pagination](https://docs.slack.dev/reference/methods/users.list/), [email scope](https://docs.slack.dev/reference/scopes/users.read.email/), [Events API](https://docs.slack.dev/apis/events-api/), [message edits](https://docs.slack.dev/reference/events/message/message_changed/), [message deletions](https://docs.slack.dev/reference/events/message/message_deleted/), [Real-time Search](https://docs.slack.dev/apis/web-api/real-time-search-api/), [app manifest](https://docs.slack.dev/reference/app-manifest/).
 
 A referral read-back keeps the exact person identity shown when it was offered.
 Confirmation does not re-resolve an old name or mention. If that contact is no

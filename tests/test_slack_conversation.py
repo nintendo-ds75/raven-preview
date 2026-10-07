@@ -293,11 +293,17 @@ class ConversationTests(DeliveryCase):
     def resettle_review(self, policy, summary):
         parent = self.review_source(policy)
         self.invalidate_review(parent)
+        before = self.store.get_decision(self.n['node_id'])
         canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': self.n['node_id'],
                                       'answer': summary, 'rationale': 'Agent summary after upstream review'})
         self.delivery.deliver_now()
         row = self.store.get_decision(self.n['node_id'])
-        self.assertFalse(row['needs_review'])
+        # Rewriting an unsigned proposal cannot review its changed premise.
+        # Keep that dependency visible until a person reviews or replaces it.
+        self.assertTrue(row['needs_review'])
+        self.assertEqual(row['review_reason'], before['review_reason'])
+        self.assertEqual(row['source_revalidation']['decision_pins'],
+                         before['source_revalidation']['decision_pins'])
         self.assertFalse(row['authorized'])
         self.assertEqual(row['signoff'], 'required')
         self.assertFalse(row['signed_by'])
@@ -379,7 +385,7 @@ class ConversationTests(DeliveryCase):
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
         self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
 
-    def test_captured_historical_policy_noop_repaired_after_review_flag_cleared(self):
+    def test_captured_historical_policy_noop_repaired_with_review_flag_retained(self):
         policy = self.recovery_policy
         self.resettle_review(policy, 'Same answer as the signed parent: never extend expiration; include fallback keys.')
         with patch('bridge.slack_chat.reading', side_effect=[
@@ -388,7 +394,7 @@ class ConversationTests(DeliveryCase):
             offered = self.reply(self.message, 'UWES', policy)
         self.assertEqual(model.call_count, 2)
         payload = model.call_args.args[1]
-        self.assertFalse(payload['needs_review'])
+        self.assertTrue(payload['needs_review'])
         self.assertTrue(payload['repeats_previous_answer'])
         self.assertFalse(payload['speaker_signed_current_answer'])
         self.assertIn(transport_text(policy), offered)
@@ -458,6 +464,43 @@ class ConversationTests(DeliveryCase):
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
         self.say('yes')
         self.assertTrue(self.store.get_decision(self.n['node_id'])['authorized'])
+
+    def test_historical_answer_after_human_reframe_needs_fresh_readback_without_review_flag(self):
+        from bridge import reframe
+        policy = 'Bill two units for this task only.'
+        self.say(policy, {'kind': 'answer', 'answer': policy})
+        self.say('yes')
+        old = self.store.get_decision(self.n['node_id'])
+        self.assertTrue(old['authorized'])
+        reframe.apply(self.store, old['id'], {
+            'question': 'How many real production usage units should this invoice bill?',
+            'rationale': 'The earlier question did not distinguish production usage.',
+            'expected_updated_at': old['updated_at'],
+        }, actor=Actor.person(self.graph.get_person(self.wes)))
+        canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': old['id'],
+                                      'answer': 'Bill three units.', 'rationale': 'Proposal for the corrected question'})
+        self.delivery.deliver_now()
+        self.message = self.slack.messages[-1]
+        row = self.store.get_decision(old['id'])
+        self.assertFalse(row['needs_review'])
+        self.assertFalse(row['authorized'])
+        self.assertEqual(row['signatures'], '[]')
+        with patch('bridge.slack_chat.reading', side_effect=[
+                {'kind': 'signoff'}, {'kind': 'answer', 'answer': policy}]) as model:
+            response = self.reply(self.message, 'UWES', policy)
+        self.assertEqual(model.call_count, 2)
+        payload = model.call_args.args[1]
+        self.assertFalse(payload['needs_review'])
+        self.assertTrue(payload['repeats_previous_answer'])
+        self.assertFalse(payload['speaker_signed_current_answer'])
+        self.assertEqual(payload['answer_on_table'], 'Bill three units.')
+        self.assertIn('reply `confirm ', response)
+        self.assertFalse(self.store.get_decision(old['id'])['authorized'])
+        self.say('yes')
+        final = self.store.get_decision(old['id'])
+        self.assertEqual(final['answer'], policy)
+        self.assertTrue(final['authorized'])
+        self.assertFalse(final['reusable'])
 
     def test_signed_repeat_waiting_for_cosigner_keeps_current_signature(self):
         policy = 'Bill two units for this task only.'

@@ -7,6 +7,7 @@ excerpts, never whole-document snapshots, policy adoption, or authorization.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -22,6 +23,22 @@ from .store import Invalid
 
 class AccessRejected(Invalid):
     pass
+
+
+class SourceRejected(Invalid):
+    """A bounded public reason code, without remote content or identifiers."""
+    def __init__(self, reason, message):
+        self.reason = reason
+        super().__init__(message)
+
+
+REJECTION_MESSAGES = {
+    'missing_access_metadata': 'The connector did not provide source access metadata. This result is not compatible with Raven durable import; do not assume public access.',
+    'missing_source_identity': 'The connector did not provide a stable source identity.',
+    'transient_or_unsynced': 'Transient, federated or unsynced results are not stored as durable context.',
+    'access_not_shared': 'Source access does not explicitly cover every configured workspace reader.',
+    'invalid_source': 'The source observation did not meet the required identity, content or metadata contract.',
+}
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS context_connections (
@@ -49,9 +66,11 @@ def now():
 
 
 def freshness_sql(alias='s'):
-    return (f"NOT EXISTS (SELECT 1 FROM context_entities ce LEFT JOIN context_connections cc ON cc.repo=ce.repo "
+    from .slack_capture import pending_sql
+    return (f"(NOT EXISTS (SELECT 1 FROM context_entities ce LEFT JOIN context_connections cc ON cc.repo=ce.repo "
             f"WHERE ce.record_id={alias}.id AND (ce.state<>'fresh' OR ce.verified_until<=? "
-            "OR cc.repo IS NULL OR cc.enabled=0 OR cc.generation<>ce.generation))", [now()])
+            "OR cc.repo IS NULL OR cc.enabled=0 OR cc.generation<>ce.generation)) "
+            "AND NOT " + pending_sql(alias) + ")", [now()])
 
 
 def fresh(db, record_id):
@@ -61,7 +80,10 @@ def fresh(db, record_id):
 
 
 def blocked_decisions(db, repo):
-    if not db.execute('SELECT 1 FROM context_entities WHERE repo=? LIMIT 1', (repo,)).fetchone():
+    if not db.execute('SELECT 1 FROM context_entities WHERE repo=? UNION ALL '
+            'SELECT 1 FROM slack_captures sc JOIN slack_capture_mutations sm '
+            'ON sm.workspace=sc.workspace AND sm.channel=sc.channel AND sm.message_ts=sc.message_ts '
+            "WHERE sc.repo=? AND sc.record_id<>'' AND sm.clock>sc.latest_clock LIMIT 1", (repo, repo)).fetchone():
         return set()
     predicate, args = freshness_sql()
     rows = db.execute("WITH RECURSIVE blocked(id) AS (SELECT e.decision_id FROM decision_source_edges e "
@@ -93,7 +115,7 @@ def configure(store, repo, collection, audience, *, shared=False, enabled=True):
         generation = previous['generation'] + 1 if previous else 1
         db.execute('INSERT INTO context_connections(repo,collection,audience,enabled,generation) VALUES(?,?,?,?,?) '
                    'ON CONFLICT(repo) DO UPDATE SET collection=excluded.collection,audience=excluded.audience,'
-                   'enabled=excluded.enabled,generation=excluded.generation,last_error=\'\'',
+                   'enabled=excluded.enabled,generation=excluded.generation,last_success=\'\',last_error=\'\'',
                    (repo, collection, serialized, int(enabled), generation))
         for row in db.execute('SELECT record_id FROM context_entities WHERE repo=?', (repo,)).fetchall():
             _unavailable(store, row['record_id'], 'connection_changed')
@@ -157,12 +179,14 @@ def _entry(result, connection):
     if not isinstance(result, dict):
         raise Invalid('Airweave result is not an object')
     meta, access = result.get('airweave_system_metadata'), result.get('access')
-    if not isinstance(meta, dict) or not isinstance(access, dict):
-        raise Invalid('Source identity or access metadata is missing')
+    if not isinstance(meta, dict):
+        raise SourceRejected('missing_source_identity', REJECTION_MESSAGES['missing_source_identity'])
     source = meta.get('source_name')
     # Federated Slack search is transient even if returned by another provider.
     if not isinstance(source, str) or source.lower() == 'slack' or not meta.get('sync_id'):
-        raise Invalid('Federated/transient search is not imported into durable memory')
+        raise SourceRejected('transient_or_unsynced', REJECTION_MESSAGES['transient_or_unsynced'])
+    if not isinstance(access, dict):
+        raise SourceRejected('missing_access_metadata', REJECTION_MESSAGES['missing_access_metadata'])
     audience, viewers = json.loads(connection['audience']), access.get('viewers')
     permitted = access.get('is_public') is True or (
         access.get('is_public') is False and bool(audience) and isinstance(viewers, list)
@@ -297,6 +321,7 @@ def search(store, args, *, client=None):
             raise Invalid('Context search task is outside this repository')
     connection = _connection(store, repo)
     imported, rejected, error = [], 0, ''
+    reasons = Counter()
     if connection:
         try:
             client = client or Airweave()
@@ -305,6 +330,9 @@ def search(store, args, *, client=None):
                 try:
                     imported.append(_accept(store, connection, result, query, task_id))
                 except (Invalid, TypeError, ValueError) as invalid:
+                    reason = (invalid.reason if isinstance(invalid, SourceRejected) else
+                              'access_not_shared' if isinstance(invalid, AccessRejected) else 'invalid_source')
+                    reasons[reason] += 1
                     if isinstance(invalid, AccessRejected):
                         meta = result.get('airweave_system_metadata') or {}
                         identity = cm.digest([meta.get('source_name'), meta.get('original_entity_id'), meta.get('chunk_index')])
@@ -314,8 +342,11 @@ def search(store, args, *, client=None):
                                 _unavailable(store, old['id'], 'access_revoked')
                             store.graph._bump(repo)
                     rejected += 1
+            if rejected and not imported:
+                error = 'No external excerpts were imported. ' + ' '.join(
+                    REJECTION_MESSAGES[reason] for reason in sorted(reasons))
             with store.graph.transaction():
-                store.graph.db.execute('UPDATE context_connections SET last_success=?,last_error=\'\' WHERE repo=?', (now(), repo))
+                store.graph.db.execute('UPDATE context_connections SET last_success=?,last_error=? WHERE repo=?', (now(), error, repo))
         except (Invalid, ValueError, TypeError) as failure:
             error = 'External retrieval unavailable; local evidence is shown with its recorded freshness'
             with store.graph.transaction():
@@ -333,24 +364,34 @@ def search(store, args, *, client=None):
             if row['record_id'] in observed and row['record_id'] not in {r.get('record_id') for r in sources}:
                 sources.append(dict(row))
         memories = store.graph.linked_answers([r['record_id'] for r in sources if r.get('record_id')], repo)
+    diagnostics = [{'reason': reason, 'count': count, 'message': REJECTION_MESSAGES[reason]}
+                   for reason, count in sorted(reasons.items())]
     with store.graph.transaction():
         store.graph.append_event('context_searched', {'task_id': task_id or None, 'repo': repo, 'query': query,
-            'imported': len(imported), 'rejected': rejected, 'error': error,
+            'imported': len(imported), 'rejected': rejected, 'rejections': diagnostics, 'error': error,
             'sources': [{'record_id': r.get('record_id'), 'source_version_id': r.get('source_version_id')} for r in sources],
             'decisions': [r.id for r in memories]})
     return {'repo': repo, 'sources': sources, 'related_decisions': [
         {'decision_id': d.id, 'question': d.question, 'answer': d.answer,
          'relation': 'Shares exact source evidence; relevance and applicability still require review',
          'sources': cm.edges(store.graph.db, d.id)} for d in memories],
-        'external': {'configured': bool(connection), 'imported': len(imported), 'rejected': rejected, 'error': error},
+        'external': {'configured': bool(connection), 'imported': len(imported), 'rejected': rejected,
+                     'rejections': diagnostics, 'error': error},
         'notice': 'Evidence and earlier answers share this graph. Neither search results nor prior signatures authorize a new task.'}
 
 
 def status(store, repo=''):
     rows = store.graph.db.execute('SELECT repo,collection,enabled,generation,last_success,last_error FROM context_connections' +
                                  (' WHERE repo=?' if repo else ''), (repo,) if repo else ()).fetchall()
-    return {'backend': 'airweave', 'configured': bool(rows), 'connections': [dict(r) for r in rows],
+    connections = []
+    for row in rows:
+        connection = dict(row)
+        connection['state'] = ('disabled' if not row['enabled'] else 'needs_attention' if row['last_error']
+            else 'search_observed' if row['last_success'] else 'configured_unverified')
+        connections.append(connection)
+    return {'backend': 'airweave', 'configured': bool(rows), 'connections': connections,
             'freshness_seconds': TTL_SECONDS, 'credential_configured': bool(os.environ.get('AIRWEAVE_API_KEY')),
+            'last_success_means': 'Last successful search transport, not proof that any source was admitted or that permissions were independently verified.',
             'notice': 'Only workspace-shared collections; unknown source ACLs and transient Slack results are excluded.'}
 
 

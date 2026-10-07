@@ -10,10 +10,59 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
 import time
 from urllib.request import Request, HTTPRedirectHandler, build_opener
 from urllib.parse import urlsplit
 import uuid
+
+HOOK_BUDGET_SECONDS = 45
+HOOK_TIMEOUT_MESSAGE = ('Raven task registration did not finish before its deadline. '
+    'Retry the same prompt after checking Raven. '
+    'An interrupted registration will recover the same task.')
+
+
+def remaining(deadline, ceiling=55):
+    if deadline is None:
+        return ceiling
+    left = deadline - time.monotonic()
+    if left <= 0:
+        raise ValueError(HOOK_TIMEOUT_MESSAGE)
+    return min(ceiling, left)
+
+
+def bounded_hook(operation, *, budget=None):
+    """Return a blocking failure before the host's 60-second hook timeout.
+
+    Socket timeouts alone do not bound DNS or a slow response body. The
+    command's main thread enforces the total deadline; its worker is a daemon
+    so a stalled operation cannot keep the hook process alive after exit 2.
+    A server may still finish an interrupted request. Its stable session/event
+    keys must therefore be reused on retry, never replaced here.
+    """
+    seconds = HOOK_BUDGET_SECONDS if budget is None else budget
+    if not isinstance(seconds, (int, float)) or not 0 < seconds <= HOOK_BUDGET_SECONDS:
+        raise ValueError('The hook budget must be positive and below the host timeout')
+    deadline = time.monotonic() + seconds
+    results, failures = [], []
+
+    def run():
+        try:
+            results.append(operation(deadline))
+        except Exception as error:
+            failures.append(error)
+
+    worker = threading.Thread(target=run, name='raven-hook-request', daemon=True)
+    worker.start()
+    worker.join(max(0, deadline - time.monotonic()))
+    if worker.is_alive() or time.monotonic() >= deadline:
+        raise ValueError(HOOK_TIMEOUT_MESSAGE)
+    if failures:
+        error = failures[0]
+        if isinstance(error, (TimeoutError, subprocess.TimeoutExpired)):
+            raise ValueError(HOOK_TIMEOUT_MESSAGE) from None
+        raise error
+    return results[0]
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -21,7 +70,7 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def rpc(config, method, params=None):
+def rpc(config, method, params=None, *, deadline=None):
     payload = {'jsonrpc': '2.0', 'id': uuid.uuid4().hex, 'method': method, 'params': params or {}}
     parts = urlsplit(config['url'])
     if (parts.scheme not in ('http', 'https') or parts.username or parts.password or parts.fragment or parts.query
@@ -30,8 +79,9 @@ def rpc(config, method, params=None):
     request = Request(config['url'], data=json.dumps(payload).encode(), headers={
         'Content-Type': 'application/json', 'Accept': 'application/json',
         'MCP-Protocol-Version': '2025-03-26', 'Authorization': 'Bearer ' + config['token']})
-    with build_opener(NoRedirect).open(request, timeout=55) as response:
+    with build_opener(NoRedirect).open(request, timeout=remaining(deadline)) as response:
         raw = response.read(4_000_001)
+    remaining(deadline)
     if len(raw) > 4_000_000:
         raise ValueError('Raven response exceeds the local adapter limit')
     value = json.loads(raw)
@@ -40,8 +90,8 @@ def rpc(config, method, params=None):
     return value['result']
 
 
-def call(config, name, args):
-    value = rpc(config, 'tools/call', {'name': name, 'arguments': args})
+def call(config, name, args, *, deadline=None):
+    value = rpc(config, 'tools/call', {'name': name, 'arguments': args}, deadline=deadline)
     texts = [c['text'] for c in value.get('content', []) if c.get('type') == 'text']
     if value.get('isError'):
         raise ValueError('\n'.join(texts))
@@ -57,31 +107,33 @@ def binding(config, host, session, event, **extra):
             'repo': config['repo'], **extra}
 
 
-def verify_project(config, cwd):
+def verify_project(config, cwd, *, deadline=None):
     root = Path(config['project']).resolve()
     work = Path(cwd).resolve()
-    actual = subprocess.check_output(['git', '-C', str(work), 'rev-parse', '--show-toplevel'], stderr=subprocess.PIPE).decode().strip()
+    actual = subprocess.check_output(['git', '-C', str(work), 'rev-parse', '--show-toplevel'],
+        stderr=subprocess.PIPE, timeout=None if deadline is None else remaining(deadline)).decode().strip()
+    remaining(deadline)
     if Path(actual).resolve() != root:
         raise ValueError('This hook belongs to another checkout; reconnect Raven in this project')
 
 
-def capabilities(config):
+def capabilities(config, *, deadline=None):
     rpc(config, 'initialize', {'protocolVersion': '2025-03-26', 'capabilities': {},
-        'clientInfo': {'name': 'raven-host-adapter', 'version': '1'}})
-    found = rpc(config, 'tools/list')['tools']
+        'clientInfo': {'name': 'raven-host-adapter', 'version': '1'}}, deadline=deadline)
+    found = rpc(config, 'tools/list', deadline=deadline)['tools']
     required = {'bridge_host_event', 'bridge_start_task', 'bridge_get_tree', 'bridge_finish_task'}
     if not required <= {t['name'] for t in found}:
         raise ValueError('This Raven server does not support the installed host adapter')
     return [t['name'] for t in found]
 
 
-def hook(config, host, payload):
-    verify_project(config, payload.get('cwd', config['project']))
+def hook(config, host, payload, *, deadline=None):
+    verify_project(config, payload.get('cwd', config['project']), deadline=deadline)
     event_name = payload.get('hook_event_name')
     session = payload.get('session_id')
     if event_name not in ('SessionStart', 'UserPromptSubmit'):
         raise ValueError('Unsupported hook event')
-    tools = capabilities(config)
+    tools = capabilities(config, deadline=deadline)
     reported = list(tools)
     for filename in ('.mcp.json', '.cursor/mcp.json'):
         path = Path(config['project']) / filename
@@ -97,7 +149,8 @@ def hook(config, host, payload):
                 break
     result = call(config, 'bridge_host_event', binding(config, host, session, action,
         prompt=prompt, tools=reported[:200],
-        event_key=str(payload.get('turn_id') or hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest())))
+        event_key=str(payload.get('turn_id') or hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest())),
+        deadline=deadline)
     # Source and human text is intentionally not elevated into hook/developer
     # instructions. The host reads that untrusted content through normal tools.
     text = ('Raven connection verified. Available tools: ' + ', '.join(tools) + '. ')
@@ -163,17 +216,21 @@ def main():
     p.add_argument('--allow-background', action='store_true')
     args = p.parse_args()
     try:
-        config = json.loads(Path(args.config).read_text())
         if args.action == 'hook':
             raw = sys.stdin.read(200_001)
             if len(raw) > 200_000: raise ValueError('Hook input is too large')
-            result = hook(config, args.host, json.loads(raw))
-        elif args.action == 'status':
+            def read_and_hook(deadline):
+                config = json.loads(Path(args.config).read_text())
+                return hook(config, args.host, json.loads(raw), deadline=deadline)
+            result = bounded_hook(read_and_hook)
+        else:
+            config = json.loads(Path(args.config).read_text())
+        if args.action == 'status':
             result = {'tools': capabilities(config), 'connection': call(config, 'bridge_connection_status', {})}
         elif args.action == 'finish':
             if not args.task: raise ValueError('--task is required')
             result = finish(config, args.task, args.base, args.checks)
-        else:
+        elif args.action == 'watch':
             if not args.allow_background or not args.session:
                 raise ValueError('Background resume requires --allow-background and an exact --session; stop the interactive host first')
             worker = uuid.uuid4().hex

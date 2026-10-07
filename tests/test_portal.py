@@ -349,7 +349,7 @@ class RecordsAndTeamsTests(PortalCase):
         self.assertEqual(row["author"], "Wes Chen")
         self.assertIn("list rate", row["body"])
         self.assertIn("agreed with @Priya Natarajan and finance", row["body"])
-        self.assertEqual(self.graph.get_source(REPO, "url:slack:C0BILL:1700000000.000100"),
+        self.assertEqual(self.graph.get_source(REPO, "url:slack:" + row["ref"]),
                          "https://slack.com/archives/C0BILL/p1700000000000100")
         self.assertEqual(handle_slack_event(self.delivery, event), {"ok": True, "captured": False})
         mention = {"type": "event_callback", "team_id": "TTEST", "event_id": "Ev8", "event": {

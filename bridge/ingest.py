@@ -42,11 +42,70 @@ _TRAILER_RE = re.compile(
     r"|Change-Id|Claude-Session|Reviewed-on|Tested-by|Cc)\s*:", re.IGNORECASE | re.MULTILINE)
 
 
+def _git_read(repo: Path | str, *args: str, timeout: int = 120,
+              errors: str | None = None) -> subprocess.CompletedProcess:
+    """Read only the explicitly selected checkout, including a read-only mount.
+
+    Host/container UIDs can differ. Git permits an exact safe.directory in
+    command scope; never persist it or mutate the server's shared environment.
+    Repository configuration is still parsed, so disable executable helpers,
+    optional writes, and missing-object fetches for these local reads.
+    """
+    repo = Path(repo).resolve()
+    if not (repo / ".git").exists():
+        raise RuntimeError(f"{repo} is not a git checkout")
+    # Git interprets a normalized path ending in /* as recursive trust.
+    if repo.name == "*":
+        raise RuntimeError("Cannot read a checkout named '*': Git treats its safe.directory as a wildcard")
+    env = os.environ.copy()
+    for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+                "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+                "GIT_NAMESPACE", "GIT_SHALLOW_FILE", "GIT_CONFIG",
+                "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT"):
+        env.pop(key, None)
+    env.update(GIT_NO_LAZY_FETCH="1", GIT_ALLOW_PROTOCOL="", GIT_TERMINAL_PROMPT="0")
+    command = ["git", "--no-pager", "--no-optional-locks",
+               "-c", "safe.directory=", "-c", f"safe.directory={repo}",
+               "-c", "core.fsmonitor=false", "-c", f"core.hooksPath={os.devnull}",
+               "-c", "log.showSignature=false", "-C", str(repo)]
+    # An unknown environment variable is silently ignored by older Git.
+    # Probe the option without opening a repository, then use the option on
+    # every supported read. Blocking transport alone is insufficient: lazy
+    # fetch can persist partialclonefilter before reaching its transport.
+    capability = subprocess.run(["git", "--no-lazy-fetch", "--version"],
+                                capture_output=True, text=True, timeout=10, env=env)
+    if capability.returncode == 0:
+        command.insert(1, "--no-lazy-fetch")
+    else:
+        partial = subprocess.run(
+            [*command, "config", "--name-only", "--get-regexp",
+             r"^(extensions\.partialclone|remote\..*\.(promisor|partialclonefilter))$"],
+            capture_output=True, text=True, timeout=10, env=env)
+        if partial.returncode not in (0, 1):
+            raise RuntimeError(f"Cannot inspect Git partial-clone configuration: {partial.stderr.strip()[:200]}")
+        if partial.returncode == 0:
+            raise RuntimeError("This Git lacks --no-lazy-fetch; partial-clone/promisor checkouts require "
+                               "Git 2.45 or newer, or a full clone without partial-clone configuration")
+    if args and args[0] in {"log", "show", "blame"}:
+        args = (args[0], "--no-ext-diff", "--no-textconv", *args[1:])
+    return subprocess.run([*command, *args], capture_output=True, text=True,
+                          timeout=timeout, errors=errors, env=env)
+
+
 def _git(repo: Path, *args: str) -> str:
-    out = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, timeout=120)
+    out = _git_read(repo, *args)
     if out.returncode != 0:
         raise RuntimeError(f"git {' '.join(args[:2])} failed: {out.stderr.strip()[:200]}")
     return out.stdout
+
+
+def _resolve_commit(repo: Path | str, rev: str) -> str:
+    """Resolve a caller's branch, tag or SHA without treating it as an option.
+
+    Git documents --verify --end-of-options with ^{commit} for untrusted
+    revisions. Only the resulting commit object ID reaches read commands.
+    """
+    return _git(Path(repo), "rev-parse", "--verify", "--end-of-options", f"{rev}^{{commit}}").strip()
 
 
 def _prefixes(path: str) -> list[str]:
@@ -66,10 +125,19 @@ def _read_at(repo: Path, rel: str, rev: str = "") -> str:
     """The text of one file in the checkout, or as of `rev` when given
     (read from the object store, so no checkout is needed)."""
     if rev:
-        out = subprocess.run(["git", "-C", str(repo), "show", f"{rev}:{rel}"],
-                             capture_output=True, text=True, timeout=60)
-        return out.stdout if out.returncode == 0 else ""
-    p = repo / rel
+        rev = _resolve_commit(repo, rev)
+        out = _git_read(repo, "show", f"{rev}:{rel}", timeout=60)
+        if out.returncode == 0:
+            return out.stdout
+        # Absent optional listings are normal. An existing entry whose blob
+        # cannot be read (e.g. a partial clone) must not look like no listing.
+        if _git(repo, "ls-tree", "--name-only", rev, "--", rel).strip():
+            raise RuntimeError(f"git show failed: {out.stderr.strip()[:200]}")
+        return ""
+    repo = repo.resolve()
+    p = (repo / rel).resolve()
+    if not p.is_relative_to(repo):
+        raise RuntimeError(f"Repository listing {rel} resolves outside the selected checkout")
     return p.read_text(errors="replace") if p.exists() else ""
 
 
@@ -142,13 +210,16 @@ _LOG_FMT = "--pretty=format:%x01%H%x02%an%x02%ae%x02%cn%x02%ce%x02%cI%x02%s%x02%
 
 
 def read_log(repo: Path | str, head: str, count_args: list[str], scope_args: list[str],
-             merges: bool = False) -> list[Commit]:
+             merges: bool = False, strict: bool = False) -> list[Commit]:
     """Commits newest first with the paths they touched. Merges list
     what they brought onto the main line (their first-parent diff)."""
     kind = ["--merges", "--diff-merges=first-parent"] if merges else ["--no-merges"]
     try:
+        head = _resolve_commit(repo, head)
         raw = _git(Path(repo), "log", head, *kind, *count_args, _LOG_FMT, "--name-only", *scope_args)
     except RuntimeError:
+        if strict:
+            raise
         return []
     out: list[Commit] = []
     for chunk in raw.split("\x01"):
@@ -313,6 +384,7 @@ def index_repo(store: Graph, repo_path: str | Path, max_commits: int | None = No
     name = (repo_name or repo.name).lower()
     scope = [p.strip("/") for p in (paths or []) if p.strip("/")]
     depth = MAX_COMMITS if max_commits is None else max_commits
+    rev = _resolve_commit(repo, rev) if rev else ""
     snap = _read_repo(repo, rev, scope, depth)
     # Every git read is done before the write lock is taken, so the lock
     # is held for the write alone, not for the seconds git takes.
@@ -338,11 +410,11 @@ class _Snapshot:
 
 
 def _read_repo(repo: Path, rev: str, scope: list[str], depth: int) -> _Snapshot:
-    head = rev or "HEAD"
+    head = _resolve_commit(repo, rev or "HEAD")
     scope_args = ["--", *scope] if scope else []
     count_args = [] if depth == 0 else [f"--max-count={depth}"]
     # One commit past the window tells whether the history was cut.
-    commits = read_log(repo, head, [] if depth == 0 else [f"--max-count={depth + 1}"], scope_args)
+    commits = read_log(repo, head, [] if depth == 0 else [f"--max-count={depth + 1}"], scope_args, strict=True)
     truncated = bool(depth) and len(commits) > depth
     if truncated:
         commits = commits[:depth]
@@ -350,7 +422,7 @@ def _read_repo(repo: Path, rev: str, scope: list[str], depth: int) -> _Snapshot:
         files = [f for f in _git(repo, "ls-tree", "-r", "--name-only", head, *scope).splitlines() if f]
     else:
         files = [f for f in _git(repo, "ls-files").splitlines() if f]
-    merge_log = read_log(repo, head, count_args, scope_args, merges=True)
+    merge_log = read_log(repo, head, count_args, scope_args, merges=True, strict=True)
     return _Snapshot(commits, truncated, files, merge_log, parse_codeowners(repo, rev),
                      _read_at(repo, "MAINTAINERS", rev))
 
@@ -499,11 +571,17 @@ def _git_rev(store: Graph, repo: str) -> str:
     """The point-in-time bound set at ingest (or by a caller), else HEAD.
     Every live lookup runs against this revision so nothing after it
     leaks into an answer."""
-    return store.get_source(repo, "git_rev") or "HEAD"
+    path = _git_source(store, repo)
+    if not path:
+        raise RuntimeError(f"{repo} has no local git checkout")
+    return _resolve_commit(path, store.get_source(repo, "git_rev") or "HEAD")
 
 
 def _git_quiet(repo: str, *args: str) -> str:
-    out = subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True, timeout=60)
+    try:
+        out = _git_read(repo, *args, timeout=60)
+    except RuntimeError:
+        return ""
     return out.stdout if out.returncode == 0 else ""
 
 
@@ -635,9 +713,10 @@ def blame_counts(path: str, rev: str, file: str) -> dict[tuple[str, str], int]:
     """Lines per (author, email) of one file at one revision, from git
     blame; empty when the file is missing or blame runs out of time."""
     try:
-        out = subprocess.run(["git", "-C", path, "blame", "--line-porcelain", rev, "--", file],
-                             capture_output=True, text=True, errors="replace", timeout=BLAME_TIMEOUT_SECONDS)
-    except (subprocess.TimeoutExpired, OSError):
+        rev = _resolve_commit(path, rev)
+        out = _git_read(path, "blame", "--line-porcelain", rev, "--", file,
+                        errors="replace", timeout=BLAME_TIMEOUT_SECONDS)
+    except (subprocess.TimeoutExpired, OSError, RuntimeError):
         return {}
     if out.returncode != 0:
         return {}

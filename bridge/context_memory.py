@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 ROLES = frozenset({'support', 'contradiction', 'context', 'work_item'})
 RELIANCE = frozenset({'support', 'contradiction'})
 LOCAL_ORIGINS = frozenset({'', 'human', 'human-reframing', 'agent', 'assumption'})
+AGENT_SOURCE_LIMIT = 64
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS source_records (
@@ -481,6 +482,52 @@ def validate(db, decision_id, pins, *, current_roles=ROLES):
             raise Invalid('Evidence is outside this decision repository')
         if p['role'] in current_roles and (not cit['current'] or cit['availability'] != 'available'):
             raise Invalid(f"Source evidence changed or became unavailable for decision {decision_id}, source {cit['ref']}; re-read and compose against current source versions")
+
+
+def agent_proposal_pins(db, decision_id, supplied):
+    """Add exact current evidence without granting human-only revalidation.
+
+    The caller owns the publication transaction. Existing active source roles,
+    versions and decision dependencies are retained, never inferred from prose.
+    Refreshing or removing an existing stale premise requires human review.
+    """
+    from .store import Invalid
+    if not db.in_transaction:
+        raise Invalid('Agent source evidence must be validated in its publication transaction')
+    keys = {'record_id', 'source_version_id', 'role'}
+    if (not isinstance(supplied, list) or len(supplied) > AGENT_SOURCE_LIMIT
+            or any(not isinstance(p, dict) or set(p) != keys
+                   or any(not isinstance(p[k], str) or not p[k] or len(p[k]) > 100 for k in keys)
+                   for p in supplied)):
+        raise Invalid(f'source_evidence must be an array of at most {AGENT_SOURCE_LIMIT} exact '
+                      '{record_id, source_version_id, role} objects; copy IDs from bridge_get_record '
+                      'and use support, contradiction, context, or work_item as the role')
+    try:
+        validate(db, decision_id, supplied)
+    except Invalid as error:
+        raise Invalid(str(error) + '; use bridge_get_record in this node repository to read the current '
+                      'record and version before proposing again; source access must be fresh') from error
+    previous = edges(db, decision_id)
+    retained = [pin(e, e['role']) for e in previous]
+    scopes = {(r['provider'], r['namespace']) for r in db.execute(
+        'SELECT s.provider,s.namespace FROM task_source_anchors a JOIN source_records s ON s.id=a.record_id '
+        'WHERE a.task_id=(SELECT run_id FROM decisions WHERE id=?)', (decision_id,))}
+    for p in retained + supplied:
+        source = citation(db, p['record_id'], p['source_version_id'])
+        shared = source['provider'] in ('legacy', 'git') or (source['provider'], source['namespace']) == ('github', 'github.com')
+        if scopes and not shared and (source['provider'], source['namespace']) not in scopes:
+            raise Invalid('Source evidence is outside the explicitly selected task namespace; '
+                          'use a current record from the selected source installation')
+    try:
+        validate(db, decision_id, retained)
+        if any(e['stale'] for e in previous):
+            raise Invalid('Existing source evidence still needs review')
+        check_current(db, decision_id)
+    except Invalid as error:
+        raise Invalid(str(error) + '; existing dependencies cannot be replaced by an agent proposal; '
+                      'request a complete current-source review from a person first') from error
+    return sorted({(p['record_id'], p['source_version_id'], p['role']): p
+                   for p in retained + supplied}.values(), key=lambda p: (p['record_id'], p['role']))
 
 
 def snapshot_decision(db, decision_id, pins=None, reason='snapshot'):

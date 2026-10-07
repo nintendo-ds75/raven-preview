@@ -1292,9 +1292,10 @@ def _not_behind_rule(graph, source_id: str, approvers: list[str]) -> list[str]:
 
 
 def settle_node(store, data) -> dict:
-    """The agent settles a node itself: the answer it acted on and why,
-    recorded on the tree and marked for sign-off, so the whole decision
-    record is visible to the people who own it."""
+    """Record an unsigned agent proposal and optional exact source pins.
+
+    The complete proposal stays on the tree for a person's sign-off.
+    """
     task_id = field(data, "task_id", limit=100)
     node_id = field(data, "node_id", limit=100)
     answer = field(data, "answer")
@@ -1308,23 +1309,40 @@ def settle_node(store, data) -> dict:
             raise Invalid(f"a node that is {d.status} cannot be settled by the agent")
         if d.signoff in ("signed", "rule"):
             raise Invalid("a node a person signed is not re-settled by the agent; ask for a correction in the inbox")
-        changed = bool(d.answer and d.answer.strip() != answer.strip())
+        from . import context_memory as cm
+        old_pins = [cm.pin(e, e['role']) for e in cm.edges(db, d.id)]
+        pins = cm.agent_proposal_pins(db, d.id, data['source_evidence']) if 'source_evidence' in data else old_pins
+        pins_changed = sorted(map(cm.encoded, pins)) != sorted(map(cm.encoded, old_pins))
+        changed = (bool(d.answer and d.answer.strip() != answer.strip())
+                   or pins_changed or d.source != "agent" or bool(d.signed_by))
+        # Freeze the old provenance before changing origin. An agent cannot
+        # turn unknown legacy evidence into an independent human replacement.
+        cm.snapshot_decision(db, d.id, reason='before-agent-proposal')
+        if pins_changed:
+            graph.retire_replaced_rule(d.id,
+                'New agent-proposed source evidence replaces the previous standing grant; explicit regrant required.')
         graph.update_decision(d.id, status="resolved", source="agent", answer=answer, rationale=rationale,
                               kind="agent", evidence="settled by the agent: " + _marked(
                                   rationale, 1200, "the rationale on the node has the rest"),
-                              signoff="required", prediction=None, source_id=None, source_revision="",
-                              needs_review=0, review_reason="")
-        if changed:
-            # A signature covers the text it was given for and nothing
-            # else: a re-settled answer starts with none.
-            db.execute("UPDATE decisions SET signatures='[]', signed_by='' WHERE id=?", (d.id,))
+                              signoff="required", prediction=None, model_pending=0, answered_by="",
+                              signed_by="", signed_hash="", signed_revision="")
+        # Even unchanged answer text is a new unsigned proposal. Retain every
+        # source/decision dependency and review flag; only a person can rebind
+        # or independently replace them. A running model's old revision loses.
+        db.execute("UPDATE decisions SET signatures='[]',actor_id='',actor_name='',actor_basis='' WHERE id=?", (d.id,))
+        cm.snapshot_decision(db, d.id, pins if 'source_evidence' in data else None, reason='agent-proposal')
+        if pins_changed:
+            # Equal answer text with additional evidence still needs a fresh
+            # notification/readback generation through the existing mechanism.
+            graph.append_event('source_review_required', {'task_id': task_id, 'decision_id': d.id,
+                'source_evidence': pins, 'reason': 'The agent added source evidence; review the complete proposal before signing.'})
         pending = db.execute("SELECT 1 FROM decisions WHERE run_id=? AND status='pending'", (task_id,)).fetchone()
         if not pending:
             db.execute("UPDATE runs SET status=CASE WHEN status='completed' THEN status ELSE 'working' END,"
                        "updated_at=? WHERE id=?", (now(), task_id))
         graph.append_event("node_settled", {"task_id": task_id, "decision_id": d.id})
         if changed:
-            graph.flag_dependents(d.id, f"the agent re-settled decision {d.id} with a different answer")
+            graph.flag_dependents(d.id, f"the agent proposed a new answer or evidence for decision {d.id}")
     if d.owner:
         store.notify(d.id, "signoff")
     return node_view(store, d.id)
