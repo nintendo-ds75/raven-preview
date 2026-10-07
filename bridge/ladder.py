@@ -357,6 +357,47 @@ def _names_file(question: str, path: str) -> bool:
     return path in low or ("." in base and base in low)
 
 
+def _memory_namespace_difference(store: Graph, task_id: str, source) -> str:
+    """Explain incompatible recorded context for a new answer reuse only.
+
+    Associations are neither supporting premises nor declared rule scope.
+    Compare explicit canonical namespaces; missing context establishes no
+    conflict. Do not attribute a later-added task link to an older answer.
+    """
+    from .context_memory import citation
+
+    def namespaces(task, through=None):
+        rows = store.db.execute('''SELECT record_id,source_version_id,recorded_at
+            FROM task_source_anchors
+            WHERE task_id=? AND role IN ('work_item','context')''', (task,))
+        found = {}
+        for row in rows:
+            if through is not None and iso_to_ts(row['recorded_at']) > through:
+                continue
+            # Native Git -> GitHub aliases retain the backing row's original
+            # identity. Compare the exact version selected by the task, not
+            # that initial identity or a newer head's canonical namespace.
+            pinned = citation(store.db, row['record_id'], row['source_version_id'])
+            if not pinned:
+                continue
+            provider, namespace = pinned['provider'], pinned['namespace']
+            if not provider or not namespace or provider == 'legacy' or namespace == 'legacy':
+                continue
+            found.setdefault(provider, set()).add(namespace)
+        return found
+
+    current = namespaces(task_id)
+    previous = namespaces(source.task_id, source.updated_at)
+    conflicts = sorted(p for p in current.keys() & previous.keys()
+                       if current[p] != previous[p])
+    if not conflicts:
+        return ''
+    here = ', '.join(f'{p}:{n}' for p in conflicts for n in sorted(current[p]))
+    there = ', '.join(f'{p}:{n}' for p in conflicts for n in sorted(previous[p]))
+    return (f'namespace_conflict: this task is linked to {here}; decision {source.id} '
+            f'was associated with {there}')
+
+
 def _scope_conflict(question: str, context: str, path: str, cand, facts: dict | None = None,
                     their_facts: dict | None = None, repo: str = "") -> str:
     """Why an open decision with the same question is not this decision,
@@ -2040,6 +2081,11 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     rule_ok, rule_why = False, (f"the rule from decision {item.id} applies in its own scope only, and "
                                                 f"this {'is' if known_scope else 'may be'} another ({other_scope}); its "
                                                 "owner did not make it apply anywhere")
+                # Task/context links can explain why ordinary historical
+                # evidence is not established here. They cannot narrow an
+                # explicit rule whose existing declared conditions hold.
+                namespace_scope = (_memory_namespace_difference(store, task_id, item)
+                                   if signed and not rule_ok else '')
                 auto_rules = store.get_setting("auto_rules") == "1"
                 terms = [c for c in rule_conditions(item.rule_conditions)]
                 covered = (f"the rule {item.rule_by or item.answered_by} made of decision {item.id}"
@@ -2062,10 +2108,16 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 elif rule_why:
                     # The rule was nominated and did not fit: the node says
                     # so where the person reads it, not only in the log.
-                    rule_note = rule_why + "; the answer is evidence to sign, not a rule here"
+                    rule_note = rule_why + ("; this historical answer still requires fresh sign-off"
+                                           if namespace_scope else "; the answer is evidence to sign, not a rule here")
                     why_open.append("memory: " + rule_note)
                 if rule_ok:
                     pass
+                elif signed and namespace_scope and not other_scope:
+                    signed = False
+                    evidence = (f"prediction: {attribution} in decision {item.id}; {namespace_scope}; "
+                                f"historical context, not established evidence for this task ({detail}); "
+                                "confirm applicability with the owner before acting on it")
                 elif signed and other_scope:
                     signed = False
                     evidence = ((f"prediction: {attribution} this for another scope, decision "

@@ -129,16 +129,26 @@ class BackgroundTests(DeliveryCase):
         self.assertFalse(self.store.get_decision(node['node_id'])['model_pending'])
         self.assertEqual(self.graph.count_events('model_read_interrupted',decision_id=node['node_id']),1)
 
-    def test_reused_answer_prefers_its_signer_unless_current_authority_overrides(self):
+    def test_reused_answer_prefers_its_current_contact_unless_authority_overrides(self):
         from bridge.routing import rank_for_decision
         task = self.task(); node = self.node(task)
         self.delivery.deliver_now()
         self.reply(self.slack.messages[0], 'UWES', 'answer: Exclude it because it is internal')
         run = self.graph.get_task(task)
-        with patch('bridge.routing.rank_for_decision', return_value=[('Marisol Vega',['authored recent code'],1.0)]):
+        with patch('bridge.routing.rank_for_decision', return_value=[
+                ('Marisol Vega', ['authored recent code'], 1.0),
+                ('Wes Chen', ['applicable learned contact'], .5)]):
             ranked = canvas._route_signer(self.graph, run, node['question'], '', ['billing/usage.py'], '', None, '', {}, node['node_id'])
         self.assertEqual(ranked[0][0], 'Wes Chen')
-        with patch('bridge.routing.rank_for_decision', return_value=[('Marisol Vega',['verified: current authority'],2.0)]):
+        with patch('bridge.routing.rank_for_decision', return_value=[
+                ('Marisol Vega', ['verified: current authority'], 2.0),
+                ('Wes Chen', ['applicable learned contact'], .5)]):
+            ranked = canvas._route_signer(self.graph, run, node['question'], '', ['billing/usage.py'], '', None, '', {}, node['node_id'])
+        self.assertEqual(ranked[0][0], 'Marisol Vega')
+        # A historical signature does not itself restore a contact omitted
+        # by current scoped routing. This asserts nomination only.
+        with patch('bridge.routing.rank_for_decision', return_value=[
+                ('Marisol Vega', ['authored recent code'], 1.0)]):
             ranked = canvas._route_signer(self.graph, run, node['question'], '', ['billing/usage.py'], '', None, '', {}, node['node_id'])
         self.assertEqual(ranked[0][0], 'Marisol Vega')
 

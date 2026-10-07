@@ -3223,8 +3223,13 @@ def _route_signer(graph, run, question, ctx, paths, requester, hints, category, 
     scope_difference = _scope_difference(question, ctx, paths[0] if paths else '', source, facts,
                                          source_facts, repo)[0] if source else ''
     person = graph.find_person(source_signer) if source_signer else None
+    # A historical signature may prioritize a currently applicable contact,
+    # not introduce one that scoped routing omitted or explicitly declined.
+    # This gates recipient nomination only; the source signature and all
+    # existing eligibility, authority and approval checks retain their meaning.
+    current_contact = person and any(name == person['name'] for name, *_ in ranked)
     if (person and person['active'] and person['role'] != 'viewer' and complete_scope and not scope_difference
-            and applicability_status(source, paths[0] if paths else '', facts)[0]):
+            and applicability_status(source, paths[0] if paths else '', facts)[0] and current_contact):
         if not ranked or not any(e.startswith('verified:') for e in ranked[0][1]):
             ranked.insert(0, (source_signer, [f'signs off; {source_signer} signed the reused answer in decision {source.id}'], 2.0))
     if not ranked:

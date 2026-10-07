@@ -718,6 +718,18 @@ def _signal_route(store: Graph, repo: str, question: str, context: str = "", pat
         hits = resolve_paths(store, repo, question, context, path, hints=hints, also_paths=also_paths)
     hits = hits[:3]
     verified = _authority_matches(store, repo, hits, question, context, category, path, also_paths)
+    # Answer-derived weak rows duplicate contact history without its source
+    # scope or outcomes. Only the scoped contact matcher may reuse that
+    # learning; treating this broad hint as independent evidence bypasses
+    # conflicts, declines, opt-outs and freshness. Keep the historical rows,
+    # explicit maps and declared referrals intact. Legacy notes are not a
+    # structured provenance link and must not be parsed to invent one.
+    answer_hints = {a['id'] for a in store.authority_rows(repo)
+                    if a['source'] == 'answer' and a['role'] == 'knows'}
+    if any(a['id'] in answer_hints for a in verified):
+        reasons.append('answer-derived weak routing hints require applicable contact history; '
+                       'unlinked legacy provenance is not inferred')
+        verified = [a for a in verified if a['id'] not in answer_hints]
     if not hits and not verified:
         wide = _repo_wide(store, repo, now, req)
         if wide is not None:

@@ -48,16 +48,28 @@ def record(graph, decision_id, person_id, outcome):
 CONTACT_FRESH_DAYS = 180
 
 
+def _version_identity(snapshot):
+    """Identity and declaration label from one immutable source version."""
+    snapshot = _context_dict(snapshot)
+    return {key: snapshot.get(source_key, '') if isinstance(snapshot.get(source_key, ''), str) else ''
+            for key, source_key in (('provider', 'provider'), ('namespace', 'namespace'),
+                ('object_kind', 'object_kind'), ('external_id', 'external_id'), ('ref', 'display_ref'))}
+
+
 def _source_context(db, decision):
     """Keep typed task/work-item context as observed, without parsing prose."""
     rows = db.execute('''SELECT b.binding,b.record_id,b.source_version_id,b.role,
-            s.provider,s.namespace,s.object_kind,s.external_id,v.source_updated_at,v.source_sequence,v.observed_at
+            v.snapshot,v.source_updated_at,v.source_sequence,v.observed_at
         FROM (SELECT 'task' AS binding,record_id,source_version_id,role FROM task_source_anchors WHERE task_id=?
               UNION ALL SELECT 'decision' AS binding,record_id,source_version_id,role
               FROM decision_source_edges WHERE decision_id=? AND active=1 AND role IN ('work_item','context')) b
-        JOIN source_records s ON s.id=b.record_id JOIN source_versions v ON v.id=b.source_version_id
+        JOIN source_versions v ON v.id=b.source_version_id AND v.record_id=b.record_id
         ORDER BY b.binding,b.record_id,b.source_version_id,b.role''', (decision['run_id'], decision['id']))
-    anchors = [dict(row) for row in rows]
+    anchors = []
+    for row in rows:
+        anchor = dict(row)
+        anchor.update(_version_identity(anchor.pop('snapshot')))
+        anchors.append(anchor)
     run = db.execute('SELECT facts FROM runs WHERE id=?', (decision['run_id'],)).fetchone()
     return {'task_id': decision['run_id'], 'client_ref': decision['client_ref'] or '',
             'anchors': anchors, 'facts': parse_facts(run['facts'] if run else '')}
@@ -102,6 +114,58 @@ def _context_dict(context):
         except (ValueError, TypeError):
             context = {}
     return context if isinstance(context, dict) else {}
+
+
+def _pinned_context(db, context, versions):
+    """Resolve only existing version pins, without rewriting observations.
+
+    Older contact snapshots omitted display refs and could carry the original
+    backing-row identity after a canonical alias import. The pinned version,
+    never its mutable head or display row, supplies the observed identity.
+    """
+    context = _context_dict(context)
+    anchors, unavailable = [], False
+    values = context.get('anchors') or []
+    for value in values if isinstance(values, list) else []:
+        if not isinstance(value, dict):
+            continue
+        anchor = dict(value)
+        if anchor.get('record_id') or anchor.get('source_version_id'):
+            pin = (anchor.get('record_id'), anchor.get('source_version_id'))
+            if not all(isinstance(k, str) and k for k in pin):
+                anchor.update(_version_identity({}))
+            else:
+                if pin not in versions:
+                    row = db.execute('SELECT snapshot FROM source_versions WHERE record_id=? AND id=?', pin).fetchone()
+                    versions[pin] = _version_identity(row['snapshot'] if row else {})
+                anchor.update(versions[pin])
+            unavailable |= not all(anchor.get(k) for k in ('provider', 'namespace', 'object_kind', 'external_id'))
+        anchors.append(anchor)
+    return {**context, 'anchors': anchors, 'unavailable_source_pin': unavailable}
+
+
+def _declared_work_item(db, context, declared, bindings):
+    """Bind an exact declaration only to a persisted, pinned task anchor."""
+    if not declared:
+        return 'missing', None
+    identities = set()
+    for anchor in context.get('anchors') or []:
+        if anchor.get('binding') != 'task' or anchor.get('role') != 'work_item':
+            continue
+        identity = tuple(anchor.get(k) for k in ('provider', 'namespace', 'object_kind', 'external_id'))
+        if (not all(isinstance(k, str) and k for k in identity) or 'legacy' in identity[:2]
+                or declared not in (anchor.get('ref'), anchor.get('external_id'))):
+            continue
+        pin = (context.get('task_id'), anchor.get('record_id'), anchor.get('source_version_id'))
+        if not all(isinstance(k, str) and k for k in pin):
+            continue
+        if pin not in bindings:
+            bindings[pin] = bool(db.execute("SELECT 1 FROM task_source_anchors WHERE task_id=? "
+                "AND record_id=? AND source_version_id=? AND role='work_item'", pin).fetchone())
+        if bindings[pin]:
+            identities.add(identity)
+    return ('linked', next(iter(identities))) if len(identities) == 1 else (
+        'ambiguous' if identities else 'unlinked', None)
 
 
 def _identities(context):
@@ -301,7 +365,12 @@ def _matching(graph, repo, question, path, context, category, facts, *, missing_
     if not terms:
         return
     stated = re.search(r'(?im)^facts?:\s*(.+)$', context or '')
-    current = routing_context(graph, task_id, decision_id, contact_context)
+    versions, bindings = {}, {}
+    current = _pinned_context(graph.db, routing_context(graph, task_id, decision_id, contact_context), versions)
+    if current['unavailable_source_pin']:
+        if notes is not None:
+            notes.append('contact scope: unavailable_source_pin in current context')
+        return
     supplied_facts, facts_conflict = _facts(facts if facts is not None else stated[1] if stated else '')
     facts = {**current['inherited_facts'], **supplied_facts}
     if facts_conflict or current['facts_conflict']:
@@ -322,7 +391,31 @@ def _matching(graph, repo, question, path, context, category, facts, *, missing_
             if notes is not None:
                 notes.append(f"contact decision {row['decision_id']}: material_fact_conflict in historical explicit facts")
             continue
-        typed = _typed_match(row.get('source_context'), current, old_facts, facts)
+        old_context = _pinned_context(graph.db, row.get('source_context'), versions)
+        if old_context['unavailable_source_pin']:
+            if notes is not None:
+                notes.append(f"contact decision {row['decision_id']}: unavailable_source_pin")
+            continue
+        effective_facts = {**facts, **_facts(current.get('facts'))[0]}
+        comparison_facts, declaration_reason = old_facts, ''
+        old_item, new_item = old_facts.get('work_item'), effective_facts.get('work_item')
+        if old_item and old_item.lower() != (new_item or '').lower():
+            old_state, old_identity = _declared_work_item(graph.db, old_context, old_item, bindings)
+            new_state, new_identity = _declared_work_item(graph.db, current, new_item, bindings)
+            if old_state == new_state == 'linked' and old_identity[:2] == new_identity[:2]:
+                # Different explicit work items are relationships, not a
+                # material boundary for contact learning. All other facts,
+                # namespace, topic and path gates remain mandatory.
+                comparison_facts = {k: v for k, v in old_facts.items() if k != 'work_item'}
+                declaration_reason = (f'declared_work_item_match: historical {old_item} -> '
+                    f'{":".join(old_identity)}; current {new_item} -> {":".join(new_identity)}')
+            elif old_state == new_state == 'linked' and notes is not None:
+                notes.append(f"contact decision {row['decision_id']}: work_item_namespace_conflict: "
+                             f'historical {":".join(old_identity[:2])}; current {":".join(new_identity[:2])}')
+            elif notes is not None:
+                notes.append(f"contact decision {row['decision_id']}: work_item_declaration: "
+                             f'historical={old_state}; current={new_state}')
+        typed = _typed_match(old_context, current, comparison_facts, facts)
         if typed['conflict'] or ((typed['missing_source_namespaces'] or typed.get('missing_facts')) and not missing_scope):
             if notes is not None:
                 notes.append(f"contact decision {row['decision_id']}: " + '; '.join(typed['reasons']))
@@ -333,10 +426,14 @@ def _matching(graph, repo, question, path, context, category, facts, *, missing_
             continue
         if notes is not None and typed['factor'] < 1:
             notes.append(f"contact decision {row['decision_id']}: typed_context_unknown; reduced confidence")
-        effective_facts = {**facts, **_facts(current.get('facts'))[0]}
-        if any((k in effective_facts or not missing_scope) and effective_facts.get(k, '').lower() != v.lower()
-               for k, v in old_facts.items()):
+        conflicting = [k for k, v in comparison_facts.items()
+                       if (k in effective_facts or not missing_scope) and effective_facts.get(k, '').lower() != v.lower()]
+        if conflicting:
+            if notes is not None:
+                notes.append(f"contact decision {row['decision_id']}: scope_fact_conflict: " + ', '.join(sorted(conflicting)))
             continue
+        if declaration_reason:
+            typed['reasons'].append(declaration_reason)
         old_topics = set(primary_scopes(row['question'], row['category']))
         if topics and old_topics and not topics & old_topics:
             continue

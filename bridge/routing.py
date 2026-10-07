@@ -52,6 +52,7 @@ def route_ranked(store: Graph, repo: str, question: str,
     learned_details = {}
     learned = candidates(store, repo, question, path, context, category, facts, task_id=task_id,
                          decision_id=decision_id, contact_context=contact_context, details=learned_details, notes=notes)
+    declined = {p['name'] for p, outcome, *_ in learned if outcome == 'declined'}
     if learned:
         # Keep the existing authority precedence, including narrower paths and
         # decider versus approver. A pending referral is only a candidate.
@@ -59,7 +60,6 @@ def route_ranked(store: Graph, repo: str, question: str,
         matches = _authority_matches(store, repo, hits or [], question, context, category, path, also_paths)
         explicit_ids = {a['id'] for a in store.authority_rows(repo) if a['source'] not in ('referral', 'answer')}
         fixed = {a['name'] for a in matches if a['strong'] and a['role'] == 'decides' and a['id'] in explicit_ids}
-        declined = {p['name'] for p, outcome, *_ in learned if outcome == 'declined'}
         verified = [r for r in ranked if r[0] in fixed]
         prior = [(p['name'], [contact_evidence(store, p, outcome, did, learned_details.get((p['id'], outcome, did)))], (2 if outcome == 'answered' else 1) + score)
                  for p, outcome, score, did, _ in learned
@@ -88,7 +88,8 @@ def route_ranked(store: Graph, repo: str, question: str,
         rows = store.intents_by_ref([record["ref"].lstrip("#")], repo)
         for row in rows:
             person = contact_for(store, row["author"])
-            if person and person["slack_id"] and person["slack_id"] not in unavailable:
+            if (person and person['name'] not in declined
+                    and person["slack_id"] and person["slack_id"] not in unavailable):
                 return [(person["name"], [f"inferred first contact: authored {record['ref']}; "
                                           "ask them to confirm who decides, not presumed authority"], 0.3)]
     from .ladder import _meaningful_terms, _void
@@ -103,7 +104,7 @@ def route_ranked(store: Graph, repo: str, question: str,
         if _void(row) or not (len(overlap) >= 2 or (same_path and overlap)):
             continue
         person = contact_for(store, row["author"])
-        if (person and person["slack_id"] and person["slack_id"] not in unavailable
+        if (person and person['name'] not in declined and person["slack_id"] and person["slack_id"] not in unavailable
                 and person != store.find_person(requester)):
             return [(person["name"], [f"inferred first contact: authored {row['kind']} {row['ref']} "
                                       f"({row['title']}); confirm or refer in Slack"], 0.3)]
