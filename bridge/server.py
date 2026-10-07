@@ -604,7 +604,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
             protocol over HTTP, and nothing a person decides with."""
             parts = path.strip("/").split("/")
             return (path in ("/api/tasks/start", "/api/runs", "/api/decisions")
-                    or (len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] in {"nodes", "settle", "finish"})
+                    or (len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] in {"nodes", "settle", "finish", "work-items"})
                     or (len(parts) == 4 and parts[:2] == ["api", "runs"] and parts[3] == "status"))
 
         def do_POST(self):
@@ -866,6 +866,10 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         from .canvas import add_note
                         self.attribute(data, "by")
                         result = add_note(store, parts[2], data, actor=self.actor(data))
+                    elif len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "work-items":
+                        if 'task_id' in data and data['task_id'] != parts[2]:
+                            raise Invalid('task_id must match the task in the URL')
+                        result = store.link_work_item({**data, 'task_id': parts[2]})
                     elif len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] in {"nodes", "settle", "finish"}:
                         from . import canvas
                         from .config import load

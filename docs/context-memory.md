@@ -511,3 +511,86 @@ renames, native identity aliases, old pins/new heads, lifecycle/availability,
 repository isolation, metadata omission, explicit bounds, restart and immutable
 history/proof checks. It is registered with the real PostgreSQL test loader;
 provider calls are not required.
+
+### Link an existing work item
+
+Reading or looking up a source does not attach it to a task. After an exact
+`bridge_lookup_record` match, read the selected record with `bridge_get_record`,
+then call `bridge_link_work_item`. The equivalent authenticated REST operation
+is `POST /api/tasks/{task_id}/work-items`, with the same fields except that
+`task_id` may be omitted; a supplied ID must match the URL.
+
+Copy `record_id`, `source_version_id`, `repo`, `provider`, `namespace`, and
+`external_id` from that read's `source`; pass its `kind` as `object_kind`.
+Alternatively use its exact current `ref` instead of `external_id`, never both.
+Ref collisions are refused even when an opaque record ID is also provided:
+use the selected source's stable external ID to disambiguate. IDs and namespace
+selectors must agree. No newest match, alias guess, prose extraction or silent
+reimport occurs. Legacy sources also expose the required canonical fields.
+
+`role` is `work_item` by default, or `context`. Both are informational task
+associations. They do not create decision premises, signatures, approval,
+read receipts, notifications, or human authority. Decisions on the task are
+returned by lookup as `task_anchor_association`, not `decision_premise`.
+The existing `bridge_settle_node(source_evidence=...)` route already accepts
+`role: "work_item"` (or `"context"`) with exact record/version pins, without
+reimporting. That creates a **decision-level association** while recording an
+unsigned answer proposal that still needs human sign-off. It does not create a
+task anchor. Its `work_item` and `context` roles remain informational; only
+`support` and `contradiction` are premises. The new `bridge_link_work_item`
+operation is for **pure task context**: it leaves the decision answer,
+revision, source edges, and sign-off state untouched. Both routes remain
+supported, and lookup distinguishes `decision_association` from
+`task_anchor_association`.
+
+The new link operation checks the exact task repository, canonical identity,
+current version, source availability and retrieval freshness in the same
+SQLite/PG writer transaction as the insert. A changed head requires a fresh
+read. Existing task anchors establish each provider's selected namespace set;
+the new operation refuses to widen that provider to a different installation.
+An explicitly selected different provider may be added as context. Existing
+associations and decision dependencies remain. A successful retry on an open
+task against the same current pin returns `changed: false` without another history event. A
+newly read version is an additional historical pin, never a replacement.
+
+The new operation rejects completed and abandoned tasks. This is a boundary
+of this API, not a newly universal restriction: existing `bridge_import_record`
+with `task_id` and `anchor_role` retains its prior behavior, including explicit
+multiple-namespace anchoring. Old completed rows, decision snapshots,
+signatures and saved proof bundles are not migrated or reconstructed.
+
+`facts.work_item` is a structured declaration, not a graph link. Task kickoff,
+tree, individual node/decision and task history reads expose
+`work_item_association` with `declared`, `status`, `record_ids`, `links`,
+`historical`, and `notice`. Each informational link carries its exact identity
+and pin plus `origin: "task"` or `"decision"`; a decision's work-item edge is
+never relabeled as a task anchor. Supporting evidence is excluded from this
+association list. Tree nodes include the link identities even when the task's
+anchor list is returned separately.
+Matching uses exact equality against already explicitly attached work-item
+records' stored `ref` or `external_id`; it does not search or infer new pins.
+
+- `unlinked`: the named ID has no matching explicit work-item association.
+- `linked`: matching pins identify one record; their versions can be historical.
+- `ambiguous`: matching associations identify distinct records.
+- `undeclared`: there is no structured ID. Existing anchors remain separately
+  visible; arbitrary question/context/client-reference text is not parsed.
+
+A `context` anchor cannot satisfy a declared work item. Decision reads may
+also recognize their own existing active `work_item` source edges; duplicate
+nodes never borrow another task's association. Changing the declaration does
+not remove old anchors or evidence. Unlinked state is visible context, not a
+new completion or approval gate. Task pages, owner decision history and personal
+briefs show association separately from source evidence and authority.
+On completed or abandoned tasks, unlinked or ambiguous declarations are
+explicitly historical and direct new work to a new task, not to the closed-task
+link operation. Namespace checks use each anchor's pinned canonical snapshot;
+native git-to-GitHub alias upgrades cannot hide an existing namespace selection.
+
+`tests/test_work_item_links.py` covers the supported lookup/read/link flow,
+MCP/REST parity and permissions, ambiguity, stale/current versions, wrong
+scope, concurrent retries and source races, existing imports, declarations,
+and signature/proof preservation with entirely synthetic offline inputs.
+`tests/browser-work-item-links.cjs` exercises actual Chromium against a local
+synthetic fixture: MCP lookup/read/link, REST retry, task and owner views,
+unlinked-to-linked display, retained historical pins, and no approval changes.

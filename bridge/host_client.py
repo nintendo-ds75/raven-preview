@@ -158,6 +158,11 @@ def hook(config, host, payload, *, deadline=None):
         text += ('Task already registered as ' + result['task_id'] + '. Do not create another task for this prompt. '
                  'Read bridge_get_tree for current decisions and evidence. Discover the relevant files yourself. '
                  'Use this task_id when adding decisions and finishing. ')
+    if 'bridge_link_work_item' in tools:
+        text += ('For an existing external work item, use bridge_lookup_record, read its current version with '
+                 'bridge_get_record, then bridge_link_work_item to attach it to this task without reimporting. '
+                 'facts.work_item alone remains unlinked; copying an ID into prose or client_ref creates no link. '
+                 'A task association is context, never supporting evidence or approval. ')
     text += 'Start a separate task in this session with the plain-text prefix Raven new task: followed by the request.'
     return {'hookSpecificOutput': {'hookEventName': event_name, 'additionalContext': text}}
 

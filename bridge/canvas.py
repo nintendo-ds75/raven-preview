@@ -255,6 +255,12 @@ def start_task(store, cfg, data) -> dict:
             if merged != current:
                 graph.db.execute("UPDATE runs SET facts=? WHERE id=?", (json.dumps(merged), task_id))
         result["facts"] = merged
+    if task_id:
+        from . import context_memory as cm
+        from .work_items import association
+        row = store.graph.db.execute('SELECT facts,status FROM runs WHERE id=?', (task_id,)).fetchone()
+        result['source_anchors'] = cm.anchors(store.graph.db, task_id)
+        result['work_item_association'] = association(row['facts'], result['source_anchors'], task_status=row['status'])
     return result
 
 
@@ -1441,6 +1447,11 @@ def node_view(store, decision_id: str, repeated: bool = False) -> dict:
     view = _view(row, repeated, canonical)
     from . import context_memory as cm
     view['sources'] = cm.edges(store.graph.db, canonical['id'] if canonical else decision_id)
+    from .work_items import association
+    source_anchors = cm.anchors(store.graph.db, row['run_id'])
+    task_status = store.graph.db.execute('SELECT status FROM runs WHERE id=?', (row['run_id'],)).fetchone()['status']
+    view['work_item_association'] = association(row['facts'], source_anchors,
+        cm.edges(store.graph.db, decision_id) if canonical else view['sources'], task_status=task_status)
     view['source_reuse_requires_review'] = bool((canonical if canonical else row)['source_reuse_uncertain'])
     view['source_provenance'] = 'versioned' if view['sources'] and not view['source_reuse_requires_review'] else 'unknown'
     view['source_notice'] = cm.provenance_notice((canonical if canonical else row)['source'], view['sources'], (canonical if canonical else row)['source_reuse_uncertain'])
@@ -1625,11 +1636,16 @@ def get_tree(store, task_id: str) -> dict:
             loaded[r["id"]] = r
     nodes = [_view(r, canonical=loaded.get(r["superseded_by"]) if r["status"] == "duplicate" else None)
              for r in rows]
+    from . import context_memory as cm
+    from .work_items import association
+    source_anchors = cm.anchors(graph.db, task_id)
     from .context_connectors import blocked_decisions
     context_blocked = blocked_decisions(graph.db, run['repo'])
     for node in nodes:
         from . import context_memory as cm
         node['sources'] = cm.edges(graph.db, node.get('duplicate_of') or node['node_id'])
+        node['work_item_association'] = association(node['facts'], source_anchors,
+            cm.edges(graph.db, node['node_id']) if node.get('duplicate_of') else node['sources'], task_status=run['status'])
         source_row = loaded.get(node.get('duplicate_of') or node['node_id'])
         node['source_reuse_requires_review'] = bool(source_row and source_row['source_reuse_uncertain'])
         node['source_provenance'] = 'versioned' if node['sources'] and not node['source_reuse_requires_review'] else 'unknown'
@@ -1765,7 +1781,17 @@ def get_tree(store, task_id: str) -> dict:
                      "bridge_finish_task again with your current diff to read it against the questions and answers as they stand, "
                      "and do not report the change as following them until then")
     from . import context_memory as cm
-    return {"source_anchors": cm.anchors(graph.db, task_id), "task_id": task_id, "title": run["title"], "goal": run["goal"] or "", "repo": run["repo"],
+    work_item = association(run['facts'], source_anchors, task_status=run['status'])
+    association_states = {work_item['status'], *(n['work_item_association']['status'] for n in nodes)}
+    if association_states & {'unlinked', 'ambiguous'}:
+        if work_item['historical']:
+            parts.append('A historical work-item declaration is unlinked or ambiguous on this closed task; preserve its history and start a new task for a new association')
+        else:
+            if 'unlinked' in association_states:
+                parts.append('A declared work item is unlinked; inspect work_item_association and use bridge_link_work_item after exact lookup and read. This is context, not an approval gate')
+            if 'ambiguous' in association_states:
+                parts.append('A declared work item matches multiple recorded identities. Inspect work_item_association.links and their origins; report the ambiguity until the intended work item is explicit. Adding another association cannot narrow existing links')
+    return {"source_anchors": source_anchors, "work_item_association": work_item, "task_id": task_id, "title": run["title"], "goal": run["goal"] or "", "repo": run["repo"],
             "requester": run["requester"] or "", "facts": _json_dict(run["facts"] if "facts" in run.keys() else ""),
             "status": run["status"], "verdict": run["verdict"] or "",
             "verdict_why": run["verdict_why"] or "", "counts": dict(counts),
@@ -1846,7 +1872,9 @@ def trace(store, task_id: str) -> dict:
                                  "answered_by", "required_signers", "signatures", "needs_review", "reusable")}
              for n in _flatten(get_tree(store, task_id)["nodes"])]
     from . import context_memory as cm
-    return {"source_anchors": cm.anchors(graph.db, task_id), "task_id": task_id, "title": run["title"], "status": run["status"], "events": events,
+    from .work_items import association
+    source_anchors = cm.anchors(graph.db, task_id)
+    return {"source_anchors": source_anchors, "work_item_association": association(run['facts'], source_anchors, task_status=run['status']), "task_id": task_id, "title": run["title"], "status": run["status"], "events": events,
             "notifications": notifications, "nodes": nodes, "notes": task_notes(store, task_id)}
 
 

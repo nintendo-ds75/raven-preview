@@ -188,6 +188,18 @@ function sourceReview(f) {
   return `<section class="brief-source-review"><h3>Evidence for this answer</h3><p>${esc(r.notice)}</p>${r.retires_rule ? '<p>Reapproving changed evidence retires the old standing rule. This signature applies here.</p>' : ''}${sources}${dependencies}${r.has_reliance ? (r.available ? '<label><input id="brief-source-confirm" type="checkbox" required> I reviewed the sources and source decisions shown here. Bind my answer to these exact revisions.</label>' : '<p>Current evidence is unavailable. Signing waits until it can be reviewed.</p>') : '<p>These context and work-item snapshots are informational. They do not require source revalidation.</p>'}</section>`;
 }
 
+function workItemContext(f) {
+  const a = f.work_item_association;
+  const sources = a?.links || [...(f.source_anchors || []).map(s => ({...s, origin:'task'})),
+    ...(f.sources || []).filter(s => ['work_item','context'].includes(s.role)).map(s => ({...s, origin:'decision'}))];
+  if (!a?.declared && !sources.length) return '';
+  const warning = a?.historical && ['unlinked','ambiguous'].includes(a.status)
+    ? '<p>Historical declaration on a closed task. Preserve its recorded history; start a new task for a new association.</p>'
+    : a?.status === 'unlinked' ? '<p>This declared ID has no explicit work-item link. Historical links are not reconstructed from text.</p>'
+    : a?.status === 'ambiguous' ? '<p>Multiple linked records match this ID. Inspect the canonical identities below.</p>' : '';
+  return `<details class="brief-why work-item-context" open><summary>Work-item context${a?.declared ? ` · ${esc(a.declared)} · ${a.historical ? 'Historical ' : ''}${esc(a.status)}` : ''}</summary><p>Context associations only, never supporting evidence or approval.</p>${warning}${sources.map(s => `<p data-work-item-origin="${esc(s.origin)}">${s.origin === 'decision' ? 'Decision association' : 'Task association'} · ${esc(s.ref)} · ${esc(s.role)} · ${s.current ? 'current observed version' : 'historical or unavailable version'}<br>${esc(s.provider)} / ${esc(s.namespace)} / ${esc(s.kind)} / ${esc(s.external_id)}<br>Record ID: ${esc(s.record_id)}<br>Recorded source version: ${esc(s.source_version_id)}</p>`).join('')}</details>`;
+}
+
 function focusCard(f) {
   if (!f) return '';
   const standing = focusStanding(f);
@@ -219,6 +231,7 @@ function focusCard(f) {
     ${back}<p class="brief-kicker">${kicker}</p>
     <h2 id="focus-question" tabindex="-1">${esc(f.question)}</h2>
     <pre class="context-box approval-scope">${esc(f.approval_scope_text)}</pre>
+    ${workItemContext(f)}
     ${f.brief ? `<p class="brief-lead">${prose(f.brief)}</p>` : ''}
     ${f.context ? `<div class="brief-block"><span class="label">Context from the coding agent</span><p>${prose(f.context)}</p></div>` : ''}
     ${found.length ? `<div class="brief-block"><span class="label">What Raven found</span>${foundList(found)}</div>` : ''}

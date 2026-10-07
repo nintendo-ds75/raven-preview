@@ -621,7 +621,7 @@ class Store:
         with self.connect() as db:
             from .context_memory import reuse_uncertainty_sql
             row = db.execute("SELECT d.*, " + reuse_uncertainty_sql() + " AS source_reuse_uncertain, " + """o.name AS owner_name,o.team AS owner_team,
-                r.title AS run_title,r.agent,r.repo FROM decisions d
+                r.title AS run_title,r.agent,r.repo,r.status AS task_status FROM decisions d
                 LEFT JOIN owners o ON o.id=d.owner_id JOIN runs r ON r.id=d.run_id WHERE d.id=?""", (decision_id,)).fetchone()
             if not row:
                 raise Invalid("Decision not found")
@@ -647,6 +647,11 @@ class Store:
             result["revision"] = revision(db, decision_id)
             from . import context_memory as cm
             result['sources'] = cm.edges(db, decision_id)
+            from .work_items import association
+            result['source_anchors'] = cm.anchors(db, row['run_id'])
+            result['work_item_association'] = association(row['facts'], result['source_anchors'], result['sources'], task_status=row['task_status'])
+            result['work_item_history'] = [dict(event) for event in db.execute(
+                "SELECT * FROM events WHERE run_id=? AND kind='work_item_linked' ORDER BY id", (row['run_id'],))]
             result['context_history'] = cm.history(db, decision_id)
             result['source_provenance'] = 'versioned' if result['sources'] and not result['source_reuse_uncertain'] else 'unknown'
             result['source_reuse_requires_review'] = bool(result['source_reuse_uncertain'])
@@ -1535,6 +1540,10 @@ class Store:
             db.execute('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY'
                        if getattr(db, 'dialect', '') == 'postgres' else 'BEGIN')
             return source_lookup.lookup(db, **query)
+
+    def link_work_item(self, data):
+        from .work_items import link
+        return link(self, data)
 
     def ownership(self, repo="", limit=200):
         """The live ownership rows, of one repository when named; limit 0
