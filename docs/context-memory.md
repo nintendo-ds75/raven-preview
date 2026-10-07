@@ -406,6 +406,88 @@ active child receives its own reviewed current source pins.
 Teams callbacks without real messages, provider requests, or model calls. The
 same cases are registered for the PostgreSQL loader.
 
+### Private conversation about attached sources
+
+Natural-language questions and chat can use the source snapshots already
+selected by the owner's current source review. Intent is interpreted before
+adding the new bound-source projection. Existing task and conversation history
+remain unchanged and may include earlier confirmed source readbacks; this is
+not a claim that historical source text is absent from the initial request.
+Before a response-only reading receives source text,
+Raven refreshes the decision projection and reuses the existing full-readback
+disclosure boundary: `authz.check` with `answer` for a pending decision or
+`correct` otherwise, using the concrete delivery actor. The actor-neutral
+`Store.get_decision` projection alone is not permission to disclose sources.
+The internal-caller exemption is not used. This adds no eligibility rules and
+does not invoke an answer, correction, proposal, signature or other action.
+
+The response pass receives complete entries from `source_revalidation`, including
+exact source versions, status, body, metadata and source-decision applicability.
+`previous_version_id` and `changed` distinguish the old attached version from a
+current review candidate; discussing the new version does not adopt it. Source
+`source_updated_at` remains the provider-supplied update time, not a claim that
+the provider was just fetched. Observation-only refreshes that leave the existing
+review projection unchanged do not invalidate the reply. There is no arbitrary
+document fetch, source search fallback, source refresh or access expansion here.
+
+The added `bound_source_review` projection is limited to 24,000 encoded JSON
+bytes, using the same escaping as the model payload. This limit is for the added
+projection, not the entire pre-existing task/conversation request. Whole source
+or dependency entries that do not fit are omitted, with explicit counts and
+`complete`/`truncated` flags; bodies are never silently shortened. Oversized
+review notices are explicitly omitted, not rewritten into a substitute notice.
+The original review projection is unchanged. If the existing review is
+unavailable, the source/dependency text is withheld and its bounded notice is
+preserved. An unavailable bound review also suppresses transient Slack search
+for that reply, even if an interaction token is supplied; search is not an
+alternate route around its blocker. Ordinary Slack search without a bound review retains
+its existing permissions and ephemeral handling. Available bound evidence may
+share a response pass with those authorized transient results.
+Server-written reply notices disclose these limitations and direct
+the participant to their existing task review link for the complete review.
+
+The response-only pass can return only question/chat. Source text is untrusted
+evidence; instructions inside it cannot choose an action, supply approval, change
+roles or make a rule. Before returning, Raven rechecks both the same disclosure
+gate and the current decision/source projection. A material change discards the
+source-informed reply. The refreshed response payload and its final recheck
+include current authorization, review, sign-off and speaker-signature state,
+which can change without changing the answer/scope revision. This only keeps
+the explanation current; it adds no signing or eligibility logic.
+Gate refusal returns only the original, unenriched
+clarification; it does not try another source retrieval route. Ordinary private
+questions add no task note or sign-off. Source-informed replies use the existing
+ephemeral delivery path, so their text is not saved in conversation history,
+webhook receipts or the reply retry queue. After a send failure, the queue holds
+only a request to ask again for current sources. Existing confirmed source
+readback storage and consent rules remain separate and unchanged.
+If the response reading fails, its diagnostic contains a fixed failure label,
+not external error text that may echo source content. The failed explanation
+also leaves any pending confirmation readback intact. Initial intent-reading
+failure and repair behavior remain unchanged.
+
+Normally this adds one logical model reading for an eligible source-backed
+question/chat: the initial `slack_conversation` interpretation without the new
+bound-source projection, then the
+response-only `slack_conversation_sources` reading. The latter uses the existing
+fast model and 1,600-token requested output budget. It contributes to the existing
+process-level `USAGE` call/token totals; this is not a new durable billing ledger.
+Existing client retries and the intent repair budget still apply, so provider
+attempts may exceed the logical reading count. If transient Slack search results
+are also supplied, they share that response pass rather than requiring a third
+logical reading. Source-free conversations, direct shortcuts and human action
+interpretations do not acquire a source-response pass.
+
+`tests/test_conversation_sources.py` uses the existing synthetic owner fixture
+and mocked disclosure refusal, source reads and model outputs. It checks exact
+projection, status/version/applicability fields, both disclosure checks, changed
+and unavailable sources, blocked search fallback, size omissions, response-only actions and private
+non-retention. These are deterministic control tests, not evidence of live model
+fidelity, provider permission correctness or broader participant eligibility.
+They do not review or change identity resolution, required-approver rules or
+owner-link isolation. The module is registered with the PostgreSQL loader;
+registration alone does not claim a PostgreSQL run.
+
 `tests/test_legacy_source_reuse.py` adds synthetic legacy migration/restart,
 auto-rules-on, malformed/partial provenance, immutable proof, current-source
 review, independent replacement, and active-dependent gates. It is registered

@@ -641,7 +641,7 @@ class Delivery:
             raise
         if event_id:
             from .slack_chat import EphemeralReply
-            kept = 'Search response is not retained. Ask again for current Slack sources.' if isinstance(reply, EphemeralReply) else reply
+            kept = 'Evidence response is not retained. Ask again for current sources.' if isinstance(reply, EphemeralReply) else reply
             with graph.transaction():
                 graph.db.execute("UPDATE webhook_receipts SET state='applied', reply=?, error='', updated_at=? WHERE id=?",
                                  (kept, now_iso(), event_id))

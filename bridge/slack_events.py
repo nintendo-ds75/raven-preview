@@ -109,7 +109,7 @@ class Inbox:
         from .slack_chat import EphemeralReply
         transient = isinstance(text, EphemeralReply)
         key = event_id or hashlib.sha256((channel + thread + text).encode()).hexdigest()
-        kept = ('The live Slack search response was not retained. Please ask again for current sources.'
+        kept = ('The evidence response was not retained. Please ask again for current sources.'
                 if transient else text)
         with self.graph.transaction():
             self.graph.db.execute('''INSERT INTO slack_replies(id,channel,thread_ts,text)

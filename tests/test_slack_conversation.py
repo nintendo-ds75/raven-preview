@@ -32,6 +32,15 @@ class ConversationTests(DeliveryCase):
         with patch('bridge.slack_chat.reading',return_value=model or {'kind':'chat','reply':'Tell me more.'}):
             return self.reply(self.message,who,text,event_id)
 
+    def assert_source_clarification_passes(self, model):
+        self.assertEqual(model.call_count, 2)
+        intent, response = [call.args[1] for call in model.call_args_list]
+        self.assertIsNot(intent, response)
+        self.assertNotIn('response_mode', intent)
+        self.assertNotIn('bound_source_review', intent)
+        self.assertEqual(response['response_mode'], 'private_clarification')
+        self.assertTrue(response['bound_source_review']['available'])
+
     def test_schema_repaired_policy_still_requires_a_fresh_human_yes(self):
         policy = ('Add a boolean accessor. Missing values return the exact default object unchanged. '
                   'Invalid values raise ValueError. This approval is for this task only; it is not a standing rule.')
@@ -199,7 +208,7 @@ class ConversationTests(DeliveryCase):
         with patch('bridge.slack_chat.reading', return_value={
                 'kind': 'question', 'reply': 'The upstream constraint changed, so fresh review is needed.'}) as model:
             result = self.reply(self.message, 'UWES', 'Why am I being asked to review this again?')
-        self.assertEqual(model.call_count, 1)
+        self.assert_source_clarification_passes(model)
         self.assertIn('fresh review', result)
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
         self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
@@ -210,7 +219,7 @@ class ConversationTests(DeliveryCase):
         with patch('bridge.slack_chat.reading', return_value={
                 'kind': 'chat', 'reply': 'The current answer is already signed.'}) as model:
             result = self.reply(self.message, 'UWES', policy)
-        self.assertEqual(model.call_count, 1)
+        self.assert_source_clarification_passes(model)
         self.assertIn('already signed', result)
         self.assertTrue(self.store.get_decision(self.n['node_id'])['authorized'])
         self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
@@ -445,7 +454,7 @@ class ConversationTests(DeliveryCase):
             with patch('bridge.slack_chat.reading', return_value={
                     'kind': 'question', 'reply': 'The agent supplied a different summary.'}) as model:
                 response = self.reply(self.message, 'UWES', 'Why does this need a signature again?')
-            model.assert_called_once()
+            self.assert_source_clarification_passes(model)
             self.assertFalse(model.call_args.args[1]['repeats_previous_answer'])
             self.assertIn('different summary', response)
             self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
