@@ -14,7 +14,7 @@ import sys
 from . import canvas
 from .config import load
 from .ingest import index_repo
-from .store import Invalid, graph_summary, ownership_rows
+from .store import Invalid
 
 MAX_LINE = 1 << 20
 PROTOCOL_VERSION = '2025-06-18'
@@ -66,7 +66,11 @@ TOOLS = [
          {"task_id": "Completed task ID, previously finished with the complete diff"}, ["task_id"]),
     tool("bridge_search_decisions", "Find similar approved or evidence-resolved decisions as evidence (stemmed lexical overlap, hashed cosine, FTS5, recency-weighted). These are approvals for their original context, not blanket authorization for new work. options are proposals; the recorded human answer may refine them or fall outside them. Read the answer and rationale rather than infer a selected option.",
          {"query": "Question to search", "repo": "Optional repository scope"}, ["query"]),
-    tool("bridge_list_owners", "List discovered Slack contacts, any optional verified authority map (who knows, decides or approves which paths, decision categories or repositories), any optional coordinator, the configured owners with their path patterns, and the ownership graph inferred from git (blame, CODEOWNERS, reviews) per repository.", {"repo": "Optional repository scope"}, []),
+    tool("bridge_list_owners", "Discover contacts, teams, optional verified authority, configured owners and inferred ownership with bounded pages. Discovery is never approval: omitted or unmatched rows do not mean no owner or required approver. Follow pagination.next_cursor with the same arguments until has_more is false; if results change, discard prior pages and restart. Use bridge_add_node for actual routing and bridge_get_tree for signoff.",
+         {"repo": "Optional exact repository scope for ownership/authority, including global authority. Contacts, owners, teams and graph totals stay organization-wide.",
+          "query": "Optional case-insensitive substring of displayed names, emails, handles, teams, paths, scopes or other row text, independently per list (at most 200 characters).",
+          "limit": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Total rows across all lists per page, including graph.repos: 1 to 200, default 100. A 48 KiB JSON-encoded content budget may return fewer intact rows."},
+          "cursor": "pagination.next_cursor from the previous page; repeat the same query, repo and limit. This is a position, never a credential or authority grant."}, []),
     tool("bridge_ingest_repo", "Build or refresh the ownership map and record graph from a local git checkout (shared HTTP instances require an operator credential; ordinary agent credentials use the checkout ingested during setup): git log, blame shares, CODEOWNERS, Reviewed-by trailers, merged and squashed PRs.",
          {"path": "Absolute path to a local git checkout", "repo": "Optional repository name override", "max_commits": "Optional history depth (0 = all)"}, ["path"]),
     tool("bridge_import_record", "Import a ticket, document or Slack record retrieved through your connected tools. Copy the source accurately, including status, author and permalink. This is evidence and a routing signal, never human authorization. Do not import secrets, unrelated private records, or Slack Real-time Search results (they must stay transient).",
@@ -195,22 +199,8 @@ def _github_status(store):
 
 
 def _list_owners(store, args):
-    repo = args.get("repo", "")
-    with store.connect() as db:
-        owners = [dict(row) for row in db.execute("SELECT * FROM owners ORDER BY created_at")]
-        graph = graph_summary(db)
-        rows = ownership_rows(db, repo, limit=0)
-    settings = store.settings()
-    return {"owners": owners, "ownership": rows, "graph": graph,
-            "people": [{k: p[k] for k in ("id", "name", "email", "github_login", "team", "teams", "active")}
-                       for p in store.people()],
-            "authority": [{k: a[k] for k in ("id", "who", "is_team", "scope_kind", "scope", "role", "repo", "source",
-                                              "asserted_by", "accepted", "effective_to")}
-                          for a in store.authority(repo)],
-            "coordinator": (settings["coordinator"] or {}).get("name", ""),
-            "notice": "Verified authority (people, teams, the authority map) outranks what git history suggests; "
-                      "otherwise Raven infers a first contact from connected sources and asks in Slack. "
-                      "An optional coordinator or Slack triage channel receives questions it cannot route."}
+    from .owner_discovery import list_owners
+    return list_owners(store, args)
 
 
 def _ingest_repo(store, args):
