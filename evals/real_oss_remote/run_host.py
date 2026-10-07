@@ -71,13 +71,15 @@ def trace_state(records):
     pending, completed = {}, []
     for record in records:
         message = record["message"]
+        session = record.get('session', '')
+        key = (session, message.get('id'))
         if record["direction"] == "request":
             if message.get("method") == "initialize":
-                pending.clear()
+                pending = {k: v for k, v in pending.items() if k[0] != session}
             if message.get("method") == "tools/call":
-                pending[message["id"]] = record
-        elif message.get("id") in pending:
-            request = pending.pop(message["id"])
+                pending[key] = record
+        elif key in pending:
+            request = pending.pop(key)
             result = message.get("result", {})
             if result.get("isError") or "error" in message:
                 continue
@@ -143,7 +145,7 @@ def command(workspace, out, phase, host):
     config = {
         "mcp_servers.bridge.command": sys.executable,
         "mcp_servers.bridge.args": [str(HERE / "mcp_proxy.py")],
-        "mcp_servers.bridge.env_vars": ["BRIDGE_TOKEN", "BRIDGE_EVAL_URL", "BRIDGE_EVAL_TRACE"],
+        "mcp_servers.bridge.env_vars": ["BRIDGE_TOKEN", "BRIDGE_EVAL_URL", "BRIDGE_EVAL_TRACE", "BRIDGE_EVAL_AUDIT"],
         "mcp_servers.bridge.required": True,
         "mcp_servers.bridge.startup_timeout_sec": 20,
         "mcp_servers.bridge.tool_timeout_sec": 120,
@@ -193,8 +195,14 @@ def run(prepared, case_id, timeout, host="codex", restart=False):
     thread.start()
     trace_path = out / "mcp-trace.jsonl"
     env = {**os.environ, "BRIDGE_TOKEN": token, "BRIDGE_EVAL_URL": f"http://127.0.0.1:{server.server_port}",
-           "BRIDGE_EVAL_TRACE": str(trace_path)}
-    actions = []
+           "BRIDGE_EVAL_TRACE": str(trace_path), "BRIDGE_EVAL_AUDIT": str(out / 'audit.jsonl')}
+    from evals.audit.ledger import Ledger, ActionLog, TaskObserver
+    audit = Ledger(out / 'audit.jsonl', secrets=(token,))
+    audit.append('run_started', {'case': case_id, 'host': host,
+                               'fixture_manifest': json.loads((prepared / 'manifest.json').read_text()),
+                               'mode': 'legacy replay; not a sealed-fixture acceptance run'})
+    actions = ActionLog(audit)
+    observer = TaskObserver(audit)
     first_routes = {}
     replied = set()
     attempted_threads = set()
@@ -210,6 +218,7 @@ def run(prepared, case_id, timeout, host="codex", restart=False):
         for phase in phases:
             prompt = host_prompt(case, phase).replace("agent=codex-host", "agent=" + host + "-host")
             (out / f"host-prompt-{phase}.txt").write_text(prompt)
+            audit.append('host_prompt', {'phase': phase, 'text': prompt})
             with (out / f"host-events-{phase}.jsonl").open("w") as stdout, (out / f"host-stderr-{phase}.log").open("w") as stderr:
                 prior_count = len(read_trace(trace_path))
                 proc = subprocess.Popen(command(workspace, out, phase, host), stdin=subprocess.PIPE, stdout=stdout,
@@ -243,6 +252,7 @@ def run(prepared, case_id, timeout, host="codex", restart=False):
                     if tasks:
                         task_id = tasks[0]["id"]
                         tree = canvas.get_tree(store, task_id)
+                        observer.observe(tree, canvas.trace(store, task_id))
                         nodes = canvas._flatten(tree["nodes"])
                         delivery.deliver_now()
                         if waiting and not first_tree:
@@ -323,6 +333,8 @@ def run(prepared, case_id, timeout, host="codex", restart=False):
         if task_id:
             dump(out / "final-tree.json", canvas.get_tree(store, task_id))
             dump(out / "task-trace.json", canvas.trace(store, task_id))
+            audit.append('task_snapshot', canvas.get_tree(store, task_id))
+            audit.append('task_history', canvas.trace(store, task_id))
         dump(out / "first-routes.json", first_routes)
         dump(out / "simulation-actions.json", actions)
         # Include newly created tests/migrations in the review artifact.
@@ -341,6 +353,9 @@ def run(prepared, case_id, timeout, host="codex", restart=False):
                    "task_status": g.db.execute("SELECT status FROM runs WHERE id=?", (task_id,)).fetchone()[0] if task_id else "missing",
                    "host_exit_codes": [a["code"] for a in actions if a["event"] == "host_exit"]}
         dump(out / "summary.json", summary)
+        audit.append('run_finished', summary)
+        from evals.audit.viewer import render
+        render(out / 'audit.jsonl', out / 'audit.html')
         print(json.dumps(summary), flush=True)
     finally:
         if proc is not None and proc.poll() is None:

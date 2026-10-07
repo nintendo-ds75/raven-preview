@@ -140,3 +140,11 @@ required for microphone input. This is not a native Slack huddle or telephone
 integration; see [voice interview setup and limitations](docs/voice-interviews.md).
 
 The product is named Raven. The `bridge` Python package, `bridge_*` MCP tools, and `BRIDGE_*` settings retain their existing names for compatibility.
+
+## For contributors running evaluations
+
+The [evaluation audit tools](evals/audit/README.md) freeze historical inputs,
+record redacted MCP calls and evaluator interventions, and show what had been
+observed at each point in a run. The [engineering plan](docs/engineering-and-evaluation-plan.md)
+defines contact and question-quality measures, host connection work, and the
+context-layer design. It distinguishes implemented tooling from planned product work.

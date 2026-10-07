@@ -1,0 +1,34 @@
+{
+  "repo": "urllib3/urllib3",
+  "cutoff": "2025-10-06T00:00:00Z",
+  "baseline": "3d934808397b9cee14c6f399a4e6c9ddeb17a00d",
+  "present_head": "a164d79c8cf760f222daa2dc7f67d0e1ca7fb17c",
+  "future_commit_unavailable": true,
+  "manifest": {
+    "schema": "raven-replay-fixture-v1",
+    "cutoff": "2025-10-06T00:00:00Z",
+    "baseline": "3d934808397b9cee14c6f399a4e6c9ddeb17a00d",
+    "tree": "35e067a081d01239be3b12967086574a58d9a3a3",
+    "objects_sha256": "06cb4be5af41e6fd964601774548af4f5f36a495e0d39c2ac08ccdb8c7ab05a6",
+    "object_count": 22449,
+    "history_count": 4299,
+    "brief_sha256": "b9b5fb422ce76bf9ba9861ecbb71314829767333b416c26e96376e8f34c5385b",
+    "records_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "brief_provenance": {
+      "kind": "blinded_reconstruction",
+      "reviewer": "evaluator: demonstration, not a held-out scored task",
+      "reviewed_brief_sha256": "b9b5fb422ce76bf9ba9861ecbb71314829767333b416c26e96376e8f34c5385b",
+      "no_solution": true,
+      "no_expected_people": true,
+      "no_future_references": true
+    },
+    "boundary": "Only mount checkout and records into the host; filesystem/network isolation is external.",
+    "sha256": "6bbe0df53a0677cb7d7dbc8758c45f015bc55fdb11eac6ab8efd80d31dd6aa30"
+  },
+  "seconds": 1.01,
+  "last_500_commits": {
+    "count": 500,
+    "distinct_authors": 87,
+    "top_author_share": 0.228
+  }
+}

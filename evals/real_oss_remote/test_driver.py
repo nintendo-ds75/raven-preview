@@ -16,6 +16,14 @@ def response(ident, value, when=1):
 
 
 class MeasurementTests(unittest.TestCase):
+    def test_overlapping_sessions_do_not_pair_identical_rpc_ids(self):
+        a={**request(1,'bridge_wait'),'session':'a'}
+        b={**request(1,'bridge_get_tree'),'session':'b'}
+        reply={**response(1,{'nodes':[]}), 'session':'b'}
+        complete, waits=trace_state([a,b,reply])
+        self.assertEqual(complete[0][0]['message']['params']['name'],'bridge_get_tree')
+        self.assertEqual(waits,[a])
+
     def test_inflight_node_is_not_counted_and_finished_wait_is_not_active(self):
         trace = [request(1, "bridge_add_node"), request(2, "bridge_wait"), response(2, {})]
         complete, waits = trace_state(trace)
