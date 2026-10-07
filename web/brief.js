@@ -230,10 +230,10 @@ function focusCard(f) {
   return `<section class="task-panel brief-focus is-${standing}" id="focus" aria-labelledby="focus-question">
     ${back}<p class="brief-kicker">${kicker}</p>
     <h2 id="focus-question" tabindex="-1">${esc(f.question)}</h2>
-    <pre class="context-box approval-scope">${esc(f.approval_scope_text)}</pre>
+    ${approvalScope(f)}
     ${workItemContext(f)}
     ${f.brief ? `<p class="brief-lead">${prose(f.brief)}</p>` : ''}
-    ${f.context ? `<div class="brief-block"><span class="label">Context from the coding agent</span><p>${prose(f.context)}</p></div>` : ''}
+    ${!f.approval_scope && f.context ? `<div class="brief-block"><span class="label">Context from the coding agent</span><p>${prose(f.context)}</p></div>` : ''}
     ${found.length ? `<div class="brief-block"><span class="label">What Raven found</span>${foundList(found)}</div>` : ''}
     ${f.prediction ? `<div class="brief-block is-guess"><span class="label">How you decided before · a guess, not approved</span><p>${prose(f.prediction)}</p></div>` : ''}
     ${f.answer ? `<div class="brief-block is-answer"><span class="label">${mine ? 'Your answer' : (['signed', 'rule'].includes(f.signoff) ? 'Signed answer' : 'Answer on the table') + (f.answered_by ? ' · ' + esc(f.answered_by) : '')}</span><p>${prose(f.answer)}</p>${f.rationale ? `<p class="brief-why-line">Why: ${prose(f.rationale)}</p>` : ''}</div>` : ''}
@@ -548,7 +548,7 @@ function render() {
   root.innerHTML = `
     ${error ? `<p class="task-warning" role="alert">Refresh failed: ${esc(error)}. Showing the last successful read.</p>` : ''}
     <section class="brief-hero">
-      <h1>${esc(t.title)}</h1>
+      <h1>${esc(taskDisplayLabel(t, f, f ? 'Decision review' : 'Task overview'))}</h1>
       <p class="brief-ask">${heroLine(standing)}</p>
       <div class="metadata"><span>Requested by ${esc(data.requester.name || 'unknown')}</span><span>${esc(t.repo)}</span><span>${p.signed} of ${p.total} signed</span>${t.status === 'completed' ? '<span>Agent reported complete</span>' : ''}</div>
     </section>

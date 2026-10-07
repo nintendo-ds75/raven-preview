@@ -56,6 +56,7 @@ function harness() {
   };
   context.window = context;
   vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../web/presentation.js'), 'utf8'), context);
   vm.runInContext(source, context);
   const run = code => vm.runInContext(code, context);
   const click = (action, id) => document.dispatch('click', {target: {

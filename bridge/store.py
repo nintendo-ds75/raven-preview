@@ -663,7 +663,9 @@ class Store:
                 result['approval_pending'] = True
                 result['source_refresh_required'] = True
                 result['source_notice'] = 'External evidence needs a successful refresh before this answer can authorize work.'
-            from .approval_scope import render as render_scope
+            from .approval_scope import display_snapshot, field_labels, render as render_scope
+            result["approval_scope"] = display_snapshot(result)
+            result["approval_scope_labels"] = field_labels()
             result["approval_scope_text"] = render_scope(result)
             return result
 

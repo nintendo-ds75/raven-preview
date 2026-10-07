@@ -181,6 +181,7 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
     api: async path => {reads++;return path.endsWith('/tree') ? fixture.tree : fixture.trace;},render(){},
     esc: context.esc, pill: context.pill,icon:()=>'',avatar:()=>'',eventLabels:{owner_approved:'Decision recorded'}};
   vm.createContext(taskContext);
+  vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../web/presentation.js'), 'utf8'), taskContext);
   // task.js uses the actual shared renderer loaded by app.js in the page.
   vm.runInContext(source.slice(source.indexOf('function sourceEvidence('), source.indexOf('function sourceRevalidationFields(')), taskContext);
   vm.runInContext(taskSource + ';taskDetail=fixture;',taskContext);

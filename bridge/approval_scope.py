@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 
 # JSON columns have empty legacy spellings; normalize only their encoding,
 # never their values or the whitespace inside fact strings.
@@ -40,6 +41,41 @@ def snapshot(decision):
             value = '' if default is None else default
         result[key] = value
     return result
+
+
+def field_labels():
+    """Display labels for the same inventory that defines signature scope."""
+    return {key: label for key, label, _default in _FIELDS}
+
+
+def display_snapshot(decision):
+    """Export a browser-safe view, or use the existing exact scope text.
+
+    Legacy JSON columns can contain nonfinite numbers or negative zero. The
+    former makes the entire API response invalid JSON; JavaScript re-encoding
+    loses the latter and integers outside its exact range. Do not change the
+    stored values, canonical snapshot, revision or signature to display them.
+    """
+    def safe(value):
+        if isinstance(value, float):
+            return (math.isfinite(value)
+                    and not (value == 0 and math.copysign(1, value) < 0)
+                    and (not value.is_integer() or abs(value) <= 2**53 - 1))
+        if isinstance(value, int):
+            return abs(value) <= 2**53 - 1
+        if isinstance(value, dict):
+            return all(safe(item) for item in value.values())
+        if isinstance(value, list):
+            return all(safe(item) for item in value)
+        return True
+
+    scope = snapshot(decision)
+    try:
+        return scope if safe(scope) else None
+    except RecursionError:
+        # A deeply nested legacy value can still have an intact textual
+        # representation. Do not break the read while inspecting its display.
+        return None
 
 
 def digest(value):
