@@ -37,7 +37,8 @@ def apply(store, decision_id, data, actor=None):
         if canvas._fact_clashes(question, facts):
             raise Invalid('The corrected question conflicts with the task facts; create a separate scoped decision')
         ranked = rank_for_decision(graph, decision['repo'], question, paths,
-                                   context=decision.get('context') or '', facts=facts)
+                                   context=decision.get('context') or '', facts=facts,
+                                   task_id=decision['run_id'], decision_id=decision['id'])
         owner = ranked[0][0] if ranked else ''
         evidence = '; '.join(ranked[0][1]) if ranked else 'Reframed question needs a verified contact'
         owner_id = graph.owner_id_for(owner) if owner else None

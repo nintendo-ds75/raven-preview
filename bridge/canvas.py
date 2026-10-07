@@ -338,7 +338,7 @@ def kickoff(store, cfg, task_id: str, title: str, goal: str, repo: str, paths: l
     context_result = None
     if context_connectors._connection(store, scope):
         context_result = context_connectors.search(store, {'repo': scope, 'query': (goal or title)[:2000], 'task_id': task_id})
-    discovery = discover(store, cfg.without_models() if cfg else None, scope, title, goal, paths, requester)
+    discovery = discover(store, cfg.without_models() if cfg else None, scope, title, goal, paths, requester, task_id=task_id)
     if context_result is not None:
         discovery['context_retrieval'] = {**context_result['external'],
             'source_ids': [r.get('record_id') for r in context_result['sources']],
@@ -419,7 +419,7 @@ def _deciders_inside(graph, repo: str, areas: list[str]) -> list[dict]:
     return out[:3]
 
 
-def discover(store, cfg, repo: str, title: str, goal: str, paths: list[str], requester: str) -> dict:
+def discover(store, cfg, repo: str, title: str, goal: str, paths: list[str], requester: str, *, task_id='') -> dict:
     """What Raven knows about a task before any node exists: the areas
     the task names, who the signals point at, who is listed, the prior
     decisions that read like this task, and what is already pending."""
@@ -446,7 +446,7 @@ def discover(store, cfg, repo: str, title: str, goal: str, paths: list[str], req
                     break
         notes: list[str] = []
         ranked = rank_for_decision(graph, repo, "Who should approve this change: " + title,
-                                   paths[:1], context=goal, notes=notes, requester=requester, hits=hits)
+                                   paths[:1], context=goal, notes=notes, requester=requester, hits=hits, task_id=task_id)
         out["people"] = [{"name": n, "evidence": list(ev[:3]), "score": s} for n, ev, s in ranked[:3]]
         if not out["people"] and out["areas"]:
             out["people"] = _deciders_inside(graph, repo, [a["path"] for a in out["areas"]])
@@ -3182,7 +3182,7 @@ def _route_signer(graph, run, question, ctx, paths, requester, hints, category, 
     from .routing import rank_for_decision, coordinator_route
     repo = graph.resolve_repo(repo_key(run['repo']))
     ranked = rank_for_decision(graph, repo, question, paths, context=ctx, requester=requester, hints=hints,
-                               category=category, facts=facts)
+                               category=category, facts=facts, task_id=run['id'])
     source = graph.get_decision(source_id) if source_id else None
     temporary = source and graph.db.execute(
         "SELECT 1 FROM events WHERE decision_id=? AND kind='route_learning_optout' LIMIT 1", (source.id,)).fetchone()

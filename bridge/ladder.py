@@ -1539,7 +1539,8 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             acc_ranked = route_ranked(store, repo, question,
                                       path=d_path if d_path != "unknown" else "", context=d_context,
                                       notes=acc_notes, requester=d_requester, hints=d_hints,
-                                      category=d_category, also_paths=d_also, facts=d_facts)
+                                      category=d_category, also_paths=d_also, facts=d_facts,
+                                      task_id=task_id, decision_id=did)
             acc = acc_ranked[0] if acc_ranked else None
             if acc is None and acc_notes:
                 why_open.append("ownership: " + "; ".join(acc_notes))
@@ -2412,7 +2413,8 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
         ranked = route_ranked(store, repo, question,
                               path=d_path if d_path != "unknown" else "", context=d_context,
                               notes=route_notes, requester=d_requester, hints=d_hints,
-                              category=d_category, also_paths=d_also, facts=d_facts) if repo else []
+                              category=d_category, also_paths=d_also, facts=d_facts,
+                              task_id=task_id, decision_id=did) if repo else []
         owner_info = ranked[0] if ranked else None
         # The pilot mode: only what the organization verified routes on
         # its own; an inferred route goes to the coordinator with the

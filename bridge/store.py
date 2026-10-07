@@ -822,6 +822,9 @@ class Store:
             default = plan["default"]
             targets = [] if default["scope_kind"] == "none" else [(default["scope_kind"], default["scope"])]
             why_none = plan["why_none"]
+        contact_outcome = data.get('contact_outcome') or 'referred'
+        if contact_outcome not in ('referred', 'declined'):
+            raise Invalid('contact_outcome must be referred or declined')
         repo = decision["repo"] or ""
         learned = [(f"{scope} decisions" if kind == "category" else f"decisions on {scope}" if kind == "path"
                     else "every decision") + (f" in {repo}" if repo else "") for kind, scope in targets]
@@ -845,13 +848,20 @@ class Store:
             # The prediction was for the previous owner and goes with them;
             # an open question left marked as a prediction kept its
             # "Prediction" pill in the inbox with nothing predicted.
+            contact_snapshot = dict(db.execute('SELECT * FROM decisions WHERE id=?', (decision_id,)).fetchone())
+            referral_stamp = now()
             db.execute("UPDATE decisions SET owner_id=?, routing_reason=?, owner_evidence=?, prediction=NULL, "
                        "source_id=NULL, kind=CASE WHEN status='pending' AND kind='prediction' THEN 'new' ELSE kind END, "
                        "updated_at=?, actor_id=?, actor_name=?, actor_basis=? WHERE id=?",
-                       (owner_id, f"Referred to {person['name']} by {by}", why_them, now(),
+                       (owner_id, f"Referred to {person['name']} by {by}", why_them, referral_stamp,
                         actor.id if actor is not None else "", by, basis, decision_id))
             graph.append_event("owner_changed", {"task_id": decision["run_id"], "decision_id": decision_id,
                                                  "to": person["name"], "by": by, "referral": True})
+            from .routing_memory import observe
+            previous_contact = db.execute('SELECT person_id FROM owners WHERE id=?', (contact_snapshot['owner_id'],)).fetchone()
+            observe(graph, contact_snapshot, contact_outcome,
+                    from_person_id=previous_contact['person_id'] if previous_contact else '',
+                    to_person_id=person['id'], reason=data.get('note') or '', db=db, source_revision=referral_stamp)
             ids = []
             for kind, scope in targets:
                 ids.append(graph.add_authority(kind, scope, role, person_id=person["id"], repo=repo, source="referral",
@@ -1113,6 +1123,11 @@ class Store:
             if not pending and not managed:
                 db.execute("UPDATE runs SET status=CASE WHEN status='completed' THEN status ELSE 'working' END,updated_at=? WHERE id=?", (now(), decision["run_id"]))
             cm.snapshot_decision(db, decision_id, pins=replacement_pins, reason='human-answer')
+            # Contact evidence commits with the human response; it grants no
+            # authority and cannot survive a failed source transaction.
+            from .routing_memory import observe_answer
+            observe_answer(self.graph, db, dict(decision), basis,
+                           actor.id if actor is not None else '', stamp)
             # Publish the human revision, supersession, and the complete
             # invalidation chain under the very same writer lock. This also
             # applies when read-back confirmation owns transaction_db.

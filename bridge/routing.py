@@ -13,7 +13,8 @@ from .graph import Graph
 def route(store: Graph, repo: str, question: str,
           path: str = "", context: str = "", notes: list[str] | None = None,
           requester: str = "", hints: list[str] | None = None,
-          hits: list | None = None, category: str = "") -> tuple[str, list[str], float] | None:
+          hits: list | None = None, category: str = "", *, task_id: str = "",
+          decision_id: str = "", contact_context: dict | None = None) -> tuple[str, list[str], float] | None:
     """Return (owner, evidence_lines, score) or None when no signal clears
     the floor. `path` is the file the agent is working in, which scopes
     the graph before any question-derived hint does. `notes`, when given,
@@ -24,7 +25,8 @@ def route(store: Graph, repo: str, question: str,
     caller already resolved, when it did. `category` is the decision
     category the agent named, if any."""
     ranked = route_ranked(store, repo, question, path=path, context=context, notes=notes,
-                          requester=requester, hints=hints, hits=hits, category=category)
+                          requester=requester, hints=hints, hits=hits, category=category, task_id=task_id,
+                          decision_id=decision_id, contact_context=contact_context)
     return ranked[0] if ranked else None
 
 
@@ -32,7 +34,8 @@ def route_ranked(store: Graph, repo: str, question: str,
                  path: str = "", context: str = "", notes: list[str] | None = None,
                  requester: str = "", hints: list[str] | None = None,
                  hits: list | None = None, category: str = "",
-                 also_paths: list[str] | None = None, facts: dict | None = None) -> list[tuple[str, list[str], float]]:
+                 also_paths: list[str] | None = None, facts: dict | None = None, *, task_id: str = "",
+                 decision_id: str = "", contact_context: dict | None = None) -> list[tuple[str, list[str], float]]:
     """The routing candidates best first, each as (owner, evidence_lines,
     score). Empty when no signal clears the floor. route() is the head.
     A store with no changes rows for the repo, and no git source Raven
@@ -45,8 +48,10 @@ def route_ranked(store: Graph, repo: str, question: str,
     taken = {r[0] for r in ranked}
     for named_path in [path, *(also_paths or [])]:
         ranked.extend(_record_authors(store, repo, named_path, requester, taken))
-    from .routing_memory import candidates
-    learned = candidates(store, repo, question, path, context, category, facts)
+    from .routing_memory import candidates, contact_evidence
+    learned_details = {}
+    learned = candidates(store, repo, question, path, context, category, facts, task_id=task_id,
+                         decision_id=decision_id, contact_context=contact_context, details=learned_details, notes=notes)
     if learned:
         # Keep the existing authority precedence, including narrower paths and
         # decider versus approver. A pending referral is only a candidate.
@@ -56,8 +61,9 @@ def route_ranked(store: Graph, repo: str, question: str,
         fixed = {a['name'] for a in matches if a['strong'] and a['role'] == 'decides' and a['id'] in explicit_ids}
         declined = {p['name'] for p, outcome, *_ in learned if outcome == 'declined'}
         verified = [r for r in ranked if r[0] in fixed]
-        prior = [(p['name'], [f"learned first contact: {p['name']} answered decision {did}; confirm or refer, not permanent authority"], 2 + score)
-                 for p, outcome, score, did, _ in learned if outcome == 'answered' and p['name'] not in fixed]
+        prior = [(p['name'], [contact_evidence(store, p, outcome, did, learned_details.get((p['id'], outcome, did)))], (2 if outcome == 'answered' else 1) + score)
+                 for p, outcome, score, did, _ in learned
+                 if outcome in ('answered', 'connector') and p['name'] not in fixed]
         seen = {r[0] for r in verified + prior}
         ranked = verified + prior + [r for r in ranked if r[0] not in seen | declined]
     if store.get_setting("slack_discovery") != "1":
@@ -168,7 +174,8 @@ def _record_authors(store, repo, path, requester, taken):
 
 
 def rank_for_decision(store, repo, question, paths=(), context='', requester='', category='', hints=None,
-                      facts=None, hits=None, notes=None):
+                      facts=None, hits=None, notes=None, *, task_id='', decision_id='', contact_context=None):
     return route_ranked(store, repo, question, path=paths[0] if paths else '', also_paths=list(paths[1:]),
                         context=context, requester=requester, category=category, hints=hints,
-                        facts=facts, hits=hits, notes=notes)
+                        facts=facts, hits=hits, notes=notes, task_id=task_id, decision_id=decision_id,
+                        contact_context=contact_context)

@@ -402,7 +402,8 @@ class Delivery:
                         ranked = rank_for_decision(graph, r['repo'], decision['question'],
                             json.loads(decision.get('scope_paths') or '[]') or [decision.get('path') or ''],
                             context=decision.get('context') or '', category=decision.get('category') or '',
-                            facts=json.loads(decision.get('facts') or '{}'))
+                            facts=json.loads(decision.get('facts') or '{}'),
+                            task_id=decision['run_id'], decision_id=decision['id'])
                         unavailable = set(json.loads(graph.get_setting('slack_unavailable') or '[]'))
                         for name, _evidence, _score in ranked:
                             alternate = contact_for(graph, name)
