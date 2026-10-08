@@ -627,8 +627,11 @@ class Store:
             self.notify(decision_id, "ask")
         return self.get_decision(decision_id)
 
-    def get_decision(self, decision_id):
-        with self.connect() as db:
+    def get_decision(self, decision_id, *, _include_history=True, _db=None):
+        # Human/HTTP callers retain the complete record. MCP can reuse the
+        # current-state calculation inside its read snapshot without loading
+        # every historical body merely to show a bounded discovery page.
+        with (nullcontext(_db) if _db is not None else self.connect()) as db:
             from .context_memory import reuse_uncertainty_sql
             row = db.execute("SELECT d.*, " + reuse_uncertainty_sql() + " AS source_reuse_uncertain, " + """o.name AS owner_name,o.team AS owner_team,
                 r.title AS run_title,r.agent,r.repo,r.status AS task_status FROM decisions d
@@ -637,7 +640,8 @@ class Store:
                 raise Invalid("Decision not found")
             result = dict(row)
             result.pop("embedding", None)
-            result["events"] = [dict(e) for e in db.execute("SELECT * FROM events WHERE decision_id=? ORDER BY id", (decision_id,))]
+            if _include_history:
+                result["events"] = [dict(e) for e in db.execute("SELECT * FROM events WHERE decision_id=? ORDER BY id", (decision_id,))]
             from .graph import authorized, blocks_finish
             probe = row
             if row["status"] == "duplicate" and row["superseded_by"]:
@@ -660,9 +664,10 @@ class Store:
             from .work_items import association
             result['source_anchors'] = cm.anchors(db, row['run_id'])
             result['work_item_association'] = association(row['facts'], result['source_anchors'], result['sources'], task_status=row['task_status'])
-            result['work_item_history'] = [dict(event) for event in db.execute(
-                "SELECT * FROM events WHERE run_id=? AND kind='work_item_linked' ORDER BY id", (row['run_id'],))]
-            result['context_history'] = cm.history(db, decision_id)
+            if _include_history:
+                result['work_item_history'] = [dict(event) for event in db.execute(
+                    "SELECT * FROM events WHERE run_id=? AND kind='work_item_linked' ORDER BY id", (row['run_id'],))]
+                result['context_history'] = cm.history(db, decision_id)
             result['source_provenance'] = 'versioned' if result['sources'] and not result['source_reuse_uncertain'] else 'unknown'
             result['source_reuse_requires_review'] = bool(result['source_reuse_uncertain'])
             result['source_notice'] = cm.provenance_notice(result.get('source'), result['sources'], result['source_reuse_uncertain'])

@@ -57,7 +57,8 @@ def _version(row, head_id):
             'provenance': row['provenance'], 'fingerprint': row['fingerprint']})
 
 
-def lookup(db, *, repo, external_id='', ref='', provider='', namespace='', object_kind='', limit=DEFAULT_LIMIT):
+def lookup(db, *, repo, external_id='', ref='', provider='', namespace='', object_kind='', limit=DEFAULT_LIMIT,
+           linked_cursor=''):
     """Caller owns a consistent read snapshot; all matching stays in SQL."""
     from .store import Invalid, repo_key
     values = {'repo': repo, 'external_id': external_id, 'ref': ref, 'provider': provider,
@@ -74,6 +75,9 @@ def lookup(db, *, repo, external_id='', ref='', provider='', namespace='', objec
         raise Invalid('Supply exactly one of external_id or ref; no text search or URL inference is performed')
     if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= MAX_ITEMS:
         raise Invalid(f'limit must be an integer from 1 to {MAX_ITEMS}')
+    if (not isinstance(linked_cursor, str) or len(linked_cursor) > 200
+            or linked_cursor != linked_cursor.strip()):
+        raise Invalid('linked_cursor must be an exact linked decision ID of at most 200 characters')
 
     identity_where, identity_args = [], []
     for key in ('provider', 'namespace', 'object_kind', 'external_id'):
@@ -123,18 +127,59 @@ def lookup(db, *, repo, external_id='', ref='', provider='', namespace='', objec
         return result
     result.update(status='matched', latest_observed=_version(head, record['head_id']),
                   observation_basis='stored observations only; local sequence orders observations, not adoption',
-                  notice='Links are explicit stored associations, never approval. Latest observed source state is not currently adopted policy. Read the linked decision/task for its scope and current authority. Source bodies and URLs are omitted; exact-record reads remain separate.')
+                  notice='Links are explicit stored associations, never approval. Latest observed source state is not currently adopted policy. Read every relevant linked decision and its history before making only/no prior decision claims, and read its task for scope and current authority. Source bodies and URLs are omitted; exact-record reads remain separate.')
+
+    def pin(row):
+        return {'pinned_source_version_id': row['source_version_id'],
+                'latest_observed_source_version_id': record['head_id'],
+                'pin_matches_latest_observed': row['source_version_id'] == record['head_id']}
+
+    def decision(row):
+        return {'decision_id': row['decision_id'], 'task_id': row['task_id'],
+                'decision_status': row['decision_status'], 'decision_signoff': row['decision_signoff'],
+                'decision_needs_review': bool(row['decision_needs_review']),
+                'decision_updated_at': row['decision_updated_at'],
+                'decision_superseded_by': row['decision_superseded_by'], 'task_status': row['task_status']}
+
+    # Deduplicate the full visible union before limiting. Repeated historical
+    # edges or anchors must never bury a different consumer in the detail pages.
+    linked_ids = ('SELECT d.id FROM decision_source_edges e '
+                  'JOIN decisions d ON d.id=e.decision_id JOIN runs r ON r.id=d.run_id '
+                  'WHERE e.record_id=? AND d.repo=? AND r.repo=? AND d.draft=0 '
+                  'UNION SELECT d.id FROM task_source_anchors a '
+                  'JOIN runs r ON r.id=a.task_id JOIN decisions d ON d.run_id=r.id '
+                  'WHERE a.record_id=? AND r.repo=? AND d.repo=? AND d.draft=0')
+    linked_args = (record['id'], repo, repo, record['id'], repo, repo)
+    linked_count = db.execute('SELECT COUNT(*) AS total, '
+                              'COUNT(CASE WHEN id=? THEN 1 END) AS cursor_matches '
+                              'FROM (' + linked_ids + ') linked',
+                              (linked_cursor, *linked_args)).fetchone()
+    if linked_cursor and not linked_count['cursor_matches']:
+        raise Invalid('linked_cursor is not a visible linked decision for this source; restart lookup without it')
+    linked_rows = db.execute('SELECT d.id AS decision_id,d.run_id AS task_id,d.status AS decision_status,'
+                             'd.signoff AS decision_signoff,d.needs_review AS decision_needs_review,'
+                             'd.updated_at AS decision_updated_at,d.superseded_by AS decision_superseded_by,'
+                             'r.status AS task_status FROM (' + linked_ids + ') linked '
+                             'JOIN decisions d ON d.id=linked.id JOIN runs r ON r.id=d.run_id '
+                             'WHERE d.id>? ORDER BY d.id LIMIT ?',
+                             (*linked_args, linked_cursor, limit + 1)).fetchall()
+    result['linked_decisions'] = _page(linked_rows, limit, decision)
+    result['linked_decisions'].update(
+        total=linked_count['total'], has_more=len(linked_rows) > limit,
+        next_cursor=linked_rows[limit - 1]['decision_id'] if len(linked_rows) > limit else '',
+        order='decision_id ascending',
+        notice='All direct source links and task-anchor associations, deduplicated by decision. '
+               'Links grant no authority and task associations do not assert source premises. '
+               'Read every relevant linked decision and its history before making only/no prior decision claims. '
+               'This traversal observes live links; new or changed links require restarting without linked_cursor. '
+               'Cursor exhaustion does not establish completeness if the link set changed.')
+
     versions = db.execute('SELECT * FROM source_versions WHERE record_id=? ORDER BY sequence DESC LIMIT ?',
                           (record['id'], limit + 1)).fetchall()
     from .context_memory import latest_observation
     result['latest_observation'] = _metadata(latest_observation(record))
     result['versions'] = _page(versions, limit, lambda row: _version(row, record['head_id']))
     result['versions']['order'] = 'newest observation first'
-
-    def pin(row):
-        return {'pinned_source_version_id': row['source_version_id'],
-                'latest_observed_source_version_id': record['head_id'],
-                'pin_matches_latest_observed': row['source_version_id'] == record['head_id']}
 
     anchors = db.execute('SELECT a.*,r.status AS task_status,r.needs_review AS task_needs_review '
                          'FROM task_source_anchors a JOIN runs r ON r.id=a.task_id '
@@ -145,13 +190,6 @@ def lookup(db, *, repo, external_id='', ref='', provider='', namespace='', objec
         'relation': 'task_anchor', 'task_id': row['task_id'], 'role': row['role'],
         'task_status': row['task_status'], 'task_needs_review': bool(row['task_needs_review']),
         'recorded_at': row['recorded_at'], **pin(row)})
-
-    def decision(row):
-        return {'decision_id': row['decision_id'], 'task_id': row['task_id'],
-                'decision_status': row['decision_status'], 'decision_signoff': row['decision_signoff'],
-                'decision_needs_review': bool(row['decision_needs_review']),
-                'decision_updated_at': row['decision_updated_at'],
-                'decision_superseded_by': row['decision_superseded_by'], 'task_status': row['task_status']}
 
     edges = db.execute('SELECT e.*,d.run_id AS task_id,d.status AS decision_status,d.signoff AS decision_signoff,'
                        'd.needs_review AS decision_needs_review,d.updated_at AS decision_updated_at,'

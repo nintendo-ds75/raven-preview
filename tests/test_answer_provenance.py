@@ -250,7 +250,7 @@ class AnswerEventProvenanceTests(DeliveryCase):
         history = canvas.trace(self.store, self.task_id)
         self.assertIn(detail, [e['detail'] for e in history['events']])
         self.assertIn(json.loads(legacy), [e['detail'] for e in history['events']])
-        decision = call_tool(self.store, 'bridge_get_decision', {'decision_id': self.node_id})
+        decision = call_tool(self.store, 'bridge_get_decision', {'decision_id': self.node_id, 'detail': 'full'})
         self.assertIn(detail, [json.loads(e['detail']) for e in decision['events']
                                if e['kind'] == 'owner_approved'])
         canvas.get_tree(self.store, self.task_id)

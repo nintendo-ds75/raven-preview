@@ -82,6 +82,21 @@ class SourceLookupTests(SharedServer):
         self.assertEqual(found['decision_sources']['items'][0]['relation'], 'decision_premise')
         self.assertEqual({r['decision_id'] for r in found['task_decisions']['items']}, {premise, associated})
         self.assertTrue(all(r['relation'] == 'task_anchor_association' for r in found['task_decisions']['items']))
+        links = found['linked_decisions']
+        self.assertEqual([r['decision_id'] for r in links['items']], sorted((premise, associated)))
+        self.assertEqual(links['total'], 2)
+        self.assertFalse(links['has_more'])
+        self.assertFalse(links['truncated'])
+        self.assertEqual(links['next_cursor'], '')
+        self.assertLess(list(found).index('linked_decisions'), list(found).index('decision_sources'))
+        self.assertLess(list(found).index('linked_decisions'), list(found).index('task_decisions'))
+        self.assertIn('every relevant linked decision and its history', found['notice'])
+        self.assertIn('grant no authority', links['notice'])
+        wire = self.post('/mcp', {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
+            'params': {'name': 'bridge_lookup_record', 'arguments': {'repo': REPO, 'external_id': 'opaque-123'}}},
+            token=self.agent)['result']['content'][0]['text']
+        for key in ('versions', 'task_anchors', 'decision_sources', 'task_decisions'):
+            self.assertLess(wire.index('"linked_decisions"'), wire.index('"' + key + '"'), key)
         self.assertEqual(before, self.frozen_state())
         self.assertFalse(self.store.get_decision(premise)['authorized'])
         # The new host can now follow supported decision and exact-record APIs.
@@ -264,7 +279,7 @@ class SourceLookupTests(SharedServer):
         self.source(availability='inaccessible')
         blocked = self.lookup(namespace='site-a', external_id='opaque-123')
         self.assertEqual(blocked['status'], 'unavailable')
-        for key in ('versions', 'latest_observed', 'task_anchors', 'decision_sources', 'task_decisions'):
+        for key in ('versions', 'latest_observed', 'task_anchors', 'linked_decisions', 'decision_sources', 'task_decisions'):
             self.assertNotIn(key, blocked)
         b = self.source(namespace='site-b')
         ambiguous = self.lookup(ref='POL-7')
@@ -292,6 +307,8 @@ class SourceLookupTests(SharedServer):
             self.store.graph.db.execute('UPDATE runs SET repo=? WHERE id=?', ('foreign/repo', self.task))
         self.assertEqual(self.lookup(ref='POL-7')['task_anchors']['items'], [])
         self.assertEqual(self.lookup(ref='POL-7')['task_decisions']['items'], [])
+        self.assertEqual(self.lookup(ref='POL-7')['linked_decisions']['items'], [])
+        self.assertEqual(self.lookup(ref='POL-7')['linked_decisions']['total'], 0)
 
     def test_lookup_metadata_omits_transcripts_notifications_and_credential_urls(self):
         source = self.source(provider='slack', namespace='TSYNTH', kind='slack',
@@ -360,6 +377,104 @@ class SourceLookupTests(SharedServer):
             self.assertEqual(found[key]['limit'], 2)
         self.assertNotEqual(found['latest_observed']['source_version_id'], source['source_version_id'])
 
+    def test_linked_decisions_deduplicate_all_history_before_limiting(self):
+        source = self.source()
+        repeated, distinct = sorted((self.node(source), self.node(source)))
+        anchor_task = self.store.add_run({'title': 'Task-only consumer', 'repo': REPO})['id']
+        associated = self.node(task=anchor_task)
+        with self.store.graph.transaction():
+            db = self.store.graph.db
+            cm.add_anchor(db, anchor_task, source['record_id'], source['source_version_id'])
+            # More than MAX_ITEMS redundant historical edges for one decision
+            # bury another decision in the existing, intentionally raw list.
+            for number in range(105):
+                db.execute('UPDATE decisions SET rationale=? WHERE id=?', (f'Synthetic revision {number}', repeated))
+                cm.snapshot_decision(db, repeated)
+            db.execute('UPDATE decision_source_edges SET active=0 WHERE record_id=?', (source['record_id'],))
+        found = self.lookup(external_id='opaque-123', limit=100)
+        self.assertEqual(len(found['decision_sources']['items']), 100)
+        self.assertTrue(found['decision_sources']['truncated'])
+        self.assertEqual({r['decision_id'] for r in found['decision_sources']['items']}, {repeated})
+        self.assertEqual([r['decision_id'] for r in found['linked_decisions']['items']],
+                         sorted((repeated, distinct, associated)))
+        self.assertEqual(found['linked_decisions']['total'], 3)
+        self.assertFalse(found['linked_decisions']['has_more'])
+        self.assertFalse(found['linked_decisions']['truncated'])
+        self.assertEqual({r['decision_id'] for r in found['task_decisions']['items']}, {associated})
+
+    def test_linked_decisions_deduplicate_all_task_anchors_before_limiting(self):
+        source = self.source(task_id=self.task)
+        repeated = self.node()
+        other_task = self.store.add_run({'title': 'Another anchored consumer', 'repo': REPO})['id']
+        distinct = self.node(task=other_task)
+        # Make the repeated decision sort first in the legacy task list.
+        repeated, distinct = sorted((repeated, distinct))
+        with self.store.graph.transaction():
+            db = self.store.graph.db
+            repeated_task = db.execute('SELECT run_id FROM decisions WHERE id=?', (repeated,)).fetchone()['run_id']
+            cm.add_anchor(db, other_task, source['record_id'], source['source_version_id'])
+            for number in range(105):
+                version = f'synthetic-anchor-version-{number}'
+                db.execute('INSERT INTO source_versions(id,record_id,sequence,fingerprint,snapshot,'
+                           'source_updated_at,source_version,source_sequence,observed_at,provenance) '
+                           'SELECT ?,record_id,?,fingerprint,snapshot,source_updated_at,source_version,'
+                           'source_sequence,observed_at,provenance FROM source_versions WHERE id=?',
+                           (version, number + 2, source['source_version_id']))
+                cm.add_anchor(db, repeated_task, source['record_id'], version)
+        found = self.lookup(external_id='opaque-123', limit=100)
+        self.assertEqual(len(found['task_decisions']['items']), 100)
+        self.assertTrue(found['task_decisions']['truncated'])
+        self.assertEqual({r['decision_id'] for r in found['task_decisions']['items']}, {repeated})
+        self.assertEqual([r['decision_id'] for r in found['linked_decisions']['items']], [repeated, distinct])
+        self.assertEqual(found['linked_decisions']['total'], 2)
+        self.assertFalse(found['linked_decisions']['has_more'])
+        self.assertEqual(found['decision_sources']['items'], [])
+
+    def test_linked_cursor_pages_stable_ids_without_changing_legacy_lists(self):
+        source = self.source(task_id=self.task)
+        nodes = sorted((self.node(source), self.node(), self.node()))
+        first = self.lookup(external_id='opaque-123', limit=2)
+        links = first['linked_decisions']
+        self.assertEqual([r['decision_id'] for r in links['items']], nodes[:2])
+        self.assertEqual(links['total'], 3)
+        self.assertTrue(links['has_more'])
+        self.assertTrue(links['truncated'])
+        self.assertEqual(links['next_cursor'], nodes[1])
+        second = self.lookup(external_id='opaque-123', limit=2, linked_cursor=links['next_cursor'])
+        self.assertEqual([r['decision_id'] for r in second['linked_decisions']['items']], nodes[2:])
+        self.assertEqual(second['linked_decisions']['total'], 3)
+        self.assertFalse(second['linked_decisions']['has_more'])
+        self.assertFalse(second['linked_decisions']['truncated'])
+        self.assertEqual(second['linked_decisions']['next_cursor'], '')
+        for key in first.keys() - {'linked_decisions'}:
+            self.assertEqual(first[key], second[key], key)
+        self.assertIn('live links', links['notice'])
+        self.assertIn('restarting without linked_cursor', links['notice'])
+        self.assertIn('does not establish completeness', links['notice'])
+
+    def test_linked_cursor_rejects_other_sources_drafts_and_removed_links(self):
+        source = self.source(task_id=self.task)
+        node = self.node(source)
+        foreign = self.source(external_id='other-source', task_id='')
+        with self.store.graph.transaction():
+            hidden = self.node(source)
+            self.store.graph.db.execute('UPDATE decisions SET draft=1 WHERE id=?', (hidden,))
+        found = self.lookup(external_id='opaque-123')
+        self.assertEqual([r['decision_id'] for r in found['linked_decisions']['items']], [node])
+        self.assertEqual(found['linked_decisions']['total'], 1)
+        for external_id, cursor in (('other-source', node), ('opaque-123', hidden), ('opaque-123', 'missing')):
+            args = {'repo': REPO, 'external_id': external_id, 'linked_cursor': cursor}
+            before = self.frozen_state()
+            self.assertTrue(self.mcp('bridge_lookup_record', args, self.agent)['isError'])
+            self.assertEqual(self.status_of('GET', '/api/records/lookup?' + urlencode(args), token=self.agent), 400)
+            self.assertEqual(before, self.frozen_state())
+        self.assertEqual(self.lookup(external_id='other-source')['source']['record_id'], foreign['record_id'])
+        with self.store.graph.transaction():
+            self.store.graph.db.execute('UPDATE decisions SET draft=1 WHERE id=?', (node,))
+        args = {'repo': REPO, 'external_id': 'opaque-123', 'linked_cursor': node}
+        self.assertTrue(self.mcp('bridge_lookup_record', args, self.agent)['isError'])
+        self.assertEqual(self.lookup(external_id='opaque-123')['linked_decisions']['total'], 0)
+
     def test_contract_validation_and_read_only_viewer_access(self):
         listed = self.post('/mcp', {'jsonrpc': '2.0', 'id': 4, 'method': 'tools/list'}, token=self.agent)['result']['tools']
         self.assertIn('bridge_lookup_record', [tool['name'] for tool in listed])
@@ -367,6 +482,8 @@ class SourceLookupTests(SharedServer):
         for args in ({'repo': REPO}, {'repo': REPO, 'ref': 'POL-7', 'external_id': 'opaque-123'},
                      {'repo': '', 'ref': 'POL-7'}, {'repo': 'https://github.com/' + REPO, 'ref': 'POL-7'},
                      {'repo': REPO, 'ref': 'POL-7', 'limit': 0}, {'repo': REPO, 'ref': 'POL-7', 'limit': 101},
+                     {'repo': REPO, 'ref': 'POL-7', 'linked_cursor': ' x'},
+                     {'repo': REPO, 'ref': 'POL-7', 'linked_cursor': 'x' * 201},
                      {'repo': REPO, 'ref': 'POL-7', 'unknown': 'ignored'}, {'repo': REPO, 'ref': 'POL-7', 'limit': 'many'}):
             self.assertTrue(self.mcp('bridge_lookup_record', args, self.agent)['isError'], args)
             self.assertEqual(self.status_of('GET', '/api/records/lookup?' + urlencode(args), token=self.agent), 400, args)

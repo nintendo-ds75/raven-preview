@@ -214,7 +214,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                 self.require("viewer")
                 if url.path == '/api/records/lookup':
                     query = parse_qs(url.query, keep_blank_values=True)
-                    allowed = {'repo', 'external_id', 'ref', 'provider', 'namespace', 'object_kind', 'limit'}
+                    allowed = {'repo', 'external_id', 'ref', 'provider', 'namespace', 'object_kind', 'limit', 'linked_cursor'}
                     if any(key not in allowed or len(values) != 1 for key, values in query.items()):
                         raise Invalid('Lookup requires one value per supported query parameter')
                     args = {key: values[0] for key, values in query.items()}
