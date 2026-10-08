@@ -321,7 +321,7 @@ def _scope_difference(question: str, context: str, path: str, cand, facts: dict 
         # A signed policy explicitly scoped by facts can be recorded in
         # one file and prescribe work in another. The destination naming
         # its own path does not narrow the source's declared scope.
-        fact_scoped = bool(spec.get("requires")) and cand.authorized and applicability_status(cand, path, facts)[0]
+        fact_scoped = bool(spec.get("requires")) and cand.authorized and applicability_status(cand, path, facts, repo=repo)[0]
         if declared or _names_file(cand.question, theirs) or (_names_file(question, mine) and not fact_scoped):
             return f"this one is about {mine}, decision {cand.id} about {theirs}", True
     facts = {k.lower(): v for k, v in (facts or {}).items()}
@@ -487,7 +487,7 @@ def _close_open_twins(store: Graph, source_id: str, question: str, repo: str,
         if twin is None:
             break
         twin_facts = _facts_of(store, twin.id)
-        if any(not applicability_status(spec, twin.path or "", twin_facts)[0] for spec in bounds):
+        if any(not applicability_status(spec, twin.path or "", twin_facts, repo=twin.repo)[0] for spec in bounds):
             unfit.add(twin.id)
             continue
         source_decision = store.get_decision(source_id, exact=True)
@@ -1534,7 +1534,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             why_open.append("memory: nothing similar answered before")
 
         if mem_pick is not None:
-            applies, reason = applicability_status(mem_pick[2], d_path, d_facts)
+            applies, reason = applicability_status(mem_pick[2], d_path, d_facts, repo=repo)
             if not applies:
                 why_open.append(f"memory: {reason}; earlier answer {mem_pick[2].id} is context, not an answer here: "
                                 + _excerpt(mem_pick[2].answer, 240, "the earlier answer has the rest"))
@@ -1909,7 +1909,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
         # question was answered with the annual rule, verbatim). When the
         # composer says the record does not answer, the ladder continues.
         if pick is not None and pick[0] == "memory":
-            applies, reason = applicability_status(pick[1], d_path, d_facts)
+            applies, reason = applicability_status(pick[1], d_path, d_facts, repo=repo)
             if not applies:
                 why_open.append(f"memory: {reason}; earlier answer {pick[1].id} is context, not an answer here: "
                                 + _excerpt(pick[1].answer, 240, "the earlier answer has the rest"))
@@ -1935,7 +1935,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             # question while the composed answer doubted that it applied.
             rule_given = ""
             if pick[1].reusable:
-                covered, _why = rule_status(pick[1], question, d_context, facts=d_facts)
+                covered, _why = rule_status(pick[1], question, d_context, facts=d_facts, repo=repo)
                 if covered:
                     rule_given = (f"The rule {pick[1].rule_by or pick[1].answered_by or 'its owner'} made of decision "
                                   f"{pick[1].id} covers this question: its conditions "
@@ -1970,7 +1970,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
         if pick is not None and mem_pick is not None:
             if pick[0] == "record":
                 mem = mem_pick[2]
-                rival = pick[1] if applicability_status(mem, d_path, d_facts)[0] else None
+                rival = pick[1] if applicability_status(mem, d_path, d_facts, repo=repo)[0] else None
             else:
                 mem = store.get_decision(pick[1].id, exact=True) or pick[1]
                 rival = _record_contradicting(store, cfg, repo, question, mem.answer)
@@ -2070,7 +2070,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 other_scope, known_scope = (_scope_difference(question, d_context, d_path, item, d_facts,
                                                               _facts_of(store, item.id), repo)
                                             if signed else ("", False))
-                rule_ok, rule_why = (rule_status(item, question, d_context, facts=d_facts)
+                rule_ok, rule_why = (rule_status(item, question, d_context, facts=d_facts, repo=repo)
                                      if signed and item.reusable else (False, ""))
                 if len(memory_used_rows) > 1 or mem_conflict:
                     rule_ok = False
@@ -2611,7 +2611,7 @@ def _how_they_decide(store: Graph, cfg, repo: str, question: str, context: str, 
     for score, prior in store.similar_answered(emb, top_k=8, min_score=0.35, repo=repo, query=question):
         if not (prior.authorized and prior.answered_by and _norm_person(prior.answered_by) == key):
             continue
-        applies, reason = applicability_status(prior, path, facts)
+        applies, reason = applicability_status(prior, path, facts, repo=repo)
         scope = "" if applies else reason.replace(f"decision {prior.id} ", "", 1)
         # An answer its owner said does not hold here is not a basis for
         # proposing it here. Measured live on eb9d22d: an answer that

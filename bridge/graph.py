@@ -638,7 +638,8 @@ def parse_applicability(raw) -> dict:
     """Normalize a human's reusable-answer boundaries; reject malformed input.
 
     Facts are exact, case-insensitive key/value assertions supplied by the
-    agent on the later question. Missing facts never satisfy a condition.
+    agent on the later question, with repo bound to that question's current
+    repository. Missing business facts never satisfy a condition.
     Paths are repository-relative file or directory prefixes.
     """
     if not raw:
@@ -686,9 +687,40 @@ def parse_applicability(raw) -> dict:
     return out
 
 
+def condition_facts(facts: dict | None, repo: str | None = None) -> tuple[dict[str, str], str]:
+    """Comparison-only facts bound to the current task/node repository.
+
+    Callers supply the current canonical repository, never the candidate's
+    historical repository. All other facts must be explicitly supplied for
+    this request. The returned copy must not replace stored facts: repository
+    binding is context for a check, not a new assertion or historical edit.
+    A contradictory explicit repository fails instead of being overwritten;
+    an unknown current repository cannot be established by a fact alone.
+    Omitting repo retains the legacy facts-only API for standalone callers;
+    production checks must pass the current repository, including an empty
+    string when it is unknown.
+    """
+    stated = {str(k).strip().lower(): " ".join(str(v).lower().split())
+              for k, v in (facts or {}).items()}
+    if repo is None:
+        return stated, ""
+    current = " ".join(str(repo or "").lower().split())
+    explicit = stated.pop("repo", None)
+    if current and current != "unknown":
+        if explicit is not None and explicit != current:
+            return stated, f"this request states repo={explicit}; its current repository is {current}"
+        stated["repo"] = current
+    elif explicit is not None:
+        return stated, "the current repository is unknown; a stated repo fact cannot establish it"
+    return stated, ""
+
+
 def applicability_status(d: "Decision", path: str = "", facts: dict | None = None,
-                         now: float | None = None) -> tuple[bool, str]:
+                         now: float | None = None, *, repo: str | None = None) -> tuple[bool, str]:
     """A declared boundary must be provably satisfied before answer reuse."""
+    stated, conflict = condition_facts(facts, repo)
+    if conflict:
+        return False, f"decision {d.id} does not apply: {conflict}"
     spec = d.applicability
     if not spec:
         return True, "no structured applicability declared; fresh sign-off remains required"
@@ -709,11 +741,14 @@ def applicability_status(d: "Decision", path: str = "", facts: dict | None = Non
             return False, f"decision {d.id} requires a path; none was stated"
         if not any(current == p.rstrip("/") or current.startswith(p.rstrip("/") + "/") for p in declared_paths):
             return False, f"decision {d.id} applies to {', '.join(declared_paths)}, not {current}"
-    stated = {str(k).strip().lower(): " ".join(str(v).lower().split()) for k, v in (facts or {}).items()}
     for key, value in (spec.get("requires") or {}).items():
         if key not in stated:
+            if key == "repo" and repo is not None:
+                return False, f"decision {d.id} needs repo={value}; the current repository is unknown"
             return False, f"decision {d.id} needs {key}={value}; the agent did not state {key}"
         if stated[key] != value:
+            if key == "repo" and repo is not None:
+                return False, f"decision {d.id} needs repo={value}; the current repository is {stated[key]}"
             return False, f"decision {d.id} needs {key}={value}; this request states {key}={stated[key]}"
     for key, value in (spec.get("excludes") or {}).items():
         if stated.get(key) == value:
@@ -723,8 +758,8 @@ def applicability_status(d: "Decision", path: str = "", facts: dict | None = Non
 
 def rule_conditions(text: str) -> list[str]:
     """The conditions a rule requires, one per line or semicolon: a
-    `key=value` fact the agent must have stated, or a phrase the
-    question or its context must carry (and not deny)."""
+    `key=value` fact the agent must have stated (repo uses current repository
+    scope), or a phrase the question or its context must carry (and not deny)."""
     import re as _re
     return [c.strip() for c in _re.split(r"[;\n]+", text or "") if c.strip()]
 
@@ -788,13 +823,13 @@ def phrase_denied(phrase: str, text: str) -> bool:
 
 
 def rule_status(d: "Decision", question: str, context: str = "", facts: dict | None = None,
-                now: float | None = None) -> tuple[bool, str]:
+                now: float | None = None, *, repo: str | None = None) -> tuple[bool, str]:
     """Whether a reusable rule covers this question here and now, and
     when not, why: ended, expired, a fact condition the agent did not
     state or stated otherwise, or a phrase the question and context do
     not carry or deny. A decision that is not a rule never applies.
-    Free text can nominate a rule; only stated facts and undenied
-    phrases satisfy its conditions."""
+    Free text can nominate a rule; only the current repository, stated
+    business facts and undenied phrases satisfy its conditions."""
     if not d.reusable or not d.authorized:
         return False, ""
     if d.source_reuse_uncertain:
@@ -810,7 +845,9 @@ def rule_status(d: "Decision", question: str, context: str = "", facts: dict | N
         except ValueError:
             return False, f"the rule from decision {d.id} has an unreadable expiry ({d.rule_expires})"
     text = f"{question}\n{context}"
-    facts = {k.lower(): v for k, v in (facts or {}).items()}
+    facts, conflict = condition_facts(facts, repo)
+    if conflict:
+        return False, f"the rule from decision {d.id} does not apply: {conflict}"
     for cond in rule_conditions(d.rule_conditions):
         if phrase_denied(cond, text):
             return False, (f"the rule from decision {d.id} does not apply: the question or its context denies "
@@ -819,9 +856,15 @@ def rule_status(d: "Decision", question: str, context: str = "", facts: dict | N
             key, _, value = cond.partition("=")
             key, value = key.strip().lower(), " ".join(value.split()).lower()
             if key not in facts:
+                if key == "repo" and repo is not None:
+                    return False, (f"the rule from decision {d.id} needs repo={value}; "
+                                   "the current repository is unknown")
                 return False, (f"the rule from decision {d.id} needs the fact {key}={value}, which the agent did not "
                                "state; a person decides")
             if facts[key].lower() != value:
+                if key == "repo" and repo is not None:
+                    return False, (f"the rule from decision {d.id} needs repo={value}; "
+                                   f"the current repository is {facts[key]}")
                 return False, (f"the rule from decision {d.id} needs {key}={value}; the agent stated "
                                f"{key}={facts[key]}")
             continue
@@ -2273,11 +2316,12 @@ class Graph:
             if source is None or source.superseded_by or source.needs_review:
                 reason = "the source rule was superseded or needs review"
             else:
-                applies, why = rule_status(source, row["question"], row["context"], facts, now=now)
+                applies, why = rule_status(source, row["question"], row["context"], facts,
+                                           now=now, repo=row["repo"])
                 if not applies:
                     reason = why or "the source is no longer an authorized reusable rule"
                 if not reason:
-                    applies, why = applicability_status(source, row["path"], facts, now=now)
+                    applies, why = applicability_status(source, row["path"], facts, now=now, repo=row["repo"])
                     if not applies:
                         reason = why
                 if not reason and source.rule_scope != "any":

@@ -185,6 +185,19 @@ def load_tests(loader, tests, pattern):
     source_conversation_case = type('PostgresConversationSourceTests',
         (PostgresIsolation, ConversationSourceTests), {'__module__': __name__})
     suite.addTests(loader.loadTestsFromTestCase(source_conversation_case))
+    # Condition projection units stay native; persisted facts/reuse contracts
+    # run against the real backend through the same isolation wrapper.
+    from test_repository_conditions import RepositoryRuleTests
+    from test_standing_grant_guidance import StandingGrantDisplayTests
+    from test_fact_revisions import FactRevisionTests, FactRevisionProtocolTests
+    from test_fact_revision_boundaries import RetainedPremiseCorrectionTests, AcceptedInteractionCorrectionTests
+    from test_fact_revision_external_pins import RetainedExternalPinCorrectionTests
+    from test_fact_revision_freshness import FactCorrectionFreshnessTests
+    for cls in (RepositoryRuleTests, StandingGrantDisplayTests, FactRevisionTests, FactRevisionProtocolTests,
+                RetainedPremiseCorrectionTests, AcceptedInteractionCorrectionTests,
+                RetainedExternalPinCorrectionTests, FactCorrectionFreshnessTests):
+        case = type('Postgres' + cls.__name__, (PostgresIsolation, cls), {'__module__': __name__})
+        suite.addTests(loader.loadTestsFromTestCase(case))
     # Reuse the same expectations on both backends, rather than implementing
     # weaker PostgreSQL copies of the authorization and lifecycle tests.
     for name in ("test_explicit_context_replies", "test_contact_recipient_routing", "test_cache_namespace_applicability", "test_work_item_links", "test_contact_learning", "test_contact_context", "test_owner_discovery", "test_agent_source_proposals", "test_mounted_ingest", "test_context_connectors", "test_host_sessions", "test_source_scope_integration", "test_notification_scope", "test_answer_rule_retirement", "test_approval_scope", "test_source_recall_interaction", "test_signed_proposed_memory", "test_human_source_revalidation", "test_source_observation", "test_source_lookup", "test_context_memory", "test_legacy_source_reuse", "test_source_review_readbacks", "test_answer_provenance", "test_record_state", "test_readback_generations", "test_contract", "test_kickoff_scope", "test_rules", "test_rule_invalidation", "test_delivery", "test_auth", "test_authority", "test_agent_rest_reads", "test_atomic_source_corrections", "test_memory_scope_retrieval",

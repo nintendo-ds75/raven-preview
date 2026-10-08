@@ -563,7 +563,14 @@ class Store:
 
     def search(self, query, repo=""):
         matches = self.candidates(None, query, repo=repo)
-        return {"matches": matches, "notice": "Prior approvals are evidence for their original context. New requests still require review."}
+        from .reuse_guidance import standing_grant_view
+        for match in matches:
+            match['standing_grant'] = standing_grant_view(match)
+        return {"matches": matches, "notice": (
+            "Search results preserve original answers and rationale alongside any current recorded standing grant. "
+            "Retrieval alone does not authorize a new request. A valid reusable grant may cover it after "
+            "Raven evaluates the current repository, explicit facts, scope, expiry and source freshness on a node. "
+            "Use that node's authorized/signoff result; otherwise fresh review is required.")}
 
     def request(self, data, *, _db=None):
         question = field(data, "question", limit=2000)
@@ -590,11 +597,14 @@ class Store:
                             owner_id, reason = owner["id"], f"Path {path} matches {pattern}"
             scope = self.graph.resolve_repo(repo_key(run["repo"]))
             candidates = self.candidates(db, question, owner_id, repo=scope) if owner_id else []
-            from .graph import applicability_status, parse_facts
+            from .graph import applicability_status, condition_facts, parse_facts
             stated_facts = parse_facts(data.get("facts"))
+            _, repository_conflict = condition_facts(stated_facts, scope)
+            if repository_conflict:
+                raise Invalid(repository_conflict)
             candidates = [candidate for candidate in candidates
                           if (source := self.graph.get_decision(candidate["id"], exact=True)) is not None
-                          and applicability_status(source, path, stated_facts)[0]]
+                          and applicability_status(source, path, stated_facts, repo=scope)[0]]
             prior = candidates[0] if candidates else None
             decision_id, timestamp = uuid.uuid4().hex[:12], now()
             observed = db.execute("SELECT updated_at FROM decisions WHERE id=?", (prior['id'],)).fetchone() if prior else None
@@ -667,6 +677,10 @@ class Store:
             result["approval_scope"] = display_snapshot(result)
             result["approval_scope_labels"] = field_labels()
             result["approval_scope_text"] = render_scope(result)
+            from .reuse_guidance import standing_grant_view
+            result['standing_grant'] = standing_grant_view(result)
+            from .fact_revisions import revision_token
+            result["fact_revision"] = revision_token(db, decision_id, row)
             return result
 
     def assign(self, decision_id, data, actor=None):

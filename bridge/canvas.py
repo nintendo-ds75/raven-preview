@@ -88,7 +88,7 @@ _HOST_LABEL_RE = re.compile(
 # agent how to call Raven, whatever else is in it. ("MCP" is not here:
 # a task can be about adding an MCP endpoint.)
 _HOST_TOOL_RE = re.compile(r"\bbridge_(?:start_task|add_node|wait|get_tree|get_decision|finish_task|"
-                           r"settle_node|ingest_repo|list_owners|search_decisions)\b")
+                           r"settle_node|correct_node_facts|ingest_repo|list_owners|search_decisions)\b")
 _LIST_ITEM_RE = re.compile(r"^\W{0,4}(?:\d+[.)]|[-*•+])\s")
 # What makes a sentence a statement about this change rather than prose:
 # it names something in the repository.
@@ -238,6 +238,15 @@ def start_task(store, cfg, data) -> dict:
     one task. Facts stated here hold for every node of the task."""
     from .graph import parse_facts
     facts = parse_facts(data.get("facts"))
+    # Repository facts cannot create or contradict the task's scope, including
+    # a resumed task whose repository is supplied by its persisted identity.
+    from .graph import condition_facts
+    resume = _text(data, "task_id", 100) or _text(data, "client_key", 200)
+    existing = store.graph.get_task(resume) if resume else None
+    scoped_repo = existing["repo"] if existing is not None else _text(data, "repo", 300) or "local"
+    _, conflict = condition_facts(facts, store.graph.resolve_repo(repo_key(scoped_repo)))
+    if conflict:
+        raise Invalid(conflict)
     result = _start_task(store, cfg, data)
     task_id = result.get("task_id") or ""
     if facts and task_id:
@@ -249,9 +258,12 @@ def start_task(store, cfg, data) -> dict:
         from .store import check_not_abandoned
         with graph.transaction() as db:
             check_not_abandoned(db, task_id)
-            row = db.execute("SELECT facts FROM runs WHERE id=?", (task_id,)).fetchone()
+            row = db.execute("SELECT facts,repo FROM runs WHERE id=?", (task_id,)).fetchone()
             current = _json_dict(row["facts"]) if row is not None else {}
             merged = {**current, **facts}
+            _, conflict = condition_facts(merged, graph.resolve_repo(repo_key(row["repo"])))
+            if conflict:
+                raise Invalid(conflict)
             if merged != current:
                 graph.db.execute("UPDATE runs SET facts=? WHERE id=?", (json.dumps(merged), task_id))
         result["facts"] = merged
@@ -925,6 +937,7 @@ def add_node(store, cfg, data) -> dict:
     precedent (to confirm), routed to a person, or an honest unknown."""
     from .config import load
     from .ladder import ask
+    from .fact_revisions import repeated_node
     task_id = field(data, "task_id", limit=100)
     question = _unescaped(field(data, "question", limit=2000))
     context = _unescaped(_text(data, "context"))
@@ -955,7 +968,7 @@ def add_node(store, cfg, data) -> dict:
             (task_id, client_ref)).fetchone()
         if row:
             resolve_scope(graph, task_id, scope_request_key)
-            return node_view(store, row["id"], repeated=True)
+            return repeated_node(store, row["id"], data, facts)
     # Reject malformed relationships before reserving a ref or running the
     # ladder. A real host sent a client_ref as depends_on; validation after
     # publication exposed a node without its mandatory approver on retry.
@@ -976,9 +989,12 @@ def add_node(store, cfg, data) -> dict:
             continue
         if (not context and not paths) or existing['scope_key'] == scope_key(context, paths):
             resolve_scope(graph, task_id, scope_request_key)
-            return node_view(store, existing['id'], repeated=True)
+            return repeated_node(store, existing['id'], data, facts)
+    from .graph import condition_facts
+    _, conflict = condition_facts(facts, graph.resolve_repo(repo_key(run['repo'])))
+    if conflict:
+        raise Invalid(conflict)
     if not owner_id:
-        from .store import repo_key
         clarification = clarify(graph, task_id, graph.resolve_repo(repo_key(run['repo'])), question,
                                 scope_request_key, path=paths[0] if paths else '', category=category, facts=facts)
         if clarification:
@@ -989,11 +1005,11 @@ def add_node(store, cfg, data) -> dict:
         # instead of writing a second one.
         mine, existing = graph.claim_node_ref(task_id, client_ref)
         if existing:
-            return node_view(store, existing, repeated=True)
+            return repeated_node(store, existing, data, facts)
         if not mine:
             held = _await_node_ref(graph, task_id, client_ref)
             if held:
-                return node_view(store, held, repeated=True)
+                return repeated_node(store, held, data, facts)
             raise Invalid(f"A node with client_ref {client_ref!r} is being written right now on this task. "
                           "Retry; it will come back as the node that write produced.")
     # The same question on this tree is the same node only in the same
@@ -1012,7 +1028,7 @@ def add_node(store, cfg, data) -> dict:
             related_ids.append(row["id"])
             continue
         if (not context and not paths) or row["scope_key"] == scope:
-            return node_view(store, row["id"], repeated=True)
+            return repeated_node(store, row["id"], data, facts)
         related_ids.append(row["id"])
     adopted = None
     if adopt:
@@ -1465,6 +1481,8 @@ def node_view(store, decision_id: str, repeated: bool = False) -> dict:
             _DECISION_SELECT + ' WHERE d.id=? AND d.run_id=? AND d.draft=0',
             (row['parent_id'], row['run_id'])).fetchone()
         _with_parent_context(store, view, parent)
+    from .fact_revisions import revision_token
+    view['fact_revision'] = revision_token(store.graph.db, decision_id, row)
     return view
 
 
@@ -1539,6 +1557,8 @@ def _view(row, repeated: bool = False, canonical=None) -> dict:
                               "updated_at": c["updated_at"]}
         view["next"] = (f"same decision as node {c['id']} (task {c['run_id']}), which is {c_status}: "
                         + _next_for_node(c_status, c))
+    from .reuse_guidance import standing_grant_view
+    view['standing_grant'] = standing_grant_view(canonical if canonical is not None else d)
     return view
 
 
@@ -1638,10 +1658,13 @@ def get_tree(store, task_id: str) -> dict:
              for r in rows]
     from . import context_memory as cm
     from .work_items import association
+    from .fact_revisions import revision_tokens
+    fact_revisions = revision_tokens(graph.db, rows)
     source_anchors = cm.anchors(graph.db, task_id)
     from .context_connectors import blocked_decisions
     context_blocked = blocked_decisions(graph.db, run['repo'])
     for node in nodes:
+        node['fact_revision'] = fact_revisions[node['node_id']]
         from . import context_memory as cm
         node['sources'] = cm.edges(graph.db, node.get('duplicate_of') or node['node_id'])
         node['work_item_association'] = association(node['facts'], source_anchors,
@@ -2516,8 +2539,8 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
         # What people did since the agent last looked (the observed_at of
         # its last bridge_get_tree or bridge_wait) is reported at once: an
         # answer that landed while the agent was busy is not waited for.
-        # People leave events; the agent's own writes are not changes.
-        marks = ",".join("?" for _ in PEOPLE_EVENTS)
+        # Explicit fact corrections also invalidate an older readback.
+        marks = ",".join("?" for _ in READBACK_EVENTS)
         touched = {r["decision_id"] for r in graph_events(store, task_id, since, marks)}
         for nid, n in before.items():
             if nid not in touched or (node_id and nid != node_id and n.get("parent_id") != node_id):
@@ -2614,21 +2637,24 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
 PEOPLE_EVENTS = ("owner_approved", "answer_corrected", "signoff", "signature", "owner_changed", "prediction_withdrawn",
                  "dependent_flagged", "twin_closed", "followup_added", "reply_received", "rule_made", "rule_ended",
                  "question_reframed")
+# Explicit fact corrections are also material readbacks, without pretending
+# an agent correction is a human action for eligibility or abandon checks.
+READBACK_EVENTS = PEOPLE_EVENTS + ("node_facts_corrected",)
 
 
 def human_revisions(store, task_id: str) -> dict:
-    """Snapshot the append-only human-event log before reading decision rows.
+    """Snapshot human actions and explicit corrections before reading rows.
 
     IDs alone are not a commit watermark on PostgreSQL: a transaction with a
     smaller allocated ID can commit later, including for the same decision.
     Its arrival changes the count even when the greatest ID stays unchanged.
     """
-    marks = ','.join('?' for _ in PEOPLE_EVENTS)
+    marks = ','.join('?' for _ in READBACK_EVENTS)
     return {r['decision_id']: {'max_event_id': int(r['max_id']), 'event_count': int(r['event_count'])}
             for r in store.graph.db.execute(
                 'SELECT decision_id, max(id) AS max_id, count(*) AS event_count FROM events '
                 f'WHERE run_id=? AND decision_id IS NOT NULL AND kind IN ({marks}) GROUP BY decision_id',
-                (task_id, *PEOPLE_EVENTS))}
+                (task_id, *READBACK_EVENTS))}
 
 
 def _receipt_covers(seen, revision) -> bool:
@@ -2706,7 +2732,7 @@ def unread_refusal(unread: list[dict]) -> str:
 def graph_events(store, task_id: str, since: str, marks: str):
     return store.graph.db.execute(
         f"SELECT DISTINCT decision_id FROM events WHERE run_id=? AND created_at > ? AND kind IN ({marks}) "
-        "AND decision_id IS NOT NULL", (task_id, since, *PEOPLE_EVENTS)).fetchall()
+        "AND decision_id IS NOT NULL", (task_id, since, *READBACK_EVENTS)).fetchall()
 
 
 def _change(store, n: dict) -> dict:
@@ -2723,6 +2749,7 @@ def _change(store, n: dict) -> dict:
             "blocking": n["blocking"], "needs_review": n["needs_review"], "answer": n["answer"],
             "answered_by": n["answered_by"], "signed_by": n.get("signed_by") or "", "owner": n["owner"],
             "rationale": n.get("rationale") or "", "next": n["next"],
+            "facts": n.get("facts") or {}, "updated_at": n["updated_at"],
             **parent_context}
 
 
@@ -3250,7 +3277,7 @@ def _route_signer(graph, run, question, ctx, paths, requester, hints, category, 
     # existing eligibility, authority and approval checks retain their meaning.
     current_contact = person and any(name == person['name'] for name, *_ in ranked)
     if (person and person['active'] and person['role'] != 'viewer' and complete_scope and not scope_difference
-            and applicability_status(source, paths[0] if paths else '', facts)[0] and current_contact):
+            and applicability_status(source, paths[0] if paths else '', facts, repo=repo)[0] and current_contact):
         if not ranked or not any(e.startswith('verified:') for e in ranked[0][1]):
             ranked.insert(0, (source_signer, [f'signs off; {source_signer} signed the reused answer in decision {source.id}'], 2.0))
     if not ranked:

@@ -148,6 +148,23 @@ Evidence is not authorization. A person stands behind a decision when the inbox 
 - **A signature covers the text it was given for.** Every signature carries the fingerprint of the answer it signed. Correcting the answer, or the agent re-settling it, drops the signatures that covered the old text: what was signed by two of three approvers is unsigned again, and the task cannot finish. Signing is one compare-and-write, so two signers, or a signer racing a correction, serialize.
 - **A reply is bound to what the person was shown.** Every message carries the fingerprint of the answer or question it showed. A reply approving an answer that has since changed is refused, with what it now says, and the current state goes out as a fresh message. An answer in Slack is stated as one (`answer: … because …`), so "I'll look tomorrow" is never recorded as a decision. An inbound event that cannot be applied is kept with its error and applied once when it is retried.
 - **Only a rule resolves without a fresh signature, and only when the organization turns that on.** Every decision is request-specific by default, and automatic rule authorization is off (`auto_rules`) until a team enables it. An owner can declare a signed answer a reusable rule (`POST /api/decisions/:id/rule`, **Make this answer a reusable rule** in the inbox, `rule if <words> until <date>` in the Slack thread) with conditions and an expiry. A condition is a fact the agent stated (`plan=enterprise`, passed as `facts` on the node or once for the task) or a phrase the question carries and does not deny; a missing fact, a contradicted fact, or a phrase the question negates means a person decides. A rule covers its own scope unless its owner says it applies anywhere. Changing or ending it, its expiry (including the source answer’s declared applicability expiry), or a correction or supersession takes the authorization back from the outstanding work it covered: those nodes come back as needs-review, and their tasks cannot finish. A decision a rule authorized never becomes memory in its own right, so a rule's reach is its conditions and nothing more.
+
+Search and direct decision reads include `standing_grant`, a presentation of the
+current recorded grant terms alongside the unchanged original answer, context
+and rationale. Its scope, conditions, grant time and expiry describe a later
+explicit permission separately from the original task's restrictions. An old
+request-specific rationale does not itself cancel a later standing grant.
+`state=declared` reports a stored declaration, not that it is unexpired, current
+or applicable here; `request_applicability=not_evaluated_by_this_read` makes that
+limit explicit. Retrieval does not authorize a new request. Use the current
+scoped node's evaluated `authorized` and `signoff` fields; an applicable rule can
+yield `signoff=rule` without a fresh signature, while unmet conditions, stale
+sources and the other existing guards continue to require review. Do not copy
+missing customer, environment or other business facts from a historical result.
+The reserved `repo` condition is checked against the current task or node's
+canonical repository, so the agent need not repeat it in `facts`. An explicitly
+contradictory `facts.repo` is refused; a historical repository never supplies
+the current scope. Other missing business conditions remain unsatisfied.
 - **A decision is its question plus its scope.** On one tree, the same question with the same context and paths is one node, and a bare retry returns it; the same words about another named customer or other files, or under a new `client_ref`, is another node, linked as related. Across trees, a duplicate needs a compatible scope; the same question in another scope is related, never merged.
 - **A duplicate reads through.** A duplicate node shows its canonical decision's answer, signer and next step, counts as waiting while the canonical waits, and stops waiting when it is answered.
 - **A correction reaches every derived answer.** Every answer taken from another decision carries `source_id` and the source's revision. Correcting the source withdraws pending suggestions and marks answered and signed dependents (and their tasks) `needs_review`, transitively, until a person confirms or corrects them.
@@ -184,7 +201,7 @@ Embeddings are always local (a hashed bag of stemmed words); no embedding API is
 - Ownership: an ownership graph ingested from Git history, blame, CODEOWNERS, reviews and imported record authors, linked to Slack contacts. Answers and referrals teach scoped first contacts; explicit ownership overrides remain optional.
 - Decision memory: search signed and evidence-resolved answers by stemmed lexical overlap, hashed-embedding cosine, and backend-native text search (SQLite FTS5 or PostgreSQL), over question, context, answer, and rationale, recency-weighted, with superseded rows excluded and the newest of a same-subject pair ranked first.
 - The ladder: applicable prior answers and model-checked records can resolve with a citation; without answerability checking, retrieved records remain context for a person. Predictions are labeled as such and never sign-off; corrections withdraw dependent suggestions and supersede.
-- MCP: eighteen tools for tasks, source import, connection status and evidence export over the standard HTTP transport share the same data with the web inbox. None of them approves anything.
+- MCP: nineteen tools for tasks, source import, connection status and evidence export over the standard HTTP transport share the same data with the web inbox. None of them approves anything.
 - Visibility: activity feed, live inbox refresh, per-decision event history including every rung's verdict, the ownership graph, and full JSON history export.
 - Local protections: Host/Origin validation, CSRF tokens for REST writes, HTML escaping, a restrictive content security policy, and optimistic concurrency checks for inbox answers.
 
@@ -285,12 +302,13 @@ If a relevant learned route depends on material facts missing from the current t
 
 **With inference configured**, a fast model (`BRIDGE_FAST_MODEL`) can map a question with no path to the tree's directories, write the brief the owner reads and advise the kickoff verdict from the same digest the rules saw. A prior decision or pending question on the paths still engages. Without inference the deterministic protocol remains available.
 
-The eighteen tools exposed to agents (the running server's `tools/list` is the authoritative schema):
+The nineteen tools exposed to agents (the running server's `tools/list` is the authoritative schema):
 
 | Tool | Purpose |
 | --- | --- |
 | `bridge_start_task` | Start with `title`, `repo`, the original `goal`, optional `agent`, `requester`, discovered `paths`, `client_key` and task `facts`. Returns `task_id`, a verdict (`engage`, `pass` or `unplaced`) and discovery. Resume an existing task with `task_id` alone. |
 | `bridge_add_node` | One decision as a node: `task_id`, `question`, optional `context`, `parent_id`, `paths`, `options`, `category`, `client_ref`, `requester`, `adopt`, `depends_on`. Idempotent. |
+| `bridge_correct_node_facts` | Explicit complete replacement of an active unsigned agent node's facts with `expected_revision`, `correction_ref`, and `reason`; audits and reevaluates applicability without changing historical authority. See [fact corrections](fact-corrections.md). |
 | `bridge_settle_node` | An unsigned agent proposal and rationale, with optional additive `source_evidence` containing exact current record/version/role pins; retains existing dependencies and requires human sign-off. See [the source contract](context-memory.md#unsigned-agent-proposals). |
 | `bridge_get_tree` | The whole canvas: verdict, nested nodes with status and answers, what each depends on, follow-ups people added, notes people wrote on the task, what to do next. |
 | `bridge_wait` | Wait for the people: blocks up to `timeout` seconds until a person acts on the task (an answer, a sign-off, a correction, a hand-on, a follow-up question) and returns what changed; with `since` (the `observed_at` of the last read) what happened meanwhile comes back at once. |
