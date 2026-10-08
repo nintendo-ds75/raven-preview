@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from urllib.request import Request, HTTPRedirectHandler, build_opener
@@ -127,9 +128,28 @@ def capabilities(config, *, deadline=None):
     return [t['name'] for t in found]
 
 
-def hook(config, host, payload, *, deadline=None):
+# Hooks that must never trap the agent: if Raven cannot answer, the host
+# stops or ends as it would without Raven.
+FAIL_OPEN_EVENTS = ('Stop', 'SessionEnd')
+
+
+def lifecycle_hook(config, host, payload, *, deadline=None):
+    """Stop: held while a person has not answered (the agent is told to
+    bridge_wait). SessionEnd: the session can be resumed for later answers."""
     verify_project(config, payload.get('cwd', config['project']), deadline=deadline)
+    session = payload.get('session_id')
+    if payload.get('hook_event_name') == 'SessionEnd':
+        call(config, 'bridge_host_event', binding(config, host, session, 'end'), deadline=deadline)
+        return {}
+    result = call(config, 'bridge_host_event', binding(config, host, session, 'stop'), deadline=deadline)
+    return {'decision': 'block', 'reason': result['reason']} if result.get('hold') else {}
+
+
+def hook(config, host, payload, *, deadline=None):
     event_name = payload.get('hook_event_name')
+    if event_name in FAIL_OPEN_EVENTS:
+        return lifecycle_hook(config, host, payload, deadline=deadline)
+    verify_project(config, payload.get('cwd', config['project']), deadline=deadline)
     session = payload.get('session_id')
     if event_name not in ('SessionStart', 'UserPromptSubmit'):
         raise ValueError('Unsupported hook event')
@@ -183,14 +203,61 @@ def finish(config, task_id, base, checks):
         'diff_sha256': hashlib.sha256(diff).hexdigest(), 'checks': checks})
 
 
-def resume_command(host, session, prompt):
+def resume_command(host, session, prompt, output_file=''):
+    """The host's own resume, headless, in its automatic permission mode:
+    Claude Code's auto mode (a classifier approves ordinary work in the
+    checkout and blocks risky actions; an unsupported model falls back to
+    manual and edits are denied) and Codex's workspace-write sandbox."""
     if not session or session.startswith('-'):
         raise ValueError('An exact session ID is required')
     if host == 'claude':
-        return ['claude', '--print', '--resume', session, '--permission-mode', 'default', prompt]
+        return ['claude', '--print', '--resume', session, '--permission-mode', 'auto', '--output-format', 'json', prompt]
     if host == 'codex':
-        return ['codex', 'exec', 'resume', session, prompt]
+        return ['codex', 'exec', '--sandbox', 'workspace-write'] + (['-o', str(output_file)] if output_file else []) + [
+            'resume', session, prompt]
     raise ValueError('Unsupported coding host')
+
+
+def _git(root, *args):
+    try:
+        return subprocess.check_output(['git', '-C', root, *args], stderr=subprocess.DEVNULL, timeout=30).decode(
+            'utf-8', 'replace')
+    except (OSError, subprocess.SubprocessError):
+        return ''
+
+
+def _numstat(root, base):
+    return {line for line in _git(root, 'diff', '--numstat', '--no-ext-diff', base, '--').splitlines() if line}
+
+
+def _changed(root, base, before):
+    """Files the resumed run changed against where it started, as
+    `path (+added -removed)`; edits that were already there are left out."""
+    out = []
+    for line in sorted(_numstat(root, base) - before):
+        added, removed, path = (line.split('\t', 2) + ['', ''])[:3]
+        out.append(f'{path} (+{added} -{removed})' if added.isdigit() else path)
+    return out
+
+
+def _outcome(host, completed, output_file):
+    """The host's final message and the actions its permission mode denied."""
+    if host == 'claude':
+        try:
+            data = json.loads(completed.stdout or '')
+        except ValueError:
+            return (completed.stderr or completed.stdout or '')[-3000:], []
+        denied = []
+        for d in data.get('permission_denials') or []:
+            if isinstance(d, dict):
+                detail = d.get('tool_input') or {}
+                target = (detail.get('command') or detail.get('file_path') or '') if isinstance(detail, dict) else ''
+                denied.append((str(d.get('tool_name') or 'tool') + (' ' + str(target) if target else ''))[:300])
+        return str(data.get('result') or ''), denied
+    try:
+        return Path(output_file).read_text()[-3000:], []
+    except OSError:
+        return (completed.stderr or completed.stdout or '')[-3000:], []
 
 
 def watch_once(config, host, session, worker, run=subprocess.run):
@@ -200,13 +267,37 @@ def watch_once(config, host, session, worker, run=subprocess.run):
     message = result.get('message')
     if not message:
         return result
-    try:
-        completed = run(resume_command(host, session, message['prompt']), cwd=config['project'], timeout=1200, check=False)
-        success = completed.returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        success = False
+    root = config['project']
+    base = _git(root, 'rev-parse', 'HEAD').strip()
+    before = _numstat(root, base) if base else set()
+    with tempfile.TemporaryDirectory(prefix='raven-resume-') as scratch:
+        output_file = str(Path(scratch) / 'last-message.txt')
+        try:
+            completed = run(resume_command(host, session, message['prompt'], output_file), cwd=root, timeout=1200,
+                            check=False, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+            code = completed.returncode
+            summary, denied = _outcome(host, completed, output_file)
+        except subprocess.TimeoutExpired:
+            code, summary, denied = 124, 'Stopped after 20 minutes without finishing.', []
+        except (OSError, subprocess.SubprocessError) as error:
+            code, summary, denied = 127, type(error).__name__, []
+    success = code == 0
     call(config, 'bridge_host_event', {**args, 'event': 'ack' if success else 'release', 'message_id': message['id']})
-    return {'resumed': success, 'message_id': message['id']}
+    reported = None
+    try:
+        reported = call(config, 'bridge_host_event', {**args, 'event': 'report', 'message_id': message['id'],
+            'exit_code': code, 'summary': summary[-3000:],
+            'changed': _changed(root, base, before)[:200] if base else [], 'denied': denied[:200]})
+    except Exception:
+        pass  # The resume itself is acknowledged; a lost report is not retried into a second run.
+    return {'resumed': success, 'message_id': message['id'], 'report': reported}
+
+
+def watch_all(config, host, worker, run=subprocess.run):
+    """One pass over every stopped session this credential has in this
+    checkout. Working or held sessions are left alone."""
+    listed = call(config, 'bridge_host_event', binding(config, host, 'sessions', 'sessions'))
+    return [watch_once(config, host, session, worker, run) for session in listed.get('sessions', [])]
 
 
 def main():
@@ -219,6 +310,7 @@ def main():
     p.add_argument('--base', help='Required for finish: exact commit before the task began')
     p.add_argument('--checks', default='')
     p.add_argument('--allow-background', action='store_true')
+    p.add_argument('--all', action='store_true', help='watch: every stopped session in this checkout')
     args = p.parse_args()
     try:
         if args.action == 'hook':
@@ -236,12 +328,16 @@ def main():
             if not args.task: raise ValueError('--task is required')
             result = finish(config, args.task, args.base, args.checks)
         elif args.action == 'watch':
-            if not args.allow_background or not args.session:
-                raise ValueError('Background resume requires --allow-background and an exact --session; stop the interactive host first')
+            if not args.allow_background or not (args.session or args.all):
+                raise ValueError('Background resume requires --allow-background and an exact --session or --all; '
+                                 'stop the interactive host first')
             worker = uuid.uuid4().hex
-            print('Watching this idle session with its normal permissions. Ctrl-C stops background resume.', flush=True)
+            print(('Watching every stopped ' + args.host + ' session in this checkout' if args.all else
+                   'Watching this idle session') + ' and resuming it in auto mode when a person answers. '
+                  'Ctrl-C stops background resume.', flush=True)
             while True:
-                result = watch_once(config, args.host, args.session, worker)
+                result = (watch_all(config, args.host, worker) if args.all
+                          else watch_once(config, args.host, args.session, worker))
                 print(json.dumps(result), flush=True)
                 time.sleep(15)
         print(json.dumps(result))
@@ -252,6 +348,13 @@ def main():
         message = str(error) if isinstance(error, ValueError) else 'Raven connection or host operation failed; check the local connection with status'
         print(message, file=sys.stderr)
         if args.action == 'hook':
+            try:
+                fail_open = json.loads(raw).get('hook_event_name') in FAIL_OPEN_EVENTS
+            except (ValueError, AttributeError, NameError):
+                fail_open = False
+            if fail_open:
+                print('{}')
+                raise SystemExit(0)
             print(json.dumps({'decision': 'block', 'reason': message}))
         raise SystemExit(2)
 

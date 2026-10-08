@@ -311,7 +311,7 @@ class HostHTTPTests(SharedServer):
         second = hc.watch_once(self.config, 'claude', self.payload['session_id'], 'worker-b', passed)
         self.assertTrue(second['resumed'])
         self.assertEqual(first['message_id'], second['message_id'])
-        self.assertEqual(calls[0][0][:6], ['claude','--print','--resume','session-real-http','--permission-mode','default'])
+        self.assertEqual(calls[0][0][:6], ['claude','--print','--resume','session-real-http','--permission-mode','auto'])
         self.assertNotIn('shell', calls[0][1])
 
     def test_finish_captures_exact_diff_and_rejects_untracked_files(self):

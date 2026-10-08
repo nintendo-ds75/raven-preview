@@ -65,33 +65,84 @@ Other server names are only an inventory, not proof of their permissions or
 availability. It does not crawl unconfigured services, request OAuth access, or
 read other connectors' credentials.
 
+## Keep the agent waiting while a person answers
+
+The adapter also installs `Stop` and `SessionEnd` hooks. While a decision on the
+session's open task waits on a person, `Stop` is refused and the agent is told
+to call `bridge_wait` with the task id, so an answer given in Slack reaches an
+agent that is still running. The refusal names only the task id and a count;
+question and answer text stays on the tree. The hold lasts at most
+`BRIDGE_STOP_HOLD_MINUTES` in total (default 20, set where Raven runs). A new
+prompt from the person at the keyboard starts it afresh. Past the budget the
+agent stops, and a later answer resumes it as described below.
+
+`Stop` and `SessionEnd` fail open. If Raven is unreachable or slow, the hook
+returns no decision and the host stops as it would without Raven. Only
+`UserPromptSubmit` registration blocks visibly on failure.
+
 ## Resume an idle coding session after a person replies
 
 Raven keeps a durable mailbox for the authenticated host session. Human answers,
 signatures, referrals, required follow-ups and source changes produce resumable
 work. A late correction can wake a completed task too. Only one Raven supervisor
-can lease a message at a time; acknowledgement advances its cursor.
+can lease a message at a time; acknowledgement advances its cursor. An answer
+the agent already read on the tree while it was held does not resume it again.
 
 Stop the interactive host first, then deliberately enable a local supervisor:
 
 ```sh
 cd /absolute/path/to/code
-python3 .raven/host.py watch --host claude --session EXACT_SESSION_ID --allow-background
-# Or use --host codex with that host's session ID.
+python3 .raven/host.py watch --host claude --all --allow-background
+# Or one exact session: --session EXACT_SESSION_ID. Use --host codex for Codex.
 ```
 
-The supervisor polls every 15 seconds and invokes the installed host's normal
-resume command, in the bound checkout, with its normal permissions. Source text
-cannot specify a shell command. Ctrl-C stops background execution. Raven's server
-never starts a process on the customer's machine by itself.
+With `--all`, the supervisor resumes every session of this credential in this
+checkout that has **stopped** (its `Stop` or `SessionEnd` hook reported so). A
+session that is working, or held waiting on a person, is left alone.
+
+The supervisor polls every 15 seconds and runs the installed host's own resume
+command in the bound checkout, in the host's automatic mode:
+
+| Host | Command |
+| --- | --- |
+| Claude Code | `claude --print --resume <session> --permission-mode auto --output-format json "<prompt>"` |
+| Codex | `codex exec --sandbox workspace-write -o <file> resume <session> "<prompt>"` |
+
+Claude Code's auto mode is not blanket approval. A classifier approves
+ordinary work in the checkout and blocks risky actions such as force pushes,
+deploys and writes to protected paths. A headless run cannot ask anyone, so a
+blocked action is denied and the run continues without it. Auto mode needs a
+supported model; on an older model the session starts in manual mode and
+edits are denied. Codex runs inside its workspace-write sandbox. Source text
+cannot specify a shell command. Ctrl-C stops background execution. Raven's
+server never starts a process on the customer's machine by itself.
+
+### The report back to Slack
+
+After each resume, the supervisor reports what happened. Raven records it on
+the task (`host_resume_report`) and posts it once to every Slack thread it
+started for the task:
+
+- who answered and what they said;
+- the agent's final message, quoted, capped and stripped of mentions (it is
+  the agent's claim, not Raven's);
+- the files the run changed against where it started, with line counts;
+- any actions the host's permission mode denied, with the command to resume
+  the session yourself and approve them;
+- how many decisions still wait on people, and a link to the task.
+
+A failed resume is reported too, and its message is released for a later
+attempt. Claude Code reports denied actions in its JSON output; Codex reports
+only its exit status and final message.
 
 Delivery is **at least once**. A failed process releases the message; an abandoned
 lease can be claimed after 30 minutes. One invocation is bounded to 20 minutes.
 A crash after host success but before acknowledgement can replay the notification,
-so the resumed host must read current task state. This does not coordinate with
-an independently running interactive client: keep that client stopped while the
-supervisor owns the session. It is not an always-on cloud scheduler, and it does
-not implement ChatGPT Work's separate MCP Events subscription API.
+so the resumed host must read current task state. With `--session`, nothing
+coordinates with an independently running interactive client: keep that client
+stopped while the supervisor owns the session. It is not an always-on cloud
+scheduler, and it does not implement ChatGPT Work's separate MCP Events
+subscription API.
 
 ## Submit the actual change
 

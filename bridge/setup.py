@@ -180,7 +180,7 @@ def install_host_hooks(project, host_path, url, token, clients, repo=''):
         if not isinstance(config, dict) or not isinstance(config.get('hooks', {}), dict):
             raise ValueError(f'Invalid existing hook configuration: {path}')
         command = 'python3 ' + shlex.quote(str(Path(host_path) / '.raven/host.py')) + ' hook --host ' + client
-        for event_name in ('SessionStart', 'UserPromptSubmit'):
+        for event_name in ('SessionStart', 'UserPromptSubmit', 'Stop', 'SessionEnd'):
             current = config.setdefault('hooks', {}).setdefault(event_name, [])
             if not isinstance(current, list):
                 raise ValueError(f'Invalid existing {event_name} hooks: {path}')
