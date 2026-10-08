@@ -3051,7 +3051,10 @@ def sign_off(store, decision_id: str, data, actor=None, transaction_db=None) -> 
             graph.append_event("signoff", {"task_id": d.task_id, "decision_id": d.id, "by": by, "corrected": False,
                                            "revision": stamp, "basis": basis,
                                            **authz.event_provenance(actor, data.get("source"))}, db=db)
-        cm.snapshot_decision(db, d.id, pins=replacement_pins, reason='human-signoff')
+        confirmed_version = cm.snapshot_decision(db, d.id, pins=replacement_pins, reason='human-signoff')
+        if basis == 'owner' and not required and not remaining:
+            from .routing_memory import observe_owner_confirmation
+            observe_owner_confirmation(graph, db, confirmed_version, stamp)
         if not remaining:
             from .execution_store import record_answer
             record_answer(db, {"id": d.id, "run_id": d.task_id, "owner_name": by}, current["answer"] or "",

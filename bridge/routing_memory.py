@@ -46,6 +46,7 @@ def record(graph, decision_id, person_id, outcome):
 
 # A contact hint is reconsidered after six months. This is not approval expiry.
 CONTACT_FRESH_DAYS = 180
+CONTACT_RESPONSES = ('answered', 'owner_confirmed')
 
 
 def _version_identity(snapshot):
@@ -239,25 +240,30 @@ def _typed_match(old_context, current, old_facts, facts):
 
 
 def observe(graph, decision, outcome, from_person_id='', to_person_id='', reason='', *, db=None,
-            source_revision=None):
+            source_revision=None, occurred_at=None, source_context=None, identity_salt=None):
     """Append contact evidence inside its source writer; never authorize an action.
 
     Revision identity makes callback/replay retries idempotent. No name/prose
     backfill: these identities must come from the committed product boundary.
     """
     db = graph.db if db is None else db
-    if outcome not in ('referred', 'declined', 'answered'):
+    if outcome not in ('referred', 'declined', *CONTACT_RESPONSES):
         raise ValueError('Unknown contact observation outcome')
-    if not to_person_id or (outcome != 'answered' and (not from_person_id or from_person_id == to_person_id)):
+    if not to_person_id or (outcome not in CONTACT_RESPONSES and (not from_person_id or from_person_id == to_person_id)):
         return
     revision = source_revision or decision['updated_at']
-    key = json.dumps([decision['id'], revision, outcome, from_person_id, to_person_id])
+    identity = [decision['id'], revision, outcome, from_person_id, to_person_id]
+    if outcome == 'owner_confirmed':
+        # Task context can change without a new decision version. Include the
+        # material transition while keeping every genuine version pin intact.
+        identity.append(identity_salt)
+    key = json.dumps(identity)
     observation_id = hashlib.sha256(key.encode()).hexdigest()
     sequence = db.execute('SELECT COALESCE(MAX(sequence),0)+1 AS n FROM contact_observations WHERE decision_id=?',
                           (decision['id'],)).fetchone()['n']
     snapshot = {key: decision[key] or '' for key in ('repo', 'question', 'category', 'path', 'facts')}
-    stamp, observed_at = revision, now_iso()
-    source_context = _source_context(db, decision)
+    stamp, observed_at = occurred_at or revision, now_iso()
+    source_context = _source_context(db, decision) if source_context is None else source_context
     row = db.execute('''INSERT INTO contact_observations
         (id,decision_id,sequence,from_person_id,to_person_id,outcome,reason,repo,question,category,path,facts,created_at,
          source_revision,observed_at,source_context)
@@ -279,6 +285,45 @@ def observe_answer(graph, db, decision, basis, actor_id, stamp):
     if person_id and basis != 'admin-override' and (not actor_id or actor_id == person_id):
         observe(graph, decision, 'answered', to_person_id=person_id, reason='Recorded human answer',
                 db=db, source_revision=stamp)
+
+
+def observe_owner_confirmation(graph, db, decision_version_id, stamp):
+    """Contact-only completion after the ordinary owner sign-off succeeds.
+
+    The caller supplies its already-established owner basis. Freeze the exact
+    committed response version, but compare material content and immutable pins
+    separately: another signature timestamp is not a new contact response.
+    """
+    from .context_memory import decision_binding
+    version = db.execute('SELECT decision_id,snapshot FROM decision_versions WHERE id=?', (decision_version_id,)).fetchone()
+    binding = decision_binding(db, version['decision_id']) if version else None
+    if not binding or binding['source_version_id'] != decision_version_id:
+        return  # An obsolete callback cannot append a past response again.
+    snapshot = json.loads(version['snapshot'])
+    decision = snapshot['decision']
+    owner = db.execute('SELECT person_id FROM owners WHERE id=?', (decision['owner_id'],)).fetchone()
+    if not owner or not owner['person_id'] or db.execute(
+            "SELECT 1 FROM events WHERE decision_id=? AND kind='route_learning_optout'", (decision['id'],)).fetchone():
+        return
+    context = _source_context(db, decision)
+    material = {'decision': {key: decision.get(key) for key in (
+        'answer', 'rationale', 'answered_by', 'source', 'source_id', 'source_revision', 'kind', 'evidence',
+        'repo', 'question', 'context', 'category', 'path', 'scope_paths', 'facts', 'applicability')},
+        'sources': sorted([p['record_id'], p['source_version_id'], p['role']] for p in snapshot['sources']),
+        'derivations': sorted([p['related_id'], p['kind'], p.get('source_version_id', '')]
+                              for p in snapshot['derivations']), 'context': context}
+    fingerprint = hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
+    previous = db.execute("SELECT id,source_context FROM contact_observations WHERE decision_id=? "
+        "AND to_person_id=? AND outcome='owner_confirmed' ORDER BY sequence DESC LIMIT 1",
+        (decision['id'], owner['person_id'])).fetchone()
+    if previous and _context_dict(previous['source_context']).get('confirmation', {}).get('response_fingerprint') == fingerprint:
+        return
+    previous_id = previous['id'] if previous else ''
+    context['confirmation'] = {'decision_version_id': decision_version_id, 'response_fingerprint': fingerprint,
+                               'previous_observation_id': previous_id}
+    observe(graph, decision, 'owner_confirmed', to_person_id=owner['person_id'],
+            reason='Owner confirmed an existing answer', db=db, source_revision=decision_version_id,
+            occurred_at=stamp, source_context=context, identity_salt=[fingerprint, previous_id])
 
 
 def _age(stamp):
@@ -321,7 +366,7 @@ def _evidence_rows(graph, repo):
         for edge in chain:
             if edge['outcome'] == 'declined':
                 yield {**edge, 'person_id': edge['from_person_id'], 'updated_at': edge['created_at']}
-        answers = [i for i, row in enumerate(chain) if row['outcome'] == 'answered']
+        answers = [i for i, row in enumerate(chain) if row['outcome'] in CONTACT_RESPONSES]
         if not answers:
             continue
         answer_index = answers[-1]
@@ -332,7 +377,7 @@ def _evidence_rows(graph, repo):
         # Work back only through the continuous, same-scope route to this answer.
         person_id, seen, edges = answer['to_person_id'], {answer['to_person_id']}, []
         for edge in reversed(chain[:answer_index]):
-            if edge['outcome'] == 'answered':
+            if edge['outcome'] in CONTACT_RESPONSES:
                 continue  # A correction does not erase its still-scoped referral path.
             if edge['to_person_id'] != person_id or not _same_scope(edge, answer):
                 break
@@ -352,7 +397,8 @@ def _evidence_rows(graph, repo):
         (SELECT 1 FROM events e WHERE e.decision_id=f.decision_id AND e.kind='route_learning_optout')
         AND (NOT EXISTS (SELECT 1 FROM contact_observations o WHERE o.decision_id=f.decision_id)
              OR (f.outcome='answered' AND NOT EXISTS
-                 (SELECT 1 FROM contact_observations o WHERE o.decision_id=f.decision_id AND o.outcome='answered')))
+                 (SELECT 1 FROM contact_observations o WHERE o.decision_id=f.decision_id
+                  AND o.outcome IN ('answered','owner_confirmed'))))
         ORDER BY f.updated_at DESC''', (repo,)):
         yield dict(row)
 
@@ -464,7 +510,7 @@ def candidates(graph, repo, question, path='', context='', category='', facts=No
             if details is not None:
                 details[(person['id'], row['outcome'], row['decision_id'])] = {
                     **row['_context_match'], 'observation_id': row.get('id', '')}
-    order = {'answered': 0, 'connector': 1, 'declined': 2}
+    order = {'answered': 0, 'owner_confirmed': 0, 'connector': 1, 'declined': 2}
     return sorted(latest.values(), key=lambda r: (order.get(r[1], 3), -r[2], r[0]['name'], r[0]['id']))
 
 
@@ -477,6 +523,9 @@ def contact_evidence(graph, person, outcome, decision_id, detail=None):
     if outcome == 'connector':
         return (f"learned helpful connector: {person['name']} referred along the completed chain for decision "
                 f"{decision_id}; ask for a referral, not presumed expertise or authority" + suffix)
+    if outcome == 'owner_confirmed':
+        return (f"learned first contact: {person['name']} confirmed an existing answer for decision {decision_id}; "
+                'owner confirmation, not answer authorship or permanent authority' + suffix)
     prefix = 'learned first contact' if structured else 'legacy learned first contact'
     return (f"{prefix}: {person['name']} answered decision {decision_id}; "
             'confirm or refer, not permanent authority' + suffix)
@@ -499,7 +548,7 @@ def clarify(graph, task_id, repo, question, key, path='', category='', facts=Non
     if previous and previous['question'] != question:
         raise Invalid('This client_ref already names a different scope clarification')
     facts = parse_facts(facts)
-    if any(outcome == 'answered' for _, outcome, *_ in candidates(
+    if any(outcome in CONTACT_RESPONSES for _, outcome, *_ in candidates(
             graph, repo, question, path=path, category=category, facts=facts, task_id=task_id,
             contact_context=contact_context)):
         return None
@@ -507,7 +556,7 @@ def clarify(graph, task_id, repo, question, key, path='', category='', facts=Non
     for person, row, _, missing in _matching(graph, repo, question, path, '', category, facts, missing_scope=True,
                                            task_id=task_id, contact_context=contact_context):
         missing_namespaces = row['_context_match']['missing_source_namespaces']
-        if row['outcome'] != 'answered' or not (missing or missing_namespaces) or row['decision_id'] in seen:
+        if row['outcome'] not in CONTACT_RESPONSES or not (missing or missing_namespaces) or row['decision_id'] in seen:
             continue
         suggestions.append({'decision_id': row['decision_id'], 'prior_contact': person['name'],
                             'source_facts': parse_facts(row['facts']), 'missing_keys': sorted(missing),

@@ -48,7 +48,7 @@ def route_ranked(store: Graph, repo: str, question: str,
     taken = {r[0] for r in ranked}
     for named_path in [path, *(also_paths or [])]:
         ranked.extend(_record_authors(store, repo, named_path, requester, taken))
-    from .routing_memory import candidates, contact_evidence
+    from .routing_memory import CONTACT_RESPONSES, candidates, contact_evidence
     learned_details = {}
     learned = candidates(store, repo, question, path, context, category, facts, task_id=task_id,
                          decision_id=decision_id, contact_context=contact_context, details=learned_details, notes=notes)
@@ -61,9 +61,9 @@ def route_ranked(store: Graph, repo: str, question: str,
         explicit_ids = {a['id'] for a in store.authority_rows(repo) if a['source'] not in ('referral', 'answer')}
         fixed = {a['name'] for a in matches if a['strong'] and a['role'] == 'decides' and a['id'] in explicit_ids}
         verified = [r for r in ranked if r[0] in fixed]
-        prior = [(p['name'], [contact_evidence(store, p, outcome, did, learned_details.get((p['id'], outcome, did)))], (2 if outcome == 'answered' else 1) + score)
+        prior = [(p['name'], [contact_evidence(store, p, outcome, did, learned_details.get((p['id'], outcome, did)))], (2 if outcome in CONTACT_RESPONSES else 1) + score)
                  for p, outcome, score, did, _ in learned
-                 if outcome in ('answered', 'connector') and p['name'] not in fixed]
+                 if outcome in (*CONTACT_RESPONSES, 'connector') and p['name'] not in fixed]
         seen = {r[0] for r in verified + prior}
         ranked = verified + prior + [r for r in ranked if r[0] not in seen | declined]
     if store.get_setting("slack_discovery") != "1":
