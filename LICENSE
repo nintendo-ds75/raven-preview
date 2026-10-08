@@ -1,0 +1,91 @@
+Raven Source Available License 1.0
+
+Copyright 2026 Divahar Sivanesan and Max Hu
+
+1. Scope and acceptance
+
+“Licensors” means Divahar Sivanesan and Max Hu. Raven is the name of the project, not a separate legal entity identified by this license.
+
+“Software” means the Raven source code, executable code and accompanying documentation that the Licensors expressly make available under this license. Separately licensed third-party material is excluded.
+
+The permissions below are granted under the copyrights that the Licensors own or are authorized to license, are nonexclusive and worldwide, and are subject to the conditions of this license. By exercising these permissions, you agree to these conditions. If you act for an organization, you must have authority to accept this license for that organization.
+
+This is a source-available license. It is not an open-source license approved by the Open Source Initiative.
+
+2. Personal and noncommercial use
+
+You may copy, run and modify the Software without charge or a time limit for your own noncommercial personal projects, learning, research and hobbies.
+
+You may also use the Software without charge or a time limit to develop, maintain or contribute to bona fide noncommercial open-source projects. For this purpose, an open-source project is one made available under an Open Source Initiative-approved license. This permission covers using Raven as a tool for that work; it does not allow relicensing Raven itself under an incompatible license.
+
+These permissions do not cover Commercial Use as defined below. An individual’s unrelated personal or volunteer activity does not become Commercial Use merely because the individual is employed by a business.
+
+3. Commercial use
+
+“Commercial Use” means use of the Software by, on behalf of, or for the operations, products or services of a business operated for profit. This includes sole proprietors, freelancers, consultants, startups and other for-profit organizations.
+
+Commercial Use includes internal business use, production use, work for customers, paid services and development of a business’s products. It applies whether or not the business currently earns revenue or makes a profit.
+
+Publishing a project’s source code or using an open-source license for that project does not exempt otherwise commercial activity. Work performed by or for a for-profit business remains Commercial Use.
+
+“Organization” means the business for which Commercial Use occurs and its affiliates under common control. “Control” means ownership of more than half of the voting interests or the power to direct management. Commercial Use by employees, contractors or other people acting for an Organization is use by that Organization.
+
+4. Commercial trial
+
+You and your Organization may copy, run and modify the Software for Commercial Use without charge for one period of 90 consecutive calendar days.
+
+The trial begins on the first day that you, or anyone acting for your Organization, runs, deploys or modifies any version of the Software offered under this license for Commercial Use. The first day counts as day one.
+
+The trial includes internal business use and production use. Merely viewing the public source code or making a repository fork without running, deploying or modifying it for Commercial Use does not start the trial.
+
+An Organization has one shared trial. Different people, teams, projects, machines, accounts, deployments or affiliates do not receive separate trials. Reinstalling, copying, modifying, forking or upgrading the Software does not restart or extend the trial. Incorporating or reorganizing substantially the same business does not create a new trial.
+
+5. Commercial use after the trial
+
+After the trial expires, Commercial Use requires a separate, valid paid team license from the Licensors covering that use. If you do not have that license, you must stop Commercial Use.
+
+The price, covered Organization, users, duration and other commercial terms must be agreed separately with the Licensors. This license does not automatically enroll anyone in a subscription, authorize a charge or create a payment obligation merely because the trial ends.
+
+Expiry of the commercial trial does not end otherwise permitted personal or noncommercial use or the source-sharing permissions below.
+
+6. Source sharing and modifications
+
+You may make and share source-code copies of the Software, including public repository forks and modifications permitted by this license, provided that you:
+
+- Include this license and retain existing copyright, attribution and third-party notices.
+- Clearly identify material changes you make.
+- Do not represent that recipients receive broader rights in the Licensors’ Software than this license permits.
+
+Each recipient receives permission for the Licensors’ Software directly from the Licensors under this license. A recipient’s Commercial Use must qualify for its own trial or be covered by its own valid commercial license. Your trial or commercial license does not automatically extend to recipients.
+
+The source-copying and source-sharing permissions in this section are available even if you work for a business, and continue after a commercial trial expires. They do not authorize running, deploying or making changes to the Software for Commercial Use beyond the applicable trial or commercial license. Nothing here limits rights that users independently have under GitHub’s applicable terms for viewing or forking a public repository.
+
+You retain any rights you hold in your original modifications. Those rights do not remove the conditions applying to the Licensors’ Software contained in a modified version.
+
+7. Third-party material and your work
+
+Third-party components, dependencies and other separately licensed material remain subject to their respective licenses. This license does not replace those licenses, restrict permissions they independently grant or claim ownership of that material.
+
+Using Raven does not give the Licensors ownership of your data, projects or other work. This license does not apply to those materials merely because Raven processes or helps create them. Any Raven code included in them remains subject to its applicable license.
+
+No permission to use the Licensors’ trademarks or to imply endorsement is granted.
+
+8. Earlier versions and other agreements
+
+This license applies only to Software expressly offered under it. It does not retroactively change or revoke rights previously granted under another license.
+
+Any separate written agreement with the Licensors governs the uses it expressly covers. Otherwise, uses not permitted by this license require separate permission.
+
+The permissions in this license are conditional on compliance with its applicable terms. If a use no longer qualifies for permission, that use must stop unless it is independently authorized by law or a separate agreement.
+
+9. No warranty
+
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED “AS IS” AND “AS AVAILABLE,” WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+This license does not promise maintenance, updates or support. Any such commitments must be agreed separately.
+
+10. Limitation of liability
+
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSORS WILL NOT BE LIABLE FOR DAMAGES ARISING FROM OR RELATING TO THE SOFTWARE OR THIS LICENSE, INCLUDING LOSS OF PROFITS, DATA OR BUSINESS, WHETHER THE CLAIM IS BASED ON CONTRACT, TORT OR ANOTHER LEGAL THEORY, EVEN IF ADVISED THAT SUCH DAMAGES COULD OCCUR.
+
+Nothing in this license excludes or limits liability or other rights that applicable law does not permit to be excluded or limited.

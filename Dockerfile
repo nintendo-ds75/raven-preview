@@ -20,6 +20,7 @@ COPY --chown=bridge:bridge scripts ./scripts
 COPY --chown=bridge:bridge bench ./bench
 COPY --chown=bridge:bridge evals ./evals
 COPY --chown=bridge:bridge bridge_mcp.py ./
+COPY --chown=bridge:bridge LICENSE ./
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/bridge-entrypoint
 USER bridge
 EXPOSE 7333

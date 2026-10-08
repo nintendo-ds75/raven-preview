@@ -64,6 +64,24 @@ People can ask for context, explain an answer, correct it, or say who to ask nex
 
 Manual ownership overrides and additional required approvers are available for teams that want them. They are not prerequisites. The host agent can check connection and delivery problems with `bridge_connection_status`, so the browser is optional for everyday work.
 
+## Licensing
+
+Raven is source-available under the [Raven Source Available License 1.0](LICENSE),
+copyright 2026 Divahar Sivanesan and Max Hu. Personal noncommercial projects and
+bona fide noncommercial open-source work are free without a time limit.
+
+For-profit use, including internal business use and pre-revenue startups, receives
+one 90-day trial per organization, including its affiliates, starting with its
+first commercial use of a version offered under these terms. The trial permits
+production use and does not reset with employees, reinstalls, forks or upgrades.
+Afterward, continued commercial use requires a separate paid team license or
+must stop. There is no automatic charge.
+
+Public source-code forks are permitted with the license and notices intact.
+Third-party material keeps its own licenses, and these terms do not retroactively
+revoke earlier grants. See [LICENSE](LICENSE) for the controlling terms. This is
+not an OSI-approved open-source license.
+
 ## Install locally with Docker
 
 You need Docker Desktop, or Docker Engine with Compose v2, running on your machine. The first build needs internet access. No host Node or AWS account is required. The optional deterministic coding-host hooks use Python 3 on the host; the Docker app itself does not need it.
