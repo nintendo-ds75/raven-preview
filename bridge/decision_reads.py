@@ -104,6 +104,36 @@ def _version_summary(row, decision_id):
     return out
 
 
+def _recorded_history(db, decision_id):
+    """Decision-local saved-state classification, never authority validation.
+
+    Representatives have fixed metadata and exact reads, not text previews.
+    They remain visible regardless of page position or recent invalidations.
+    """
+    approval = _approval_predicate(db)
+    predicates = {'approval_states': approval,
+                  'signed_states': f"({approval}) AND {_saved(db, 'signoff')}='signed'",
+                  'rule_use_states': f"({approval}) AND {_saved(db, 'signoff')}='rule'"}
+    columns = ['count(*) AS saved_state_count',
+               *(f'count(CASE WHEN {where} THEN 1 END) AS {key}' for key, where in predicates.items())]
+    counts = db.execute('SELECT ' + ','.join(columns) + ' FROM decision_versions v WHERE v.decision_id=?',
+                        (decision_id,)).fetchone()
+    overview = {'decision_id': decision_id, 'scope': 'this_decision_only',
+                'saved_state_count': counts['saved_state_count']}
+    for key, where in predicates.items():
+        row = db.execute('SELECT v.id,v.sequence,v.recorded_at FROM decision_versions v '
+                         'WHERE v.decision_id=? AND ' + where + ' ORDER BY v.sequence DESC,v.id LIMIT 1',
+                         (decision_id,)).fetchone() if counts[key] else None
+        overview[key] = {'count': counts[key], 'latest': _version_summary(row, decision_id) if row else None}
+    overview['notice'] = (
+        'Immutable saved-state classification on this decision only, not signature verification or current authorization. '
+        'Counts measure saved states, not distinct approvals or grants; groups overlap. A rule use is not a new human signature. '
+        'Zero means no matching saved states on this decision, not proof that no approval occurred here or elsewhere. '
+        'Preserved answer/rationale text alone does not establish or erase recorded signoff or rule use. '
+        'Read the exact versions and linked decisions for historical evidence; current permission is separate.')
+    return overview
+
+
 def _authority(current):
     return {key: current[key] for key in ('id', 'status', 'signoff', 'needs_review',
             'authorized', 'approval_pending', 'updated_at') if key in current}
@@ -195,25 +225,26 @@ def get_decision(store, args):
         raise Invalid('version_id cannot be combined with cursor or limit')
     if detail == 'full' and any(key in args for key in ('cursor', 'limit')):
         raise Invalid('detail=full cannot be combined with cursor or limit')
-    if detail == 'full' and not version_id:
-        return store.get_decision(decision_id)
     limit = _limit(args)
     binding = _digest({'decision_id': decision_id, 'limit': limit})
     cursor = _read_cursor(args['cursor'], binding, HISTORY_COLLECTIONS) if 'cursor' in args else None
     with store.connect() as db:
         _begin(db)
-        current = store.get_decision(decision_id, _include_history=False, _db=db)
+        current = store.get_decision(decision_id, _include_history=detail == 'full' and not version_id, _db=db)
+        overview = _recorded_history(db, decision_id)
         if version_id:
             row = db.execute('SELECT id,sequence,snapshot,recorded_at FROM decision_versions WHERE decision_id=? AND id=?',
                              (decision_id, version_id)).fetchone()
             if row is None:
                 raise Invalid('Decision history version not found on this decision; version_id must be a decision_versions ID, not a signed/proof revision')
-            return {'decision_id': decision_id, 'version_id': row['id'], 'sequence': row['sequence'],
+            return {'recorded_history': overview, 'decision_id': decision_id, 'version_id': row['id'], 'sequence': row['sequence'],
                     'recorded_at': row['recorded_at'], 'historical_snapshot': json.loads(row['snapshot']),
                     'current_authorization': _authority(current),
                     'saved_revision': _saved_revision(current),
                     'notice': 'Complete immutable saved snapshot. Its recorded status/signoff/grant is historical; '
                               'current_authorization describes the decision now and does not authorize a new request.'}
+        if detail == 'full':
+            return {'recorded_history': overview, **current}
         omitted = {}
         for key, sql, params in (
                 ('events', 'SELECT count(*) FROM events WHERE decision_id=?', (decision_id,)),
@@ -239,7 +270,7 @@ def get_decision(store, args):
 
     def response():
         has_more = any(offsets[key] < totals[key] for key in HISTORY_COLLECTIONS)
-        return {**out, **pages, 'projection': {'detail': 'summary', 'notice': NOTICE,
+        return {'recorded_history': overview, **out, **pages, 'projection': {'detail': 'summary', 'notice': NOTICE,
                 'omitted_fields': omitted, 'full_read': {'decision_id': decision_id, 'detail': 'full'},
                 'history_format': 'metadata and labeled previews; use version_id for complete snapshot'},
                 'pagination': {'limit': limit, 'snapshot': snapshot, 'max_content_bytes': MAX_CONTENT_BYTES,

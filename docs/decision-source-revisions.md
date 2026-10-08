@@ -60,6 +60,38 @@ and their histories before claiming only one or no prior decision exists.
 
 `bridge_get_decision` now defaults to a compact MCP projection capped at 32 KiB
 of JSON-encoded text. Ordinary current-state fields retain their meanings.
+
+Every MCP decision-read mode (`summary`, `full`, and exact `version_id`) starts
+its serialized response with the same bounded `recorded_history` overview:
+
+- `decision_id` and `scope="this_decision_only"` identify its local scope.
+- `saved_state_count` counts every immutable version on this decision.
+- `approval_states`, `signed_states`, and `rule_use_states` each contain a
+  saved-state `count` and `latest` representative, or `null` when none matches.
+  The approval group uses the existing recorded-state predicate: saved status
+  `approved` or signoff `signed`/`rule`, with no recorded review requirement.
+  The signed and rule-use groups further select their respective signoff value.
+  These groups overlap and count saved snapshots, never distinct approvals,
+  signatures, grants, or people. They do not validate historical signatures.
+- Each representative contains immutable version metadata and a `read` with
+  the exact `decision_id` and `version_id`. It has no prose preview or inferred
+  source-grant pin. Read that complete snapshot's saved citations and
+  derivations to follow the versions actually recorded for its sources.
+
+The overview is independent of page position and recent invalidations. It is
+read in the same database snapshot as the current fields and full or paged
+history. It stays present within the compact encoded budget even when Unicode
+text requires other fields to be omitted or previews shortened. It does not
+replace the complete history or imply that its representatives are exhaustive.
+Zero means no matching immutable saved states on this decision, not proof that
+no approval occurred here or elsewhere: legacy decisions may lack saved
+versions, and linked decisions have their own histories. A recorded rule use
+is not a new human signature. Preserved unsigned answer/rationale text alone
+cannot establish or erase recorded signoff or rule use. None of this overview
+calculates current permission or authorization for a new request; the existing
+current fields, `current_authorization`, and saved signed-revision pointer keep
+their separate meanings.
+
 `context_history` contains version metadata and explicitly named previews;
 `historical_approvals` independently lists snapshots with recorded human
 approval or rule use, so newer invalidation snapshots cannot bury them. This
@@ -71,8 +103,8 @@ or version identities invalidate the cursor even when timestamps are equal.
 
 Large current fields are omitted whole and listed in
 `projection.omitted_fields`; any retained snippet has a `_preview` suffix.
-The encoded budget includes omission metadata and the first available entry
-from each history/index collection (subject to `limit`). Labeled previews may
+The encoded budget includes the overview, omission metadata and the first
+available entry from each history/index collection (subject to `limit`). Labeled previews may
 shrink further to fit; their complete full/exact-version read paths and original
 lengths remain available. Large Unicode or escaped text must not hide the index.
 Generic event and work-item histories have explicit counts and full-read
@@ -84,13 +116,16 @@ historical signed revision is not part of `current_authorization`, and its ID
 must not be supplied as a `decision_versions` ID.
 These supported reads retrieve the complete material:
 
-- `bridge_get_decision(decision_id, detail="full")` returns the former complete
-  MCP body, without the compact response cap. It is intentionally potentially
-  large. Existing Store and HTTP human-review reads remain complete by default.
+- `bridge_get_decision(decision_id, detail="full")` adds the leading overview
+  while preserving every field and complete body from the former MCP response,
+  without the compact response cap. It is intentionally potentially large.
+  Existing Store and HTTP human-review responses are unchanged and complete.
 - `bridge_get_decision(decision_id, version_id)` returns one complete immutable
-  `historical_snapshot` and a separately labeled `current_authorization` block.
-  Copy the exact `decision_versions` ID from either compact history list. A
-  signed revision or proof revision is a different identifier and is rejected.
+  `historical_snapshot`, the leading decision-local overview, and a separately
+  labeled `current_authorization` block. The overview covers this decision's
+  saved states at read time; it is not part of the requested immutable snapshot.
+  Copy the exact `decision_versions` ID from the overview or either compact
+  history list. A signed revision or proof revision is a different identifier and is rejected.
   The version must belong to this decision. The saved signoff, grant terms,
   citations and derivations remain exactly historical. `current_authorization`
   describes this stored decision now; it does not evaluate a new work item.
@@ -111,9 +146,11 @@ no new permission decision. Follow exact reads for approval evidence and let
 the normal scoped node evaluate a new request's current facts and permission.
 
 `tests/test_decision_reads.py` covers large histories, independent approval
-discovery after 105 invalidation snapshots, saved rule uses, removal of generic
-events, explicit omissions, complete reads, unchanged automatic search,
-cursor binding, equal timestamps and concurrent writes. It is registered with
+discovery after 105 invalidation snapshots, saved rule uses beside misleading
+unsigned rationale, supported versioned-import invalidation, decision-local
+empty history, removal of generic events, explicit omissions, complete reads,
+leading MCP wire order, unchanged automatic search, cursor binding, equal
+timestamps and concurrent writes in every read mode. It is registered with
 the PostgreSQL loader; a native pass does not imply a PostgreSQL pass.
 
 The recorded-approval index counts saved snapshots, not distinct human approval actions.
