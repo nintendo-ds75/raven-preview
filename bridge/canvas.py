@@ -929,7 +929,7 @@ def _unescaped(text: str) -> str:
     return text.replace('\\"', '"') if text else text
 
 
-def add_node(store, cfg, data) -> dict:
+def add_node(store, cfg, data, *, _cached_rule_attempt=False) -> dict:
     """One decision the agent discovered, as a node of its task's tree.
     Idempotent: the same client_ref, or the same question on the same
     tree, returns the existing node. The node runs through the ladder:
@@ -994,10 +994,13 @@ def add_node(store, cfg, data) -> dict:
     _, conflict = condition_facts(facts, graph.resolve_repo(repo_key(run['repo'])))
     if conflict:
         raise Invalid(conflict)
-    if not owner_id:
+    if not owner_id and not _cached_rule_attempt:
         clarification = clarify(graph, task_id, graph.resolve_repo(repo_key(run['repo'])), question,
                                 scope_request_key, path=paths[0] if paths else '', category=category, facts=facts)
         if clarification:
+            cached = _rule_before_contact(store, data)
+            if cached is not None:
+                return cached
             return clarification
     if client_ref:
         # Nothing published under this ref. Take it before the ladder
@@ -1076,7 +1079,7 @@ def add_node(store, cfg, data) -> dict:
         ctx = (ctx + "\n" if ctx else "") + "Options: " + " | ".join(options)
     effective = cfg if cfg is not None else load()
     from . import context_connectors
-    if context_connectors._connection(store, run['repo']):
+    if not _cached_rule_attempt and context_connectors._connection(store, run['repo']):
         context_connectors.search(store, {'repo': run['repo'], 'query': question[:2000], 'task_id': task_id})
     background = effective.semantic_retrieval
     first_pass = effective.without_models() if background else effective
@@ -1087,7 +1090,8 @@ def add_node(store, cfg, data) -> dict:
     drafts: list[str] = []
     did = ""
     try:
-        row = ask(store, first_pass, task_id, question, context=ctx or "a node on the canvas",
+        query = _ask_cached_rule if _cached_rule_attempt else ask
+        row = query(store, first_pass, task_id, question, context=ctx or "a node on the canvas",
                   path=paths[0] if paths else "unknown", category=category, owner_id=owner_id or None,
                   requester=requester, hints=hints, facts=facts, keep_draft=True, also_paths=paths[1:])
         drafts = list(row.get("drafts") or [])
@@ -1097,7 +1101,8 @@ def add_node(store, cfg, data) -> dict:
         did = row.get("duplicate_stub") or row["id"]
         view = _place_node(store, graph, run, row, did, task_id, question, context, ctx, category, paths,
                            options, parent_id, client_ref, adopted, depth, scope, related_ids, depends_on,
-                           first_pass, requester, hints, drafts, scope_paths=scope_paths, deferred=background)
+                           first_pass, requester, hints, drafts, scope_paths=scope_paths,
+                           deferred=background or _cached_rule_attempt)
     except Exception:
         # A node that could not be placed is still a decision somebody
         # asked: published, not hidden. The claim follows it, so a retry
@@ -1118,6 +1123,124 @@ def add_node(store, cfg, data) -> dict:
                           owner_id, context, view['updated_at'])
     resolve_scope(graph, task_id, scope_request_key)
     return view
+
+
+class _NoCachedRule(Exception):
+    pass
+
+
+def _ask_cached_rule(store, cfg, task_id, question, **request):
+    """Use the ordinary local ladder on this writer, before any inbox route."""
+    from .ladder import run_task
+    graph = store.graph
+    run = _task(store, task_id)
+    repo = graph.resolve_repo(repo_key(run['repo']))
+    with graph.source_scope(task_id):
+        result = run_task(graph, cfg, run['title'], repo=repo, run_id=task_id,
+            keep_draft=True, scratch=True, decisions=[{
+                'question': question, 'category': request.get('category') or '',
+                'context': request.get('context') or '', 'path': request.get('path') or 'unknown',
+                'requester': request.get('requester') or '', 'hints': request.get('hints') or [],
+                'facts': request.get('facts') or {}, 'also_paths': request.get('also_paths') or []}])
+    if len(result.drafts) != 1:
+        raise _NoCachedRule()
+    row = graph.db.execute(_DECISION_SELECT + ' WHERE d.id=? AND d.run_id=? AND d.draft=1',
+                           (result.drafts[0], task_id)).fetchone()
+    if row is None or row['signoff'] != 'rule':
+        raise _NoCachedRule()
+    return {**dict(row), 'drafts': list(result.drafts)}
+
+
+def _rule_before_contact(store, data):
+    """Attempt existing local rule reuse before asking for contact-only scope.
+
+    The ordinary draft/place path checks relevance, all current premises and
+    required approvers. It cannot notify, search a connector or start a model.
+    Only its fully qualified rule result is kept. A savepoint also preserves
+    this no-write fallback when a caller already owns the outer transaction.
+    """
+    from .config import Config
+    from .graph import ts_to_iso
+    import time
+
+    class LocalRules(Config):
+        @property
+        def live_retrieval(self):
+            return False
+
+    graph = store.graph
+    with graph.transaction() as db:
+        # Never wait on another writer's unfinished client-ref claim while
+        # holding this writer. The normal retry can observe its published node.
+        ref = _text(data, 'client_ref', 200)
+        stale_claim = None
+        if ref:
+            claim = db.execute('SELECT decision_id,created_at FROM node_claims WHERE run_id=? AND client_ref=?',
+                               (data['task_id'], ref)).fetchone()
+            if claim is not None and not claim['decision_id']:
+                # Use the ordinary claim_node_ref recovery window. A live
+                # claim must not be awaited while holding this writer.
+                if not claim['created_at'] or claim['created_at'] >= ts_to_iso(time.time() - 120):
+                    return None
+                stale_claim = claim['created_at']
+        savepoint = 'contact_rule_' + uuid.uuid4().hex
+        db.execute('SAVEPOINT ' + savepoint)
+        try:
+            if stale_claim is not None:
+                # A duplicate INSERT would abort a PostgreSQL transaction.
+                # Remove only this still-stale blank claim under the writer;
+                # rollback restores it if no qualified node is published.
+                removed = db.execute("DELETE FROM node_claims WHERE run_id=? AND client_ref=? "
+                    "AND decision_id='' AND created_at=?", (data['task_id'], ref, stale_claim))
+                if removed.rowcount != 1:
+                    raise _NoCachedRule()
+            result = add_node(store, LocalRules(model_api='none', deterministic=True), data,
+                              _cached_rule_attempt=True)
+            if result.get('repeated'):
+                # Another write may have published between the caller's first
+                # lookup and this writer. Honor ordinary idempotent readback,
+                # preserving its facts notices and any existing model worker.
+                db.execute('RELEASE SAVEPOINT ' + savepoint)
+                return result
+            node_id = result['node_id']
+            # Deferred placement suppresses every notification; this local
+            # attempt never scheduled a background read that needs the flag.
+            db.execute('UPDATE decisions SET model_pending=0 WHERE id=?', (node_id,))
+            view = node_view(store, node_id, repeated=bool(result.get('repeated')))
+            from .context_connectors import blocked_decisions
+            from .ladder import _current_grant
+            from .graph import parse_facts
+            current = db.execute('SELECT * FROM decisions WHERE id=?', (node_id,)).fetchone()
+            repo = graph.resolve_repo(repo_key(_task(store, data['task_id'])['repo']))
+            source = graph.get_decision(current['source_id'], exact=True) if current['source_id'] else None
+            if (view.get('signoff') != 'rule' or not view.get('authorized')
+                    or view.get('needs_review') or graph.source_review_reason(node_id)
+                    or node_id in blocked_decisions(db, repo) or source is None
+                    or not _current_grant(graph, source, current['question'], current['context'],
+                        current['path'], parse_facts(current['facts']), repo)[0]):
+                raise _NoCachedRule()
+            if source.rule_scope != 'any':
+                # Contact clarification already identified uncertain history.
+                # An own-scope grant cannot establish its missing facts merely
+                # because some of the other historical facts happen to match.
+                from .graph import condition_facts
+                known, _ = condition_facts(parse_facts(current['facts']), repo)
+                source_row = db.execute('SELECT facts FROM decisions WHERE id=?', (source.id,)).fetchone()
+                historical, _ = condition_facts(parse_facts(source_row['facts']), repo)
+                if any(known.get(key) != value for key, value in historical.items()):
+                    raise _NoCachedRule()
+            if 'ranked' in result:
+                view['ranked'] = result['ranked']
+        except _NoCachedRule:
+            db.execute('ROLLBACK TO SAVEPOINT ' + savepoint)
+            db.execute('RELEASE SAVEPOINT ' + savepoint)
+            return None
+        except BaseException:
+            db.execute('ROLLBACK TO SAVEPOINT ' + savepoint)
+            db.execute('RELEASE SAVEPOINT ' + savepoint)
+            raise
+        db.execute('RELEASE SAVEPOINT ' + savepoint)
+        return view
 
 
 CLAIM_WAIT = 20.0

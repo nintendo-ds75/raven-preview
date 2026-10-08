@@ -165,6 +165,13 @@ The reserved `repo` condition is checked against the current task or node's
 canonical repository, so the agent need not repeat it in `facts`. An explicitly
 contradictory `facts.repo` is refused; a historical repository never supplies
 the current scope. Other missing business conditions remain unsatisfied.
+Relevant, eligible standing grants are considered alongside unsigned historical
+episodes with identical answers. A failed episode's rationale does not revoke
+a later grant; differing answers and all scope/source guards still apply. See
+[bounded rule candidate selection](rule-candidate-selection.md). A qualified
+local rule can also resolve a request before asking for contact-only historical
+scope; [the contact-order contract](rule-before-contact.md) describes its
+transactional, provider-free fallback.
 - **A decision is its question plus its scope.** On one tree, the same question with the same context and paths is one node, and a bare retry returns it; the same words about another named customer or other files, or under a new `client_ref`, is another node, linked as related. Across trees, a duplicate needs a compatible scope; the same question in another scope is related, never merged.
 - **A duplicate reads through.** A duplicate node shows its canonical decision's answer, signer and next step, counts as waiting while the canonical waits, and stops waiting when it is answered.
 - **A correction reaches every derived answer.** Every answer taken from another decision carries `source_id` and the source's revision. Correcting the source withdraws pending suggestions and marks answered and signed dependents (and their tasks) `needs_review`, transitively, until a person confirms or corrects them.

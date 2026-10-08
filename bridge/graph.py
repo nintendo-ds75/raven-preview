@@ -465,6 +465,9 @@ MEMORY_STATUSES = ("approved", "resolved")
 FULL_SCAN_MAX = 2000
 CANDIDATE_FTS = 600
 CANDIDATE_RECENT = 500
+GRANT_CANDIDATE_FTS = 32
+GRANT_CANDIDATE_RECENT = 32
+GRANT_MATCH_LIMIT = 8
 RECENT_STATUSES = ("approved", "resolved", "partial")
 # Statuses that carry an answer a person has not signed: evidence or a
 # prediction, never authorization. A finish is refused while a task
@@ -1370,7 +1373,7 @@ class Graph:
         return [r for _, r in scored[:limit]]
 
     def _fts_ids(self, table: str, terms: Iterable[str], limit: int = 20, *,
-                 repo: str = "", statuses: tuple | None = None) -> set[str]:
+                 repo: str = "", statuses: tuple | None = None, standing_grants: bool = False) -> set[str]:
         """Rank eligible rows before taking the candidate budget.
 
         A global top-N followed by scope filtering can lose every local
@@ -1386,23 +1389,24 @@ class Graph:
         relation = {"decisions_fts": "decisions", "intents_fts": "intents"}[table]
         scope, args = "", []
         if relation == "decisions" and statuses is not None:
-            scope, args = self._memory_filter(statuses, repo)
+            scope, args = self._memory_filter(statuses, repo, standing_grants=standing_grants)
         elif repo:
             scope = "(d.repo=? OR d.repo='')" if relation == "decisions" else "d.repo=?"
             args = [repo]
         where = " AND " + scope if scope else ""
+        tie = ", d.updated_at DESC, d.id" if standing_grants else ""
         if self.postgres:
             rows = self.db.execute(
                 f"SELECT d.id FROM {relation} d, websearch_to_tsquery('english', ?) AS query "
                 "WHERE d.search_vector @@ query" + where +
-                " ORDER BY ts_rank(d.search_vector, query) DESC LIMIT ?",
+                " ORDER BY ts_rank(d.search_vector, query) DESC" + tie + " LIMIT ?",
                 [" OR ".join(words[:24]), *args, limit]).fetchall()
             return {r["id"] for r in rows}
         query = " OR ".join('"' + w.replace('"', '') + '"' for w in words[:24])
         try:
             rows = self.db.execute(
                 f"SELECT d.id FROM {table} JOIN {relation} d ON d.id={table}.id "
-                f"WHERE {table} MATCH ?" + where + f" ORDER BY bm25({table}) LIMIT ?",
+                f"WHERE {table} MATCH ?" + where + f" ORDER BY bm25({table})" + tie + " LIMIT ?",
                 [query, *args, limit]).fetchall()
         except sqlite3.OperationalError:
             return set()
@@ -2127,7 +2131,7 @@ class Graph:
                 "UNION SELECT decision_id,related_id FROM decision_links WHERE kind IN ('derived','depends')"
                 ") links JOIN incompatible blocked ON blocked.id=links.related_id) SELECT id FROM incompatible)"), args
 
-    def _memory_filter(self, statuses: tuple, repo: str) -> tuple[str, list]:
+    def _memory_filter(self, statuses: tuple, repo: str, *, standing_grants: bool = False) -> tuple[str, list]:
         """One eligibility predicate for counting, ranking and fetching memory."""
         marks = ",".join("?" for _ in statuses)
         sql = f"d.status IN ({marks})"
@@ -2140,6 +2144,10 @@ class Graph:
                    "AND d.needs_review=0 AND d.signed_by!='' AND d.signed_revision!='' "
                    "AND d.signed_hash!='' AND d.signatures NOT IN ('', '[]')))")
         sql += " AND d.superseded_by='' AND d.draft=0 AND d.needs_review=0"
+        if standing_grants:
+            # Nomination only. Expiry, facts, scope and source checks still
+            # decide whether this declared grant covers the current ask.
+            sql += f" AND d.reusable=1 AND {PERSONALLY_SIGNED_SQL}"
         args: list = list(statuses)
         excluded = getattr(self._local, 'model_exclude', '')
         if excluded:
@@ -2156,7 +2164,8 @@ class Graph:
         args.extend(scoped_args)
         return sql, args
 
-    def _memory_rows(self, statuses: tuple, repo: str, ids: set[str] | None = None) -> list[sqlite3.Row]:
+    def _memory_rows(self, statuses: tuple, repo: str, ids: set[str] | None = None, *,
+                     standing_grants: bool = False) -> list[sqlite3.Row]:
         """The rows memory is made of. A row that was itself derived from
         memory or a record, and that no person signed here, is left out:
         it adds nothing its source does not, and it would let one reuse
@@ -2164,7 +2173,7 @@ class Graph:
         that never reviewed this question). An unsigned answer the agent
         settled stays in, as a prediction the ladder labels as such.
         With `ids`, only those rows."""
-        scope, args = self._memory_filter(statuses, repo)
+        scope, args = self._memory_filter(statuses, repo, standing_grants=standing_grants)
         sql = _DECISION_SELECT + " WHERE " + scope
         if ids is not None:
             out: list[sqlite3.Row] = []
@@ -2576,6 +2585,32 @@ class Graph:
                 out.append((score, _row_to_decision(row)))
         out.sort(key=lambda x: (-x[0], -x[1].updated_at))
         return out[:top_k]
+
+    def standing_grant_candidates(self, embedding: list[float], top_k: int = GRANT_MATCH_LIMIT,
+                                  min_score: float = 0.25, repo: str = "", query: str = "") -> list[tuple[float, Decision]]:
+        """A reserved finite nomination budget, independent of unsigned retries.
+
+        Apply the existing memory/repository/namespace filter plus declared
+        signed-grant membership before both limits. Never scan all grants:
+        score at most FTS + recent rows and return at most GRANT_MATCH_LIMIT.
+        Membership does not establish current applicability or authority.
+        """
+        from .llm import stem
+        import re
+        terms = sorted({stem(t) for t in re.findall(r"[a-z0-9]{3,}", query.lower())} - _STOP)
+        ids = self._fts_ids("decisions_fts", terms, limit=GRANT_CANDIDATE_FTS,
+                            repo=repo, statuses=MEMORY_STATUSES, standing_grants=True)
+        scope, args = self._memory_filter(MEMORY_STATUSES, repo, standing_grants=True)
+        ids |= {row["id"] for row in self.db.execute(
+            "SELECT d.id FROM decisions d WHERE " + scope + " ORDER BY d.updated_at DESC,d.id LIMIT ?",
+            [*args, GRANT_CANDIDATE_RECENT])}
+        out = []
+        for row in self._memory_rows(MEMORY_STATUSES, repo, ids=ids, standing_grants=True):
+            score = _cosine(embedding, self._row_embedding(row))
+            if score >= min_score:
+                out.append((score, _row_to_decision(row)))
+        out.sort(key=lambda pair: (-pair[0], -pair[1].updated_at, pair[1].id))
+        return out[:max(0, min(top_k, GRANT_MATCH_LIMIT))]
 
     def similar_open(self, embedding: list[float], top_k: int = 3, min_score: float = 0.60,
                      repo: str = "", query: str = "") -> list[tuple[float, Decision]]:

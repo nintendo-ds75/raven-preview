@@ -805,7 +805,55 @@ def _as_record(item) -> dict:
             "status": "", "resolved": 1}
 
 
-def _selector_pick(cfg: Config, question: str, cands: dict[str, tuple[str, object]]):
+def _current_grant(store: Graph, item, question: str, context: str, path: str,
+                   facts: dict | None, repo: str) -> tuple[bool, str]:
+    """Current grant eligibility, separate from relevance and answerability.
+
+    Reuse the existing conditions, scope and opaque source-review guards;
+    historical facts only compare scope and never supply current facts.
+    """
+    eligible, reason = rule_status(item, question, context, facts=facts, repo=repo)
+    if not eligible:
+        return False, reason or "no current authorized standing grant"
+    applies, reason = applicability_status(item, path, facts, repo=repo)
+    if not applies:
+        return False, reason
+    if item.rule_scope != "any":
+        other, _ = _scope_difference(question, context, path, item, facts, _facts_of(store, item.id), repo)
+        if other:
+            return False, f"the standing grant is limited to its own scope: {other}"
+    from .context_connectors import blocked_decisions
+    if item.id in blocked_decisions(store.db, repo):
+        return False, "standing grant source requires a successful observation refresh"
+    reason = store.source_review_reason(item.id)
+    return (False, reason) if reason else (True, "current grant conditions, scope and source checks pass")
+
+
+def _same_answer_grant(store: Graph, picked, candidates: list, question: str, context: str,
+                       path: str, facts: dict | None, repo: str):
+    """Keep eligible authority for the selected answer among relevant matches.
+
+    This never arbitrates differing answers or promotes an unrelated rule.
+    Call before entailment, so changing the source cannot skip that gate.
+    """
+    if guess_category(question) == "data-source" or _current_grant(
+            store, picked, question, context, path, facts, repo)[0]:
+        return picked
+    terms = set(_meaningful_terms(picked.question))
+    for eff, _sim, candidate in candidates:
+        if eff < NEAR_MEMORY_MIN or candidate.id == picked.id or candidate.answer != picked.answer:
+            continue
+        other_terms = set(_meaningful_terms(candidate.question))
+        if not terms or not other_terms or len(terms & other_terms) / min(len(terms), len(other_terms)) < 0.7:
+            continue
+        if _current_grant(store, candidate, question, context, path, facts, repo)[0]:
+            return candidate
+    return picked
+
+
+def _selector_pick(cfg: Config, question: str, cands: dict[str, tuple[str, object]], *,
+                   store: Graph | None = None, context: str = "", path: str = "",
+                   facts: dict | None = None, repo: str = ""):
     """One selector call over labeled candidates. Returns the picked
     (kind, item) or None; the model only ever selects from what it is
     shown."""
@@ -816,10 +864,22 @@ def _selector_pick(cfg: Config, question: str, cands: dict[str, tuple[str, objec
     for key, (kind, item) in cands.items():
         if kind == "memory":
             age = int(max(0, (_time.time() - item.updated_at) / 86400))
-            label = (f"signed answer, {age}d old, by {item.answered_by}"
-                     if item.source in ("human", "memory") and item.answered_by
-                     else f"earlier resolution from {item.source or 'a record'}, {age}d old, unsigned")
-            lines.append(f"{key} [{label}] Q: {item.question} A: {_memory_body(item)[:400]}")
+            if item.status == "approved" or item.signoff == "signed":
+                label = f"signed answer, {age}d old, by {item.signed_by or item.answered_by or 'a person'}"
+            elif item.signoff == "rule":
+                label = f"rule-authorized answer, {age}d old; no personal signoff on this answer"
+            else:
+                label = f"earlier resolution from {item.source or 'a record'}, {age}d old, unsigned"
+            applies, applicability_why = applicability_status(item, path, facts, repo=repo)
+            grant, grant_why = (_current_grant(store, item, question, context, path, facts, repo)
+                                if store is not None else (False, "current source and scope checks not performed"))
+            lines.append(f"{key} [{label}; origin={item.source}; authorized={item.authorized}] "
+                         f"Q: {item.question} A: {_memory_body(item)[:400]}\n"
+                         f"  Applicability: {applies}; {applicability_why}\n"
+                         f"  Standing grant: declared={item.reusable}; by={item.rule_by or 'none'}; "
+                         f"scope={item.rule_scope or 'same'}; conditions={item.rule_conditions or 'none'}; "
+                         f"expires={item.rule_expires or 'none'}\n"
+                         f"  Current grant eligible={grant}: {grant_why}")
         else:
             text = (item["title"] + " " + item["body"]).lower()
             void = _void(item)
@@ -837,7 +897,8 @@ def _selector_pick(cfg: Config, question: str, cands: dict[str, tuple[str, objec
     try:
         raw = llm_mod.Client(cfg).complete_json(
             "select", llm_mod.SELECTOR_SYSTEM,
-            f"Question: {question}\n\nCandidates:\n" + "\n".join(lines))
+            f"Question: {question}\nCurrent repository: {repo or 'unknown'}\nCurrent path: {path or 'unknown'}\n"
+            + _given(context, facts) + "\n\nCandidates:\n" + "\n".join(lines))
     except llm_mod.LLMError:
         return None
     if not isinstance(raw, dict):
@@ -1464,6 +1525,12 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             return max(sim, ov)
 
         raw = store.similar_answered(emb, top_k=8, min_score=0.25, repo=repo, query=question)
+        rule_raw = list(raw)
+        seen_rule = {candidate.id for _, candidate in rule_raw}
+        for score, candidate in store.standing_grant_candidates(emb, repo=repo, query=question):
+            if candidate.id not in seen_rule:
+                rule_raw.append((score, candidate))
+                seen_rule.add(candidate.id)
         if q_ref_res:
             have = {p.id for _, p in raw}
             for p in store.recent_answered(repo=repo, limit=12):
@@ -1477,6 +1544,8 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
         aged = (lambda p: 1.0) if guess_category(question) == "data-source" else (lambda p: _recency(p.updated_at))
         scored = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in raw),
                         key=lambda t: -t[0])
+        rule_candidates = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in rule_raw),
+                                 key=lambda t: -t[0])
         accepted = [(eff, s, p) for eff, s, p in scored if eff >= floor]
         if accepted:
             eff, sim, past = accepted[0]
@@ -1532,6 +1601,19 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                                    else ""))
         else:
             why_open.append("memory: nothing similar answered before")
+
+        def preserve_grant(picked):
+            candidate = _same_answer_grant(store, picked, rule_candidates, question, d_context, d_path, d_facts, repo)
+            if candidate.id != picked.id:
+                store.append_event("memory_grant_selected", {"task_id": task_id, "decision_id": did,
+                    "memory": candidate.id, "instead_of": picked.id,
+                    "why": "same answer from a relevant current standing grant; entailment and conflicts still checked"})
+            return candidate
+
+        if mem_pick is not None:
+            candidate = preserve_grant(mem_pick[2])
+            if candidate.id != mem_pick[2].id:
+                mem_pick = next(row for row in rule_candidates if row[2].id == candidate.id)
 
         if mem_pick is not None:
             applies, reason = applicability_status(mem_pick[2], d_path, d_facts, repo=repo)
@@ -1761,9 +1843,16 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
 
         # arbitration
         pick, pick_note, mem_lex = None, "", False
+        selector_scope = {"store": store, "context": d_context, "path": d_path, "facts": d_facts, "repo": repo}
+        memory_choices = ({"m1": ("memory", mem_pick[2])} if mem_pick is not None else {})
+        for _, _, candidate in accepted:
+            if len(memory_choices) >= 8:
+                break
+            if candidate.id not in {item.id for _, item in memory_choices.values()}:
+                memory_choices[f"m{len(memory_choices) + 1}"] = ("memory", candidate)
         if mem_pick is not None and rec_best is not None:
             if cfg.semantic_retrieval:
-                choice = _selector_pick(cfg, question, {"m1": ("memory", mem_pick[2]), "r1": ("record", rec_best)})
+                choice = _selector_pick(cfg, question, {**memory_choices, "r1": ("record", rec_best)}, **selector_scope)
                 if choice is None:
                     why_open.append("semantic: neither the matched memory nor the matched record truly answers")
                 else:
@@ -1778,9 +1867,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 pick_note = "newest source won the cross-source tie"
         elif mem_pick is not None:
             if cfg.semantic_retrieval:
-                cands: dict = {"m1": ("memory", mem_pick[2])}
-                for i, (_, _, p) in enumerate(accepted[1:4], 2):
-                    cands[f"m{i}"] = ("memory", p)
+                cands: dict = dict(memory_choices)
                 sel_rows = list(ref_rows)
                 seen_refs2 = {r["ref"] for r in sel_rows}
                 for m in store.intents_matching(_meaningful_terms(question), limit=5, repo=repo):
@@ -1788,7 +1875,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                         sel_rows.append(m)
                 for i, m in enumerate(sel_rows[:7], 1):
                     cands[f"r{i}"] = ("record", m)
-                choice = _selector_pick(cfg, question, cands)
+                choice = _selector_pick(cfg, question, cands, **selector_scope)
                 if choice is None:
                     why_open.append("semantic: neither the matched memory nor any record answers this "
                                     "question's actual ask")
@@ -1810,7 +1897,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     if m["ref"] not in seen_refs3:
                         sel_rows2.append(m)
                 cands = {f"r{i}": ("record", m) for i, m in enumerate(sel_rows2[:8], 1)}
-                choice = _selector_pick(cfg, question, cands)
+                choice = _selector_pick(cfg, question, cands, **selector_scope)
                 if choice is None:
                     why_open.append("records: the selector rejected every candidate as out of scope")
                 else:
@@ -1846,7 +1933,8 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             store.append_event("expand", {"task_id": task_id, "decision_id": did, "phrases": expansion,
                                           "added_candidates": exp_added})
             pick = _wide_select(store, cfg, question, emb, _meaningful_terms(question), repo=repo,
-                                extra_rows=sweep_rows, extra_emb=exp_emb, extra_mems=sweep_mems)
+                                extra_rows=sweep_rows, extra_emb=exp_emb, extra_mems=sweep_mems,
+                                context=d_context, path=d_path, facts=d_facts)
             if pick is None:
                 joint_rows = list(sweep_rows)
                 seen_j = {r["ref"] for r in joint_rows}
@@ -1883,6 +1971,14 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                                 f"(expansion added {exp_added} candidates)")
             else:
                 pick_note = "selected by the semantic rung"
+
+        if pick is not None and pick[0] == "memory":
+            candidate = preserve_grant(pick[1])
+            pick = ("memory", candidate)
+            if mem_lex:
+                # Similarity belongs to the selected source, including
+                # after newest-answer or semantic arbitration.
+                mem_pick = next((row for row in rule_candidates + scored if row[2].id == candidate.id), None)
 
         # Selection (including the model sweep) cannot turn a historical
         # record into approval to reverse it. Keep its citation for the owner.
@@ -2668,7 +2764,7 @@ def _how_they_decide(store: Graph, cfg, repo: str, question: str, context: str, 
 
 def _wide_select(store: Graph, cfg: Config, question: str, emb: list[float], terms: list[str], repo: str = "",
                  extra_rows: list | None = None, extra_emb: list[float] | None = None,
-                 extra_mems: list | None = None):
+                 extra_mems: list | None = None, *, context: str = "", path: str = "", facts: dict | None = None):
     cands: dict[str, tuple[str, object]] = {}
     mems: list = store.anchored_answers(repo)
     for _, past in store.similar_answered(emb, top_k=6, min_score=0.02, repo=repo, query=question):
@@ -2703,7 +2799,7 @@ def _wide_select(store: Graph, cfg: Config, question: str, emb: list[float], ter
             seen.add(m["ref"])
     for i, m in enumerate(rows[:14], 1):
         cands[f"r{i}"] = ("record", m)
-    return _selector_pick(cfg, question, cands)
+    return _selector_pick(cfg, question, cands, store=store, context=context, path=path, facts=facts, repo=repo)
 
 
 # ---------------- inbox integration ----------------

@@ -193,9 +193,13 @@ def load_tests(loader, tests, pattern):
     from test_fact_revision_boundaries import RetainedPremiseCorrectionTests, AcceptedInteractionCorrectionTests
     from test_fact_revision_external_pins import RetainedExternalPinCorrectionTests
     from test_fact_revision_freshness import FactCorrectionFreshnessTests
+    from test_rule_candidates import RuleCandidateSelectionTests
+    from test_reserved_grant_candidates import ReservedGrantCandidateTests
+    from test_rule_before_contact import RuleBeforeContactTests
     for cls in (RepositoryRuleTests, StandingGrantDisplayTests, FactRevisionTests, FactRevisionProtocolTests,
                 RetainedPremiseCorrectionTests, AcceptedInteractionCorrectionTests,
-                RetainedExternalPinCorrectionTests, FactCorrectionFreshnessTests):
+                RetainedExternalPinCorrectionTests, FactCorrectionFreshnessTests,
+                RuleCandidateSelectionTests, ReservedGrantCandidateTests, RuleBeforeContactTests):
         case = type('Postgres' + cls.__name__, (PostgresIsolation, cls), {'__module__': __name__})
         suite.addTests(loader.loadTestsFromTestCase(case))
     # Reuse the same expectations on both backends, rather than implementing
