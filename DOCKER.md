@@ -21,6 +21,77 @@ preserve data and skip unchanged repository history. No host Python, Node, Make,
 or API key is needed. Noninteractive runs omit the token from logs; `./dev login`
 prints it when needed.
 
+## Self-hosting and data flow
+
+Raven is fully self-hosted software. You run its application and database on your
+own hardware or in a cloud account you choose. You operate the network, storage,
+credentials, backups and access controls. The standard Compose stack stores the
+graph in PostgreSQL and private application files in customer-controlled volumes;
+a direct Python deployment can use SQLite. No Raven-operated application backend,
+database, hosted token broker, telemetry collector or remote license check is
+required by the shipped service.
+
+A Raven license grants software-use permissions. It does not supply infrastructure,
+inference credits or integration accounts. Hosting, inference and third-party
+service arrangements and charges are yours. There is no requirement to host Raven
+with its authors.
+
+### Services you enable can receive data
+
+The deployment and the providers you connect define where information is processed.
+Their own access, retention and data-processing terms apply; self-hosting Raven
+does not change them. The shipped paths are:
+
+- **Inference:** Raven's model client sends selected task, source, conversation and
+  diff context directly to the Anthropic Messages API using your key, or through
+  your installed Claude CLI/account. These are the currently supported internal
+  model backends, not a promise of arbitrary model-endpoint compatibility. The
+  Compose default is `BRIDGE_MODEL_API=none`. Direct Python configuration defaults
+  to Anthropic and can fall back to an installed Claude CLI; set
+  `BRIDGE_MODEL_API=none` explicitly when you want Raven's internal model calls off.
+  Local search embeddings are computed inside Raven without an embedding API.
+- **Coding agents and optional managed execution:** a connected Claude Code,
+  Codex, Cursor or other MCP host has its own provider and data settings. The
+  opt-in managed Agents API sends the selected task, packaged repository files
+  and tool results to OpenAI and runs the agent in an OpenAI-hosted environment.
+  That optional execution environment is outside your Raven server.
+- **Slack and Teams:** enabled messaging sends questions, context, review material
+  and replies through the configured workspace/service. Slack directory and search
+  calls also reach Slack. Teams bot mode contacts Microsoft's authorization/key
+  services as well as its delivery service; a Teams webhook uses its configured
+  destination. These are customer-configured integrations, not Raven-hosted relays.
+- **GitHub:** sign-in, device authorization and repository sync contact GitHub
+  directly; configured sync can poll in the background. The default connection
+  uses the shared registered Bridge Repository Access App. Local token storage does not make that App registration yours;
+  review its GitHub permissions, or [use your own registered App](docs/github-connection.md#optional-use-your-own-app)
+  or the documented operator credentials. This default registration is separate
+  from hosting Raven's application or database.
+- **Jira and Airweave:** Raven has no native Jira polling client. Records imported
+  by a coding host use that host's connector and provider permissions. Optional
+  Airweave retrieval sends searches to the `BRIDGE_AIRWEAVE_URL` you configure,
+  which may be your own Airweave service or a chosen hosted service. Airweave's
+  upstream connectors and processing are part of that separate deployment.
+  Enabled retained sources can also be refreshed in the background.
+- **Browser voice:** optional microphone recognition and speech synthesis can use
+  the browser/OS provider. Raven stores the resulting text, not audio. See
+  [voice privacy and browser behavior](docs/voice-interviews.md#privacy-and-browser-behavior).
+  Typed input avoids the browser speech path.
+
+The web application's assets are served by your Raven instance, rather than a
+required third-party asset CDN. Browser integrations, extensions, coding-host
+telemetry and provider-side processing have their own behavior; this is not a
+zero-egress or air-gapped certification. Choose integrations and network policy
+that fit the information you intend to send.
+
+### Installation and updates
+
+Cloning or fetching updates contacts the configured Git remote. Docker builds and
+rebuilds may download base images, Debian packages and Python dependencies from
+the configured registries and package sources. This installation traffic is
+separate from runtime task-data calls. The shipped service has no Raven-operated
+automatic updater or usage-reporting endpoint. Disabling inference alone does not
+disable configured integrations or package downloads.
+
 ## One setup command
 
 ```sh

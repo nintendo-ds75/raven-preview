@@ -2,6 +2,13 @@
 
 **Your agents do the work. They come to you for judgment.**
 
+**Fully self-hosted. Bring your own infrastructure and inference accounts.**
+Raven's application, database and decision memory run on your machines or in your
+cloud account. No Raven-operated application backend or database is required.
+You supply accounts for the supported model providers and integrations you enable;
+those services receive the context needed for their features under their own
+processing and retention policies. See [self-hosting and data flow](DOCKER.md#self-hosting-and-data-flow).
+
 A feature can be easy to code and still take weeks. Someone knows which usage is billable. Someone else owns pricing. A customer exception lives in a conversation. The developer ends up finding those people, carrying context between them, and turning their answers into a spec.
 
 Raven helps discover those decisions as the task unfolds. It brings together what the company already knows, proposes answers where there is useful precedent, and asks the right people for the judgment and signoff the agent still needs. The agent can prepare the work in the background while people confirm or correct its assumptions.
@@ -77,6 +84,9 @@ production use and does not reset with employees, reinstalls, forks or upgrades.
 Afterward, continued commercial use requires a separate paid team license or
 must stop. There is no automatic charge.
 
+The software license does not include cloud hosting, inference credits or
+third-party accounts. You arrange those separately with your chosen providers.
+
 Public source-code forks are permitted with the license and notices intact.
 Third-party material keeps its own licenses, and these terms do not retroactively
 revoke earlier grants. See [LICENSE](LICENSE) for the controlling terms. This is
@@ -138,9 +148,24 @@ Inference is optional for exploring the interface and deterministic routing. Mod
 
 ## Your instance and your data
 
-Docker packages the software. You supply the machine it runs on. A local trial runs on your laptop; a shared deployment needs a reachable server, HTTPS, authentication, and backups. Docker uses PostgreSQL. Direct Python installs can use SQLite.
+You operate Raven and control its storage, networking, access and backups. Use a
+local machine, your own servers or infrastructure in your chosen cloud account.
+A shared deployment needs a reachable server, HTTPS and production authentication.
+Docker uses PostgreSQL; direct Python installs can use SQLite. The application and
+stored decision graph do not need a Raven-hosted service or a remote license check.
 
-Configured inference providers and connectors receive the context needed for their calls. Raven does not automatically send us task telemetry or give us access to your instance. You can screen share, send a trace you have reviewed and redacted, or invite a named support person. Viewer access covers the workspace, not just one task. Exports are not automatically anonymous.
+Self-hosted does not mean that enabled features have no outbound traffic. Model
+calls go to your configured supported inference backend; Slack, GitHub, Teams and
+optional context connectors use their respective services. Coding agents and
+browser speech can also use their own providers. Your cloud and service providers'
+access, processing and retention terms still apply. The built-in GitHub connection
+uses a shared registered App by default; use a [customer-owned App](docs/github-connection.md#optional-use-your-own-app)
+when you need to control that registration too. See the [deployment data-flow details](DOCKER.md#self-hosting-and-data-flow).
+
+The shipped Raven application has no Raven-operated task-telemetry collector.
+Support access is something you choose to provide: you can screen share, send a
+trace you have reviewed and redacted, or invite a named support person. Viewer
+access covers the workspace, not just one task. Exports are not automatically anonymous.
 
 ## What this preview can promise today
 

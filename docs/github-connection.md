@@ -10,6 +10,13 @@ Raven includes the public identifiers for the registered
 Run `./setup` and choose **Connect GitHub** in the browser that opens. No environment
 configuration or app registration is needed for users.
 
+This is a shared App registration, not a customer-owned App. Raven's device flow
+calls GitHub directly and stores its tokens in your instance; it does not route
+them through a Raven-hosted token service. Installing the App still grants the
+permissions shown by GitHub to that registration. If your organization needs to
+control the App registration as well as its Raven deployment, use the override
+below. See [self-hosting and data flow](../DOCKER.md#self-hosting-and-data-flow).
+
 ## Optional: use your own app
 
 Fork maintainers or operators who want a separate integration can override both
