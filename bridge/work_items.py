@@ -50,7 +50,7 @@ def link(store, data):
     allowed = required | {'external_id', 'ref', 'role'}
     if not isinstance(data, dict) or not required <= data.keys() or data.keys() - allowed:
         raise Invalid('Link an existing work item with task_id, exact repo, record_id, source_version_id, '
-                      'provider, namespace, object_kind, and exactly one of external_id or ref')
+                      'provider, namespace, object_kind, and optionally one of external_id or ref')
     for key in required:
         if not isinstance(data[key], str) or not data[key] or data[key] != data[key].strip():
             raise Invalid(f'{key} must be a nonempty exact key without surrounding whitespace')
@@ -68,6 +68,13 @@ def link(store, data):
             raise Invalid('Work-item link is outside this task repository')
         if task['status'] in ('completed', 'abandoned'):
             raise Invalid('Closed task associations are historical; start a new task instead of rewriting them')
+        if 'external_id' not in data and 'ref' not in data:
+            selected = cm.citation(db, data['record_id'], data['source_version_id'])
+            if selected is None or selected['repo'] != data['repo']:
+                raise Invalid('Work-item record/version not found in this task repository')
+            # The opaque ID selects one record. Reuse its exact stored identity
+            # so lookup retains all canonical-key and live-availability checks.
+            query['external_id'] = selected['external_id']
         resolved = source_lookup.lookup(db, **query)
         if resolved['status'] != 'matched':
             raise Invalid('Work-item identity is ' + resolved['status'] + '; resolve it with bridge_lookup_record before linking')

@@ -611,11 +611,13 @@ then call `bridge_link_work_item`. The equivalent authenticated REST operation
 is `POST /api/tasks/{task_id}/work-items`, with the same fields except that
 `task_id` may be omitted; a supplied ID must match the URL.
 
-Copy `record_id`, `source_version_id`, `repo`, `provider`, `namespace`, and
-`external_id` from that read's `source`; pass its `kind` as `object_kind`.
-Alternatively use its exact current `ref` instead of `external_id`, never both.
-Ref collisions are refused even when an opaque record ID is also provided:
-use the selected source's stable external ID to disambiguate. IDs and namespace
+Copy `record_id`, `source_version_id`, `repo`, `provider`, and `namespace`
+from that read's `source`; pass its `kind` as `object_kind`. Those exact fields
+are sufficient: `record_id` uniquely selects the stored record. Optionally
+include its `external_id` or exact current `ref`, never both. Supplied selectors
+must still resolve uniquely to that record. Ref collisions are refused even
+when an opaque record ID is also provided: omit the ref or use the selected
+source's stable external ID to disambiguate. IDs and namespace
 selectors must agree. No newest match, alias guess, prose extraction or silent
 reimport occurs. Legacy sources also expose the required canonical fields.
 

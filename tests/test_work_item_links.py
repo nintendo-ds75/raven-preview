@@ -42,6 +42,9 @@ class WorkItemLinksTests(OfflineCase):
             'namespace': source['namespace'], 'object_kind': source['kind'],
             'external_id': source['external_id'], **changes}
 
+    def record_id_args(self, source, **changes):
+        return {key: value for key, value in self.args(source, **changes).items() if key != 'external_id'}
+
     def frozen(self, tables=None):
         tables = tables or ('runs', 'decisions', 'decision_versions', 'decision_source_edges',
             'decision_links', 'source_records', 'source_versions', 'source_identities',
@@ -97,6 +100,122 @@ class WorkItemLinksTests(OfflineCase):
         retry = self.store.link_work_item(args)
         self.assertFalse(retry['changed'])
         self.assertEqual(before, self.frozen())
+
+    def test_exact_record_version_without_locator_selects_one_record_and_retries(self):
+        source = self.source()
+        other = self.source(external_id='object-2')
+        source = mcp.call_tool(self.store, 'bridge_get_record',
+                               {'record_id': source['record_id'], 'repo': REPO})['source']
+        args = self.record_id_args(source)
+        before = self.frozen(('decisions', 'decision_versions', 'decision_source_edges',
+                              'decision_links', 'source_records', 'source_versions', 'source_identities',
+                              'authority', 'notifications'))
+        linked = mcp.call_tool(self.store, 'bridge_link_work_item', args)
+        self.assertTrue(linked['changed'])
+        self.assertEqual(linked['source'], {**source, 'role': 'work_item'})
+        self.assertEqual(before, self.frozen(before.keys()))
+        self.assertEqual(canvas.get_tree(self.store, self.task)['work_item_association']['record_ids'],
+                         [source['record_id']])
+        before = self.frozen()
+        self.assertFalse(self.store.link_work_item(args)['changed'])
+        self.assertEqual(before, self.frozen())
+        self.store.link_work_item(self.record_id_args(other))
+        association = canvas.get_tree(self.store, self.task)['work_item_association']
+        self.assertEqual(association['status'], 'ambiguous')
+        self.assertEqual(set(association['record_ids']), {source['record_id'], other['record_id']})
+
+    def test_record_id_only_scope_identity_and_pin_errors_are_atomic(self):
+        source = self.source()
+        another = self.source(external_id='object-2', ref='CASE-2')
+        foreign = self.source(repo='synthetic/other')
+        variants = [self.record_id_args(source, repo='synthetic/other'),
+                    self.record_id_args(source, repo='https://github.com/' + REPO),
+                    self.record_id_args(source, task_id='absent'),
+                    self.record_id_args(source, record_id='absent'),
+                    self.record_id_args(source, record_id=[]),
+                    self.record_id_args(source, namespace='site-b'),
+                    self.record_id_args(source, object_kind='ticket'),
+                    self.record_id_args(source, provider='generic'),
+                    self.record_id_args(source, source_version_id=another['source_version_id']),
+                    self.record_id_args(source, source_version_id='absent'),
+                    self.record_id_args(foreign), self.record_id_args(source, role='support'),
+                    self.record_id_args(source, role='contradiction'),
+                    self.record_id_args(source, provider='p' * 31),
+                    self.record_id_args(source, namespace='n' * 1001),
+                    self.record_id_args(source, object_kind='k' * 31),
+                    self.record_id_args(source, namespace=' site-a'),
+                    self.record_id_args(source, unexpected=True)]
+        before = self.frozen()
+        for args in variants:
+            with self.subTest(args=args), self.assertRaises(Invalid):
+                self.store.link_work_item(args)
+            self.assertEqual(before, self.frozen())
+
+    def test_record_id_only_does_not_ignore_supplied_locator_conflicts(self):
+        source = self.source()
+        self.source(external_id='object-2')
+        args = self.record_id_args(source)
+        before = self.frozen()
+        for selectors in ({'external_id': 'object-2'}, {'ref': 'CASE-1'},
+                          {'external_id': 'object-1', 'ref': 'CASE-1'},
+                          {'external_id': ''}, {'ref': ''}, {'external_id': []}):
+            with self.subTest(selectors=selectors), self.assertRaises(Invalid):
+                self.store.link_work_item({**args, **selectors})
+            self.assertEqual(before, self.frozen())
+
+    def test_record_id_only_preserves_selected_namespace_and_context_role(self):
+        source = self.source()
+        self.store.link_work_item(self.record_id_args(source))
+        other = self.source(namespace='site-b')
+        before = self.frozen()
+        with self.assertRaisesRegex(Invalid, 'selected task namespace'):
+            self.store.link_work_item(self.record_id_args(other))
+        self.assertEqual(before, self.frozen())
+        context = self.source(provider='generic', namespace='docs', kind='doc', ref='ADR-1')
+        result = self.store.link_work_item(self.record_id_args(context, role='context'))
+        self.assertEqual(result['source']['role'], 'context')
+        self.assertEqual(canvas.get_tree(self.store, self.task)['work_item_association']['record_ids'],
+                         [source['record_id']])
+
+    def test_record_id_only_rechecks_head_live_availability_and_freshness(self):
+        old = self.source()
+        current = self.source(body='A newer observation.')
+        before = self.frozen()
+        with self.assertRaisesRegex(Invalid, 'changed'):
+            self.store.link_work_item(self.record_id_args(old))
+        self.assertEqual(before, self.frozen())
+        for availability in ('deleted', 'inaccessible'):
+            with self.graph.transaction() as db:
+                db.execute('UPDATE source_records SET availability=? WHERE id=?',
+                           (availability, current['record_id']))
+            before = self.frozen()
+            with self.assertRaisesRegex(Invalid, 'unavailable'):
+                self.store.link_work_item(self.record_id_args(current))
+            self.assertEqual(before, self.frozen())
+        with self.graph.transaction() as db:
+            db.execute("UPDATE source_records SET availability='available' WHERE id=?", (current['record_id'],))
+            db.execute('INSERT INTO context_entities(record_id,repo,collection,entity_id,source_name,chunk_index,generation,verified_until,checked_at,state,query) '
+                "VALUES(?,?, 'test','test','test',0,1,'2000-01-01','','stale','')", (current['record_id'], REPO))
+        before = self.frozen()
+        with self.assertRaisesRegex(Invalid, 'unavailable'):
+            self.store.link_work_item(self.record_id_args(current))
+        self.assertEqual(before, self.frozen())
+
+    def test_record_id_only_closed_tasks_reject_new_links_and_retries(self):
+        source = self.source()
+        for status in ('completed', 'abandoned'):
+            for already_linked in (False, True):
+                with self.subTest(status=status, already_linked=already_linked):
+                    task = self.store.add_run({'repo': REPO, 'title': 'Closed association boundary'})['id']
+                    args = self.record_id_args(source, task_id=task)
+                    if already_linked:
+                        self.store.link_work_item(args)
+                    with self.graph.transaction() as db:
+                        db.execute('UPDATE runs SET status=? WHERE id=?', (status, task))
+                    before = self.frozen()
+                    with self.assertRaisesRegex(Invalid, 'Closed task'):
+                        self.store.link_work_item(args)
+                    self.assertEqual(before, self.frozen())
 
     def test_context_is_not_a_work_item_or_premise(self):
         self.store.link_work_item(self.args(self.source(), role='context'))
@@ -197,6 +316,7 @@ class WorkItemLinksTests(OfflineCase):
         self.assertEqual((legacy_row['provider'], legacy_row['namespace']), ('git', REPO))
         self.assertEqual((source['provider'], source['namespace']), ('github', 'github.com'))
         self.store.link_work_item(self.args(source))
+        self.assertFalse(self.store.link_work_item(self.record_id_args(source))['changed'])
         other = self.source(provider='github', namespace='second-installation', kind='issue', external_id='issue-7')
         before = self.frozen()
         with self.assertRaisesRegex(Invalid, 'selected task namespace'):
@@ -442,6 +562,14 @@ class WorkItemTransportTests(SharedServer):
                 self.assertTrue(self.mcp('bridge_link_work_item', {**self.args, **bad}, self.agent)['isError'])
                 self.assertEqual(self.status_of('POST', self.route, {**self.args, **bad}, token=self.agent), 400)
         self.assertEqual(self.status_of('POST', self.route, {**self.args, 'task_id': 'different'}, token=self.agent), 400)
+        self.assertEqual(self.store.graph.count_events('work_item_linked', task_id=self.task), 1)
+
+    def test_mcp_rest_accept_exact_record_version_without_locator(self):
+        args = {key: value for key, value in self.args.items() if key != 'external_id'}
+        first = self.mcp('bridge_link_work_item', args, self.agent)
+        self.assertFalse(first['isError'], first)
+        retry = self.post(self.route, {key: value for key, value in args.items() if key != 'task_id'}, token=self.agent)
+        self.assertEqual({**first['result'], 'changed': False}, retry)
         self.assertEqual(self.store.graph.count_events('work_item_linked', task_id=self.task), 1)
 
     def test_viewer_is_read_only_and_anonymous_cannot_link(self):
