@@ -382,9 +382,14 @@ its content cannot mention extra recipients or execute a confirmation.
 
 The server stores those displayed snapshots, `source_evidence`,
 `source_decision_pins`, and `expected_updated_at` with that unique proposal. The
-owner must reply with its exact `confirm <code>` (or `yes <code>`) after delivery.
+owner must reply after delivery with `confirm answer <code>` for an answer or
+correction, explicitly selecting the complete displayed payload as the answer
+only. It creates no referral, reusable rule or follow-up. Other action readings,
+including a sign-off of the existing answer, use `confirm <code>` (or `yes <code>`).
 A bare yes does not refresh sources, even when replying directly to the delivered
-reading. The existing authenticated actor, original message occurrence, thread,
+reading. Unmarked answer holds from an older version require a fresh review;
+an upgrade cannot infer that the owner selected their purpose. The existing
+authenticated actor, original message occurrence, thread,
 and delivery checks remain in force. Consuming the reading, recording consent,
 and applying the answer/signature share the same write transaction. A changed
 source, source decision, or reviewed decision revision refuses confirmation.

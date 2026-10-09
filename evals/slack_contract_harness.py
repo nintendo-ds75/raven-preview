@@ -70,9 +70,9 @@ def http_json(url, payload, headers=None, raw=None, timeout=15):
 
 def confirmation_text(readback):
     """A synthetic person copies the identity from the actually delivered reading."""
-    match = re.search(r'`confirm ([0-9a-f]{12})`', readback['text'])
+    match = re.search(r'`(confirm(?: answer)? [0-9a-f]{12})`', readback['text'])
     assert match, readback
-    return 'confirm ' + match[1]
+    return match[1]
 
 
 def eventually(predicate, description, timeout=12):
@@ -486,7 +486,7 @@ def run_contract():
         checks.append('natural referral parsed at mocked provider boundary; confirmed handoff sends a distinct DM')
         _, readback = harness.say(referred_message,
             'Please exclude internal load tests, but still bill real customer traffic.',
-            expected='Record your decision as:', user=REFERRED)
+            expected='Use this exact text as the answer only:', user=REFERRED)
         assert ANSWER in readback['text']
         assert not harness.call('bridge_get_decision', decision_id=node_id)['authorized']
         harness.restart(workers=False)

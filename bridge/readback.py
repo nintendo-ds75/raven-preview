@@ -16,11 +16,12 @@ _SIGNOFF_COMMAND = re.compile(
 MAX_PROMPT_BYTES = 12000
 
 _TOKEN = re.compile(r'^\s*(confirm|yes|decline|no)\s+([0-9a-f]{12})\s*[.!]?\s*$', re.I)
+_ANSWER_TOKEN = re.compile(r'^\s*confirm\s+answer\s+([0-9a-f]{12})\s*[.!]?\s*$', re.I)
 
 
 def migrate(db):
     have = {r['name'] for r in db.execute('PRAGMA table_info(reply_readings)')}
-    for name in ('proposal_id', 'source_occurrence', 'source_event_id', 'delivered_ref', 'prompt', 'source_review'):
+    for name in ('proposal_id', 'source_occurrence', 'source_event_id', 'delivered_ref', 'prompt', 'source_review', 'selection_kind'):
         if name not in have:
             db.execute(f"ALTER TABLE reply_readings ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
     if 'delivered_at' not in have:
@@ -62,6 +63,9 @@ def occurrence_time(occurrence):
 
 def intent(text, include_signoff=False):
     from .delivery import _CONFIRM_RE, _DECLINE_RE
+    answer = _ANSWER_TOKEN.fullmatch(text or '')
+    if answer:
+        return 'confirm', answer[1].lower()
     token = _TOKEN.fullmatch(text or '')
     if token:
         return ('confirm' if token[1].lower() in ('yes', 'confirm') else 'decline', token[2].lower())
@@ -87,7 +91,28 @@ def declining(text):
 def guidance(held):
     if not held or not held.get('proposal_id'):
         return 'Please restate your answer for a fresh read-back.'
+    if held.get('selection_kind') == 'answer_only':
+        return (f"To use this exact text as the answer only, reply `confirm answer {held['proposal_id']}` "
+                f"(or `decline {held['proposal_id']}`). To edit it, send `answer: …` or use your task review page.")
     return f"Review the read-back and reply `confirm {held['proposal_id']}` (or `decline {held['proposal_id']}`)."
+
+
+def _action(held):
+    if held.get('kind') != 'conversation':
+        return held
+    try:
+        action = json.loads(held.get('answer') or '{}')
+        return action if isinstance(action, dict) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def answer_summary(answer, rationale=''):
+    """The owner selects this payload's purpose; a classifier cannot do so."""
+    return ('Use this exact text as the answer only:\n' + answer
+            + ('\nReason: ' + rationale if rationale else '')
+            + '\nThis records the answer only. It does not create a reusable rule, refer the question, '
+              'or add a follow-up. Send those requests separately.')
 
 
 def begin(graph, platform, channel, thread, person_id, occurrence, event_id=""):
@@ -130,7 +155,11 @@ def save(delivery, channel, thread, person_id, occurrence, event_id, values, sum
     if held and held.get('source_event_id') == event_id:
         return held['prompt']  # A resumed occurrence cannot create a different proposal.
     from . import source_review
-    kind = json.loads(values['answer']).get('kind') if values['kind'] == 'conversation' else values['kind']
+    action = _action(values)
+    kind = action.get('kind')
+    selection_kind = 'answer_only' if kind == 'answer' else ''
+    if selection_kind:
+        summary = answer_summary(action.get('answer', ''), action.get('rationale', ''))
     review, summary, error = source_review.prepare(delivery, values['decision_id'], kind, summary, snapshot)
     if error:
         delivery._forget_reading(channel, thread, person_id)
@@ -138,7 +167,6 @@ def save(delivery, channel, thread, person_id, occurrence, event_id, values, sum
     proposal = uuid.uuid4().hex[:12]
     from .approval_scope import render, transport_text
     decision = delivery.store.get_decision(values['decision_id'])
-    action = json.loads(values['answer']) if values['kind'] == 'conversation' else values
     # An identical semantic answer without a rationale is a co-signature.
     # All other answer proposals use Store.answer's explicit empty default,
     # not an inferred or inherited reusable applicability grant.
@@ -154,7 +182,8 @@ def save(delivery, channel, thread, person_id, occurrence, event_id, values, sum
     # A source review already contains the complete root and escaped data.
     # Preserve its trusted framing; do not duplicate the root or escape twice.
     displayed = summary if review else transport_text(summary) + '\n' + transport_text(render(decision))
-    prompt = displayed + effect + '\nNothing applied yet. ' + guidance({'proposal_id': proposal})
+    prompt = displayed + effect + '\nNothing applied yet. ' + guidance(
+        {'proposal_id': proposal, 'selection_kind': selection_kind})
     # Measure the complete escaped prompt, including its confirmation code.
     # A provider-truncated message cannot constitute reviewed consent.
     from .delivery import complete_chat_text
@@ -165,7 +194,7 @@ def save(delivery, channel, thread, person_id, occurrence, event_id, values, sum
     values = {**values, 'channel': channel, 'thread_ts': thread, 'person_id': person_id,
               'proposal_id': proposal, 'source_occurrence': json.dumps(occurrence, sort_keys=True),
               'source_event_id': event_id, 'delivered_ref': '', 'delivered_at': 0, 'prompt': prompt,
-              'source_review': review}
+              'source_review': review, 'selection_kind': selection_kind}
     columns = list(values)
     updates = ','.join(f'{key}=excluded.{key}' for key in columns if key not in ('channel', 'thread_ts', 'person_id'))
     graph.db.execute(f"INSERT INTO reply_readings({','.join(columns)}) VALUES({','.join('?' for _ in columns)}) "
@@ -195,6 +224,9 @@ def refusal(delivery, channel, thread, person_id, held, text, occurrence):
     """Call inside the same writer transaction as snapshot consumption/action."""
     if not held:
         return 'Not recorded: there is no read-back waiting for confirmation. Tell me the answer you want recorded.'
+    if (held.get('person_id') != person_id or held.get('channel') != channel
+            or held.get('thread_ts') != thread):
+        return 'Not recorded: this read-back belongs to a different person or conversation. Review your current read-back.'
     try:
         source = json.loads(held.get('source_occurrence') or '{}')
     except (TypeError, ValueError):
@@ -211,6 +243,18 @@ def refusal(delivery, channel, thread, person_id, held, text, occurrence):
     kind, token = intent(text, include_signoff=True)
     if not kind or (token and token != held.get('proposal_id')):
         return 'Not recorded: that confirmation does not identify the current read-back. ' + guidance(held)
+    if kind == 'confirm':
+        answer_selection = _ANSWER_TOKEN.fullmatch(text or '')
+        if _action(held).get('kind') == 'answer':
+            if held.get('selection_kind') != 'answer_only':
+                # Upgrades cannot retrofit purpose selection onto a prompt the
+                # person already received. Leave other action holds intact.
+                return ('Nothing signed: this older answer read-back needs a fresh review. '
+                        'Send the complete answer again, or edit it on your task review page.')
+            if not answer_selection:
+                return 'Nothing signed. Choose whether to use the displayed text as the answer only. ' + guidance(held)
+        elif answer_selection or held.get('selection_kind'):
+            return 'Nothing applied: this is not an answer-only read-back. ' + guidance(held)
     if not token and held.get('source_review'):
         return 'Not recorded: reviewing current sources requires the exact read-back code. ' + guidance(held)
     if not token and occurrence.get('reply_to') != held['delivered_ref']:
@@ -238,4 +282,5 @@ def record_confirmation(delivery, held, person, occurrence):
         'source_occurrence': json.loads(held['source_occurrence']), 'confirmation_occurrence': occurrence,
         'delivered_ref': held['delivered_ref'], 'delivered_at': held['delivered_at'],
         'proposal': {key: held[key] for key in ('revision', 'kind', 'answer', 'rationale', 'recipient', 'prompt', 'source_review')},
+        'selection_kind': held.get('selection_kind', ''),
     })

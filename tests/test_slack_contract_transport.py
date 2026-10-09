@@ -102,7 +102,7 @@ class SlackCustomerPathTests(unittest.TestCase):
             _, node, message = h.begin()
             from evals.slack_contract_harness import confirmation_text
             _, readback = h.say(message, 'Please exclude internal load tests, but still bill real customer traffic.',
-                  expected='Record your decision as:')
+                  expected='Use this exact text as the answer only:')
             h.say(message, confirmation_text(readback), user=REFERRED, expected='no read-back')
             self.assertFalse(h.call('bridge_get_decision', decision_id=node)['authorized'])
             h.say(message, confirmation_text(readback), expected='Recorded')

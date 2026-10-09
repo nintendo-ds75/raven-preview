@@ -2,6 +2,7 @@
 
 Only model output is replaced. No provider or live messages are used.
 """
+from test_delivery import confirmation
 import json
 from unittest.mock import patch
 
@@ -59,7 +60,7 @@ class AuthoredAnswerTests(DeliveryCase):
 
     def confirm(self, held=None, event_id=''):
         held = held or self.held()
-        return self.reply(self.message, 'UWES', 'confirm ' + held['proposal_id'], event_id)
+        return self.reply(self.message, 'UWES', confirmation(held), event_id)
 
     def test_observed_condition_and_reason_survive_lossy_model_answer_on_assumed_node(self):
         before = self.row()

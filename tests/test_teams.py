@@ -1,4 +1,5 @@
 """Offline signed Bot Connector fixtures; these are not a live Teams certification."""
+from test_delivery import confirmation as readback_confirmation
 import copy
 import json
 import os
@@ -251,9 +252,9 @@ class TeamsTests(OfflineCase):
             self.submit(self.activity("We should leave that one out"))
         self.assertEqual(self.decision()["status"], "pending")
         prompt = self.graph.db.execute("SELECT text FROM teams_replies").fetchone()[0]
-        self.assertIn("Not recorded yet", prompt)
+        self.assertIn("Use this exact text as the answer only:", prompt)
         held = self.delivery._reading(self.config.destination, self.thread["id"], self.wes)
-        self.submit(self.activity("confirm " + held["proposal_id"]))
+        self.submit(self.activity(readback_confirmation(held)))
         self.assertEqual(self.decision()["answer"], "Exclude the load test")
 
     def test_stale_readback_cannot_sign_new_question(self):
@@ -367,7 +368,7 @@ class TeamsTests(OfflineCase):
         self.delivery.inbox.process()
         self.assertEqual(self.decision()["status"], "pending")
         held = self.delivery._reading(self.config.destination, self.thread["id"], self.wes)
-        self.submit(self.activity("confirm " + held["proposal_id"]))
+        self.submit(self.activity(readback_confirmation(held)))
         self.assertEqual(self.decision()["answer"], "Exclude the load test")
 
     def test_concurrent_duplicate_callback_applies_once(self):

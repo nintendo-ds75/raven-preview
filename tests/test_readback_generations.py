@@ -4,6 +4,7 @@ Only local fixture transports and mocked interpretation are used. A callback's
 identity, source ordering, proposal generation, and delivered message must all
 agree before a human confirmation can authorize the held interpretation.
 """
+from test_delivery import confirmation
 import copy
 import json
 import time
@@ -109,10 +110,10 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         self.send('yes', stamp='1700000001.000020')
         self.assert_pending()
         self.assertEqual(self.held(), b)
-        self.send('confirm ' + a['proposal_id'], stamp='1700000001.000040')
+        self.send(confirmation(a), stamp='1700000001.000040')
         self.assert_pending()
         self.assertEqual(self.held(), b)
-        self.send('confirm ' + b['proposal_id'], stamp='1700000001.000050')
+        self.send(confirmation(b), stamp='1700000001.000050')
         self.assertEqual(self.store.get_decision(self.node_id)['answer'], 'Bill the load test.')
 
     def test_new_root_thread_yes_requires_the_visible_proposal_code(self):
@@ -121,12 +122,15 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         self.assert_pending()
         self.assertEqual(self.held(), held)
         self.assertIn(held['proposal_id'], self.slack.messages[-1]['text'])
-        self.send('yes ' + held['proposal_id'])
+        self.send(confirmation(held))
         self.assertTrue(self.store.get_decision(self.node_id)['authorized'])
 
-    def test_bare_yes_can_bind_an_exact_delivered_reply_reference(self):
+    def test_answer_selection_is_required_even_for_exact_delivered_reply_reference(self):
         held = self.offer()
         self.direct('yes', self.occurrence(reply_to=held['delivered_ref']))
+        self.assert_pending()
+        self.assertEqual(self.held(), held)
+        self.direct(confirmation(held), self.occurrence(stamp='1700000002.000002', reply_to=held['delivered_ref']))
         self.assertTrue(self.store.get_decision(self.node_id)['authorized'])
         self.assertIsNone(self.held())
 
@@ -142,10 +146,10 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         b = self.offer()
         self.assertNotEqual(a['proposal_id'], b['proposal_id'])
         self.assertNotEqual(a['source_occurrence'], b['source_occurrence'])
-        self.send('yes ' + a['proposal_id'])
+        self.send(confirmation(a))
         self.assert_pending()
         self.assertEqual(self.held(), b)
-        self.send('yes ' + b['proposal_id'])
+        self.send(confirmation(b))
         self.assertTrue(self.store.get_decision(self.node_id)['authorized'])
 
     def test_semantic_readback_obeys_the_same_occurrence_and_generation_checks(self):
@@ -154,10 +158,10 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         self.assertEqual(b['kind'], 'conversation')
         with interpretation('Bill the load test.', semantic=True):
             self.send('yes', stamp='1700000001.000020')
-            self.send('confirm ' + a['proposal_id'], stamp='1700000001.000040')
+            self.send(confirmation(a), stamp='1700000001.000040')
             self.assert_pending()
             self.assertEqual(self.held(), b)
-            self.send('confirm ' + b['proposal_id'], stamp='1700000001.000050')
+            self.send(confirmation(b), stamp='1700000001.000050')
         self.assertEqual(self.store.get_decision(self.node_id)['answer'], 'Bill the load test.')
 
     def test_missing_or_invalid_occurrence_cannot_create_a_readback(self):
@@ -181,10 +185,10 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
                    self.occurrence(id=''), self.occurrence(platform='teams')]
         for occurrence in invalid:
             with self.subTest(occurrence=occurrence):
-                self.direct('confirm ' + held['proposal_id'], occurrence)
+                self.direct(confirmation(held), occurrence)
                 self.assert_pending()
                 self.assertEqual(self.held(), held)
-        self.direct('confirm ' + held['proposal_id'], self.occurrence())
+        self.direct(confirmation(held), self.occurrence())
         self.assertTrue(self.store.get_decision(self.node_id)['authorized'])
 
     def test_duplicate_equal_and_older_sources_cannot_replace_newer_readback(self):
@@ -194,7 +198,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
                 self.send('An obsolete interpretation.', stamp=stamp)
                 self.assertEqual(self.held(), held)
         self.assert_pending()
-        self.send('confirm ' + held['proposal_id'], stamp='1700000001.000011')
+        self.send(confirmation(held), stamp='1700000001.000011')
         self.assertEqual(self.store.get_decision(self.node_id)['answer'], 'Exclude the load test.')
 
     def test_duplicate_callback_does_not_reissue_or_apply_twice(self):
@@ -205,22 +209,22 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
             handle_slack_event(self.delivery, copy.deepcopy(event))
         self.assertEqual(self.held(), held)
         self.assertEqual(len(self.slack.messages), before)
-        confirmation = self.send('confirm ' + held['proposal_id'])
+        confirmation_event = self.send(confirmation(held))
         signature_events = self.graph.db.execute("SELECT count(*) FROM events WHERE kind='owner_approved'").fetchone()[0]
-        handle_slack_event(self.delivery, copy.deepcopy(confirmation))
+        handle_slack_event(self.delivery, copy.deepcopy(confirmation_event))
         self.assertEqual(self.graph.db.execute("SELECT count(*) FROM events WHERE kind='owner_approved'").fetchone()[0], signature_events)
 
     def test_wrong_person_and_workspace_cannot_confirm_owner_proposal(self):
         held = self.offer()
-        self.send('confirm ' + held['proposal_id'], user='UMAR')
+        self.send(confirmation(held), user='UMAR')
         self.assert_pending()
         self.assertEqual(self.held(), held)
-        wrong_workspace = self.event('confirm ' + held['proposal_id'])
+        wrong_workspace = self.event(confirmation(held))
         wrong_workspace['team_id'] = 'TOTHER'
         handle_slack_event(self.delivery, wrong_workspace)
         self.assert_pending()
         self.assertEqual(self.held(), held)
-        self.send('confirm ' + held['proposal_id'])
+        self.send(confirmation(held))
         self.assertTrue(self.store.get_decision(self.node_id)['authorized'])
 
     def test_proposal_codes_cannot_cross_threads_or_tasks(self):
@@ -230,14 +234,14 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         self.delivery.deliver_now()
         second_message = self.slack.messages[-1]
         second = self.offer('Bill the separate account.', message=second_message)
-        self.send('confirm ' + first['proposal_id'], message=second_message)
-        self.send('confirm ' + second['proposal_id'])
+        self.send(confirmation(first), message=second_message)
+        self.send(confirmation(second))
         self.assert_pending()
         self.assert_pending(second_id)
         self.assertEqual(self.held(), first)
         self.assertEqual(self.held(second_message), second)
-        self.send('confirm ' + second['proposal_id'], message=second_message)
-        self.send('confirm ' + first['proposal_id'])
+        self.send(confirmation(second), message=second_message)
+        self.send(confirmation(first))
         self.assertEqual(self.store.get_decision(second_id)['answer'], 'Bill the separate account.')
         self.assertEqual(self.store.get_decision(self.node_id)['answer'], 'Exclude the load test.')
 
@@ -245,7 +249,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         held = self.offer()
         task = self.store.get_decision(self.node_id)['run_id']
         canvas.finish_task(self.store, {'task_id': task, 'status': 'abandoned', 'reason': 'Synthetic cancellation'})
-        self.send('confirm ' + held['proposal_id'])
+        self.send(confirmation(held))
         row = self.store.get_decision(self.node_id)
         self.assertEqual(row['status'], 'withdrawn')
         self.assertFalse(row['authorized'])
@@ -257,20 +261,20 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         self.assertIsNone(self.held())
         b = self.offer()
         self.assertNotEqual(a['proposal_id'], b['proposal_id'])
-        self.send('confirm ' + a['proposal_id'])
+        self.send(confirmation(a))
         self.assert_pending()
         self.assertEqual(self.held(), b)
-        self.send('confirm ' + b['proposal_id'])
+        self.send(confirmation(b))
         self.assertTrue(self.store.get_decision(self.node_id)['authorized'])
 
     def test_delivery_proof_and_source_occurrence_survive_store_restart(self):
         held = self.offer(stamp='1700000001.000020')
         self.restart()
         self.assertEqual(self.held(), held)
-        self.send('confirm ' + held['proposal_id'], stamp='1700000001.000019')
+        self.send(confirmation(held), stamp='1700000001.000019')
         self.assert_pending()
         self.assertEqual(self.held(), held)
-        self.send('confirm ' + held['proposal_id'], stamp='1700000001.000021')
+        self.send(confirmation(held), stamp='1700000001.000021')
         self.assertTrue(self.store.get_decision(self.node_id)['authorized'])
 
     def test_failed_delivery_cannot_confirm_until_durable_reply_is_sent(self):
@@ -280,7 +284,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         held = self.held()
         self.assertTrue(held['proposal_id'])
         self.assertFalse(held['delivered_ref'])
-        self.send('confirm ' + held['proposal_id'])
+        self.send(confirmation(held))
         self.assert_pending()
         self.assertEqual(self.held(), held)
         self.restart()
@@ -292,7 +296,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         self.assertEqual(delivered['source_occurrence'], held['source_occurrence'])
         self.assertTrue(delivered['delivered_ref'])
         self.assertEqual(self.graph.db.execute('SELECT state FROM slack_replies WHERE id=?', (event['event_id'],)).fetchone()[0], 'sent')
-        self.send('confirm ' + held['proposal_id'])
+        self.send(confirmation(held))
         self.assertTrue(self.store.get_decision(self.node_id)['authorized'])
 
     def test_retrying_old_prompt_never_rebinds_newer_delivered_proposal(self):
@@ -305,10 +309,10 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         self.graph.db.execute('UPDATE slack_replies SET next_attempt=0 WHERE id=?', (first_event['event_id'],))
         self.delivery.inbox.flush()
         self.assertEqual(self.held(), current)
-        self.send('confirm ' + first['proposal_id'])
+        self.send(confirmation(first))
         self.assert_pending()
         self.assertEqual(self.held(), current)
-        self.send('confirm ' + current['proposal_id'])
+        self.send(confirmation(current))
         self.assertEqual(self.store.get_decision(self.node_id)['answer'], 'Bill the load test.')
 
     def test_missing_slack_timestamp_never_becomes_a_proposal_or_confirmation(self):
@@ -318,7 +322,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
             handle_slack_event(self.delivery, event)
         self.assertIsNone(self.held())
         held = self.offer()
-        event = self.event('confirm ' + held['proposal_id'])
+        event = self.event(confirmation(held))
         event['event'].pop('ts')
         handle_slack_event(self.delivery, event)
         self.assert_pending()
@@ -337,7 +341,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
                 self.assertEqual([dict(r) for r in self.graph.db.execute(
                     "SELECT * FROM events WHERE kind IN ('readback_confirmed','owner_approved','answer_corrected','signoff') ORDER BY id")],
                     [r for r in before if r['kind'] in ('readback_confirmed','owner_approved','answer_corrected','signoff')])
-        self.send('confirm ' + held['proposal_id'])
+        self.send(confirmation(held))
         self.assertEqual(self.store.get_decision(self.node_id)['answer'], 'Replace it with a stricter task-only answer.')
 
     def test_confirmation_authored_before_delivery_is_not_retimed_by_processing(self):
@@ -354,15 +358,15 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         self.graph.db.execute('UPDATE slack_replies SET next_attempt=0')
         with patch.object(self.slack, 'post_message', side_effect=delivered_later):
             self.delivery.inbox.flush()
-        self.send('confirm ' + held['proposal_id'], stamp='1700000002.000001')
+        self.send(confirmation(held), stamp='1700000002.000001')
         self.assert_pending()
-        self.send('confirm ' + held['proposal_id'], stamp='1700000004.000001')
+        self.send(confirmation(held), stamp='1700000004.000001')
         self.assertTrue(self.store.get_decision(self.node_id)['authorized'])
 
     def test_legacy_readback_metadata_is_not_upgraded_into_consent(self):
         held = self.offer()
         self.graph.db.execute("UPDATE reply_readings SET source_occurrence='',proposal_id='',delivered_ref='',delivered_at=0")
-        self.send('confirm ' + held['proposal_id'])
+        self.send(confirmation(held))
         self.assert_pending()
         self.send('yes')
         self.assert_pending()
@@ -395,7 +399,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
     def test_exact_confirmation_provenance_is_appended_once(self):
         held = self.offer()
         before = [dict(r) for r in self.graph.db.execute('SELECT * FROM events ORDER BY id')]
-        event = self.send('confirm ' + held['proposal_id'])
+        event = self.send(confirmation(held))
         after = [dict(r) for r in self.graph.db.execute('SELECT * FROM events ORDER BY id')]
         self.assertEqual(after[:len(before)], before)
         proof = json.loads(next(r['detail'] for r in after if r['kind'] == 'readback_confirmed'))
@@ -431,8 +435,8 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
 
     def test_two_connection_confirmations_consume_exactly_once(self):
         held=self.offer()
-        events=[self.event('confirm '+held['proposal_id'],stamp='1700000002.000001'),
-                self.event('confirm '+held['proposal_id'],stamp='1700000002.000002')]
+        events=[self.event(confirmation(held),stamp='1700000002.000001'),
+                self.event(confirmation(held),stamp='1700000002.000002')]
         barrier=threading.Barrier(2);first_read=threading.Event();local=threading.local();original=self.delivery._reading;errors=[];connections=set()
         def reading(*args):
             result=original(*args)
@@ -473,7 +477,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
 
     def test_later_explicit_answer_defeats_paused_confirmation(self):
         held=self.offer();entered,release=threading.Event(),threading.Event();errors=[];original=self.delivery._reading
-        confirm=self.event('confirm '+held['proposal_id'],stamp='1700000002.000001')
+        confirm=self.event(confirmation(held),stamp='1700000002.000001')
         newer=self.event('answer: Bill the full spike because the fixture changed',stamp='1700000002.000002')
         def reading(*args):
             result=original(*args)
@@ -497,34 +501,34 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
             raise RuntimeError('synthetic failure after answer mutation')
         with patch.object(self.store,'answer',side_effect=failed):
             with self.assertRaisesRegex(RuntimeError,'synthetic failure'):
-                self.send('confirm '+held['proposal_id'])
+                self.send(confirmation(held))
         self.assert_pending();self.assertEqual(self.held(),held)
         self.assertEqual(self.event_count('readback_confirmed'),0);self.assertEqual(self.event_count('owner_approved'),0)
-        self.send('confirm '+held['proposal_id']);self.assertTrue(self.store.get_decision(self.node_id)['authorized'])
+        self.send(confirmation(held));self.assertTrue(self.store.get_decision(self.node_id)['authorized'])
 
     def test_semantic_followup_is_atomic_without_nested_writer(self):
         held=self.action_offer({'kind':'followup','answer':'Should we add a synthetic usage ceiling?','required':True},'Please ask whether to add a synthetic usage ceiling before finishing')
-        self.send('confirm '+held['proposal_id'])
+        self.send(confirmation(held))
         self.assertIsNone(self.held());self.assertEqual(self.event_count('readback_confirmed'),1)
         row=self.graph.db.execute('SELECT * FROM decisions WHERE parent_id=?',(self.node_id,)).fetchone()
         self.assertTrue(row);self.assertEqual(row['followup_required'],1)
 
     def test_semantic_reframe_is_atomic_without_nested_writer(self):
         held=self.action_offer({'kind':'reframe','answer':'Should synthetic usage be excluded from this invoice?','rationale':'fixture scope'},'Please replace the mistaken question with whether synthetic usage is excluded')
-        self.send('confirm '+held['proposal_id'])
+        self.send(confirmation(held))
         self.assertEqual(self.store.get_decision(self.node_id)['question'],'Should synthetic usage be excluded from this invoice?')
         self.assertEqual(self.event_count('readback_confirmed'),1)
 
     def test_semantic_rule_is_atomic_without_nested_writer(self):
         self.send('answer: Exclude it because it was synthetic')
         held=self.action_offer({'kind':'rule','conditions':'fixture=synthetic','expires':''},'Make that a rule for fixture=synthetic')
-        self.send('confirm '+held['proposal_id'])
+        self.send(confirmation(held))
         self.assertTrue(self.store.get_decision(self.node_id)['reusable'])
         self.assertEqual(self.event_count('readback_confirmed'),1)
 
     def test_semantic_handoff_keeps_question_only_scope(self):
         held=self.action_offer({'kind':'handoff','to':'<@UMAR>','scope_kind':'none','scope':''},'Please ask <@UMAR> for this question only')
-        self.send('confirm '+held['proposal_id'])
+        self.send(confirmation(held))
         row=self.store.get_decision(self.node_id)
         owner=self.graph.db.execute('SELECT person_id FROM owners WHERE id=?',(row['owner_id'],)).fetchone()
         self.assertEqual(owner['person_id'],self.marisol)
@@ -539,7 +543,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
             return {'id':uid,'team_id':'TTEST','profile':{'real_name':person['name'],'email':person['email']}}
         with patch.object(self.slack,'user_info',side_effect=user_info,create=True):
             held=self.action_offer({'kind':'handoff','to':'<@UMAR>','scope_kind':'none','scope':''},'Please ask <@UMAR> for this question only')
-            self.send('confirm '+held['proposal_id'])
+            self.send(confirmation(held))
         self.assertFalse(any(locked for _,locked in calls),'Remote user_info must not run while the global writer transaction is held')
 
     def test_semantic_handoff_confirmation_preserves_displayed_target(self):
@@ -550,7 +554,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         with self.graph.transaction():
             self.graph.db.execute('UPDATE people SET slack_id=? WHERE id=?',('UMARNEW',self.marisol))
             replacement=self.graph.add_person('Synthetic Other Contact',email='other-contact@example.test',slack_id='UMAR',merge=False)
-        self.send('confirm '+held['proposal_id'])
+        self.send(confirmation(held))
         row=self.store.get_decision(self.node_id)
         actual=self.graph.db.execute('SELECT person_id FROM owners WHERE id=?',(row['owner_id'],)).fetchone()['person_id']
         self.assertNotEqual(actual,replacement,'Exact displayed proposal must not re-resolve its original mention into another person')
@@ -559,7 +563,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         held=self.action_offer({'kind':'handoff','to':'<@UPRI>','scope_kind':'none','scope':''},'<@UMAR> is away. Please ask <@UPRI> for this question only')
         self.assertEqual(json.loads(held['answer'])['to'],self.priya)
         self.assertIn('Priya Natarajan',held['prompt'])
-        self.send('confirm '+held['proposal_id'])
+        self.send(confirmation(held))
         row=self.store.get_decision(self.node_id)
         actual=self.graph.db.execute('SELECT person_id FROM owners WHERE id=?',(row['owner_id'],)).fetchone()['person_id']
         self.assertEqual(actual,self.priya,'The first original mention is not the displayed target')
@@ -568,7 +572,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         held=self.action_offer({'kind':'handoff','to':'<@UMAR>','scope_kind':'none','scope':''},'Please ask <@UMAR> for this question only')
         self.graph.add_person('Marisol Renamed',email='marisol@acme.example')
         other=self.graph.add_person('Marisol Vega',email='namesake@example.test',slack_id='UMAROTHER',merge=False)
-        self.send('confirm '+held['proposal_id'])
+        self.send(confirmation(held))
         row=self.store.get_decision(self.node_id)
         actual=self.graph.db.execute('SELECT person_id FROM owners WHERE id=?',(row['owner_id'],)).fetchone()['person_id']
         self.assertEqual(actual,self.marisol);self.assertNotEqual(actual,other)
@@ -576,7 +580,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
     def test_semantic_deactivated_target_refuses_and_preserves_proposal(self):
         held=self.action_offer({'kind':'handoff','to':'<@UMAR>','scope_kind':'none','scope':''},'Please ask <@UMAR> for this question only')
         with self.graph.transaction():self.graph.db.execute('UPDATE people SET active=0 WHERE id=?',(self.marisol,))
-        self.send('confirm '+held['proposal_id'])
+        self.send(confirmation(held))
         self.assertEqual(self.held(),held);self.assertEqual(self.event_count('readback_confirmed'),0)
         row=self.store.get_decision(self.node_id)
         self.assertEqual(self.graph.db.execute('SELECT person_id FROM owners WHERE id=?',(row['owner_id'],)).fetchone()['person_id'],self.wes)
@@ -590,7 +594,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         self.assertIn('Marisol Vega',held['prompt'])
         self.graph.add_person('Marisol Renamed',email='marisol@acme.example')
         other=self.graph.add_person('Marisol Vega',email='namesake@example.test',slack_id='UMAROTHER',merge=False)
-        self.send('confirm '+held['proposal_id'])
+        self.send(confirmation(held))
         row=self.store.get_decision(self.node_id)
         actual=self.graph.db.execute('SELECT person_id FROM owners WHERE id=?',(row['owner_id'],)).fetchone()['person_id']
         self.assertNotEqual(actual,other,'A name rebound after readback must not select a different contact')
@@ -601,7 +605,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         self.store.notify(self.node_id,'ask');self.delivery.deliver_now();self.message=self.slack.messages[-1]
         self.assertEqual(self.message['channel'],'CTRIAGE')
         held=self.action_offer({'kind':'claim'},'I can take responsibility for this question')
-        self.send('confirm '+held['proposal_id'])
+        self.send(confirmation(held))
         row=self.store.get_decision(self.node_id)
         actual=self.graph.db.execute('SELECT person_id FROM owners WHERE id=?',(row['owner_id'],)).fetchone()['person_id']
         self.assertEqual(actual,self.wes);self.assertFalse(row['authorized'])
@@ -614,7 +618,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
 
     def test_compatibility_handoff_normal_uses_bound_stable_identity(self):
         held=self.compatibility_offer();self.assertEqual(held['recipient'],self.marisol)
-        self.send('confirm '+held['proposal_id'])
+        self.send(confirmation(held))
         row=self.store.get_decision(self.node_id)
         actual=self.graph.db.execute('SELECT person_id FROM owners WHERE id=?',(row['owner_id'],)).fetchone()['person_id']
         self.assertEqual(actual,self.marisol);self.assertEqual(self.event_count('readback_confirmed'),1)
@@ -624,7 +628,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         with self.graph.transaction():
             self.graph.db.execute('UPDATE people SET slack_id=? WHERE id=?',('UMARNEW',self.marisol))
             other=self.graph.add_person('Synthetic Other Contact',email='other-contact@example.test',slack_id='UMAR',merge=False)
-        self.send('confirm '+held['proposal_id'])
+        self.send(confirmation(held))
         row=self.store.get_decision(self.node_id)
         actual=self.graph.db.execute('SELECT person_id FROM owners WHERE id=?',(row['owner_id'],)).fetchone()['person_id']
         self.assertEqual(actual,self.marisol);self.assertNotEqual(actual,other)
@@ -632,7 +636,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
     def test_compatibility_deactivated_target_refuses_and_preserves_proposal(self):
         held=self.compatibility_offer()
         with self.graph.transaction():self.graph.db.execute('UPDATE people SET active=0 WHERE id=?',(self.marisol,))
-        self.send('confirm '+held['proposal_id'])
+        self.send(confirmation(held))
         self.assertEqual(self.held(),held);self.assertEqual(self.event_count('readback_confirmed'),0)
         row=self.store.get_decision(self.node_id)
         actual=self.graph.db.execute('SELECT person_id FROM owners WHERE id=?',(row['owner_id'],)).fetchone()['person_id']
@@ -716,13 +720,13 @@ class TeamsReadbackGenerationTests(OfflineCase):
         b = self.offer('Bill the load test.', seconds=10)
         self.submit(self.stamped('yes', 5))
         self.submit(self.stamped('yes', 11))
-        self.submit(self.stamped('confirm ' + a['proposal_id'], 12))
+        self.submit(self.stamped(confirmation(a), 12))
         self.assert_pending()
         self.assertEqual(self.held(), b)
-        self.submit(self.stamped('confirm ' + b['proposal_id'], 13))
+        self.submit(self.stamped(confirmation(b), 13))
         self.assertEqual(self.decision()['answer'], 'Bill the load test.')
 
-    def test_verified_exact_reply_to_current_readback_can_confirm_without_code(self):
+    def test_verified_exact_reply_to_answer_still_requires_explicit_selection(self):
         a = self.offer(seconds=0)
         b = self.offer('Bill the load test.', seconds=10)
         self.assertNotEqual(a['delivered_ref'], b['delivered_ref'])
@@ -730,6 +734,9 @@ class TeamsReadbackGenerationTests(OfflineCase):
         self.assert_pending()
         self.assertEqual(self.held(), b)
         self.submit(self.stamped('yes', 12, replyToId=b['delivered_ref']))
+        self.assert_pending()
+        self.assertEqual(self.held(), b)
+        self.submit(self.stamped(confirmation(b), 13, replyToId=b['delivered_ref']))
         self.assertEqual(self.decision()['answer'], 'Bill the load test.')
 
     def test_same_text_and_equal_timestamp_are_not_the_same_generation(self):
@@ -739,26 +746,26 @@ class TeamsReadbackGenerationTests(OfflineCase):
         self.assertEqual(self.held(), a)
         b = self.offer(seconds=1)
         self.assertNotEqual(a['proposal_id'], b['proposal_id'])
-        self.submit(self.stamped('confirm ' + a['proposal_id'], 2))
+        self.submit(self.stamped(confirmation(a), 2))
         self.assert_pending()
         self.assertEqual(self.held(), b)
-        self.submit(self.stamped('confirm ' + b['proposal_id'], 3))
+        self.submit(self.stamped(confirmation(b), 3))
         self.assertTrue(self.decision()['authorized'])
 
     def test_verified_other_person_cannot_use_owner_code(self):
         held = self.offer()
-        activity = self.stamped('confirm ' + held['proposal_id'], 1)
+        activity = self.stamped(confirmation(held), 1)
         activity['from']['aadObjectId'] = teams_fixtures.OTHER
         self.submit(activity)
         self.assert_pending()
         self.assertEqual(self.held(), held)
-        self.submit(self.stamped('confirm ' + held['proposal_id'], 2))
+        self.submit(self.stamped(confirmation(held), 2))
         self.assertTrue(self.decision()['authorized'])
 
     def test_missing_or_invalid_signed_timestamp_never_changes_held_readback(self):
         held = self.offer()
         for timestamp in (None, '', 'not-a-time', '2026-10-06T12:00:00'):
-            activity = self.stamped('confirm ' + held['proposal_id'], 1)
+            activity = self.stamped(confirmation(held), 1)
             if timestamp is None:
                 activity.pop('timestamp')
             else:
@@ -770,7 +777,7 @@ class TeamsReadbackGenerationTests(OfflineCase):
 
     def test_queue_preserves_verified_occurrence_through_adapter_restart(self):
         held = self.offer()
-        activity = self.stamped('yes', 1, replyToId=held['delivered_ref'])
+        activity = self.stamped(confirmation(held), 1, replyToId=held['delivered_ref'])
         self.delivery.handle(self.token(), activity)
         queued = dict(self.graph.db.execute("SELECT * FROM teams_ingress WHERE state='queued'").fetchone())
         occurrence = json.loads(queued['payload'])['occurrence']
@@ -788,10 +795,10 @@ class TeamsReadbackGenerationTests(OfflineCase):
         a = self.offer(seconds=0, semantic=True)
         b = self.offer('Bill the load test.', seconds=2, semantic=True)
         with interpretation('Bill the load test.', semantic=True):
-            self.submit(self.stamped('confirm ' + a['proposal_id'], 3))
+            self.submit(self.stamped(confirmation(a), 3))
             self.assert_pending()
             self.assertEqual(self.held(), b)
-            self.submit(self.stamped('confirm ' + b['proposal_id'], 4))
+            self.submit(self.stamped(confirmation(b), 4))
         self.assertEqual(self.decision()['answer'], 'Bill the load test.')
 
     def test_delivery_retry_preserves_code_and_adds_exact_reply_binding(self):
@@ -813,17 +820,17 @@ class TeamsReadbackGenerationTests(OfflineCase):
         self.assertEqual(delivered['source_occurrence'], held['source_occurrence'])
         self.assertTrue(delivered['delivered_ref'])
         with patch.object(replacement.inbox, 'start'):
-            replacement.handle(self.token(), self.stamped('yes', 2, replyToId=delivered['delivered_ref']))
+            replacement.handle(self.token(), self.stamped(confirmation(delivered), 2, replyToId=delivered['delivered_ref']))
         replacement.inbox.process()
         self.assertTrue(self.decision()['authorized'])
 
     def test_fresh_jwt_does_not_retime_an_old_confirmation(self):
         self.epoch = time.time() - 20
         held = self.offer(seconds=0)
-        old = self.stamped('confirm ' + held['proposal_id'], 1)
+        old = self.stamped(confirmation(held), 1)
         self.submit(old)  # JWT is verified now; the activity was before delivery.
         self.assert_pending()
-        self.submit(self.activity('confirm ' + held['proposal_id']))
+        self.submit(self.activity(confirmation(held)))
         self.assertTrue(self.decision()['authorized'])
 
     def test_submicrosecond_occurrences_tie_instead_of_inventing_order(self):

@@ -1,4 +1,5 @@
 """Current-main structured consent scope through offline real callback paths."""
+from test_delivery import confirmation as readback_confirmation
 import json
 import unittest
 from unittest.mock import patch
@@ -195,7 +196,7 @@ class SlackApprovalScopeTests(ScopeCallbacks, slack_fixtures.DeliveryCase):
 
     def confirm_proposal(self, held, semantic):
         with generations.interpretation('Exclude the load test.', semantic):
-            self.send('confirm ' + held['proposal_id'])
+            self.send(readback_confirmation(held))
 
     def send_unheld(self, answer, semantic):
         with generations.interpretation(answer, semantic):
@@ -234,7 +235,7 @@ class TeamsApprovalScopeTests(ScopeCallbacks, generations.TeamsReadbackGeneratio
     def confirm_proposal(self, held, semantic):
         self.scope_clock += 1
         with generations.interpretation('Exclude the load test.', semantic):
-            self.submit(self.stamped('confirm ' + held['proposal_id'], self.scope_clock))
+            self.submit(self.stamped(readback_confirmation(held), self.scope_clock))
 
     def send_unheld(self, answer, semantic):
         self.scope_clock += 2

@@ -2,6 +2,7 @@
 
 No real provider calls, credentials, messages or model inference are used.
 """
+from test_delivery import confirmation
 import json
 import time
 import unittest
@@ -58,7 +59,7 @@ class SourceReviewCases:
         return held
 
     def confirm(self, held, **options):
-        self.chat('confirm ' + held['proposal_id'], **options)
+        self.chat(confirmation(held), **options)
 
     def consent_count(self):
         return self.graph.db.execute("SELECT count(*) FROM events WHERE kind='readback_confirmed'").fetchone()[0]
@@ -258,7 +259,7 @@ class SourceReviewCases:
         self.chat('yes', reply_to=held['delivered_ref'])
         self.assertFalse(self.decision()['authorized'])
         self.assertEqual(self.held(), held)
-        self.assertIn('exact read-back code', self.last_text())
+        self.assertIn('confirm answer ' + held['proposal_id'], self.last_text())
         self.confirm(held)
         self.assertTrue(self.decision()['authorized'])
 

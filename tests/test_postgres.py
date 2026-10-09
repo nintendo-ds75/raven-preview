@@ -195,7 +195,8 @@ def load_tests(loader, tests, pattern):
     # compatibility classifier cases remain a separate native lane.
     from test_human_answer_fidelity import AuthoredAnswerTests
     from test_assumed_owner_correction import AssumedOwnerCorrectionTests
-    for cls in (AuthoredAnswerTests, AssumedOwnerCorrectionTests):
+    from test_answer_selection import AnswerSelectionTests
+    for cls in (AuthoredAnswerTests, AssumedOwnerCorrectionTests, AnswerSelectionTests):
         case = type('Postgres' + cls.__name__, (PostgresIsolation, cls), {'__module__': __name__})
         suite.addTests(loader.loadTestsFromTestCase(case))
     # Bounded MCP history storage/transport contracts use the backend;

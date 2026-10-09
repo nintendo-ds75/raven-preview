@@ -10,6 +10,7 @@ The agent is the JSON-RPC client of bridge/mcp.py: in process for the
 scenarios (a fake Slack stands in for the network), as a real stdio
 subprocess for the restart, and over HTTP for the shared Raven's
 bounded wait."""
+from test_delivery import confirmation as readback_confirmation
 
 import json
 import os
@@ -224,11 +225,11 @@ class TheLoopTests(E2ECase):
         held = delivery2._reading('DUPRI', signoff['ts'], self.priya)
         self.assertIsNotNone(held)
         self.assertTrue(held['source_review'])
-        self.assertIn('confirm ' + held['proposal_id'], self.slack.messages[-1]['text'])
+        self.assertIn(readback_confirmation(held), self.slack.messages[-1]['text'])
         self.assertFalse(canvas.node_view(delivery2.store, child['node_id'])['authorized'])
         source_reply('yes', 2)
         self.assertFalse(canvas.node_view(delivery2.store, child['node_id'])['authorized'])
-        source_reply('confirm ' + held['proposal_id'], 3)
+        source_reply(readback_confirmation(held), 3)
         self.assertIn("Signed off by Priya Natarajan", self.slack.messages[-1]["text"])
         signed = agent2.call("bridge_wait", task_id=task, timeout="5", since=observed)
         self.assertEqual([c["node_id"] for c in signed["changed"]], [child["node_id"]])
@@ -340,8 +341,8 @@ class CorrectionTests(E2ECase):
         held = self.delivery._reading('DUPRI', review['ts'], self.priya)
         self.assertIsNotNone(held)
         self.assertTrue(held['source_review'])
-        self.assertIn('confirm ' + held['proposal_id'], self.slack.messages[-1]['text'])
-        confirmation = thread_reply('DUPRI', review['ts'], 'UPRI', 'confirm ' + held['proposal_id'], 'Ev9-confirm')
+        self.assertIn(readback_confirmation(held), self.slack.messages[-1]['text'])
+        confirmation = thread_reply('DUPRI', review['ts'], 'UPRI', readback_confirmation(held), 'Ev9-confirm')
         confirmation['event']['ts'] = '2000000000.000002'
         handle_slack_event(self.delivery, confirmation)
         self.assertIn("Corrected and signed by Priya Natarajan", self.slack.messages[-1]["text"])

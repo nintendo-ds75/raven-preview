@@ -1,3 +1,4 @@
+from test_delivery import confirmation
 from bridge.approval_scope import transport_text
 """Conversation, durable callbacks and scoped routing learned from real human actions."""
 import json
@@ -138,9 +139,9 @@ class ConversationTests(DeliveryCase):
                 # A bare yes is not a source review. Bypass the convenience
                 # fixture's code expansion to exercise the real refusal.
                 refused = self.reply(self.message, 'UWES', 'yes', literal=True)
-                self.assertIn('confirm ' + held['proposal_id'], refused)
+                self.assertIn(confirmation(held), refused)
                 self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
-                self.say('confirm ' + held['proposal_id'])
+                self.say(confirmation(held))
                 restored = self.store.get_decision(self.n['node_id'])
                 self.assertTrue(restored['authorized'])
                 self.assertFalse(restored['needs_review'])
@@ -638,7 +639,7 @@ class ConversationTests(DeliveryCase):
         self.assertEqual(repair['message'], message)
         self.assertEqual(repair['answer_on_table'], old)
         self.assertEqual(repair['question'], before['question'])
-        self.assertIn('Record your decision as:', offered)
+        self.assertIn('Use this exact text as the answer only:', offered)
         self.assertNotIn('Replace the current question', offered)
         self.assertIn(transport_text(policy), offered)
         self.assertEqual(self.store.get_decision(self.n['node_id'])['answer'], old)
@@ -753,7 +754,7 @@ class ConversationTests(DeliveryCase):
                 'kind': 'answer', 'answer_form': 'complete'}) as model:
             response = self.reply(self.message, 'UWES', message)
         self.assertEqual(model.call_count, 1)
-        self.assertIn('Record your decision as:', response)
+        self.assertIn('Use this exact text as the answer only:', response)
         self.assertEqual(json.loads(self.delivery._reading(
             self.message['channel'], self.message['ts'], self.wes)['answer'])['answer'], message)
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
@@ -909,7 +910,7 @@ class ConversationTests(DeliveryCase):
         delivery=other.connect_delivery(self.slack)
         with patch('bridge.slack_chat.load',return_value=Config(model_api='none')):
             held = delivery._reading(self.message['channel'], self.message['ts'], self.wes)
-            said=delivery.receive(self.message['channel'],self.message['ts'],'UWES','confirm '+held['proposal_id'],
+            said=delivery.receive(self.message['channel'],self.message['ts'],'UWES',confirmation(held),
                 event_id='after-restart', occurrence={'platform':'slack','id':'2000000001.000001',
                 'timestamp':'2000000001.000001','reply_to':self.message['ts']})
         self.assertIn('Recorded',said)
@@ -980,7 +981,7 @@ class ConversationTests(DeliveryCase):
         # or a reason the model supplied.
         out=self.say('Exclude the load test from billing.',{'kind':'answer','answer':'Exclude the load test from billing.',
             'rationale':'The load test should be excluded from billing.'})
-        self.assertIn('Record your decision as:',out); self.assertNotIn('Reason:',out)
+        self.assertIn('Use this exact text as the answer only:',out); self.assertNotIn('Reason:',out)
         out=self.say('Exclude the load test from billing.',{'kind':'answer','answer':'Exclude the load test from billing.',
             'rationale':'Enterprise contracts forbid charging for synthetic traffic.'})
         self.assertNotIn('Reason:',out)

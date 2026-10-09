@@ -28,6 +28,12 @@ from bridge.store import Store
 CFG = Config(model_api="none")
 
 
+def confirmation(held):
+    """Choose the action advertised by this generation in positive fixtures."""
+    prefix = 'confirm answer ' if held.get('selection_kind') == 'answer_only' else 'confirm '
+    return prefix + held['proposal_id']
+
+
 class FakeSlack:
     name = "slack"
 
@@ -96,7 +102,7 @@ class DeliveryCase(OfflineCase):
         held = self.delivery._reading(message['channel'], message['ts'], person['id']) if person else None
         kind, token = readback.intent(text)
         if not literal and kind and not token and held and held.get('proposal_id'):
-            text = ('confirm' if kind == 'confirm' else 'decline') + ' ' + held['proposal_id']
+            text = confirmation(held) if kind == 'confirm' else 'decline ' + held['proposal_id']
         # Preserve the exact already-emitted callback when testing duplicate IDs.
         receipt = self.graph.db.execute('SELECT payload FROM webhook_receipts WHERE id=?', (event_id,)).fetchone()
         if receipt and previous_input == original_input:
@@ -243,7 +249,7 @@ class QuietTests(DeliveryCase):
         read = {"kind": "answer", "answer": "Exclude the spike.", "rationale": "it was our own load test", "to": ""}
         with patch("bridge.llm.read_reply", return_value=read):
             offered = self.reply(asked, "UWES", "just exclude that spike, it was our own load test")
-        self.assertIn("Not recorded yet", offered)
+        self.assertIn("Use this exact text as the answer only:", offered)
         self.assertIn("Exclude the spike.", offered)
         self.assertEqual(self.store.get_decision(n["node_id"])["status"], "pending")
         # Nothing the model said is on the record until the person says so.
