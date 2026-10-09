@@ -612,7 +612,9 @@ class ReplyTests(DeliveryCase):
             self.assertEqual(llm.read_reply(Config(), "Jitter?", "", long)["answer"], long)
             replies[0] = long * 4
             self.assertEqual(llm.read_reply(Config(), "Jitter?", "", long)['answer'], long)
-            self.assertEqual(llm.read_reply(Config(), "Jitter?", "", long * 20), {'kind': 'clarify_answer'})
+            self.assertEqual(llm.read_reply(Config(), "Jitter?", "", long * 20), {
+                'kind': 'clarify_answer', 'refusal': {
+                    'reason': 'oversized_message', 'answer_form': '', 'conflicting_fields': []}})
 
     def test_the_message_says_what_bridge_cites_not_how_the_search_went(self):
         from bridge.delivery import _found_for_owner

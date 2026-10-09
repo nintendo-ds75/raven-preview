@@ -116,6 +116,10 @@ For a natural-language answer, inference classifies intent and whether the messa
 
 An incomplete amendment such as “keep that part, except for Acme” needs a complete replacement. Messages combining an answer with a referral, rule request or private discussion also need separate instructions. Raven asks for the complete answer through `answer: …` or the existing task review page instead of composing text for the person to sign. This is a conservative fallback; intent classification is not proof of human intent. Check the full reading before confirming it.
 
+Several related conditions, reasons, exceptions or limits can belong to one complete answer. Multiple paragraphs and a statement withholding other authority do not by themselves make it a mixed request. A self-contained replacement can change the current proposal. A separate request to contact another person, create a reusable rule or discuss a private question still needs its own instruction.
+
+If interpretation cannot produce a confirmable answer, the audit records a bounded refusal reason and any conflicting control-field names. It does not record model values or reasoning in that diagnostic. A complete classification with conflicting controls still refuses; the diagnostic is not evidence of approval or proof that the person's message was incomplete.
+
 A complete replacement can correct an assumed or unsigned proposal. The ordinary ownership, revision, current-source review and explicit confirmation checks still apply. An oversized answer or source review is refused whole and uses the task review page; no shortened copy can be signed. This change does not alter previously recorded answers or pending historical evidence.
 
 ## Check it from your host agent

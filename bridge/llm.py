@@ -1732,7 +1732,7 @@ def read_reply(cfg, question: str, on_table: str, text: str) -> dict:
         return {}
     from .human_answers import ANSWER_FORM_GUIDANCE, CompleteAnswerRequired, preserve_complete_answer
     if len(text or '') > 12000:
-        return {'kind': 'clarify_answer'}
+        return {'kind': 'clarify_answer', 'refusal': CompleteAnswerRequired('oversized_message').diagnostic()}
     prompt = (f"DECISION: {question}\nANSWER ON THE TABLE: {(on_table or '').strip()[:600] or 'none yet'}\n"
               f"THEIR MESSAGE: {text or ''}")
     try:
@@ -1748,8 +1748,8 @@ def read_reply(cfg, question: str, on_table: str, text: str) -> dict:
     if kind == 'answer':
         try:
             return preserve_complete_answer(raw, text)
-        except CompleteAnswerRequired:
-            return {'kind': 'clarify_answer'}
+        except CompleteAnswerRequired as error:
+            return {'kind': 'clarify_answer', 'refusal': error.diagnostic()}
         except ValueError:
             return {}
     answer = str(raw.get("answer", "")).strip()

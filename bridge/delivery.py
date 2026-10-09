@@ -767,8 +767,12 @@ class Delivery:
             return ""
         kind = read.get("kind", "")
         if kind == 'clarify_answer':
-            from .human_answers import COMPLETE_ANSWER_REQUEST
-            return COMPLETE_ANSWER_REQUEST
+            from .human_answers import CompleteAnswerRequired, record_refusal
+            detail = read.get('refusal') if isinstance(read.get('refusal'), dict) else {}
+            refusal = CompleteAnswerRequired(detail.get('reason'), answer_form=detail.get('answer_form'),
+                                             fields=detail.get('conflicting_fields'))
+            record_refusal(self.store.graph, decision, refusal)
+            return str(refusal)
         if kind in ("", "chat"):
             return ""
         if kind == "question":

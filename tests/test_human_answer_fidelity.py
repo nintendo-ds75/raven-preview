@@ -8,7 +8,9 @@ from unittest.mock import patch
 from bridge import canvas, llm
 from bridge.approval_scope import transport_text
 from bridge.config import Config
-from bridge.human_answers import COMPLETE_ANSWER_REQUEST, INLINE_RATIONALE
+from bridge.human_answers import (ANSWER_FORM_GUIDANCE, ANSWER_INTERPRETATION_REQUEST,
+                                  COMPLETE_ANSWER_REQUEST, INLINE_RATIONALE,
+                                  CompleteAnswerRequired, preserve_complete_answer)
 from fixtures import OfflineCase
 from test_delivery import DeliveryCase
 
@@ -148,7 +150,7 @@ class AuthoredAnswerTests(DeliveryCase):
             with self.subTest(field=field):
                 result, _ = self.offer('Hold rollout and ask someone else about future reuse.',
                                       {'kind': 'answer', 'answer_form': 'complete', field: value})
-                self.assertEqual(result, COMPLETE_ANSWER_REQUEST)
+                self.assertEqual(result, ANSWER_INTERPRETATION_REQUEST)
                 self.assertIsNone(self.held())
                 self.assertFalse(self.row()['authorized'])
 
@@ -239,6 +241,106 @@ class AuthoredAnswerTests(DeliveryCase):
         self.assertEqual(self.row()['answer'], text)
         self.assertTrue(self.row()['authorized'])
 
+    def refusals(self):
+        return [json.loads(event['detail']) for event in self.row()['events']
+                if event['kind'] == 'answer_readback_refused']
+
+    def test_primary_prompt_keeps_related_constraints_in_one_complete_replacement(self):
+        text = ('For this maintenance window, retain rejected rows until the recorded counts reconcile.\n'
+                'This preserves auditability. Permit no exception for retries. '
+                'This answer does not authorize deleting customer data or changing production access.')
+        result, model = self.offer(text)
+        system = model.call_args.args[1]
+        self.assertIn(ANSWER_FORM_GUIDANCE, system)
+        self.assertIn('INDEPENDENT request', system)
+        self.assertIn('For kind=rule, use scope_kind=none', system)
+        self.assertIn('and required=false', system)
+        self.assertNotIn('An amendment is an answer with answer_form=partial', system)
+        self.assertEqual(json.loads(model.call_args.args[2])['message'], text)
+        self.assertIn(transport_text(text), result)
+        self.assertEqual(json.loads(self.held()['answer'])['answer'], text)
+        self.assertFalse(self.row()['authorized'])
+        self.assertEqual(self.refusals(), [])
+        self.confirm()
+        self.assertEqual(self.row()['answer'], text)
+        self.assertFalse(self.row()['reusable'])
+
+    def test_complete_control_conflict_has_bounded_diagnostic_without_private_values(self):
+        before = self.row()
+        secret = 'model-private-control-value-73ad'
+        result, model = self.offer('Hold this change for this task only.', {
+            'kind': 'answer', 'answer_form': 'complete', 'scope_kind': 'none',
+            'conditions': secret, 'explanation': secret, 'rationale': secret})
+        model.assert_called_once()
+        self.assertEqual(result, ANSWER_INTERPRETATION_REQUEST)
+        self.assertNotIn('partial answer', result)
+        self.assertIsNone(self.held())
+        after = self.row()
+        for key in ('answer', 'status', 'signoff', 'signed_by', 'authorized', 'reusable', 'signatures', 'context_history'):
+            self.assertEqual(after.get(key), before.get(key), key)
+        details = self.refusals()
+        self.assertEqual(len(details), 1)
+        self.assertEqual(details[0], {'decision_id': self.node_id, 'task_id': before['run_id'],
+            'reason': 'conflicting_control_fields', 'answer_form': 'complete',
+            'conflicting_fields': ['conditions', 'scope_kind']})
+        self.assertNotIn(secret, json.dumps(details))
+        self.assertNotIn('Hold this change', json.dumps(details))
+
+    def test_partial_and_independent_requests_have_distinct_non_authorizing_diagnostics(self):
+        messages = [('partial', 'Keep that part, except for trial accounts.'),
+                    ('mixed', 'Hold this change. Ask Marisol to decide the next rollout.'),
+                    ('mixed', 'Hold this change. Make my answer reusable for later customers.'),
+                    ('mixed', 'Hold this change. Privately, what did the customer disclose?')]
+        for form, text in messages:
+            with self.subTest(text=text):
+                result, _ = self.offer(text, {'kind': 'answer', 'answer_form': form})
+                self.assertEqual(result, COMPLETE_ANSWER_REQUEST)
+                self.assertIsNone(self.held())
+                detail = self.refusals()[-1]
+                self.assertEqual(detail['reason'], form)
+                self.assertEqual(detail['answer_form'], form)
+                self.assertEqual(detail['conflicting_fields'], [])
+                self.assertNotIn(text, json.dumps(detail))
+                self.assertFalse(self.row()['authorized'])
+                self.assertFalse(self.row()['reusable'])
+
+    def test_duplicate_refusal_callback_does_not_add_diagnostic_or_confirmation(self):
+        action = {'kind': 'answer', 'answer_form': 'complete', 'required': True}
+        self.offer('Hold this change.', action, event_id='one-refused-reply')
+        before = self.refusals()
+        _, model = self.offer('Hold this change.', action, event_id='one-refused-reply')
+        model.assert_not_called()
+        self.assertEqual(self.refusals(), before)
+        self.assertIsNone(self.held())
+        self.assertFalse(self.row()['authorized'])
+
+    def test_compatibility_conflict_records_same_bounded_reason(self):
+        text = 'Retain these rows only for the current task. This protects the audit record.'
+        with patch('bridge.slack_chat.respond', return_value=None), \
+                patch('bridge.llm.Client.complete_json', return_value={
+                    'kind': 'answer', 'answer_form': 'complete', 'confident': True,
+                    'conditions': 'private-model-condition-value'}):
+            result = self.reply(self.message, 'UWES', text)
+        self.assertEqual(result, ANSWER_INTERPRETATION_REQUEST)
+        self.assertIsNone(self.held())
+        detail = self.refusals()[-1]
+        self.assertEqual(detail['reason'], 'conflicting_control_fields')
+        self.assertEqual(detail['conflicting_fields'], ['conditions'])
+        self.assertNotIn('private-model-condition-value', json.dumps(detail))
+        self.assertFalse(self.row()['authorized'])
+
+    def test_rule_control_fields_remain_on_the_rule_path(self):
+        from bridge.slack_chat import reading
+        action = {'kind': 'rule', 'conditions': 'customer=Acme', 'scope_kind': 'none',
+                  'expires': '2099-01-01'}
+        with patch('bridge.slack_chat.Client.complete_json', return_value=action):
+            result = reading(Config(model_api='none'), {'message': 'Make this my rule only for this task.'})
+        self.assertEqual(result['kind'], 'rule')
+        for key in ('conditions', 'scope_kind', 'expires'):
+            self.assertEqual(result[key], action[key])
+        self.assertFalse(self.row()['authorized'])
+        self.assertFalse(self.row()['reusable'])
+
 
 class CompatibilityAuthoredAnswerTests(OfflineCase):
     def read(self, text, action):
@@ -268,11 +370,42 @@ class CompatibilityAuthoredAnswerTests(OfflineCase):
             with self.subTest(form=form):
                 result, _ = self.read('Keep that part but ask Marisol about the rest.',
                                       {'kind': 'answer', 'confident': True, 'answer_form': form})
-                self.assertEqual(result, {'kind': 'clarify_answer'})
+                self.assertEqual(result, {'kind': 'clarify_answer', 'refusal': {
+                    'reason': form, 'answer_form': form, 'conflicting_fields': []}})
 
     def test_compatibility_missing_form_and_overlimit_input_fail_closed(self):
         result, _ = self.read('Hold rollout.', {'kind': 'answer', 'confident': True, 'answer': 'Ship.'})
         self.assertEqual(result, {})
         result, model = self.read('x' * 12001, {'kind': 'answer', 'confident': True, 'answer_form': 'complete'})
-        self.assertEqual(result, {'kind': 'clarify_answer'})
+        self.assertEqual(result, {'kind': 'clarify_answer', 'refusal': {
+            'reason': 'oversized_message', 'answer_form': '', 'conflicting_fields': []}})
         model.assert_not_called()
+
+    def test_compatibility_prompt_uses_same_complete_related_clause_contract(self):
+        text = ('Do not bill failed requests, including retries. Bill completed requests only.\n'
+                'This preserves accurate invoices and grants no refund or access-policy exception.')
+        result, model = self.read(text, {'kind': 'answer', 'confident': True, 'answer_form': 'complete'})
+        self.assertIn(ANSWER_FORM_GUIDANCE, model.call_args.args[1])
+        self.assertIn('Related conditions and reasons do not themselves make a message mixed', model.call_args.args[1])
+        self.assertIn(text, model.call_args.args[2])
+        self.assertEqual(result['answer'], text)
+        self.assertEqual(result['rationale'], '')
+
+    def test_refusal_metadata_never_copies_unknown_values_or_fields(self):
+        refusal = CompleteAnswerRequired('private-unrecognized-reason', answer_form='private-form',
+                                          fields=['unknown-secret-field', 'to', 'to', 'scope', {'secret': 'value'}])
+        self.assertEqual(refusal.diagnostic(), {'reason': 'unclassified', 'answer_form': '',
+                                                'conflicting_fields': ['to', 'scope']})
+        self.assertEqual(str(refusal), ANSWER_INTERPRETATION_REQUEST)
+        malformed = CompleteAnswerRequired(['private'], answer_form={'private': 1}, fields='private')
+        self.assertEqual(malformed.diagnostic(), {'reason': 'unclassified', 'answer_form': '', 'conflicting_fields': []})
+
+    def test_invalid_and_oversized_messages_have_separate_bounded_reasons(self):
+        for text, reason in ((None, 'invalid_message'), ('  ', 'invalid_message'),
+                             (['private-text'], 'invalid_message'), ('x' * 12001, 'oversized_message')):
+            with self.subTest(reason=reason, text_type=type(text).__name__):
+                with self.assertRaises(CompleteAnswerRequired) as caught:
+                    preserve_complete_answer({'kind': 'answer', 'answer_form': 'complete'}, text)
+                self.assertEqual(caught.exception.diagnostic(), {
+                    'reason': reason, 'answer_form': 'complete', 'conflicting_fields': []})
+                self.assertEqual(str(caught.exception), ANSWER_INTERPRETATION_REQUEST)
