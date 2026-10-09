@@ -284,6 +284,9 @@ class HostHTTPTests(SharedServer):
         self.assertEqual(self.store.graph.db.execute('SELECT count(*) n FROM runs').fetchone()['n'], 1)
         self.assertNotIn(self.config['token'], context)
         self.assertNotIn(self.payload['prompt'], context)
+        self.assertIn(hc.DECISION_GUIDANCE, context)
+        initialized = hc.rpc(self.config, 'initialize')
+        self.assertIn(hc.DECISION_GUIDANCE, initialized['instructions'])
 
     def test_installed_hook_executes_as_a_separate_process_with_private_configuration(self):
         install_host_hooks(self.project, str(self.project), self.config['url'], self.config['token'],
@@ -295,7 +298,42 @@ class HostHTTPTests(SharedServer):
                                     cwd=self.project, timeout=30, check=True)
             self.assertEqual(json.loads(result.stdout)['hookSpecificOutput']['hookEventName'], payload['hook_event_name'])
             self.assertNotIn(self.config['token'], result.stdout + result.stderr)
+            context = json.loads(result.stdout)['hookSpecificOutput']['additionalContext']
+            self.assertIn(hc.DECISION_GUIDANCE, context)
+            self.assertNotIn(self.payload['prompt'], context)
         self.assertEqual(self.store.graph.db.execute('SELECT count(*) n FROM runs').fetchone()['n'], 1)
+
+    def test_no_judgment_task_finishes_without_inventing_a_node(self):
+        response = hc.hook(self.config, 'claude', self.payload)
+        self.assertIn('do not invent a node', response['hookSpecificOutput']['additionalContext'])
+        task = self.store.graph.db.execute('SELECT id FROM runs').fetchone()['id']
+        tree = hc.call(self.config, 'bridge_get_tree', {'task_id': task})
+        self.assertEqual(tree['nodes'], [])
+        self.assertEqual(tree['counts']['blocking'], 0)
+        done = hc.call(self.config, 'bridge_finish_task', {'task_id': task,
+            'checks': 'Synthetic no-change inspection; no human judgment requested.'})
+        self.assertEqual(done['status'], 'completed')
+        self.assertEqual(done['authorized'], [])
+        self.assertEqual(self.store.graph.db.execute('SELECT count(*) n FROM decisions').fetchone()['n'], 0)
+        self.assertEqual(hc.hook(self.config, 'claude', {**self.payload, 'hook_event_name': 'Stop'}), {})
+
+    def test_misclassified_code_fact_still_holds_stop_and_finish(self):
+        hc.hook(self.config, 'claude', self.payload)
+        task = self.store.graph.db.execute('SELECT id FROM runs').fetchone()['id']
+        node = hc.call(self.config, 'bridge_add_node', {'task_id': task,
+            'question': 'What value is currently stored in a.txt?', 'paths': 'a.txt',
+            'category': 'data-source', 'client_ref': 'mistaken-observation'})
+        settled = hc.call(self.config, 'bridge_settle_node', {'task_id': task, 'node_id': node['node_id'],
+            'answer': 'The file contains before.', 'rationale': 'Observed in the local checkout a.txt:1.'})
+        self.assertFalse(settled['authorized'])
+        self.assertEqual(settled['signoff'], 'required')
+        held = hc.hook(self.config, 'claude', {**self.payload, 'hook_event_name': 'Stop'})
+        self.assertEqual(held['decision'], 'block')
+        self.assertIn('bridge_wait', held['reason'])
+        hc.call(self.config, 'bridge_get_tree', {'task_id': task})
+        with self.assertRaises(ValueError):
+            hc.call(self.config, 'bridge_finish_task', {'task_id': task})
+        self.assertEqual(self.store.graph.db.execute('SELECT count(*) n FROM decisions').fetchone()['n'], 1)
 
     def test_real_mailbox_supervisor_releases_failure_and_acks_success(self):
         hc.hook(self.config, 'claude', self.payload)

@@ -5,6 +5,31 @@ the model starts working, so kickoff no longer depends on the model remembering
 an instruction. The agent still has to inspect the repository and discover
 which decisions need people.
 
+## Separate observations from decisions
+
+Create a node for a judgment or authorization choice, such as a policy,
+default, compatibility tradeoff, choice of authoritative source, or whether
+uncertain evidence is acceptable. Code and test observations that can be
+established by inspection belong in the relevant decision's `context`, with
+the repository revision, path/lines or exact record/version, and any limits.
+Use `facts` only for known current applicability facts. Neither a citation nor
+an applicability fact grants authority.
+
+Keep the factual findings separate from the requested judgment in that context;
+do not make each finding an approval node. `parent_id` and `depends_on` describe
+actual decision relationships and authorization prerequisites, not a checklist
+of evidence to read. The `data-source` category has the same approval rules as
+other categories. An agent-settled node remains unsigned and can block finish.
+
+If no human judgment is needed, keep the registered task, do the normal work
+and checks, read its tree, and finish through the existing protocol without
+inventing a node. Existing open decisions and required follow-ups still apply.
+This guidance does not remove a mistakenly created node or authorize its answer.
+
+The same generic guidance is delivered by MCP initialization and the installed
+registration hook. Rerun setup to refresh an older copied host adapter; restart
+or reconnect the client so it reads current server instructions.
+
 ## Connect a local host
 
 `./setup --configure --project /absolute/path/to/code` installs the MCP

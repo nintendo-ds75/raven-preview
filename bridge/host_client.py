@@ -22,6 +22,19 @@ HOOK_TIMEOUT_MESSAGE = ('Raven task registration did not finish before its deadl
     'Retry the same prompt after checking Raven. '
     'An interrupted registration will recover the same task.')
 
+# Shared with MCP initialization; kept here so the copied hook stays standalone.
+DECISION_GUIDANCE = (
+    'Create a decision node for a judgment or authorization choice, not a fact you can establish by inspection. '
+    'Put code and test findings in the relevant decision context with revision, path/line or record/version '
+    'citations and uncertainty; use facts only for known applicability facts, never inferred authority. '
+    'Keep static findings and organizational judgment distinct within that context, not as separate approval nodes. '
+    'Use parent_id and depends_on for actual decision relationships and authorization prerequisites, '
+    'not an evidence-reading checklist. Choosing a policy, default, compatibility tradeoff or whether to accept '
+    'uncertain evidence can require a real decision. If no human judgment is needed, do not invent a node just '
+    'to use Raven: keep the registered task, do the work and checks, read the tree and finish through the normal '
+    'protocol. Existing open decisions and required follow-ups still need that protocol; this guidance does '
+    'not clear nodes or grant approval. ')
+
 
 def remaining(deadline, ceiling=55):
     if deadline is None:
@@ -173,7 +186,7 @@ def hook(config, host, payload, *, deadline=None):
         deadline=deadline)
     # Source and human text is intentionally not elevated into hook/developer
     # instructions. The host reads that untrusted content through normal tools.
-    text = ('Raven connection verified. Available tools: ' + ', '.join(tools) + '. ')
+    text = ('Raven connection verified. Available tools: ' + ', '.join(tools) + '. ' + DECISION_GUIDANCE)
     if result['task_id']:
         text += ('Task already registered as ' + result['task_id'] + '. Do not create another task for this prompt. '
                  'Read bridge_get_tree for current decisions and evidence. Discover the relevant files yourself. '

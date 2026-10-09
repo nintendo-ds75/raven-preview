@@ -2264,6 +2264,75 @@ class RecordGateTests(CanvasCase):
 
 
 class ProtocolTests(CanvasCase):
+    def test_initialize_and_tool_discovery_explain_findings_versus_decisions(self):
+        from bridge.host_client import DECISION_GUIDANCE
+        init = dispatch(self.store, {"jsonrpc": "2.0", "id": 1, "method": "initialize"})
+        instructions = init["result"]["instructions"]
+        self.assertIn(DECISION_GUIDANCE, instructions)
+        for boundary in ("not a fact you can establish by inspection", "revision, path/line or record/version",
+                         "facts only for known applicability facts", "never inferred authority",
+                         "not as separate approval nodes", "not an evidence-reading checklist",
+                         "do not invent a node", "Existing open decisions and required follow-ups"):
+            self.assertIn(boundary, instructions)
+        listed = dispatch(self.store, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        tools = {t['name']: t for t in listed['result']['tools']}
+        add = tools['bridge_add_node']
+        self.assertIn('judgment or authorization choice', add['description'])
+        fields = add['inputSchema']['properties']
+        self.assertIn('static code/test findings', fields['context']['description'])
+        self.assertIn('same approval requirements', fields['category']['description'])
+        self.assertIn('authorization is a prerequisite', fields['depends_on']['description'])
+        self.assertIn('Known current applicability facts', fields['facts']['description'])
+        self.assertEqual(add['inputSchema']['required'], ['task_id', 'question'])
+        self.assertFalse(add['inputSchema']['additionalProperties'])
+        self.assertIn('stays agent-origin, unsigned', tools['bridge_settle_node']['description'])
+        self.assertIn('settlement does not clear it', tools['bridge_settle_node']['description'])
+
+    def test_cited_code_findings_stay_context_of_one_real_judgment(self):
+        task = self.start('Decide network compatibility', paths='hw/net/virtio-net.c')
+        context = ('Observed in checkout revision abc123, hw/net/virtio-net.c:12-18: '
+                   'the parser recognizes the legacy header. This inspection does not decide '
+                   'whether existing guests should keep that default; untested paths remain unknown.')
+        node = canvas.add_node(self.store, self.cfg, {
+            'task_id': task['task_id'], 'question': 'Should existing guests keep the legacy header default?',
+            'paths': 'hw/net/virtio-net.c', 'category': 'compat', 'context': context,
+            'facts': 'environment=preview', 'client_ref': 'compat-policy'})
+        proposed = canvas.settle_node(self.store, {'task_id': task['task_id'], 'node_id': node['node_id'],
+            'answer': 'Keep the default for existing guests.', 'rationale': 'Proposal for review, not code authority.'})
+        self.assertFalse(proposed['authorized'])
+        self.assertEqual(proposed['signoff'], 'required')
+        tree = canvas.get_tree(self.store, task['task_id'])
+        rows = list(canvas._flatten(tree['nodes']))
+        self.assertEqual(len(rows), 1)
+        saved = self.store.get_decision(node['node_id'])
+        self.assertEqual(saved['context'], context + '\nPaths: hw/net/virtio-net.c')
+        self.assertEqual(rows[0]['depends_on'], [])
+        self.assertEqual(rows[0]['parent_id'], '')
+        self.assertEqual(tree['counts']['blocking'], 1)
+        self.assertEqual(json.loads(saved['facts'])['environment'], 'preview')
+
+    def test_data_source_category_and_fact_dependency_do_not_bypass_signoff(self):
+        task = self.start('Inspect a network default', paths='hw/net/virtio-net.c')
+        fact = canvas.add_node(self.store, self.cfg, {
+            'task_id': task['task_id'], 'question': 'Which parser currently reads the network header?',
+            'paths': 'hw/net/virtio-net.c', 'category': 'data-source', 'client_ref': 'misclassified-finding'})
+        settled = canvas.settle_node(self.store, {'task_id': task['task_id'], 'node_id': fact['node_id'],
+            'answer': 'The parser in hw/net/virtio-net.c.', 'rationale': 'Observed at checkout abc123:12-18.'})
+        self.assertEqual(settled['signoff'], 'required')
+        self.assertFalse(settled['authorized'])
+        policy = canvas.add_node(self.store, self.cfg, {
+            'task_id': task['task_id'], 'question': 'Should the next release keep this parser as the default?',
+            'paths': 'hw/net/virtio-net.c', 'parent_id': fact['node_id'], 'depends_on': fact['node_id']})
+        canvas.settle_node(self.store, {'task_id': task['task_id'], 'node_id': policy['node_id'],
+            'answer': 'Keep it.', 'rationale': 'An unsigned policy proposal.'})
+        tree = canvas.get_tree(self.store, task['task_id'])
+        rows = {n['node_id']: n for n in canvas._flatten(tree['nodes'])}
+        self.assertEqual(rows[policy['node_id']]['depends_on'], [fact['node_id']])
+        self.assertEqual(tree['counts']['blocking'], 2)
+        self.assertTrue(all(n['blocking'] and not n['authorized'] for n in rows.values()))
+        with self.assertRaises(Invalid):
+            canvas.finish_task(self.store, {'task_id': task['task_id']})
+
     def test_mcp_tools_carry_the_protocol(self):
         init = dispatch(self.store, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
         self.assertIn("bridge_start_task the moment a task is kicked off", init["result"]["instructions"])

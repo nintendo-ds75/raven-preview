@@ -170,6 +170,12 @@ def load_tests(loader, tests, pattern):
     if os.environ.get("BRIDGE_TEST_POSTGRES") != "1":
         return unittest.TestSuite()
     suite = loader.loadTestsFromTestCase(PostgresSpecific)
+    # Advertised host guidance and its actual decision/finish boundaries use
+    # the same protocol contracts on both persistence backends.
+    from test_canvas import ProtocolTests
+    protocol_case = type('PostgresCanvasProtocolTests',
+                         (PostgresIsolation, ProtocolTests), {'__module__': __name__})
+    suite.addTests(loader.loadTestsFromTestCase(protocol_case))
     from test_fixture_hygiene import PseudonymTests
     fixture_case = type('PostgresPseudonymTests', (PostgresIsolation, PseudonymTests), {'__module__': __name__})
     suite.addTests(loader.loadTestsFromTestCase(fixture_case))
