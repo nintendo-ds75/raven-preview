@@ -1639,6 +1639,10 @@ def _view(row, repeated: bool = False, canonical=None) -> dict:
             "origin": d.get("origin") or "agent", "question": d["question"], "status": status,
             "kind": d.get("kind") or "", "answer": d.get("answer") or "", "prediction": d.get("prediction") or "",
             "evidence": d.get("evidence") or "", "owner": d.get("owner_name") or "",
+            # Scalar provenance already available on the complete decision read.
+            # The run view must not infer answer origin or current routing from prose.
+            "source": d.get("source") or "", "source_id": d.get("source_id") or "",
+            "source_revision": d.get("source_revision") or "", "routing_reason": d.get("routing_reason") or "",
             "owner_evidence": d.get("owner_evidence") or "", "answered_by": d.get("answered_by") or "",
             "rationale": d.get("rationale") or "", "signoff": d.get("signoff") or "",
             "signed_by": d.get("signed_by") or "", "brief": d.get("brief") or "",
@@ -1670,7 +1674,9 @@ def _view(row, repeated: bool = False, canonical=None) -> dict:
         c_status = _status(c)
         for key, col in (("answer", "answer"), ("answered_by", "answered_by"), ("signoff", "signoff"),
                          ("signed_by", "signed_by"), ("owner", "owner_name"), ("owner_evidence", "owner_evidence"),
-                         ("rationale", "rationale"), ("kind", "kind")):
+                         ("rationale", "rationale"), ("kind", "kind"),
+                         ("source", "source"), ("source_id", "source_id"),
+                         ("source_revision", "source_revision"), ("routing_reason", "routing_reason")):
             view[key] = c.get(col) or ""
         view["needs_review"] = bool(c.get("needs_review"))
         view["review_reason"] = c.get("review_reason") or ""

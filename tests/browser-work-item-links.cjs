@@ -56,7 +56,9 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
       await page.goto(fixture.url + '/#runs/' + taskId);
       await page.locator('#task-tab-overview').waitFor();
       await page.locator('#task-tab-overview').click();
-      await page.locator('#app .work-item-context').waitFor();
+      const context = page.locator('#task-context');
+      if (!(await context.evaluate(el => el.open))) await context.locator(':scope > summary').click();
+      await page.locator('#task-context .work-item-context').waitFor();
     };
     const openOwner = async (nodeId = fixture.node_id) => {
       await page.evaluate(id => review(id), nodeId);
@@ -67,7 +69,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
       assert.equal(await page.locator('#source-review-signoff').count(), 0);
     };
     await taskPage();
-    assert.match(await page.locator('#app .work-item-context').innerText(), /CASE-1 · Unlinked/);
+    assert.match(await page.locator('#task-context .work-item-context').innerText(), /CASE-1 · Unlinked/);
     await screenshot('work-item-unlinked-task.png');
     await openOwner();
     assert.match(await page.locator('#modal .work-item-context').innerText(), /no explicit work-item link/);
@@ -99,9 +101,9 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await taskPage();
     // The mutation occurred through a separate API client. Same-hash
     // navigation can retain the prior render until the normal task poll.
-    await page.waitForFunction(() => document.querySelector('#app .work-item-context')?.textContent
+    await page.waitForFunction(() => document.querySelector('#task-context .work-item-context')?.textContent
       .includes('CASE-1 · Linked association'));
-    const taskContext = await page.locator('#app .work-item-context').innerText();
+    const taskContext = await page.locator('#task-context .work-item-context').innerText();
     for (const text of ['CASE-1 · Linked association', s.record_id, s.source_version_id, 'current observed version',
       'not supporting evidence or approval']) assert(taskContext.includes(text), text);
     await openOwner();
@@ -126,10 +128,10 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.equal(tree.source_anchors[0].current, false);
     assert.deepEqual(decisionState(await decision()), initial);
     await taskPage();
-    await page.waitForFunction(() => document.querySelector('#app .work-item-context')?.textContent
+    await page.waitForFunction(() => document.querySelector('#task-context .work-item-context')?.textContent
       .includes('historical or unavailable version'));
-    assert((await page.locator('#app .work-item-context').innerText()).includes('historical or unavailable version'));
-    assert((await page.locator('#app .work-item-context').innerText()).includes(s.source_version_id));
+    assert((await page.locator('#task-context .work-item-context').innerText()).includes('historical or unavailable version'));
+    assert((await page.locator('#task-context .work-item-context').innerText()).includes(s.source_version_id));
     await screenshot('work-item-historical-task.png');
     await openOwner();
     await noContextControls();
@@ -153,13 +155,15 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     // source_anchors field on the node payload.
     await taskPage(fixture.ambiguous_task);
     await page.locator('#task-tab-decisions').click();
-    const ambiguousContext = page.locator('.task-decision .work-item-context');
+    const question = page.locator(`.task-question[data-node-id="${fixture.ambiguous_node}"]`);
+    if (!(await question.evaluate(el => el.open))) await question.locator(':scope > summary').click();
+    const ambiguousContext = question.locator('.work-item-context');
     assert((await ambiguousContext.innerText()).includes('Ambiguous association'));
     for (const item of fixture.ambiguous_sources) assert((await ambiguousContext.innerText()).includes(item.record_id));
     assert.equal(await ambiguousContext.locator('[data-work-item-origin="task"]').count(), 2);
     await screenshot('work-item-ambiguous-node.png');
     await taskPage(fixture.closed_task);
-    const closed = await page.locator('#app .work-item-context').innerText();
+    const closed = await page.locator('#task-context .work-item-context').innerText();
     assert(closed.includes('Historical Unlinked'));
     assert(closed.includes('start a new task'));
     await screenshot('work-item-historical-unlinked-task.png');

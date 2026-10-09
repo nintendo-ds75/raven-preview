@@ -43,7 +43,9 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.goto(`${world.url}/#runs/${world.task}`);
     await page.getByRole('button', {name:'Decisions (1)',exact:true}).click();
     const open = async () => {
-      await page.getByRole('button', {name:/Open decision/}).first().click();
+      const question = page.locator('.task-question').first();
+      if (!(await question.evaluate(el => el.open))) await question.locator(':scope > summary').click();
+      await question.getByRole('button', {name:/Open decision/}).click();
       await page.getByRole('button', {name:'Start or resume interview',exact:true}).click();
       await page.locator('#interview-modal[open]').waitFor();
     };

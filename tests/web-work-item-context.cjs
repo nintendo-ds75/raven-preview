@@ -60,6 +60,6 @@ for (const [text, end] of [[app, 'function sourceRevalidationFields('], [brief, 
 assert(app.includes('${workItemContext(d)}'));
 assert(brief.includes('${workItemContext(f)}'));
 const task = fs.readFileSync(path.join(__dirname, '../web/task.js'), 'utf8');
-assert(task.includes('${workItemContext(t)}'));
-assert(task.includes('${workItemContext(n)}'));
+assert.match(task, /taskDetails\(workItemContext\(t\),/);
+assert.match(task, /taskDetails\(workItemContext\(n\),/);
 console.log('Work-item context rendering checks passed');

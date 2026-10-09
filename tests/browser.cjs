@@ -14,7 +14,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
   const python = process.env.BRIDGE_PYTHON || 'python3';
   // These checks exercise an existing workspace, not the first-run account flow.
   const initialized = spawnSync(python, ['-c',
-    'import sys; from bridge.store import Store; s = Store(sys.argv[1]); s.graph.set_setting("workspace_name", "Browser test workspace")', db],
+    'import sys; from bridge.store import Store; s = Store(sys.argv[1]); s.graph.set_setting("workspace_name", "Browser test workspace"); s.add_record({"repo":"test/platform","provider":"generic","namespace":"browser-fixture","kind":"doc","external_id":"scope","ref":"BROWSER-SCOPE","title":"Synthetic repository scope","body":"An invented repository registered for the browser regression."})', db],
     {cwd:root, encoding:'utf8'});
   assert.equal(initialized.status, 0, initialized.stderr);
   // The UI checks are deterministic: the model rungs stay off whatever
@@ -60,7 +60,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.locator('tr').filter({hasText:'Move the nightly backup job'}).getByRole('button', {name:'View run',exact:true}).click();
     await page.waitForSelector('.task-summary');
     assert.match(await page.locator('#app').textContent(), /Requested by Priya Natarajan/);
-    assert.match(await page.locator('#app').textContent(), /What the agent has learned/);
+    assert.match(await page.locator('#app').textContent(), /Questions & findings/);
     const taskUrl = page.url();
     // A deep link may return the tree before the account. Never interpret
     // that missing auth state as permission to show editing controls.
@@ -169,22 +169,24 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.waitForSelector('#modal:not([open])', {state:'attached'});
     await page.getByRole('link', {name:'Judgment inbox',exact:true}).click();
     await openMore();
-    await page.getByRole('button', {name:'New request',exact:true}).click();
-    await page.getByLabel('Task', {exact:true}).fill('Verify retry policy');
-    await page.getByLabel('Agent', {exact:true}).fill('Browser test agent');
-    await page.getByLabel('Repository', {exact:true}).fill('test/platform');
-    await page.getByLabel('What decision is needed?').fill('Should payment retries stop after three attempts?');
+    await page.getByRole('button', {name:'Ask Raven',exact:true}).click();
+    await page.getByLabel('Question or prompt', {exact:true}).fill('Should payment retries stop after three attempts?');
+    await page.getByLabel('Repository scope', {exact:true}).selectOption('test/platform');
+    await page.locator('#request-context > summary').click();
     await page.getByLabel('Context & evidence').fill('The retry worker can cap attempts. Confirm the customer-facing policy.');
     await page.getByLabel('Relevant file path').fill('payments/retries.py');
-    await page.getByRole('button', {name:/Create request/}).click();
+    await page.locator('#request-form').getByRole('button', {name:'Ask Raven',exact:true}).click();
     await page.waitForSelector('#modal:not([open])', {state:'attached'});
+    await page.waitForSelector('.task-summary');
+    await page.getByRole('link', {name:'Judgment inbox',exact:true}).click();
     await page.getByRole('button', {name:/Needs review/}).click();
     const card = page.locator('.decision-card').filter({hasText:'Should payment retries stop after three attempts?'});
     await card.waitFor();
     assert.match(await card.textContent(), /Jamie Test/);
     // The form started a task on the canvas and wrote the question as its first node.
     const started = await (await fetch(`${url}/api/state`)).json();
-    const task = started.runs.find(r => r.title === 'Verify retry policy');
+    const task = started.runs.find(r => r.title === 'Should payment retries stop after three attempts?');
+    assert.equal(task.agent, 'Raven UI');
     assert.equal(task.paths, 'payments/retries.py');
     assert.match(task.verdict, /^(engage|pass)$/);
     const tree = await (await fetch(`${url}/api/tasks/${task.id}/tree`)).json();
@@ -350,7 +352,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     }
     await page.goto(`${url}/#inbox`);
     await openMore();
-    await page.getByRole('button', {name:'New request',exact:true}).click();
+    await page.getByRole('button', {name:'Ask Raven',exact:true}).click();
     await page.screenshot({path:path.join(artifacts,'mobile-dialog.png'),fullPage:true});
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('#modal').evaluate(el => el.open), false);

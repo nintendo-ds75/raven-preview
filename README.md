@@ -52,6 +52,20 @@ The developer stays in Claude Code, Codex, Cursor, or another MCP client. People
 
 People can add context or required follow-up questions. Stakeholders can have read-only viewer accounts. A copied task link shares the location; it does not grant access to a shared instance.
 
+The workspace **Tasks** view follows one run at a time. It shows recorded questions
+and findings, where an answer came from, its current approval state, the people
+contacted, and what still blocks progress. Evidence, source versions, referrals
+and the chronological record expand when you need them. Findings can be useful
+before they are approved; the page keeps those states separate. Work outside
+Raven is not automatically captured.
+
+Workspace members can also choose **Ask Raven** in Tasks: enter one question and
+its repository, with optional context. It uses the same source and prior-decision
+resolution path as the coding-agent tools, and may ask an owner for an answer or
+sign-off. Missing scope must be supplied explicitly. The result appears as a real
+run; this action does not launch a coding agent. Separately enabled hosted
+execution keeps its own explicit start action.
+
 At completion, `bridge_export_proof` returns a portable review bundle containing
 the exact submitted diff hash, decision revisions, recorded signers, scope,
 citations and host-reported checks. Changed decisions mark the saved proof stale.

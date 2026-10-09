@@ -138,8 +138,8 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   const makeDisclosure = (item, scroll) => ({...item, list: {scrollTop: scroll}, querySelector() { return this.list; }});
   const oldSections = existing.map(item => makeDisclosure(item, 90));
   const newSections = existing.map(item => makeDisclosure({...item, open: false}, 0));
-  const app = {innerHTML: ''};
-  const renderContext = {state: {auth: {enabled: false}}, document: {activeElement: {tagName: 'BODY'}, querySelectorAll: () => oldSections, getElementById: id => newSections.find(el => el.id === id)},
+  const app = {innerHTML: '', dataset:{}};
+  const renderContext = {workspaceError:'', state: {auth: {enabled: false}}, document: {activeElement: {tagName: 'BODY'}, querySelectorAll: () => oldSections, getElementById: id => newSections.find(el => el.id === id)},
     $: () => app, taskId: () => '', view: 'connect', inbox() {}, runs() {}, memory() {}, owners() {}, connections: () => 'updated'};
   vm.createContext(renderContext);
   vm.runInContext(source.slice(source.indexOf('function render() {'), source.indexOf('function openModal(')), renderContext);
@@ -181,6 +181,8 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
     api: async path => {reads++;return path.endsWith('/tree') ? fixture.tree : fixture.trace;},render(){},
     esc: context.esc, pill: context.pill,icon:()=>'',avatar:()=>'',eventLabels:{owner_approved:'Decision recorded'}};
   vm.createContext(taskContext);
+  vm.runInContext(source.slice(source.indexOf('const plural ='), source.indexOf('const CLIENT_NAMES')), taskContext);
+  vm.runInContext(source.slice(source.indexOf('const RUN_STATUS'), source.indexOf('const initials')), taskContext);
   vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../web/presentation.js'), 'utf8'), taskContext);
   // task.js uses the actual shared renderer loaded by app.js in the page.
   vm.runInContext(source.slice(source.indexOf('function sourceEvidence('), source.indexOf('function sourceRevalidationFields(')), taskContext);
@@ -189,9 +191,11 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   assert.match(overview, /Read the task brief/);
   assert.match(overview, /Open code review/);
   assert.match(overview, /Signed by Wes/);
-  assert.match(overview, /Versioned sources/);
-  assert.match(overview, /SRC-42 · version 2 · support/);
-  assert.match(overview, /fixture-site · version-2/);
+  assert.match(overview, /Evidence & answer origin/);
+  assert.match(overview, /SRC-42 · support/);
+  assert.match(overview, /"sequence": 2/);
+  assert.match(overview, /"namespace": "fixture-site"/);
+  assert.match(overview, /"source_version_id": "version-2"/);
   assert.doesNotMatch(overview, /Existing code is outside the diff/);
   assert.doesNotMatch(overview, /id="note-form"/);
   // Stale reviews can reflect changed answers, reframed questions, or legacy
@@ -204,8 +208,8 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
       stale:[{node_id:'n1',why:reason}]};
     const staleOverview = vm.runInContext('taskOverview()',taskContext);
     assert.match(staleOverview, /Review needed/);
-    assert.match(staleOverview, /needs refreshing for the current signed questions and answers/);
-    assert.match(staleOverview, /The agent must submit its current diff again/);
+    assert.match(staleOverview, /needs refreshing for the current questions and answers/);
+    assert.match(staleOverview, /Submit the current diff again/);
     assert.doesNotMatch(staleOverview, /An answer changed after the code review/);
     assert.equal(reads,0,'Rendering stale review guidance must not issue requests');
   }

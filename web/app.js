@@ -25,9 +25,9 @@ const plural = (count, word, words = word + 's') => `${count} ${count === 1 ? wo
 const CLIENT_NAMES = {claude: 'Claude Code', codex: 'Codex', cursor: 'Cursor'};
 const clientName = id => CLIENT_NAMES[id] || id;
 // A task's status as the page says it; the raw value ("working") stays in the API.
-const RUN_STATUS = {working: 'Agent working', needs_judgment: 'Waiting for decisions', pending: 'Starting',
-  completed: 'Agent reported complete', abandoned: 'Closed by the agent', result_ready: 'Result ready for inspection',
-  failed: 'Agent failed', cancelled: 'Cancelled', review_required: 'Review needed', delivery_pending: 'Delivering answers',
+const RUN_STATUS = {working: 'In progress', needs_judgment: 'Waiting for decisions', pending: 'Starting',
+  completed: 'Reported complete', abandoned: 'Closed', result_ready: 'Result ready for inspection',
+  failed: 'Failed', cancelled: 'Cancelled', review_required: 'Review needed', delivery_pending: 'Delivering answers',
   environment_pending: 'Preparing the environment', duplicate: 'Duplicate'};
 const runStatusLabel = status => RUN_STATUS[status] || String(status || '').replaceAll('_', ' ');
 const initials = name => (name || '?').split(/\s+/).map(word => word[0]).slice(0, 2).join('');
@@ -39,19 +39,20 @@ const ago = value => {
 const pill = (text, color = '') => `<span class="pill ${color}"><span class="status-dot"></span>${esc(text)}</span>`;
 const titles = {
   inbox: ['Judgment inbox', '', 'Inbox', 'Questions from your coding agents. Confirm an answer or make the decision.'],
-  runs: ['Tasks', '', 'Tasks', 'Started in your coding agent. Follow decisions and progress here.'],
+  runs: ['Tasks', '', 'Tasks', 'Ask Raven or follow a task from your coding agent. See what is known and what still needs a decision.'],
   memory: ['Decision memory', '', 'Memory', 'Past answers and source evidence, with their owner, scope, and approval status.'],
   owners: ['People & ownership', '', 'People', 'Questions go to whoever this map says decides; where it is silent, to repository history and the coordinator. Readiness says what is missing.'],
   connect: ['Connections & setup', '', 'Connect your agent', 'Add Raven over MCP, then give your agent a task in your own words.'],
 };
 let state = {decisions: [], runs: [], owners: [], events: []};
+let workspaceError = '';
 // The ownership graph and the directory (people, teams, the authority map, the coordinator) are not in the
 // polled state: the owners view fetches them when it renders.
 let ownership = null, ownershipLoading = false;
 let directory = null, directoryLoading = false;
 let view = 'inbox', tab = 'pending', tabChosen = false, query = '', ownerFilter = '', fetching = false;
 let toastTimer;
-let modalVersion = 0;
+let modalVersion = 0, navigationVersion = 0;
 let launcherPair = null;
 const pairing = new URLSearchParams(location.hash.split('?')[1] || '');
 if (/^\d{1,5}$/.test(pairing.get('launcher_port') || '') && pairing.get('launcher_key')) {
@@ -131,7 +132,7 @@ async function api(path, data) {
     method: 'POST', headers: {'Content-Type': 'application/json', 'X-Bridge-CSRF': state.csrf_token}, body: JSON.stringify(data),
   });
   const body = await response.json();
-  if (!response.ok) throw new Error(body.error || 'Request failed. Please try again.');
+  if (!response.ok) { const error = new Error(body.error || 'Request failed. Please try again.'); error.status = response.status; throw error; }
   return body;
 }
 
@@ -179,6 +180,7 @@ async function refresh({quiet = false} = {}) {
   fetching = true;
   try {
     state = await api('/api/state');
+    workspaceError = '';
     updateWorkspaceName();
     updateAgentConnectPrompt();
     if ($('#agent-status')) $('#agent-status').innerHTML = agentStatus();
@@ -197,7 +199,13 @@ async function refresh({quiet = false} = {}) {
   } catch (error) {
     $('#connection').classList.add('offline');
     $('#connection').innerHTML = '<i></i> Connection lost';
-    if (!quiet) $('#app').innerHTML = `<div class="empty"><h3>We couldn’t reach your workspace.</h3><p>${esc(error.message)}</p><button class="button" data-action="retry">Try again</button></div>`;
+    if ([401,403].includes(error.status)) {
+      if (typeof rememberTaskView === 'function') rememberTaskView();
+      state.auth = null; workspaceError = error.message; taskDetail = null;
+      if ($('#modal').open) closeModal();
+      render();
+    } else if (taskId()) { taskError = error.message; render(); }
+    else if (!quiet) $('#app').innerHTML = `<div class="empty"><h3>We couldn’t reach your workspace.</h3><p>${esc(error.message)}</p><button class="button" data-action="retry">Try again</button></div>`;
   } finally { fetching = false; }
 }
 
@@ -216,6 +224,7 @@ function loadDirectory() {
 }
 
 function navigate() {
+  navigationVersion += 1;
   const next = location.hash.slice(1).split('/')[0];
   view = titles[next] ? next : 'inbox';
   query = ''; ownerFilter = ''; ownership = null; directory = null;
@@ -226,13 +235,14 @@ function navigate() {
   $('#page-description').textContent = description;
   document.title = `Raven · ${breadcrumb}`;
   $('#new-request').hidden = view === 'connect';
-  $('#new-request').innerHTML = `${icon('plus')}${view === 'owners' ? 'Add owner' : 'New request'}`;
+  $('#new-request').innerHTML = `${icon('plus')}${view === 'owners' ? 'Add owner' : 'Ask Raven'}`;
   document.querySelectorAll('nav a').forEach(link => {
     link.classList.toggle('active', link.dataset.view === view);
     if (link.dataset.view === view) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
   });
-  taskTab = 'overview';
+  taskTab = typeof taskView === 'function' && taskId() ? taskView().tab : 'overview';
+  if (typeof taskRequest !== 'undefined') taskRequest += 1;
   taskDetail = null; taskError = '';
   if (taskId()) loadTask();
   render();
@@ -344,11 +354,11 @@ function inbox() {
 }
 
 function runs() {
-  return `<div class="wide-toolbar"><h2>Tasks in this workspace</h2>${state.execution_config?.enabled ? '<button class="button primary" data-action="task">Start a task</button>' : ''}<span class="muted">${plural(state.runs.length, 'task')}</span></div>${state.runs.length ? `<div class="table-wrap"><table><thead><tr><th>TASK / REPOSITORY</th><th>AGENT</th><th>STATUS</th><th>DECISIONS</th><th>UPDATED</th><th></th></tr></thead><tbody>${state.runs.map(run => {
+  return `<div class="wide-toolbar"><h2>Tasks in this workspace</h2>${!state.auth?.enabled || ['admin','member'].includes(state.me?.role) ? '<button class="button primary" data-action="new">Ask Raven</button>' : ''}${state.execution_config?.enabled && state.me?.role !== 'viewer' ? '<button class="button" data-action="task">Start hosted execution</button>' : ''}<span class="muted">${plural(state.runs.length, 'task')}</span></div>${state.runs.length ? `<div class="table-wrap"><table><thead><tr><th>TASK / REPOSITORY</th><th>AGENT</th><th>STATUS</th><th>DECISIONS</th><th>UPDATED</th><th></th></tr></thead><tbody>${state.runs.map(run => {
     const decisions = state.decisions.filter(d => d.run_id === run.id);
     const pending = decisions.filter(needsYou);
     return `<tr><td><strong>${esc(run.title)}</strong><small>${esc(run.repo)}</small></td><td>${esc(run.agent)}</td><td>${pill(pending.length ? 'Waiting for decisions' : runStatusLabel(run.status), pending.length ? '' : 'gray')}</td><td>${decisions.length} total${pending.length ? ` · ${pending.length} need a person` : ''}</td><td>${ago(run.updated_at)}</td><td><button class="button small" data-action="run" data-id="${esc(run.id)}">View run</button></td></tr>`;
-  }).join('')}</tbody></table></div>` : empty('No tasks yet.', 'Connect Raven over MCP, then ask your coding agent to work on a task. It discovers the files and decisions.', 'help-connect', 'Connect an agent')}`;
+  }).join('')}</tbody></table></div>` : empty('No tasks yet.', 'Ask Raven a question, or connect Raven over MCP to follow work from your coding agent.', 'help-connect', 'Connect an agent')}`;
 }
 
 function memory() {
@@ -483,11 +493,12 @@ function render() {
   if (!state.auth) {
     $('#new-request').hidden = true;
     $('#manual-actions').hidden = true;
-    $('#app').innerHTML = '<p class="context" role="status">Loading workspace…</p>';
+    $('#app').innerHTML = workspaceError ? `<div class="empty" role="alert"><h2>Workspace access unavailable</h2><p>${esc(workspaceError)}</p><button class="button" data-action="retry">Try again</button></div>` : '<p class="context" role="status">Loading workspace…</p>';
     return;
   }
   $('#new-request').hidden = view === 'connect' || state.me?.role === 'viewer' || (view === 'owners' && !canAdminister());
   $('#manual-actions').hidden = $('#new-request').hidden;
+  if (typeof rememberTaskView === 'function') rememberTaskView();
   const noteDraft = $('#note-text')?.value;
   const active = document.activeElement;
   const focusId = active.id;
@@ -495,6 +506,8 @@ function render() {
   const disclosures = [...document.querySelectorAll('#app details[id]')].map(el => ({id: el.id, open: el.open, scroll: el.querySelector('ul')?.scrollTop || 0}));
   $('.page-head').hidden = !!taskId();
   $('#app').innerHTML = taskId() ? taskOverview() : ({inbox, runs, memory, owners, connect: connections})[view]();
+  $('#app').dataset.taskId = taskId();
+  if (taskId() && typeof restoreTaskView === 'function') { restoreTaskView(); return; }
   if (noteDraft && $('#note-text')) $('#note-text').value = noteDraft;
   for (const saved of disclosures) {
     const el = document.getElementById(saved.id);
@@ -516,6 +529,7 @@ function showHelp() {
 }
 
 function openModal(title, subtitle, body) {
+  saveRequestDraft();
   modalVersion += 1;
   delete $('#modal').dataset.runId;
   $('#modal-content').innerHTML = `<div class="modal-head"><div><h2 id="modal-title">${esc(title)}</h2><p>${esc(subtitle)}</p></div><button class="icon-button" data-action="close" aria-label="Close dialog">${icon('close')}</button></div><div class="modal-body">${body}</div>`;
@@ -523,6 +537,7 @@ function openModal(title, subtitle, body) {
 }
 
 function closeModal() {
+  saveRequestDraft();
   // Native close events are queued. Invalidate now so a late response cannot
   // reopen this dialog, and an old close event cannot cancel a newer review.
   modalVersion += 1;
@@ -533,8 +548,110 @@ function ownerOptions(selected, auto = false) {
   return `${auto ? '<option value="">Route automatically by path</option>' : '<option value="">Select an owner</option>'}${state.owners.map(o => `<option value="${esc(o.id)}" ${selected === o.id ? 'selected' : ''}>${esc(o.name)} · ${esc(o.team)}</option>`).join('')}`;
 }
 
+let requestDraft = null;
+const requestKey = () => 'ui-' + (globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
+
+function saveRequestDraft() {
+  const form = $('#request-form');
+  if (!requestDraft || !form || form.dataset.clientKey !== requestDraft.clientKey) return;
+  if (!requestDraft.payload) requestDraft.values = Object.fromEntries(new FormData(form));
+  if (requestDraft.scopeEditable && !requestDraft.pending) requestDraft.factValues = Object.fromEntries([...form.querySelectorAll('[data-fact-key]')].map(el => [el.dataset.factKey,el.value]));
+}
+
+function requestScopeKeys(draft) {
+  return [...new Set((draft.scope?.scope_clarifications || []).flatMap(s => s.missing_keys || []).filter(key => typeof key === 'string'))];
+}
+
+function requestScopeFields(draft) {
+  if (!draft.scope || draft.complete) return '';
+  const keys = requestScopeKeys(draft);
+  const namespaces = (draft.scope.scope_clarifications || []).flatMap(s => s.missing_source_namespaces || []);
+  return `<details id="request-scope" open><summary>Confirm missing scope</summary><p>${draft.scopeEditable && !draft.pending ? 'The last response needed scope. No question was added or sent by that attempt.' : 'The latest result is pending or unconfirmed. Retry uses the same question and facts.'}</p>${keys.map((key,i) => `<label for="request-fact-${i}">Current value for ${esc(key)} (if known)</label><input id="request-fact-${i}" data-fact-key="${esc(key)}" maxlength="2000" value="${esc(Object.hasOwn(draft.factValues || {},key) ? draft.factValues[key] : '')}" ${draft.scopeEditable && !draft.pending ? '' : 'readonly'}>`).join('')}${keys.length ? '<p class="context">Enter only current facts you know from this task; leave unknown values blank. The run can remain blocked. Historical values have not been copied into these fields.</p>' : ''}${namespaces.length ? `<p class="task-warning">Source context is also missing: ${namespaces.map(value => esc(typeof value === 'string' ? value : JSON.stringify(value))).join(', ')}. The originating workflow must supply the required source context; these fields cannot create source anchors.</p>` : ''}<p class="context">Retry checks the same task and question. It may stay blocked until all required context is present.</p></details>`;
+}
+
 function newRequest() {
-  openModal('Create a request', 'Add a task and its first decision manually.', `<form id="request-form"><label for="title">Task</label><input id="title" name="title" placeholder="Add usage-based pricing" maxlength="300" required><div class="form-row"><div><label for="agent">Agent</label><input id="agent" name="agent" placeholder="Claude Code, Codex, Cursor…" maxlength="100" required></div><div><label for="repo">Repository</label><input id="repo" name="repo" placeholder="team/platform" maxlength="300" required></div></div><label for="question">What decision is needed?</label><textarea id="question" name="question" placeholder="Ask one specific question." maxlength="2000" required></textarea><label for="context">Context & evidence</label><textarea id="context" name="context" placeholder="What does the owner need to know? Include constraints and consequences." maxlength="12000" required></textarea><label for="path">Relevant file path</label><input id="path" name="path" placeholder="billing/usage.py" maxlength="1000" required><label for="owner_id">Decision owner</label><select id="owner_id" name="owner_id">${ownerOptions('',true)}</select><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Cancel</button><button class="button primary" type="submit">Create request ${icon('arrow')}</button></div></form>`);
+  saveRequestDraft();
+  if (!requestDraft) requestDraft = {clientKey:requestKey(), clientRef:requestKey(), values:{}, taskId:'', payload:null, nodePayload:null, facts:{}, factValues:{}, scope:null, scopeEditable:false, pending:false, complete:false, error:''};
+  const d = requestDraft, v = d.values, locked = !!d.payload;
+  const repos = [...new Set((state.graph?.repos || []).filter(r => typeof r === 'string' && r))];
+  const canAsk = !!state.auth && (!state.auth.enabled || ['admin','member'].includes(state.me?.role));
+  const selected = v.repo || (repos.length === 1 ? repos[0] : '');
+  openModal('Ask Raven', 'Raven records your question and may contact its routed owner. This does not launch an external coding agent.', `<form id="request-form" data-client-key="${esc(d.clientKey)}" data-client-ref="${esc(d.clientRef)}" data-task-id="${esc(d.taskId)}">
+    <label for="question">Question or prompt</label><textarea id="question" name="question" maxlength="2000" rows="4" placeholder="What do you need to know or decide?" ${locked ? 'readonly' : ''} required>${esc(v.question || '')}</textarea>
+    <label for="repo">Repository scope</label><select id="repo" name="repo" ${locked ? 'disabled' : ''} required><option value="">Choose a repository</option>${repos.map(r => `<option value="${esc(r)}" ${selected === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}${v.repo && !repos.includes(v.repo) ? `<option value="${esc(v.repo)}" selected>${esc(v.repo)}</option>` : ''}</select>
+    <details id="request-context" ${v.context || v.path ? 'open' : ''}><summary>Extra context (optional)</summary><label for="context">Context & evidence</label><textarea id="context" name="context" maxlength="12000" ${locked ? 'readonly' : ''}>${esc(v.context || '')}</textarea><label for="path">Relevant file path</label><input id="path" name="path" maxlength="1000" placeholder="src/example.py" value="${esc(v.path || '')}" ${locked ? 'readonly' : ''}></details>
+    ${!canAsk ? `<p class="context">${state.auth ? 'You have read-only access to this workspace.' : 'Loading workspace access…'}</p>` : !repos.length && !locked ? '<p class="context">No repository scope is available yet. Connect or ingest a repository in Connections & setup.</p>' : ''}
+    <p class="context">${locked ? 'Retry uses this same question and scope to avoid duplicate tasks or questions.' : 'Ask one question, up to 2,000 characters. Add details in Extra context.'}</p>
+    <div id="request-scope-area">${requestScopeFields(d)}</div>
+    <p class="error" id="form-error" role="alert" ${d.error ? '' : 'hidden'}>${esc(d.error)}</p><p id="request-progress" role="status">${d.pending ? 'Recording your question…' : d.complete ? 'Your question is recorded.' : d.scope ? d.scopeEditable ? 'Scope is still needed. No question was added or sent by the last attempt.' : 'The latest question result is unconfirmed. Retry uses the same facts.' : d.taskId ? 'The task is recorded. Retry to finish adding its question.' : ''} ${d.taskId ? `<a id="request-run-link" href="#runs/${encodeURIComponent(d.taskId)}" data-action="request-view-run">Open recorded run</a>` : ''}</p>
+    <div class="modal-actions"><button type="button" class="button" data-action="close">Cancel</button>${d.pending ? '<button type="button" class="button" data-action="request-status">Check request status</button>' : ''}${d.complete ? '<button type="button" class="button primary" data-action="request-new">Ask another question</button>' : `<button class="button primary" type="submit" ${d.pending || !canAsk || (!repos.length && !locked) ? 'disabled' : ''}>${d.scope ? 'Retry with current scope' : locked ? 'Retry question' : 'Ask Raven'}</button>`}</div></form>`);
+}
+
+async function submitRequest(form) {
+  const draft = requestDraft;
+  if (!draft || form.dataset.clientKey !== draft.clientKey || $('#request-form') !== form || !$('#modal').open || draft.pending || draft.complete) return;
+  if (!state.auth || (state.auth.enabled && !['admin','member'].includes(state.me?.role))) return;
+  if (!form.reportValidity()) return;
+  const errorEl = form.querySelector('#form-error'), progress = form.querySelector('#request-progress');
+  if (!draft.payload) {
+    const data = Object.fromEntries(new FormData(form));
+    if (!data.question?.trim() || data.question.length > 2000 || !state.graph?.repos?.includes(data.repo)) {
+      errorEl.textContent = 'Enter a question of up to 2,000 characters and choose an available repository.';
+      errorEl.hidden = false; return;
+    }
+    draft.values = data;
+    draft.payload = {question:data.question, repo:data.repo, context:data.context || '', path:data.path || ''};
+  }
+  if (draft.scopeEditable) {
+    draft.factValues = Object.fromEntries([...form.querySelectorAll('[data-fact-key]')].map(el => [el.dataset.factKey,el.value]));
+    const missing = new Set(requestScopeKeys(draft));
+    draft.facts = Object.fromEntries([...Object.entries(draft.facts || {}).filter(([key]) => !missing.has(key)), ...Object.entries(draft.factValues).filter(([,value]) => value.trim())]);
+    draft.nodePayload = null; draft.scopeEditable = false;
+  }
+  const data = draft.payload, version = modalVersion, navigation = navigationVersion, route = location.hash;
+  if (!draft.nodePayload) draft.nodePayload = {question:data.question, context:data.context, paths:data.path, client_ref:draft.clientRef, ...(Object.keys(draft.facts || {}).length ? {facts:{...draft.facts}} : {})};
+  const current = () => $('#modal').open && modalVersion === version && navigationVersion === navigation && $('#request-form') === form && location.hash === route;
+  const button = form.querySelector('[type="submit"]');
+  draft.pending = true; draft.error = ''; button.disabled = true; errorEl.hidden = true;
+  form.querySelectorAll('input,textarea').forEach(el => { el.readOnly = true; });
+  form.querySelector('select').disabled = true;
+  progress.textContent = 'Recording your question…';
+  if (draft.scope) form.querySelector('#request-scope-area').innerHTML = requestScopeFields(draft);
+  try {
+    if (!draft.taskId) {
+      const result = await api('/api/tasks/start', {title:Array.from(data.question).slice(0,300).join(''), goal:data.question, agent:'Raven UI', repo:data.repo, paths:data.path, client_key:draft.clientKey});
+      if (!result.task_id) throw new Error('No task ID was returned. Retry this same question.');
+      draft.taskId = result.task_id; form.dataset.taskId = draft.taskId;
+    }
+    const result = await api(`/api/tasks/${encodeURIComponent(draft.taskId)}/nodes`, draft.nodePayload);
+    if (result.status === 'needs_scope_clarification') {
+      draft.scope = result; draft.scopeEditable = true; draft.nodePayload = null;
+      if (current()) {
+        // This is a definite non-creation response, so additional facts may be entered.
+        draft.pending = false;
+        form.querySelector('#request-scope-area').innerHTML = requestScopeFields(draft);
+        progress.innerHTML = `Scope is still needed. No question was added or sent. <a id="request-run-link" href="#runs/${encodeURIComponent(draft.taskId)}" data-action="request-view-run">Open blocked run</a>`;
+      }
+      return;
+    }
+    if (!result.node_id) throw new Error('No question ID was returned. Retry this same question to check its recorded result.');
+    draft.complete = true; draft.scope = null; draft.scopeEditable = false;
+    if (current()) {
+      closeModal(); requestDraft = null;
+      location.hash = 'runs/' + encodeURIComponent(draft.taskId);
+      notify('Question recorded. Follow its answers and next action in this run.');
+      await refresh({quiet:true});
+    }
+  } catch (error) {
+    draft.error = error.message;
+    if (current()) {
+      errorEl.textContent = error.message; errorEl.hidden = false;
+      progress.innerHTML = draft.taskId ? `${draft.scope ? 'The latest question result is unconfirmed. Retry uses the same facts.' : 'The task is recorded. Retry to check or finish adding its question.'} <a id="request-run-link" href="#runs/${encodeURIComponent(draft.taskId)}" data-action="request-view-run">Open recorded run</a>` : 'Your prompt is preserved. Retry uses the same request key.';
+    }
+  } finally {
+    draft.pending = false;
+    if (current()) { button.disabled = false; button.textContent = draft.scopeEditable ? 'Retry with current scope' : 'Retry question'; }
+  }
 }
 
 function newTask() {
@@ -569,7 +686,7 @@ function sourceEvidence(sources, review = null) {
   return `<details class="history" open><summary>Versioned sources · ${review?.sources?.length || (sources || []).length}</summary>${(sources || []).map(source => {
     const label = `${source.ref} · version ${source.sequence} · ${source.role}`;
     const url = /^https?:\/\//i.test(source.url || '') ? source.url : '';
-    return `<p class="context">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>` : esc(label)}${source.stale ? ' · source changed' : ''}<br><small>${esc(source.namespace)} · ${esc(source.source_version_id)}<br>Record ID: ${esc(source.record_id)}</small></p>`;
+    return `<p class="context">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>` : esc(label)}${source.stale ? ' · historical or unavailable; review before reuse' : ''}<br><small>${esc(source.namespace)} · ${esc(source.source_version_id)}<br>Record ID: ${esc(source.record_id)}</small></p>`;
   }).join('')}${review?.sources?.length ? `<section class="source-evidence-review"><h3>Source snapshots for this answer</h3>${!review.available ? `<p class="context">${esc(review.notice)}</p>` : ''}${sourceSnapshots(review.sources)}</section>` : ''}<p class="context">Sources are evidence. Their authors and statuses do not grant approval. Context and work-item links do not require source revalidation.</p></details>`;
 }
 
@@ -739,7 +856,9 @@ document.addEventListener('click', async event => {
   const action = target.dataset.action;
   try {
     if (action === 'close') closeModal();
-    if (action === 'new') newRequest();
+    if (action === 'new' || action === 'request-status') newRequest();
+    if (action === 'request-new') { requestDraft = null; newRequest(); }
+    if (action === 'request-view-run') closeModal();
     if (action === 'owner') newOwner();
     if (action === 'person') newPerson();
     if (action === 'team') newTeam();
@@ -774,7 +893,8 @@ document.addEventListener('click', async event => {
     if (action === 'tab') { tab = target.dataset.tab; tabChosen = true; render(); }
     if (action === 'review' || action === 'source') await review(target.dataset.id);
     if (action === 'run') location.hash = 'runs/' + encodeURIComponent(target.dataset.id);
-    if (action === 'task-tab') { taskTab = target.dataset.tab; render(); }
+    if (action === 'task-tab') { taskTab = target.dataset.tab; taskView().tab = taskTab; render(); }
+    if (action === 'task-more') taskMore(target.dataset.key, Number(target.dataset.step) || 12);
     if (action === 'task-refresh') await loadTask();
     if (action === 'task-brief') { const r = await api(`/api/tasks/${encodeURIComponent(taskId())}/link`, {decision_id: taskBriefDecision()}); location.assign(r.url); }
     if (action === 'task-share') { await navigator.clipboard.writeText(location.href); notify('App link copied. Workspace access is required on shared instances.'); }
@@ -905,10 +1025,13 @@ document.addEventListener('submit', async event => {
   const form = event.target;
   if (!['invite-form','request-form','owner-form','answer-form','correct-form','task-form','ingest-form','person-form','team-form','authority-form','rule-form','note-form'].includes(form.id)) return;
   event.preventDefault();
+  if (form.id === 'request-form') { await submitRequest(form); return; }
+  if (form.id === 'note-form') { await submitTaskNote(form); return; }
   const button = form.querySelector('[type="submit"]');
   if (button.disabled || !form.reportValidity()) return;
   button.disabled = true;
-  $('#form-error').hidden = true;
+  const errorEl = form.querySelector('#form-error');
+  errorEl.hidden = true;
   const data = Object.fromEntries(new FormData(form));
   try {
     if (form.id === 'invite-form') {
@@ -920,16 +1043,6 @@ document.addEventListener('submit', async event => {
       await api('/api/tasks', {...data, submission_key:form.dataset.submissionKey});
       notify('Task queued. Follow progress in Tasks.');
       location.hash = 'runs';
-    } else if (form.id === 'request-form') {
-      // Keep the started task on the form if the node fails, so retry does not start it twice.
-      const taskId = form.dataset.taskId || (await api('/api/tasks/start', {title:data.title, agent:data.agent, repo:data.repo, paths:data.path})).task_id;
-      form.dataset.taskId = taskId;
-      await api(`/api/tasks/${encodeURIComponent(taskId)}/nodes`, {question:data.question, context:data.context, paths:data.path, ...(data.owner_id ? {owner_id:data.owner_id} : {})});
-      notify('Request created. Its owner can review it in the inbox.');
-    } else if (form.id === 'note-form') {
-      await api(`/api/tasks/${encodeURIComponent(form.dataset.id)}/notes`, {text: data.text, by: state.me?.name || 'Local operator'});
-      notify('Note added. The agent can read it on the tree.');
-      form.reset();
     } else if (form.id === 'rule-form') {
       const d = state.decisions.find(x => x.id === form.dataset.id);
       const result = await api(`/api/decisions/${form.dataset.id}/rule`, {by: state.me?.name || d?.signed_by || d?.owner_name || 'Local operator', expected_updated_at: form.dataset.updated, ...data});
@@ -963,8 +1076,8 @@ document.addEventListener('submit', async event => {
     closeModal();
     await refresh();
   } catch (error) {
-    $('#form-error').textContent = error.message;
-    $('#form-error').hidden = false;
+    errorEl.textContent = error.message;
+    errorEl.hidden = false;
     button.disabled = false;
   }
 });
