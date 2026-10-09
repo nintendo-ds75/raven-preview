@@ -191,6 +191,13 @@ def load_tests(loader, tests, pattern):
     source_conversation_case = type('PostgresConversationSourceTests',
         (PostgresIsolation, ConversationSourceTests), {'__module__': __name__})
     suite.addTests(loader.loadTestsFromTestCase(source_conversation_case))
+    # Real human-answer writes run against both storage backends. The pure
+    # compatibility classifier cases remain a separate native lane.
+    from test_human_answer_fidelity import AuthoredAnswerTests
+    from test_assumed_owner_correction import AssumedOwnerCorrectionTests
+    for cls in (AuthoredAnswerTests, AssumedOwnerCorrectionTests):
+        case = type('Postgres' + cls.__name__, (PostgresIsolation, cls), {'__module__': __name__})
+        suite.addTests(loader.loadTestsFromTestCase(case))
     # Bounded MCP history storage/transport contracts use the backend;
     # the pure encoded-budget projection unit remains a separate native lane.
     from test_decision_reads import DecisionReadTests, DecisionReadHTTPTests

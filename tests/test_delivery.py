@@ -602,7 +602,8 @@ class ReplyTests(DeliveryCase):
         long = ("Keep jitter off by default and let callers opt in per pool. " * 20).strip()
 
         def complete_json(self, purpose, system, prompt, **kw):
-            return {"kind": "answer", "confident": True, "answer": replies[0], "rationale": "because"}
+            return {"kind": "answer", "answer_form": "complete", "confident": True,
+                    "answer": replies[0], "rationale": "because"}
         env = patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1", "BRIDGE_CLAUDE_BIN": "/nonexistent/claude"})
         env.start()
         self.addCleanup(env.stop)
@@ -610,7 +611,8 @@ class ReplyTests(DeliveryCase):
             replies = [long]
             self.assertEqual(llm.read_reply(Config(), "Jitter?", "", long)["answer"], long)
             replies[0] = long * 4
-            self.assertEqual(llm.read_reply(Config(), "Jitter?", "", long), {})
+            self.assertEqual(llm.read_reply(Config(), "Jitter?", "", long)['answer'], long)
+            self.assertEqual(llm.read_reply(Config(), "Jitter?", "", long * 20), {'kind': 'clarify_answer'})
 
     def test_the_message_says_what_bridge_cites_not_how_the_search_went(self):
         from bridge.delivery import _found_for_owner

@@ -1707,13 +1707,13 @@ READ_REPLY_SYSTEM = (
     "answer is right. A statement of what is usually or normally done (\"we usually ship these off by "
     "default\", \"that is how we have always done it\", \"the convention here is X\") is \"chat\" even when "
     "it happens to match the answer on the table: it says what tends to happen, not that this decision is "
-    "settled, and a person who meant to settle it will say so. For \"answer\", put what they decided "
-    "in `answer`, in their own words, as a statement of the decision and not a paraphrase of the question; "
-    "put their reason in `rationale` if they gave one, otherwise leave it empty. For \"handoff\", put who "
+    "settled, and a person who meant to settle it will say so. For \"answer\", classify answer_form "
+    "using the contract below; code preserves the human text and does not use a rewritten answer or reason. "
+    "For \"handoff\", put who "
     "they named in `to`, exactly as they wrote it. Add nothing they did not say, never resolve the decision "
     "yourself, and never treat a question of theirs as an answer. Return ONLY JSON: {\"kind\": \"...\", "
-    "\"answer\": \"...\", \"rationale\": \"...\", \"to\": \"...\", \"confident\": true or false}. No em "
-    "dashes or en dashes."
+    "\"answer_form\": \"complete|partial|mixed\", \"answer\": \"\", \"rationale\": \"\", "
+    "\"to\": \"...\", \"confident\": true or false}."
 )
 
 READ_REPLY_KINDS = ("answer", "signoff", "handoff", "rule", "question", "chat")
@@ -1730,10 +1730,14 @@ def read_reply(cfg, question: str, on_table: str, text: str) -> dict:
     prevent."""
     if not cfg or not cfg.semantic_retrieval:
         return {}
+    from .human_answers import ANSWER_FORM_GUIDANCE, CompleteAnswerRequired, preserve_complete_answer
+    if len(text or '') > 12000:
+        return {'kind': 'clarify_answer'}
     prompt = (f"DECISION: {question}\nANSWER ON THE TABLE: {(on_table or '').strip()[:600] or 'none yet'}\n"
-              f"THEIR MESSAGE: {(text or '').strip()[:1500]}")
+              f"THEIR MESSAGE: {text or ''}")
     try:
-        raw = Client(cfg.fast()).complete_json("read_reply", READ_REPLY_SYSTEM, prompt, max_tokens=400)
+        raw = Client(cfg.fast()).complete_json("read_reply", READ_REPLY_SYSTEM + '\n' + ANSWER_FORM_GUIDANCE,
+                                              prompt, max_tokens=400)
     except LLMError:
         return {}
     if not isinstance(raw, dict):
@@ -1741,10 +1745,15 @@ def read_reply(cfg, question: str, on_table: str, text: str) -> dict:
     kind = str(raw.get("kind", "")).strip().lower()
     if kind not in READ_REPLY_KINDS or not raw.get("confident"):
         return {}
+    if kind == 'answer':
+        try:
+            return preserve_complete_answer(raw, text)
+        except CompleteAnswerRequired:
+            return {'kind': 'clarify_answer'}
+        except ValueError:
+            return {}
     answer = str(raw.get("answer", "")).strip()
     rationale = str(raw.get("rationale", "")).strip()
-    if kind == "answer" and (not answer or looks_meta(answer)):
-        return {}
     # The person confirms this reading as their answer: it is never cut to
     # fit (it was cut at 700 characters). A reading longer than anything a
     # reply restates is not a reading to offer.

@@ -39,7 +39,7 @@ BOT_TOKEN = 'xoxb-contract-fixture-not-a-real-token'
 ACTION_TOKEN = 'contract-transient-action-token-canary'
 SOURCE_TEXT = 'Contract source canary: internal load tests are excluded from invoices.'
 SOURCE_URL = 'https://contract-fixture.slack.com/archives/C012BILLING/p1700000000000001'
-ANSWER = 'Exclude internal load tests from invoices; continue billing real customer traffic.'
+ANSWER = 'Please exclude internal load tests, but still bill real customer traffic.'
 DIFF = ('diff --git a/billing/usage.py b/billing/usage.py\n'
         '--- a/billing/usage.py\n+++ b/billing/usage.py\n@@ -1 +1 @@\n'
         '-bill_internal = True\n+bill_internal = False\n')
@@ -256,7 +256,7 @@ class FixtureProvider:
         elif message == 'Could you ask Marisol Contract instead?':
             action = {'kind': 'handoff', 'to': 'Marisol Contract'}
         elif message == 'Please exclude internal load tests, but still bill real customer traffic.':
-            action = {'kind': 'answer', 'answer': ANSWER, 'rationale': ''}
+            action = {'kind': 'answer', 'answer_form': 'complete', 'answer': '', 'rationale': ''}
         else:
             action = {'kind': 'chat', 'reply': 'Please state the decision you want recorded.'}
         return json.dumps(action)

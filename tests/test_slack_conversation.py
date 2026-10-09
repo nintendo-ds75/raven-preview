@@ -45,7 +45,8 @@ class ConversationTests(DeliveryCase):
         policy = ('Add a boolean accessor. Missing values return the exact default object unchanged. '
                   'Invalid values raise ValueError. This approval is for this task only; it is not a standing rule.')
         with patch('bridge.slack_chat.Client.complete_json', side_effect=[
-                {'kind': 'answer', 'answer': {'text': policy}}, {'kind': 'answer', 'answer': policy}]) as model:
+                {'kind': 'answer', 'answer': {'text': policy}},
+                {'kind': 'answer', 'answer_form': 'complete', 'answer': policy}]) as model:
             response = self.reply(self.message, 'UWES', policy)
         self.assertEqual(model.call_count, 2)
         self.assertIn(transport_text(policy), response)
@@ -80,7 +81,7 @@ class ConversationTests(DeliveryCase):
     def test_schema_repair_cannot_replace_a_newer_readback(self):
         def repaired(*args, **kwargs):
             self.say('Hold the invoice.', {'kind': 'answer', 'answer': 'Hold the invoice.'})
-            return {'kind': 'answer', 'answer': 'Bill two units.'}
+            return {'kind': 'answer', 'answer_form': 'complete', 'answer': 'Bill two units.'}
         calls = iter([{'kind': 'answer', 'answer': []}, None])
         def model(*args, **kwargs):
             return next(calls) or repaired(*args, **kwargs)
@@ -747,11 +748,14 @@ class ConversationTests(DeliveryCase):
         self.assertIn('Replace the current question', response)
 
     def test_faithful_answer_amendment_needs_no_repair(self):
-        with patch('bridge.slack_chat.reading', return_value={
-                'kind': 'answer', 'answer': 'Bill real traffic only.'}) as model:
-            response = self.reply(self.message, 'UWES', 'I amend my earlier answer: bill real traffic only.')
+        message = 'My complete replacement answer: bill real traffic only.'
+        with patch('bridge.slack_chat.Client.complete_json', return_value={
+                'kind': 'answer', 'answer_form': 'complete'}) as model:
+            response = self.reply(self.message, 'UWES', message)
         self.assertEqual(model.call_count, 1)
         self.assertIn('Record your decision as:', response)
+        self.assertEqual(json.loads(self.delivery._reading(
+            self.message['channel'], self.message['ts'], self.wes)['answer'])['answer'], message)
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
 
     def test_repaired_answer_keeps_authority_and_stale_readback_checks(self):
@@ -820,11 +824,15 @@ class ConversationTests(DeliveryCase):
             self.assertIn('11x',model.call_args.args[1]['context'])
         self.say('Exclude that one, it was internal testing',{'kind':'answer','answer':'Exclude the spike.','rationale':'internal testing'})
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
-        with patch('bridge.slack_chat.reading',return_value={'kind':'answer','answer':'Exclude internal traffic only; bill real customer traffic.'}) as model:
+        with patch('bridge.slack_chat.Client.complete_json',return_value={'kind':'answer','answer_form':'partial'}) as model:
             offered=self.reply(self.message,'UWES','Actually keep the real customer traffic billable')
-            self.assertTrue(model.call_args.args[1]['pending_readback'])
-            self.assertGreater(len(model.call_args.args[1]['history']),1)
-            self.assertIn('real customer',offered)
+            payload=json.loads(model.call_args.args[2])
+            self.assertTrue(payload['pending_readback'])
+            self.assertGreater(len(payload['history']),1)
+            self.assertIn('complete answer or replacement',offered)
+            self.assertIsNone(self.delivery._reading(self.message['channel'],self.message['ts'],self.wes))
+        with patch('bridge.slack_chat.Client.complete_json',return_value={'kind':'answer','answer_form':'complete'}):
+            self.reply(self.message,'UWES','Exclude internal traffic only; bill real customer traffic.')
         self.say('yes',event_id='signed')
         d=self.store.get_decision(self.n['node_id'])
         self.assertTrue(d['authorized']);self.assertIn('bill real',d['answer'])
@@ -832,11 +840,12 @@ class ConversationTests(DeliveryCase):
 
     def test_model_cannot_treat_an_amendment_as_confirmation(self):
         self.say('Exclude internal traffic',{'kind':'answer','answer':'Exclude internal traffic.'})
-        with patch('bridge.slack_chat.reading',side_effect=[{'kind':'confirm'},
-                {'kind':'answer','answer':'Exclude internal traffic for Acme only.'}]) as model:
+        with patch('bridge.slack_chat.Client.complete_json',side_effect=[{'kind':'confirm'},
+                {'kind':'answer','answer_form':'partial'}]) as model:
             ack=self.reply(self.message,'UWES','Actually, only for Acme')
         self.assertEqual(model.call_count,2)
-        self.assertIn('Acme only',ack)
+        self.assertIn('complete answer or replacement',ack)
+        self.assertIsNone(self.delivery._reading(self.message['channel'],self.message['ts'],self.wes))
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
 
     def test_ambiguous_amendment_invalidates_the_old_readback(self):
@@ -1184,7 +1193,7 @@ class ReplySchemaTests(OfflineCase):
         # claims about which field the actual provider returned incorrectly.
         for field in ('reply', 'answer', 'rationale', 'to', 'conditions', 'expires', 'scope_kind', 'scope'):
             with self.subTest(field=field):
-                good = {'kind': 'answer', 'answer': 'Bill two units for this task only.'}
+                good = {'kind': 'answer', 'answer_form': 'complete', 'answer': 'Bill two units for this task only.'}
                 got = self.validated([{'kind': 'answer', field: {'private-canary': 'not-for-error'}}, good])
                 self.assertEqual(got['answer'], good['answer'])
                 self.assertEqual(self.model.call_count, 2)
@@ -1202,7 +1211,7 @@ class ReplySchemaTests(OfflineCase):
 
     def test_oversized_text_is_repaired_without_echoing_the_rejected_value(self):
         got = self.validated([{'kind': 'answer', 'answer': 'canary-' * 2000},
-                              {'kind': 'answer', 'answer': 'Bill two units for this task only.'}])
+                              {'kind': 'answer', 'answer_form': 'complete', 'answer': 'Bill two units for this task only.'}])
         self.assertEqual(got['kind'], 'answer')
         repaired = json.loads(self.model.call_args.args[2])
         self.assertIn('12000', repaired['validation_error'])
@@ -1213,7 +1222,7 @@ class ReplySchemaTests(OfflineCase):
             self.validated([{'kind': 'answer', 'answer': []}, {'kind': 'answer', 'answer': {}}])
         self.assertEqual(self.model.call_count, 2)
 
-    def test_schema_and_scope_guards_share_one_repair_budget(self):
+    def test_schema_and_answer_classification_share_one_repair_budget(self):
         for replies in ([{'kind': 'answer', 'answer': []}, {'kind': 'answer', 'answer': 'Bill two units.'}],
                         [{'kind': 'answer', 'answer': 'Bill two units.'}, {'kind': 'answer', 'answer': []}]):
             with self.subTest(first=replies[0]):

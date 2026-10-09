@@ -766,6 +766,9 @@ class Delivery:
         except Exception:
             return ""
         kind = read.get("kind", "")
+        if kind == 'clarify_answer':
+            from .human_answers import COMPLETE_ANSWER_REQUEST
+            return COMPLETE_ANSWER_REQUEST
         if kind in ("", "chat"):
             return ""
         if kind == "question":
@@ -789,6 +792,8 @@ class Delivery:
             summary = "Not recorded yet. I read that as agreeing with the complete answer on the table:\n" + (decision.get('answer') or '')
         else:
             summary = f"Not recorded yet. I read your answer as: \"{read['answer']}\"."
+            if read.get('rationale'):
+                summary += '\nReason: ' + read['rationale']
         graph = self.store.graph
         with graph.transaction():
             if self._reading(channel, thread_ts, person['id']) != held:

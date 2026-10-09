@@ -94,7 +94,7 @@ Raven sends the question, task context, evidence, and why it chose the person in
 
 * “Why are we changing the current behavior?”
 * “Keep the default for existing customers, but make it configurable for new ones.”
-* “Actually, the exception is only for Acme.”
+* “My complete replacement answer: keep the default, with an exception only for Acme.”
 * “This is Priya’s call. Could you ask @Priya?”
 * “Before finishing, check whether this also changes exports.”
 
@@ -109,6 +109,14 @@ If no contact matches the available evidence, Raven posts the question in the tr
 The host calls `bridge_wait` and reads the answer through `bridge_get_tree`. It can continue independent work while it waits. `bridge_finish_task` refuses outstanding required answers and signatures. Evidence reuse still requires a signature unless an explicitly enabled, matching standing rule covers it.
 
 Task notes are always in `bridge_get_tree.notes`. A wait returns notes added while it is running; pass the previous `observed_at` as `since` to also receive notes that arrived between calls. A wait without `since` does not replay existing notes. On an ordinary timeout, the guidance says “no new decision or forwarded task note is observable” and “this does not prove that nobody replied privately.” That is a generic visibility boundary, not a report about any particular private conversation.
+
+### Complete authored answers and corrections
+
+For a natural-language answer, inference classifies intent and whether the message is complete. Raven copies a complete authored answer verbatim into the read-back, including conditions, exceptions, negation and any inline reason. It does not replace the person's wording with a model summary or a more specific implementation. The received text remains in the conversation and confirmation evidence; outer transport whitespace is normalized as before. A separate reason field may be empty even when the complete answer includes a reason.
+
+An incomplete amendment such as “keep that part, except for Acme” needs a complete replacement. Messages combining an answer with a referral, rule request or private discussion also need separate instructions. Raven asks for the complete answer through `answer: …` or the existing task review page instead of composing text for the person to sign. This is a conservative fallback; intent classification is not proof of human intent. Check the full reading before confirming it.
+
+A complete replacement can correct an assumed or unsigned proposal. The ordinary ownership, revision, current-source review and explicit confirmation checks still apply. An oversized answer or source review is refused whole and uses the task review page; no shortened copy can be signed. This change does not alter previously recorded answers or pending historical evidence.
 
 ## Check it from your host agent
 

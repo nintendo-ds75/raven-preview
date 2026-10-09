@@ -1042,8 +1042,15 @@ def act(store, link: Link, data) -> dict:
     if decision["run_id"] != link.run_id:
         raise Invalid("Decision not found on this task")
     expected = field(data, "expected_updated_at", limit=60)
-    answer = str(data.get("answer") or "").strip()[:12000]
-    rationale = str(data.get("rationale") or "").strip()[:4000]
+    # The owner approves the complete submitted text. Refuse oversized input
+    # rather than signing a prefix that may omit a late condition or reason.
+    answer = canvas._text(data, 'answer', limit=12000)
+    rationale = canvas._text(data, 'rationale', limit=4000)
+    # HTML textarea maxlength counts UTF-16 code units. Match that same
+    # bound for direct API submissions, including non-BMP characters.
+    for key, value, limit in (('answer', answer, 12000), ('rationale', rationale, 4000)):
+        if len(value.encode('utf-16-le', errors='surrogatepass')) // 2 > limit:
+            raise Invalid(f'{key} must be at most {limit} characters')
     actor = link.actor
     name = link.person["name"]
     # The task link permits only this task's decision, on this person's

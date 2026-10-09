@@ -7,6 +7,8 @@ from . import authz, canvas
 from .config import load
 from .graph import now_iso
 from .llm import Client, LLMError
+from .human_answers import (ANSWER_FORM_GUIDANCE, COMPLETE_ANSWER_REQUEST, INLINE_RATIONALE,
+                            CompleteAnswerRequired, preserve_complete_answer)
 from .store import Invalid
 
 class EphemeralReply(str):
@@ -67,9 +69,7 @@ confirm: explicit agreement with the pending read-back and NO new qualification.
 There is nothing to confirm when pending_readback is null. A task or question asking to "re-confirm" does not
 make a full human policy a confirmation. A complete instruction such as "Expose keyword-only options..."
 is an answer to read back, even if the person gave the same policy on another node.
-An amendment must keep unaffected requirements from the pending answer and incorporate the new requirement.
-For example, "Actually, one qualification: zero must disable the cap. Keep the Retry-After part"
-means answer with BOTH requirements, never confirm.
+An amendment is an answer with answer_form=partial, never confirm. Do not synthesize a replacement.
 decline: they reject the pending read-back without supplying a replacement. Ambiguity is chat, never confirm.
 handoff: they identify someone else to ask. Copy their Slack mention, full name or email exactly into to.
 contact_outcome is blank or referred for an ordinary handoff. Use declined only when they explicitly say
@@ -90,6 +90,7 @@ You may copy an explicitly named category into scope_kind=category and scope, bu
 Do NOT claim anything has been saved, signed, sent or learned. Code applies actions after confirmation.
 reply is conversational text for question or chat only. Other actions are read back by code.
 Do not include text beyond the JSON.'''
+SYSTEM += '\n' + ANSWER_FORM_GUIDANCE
 
 
 # Recognizable human scope restrictions are a conservative omission guard,
@@ -170,10 +171,12 @@ def validated_reading(cfg, payload):
         if kind == 'reframe' and explicit_answer_amendment(payload['message']):
             require_answer = True
             error = ('The person explicitly amended their answer, not the question. Return an answer '
-                     'preserving the complete replacement or all unaffected requirements of the earlier answer. '
+                     'with answer_form=complete only if their current message is a complete authored replacement; '
+                     'otherwise use answer_form=partial or mixed and request a complete replacement. Do not compose one. '
                      'Do not reframe the question or sign off the old answer.')
         elif require_answer and (kind != 'answer' or not action.get('answer', '').strip()):
-            error = 'The repair must supply the complete amended answer, not another action or an empty answer.'
+            error = ('The repair must classify the authored answer as complete, partial, or mixed. '
+                     'Do not supply a synthesized answer, another action, or an empty complete answer.')
         elif require_reapproval and (
                 kind not in ('answer', 'signoff')
                 or (kind == 'signoff' and not can_sign_reaffirmation)
@@ -193,8 +196,8 @@ def validated_reading(cfg, payload):
                      + ('There is no pending read-back to confirm. ' if not payload.get('pending_readback') else '')
                      + 'Read the current human words, not a task or question asking to re-confirm. '
                      'A complete policy or instruction is an answer to read back for fresh confirmation. '
-                     'Otherwise re-read it as an amendment, question, context or chat. '
-                     'Preserve all unaffected requirements when amending the pending answer.')
+                     'Otherwise re-read it as a partial or mixed answer, question, context or chat. '
+                     'An incomplete amendment needs answer_form=partial and a complete human replacement, not synthesis.')
         if not error:
             missing = missing_scope_qualifiers(action, payload['message'])
             if missing:
@@ -272,6 +275,13 @@ def reading(cfg, payload):
         raise ReadingShapeError('contact_outcome must be blank, referred, or declined')
     if raw.get('contact_outcome') == 'declined' and raw['kind'] != 'handoff':
         raise ReadingShapeError('contact_outcome declined is only valid for handoff')
+    if raw['kind'] == 'answer':
+        try:
+            raw = preserve_complete_answer(raw, payload.get('message'))
+        except CompleteAnswerRequired:
+            raise
+        except ValueError as error:
+            raise ReadingShapeError(str(error)) from error
     return raw
 
 
@@ -429,7 +439,9 @@ def apply(delivery, d, person, action, actor, review_data=None):
                 and action['answer'].strip() == (d.get('answer') or '').strip()):
             canvas.sign_off(store, d['id'], by, actor=actor, transaction_db=transaction_db)
             return f"Signed by {person['name']}. The coding agent can now read it."
-        data = {**by, 'answer':action['answer'], 'rationale':action.get('rationale') or f'No reason given in the {delivery.channel.title()} conversation',
+        fallback = (INLINE_RATIONALE if action.get('authored_verbatim')
+                    else f'No reason given in the {delivery.channel.title()} conversation')
+        data = {**by, 'answer':action['answer'], 'rationale':action.get('rationale') or fallback,
                 'signed_by':person['name'],'source':f"{delivery.channel}: {person['name']} (read back and confirmed)"}
         if d['status'] == 'pending': store.answer(d['id'],data,actor=actor,transaction_db=transaction_db)
         else: canvas.sign_off(store,d['id'],data,actor=actor,transaction_db=transaction_db)
@@ -564,6 +576,10 @@ def respond(delivery, note, d, person, text, actor, action_token='', occurrence=
                 action['rationale'] = grounded_rationale(
                     action.get('rationale', ''), action.get('answer', ''),
                     [text] + [h.get('text', '') for h in history if h.get('role') == 'user'])
+        except CompleteAnswerRequired:
+            if pending:
+                _forget_snapshot(delivery, channel, thread, person['id'], held)
+            return COMPLETE_ANSWER_REQUEST
         except LLMError as error:
             if pending:
                 _forget_snapshot(delivery, channel, thread, person['id'], held)
