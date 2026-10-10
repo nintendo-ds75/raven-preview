@@ -90,7 +90,7 @@ class DocsSourceTests(OfflineCase):
         self.assertEqual(sources.connections(self.store), [])
 
     def test_registration_refuses_non_https_remote_urls_and_credentials(self):
-        for url in ('http://docs.example.com/', 'https://user:pw@docs.example.com/', 'ftp://docs.example.com/'):
+        for url in ('http://docs.example.com/', 'https://user:pw@docs.example.invalid/', 'ftp://docs.example.com/'):
             with self.assertRaises(Invalid):
                 sources.register(self.store, 'docs', 'example/service', url, shared=True,
                                  client=source_docs.HTTPClient())
