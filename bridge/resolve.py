@@ -410,6 +410,11 @@ def root_file_hits(tree: Tree, text: str, common: set[str] | None = None) -> dic
     return hits
 
 
+_LEGAL_NAME_RE = re.compile(r"\b(?:LICEN[CS]E|COPYING|NOTICE|AUTHORS|CONTRIBUTORS)(?:\.[A-Za-z]+)?\b")
+_LEGAL_TEXT_RE = re.compile(r"relicens|copyright|\b(?:licen[cs]e|copying|notice)\s+(?:file|text|terms)\b|"
+                            r"\b(?:our|the project'?s|this project'?s)\s+licen[cs]e\b", re.IGNORECASE)
+
+
 _AREA_RE = re.compile(r"^(?:[^:?]{0,60}:\s*)?Should\s+(?:the\s+)?([A-Za-z0-9_.+/-]+)", re.IGNORECASE)
 
 
@@ -605,6 +610,7 @@ def resolve_paths(store: Graph, repo: str, question: str, context: str = "", pat
                     # A lone word from the body is never an area; two are.
                     if len(v.why.split("matched ", 1)[-1].split(" to ")[0].split(", ")) >= 2:
                         _add(hits, k, v.weight * 0.7, v.why + " (from the context)")
+    _drop_legal_topics(hits, question, path, also_paths)
     if best() < 0.6:
         for k, v in record_hits(store, repo, question).items():
             _add(hits, k, v.weight, v.why)
@@ -632,8 +638,22 @@ def resolve_paths(store: Graph, repo: str, question: str, context: str = "", pat
     if best() < 0.8:
         for k, v in model_area_hits(store, repo, tree, question, context).items():
             _add(hits, k, v.weight, v.why)
+    _drop_legal_topics(hits, question, path, also_paths)
     out = sorted(hits.values(), key=lambda h: (-h.weight, h.path))
     return out[:MAX_HITS]
+
+
+def _drop_legal_topics(hits, question, path, also_paths):
+    """"license" as a topic (License-Expression, SPDX licence ids) is not the
+    project's own licence file: a root legal file is the area only when the
+    agent works in it, or the question is about that text or names it.
+    Dropped before the record and memory fallbacks, so they can still
+    find the code the question is about."""
+    if _LEGAL_TEXT_RE.search(question) or _LEGAL_NAME_RE.search(question):
+        return
+    working = {(n or "").lstrip("/") for n in [path, *(also_paths or [])]}
+    for k in [k for k in hits if "/" not in k and _norm(_stem_of(k)) in LEGAL_STEMS and k not in working]:
+        del hits[k]
 
 
 INHERITED_WEIGHT = 0.8
