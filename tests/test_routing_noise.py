@@ -3,6 +3,7 @@ a question word that happens to be a licence file's stem, and commits that
 only ran a linter or spelling tool over the code."""
 
 from pathlib import Path
+from unittest.mock import patch
 
 from fixtures import OfflineCase
 
@@ -83,3 +84,35 @@ class RoutingNoiseTests(OfflineCase):
         self.change("abc", CODE, "Metadata Author", "Support metadata 2.3")
         row = self.graph.db.execute("SELECT subject FROM changes WHERE repo='app' AND sha='abc'").fetchone()
         self.assertEqual(row["subject"], "Support metadata 2.3")
+
+
+class DominantBlameTests(OfflineCase):
+    """Whoever wrote most of a file's surviving lines stays a candidate after
+    their commits age out of the recent window."""
+
+    def setUp(self):
+        super().setUp()
+        self.store = Store(Path(self.temp.name) / "blame.db")
+        self.graph = self.store.graph
+        self.addCleanup(self.graph.close)
+        self.graph.set_source("app", "git_now", NOW)
+        self.graph.upsert_artifact("app", CODE)
+
+    def test_the_builder_of_a_file_clears_the_floor_after_a_quiet_year(self):
+        old = "2025-05-01T00:00:00+00:00"
+        for i in range(2):
+            self.graph.add_change("app", f"build-{i}", old, [CODE], [("Module Builder", "", "author")],
+                                  subject=f"Parse metadata, part {i}")
+        for i in range(3):
+            self.graph.add_change("app", f"recent-{i}", NOW, [CODE], [(f"Passer By {i}", "", "author")],
+                                  subject=f"Small fix {i}")
+        # Still active elsewhere in the repository, so not a departed author.
+        self.graph.upsert_artifact("app", "docs/index.rst")
+        self.graph.add_change("app", "builder-docs", NOW, ["docs/index.rst"], [("Module Builder", "", "author")],
+                              subject="Document metadata")
+        lines = {"Module Builder": 700, "Passer By 0": 30, "Passer By 1": 30, "Passer By 2": 40}
+        blame = {CODE: {name: (name, "", n / 800) for name, n in lines.items()}}
+        with patch("bridge.ingest.fetch_blame", return_value=blame):
+            picked = route(self.graph, "app", "How should metadata validation treat licence fields?", path=CODE)
+        self.assertIsNotNone(picked)
+        self.assertEqual(picked[0], "Module Builder")

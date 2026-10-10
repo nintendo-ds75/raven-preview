@@ -40,7 +40,7 @@ LISTED_ACTIVE_SHARE = 0.15
 GATEKEEPER_SPECIALIZATION = 0.5
 APPROVAL_ROLES = ("reviewed-by", "acked-by", "helped-by", "approved-by", "committer", "merger", "merged-by")
 _W = {"user": 1.5, "maintainer": 0.50, "owner": 0.50, "reviewer": 0.30, "approval": 0.70, "author": 0.50,
-      "author_peer": 0.75, "affinity": 0.35, "affinity_repo": 0.20, "blame": 0.15,
+      "author_peer": 0.75, "affinity": 0.35, "affinity_repo": 0.20, "blame": 0.15, "blame_dominant": 0.20,
       # A verified authority (the organization said who decides or
       # approves this scope) outranks every inferred signal; someone the
       # organization says merely knows the area is a strong candidate.
@@ -229,6 +229,7 @@ def listed_for(store: Graph, repo: str, path: str) -> list[dict]:
 
 # ---------------- the route ----------------
 
+BLAME_DOMINANT_SHARE = 0.5
 SWEEP_CAP_FILES = 20   # a change over more files than this counts as a fraction of a change
 # A change whose subject says it only ran a linter, formatter, type or
 # spelling tool over the code counts as a fraction of a change: it says who
@@ -916,6 +917,12 @@ def _signal_route(store: Graph, repo: str, question: str, context: str = "", pat
                 recent_auth = next((sig["author"][key] / (sig["total"] or 1.0) for level, sig, _lw in levels
                                     if level == hit.path), 0.0)
                 s += _W["blame"] * max(0.0, bshare - recent_auth)
+                if bshare >= BLAME_DOMINANT_SHARE:
+                    # Whoever wrote most of the file's surviving lines built
+                    # it; years without a commit fade their recent share but
+                    # not that. Measured on pypa/packaging: the author of 701
+                    # of metadata.py's 804 lines fell below the routing floor.
+                    s += _W["blame_dominant"] * bshare
                 lines.append(f"wrote {_pct(bshare)} of the human-written lines of {hit.path} (git blame, bots excluded)")
             # Who usually reviews this requester, anywhere in the repository,
             # tips the balance between people who already hold signal here.
