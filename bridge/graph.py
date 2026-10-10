@@ -1128,14 +1128,14 @@ class Graph:
     # ---------------- the shared people-to-paths-to-changes structure ----------------
 
     def add_change(self, repo: str, sha: str, ts: str, paths: list[str],
-                   people: list[tuple[str, str, str]]) -> None:
+                   people: list[tuple[str, str, str]], subject: str = "") -> None:
         """One change (a commit or a merge) with the paths it touched and
         the people on it with their roles (author, committer, reviewer
         trailers, merger). Routing sums these under any path prefix, so
         ownership exists at every depth without being materialized, and
         the same rows link records to paths for retrieval."""
-        self.db.execute("INSERT OR REPLACE INTO changes(repo, sha, ts, nfiles) VALUES(?,?,?,?)",
-                        (repo, sha, ts or "", len(paths)))
+        self.db.execute("INSERT OR REPLACE INTO changes(repo, sha, ts, nfiles, subject) VALUES(?,?,?,?,?)",
+                        (repo, sha, ts or "", len(paths), (subject or "")[:300]))
         self.db.executemany("INSERT OR IGNORE INTO change_paths(repo, sha, path) VALUES(?,?,?)",
                             [(repo, sha, p) for p in paths])
         self.db.executemany("INSERT OR REPLACE INTO change_people(repo, sha, engineer, email, role) VALUES(?,?,?,?,?)",
@@ -1160,13 +1160,13 @@ class Graph:
         return self.db.execute("SELECT 1 FROM changes WHERE repo=? LIMIT 1", (repo,)).fetchone() is not None
 
     def changes_under(self, repo: str, prefix: str) -> list[sqlite3.Row]:
-        """(sha, ts, nfiles, engineer, email, role) for every change that
-        touched a path under the prefix."""
+        """(sha, ts, nfiles, subject, engineer, email, role) for every
+        change that touched a path under the prefix."""
         if prefix in ("", "*"):
-            sql = ("SELECT c.sha, c.ts, c.nfiles, p.engineer, p.email, p.role FROM changes c "
+            sql = ("SELECT c.sha, c.ts, c.nfiles, c.subject, p.engineer, p.email, p.role FROM changes c "
                    "JOIN change_people p ON p.repo=c.repo AND p.sha=c.sha WHERE c.repo=?")
             return self.db.execute(sql, (repo,)).fetchall()
-        sql = ("SELECT c.sha, c.ts, c.nfiles, p.engineer, p.email, p.role FROM changes c "
+        sql = ("SELECT c.sha, c.ts, c.nfiles, c.subject, p.engineer, p.email, p.role FROM changes c "
                "JOIN change_people p ON p.repo=c.repo AND p.sha=c.sha "
                "WHERE c.repo=? AND c.sha IN (SELECT DISTINCT sha FROM change_paths WHERE repo=? AND ")
         # A range on (repo, path) walks the index; substr would scan the

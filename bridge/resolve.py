@@ -578,8 +578,19 @@ def resolve_paths(store: Graph, repo: str, question: str, context: str = "", pat
         for k, v in explicit_hits(tree, question).items():
             _add(hits, k, v.weight, v.why)
         common = common_words(store, repo, [t for t, _ in _question_tokens(question + " " + (context or ""))])
+        # A question word that happens to be a root file's stem ("license"
+        # and LICENSE.BSD) is a guess at the area; once the agent named a
+        # path that exists, it stays a secondary hit, so a file's sole
+        # author cannot outrank the people who own the code being changed.
+        # Legal boilerplate (LICENSE, COPYING, NOTICE, AUTHORS) is never the
+        # area then: who wrote the licence text says nothing about who
+        # decides code that handles licences.
+        anchored = best() >= 0.8
         for k, v in root_file_hits(tree, question, common).items():
-            _add(hits, k, v.weight, v.why)
+            if anchored and _norm(_stem_of(k)) in LEGAL_STEMS:
+                continue
+            _add(hits, k, v.weight * (ROOT_WORD_WHEN_ANCHORED if anchored else 1.0),
+                 v.why + ("; secondary to the path the agent named" if anchored else ""))
         if best() < 0.9:
             for k, v in area_word_hits(tree, question).items():
                 _add(hits, k, v.weight, v.why)
@@ -626,6 +637,8 @@ def resolve_paths(store: Graph, repo: str, question: str, context: str = "", pat
 
 
 INHERITED_WEIGHT = 0.8
+ROOT_WORD_WHEN_ANCHORED = 0.4
+LEGAL_STEMS = frozenset({"license", "licence", "copying", "notice", "copyright", "authors", "contributors"})
 INHERITED_BELOW = 0.6
 MODEL_AREA_WEIGHT = 0.75
 MODEL_AREA_MAX_ENTRIES = 600

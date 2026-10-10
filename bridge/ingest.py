@@ -310,7 +310,7 @@ def record_change(store: Graph, repo: str, c: Commit, roles: tuple[str, ...] = (
         return
     for name, email, _role in people:
         store.upsert_engineer(name, email)
-    store.add_change(repo, c.sha, c.date, c.files[:MAX_CHANGE_PATHS], people)
+    store.add_change(repo, c.sha, c.date, c.files[:MAX_CHANGE_PATHS], people, subject=c.subject)
 
 
 # ---------------- MAINTAINERS (kernel and QEMU format) ----------------
