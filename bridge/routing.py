@@ -46,7 +46,15 @@ def route_ranked(store: Graph, repo: str, question: str,
     ranked = signal_route(store, repo, question, context=context, path=path, notes=notes, requester=requester,
                           hints=hints, hits=hits, category=category, also_paths=also_paths)
     taken = {r[0] for r in ranked}
-    for named_path in [path, *(also_paths or [])]:
+    named_paths = [path, *(also_paths or [])]
+    if not any(named_paths):
+        # No path from the agent: a file the question names outright
+        # (packaging.tags, src/x.py) stands in for one.
+        from .resolve import resolve_paths
+        named_paths = [h.path for h in resolve_paths(store, repo, question, context)
+                       if h.why.startswith("the question names")
+                       and (h.weight >= 0.9 or (h.weight >= 0.7 and ", defined in " in h.why))][:2]
+    for named_path in named_paths:
         ranked.extend(_record_authors(store, repo, named_path, requester, taken))
     from .routing_memory import CONTACT_RESPONSES, candidates, contact_evidence
     learned_details = {}
@@ -152,7 +160,7 @@ RECORD_AUTHOR_SCORE = 0.25
 
 def _record_authors(store, repo, path, requester, taken):
     from .ladder import _void
-    from .signals import requester_keys, _is_requester
+    from .signals import _MECHANICAL, requester_keys, _is_requester
     if not path:
         return []
     req = requester_keys(requester, store, repo)
@@ -163,6 +171,10 @@ def _record_authors(store, repo, path, requester, taken):
     for row in rows:
         if _void(row):
             continue
+        # A lint, format or typo sweep says who maintains the tooling, not
+        # who to ask about the code.
+        if _MECHANICAL.search(row['title'] or ''):
+            continue
         person = contact_for(store, row['author'])
         name = person['name'] if person else row['author']
         email = person.get('email', '') if person else ''
@@ -171,7 +183,29 @@ def _record_authors(store, repo, path, requester, taken):
         taken.add(name)
         out.append((name, [f"inferred first contact: authored {row['kind']} {row['ref']} for {path}; confirm or refer"],
                     RECORD_AUTHOR_SCORE))
+    # Among them, whoever did the most real (non-sweep) work on the path
+    # comes first; recency only breaks ties.
+    work = _real_changes(store, repo, path)
+    order = {name: i for i, (name, _lines, _score) in enumerate(out)}
+    out.sort(key=lambda entry: (-work.get(_norm_name(entry[0]), 0), order[entry[0]]))
     return out
+
+
+def _norm_name(name):
+    from .signals import _norm_person
+    return _norm_person(name)
+
+
+def _real_changes(store, repo, path):
+    """Authored changes per person under a path, tooling sweeps excluded."""
+    from .signals import _MECHANICAL
+    counts: dict[str, int] = {}
+    for row in store.changes_under(repo, path):
+        if row["role"] != "author" or _MECHANICAL.search(row["subject"] or ""):
+            continue
+        key = _norm_name(row["engineer"])
+        counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def rank_for_decision(store, repo, question, paths=(), context='', requester='', category='', hints=None,

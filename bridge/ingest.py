@@ -310,7 +310,7 @@ def record_change(store: Graph, repo: str, c: Commit, roles: tuple[str, ...] = (
         return
     for name, email, _role in people:
         store.upsert_engineer(name, email)
-    store.add_change(repo, c.sha, c.date, c.files[:MAX_CHANGE_PATHS], people)
+    store.add_change(repo, c.sha, c.date, c.files[:MAX_CHANGE_PATHS], people, subject=c.subject)
 
 
 # ---------------- MAINTAINERS (kernel and QEMU format) ----------------
@@ -700,6 +700,43 @@ def fetch_tree(store: Graph, repo: str) -> int:
 
 BLAME_MAX_FILES = 3
 BLAME_TIMEOUT_SECONDS = 8
+
+
+DEFINITION_MAX_FILES = 3
+
+
+def definitions_of(store: Graph, repo: str, names: list[str]) -> dict[str, list[str]]:
+    """The files that define each named function or class at the pinned
+    revision (def/class/func/fn/function, or a C-style definition line).
+    A name defined in more than DEFINITION_MAX_FILES files is ambiguous and
+    left out; partial clones are skipped, as for blame."""
+    path = _git_source(store, repo)
+    if not path or not names or _partial_clone(path):
+        return {}
+    try:
+        rev = _git_rev(store, repo)
+    except RuntimeError:
+        return {}
+    out: dict[str, list[str]] = {}
+    for name in names[:3]:
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{3,80}", name):
+            continue
+        pattern = (rf"(^|[^A-Za-z0-9_])(def|class|func|fn|function|struct|enum|union|type)[[:space:]]+{name}"
+                   rf"([^A-Za-z0-9_]|$)"
+                   rf"|^[A-Za-z_][A-Za-z0-9_ *]*[[:space:]*]{name}[[:space:]]*\("
+                   rf"|^#[[:space:]]*define[[:space:]]+{name}([^A-Za-z0-9_]|$)"
+                   rf"|^}}[[:space:]]*{name}[[:space:]]*;"
+                   rf"|^typedef[[:space:]].*[[:space:]*]{name}[[:space:]]*;")
+        try:
+            res = _git_read(path, "grep", "-l", "-E", "-e", pattern, rev, "--", timeout=20)
+        except (RuntimeError, subprocess.TimeoutExpired, OSError):
+            continue
+        if res.returncode != 0:
+            continue
+        files = sorted({line.split(":", 1)[1] for line in res.stdout.splitlines() if ":" in line})
+        if 0 < len(files) <= DEFINITION_MAX_FILES:
+            out[name] = files
+    return out
 
 
 def _partial_clone(path: str) -> bool:

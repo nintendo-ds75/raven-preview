@@ -176,6 +176,26 @@ _MODULE_EXTS = (".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".rb", ".go", ".rs"
                 ".swift", ".scala", ".ex", ".exs")
 
 
+_SOURCE_ROOTS = ("src/", "lib/", "python/")
+
+
+def _module_base(tree: Tree, base: str) -> str:
+    """Where a dotted module path lives: as written from the root, under a
+    usual source root (the src/ layout: packaging.tags is
+    src/packaging/tags.py), or as the one path in the tree ending with it."""
+    def present(b: str) -> bool:
+        return b + "/" in tree.dirs or any(b + ext in tree.files for ext in _MODULE_EXTS)
+    if present(base):
+        return base
+    for root in _SOURCE_ROOTS:
+        if present(root + base):
+            return root + base
+    tail = "/" + base
+    found = {f[: -len(ext)] for f in tree.files for ext in _MODULE_EXTS if f.endswith(tail + ext)}
+    found |= {d.rstrip("/") for d in tree.dirs if d.rstrip("/").endswith(tail)}
+    return found.pop() if len(found) == 1 else base
+
+
 def module_hits(tree: Tree, text: str) -> dict[str, PathHit]:
     """A dotted module or symbol path (billing.usage.invoice_cents,
     acme.billing.rates) names the file or package it lives in. Measured
@@ -188,7 +208,7 @@ def module_hits(tree: Tree, text: str) -> dict[str, PathHit]:
         if _FILENAME_RE.fullmatch(raw) or len(parts) < 2:
             continue
         for k in range(len(parts), 1, -1):
-            base = "/".join(parts[:k])
+            base = _module_base(tree, "/".join(parts[:k]))
             file = next((base + ext for ext in _MODULE_EXTS if base + ext in tree.files), "")
             if file:
                 _add(hits, file, 0.95, f"the question names {raw}, which is {file}")
@@ -492,6 +512,31 @@ def common_words(store: Graph, repo: str, tokens: list[str]) -> set[str]:
     return {t for t, df in dfs.items() if df / n > 0.02}
 
 
+_CALL_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]{3,})\(\)")
+_SNAKE_RE = re.compile(r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b")
+_CAMEL_RE = re.compile(r"\b([A-Z][a-z0-9]*[A-Z][A-Za-z0-9]*)\b")
+_MACRO_RE = re.compile(r"\b([A-Z][A-Z0-9]*_[A-Z0-9_]+)\b")
+
+
+def symbol_hits(store: Graph, repo: str, text: str) -> dict[str, PathHit]:
+    """A function the question names (sys_tags(), init_excp_4xx_softmmu)
+    is about the file that defines it, read from the pinned checkout."""
+    # Code-shaped names only: a call, snake_case of six or more characters,
+    # CamelCase with an inner capital, or an UPPER_CASE macro.
+    found = (_CALL_RE.findall(text) + [w for w in _SNAKE_RE.findall(text) if len(w) >= 6]
+             + [w for w in _CAMEL_RE.findall(text) if len(w) >= 5] + _MACRO_RE.findall(text))
+    names = list(dict.fromkeys(found))[:3]
+    if not names:
+        return {}
+    from .ingest import definitions_of
+    hits: dict[str, PathHit] = {}
+    for name, files in definitions_of(store, repo, names).items():
+        weight = 0.7 if len(files) == 1 else 0.6
+        for f in files:
+            _add(hits, f, weight, f"the question names {name}, defined in {f}")
+    return hits
+
+
 def record_hits(store: Graph, repo: str, text: str) -> dict[str, PathHit]:
     """Paths of indexed records about the same subject. The subject is
     carried by rare terms: a record shares the subject when it covers
@@ -574,12 +619,31 @@ def resolve_paths(store: Graph, repo: str, question: str, context: str = "", pat
     def best() -> float:
         return max((h.weight for h in hits.values()), default=0.0)
 
+    # The agent named a path (or a new file whose directory exists): the
+    # question's words refine it, they do not move it to licence boilerplate.
+    anchored = best() >= 0.8
+
     if tree.files:
         for k, v in explicit_hits(tree, question).items():
             _add(hits, k, v.weight, v.why)
         common = common_words(store, repo, [t for t, _ in _question_tokens(question + " " + (context or ""))])
+        # A question word that happens to be a root file's stem ("license"
+        # and LICENSE.BSD) is a guess at the area; once the agent named a
+        # path that exists, it stays a secondary hit, so a file's sole
+        # author cannot outrank the people who own the code being changed.
+        # Legal boilerplate (LICENSE, COPYING, NOTICE, AUTHORS) is never the
+        # area then: who wrote the licence text says nothing about who
+        # decides code that handles licences.
         for k, v in root_file_hits(tree, question, common).items():
-            _add(hits, k, v.weight, v.why)
+            if anchored and _norm(_stem_of(k)) in LEGAL_STEMS:
+                continue
+            _add(hits, k, v.weight * (ROOT_WORD_WHEN_ANCHORED if anchored else 1.0),
+                 v.why + ("; secondary to the path the agent named" if anchored else ""))
+        # A change to MAINTAINERS that names a section ("add myself as a
+        # reviewer of machine core") is decided by that section's people.
+        if "MAINTAINERS" in hits or re.search(r"\bMAINTAINERS\b", question):
+            for k, v in maintainers_section_hits(store, repo, tree, question).items():
+                _add(hits, k, v.weight, v.why)
         if best() < 0.9:
             for k, v in area_word_hits(tree, question).items():
                 _add(hits, k, v.weight, v.why)
@@ -594,6 +658,11 @@ def resolve_paths(store: Graph, repo: str, question: str, context: str = "", pat
                     # A lone word from the body is never an area; two are.
                     if len(v.why.split("matched ", 1)[-1].split(" to ")[0].split(", ")) >= 2:
                         _add(hits, k, v.weight * 0.7, v.why + " (from the context)")
+    if anchored:
+        _drop_legal_word_hits(hits, question, path, also_paths)
+    if best() < 0.6:
+        for k, v in symbol_hits(store, repo, question).items():
+            _add(hits, k, v.weight, v.why)
     if best() < 0.6:
         for k, v in record_hits(store, repo, question).items():
             _add(hits, k, v.weight, v.why)
@@ -625,7 +694,84 @@ def resolve_paths(store: Graph, repo: str, question: str, context: str = "", pat
     return out[:MAX_HITS]
 
 
+_LEGAL_TEXT_RE = re.compile(r"relicens|copyright|\b(?:licen[cs]e|copying|notice)\s+(?:file|text|terms)\b|"
+                            r"\b(?:our|the project'?s|this project'?s)\s+licen[cs]e\b", re.IGNORECASE)
+_LEGAL_NAME_RE = re.compile(r"\b(?:LICEN[CS]E|COPYING|NOTICE|AUTHORS|CONTRIBUTORS)(?:\.[A-Za-z]+)?\b")
+
+
+_SECTION_WORD_RE = re.compile(r"[A-Za-z0-9]+")
+_SECTION_GENERIC = {"and", "or", "the", "of", "for", "a", "an", "support", "devices", "device", "general",
+                    "misc", "other", "common", "core"}
+_AUX_PATH = re.compile(r"^(?:docs?|Documentation|tests?)/")
+SECTION_WEIGHT = 0.9
+SECTION_MAX_FILES = 6
+
+
+def maintainers_section_hits(store: Graph, repo: str, tree: Tree, question: str) -> dict[str, PathHit]:
+    """The files of the MAINTAINERS section a question names: every title
+    word in the question, two shared words, or one word that only that
+    section's title carries. Patterns expand against the tree, so the area
+    is real files, never a wildcard as wide as hw/."""
+    import fnmatch
+    rows = store.db.execute("SELECT DISTINCT section, pattern FROM listings WHERE repo=? AND kind='maintainers' "
+                            "AND role != 'exclude' AND section != ''", (repo,)).fetchall()
+    patterns: dict[str, list[str]] = {}
+    for r in rows:
+        patterns.setdefault(r["section"], []).append(r["pattern"])
+    q = {w.lower() for w in _SECTION_WORD_RE.findall(question)} - _STOP
+    words = {sec: {w.lower() for w in _SECTION_WORD_RE.findall(sec)} - _STOP for sec in patterns}
+    words = {sec: ws for sec, ws in words.items() if ws}
+    seen: dict[str, int] = {}
+    for ws in words.values():
+        for w in ws:
+            seen[w] = seen.get(w, 0) + 1
+    scored = []
+    for sec, ws in words.items():
+        shared = (ws & q) - {"maintainers", "reviewer", "reviewers", "myself"}
+        if not shared:
+            continue
+        distinctive = {w for w in shared if seen[w] == 1 and len(w) >= 4 and w not in _SECTION_GENERIC}
+        if ws <= q or len(shared - _SECTION_GENERIC) >= 2 or distinctive:
+            scored.append((len(shared) / len(ws), len(shared), sec))
+    hits: dict[str, PathHit] = {}
+    ranked = sorted(scored, reverse=True)
+    # The best match only, unless two sections match equally well.
+    chosen = [sec for ratio, n, sec in ranked if ranked and (ratio, n) == ranked[0][:2]][:2]
+    for sec in chosen:
+        found = 0
+        for pat in patterns[sec]:
+            if found >= SECTION_MAX_FILES:
+                break
+            pat = pat.lstrip("/")
+            if pat.endswith("/") and pat in tree.dirs:
+                _add(hits, pat, SECTION_WEIGHT, f"the question changes the MAINTAINERS section {sec!r}")
+                found += 1
+                continue
+            # Source before documentation and tests: they show who owns the code.
+            for f in sorted(tree.files, key=lambda f: (bool(_AUX_PATH.match(f)), f)):
+                if fnmatch.fnmatch(f, pat):
+                    _add(hits, f, SECTION_WEIGHT, f"the question changes the MAINTAINERS section {sec!r}")
+                    found += 1
+                    if found >= SECTION_MAX_FILES:
+                        break
+    return hits
+
+
+def _drop_legal_word_hits(hits, question, path, also_paths):
+    """Root legal files reached through the question's words, while the
+    agent works on code: "license" there is a topic (License-Expression,
+    SPDX ids), not the project's licence text, unless the question says so
+    (relicensing, copyright, the licence file, or the file by name)."""
+    if _LEGAL_TEXT_RE.search(question) or _LEGAL_NAME_RE.search(question):
+        return
+    working = {(n or "").lstrip("/") for n in [path, *(also_paths or [])]}
+    for k in [k for k in hits if "/" not in k and _norm(_stem_of(k)) in LEGAL_STEMS and k not in working]:
+        del hits[k]
+
+
 INHERITED_WEIGHT = 0.8
+ROOT_WORD_WHEN_ANCHORED = 0.4
+LEGAL_STEMS = frozenset({"license", "licence", "copying", "notice", "copyright", "authors", "contributors"})
 INHERITED_BELOW = 0.6
 MODEL_AREA_WEIGHT = 0.75
 MODEL_AREA_MAX_ENTRIES = 600

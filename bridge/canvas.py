@@ -386,7 +386,8 @@ def kickoff(store, cfg, task_id: str, title: str, goal: str, repo: str, paths: l
     # never expire. Add an expiry to them."), the pass sent the agent off
     # to settle the token lifetime alone, in an area with an owner on the
     # map; the agent itself had said the owner should decide.
-    elif verdict == "pass" and not paths and not discovery.get("areas") and not discovery.get("people"):
+    elif verdict == "pass" and not paths and not discovery.get("areas") and not discovery.get("people") \
+            and not no_change_requested(task_statement(goal) or title):
         verdict = "unplaced"
         why = ("the task names no area Raven knows and no paths were given, so Raven cannot yet say whether "
                "anyone has to decide something: this is not a pass")
@@ -633,6 +634,27 @@ def task_statement(goal: str) -> str:
             continue
         kept.append(_FACTS_CLAUSE_RE.sub("", line))
     return "\n".join(kept).strip()
+
+
+_CHATTER_RE = re.compile(r"^\W*(hi|hello|hey|thanks|thank you|thx|ok|okay|cool|great|nice|good morning|good night)\b",
+                         re.IGNORECASE)
+_INFO_RE = re.compile(r"^\W*(what|how|why|where|which|who|when|explain|describe|show me|tell me|summari[sz]e|list|"
+                      r"can you (?:explain|describe|show|tell|summari[sz]e))\b", re.IGNORECASE)
+_CHANGE_WORDS = re.compile(r"\b(should|must|need|needs|add|adds|fix|fixes|change|changes|remove|delete|implement|"
+                           r"update|refactor|rename|migrate|support|make|write|create|deprecate|replace|enable|disable|"
+                           r"set|bump|drop|allow|reject|decide)\b", re.IGNORECASE)
+
+
+def no_change_requested(goal: str) -> bool:
+    """A greeting or a purely informational question: nothing is being
+    changed, so nobody has to decide anything yet. A question that asks
+    what should be done, or names a change, is not this."""
+    text = " ".join((goal or "").split())
+    if not text or len(text.split()) > 40:
+        return False
+    if _CHATTER_RE.match(text) and len(text.split()) <= 6 and not _CHANGE_WORDS.search(text):
+        return True
+    return bool(_INFO_RE.match(text)) and not _CHANGE_WORDS.search(text)
 
 
 def narrow_edit(title: str, goal: str, paths: list[str]) -> str:

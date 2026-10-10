@@ -40,7 +40,7 @@ LISTED_ACTIVE_SHARE = 0.15
 GATEKEEPER_SPECIALIZATION = 0.5
 APPROVAL_ROLES = ("reviewed-by", "acked-by", "helped-by", "approved-by", "committer", "merger", "merged-by")
 _W = {"user": 1.5, "maintainer": 0.50, "owner": 0.50, "reviewer": 0.30, "approval": 0.70, "author": 0.50,
-      "author_peer": 0.75, "affinity": 0.35, "affinity_repo": 0.20, "blame": 0.15,
+      "author_peer": 0.75, "affinity": 0.35, "affinity_repo": 0.20, "blame": 0.15, "blame_dominant": 0.20,
       # A verified authority (the organization said who decides or
       # approves this scope) outranks every inferred signal; someone the
       # organization says merely knows the area is a strong candidate.
@@ -229,7 +229,26 @@ def listed_for(store: Graph, repo: str, path: str) -> list[dict]:
 
 # ---------------- the route ----------------
 
+BLAME_DOMINANT_SHARE = 0.5
 SWEEP_CAP_FILES = 20   # a change over more files than this counts as a fraction of a change
+# A change whose subject says it only ran a linter, formatter, type or
+# spelling tool over the code counts as a fraction of a change: it says who
+# maintains the tooling, not who decides what the code does. Measured on
+# pypa/packaging: four "Apply ruff rules" / codespell commits (19 of 804
+# lines of metadata.py) outranked the author of 701 of its lines.
+MECHANICAL_WEIGHT = 0.25
+_MECHANICAL = re.compile(
+    r"\b(?:ruff|flake8|pyupgrade|isort|codespell|pre-commit|autoupdate|linters?|linting|lint|reformat(?:ted|ting)?|"
+    r"whitespace|mypy|pyright|type annotations?|typos?|spelling|eslint|prettier|gofmt|clang-format|rustfmt)\b",
+    re.IGNORECASE)
+
+
+def _change_weight(head, now: float) -> float:
+    """How much one change counts: recency, a cap for sweeps over many
+    files, and a fraction for tooling-only changes."""
+    w = min(1.0, SWEEP_CAP_FILES / max(1, head["nfiles"])) * _decay(head["ts"], now)
+    subject = head["subject"] if "subject" in head.keys() else ""
+    return w * MECHANICAL_WEIGHT if subject and _MECHANICAL.search(subject) else w
 HALF_LIFE_DAYS = 180.0
 
 
@@ -380,7 +399,7 @@ def _scope_aggregate(store: Graph, repo: str, scope: str, now: float) -> dict:
         total = merge_total = 0.0
         for sha, group in by_sha.items():
             head = group[0]
-            w = min(1.0, SWEEP_CAP_FILES / max(1, head["nfiles"])) * _decay(head["ts"], now)
+            w = _change_weight(head, now)
             merge_event = any(r["role"] == "merger" for r in group)
             if merge_event:
                 merge_total += w
@@ -898,6 +917,12 @@ def _signal_route(store: Graph, repo: str, question: str, context: str = "", pat
                 recent_auth = next((sig["author"][key] / (sig["total"] or 1.0) for level, sig, _lw in levels
                                     if level == hit.path), 0.0)
                 s += _W["blame"] * max(0.0, bshare - recent_auth)
+                if bshare >= BLAME_DOMINANT_SHARE:
+                    # Whoever wrote most of the file's surviving lines built
+                    # it; years without a commit fade their recent share but
+                    # not that. Measured on pypa/packaging: the author of 701
+                    # of metadata.py's 804 lines fell below the routing floor.
+                    s += _W["blame_dominant"] * bshare
                 lines.append(f"wrote {_pct(bshare)} of the human-written lines of {hit.path} (git blame, bots excluded)")
             # Who usually reviews this requester, anywhere in the repository,
             # tips the balance between people who already hold signal here.
