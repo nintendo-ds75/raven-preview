@@ -229,7 +229,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     query = parse_qs(url.query)
                     return self.send(200, store.get_record(query.get('record_id', [''])[0], query.get('repo', [''])[0]))
                 if url.path == "/api/state":
-                    return self.send(200, {**store.state(), "execution_config": {
+                    from .sources import report as source_report
+                    return self.send(200, {**store.state(), "context_sources": source_report(store), "execution_config": {
                         "enabled": executions is not None,
                         "repositories": [{"id": r["id"], "name": r["name"]} for r in executions.repositories]
                         if executions else []},
@@ -254,6 +255,9 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                            "inbound_failed": store.delivery.inbound_failed(),
                                            "reply_failures": store.delivery.reply_failures(),
                                            "delivery": self.delivery_view()})
+                if url.path == "/api/context/sources":
+                    from .sources import report
+                    return self.send(200, report(store))
                 if url.path == "/api/sync":
                     from .github import sync_states
                     return self.send(200, {"sync": sync_states(store.graph),
@@ -720,6 +724,27 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     result = store.delivery.sync_directory()
                 elif path == "/api/records":
                     result = store.add_record(data)
+                elif path == "/api/context/sources":
+                    # An administrator attests the source is shared with every reader.
+                    self.require("admin")
+                    from . import sources
+                    options = data.get("options") or {}
+                    if not isinstance(options, dict):
+                        raise Invalid("options must be an object")
+                    result = sources.register(store, field(data, "kind", limit=20), field(data, "repo", limit=300),
+                                              field(data, "target", limit=1000), shared=data.get("workspace_shared") is True,
+                                              options=options, by=getattr(self.me, "name", "") or "local operator")
+                elif path.startswith("/api/context/sources/") and path.rsplit("/", 1)[-1] in ("sync", "disable"):
+                    self.require("admin")
+                    from . import sources
+                    source_id, action = path.split("/")[4], path.rsplit("/", 1)[-1]
+                    if action == "disable":
+                        result = sources.disable(store, source_id, by=getattr(self.me, "name", "") or "local operator")
+                    else:
+                        try:
+                            result = sources.sync(store, source_id)
+                        except sources.SourceError as error:
+                            raise Invalid(str(error))
                 elif path == "/api/sync":
                     self.require("admin")
                     from .github import GitHubError, register, sync_repo

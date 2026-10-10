@@ -66,8 +66,9 @@ does not change them. The shipped paths are:
   review its GitHub permissions, or [use your own registered App](docs/github-connection.md#optional-use-your-own-app)
   or the documented operator credentials. This default registration is separate
   from hosting Raven's application or database.
-- **Jira and Airweave:** Raven has no native Jira polling client. Records imported
-  by a coding host use that host's connector and provider permissions. Optional
+- **Jira and Airweave:** Raven polls Jira only for projects an administrator adds as a
+  [native context source](docs/context-sources.md), with the `JIRA_*` API token you
+  set. Records imported by a coding host use that host's connector and provider permissions. Optional
   Airweave retrieval sends searches to the `BRIDGE_AIRWEAVE_URL` you configure,
   which may be your own Airweave service or a chosen hosted service. Airweave's
   upstream connectors and processing are part of that separate deployment.

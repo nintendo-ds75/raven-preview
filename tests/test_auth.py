@@ -39,7 +39,8 @@ class SharedServer(OfflineCase):
         if getattr(self, 'workspace_ready', True):
             self.store.graph.set_setting('workspace_name', 'Test workspace')
         self.server = make_server(self.store, port=0, auth=self.auth)
-        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        # A short poll interval: shutdown() otherwise waits up to 0.5 s per test.
+        thread = threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         thread.start()
         self.addCleanup(self.server.shutdown)
         self.port = self.server.server_port

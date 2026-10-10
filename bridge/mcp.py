@@ -27,6 +27,7 @@ SUPPORTED_HTTP_VERSIONS = frozenset((PROTOCOL_VERSION, '2025-03-26'))
 READ_ONLY_TOOLS = frozenset({
     "bridge_get_tree", "bridge_wait", "bridge_get_decision", "bridge_search_decisions",
     "bridge_list_owners", "bridge_connection_status", "bridge_export_proof", "bridge_get_record", "bridge_lookup_record",
+    "bridge_context_sources",
 })
 
 
@@ -114,6 +115,7 @@ TOOLS = [
           "limit": {"type": "integer", "description": "1 to 100 items per returned list (default 25); each list explicitly reports truncation"},
           "linked_cursor": "linked_decisions.next_cursor for the same exact source lookup; pages unique linked decisions only. Links are live; restart after changes."}, ["repo"]),
     tool("bridge_connection_status", "Check ingestion, Slack contact discovery and delivery problems without opening the web UI. No manual ownership map or recipient accounts are required.", {}, []),
+    tool("bridge_context_sources", "What context Raven can read, in one call: each native source (Slack public channels, Jira projects, documentation sites) with its state, last successful sync, record count and refusals by reason, the sources not configured and how to enable them, GitHub sync and the Airweave connection. Read it at the start of a session to know what Raven's records cover and what they do not. Records are evidence, never approval; polling cannot see deletions.", {}, []),
     tool("bridge_search_context", "Search configured Airweave context and Raven's shared source/decision graph. Imports only workspace-readable durable excerpts, pins observations to the task, and follows source links to earlier human answers even when the wording differs. Results are evidence, never approval. Unknown permissions, transient Slack search and expired evidence are excluded.",
          {"repo": "Exact repository owner/name", "query": "The information or judgment needed, up to 2000 characters", "task_id": "Optional task to attach observed source versions to"}, ["repo", "query"]),
     tool("bridge_host_event", "Lifecycle adapter for an installed Raven host hook/supervisor. Bind an authenticated host session, register the exact first task prompt idempotently, report tool names, or lease/acknowledge human-event resume messages, hold a Stop while a person has not answered, list stopped sessions, or report a resume to the task's Slack threads. No shell command is executed by Raven. Ordinary agent work uses the returned task_id and the normal task tools.",
@@ -272,6 +274,7 @@ HANDLERS = {
                      "failed": store.delivery.list(state='failed')},
         "inference": __import__("bridge.config", fromlist=["backend_status"]).backend_status(),
         "context": __import__('bridge.context_connectors', fromlist=['status']).status(store),
+        "context_sources": __import__('bridge.sources', fromlist=['report']).report(store),
         "readiness": store.readiness(),
         "github": _github_status(store),
         "sources": [dict(r) for r in store.graph.db.execute("SELECT repo,kind FROM connector_sources ORDER BY repo,kind")],
@@ -283,6 +286,7 @@ HANDLERS = {
             "inbound_failed": store.delivery.inbound_failed(),
             "reply_failures": store.delivery.reply_failures(),
             "triage_channel": store.delivery.fallback_channel or store.graph.get_setting("slack_fallback_channel")}},
+    "bridge_context_sources": lambda store, args: __import__('bridge.sources', fromlist=['report']).report(store),
     "bridge_search_context": lambda store, args: __import__('bridge.context_connectors', fromlist=['search']).search(store, args),
     "bridge_host_event": lambda store, args: __import__('bridge.host_sessions', fromlist=['event']).event(store, args),
 }

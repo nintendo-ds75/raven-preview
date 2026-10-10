@@ -1300,6 +1300,8 @@ class Store:
                             "what": f"{repo} has never been synced from GitHub, so approvals come from git "
                                     "trailers and merge commits only.",
                             "do": f"Run bridge sync {repo} with a token that can read it."})
+        from .sources import readiness as source_readiness
+        out.extend(source_readiness(self))
         return out
 
     def state(self, full_history=False):

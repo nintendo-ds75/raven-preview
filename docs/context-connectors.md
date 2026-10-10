@@ -115,7 +115,8 @@ and Slack excerpts are not imported by this adapter. Raven's own Slack bot still
 records the decisions people explicitly give it. Its bounded [capture callback
 path](slack.md) follows edits/deletions only for those explicitly enrolled message
 identities. It does not turn search results into durable company memory or
-backfill Slack. Generic caller-imported Jira and other records remain
+backfill Slack. The separate opt-in [native context sources](context-sources.md) can keep
+selected public channels, Jira projects and documentation sites current. Generic caller-imported Jira and other records remain
 caller-refreshed; their `latest_observation` is local acceptance, not proof of an
 upstream synchronization.
 

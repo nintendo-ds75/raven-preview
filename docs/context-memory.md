@@ -96,7 +96,7 @@ the task tree and trace and do not independently block or authorize the task.
 
 GitHub and local Git ingestion continue to supply records natively. Jira/Slack
 records imported by a host are generic durable imports and remain caller-refreshed,
-not native Jira sync or full Slack backfill. The bot's explicit `record:` captures
+not native Jira sync or full Slack backfill. The separate opt-in [native context sources](context-sources.md) poll selected Jira projects and public Slack channels. The bot's explicit `record:` captures
 have a separate, bounded [edit/delete callback path](slack.md); generic and legacy
 imports do not enroll in it. Slack Real-time Search remains transient; imports
 labeled `slack_realtime_search`, `realtime_search`, or `transient` are rejected.

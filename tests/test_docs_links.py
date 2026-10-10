@@ -16,7 +16,8 @@ class PublicLinksTests(unittest.TestCase):
             self.assertFalse(re.search(r'github\.com/nintendo-ds75/(?:bridge|bridged)(?![\w-])', text), rel)
 
 _NUMBER_WORDS = {8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve", 13: "thirteen", 14: "fourteen",
-                 15: "fifteen", 16: "sixteen", 17: "seventeen", 18: "eighteen", 19: "nineteen"}
+                 15: "fifteen", 16: "sixteen", 17: "seventeen", 18: "eighteen", 19: "nineteen",
+                 20: "twenty", 21: "twenty-one", 22: "twenty-two", 23: "twenty-three", 24: "twenty-four"}
 _SCOPE_PREFIXES = ("chat", "im", "mpim", "channels", "groups", "users", "app_mentions", "assistant", "search", "files",
                    "reactions", "pins", "team")
 _SCOPE_RE = re.compile(r"`((?:%s):[a-z_.]+)`" % "|".join(_SCOPE_PREFIXES))

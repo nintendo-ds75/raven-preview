@@ -159,6 +159,9 @@ def main():
     from .context_connectors import Refresher
     context_refresher = Refresher(store)
     context_refresher.start()
+    from .sources import SourceSyncer
+    source_syncer = SourceSyncer(store)
+    source_syncer.start()
     try:
         server = make_server(store, args.port, executions, host=args.host, auth=auth, public_url=args.public_url,
                              github_app=github_app, github_syncer=syncer, teams_adapter=teams_adapter)
@@ -195,6 +198,7 @@ def main():
         if syncer:
             syncer.close()
         context_refresher.close()
+        source_syncer.close()
         if delivery:
             delivery.close()
         if webhook:

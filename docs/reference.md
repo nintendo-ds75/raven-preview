@@ -208,7 +208,7 @@ Embeddings are always local (a hashed bag of stemmed words); no embedding API is
 - Ownership: an ownership graph ingested from Git history, blame, CODEOWNERS, reviews and imported record authors, linked to Slack contacts. Answers and referrals teach scoped first contacts; explicit ownership overrides remain optional.
 - Decision memory: search signed and evidence-resolved answers by stemmed lexical overlap, hashed-embedding cosine, and backend-native text search (SQLite FTS5 or PostgreSQL), over question, context, answer, and rationale, recency-weighted, with superseded rows excluded and the newest of a same-subject pair ranked first.
 - The ladder: applicable prior answers and model-checked records can resolve with a citation; without answerability checking, retrieved records remain context for a person. Predictions are labeled as such and never sign-off; corrections withdraw dependent suggestions and supersede.
-- MCP: nineteen tools for tasks, source import, connection status and evidence export over the standard HTTP transport share the same data with the web inbox. None of them approves anything.
+- MCP: twenty tools for tasks, source import, connection status and evidence export over the standard HTTP transport share the same data with the web inbox. None of them approves anything.
 - Visibility: activity feed, live inbox refresh, per-decision event history including every rung's verdict, the ownership graph, and full JSON history export.
 - Local protections: Host/Origin validation, CSRF tokens for REST writes, HTML escaping, a restrictive content security policy, and optimistic concurrency checks for inbox answers.
 
@@ -309,7 +309,7 @@ If a relevant learned route depends on material facts missing from the current t
 
 **With inference configured**, a fast model (`BRIDGE_FAST_MODEL`) can map a question with no path to the tree's directories, write the brief the owner reads and advise the kickoff verdict from the same digest the rules saw. A prior decision or pending question on the paths still engages. Without inference the deterministic protocol remains available.
 
-The nineteen tools exposed to agents (the running server's `tools/list` is the authoritative schema):
+The twenty tools exposed to agents (the running server's `tools/list` is the authoritative schema):
 
 | Tool | Purpose |
 | --- | --- |
@@ -330,6 +330,7 @@ The nineteen tools exposed to agents (the running server's `tools/list` is the a
 | `bridge_link_work_item` | Add an existing record's exact current version as task `work_item` or `context`, without reimporting. Requires `task_id`, exact `repo`, `record_id`, `source_version_id`, canonical `provider`, `namespace`, and `object_kind`. Optional `external_id` or `ref` (never both) must resolve uniquely to that record. Additive and idempotent; never supporting evidence or approval. See [the association contract](context-memory.md#link-an-existing-work-item). |
 | `bridge_search_context` | Retrieve operator-configured Airweave excerpts into the same versioned graph, join them to related human decisions, and attach observed source versions to the task. Unknown permissions and transient Slack search results are excluded. |
 | `bridge_host_event` | Bind an authenticated coding-host session, register task prompts from installed hooks, and lease/acknowledge durable resume notifications. Raven does not execute callback commands. |
+| `bridge_context_sources` | What context Raven can read: each native source (Slack public channels, Jira projects, documentation sites) with its state, last sync, record count and refusals by reason, the sources not configured and how to enable them, GitHub sync and Airweave. Read-only. |
 | `bridge_connection_status` | What is connected and what is not: readiness findings, ingested sources and records, GitHub sync per repository with how to make it current, Slack contact discovery, failed deliveries and replies, and the triage channel. |
 | `bridge_export_proof` | Export the saved finish bundle: submitted diff and SHA-256, signed decision revisions, scope, attribution, citations, host-reported checks and integrity/staleness indicators. A digest is not a human digital signature or proof that tests ran. |
 
@@ -416,7 +417,7 @@ For Docker/PostgreSQL, use `./dev backup` and the restore workflow in [DOCKER.md
 
 On loopback with auth off this is a **local, single-operator** workspace: the operator records answers on behalf of the named owner and local trusted processes share the database. Shared deployments require authentication and TLS; agents, people and task links have distinct permissions. Docker uses PostgreSQL, while direct Python can use SQLite. Keep a separate deployment/database per organization: this is not a multi-tenant service, and moving to PostgreSQL alone does not establish horizontal scalability.
 
-Remaining limits include inbound Teams replies (its incoming webhook is outbound-only), native Jira/Linear/Notion/Confluence polling (records arrive through host connectors and `bridge_import_record` or `POST /api/records`), private-channel Slack search OAuth, automatic Slack archive backfill, multi-tenant hosting and enterprise-wide tracing. Automatic first-contact inference exists but cannot prove decision-making authority. Retrieval is lexical and hashed-embedding based; there is no learned embedding model. Similar prior decisions are evidence for their original context, never blanket approval for a new action.
+Remaining limits include inbound Teams replies (its incoming webhook is outbound-only), native Linear/Notion/Confluence polling (records arrive through host connectors and `bridge_import_record` or `POST /api/records`; Jira projects, public Slack channels and documentation sites can be opted in as [native context sources](context-sources.md)), private-channel Slack search OAuth, private-channel Slack backfill, multi-tenant hosting and enterprise-wide tracing. Automatic first-contact inference exists but cannot prove decision-making authority. Retrieval is lexical and hashed-embedding based; there is no learned embedding model. Similar prior decisions are evidence for their original context, never blanket approval for a new action.
 
 The optional voice interview is a browser microphone/speech interface reached from Raven's task workflow, with guided prompts and model-backed follow-up when configured. It requires the participant to review and explicitly sign the resulting decision. It is not a native Slack call. Voice-provider, browser microphone and real-human checks must be reported separately from simulated/text interview tests.
 

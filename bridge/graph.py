@@ -327,6 +327,8 @@ def migrate(db: sqlite3.Connection) -> None:
     migrate_connectors(db)
     from .host_sessions import migrate as migrate_hosts
     migrate_hosts(db)
+    from .sources import migrate as migrate_sources
+    migrate_sources(db)
     if fts_available(db):
         db.executescript(_FTS)
 

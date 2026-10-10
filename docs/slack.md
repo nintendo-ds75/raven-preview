@@ -76,7 +76,10 @@ it. Explicit fresh capture retains old unscoped legacy sources as separate
 history. Raven makes no history/channel reads, adds no subscriptions or scopes,
 and never archives transient search results through this path. It cannot detect
 missed callbacks or upstream changes while disconnected. Jira and other generic
-imports still require a caller to refresh them; no Jira poller is added.
+imports still require a caller to refresh them through this path. The separate opt-in
+[native context sources](context-sources.md) read history only for public channels an
+administrator selects; they need one additional channel-read scope, which the default
+manifest does not request (see that page).
 
 ## Natural conversations and live search
 

@@ -23,5 +23,6 @@
   actual decision's sign-off.
 
 Generic Jira and Slack import is not native Jira synchronization or full Slack
-backfill. Slack Real-time Search results must remain transient and must not be
+backfill; the opt-in [native context sources](context-sources.md) are, for the projects and
+public channels an administrator selects, and they write through this same contract. Slack Real-time Search results must remain transient and must not be
 imported through this durable-record API.
