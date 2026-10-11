@@ -13,7 +13,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Force-pushed event tips may still be absent. The checker fetches
           # those exact SHAs and refuses to silently use a different range.
