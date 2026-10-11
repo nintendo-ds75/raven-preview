@@ -52,7 +52,9 @@ jobs:
   postgres:
     name: Tests against PostgreSQL
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The whole behaviour contract suite runs against PostgreSQL; it took
+    # about half an hour on a laptop.
+    timeout-minutes: 60
     services:
       postgres:
         image: postgres:17
