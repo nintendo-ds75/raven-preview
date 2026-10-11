@@ -6,7 +6,6 @@ import sys
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import fixtures  # Sanitizes deployment credentials/settings before constructing the Store.
 from bridge import canvas
 from bridge.authz import Actor
 from bridge.config import Config

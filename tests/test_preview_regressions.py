@@ -51,7 +51,7 @@ class PreviewRegressions(OfflineCase):
         self.assertEqual(why, "")
 
     def test_explicit_path_boundary_is_not_erased_by_matching_release(self):
-        source = self.seed("What docs should ship?", "Guide only", path="docs/user-guide.rst",
+        self.seed("What docs should ship?", "Guide only", path="docs/user-guide.rst",
             applicability={"requires": {"release": "library-next"}, "paths": ["docs/"]})
         node = self.ask("What docs should ship?", path="changelog/", facts={"release": "library-next"})
         self.assertNotEqual(node.status, "resolved")

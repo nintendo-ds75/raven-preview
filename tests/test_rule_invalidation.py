@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from test_rules import CFG, QUESTION, RuleCase
+from test_rules import CFG, RuleCase
 from test_proof import DIFF
 from bridge import canvas, proof
 from bridge.store import Invalid, Store

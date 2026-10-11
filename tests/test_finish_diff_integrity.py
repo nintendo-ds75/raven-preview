@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from test_contract import ContractCase
-from bridge import canvas, proof
+from bridge import proof
 from bridge.mcp import INSTRUCTIONS, TOOLS, call_tool
 from bridge.store import Invalid
 

@@ -1,5 +1,4 @@
 """Reject contaminated fixtures, rewritten observations and post-hoc scoring."""
-import copy
 import hashlib
 import json
 import os
@@ -10,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 import unittest
 
 from evals.audit.fixture import attest_patch, freeze, git, validate_records, verify_fixture
-from evals.audit.ledger import Ledger, TaskObserver, digest, redact, verify
+from evals.audit.ledger import Ledger, TaskObserver, redact, verify
 from evals.audit.scoring import pin_rubric, score, score_run, validate_rubric
 from evals.audit.viewer import render
 

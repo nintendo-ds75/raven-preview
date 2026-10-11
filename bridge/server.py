@@ -1022,7 +1022,6 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
             request bound, and a live call never looks idle to the client.
             Measured live on a397f1c: bound to 50 seconds, one task took 28
             wait calls, and the host ran out of budget before finishing."""
-            from .canvas import WAIT_CAP
             from .mcp import PROGRESS_MESSAGES, progress_sleep
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")

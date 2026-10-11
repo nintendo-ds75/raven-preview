@@ -1,5 +1,4 @@
 """Read-only run provenance from existing rows; no new authority or identity rules."""
-import json
 from pathlib import Path
 
 from fixtures import OfflineCase

@@ -1,6 +1,5 @@
 """Synthetic-owner demo acceptance: real code/protocol, no real customers."""
 import hashlib
-import json
 from pathlib import Path
 from unittest.mock import patch
 

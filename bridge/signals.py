@@ -393,7 +393,6 @@ def _scope_aggregate(store: Graph, repo: str, scope: str, now: float) -> dict:
         # GitHub is synced. Measured on home-assistant/core, where most
         # code owners commit under a full name their handle does not spell.
         logins: dict[str, str] = {}
-        emails_seen = {}
         norm: dict[str, str] = {}
         changes: list[tuple[str, float, list[tuple[str, str]], dict[str, float]]] = []
         total = merge_total = 0.0

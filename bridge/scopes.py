@@ -70,5 +70,3 @@ def primary_scopes(question: str, category: str = "") -> list[str]:
     return decision_scopes(question, "", "", include_context=False)
 
 
-def known_category(name: str) -> bool:
-    return (name or "").strip().lower() in CATEGORIES

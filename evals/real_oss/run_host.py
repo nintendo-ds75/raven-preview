@@ -23,8 +23,6 @@ Needs the `claude` CLI on PATH and authenticated, and the checkout that
 
 import argparse
 import json
-import os
-import re
 import shutil
 import subprocess
 import sys

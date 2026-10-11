@@ -199,7 +199,7 @@ class SupportedAnswerTests(LadderCase):
             "question": "Should timeout_slack, a new numeric retry option, reject negative and non-finite values with "
                         "ValueError and accept bools?", "path": "src/retry.py", "category": "policy"}])
         self.assertTrue(prompts, "the support check did not run")
-        self.assertIn(f"covers this question: its conditions (numeric retry option) are met here", prompts[0])
+        self.assertIn("covers this question: its conditions (numeric retry option) are met here", prompts[0])
 
     def test_a_prediction_names_no_detail_their_answers_do_not_state(self):
         """Measured live on 63eb671: "Which retry metric label and rollout

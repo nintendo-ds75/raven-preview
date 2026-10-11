@@ -347,7 +347,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
     def test_confirmation_authored_before_delivery_is_not_retimed_by_processing(self):
         self.slack.fail = True
         with interpretation('Exclude the load test.'):
-            source = self.send('Exclude the load test.', stamp='1700000001.000001')
+            self.send('Exclude the load test.', stamp='1700000001.000001')
         held = self.held()
         self.slack.fail = False
         original = self.slack.post_message

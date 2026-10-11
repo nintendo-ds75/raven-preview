@@ -1340,7 +1340,6 @@ def _place_node(store, graph, run, row, did, task_id, question, context, ctx, ca
     if signoff == "required" and not row.get("owner_name"):
         from .ladder import _ranked_view
         from .graph import parse_facts
-        from .routing import route_ranked
         from .store import repo_key
         repo = graph.resolve_repo(repo_key(run["repo"]))
         if repo:

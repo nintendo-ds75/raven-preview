@@ -5,7 +5,6 @@ the host process, working directory and permission mode. Delivery is at least
 once; acknowledgments and task registration are idempotent.
 """
 from datetime import datetime, timedelta, timezone
-import json
 
 from . import context_memory as cm
 from .store import Invalid

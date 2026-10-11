@@ -1,5 +1,4 @@
 """Behavior reconstructed from the interrupted review, tested without inference."""
-import json
 import os
 import threading
 import time
@@ -116,7 +115,7 @@ class BackgroundTests(DeliveryCase):
         with self.assertRaises(Invalid):self.node(task)
 
     def test_a_task_a_person_answered_cannot_be_abandoned(self):
-        task=self.task();node=self.node(task);self.delivery.deliver_now()
+        task=self.task();self.node(task);self.delivery.deliver_now()
         self.reply(self.slack.messages[0],'UWES','answer: Exclude it because it was internal')
         with self.assertRaises(Invalid):
             canvas.finish_task(self.store,{'task_id':task,'status':'abandoned','reason':'Oops'})
@@ -130,7 +129,6 @@ class BackgroundTests(DeliveryCase):
         self.assertEqual(self.graph.count_events('model_read_interrupted',decision_id=node['node_id']),1)
 
     def test_reused_answer_prefers_its_current_contact_unless_authority_overrides(self):
-        from bridge.routing import rank_for_decision
         task = self.task(); node = self.node(task)
         self.delivery.deliver_now()
         self.reply(self.slack.messages[0], 'UWES', 'answer: Exclude it because it is internal')

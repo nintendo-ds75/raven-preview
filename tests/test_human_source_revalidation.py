@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from fixtures import OfflineCase
 from test_auth import SharedServer, BOOTSTRAP
-from bridge import canvas, context_memory as cm, ladder, proof
+from bridge import canvas, context_memory as cm, ladder
 from bridge.graph import ts_to_iso
 from bridge.config import Config
 from bridge.store import Invalid, Store

@@ -398,14 +398,6 @@ def _memory_namespace_difference(store: Graph, task_id: str, source) -> str:
             f'was associated with {there}')
 
 
-def _scope_conflict(question: str, context: str, path: str, cand, facts: dict | None = None,
-                    their_facts: dict | None = None, repo: str = "") -> str:
-    """Why an open decision with the same question is not this decision,
-    known or suspected (see `_scope_difference`). Empty when the scopes
-    are compatible."""
-    return _scope_difference(question, context, path, cand, facts, their_facts, repo)[0]
-
-
 def _open_twin(store: Graph, cfg, client, question: str, emb: list[float], repo: str,
                exclude: str = "", context: str = "", path: str = "", related: list | None = None,
                facts: dict | None = None, skip: set | None = None):

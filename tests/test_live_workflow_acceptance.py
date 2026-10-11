@@ -9,7 +9,6 @@ import unittest
 import urllib.request
 from unittest.mock import patch
 
-from fixtures import ROOT
 from bridge import llm
 from evals.live_workflow_acceptance import (
     PROVIDER_URL, AcceptanceFailure, RequestBudget, check_expression, check_guidance,

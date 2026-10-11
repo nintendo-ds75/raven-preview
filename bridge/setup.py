@@ -303,7 +303,6 @@ def main():
             clients = [name for name in saved.get("BRIDGE_MCP_CLIENTS", "").split(",") if name]
             if clients:
                 token = sys.stdin.read().strip()
-                url = align_public_url(saved).rstrip("/") + "/mcp"
                 written = connect_mcp(saved, Path("/agent-project"), token, os.environ.get("BRIDGE_AGENT_PROJECT_HOST", ""))
                 print("Connected your agent to Raven over MCP in: " + ", ".join(written))
             return

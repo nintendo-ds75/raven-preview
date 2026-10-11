@@ -4,7 +4,6 @@ import time
 import unittest
 from unittest.mock import patch
 
-from fixtures import ROOT  # Standard test import/environment isolation.
 from evals.slack_contract_harness import (
     ACTION_TOKEN, BOT_TOKEN, OWNER, REFERRED, SOURCE_TEXT, SOURCE_URL,
     RavenContractHarness, SlackContractServer, eventually, http_json, run_contract,

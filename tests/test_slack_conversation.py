@@ -6,7 +6,7 @@ import time
 import threading
 from unittest.mock import patch
 from fixtures import OfflineCase
-from test_delivery import DeliveryCase, FakeSlack
+from test_delivery import DeliveryCase
 from bridge import canvas
 from bridge.authz import Actor
 from bridge.config import Config

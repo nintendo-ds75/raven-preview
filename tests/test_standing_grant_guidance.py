@@ -1,6 +1,5 @@
 """Recorded reuse terms are presentation, never new-request authorization."""
 import copy
-import json
 import unittest
 
 from bridge.reuse_guidance import standing_grant_view

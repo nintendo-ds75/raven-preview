@@ -476,7 +476,6 @@ class SlackSourceReviewTests(SourceReviewCases, slack.DeliveryCase):
         if reply_to:
             # Slack's real thread event identifies the root; the internal
             # adapter contract also permits an authenticated exact reply ref.
-            person = self.peer if peer else self.wes
             self.last_direct = self.delivery.receive(self.channel_id, self.thread_id, 'UMAR' if peer else 'UWES', text,
                 event_id=event['event_id'], occurrence={'platform': 'slack', 'id': event['event']['ts'],
                 'timestamp': event['event']['ts'], 'reply_to': reply_to})

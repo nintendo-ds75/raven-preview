@@ -21,7 +21,7 @@ import urllib.request
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 
 from .delivery import Delivery, now_iso, retry_delay
 from .store import Invalid

@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bridge.ingest import index_repo
 from bridge.mcp import call_tool
 from bridge.server import make_server
-from bridge.store import Store, Invalid
+from bridge.store import Store
 
 
 def main():

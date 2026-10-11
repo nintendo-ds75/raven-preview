@@ -1,7 +1,5 @@
 """No manually registered people, authority rows, or recipient accounts."""
 import copy
-import json
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase, PEOPLE

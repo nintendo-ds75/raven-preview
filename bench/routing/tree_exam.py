@@ -380,8 +380,8 @@ def write_summary(results: list[dict], out: Path, label: str) -> str:
                       f"on {pct(s['approver_required_rate'])} (engaged on {pct(s['engage_recall_when_required'])} of "
                       f"those); of the passes {pct(s['pass_precision_when_self_owned'])} needed nobody else; "
                       f"cross-owner series {pct(s['cross_owner_rate'])} (engaged on {pct(s['cross_owner_engaged'])})",
-                      f"- node statuses: " + ", ".join(f"{k} {v}" for k, v in s["node_statuses"].items()),
-                      f"- node misses by mechanism: " + ", ".join(f"{k} {v}" for k, v in s["node_mechanisms"].items()),
+                      "- node statuses: " + ", ".join(f"{k} {v}" for k, v in s["node_statuses"].items()),
+                      "- node misses by mechanism: " + ", ".join(f"{k} {v}" for k, v in s["node_mechanisms"].items()),
                       f"- errors: {s['errors']}", ""]
     text = "\n".join(lines)
     (out / "summary.md").write_text(text)

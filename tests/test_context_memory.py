@@ -46,7 +46,7 @@ class ContextMemoryTests(OfflineCase):
         same = self.source()
         self.assertFalse(same['changed'])
         self.assertEqual(a['source']['source_version_id'], same['source']['source_version_id'])
-        b = self.source(body='Retain for seven days.', author='Editor', paths=['policy/new.py'])
+        self.source(body='Retain for seven days.', author='Editor', paths=['policy/new.py'])
         c = self.source()
         record = self.store.get_record(a['source']['record_id'], REPO)
         self.assertEqual([v['sequence'] for v in record['versions']], [1, 2, 3])

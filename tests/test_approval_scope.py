@@ -2,13 +2,11 @@
 from test_delivery import confirmation as readback_confirmation
 import json
 import unittest
-from unittest.mock import patch
 
-from fixtures import OfflineCase
 import test_delivery as slack_fixtures
 import test_teams as teams_fixtures
 import test_readback_generations as generations
-from bridge import canvas, interview
+from bridge import canvas
 from bridge.store import Invalid
 import test_interview as interviews
 

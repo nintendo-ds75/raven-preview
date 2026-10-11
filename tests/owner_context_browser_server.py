@@ -5,7 +5,7 @@ import sys
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import fixtures
+import fixtures  # noqa: F401  (puts the repository root on sys.path)
 from bridge.server import make_server
 from bridge.store import Store
 from owner_context_fixture import seed

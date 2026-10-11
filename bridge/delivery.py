@@ -1556,12 +1556,6 @@ class SlackTransport:
         return [{"author": m.get('author_user_id',''), "text": m.get('content',''),
                  "url": m.get('permalink','')} for m in messages[:5] if not m.get('is_author_bot')]
 
-    def lookup_by_email(self, email: str) -> str:
-        try:
-            return self._call("users.lookupByEmail", {"email": email})["user"]["id"]
-        except RuntimeError:
-            return ""
-
     def workspace_id(self) -> str:
         return self._call("auth.test", {}).get("team_id", "")
 

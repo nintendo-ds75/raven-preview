@@ -409,7 +409,7 @@ class AnswerTests(BriefCase, Http):
     def test_personal_link_can_review_complete_changed_sources_without_an_account(self):
         source_data = {'repo': 'acme/platform', 'kind': 'doc', 'ref': 'POL-1',
                        'body': 'Exclude internal load tests.', 'paths': ['billing/usage.py']}
-        source = self.store.add_record(source_data)
+        self.store.add_record(source_data)
         did = self.a['node_id']
         row = self.graph.intents_by_ref(['POL-1'], 'acme/platform')[0]
         self.graph.publish_evidence(did, [row], status='resolved', source='record',

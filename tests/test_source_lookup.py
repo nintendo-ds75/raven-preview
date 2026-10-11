@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from bridge import canvas, context_memory as cm, github, proof
 from bridge.store import Store
-from test_auth import BOOTSTRAP, SharedServer
+from test_auth import SharedServer
 
 REPO = 'synthetic/handover'
 

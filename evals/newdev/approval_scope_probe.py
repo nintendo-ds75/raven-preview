@@ -7,7 +7,7 @@ import json,os,sys,tempfile
 from pathlib import Path
 os.environ['BRIDGE_MODEL_API']='none';os.environ['BRIDGE_SEMANTIC']='0'
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
-from bridge import canvas,mcp
+from bridge import canvas
 from bridge.authz import Actor
 from bridge.config import Config
 from bridge.store import Store
