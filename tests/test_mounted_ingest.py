@@ -204,7 +204,9 @@ class MountedIngestTests(OfflineCase):
         with patch.dict(os.environ, {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "safe.directory",
                                     "GIT_CONFIG_VALUE_0": "*", "GIT_CONFIG_PARAMETERS": "'safe.directory=*'"}):
             values = _git(self.repo, "config", "--get-all", "safe.directory").splitlines()
-            self.assertEqual(values, ["", str(self.repo)])
+            # The checkout is trusted by its resolved path (on macOS /var is
+            # /private/var), which is the path git itself compares.
+            self.assertEqual(values, ["", str(self.repo.resolve())])
             result = index_repo(self.store.graph, self.repo)
             self.assertEqual(result["commits"], 1)
         self.assert_untrusted(self.other)
