@@ -1,0 +1,8 @@
+# Lint for correctness, not style: pyflakes (undefined names, unused imports
+# and variables, f-strings without placeholders) and syntax errors. CI runs
+# `ruff check .` with this file.
+target-version = "py311"
+extend-exclude = ["evals/**/results/**"]  # recorded evidence stays as captured
+
+[lint]
+select = ["F", "E9"]

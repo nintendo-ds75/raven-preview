@@ -1,4 +1,4 @@
-.PHONY: up down logs status login seed shell db-shell test test-postgres ingest backup restore
+.PHONY: up down logs status login seed shell db-shell test test-postgres ingest backup restore check
 
 up:
 	./dev up
@@ -43,3 +43,9 @@ restore:
 	@test -n "$(FILE)" -a -n "$(DB)" || (echo 'Usage: make restore FILE=backups/file.dump DB=bridge_restored'; exit 1)
 	docker compose exec -T db createdb -U bridge "$(DB)"
 	docker compose exec -T db pg_restore -U bridge -d "$(DB)" --exit-on-error < "$(FILE)"
+
+# What CI runs, on this machine (needs ruff and node on PATH).
+check:
+	ruff check .
+	python3 -m unittest discover -s tests -p 'test_*.py'
+	for f in tests/*-unit.cjs tests/web-*.cjs tests/audit-viewer.cjs; do node "$$f" || exit 1; done
