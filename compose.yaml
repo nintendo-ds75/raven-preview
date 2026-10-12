@@ -20,6 +20,7 @@ services:
       args:
         INSTALL_AGENTS: ${BRIDGE_INSTALL_AGENTS:-false}
         INSTALL_TEAMS: ${BRIDGE_INSTALL_TEAMS:-false}
+        INSTALL_SEMANTIC: ${BRIDGE_INSTALL_SEMANTIC:-true}
     environment:
       DATABASE_URL: postgresql://bridge:${POSTGRES_PASSWORD:-bridge-local-development}@db:5432/bridge
       BRIDGE_PUBLIC_URL: ${BRIDGE_PUBLIC_URL:-http://localhost:7333}
@@ -30,6 +31,9 @@ services:
       BRIDGE_INGEST_REPO_DIR: ${BRIDGE_INGEST_REPO_DIR:-}
       BRIDGE_INGEST_REPO: ${BRIDGE_INGEST_REPO:-}
       BRIDGE_MODEL_API: ${BRIDGE_MODEL_API:-none}
+      BRIDGE_MODEL: ${BRIDGE_MODEL:-claude-sonnet-5}
+      BRIDGE_FAST_MODEL: ${BRIDGE_FAST_MODEL:-claude-haiku-4-5-20251001}
+      BRIDGE_EMBEDDINGS: ${BRIDGE_EMBEDDINGS:-local}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_WORKSPACE_ID: ${ANTHROPIC_WORKSPACE_ID:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

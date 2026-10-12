@@ -481,7 +481,7 @@ def respond(delivery, note, d, person, text, actor, action_token='', occurrence=
         return None
     # Commands remain a supported shortcut. Natural language, including a
     # sentence containing 'because', goes through inference and confirmation.
-    if not pending and re.match(r'^(?:answer\s*:|reframe\s*:|not me\b|sign off\W*$|approve\W*$|rule\b)',text,re.I):
+    if not pending and re.match(r'^(?:answer\s*:|reframe\s*:|sign off\W*$|approve\W*$)',text,re.I):
         return None
     if held and not pending:
         return None  # A read-back made by the compatibility parser owns its confirmation.

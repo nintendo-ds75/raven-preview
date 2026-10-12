@@ -329,6 +329,12 @@ def migrate(db: sqlite3.Connection) -> None:
     migrate_hosts(db)
     from .sources import migrate as migrate_sources
     migrate_sources(db)
+    from .semantic_index import migrate as migrate_semantic
+    migrate_semantic(db)
+    from .investigation import migrate as migrate_investigation
+    migrate_investigation(db)
+    from .mcp_events import migrate as migrate_events
+    migrate_events(db)
     if fts_available(db):
         db.executescript(_FTS)
 

@@ -997,6 +997,32 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
             if error:
                 return self.send(200, {"jsonrpc": "2.0", "id": message["id"],
                                        "error": {"code": -32602, "message": error}})
+            if message['method'] == 'server/discover' or message['method'].startswith('events/'):
+                from . import mcp_events
+                rpc = {'jsonrpc': '2.0', 'id': message['id']}
+                try:
+                    if not auth.enabled or not self.me or not self.me.id:
+                        raise Invalid('MCP Events requires an authenticated personal connection')
+                    if message['method'] == 'server/discover':
+                        value = {'resultType': 'complete', 'supportedVersions': [mcp_events.VERSION],
+                                 'capabilities': {'tools': {}, 'events': {}}}
+                    elif message['method'] == 'events/list':
+                        value = {'events': [mcp_events.DEFINITION]}
+                    elif message['method'] in ('events/subscribe', 'events/unsubscribe'):
+                        token = self.headers.get('Authorization', '')
+                        credential = (store.graph.db.execute("SELECT id FROM api_tokens WHERE token_hash=? AND revoked_at=''",
+                                      (auth._hash(token[7:].strip()),)).fetchone()
+                                      if token.lower().startswith('bearer ') else None)
+                        value = mcp_events.subscription(store, params, self.me.id, credential['id'] if credential else '',
+                                                       remove=message['method'] == 'events/unsubscribe')
+                    else:
+                        return self.send(200, {**rpc, 'error': {'code': -32601, 'message': 'Method not found'}})
+                    return self.send(200, {**rpc, 'result': value})
+                except mcp_events.CallbackError as failure:
+                    return self.send(200, {**rpc, 'error': {'code': -32015, 'message': 'CallbackEndpointError',
+                                                         'data': {'reason': failure.reason}}})
+                except Invalid as failure:
+                    return self.send(200, {**rpc, 'error': {'code': -32602, 'message': str(failure)}})
             if message["method"] == "tools/call":
                 from .mcp import _progress_token
                 if (isinstance(params, dict) and params.get("name") in ("bridge_wait", "bridge_finish_task")

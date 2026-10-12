@@ -19,7 +19,7 @@ from .store import Invalid
 
 MAX_LINE = 1 << 20
 PROTOCOL_VERSION = '2025-06-18'
-SUPPORTED_HTTP_VERSIONS = frozenset((PROTOCOL_VERSION, '2025-03-26'))
+SUPPORTED_HTTP_VERSIONS = frozenset((PROTOCOL_VERSION, '2025-03-26', '2026-07-28'))
 
 # Viewer-owned credentials retain evidence/review access, but never acquire
 # write privileges merely because they use the agent protocol. New tools are
@@ -38,6 +38,15 @@ def tool(name, description, properties, required):
 
 
 TOOLS = [
+    tool('bridge_review_discovery', 'After inspecting the code, send your investigation observations and paths before asking people. Raven challenges missing judgment and distinguishes code investigations from approval questions. Use phase=finish with the actual diff before finishing an engaged task. Address findings by calling again with review_id and dispositions; either link a decision on this task or state what you investigated and why no new judgment is needed. Suggestions never authorize anything.',
+         {'task_id': 'The registered task', 'observations': 'What you actually found, with code revision/path/line or record/version citations and uncertainty; up to 24000 characters',
+          'paths': {'type': 'array', 'items': {'type': 'string'}},
+          'phase': {'type': 'string', 'enum': ['investigation', 'finish']}, 'diff': 'Exact current diff for phase=finish',
+          'review_id': 'Existing review to address; omit observations and diff when supplying dispositions',
+          'retry': {'type': 'boolean', 'description': 'Retry an unavailable review by review_id using its saved observations and current evidence'},
+          'dispositions': {'type': 'array', 'items': {'type': 'object', 'properties': {
+              'finding_id': {'type': 'string'}, 'decision_id': {'type': 'string'}, 'reason': {'type': 'string'}},
+              'required': ['finding_id'], 'additionalProperties': False}}}, ['task_id']),
     tool("bridge_start_task", "Call this the moment a task is kicked off, before any work, passing the task as it was given to you in `goal` and not only a title of your own: Raven looks at the task with what it knows (the tree, MAINTAINERS and CODEOWNERS, git history and blame, prior decisions, what is pending) and returns a verdict, engage or pass, with its reason and a discovery digest (areas, people, listings, prior decisions, pending questions). Most tasks are trivial and get pass. A task whose words name no area, kicked off with no paths, gets unplaced: call again with the same title, repo and client_key once you know the files, passing them as paths, and Raven judges it then. Returns task_id: the canvas every later node is written to. Pass client_key (your own id for this kickoff) so a retry returns the same task instead of starting a second one.",
          {"task_id": "Existing task ID to resume without changing its repository. To replace a mistaken repository scope, abandon that task and start without task_id using a new client_key.", "title": "The task as kicked off, one line", "goal": "The task as it was given to you, in the requester's own words and in full. Raven triages on this: a one-line title of your own is thinner than what you were asked, and passes tasks that would otherwise engage", "repo": "Repository identity as the organization knows it: owner/name (acme/platform) or the git URL. This is what Raven matches its map and its memory against, so a path to your working copy or a scratch directory finds nothing and the verdict reads no repository at all; bridge_list_owners names the ones it holds", "agent": "Agent name", "requester": "Who kicked the task off (name, email, or both): their usual approvers count, and nothing is routed back to them", "paths": "Files or directories the task will touch, comma separated (optional)", "client_key": "Your own id for this kickoff; the same key returns the same task on a retry (optional, recommended)", "facts": "What holds for the whole task as key=value pairs, comma separated (release=library-next, customer=globex), copied from the task or its tickets and never invented: every node inherits them unless it states its own. Repository conditions use the task’s canonical repository; a contradictory facts.repo is refused. Never copy missing business facts from history (optional)"}, []),
     tool("bridge_add_node", "Write one judgment or authorization choice to the canvas as a node under the decision it grew from (parent_id). Code or test observations belong in the genuine decision context with citations, not in separate approval nodes. Do not invent a node when no human judgment is needed. You break the task down, Raven does not. Raven resolves the node from memory and records where it can (status resolved: evidence with a citation, marked for a person's sign-off, not authorization), predicts from precedent or from an unsigned earlier answer (predicted, to confirm), routes it to the person the signals name (pending), or says it does not know (unrouted). Idempotent: the same client_ref, or the same question in the same scope on this tree, returns the existing node; the same question about other files or another named customer is a new node, linked as related. Changed facts on a retry are not applied: use bridge_correct_node_facts with the current revision. To take up a follow-up question a person added, pass adopt=<its node_id>.",
@@ -252,6 +261,7 @@ def _ingest_repo(store, args):
 
 
 HANDLERS = {
+    'bridge_review_discovery': lambda store, args: __import__('bridge.investigation', fromlist=['review']).review(store, args, defer=True),
     "bridge_start_task": lambda store, args: canvas.start_task(store, load(), args),
     "bridge_add_node": lambda store, args: canvas.add_node(store, load(), args),
     "bridge_correct_node_facts": lambda store, args: __import__("bridge.fact_revisions", fromlist=["correct_node_facts"]).correct_node_facts(store, args),

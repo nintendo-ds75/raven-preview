@@ -17,6 +17,14 @@ Raven helps discover those decisions as the task unfolds. It brings together wha
 
 Connect Raven to your coding agent over MCP once, then give the agent a task such as “add usage-based pricing.” You do not need to supply file paths, owner names, or a list of decisions. The agent discovers those as it reads the repository. If Raven cannot place the task yet, the agent returns with the files it found. As it explores the work, Raven and the agent build a tree of decisions: which usage counts, what allowance to give, how to handle overages, and whether a particular customer needs different terms. An answer can reveal another question. The tree grows with the task.
 
+Raven reviews the agent's investigation for missing judgment, searches records
+and previous answers with a local learned embedding model, and compares evidence
+to choose a first contact. The agent reviews those suggestions before asking
+people. Local Claude Code and Codex use installed hooks and the resume adapter;
+supported Work cloud chats and dots can subscribe to signed task events. See
+[the investigation and wake-up flow](docs/investigation-and-events.md) for setup
+and limits.
+
 Each decision can fall anywhere on this spectrum:
 
 | What is available | What Raven brings to the owner | What the owner does |

@@ -1,0 +1,340 @@
+{
+  "repo": "urllib3/urllib3",
+  "revision": "3d934808397b9cee14c6f399a4e6c9ddeb17a00d",
+  "checks": {
+    "discovery_completed": true,
+    "discovery_found_choices": true,
+    "review_created_no_decisions": true,
+    "learned_retrieval_active": true,
+    "policy_retrieved": true,
+    "runtime_contact_found": true,
+    "no_authority_invented": true,
+    "natural_reply_intents": true
+  },
+  "limits": [
+    "No coding host was launched.",
+    "Slack statements and policy records are synthetic.",
+    "The repository and inference calls are real."
+  ],
+  "ingest": {
+    "files": 45,
+    "commits": 250,
+    "merges": 165,
+    "owners": 34,
+    "prs": 83,
+    "truncated": 250,
+    "repo": "urllib3/urllib3",
+    "integrators": [
+      "Andrey Petrov",
+      "Cory Benfield"
+    ],
+    "squashed": 94,
+    "maintainers": 0,
+    "bots_skipped": 0,
+    "github": {
+      "pulls": 0,
+      "approvals": 0,
+      "records": 0
+    }
+  },
+  "discovery": {
+    "review_id": "7e095425b4f54e2fa0a5654888272fee",
+    "phase": "investigation",
+    "input_hash": "d9a16bc43a56e953de815723ba3a1db7b2a997817e74e71d33ccea2af5a42f21",
+    "status": "complete",
+    "summary": "The agent has correctly scoped the Retry-After cap addition to retry.py and located the relevant parsing/sleep methods, and an approved decision (RUNTIME-1) already settles the key behavioral questions (default unlimited, zero skips wait but still retries, raw header parsing unchanged, reject negative/NaN/infinite, document zero/invalid). However, several concrete implementation/judgment gaps remain that the decision record doesn't resolve, and the agent hasn't yet shown evidence of checking them.",
+    "findings": [
+      {
+        "id": "3198dc3aef52014b",
+        "kind": "judgment",
+        "question": "When an invalid cap (negative, NaN, or infinite) is supplied, should Retry raise immediately in __init__/new(), or only when the cap is actually used (e.g. in sleep/get_retry_after)?",
+        "why": "RUNTIME-1 mandates rejecting these values but doesn't specify timing; Retry.__init__ currently does no validation of its numeric params, and new()/increment() reconstruct Retry objects on every retry, so deferred validation could re-raise repeatedly or mask the error at construction time for library users who set this as a pool default.",
+        "basis": [
+          "source:ae4c7f88a4d94aca82a58c8d409ea621:00c693bf81f34ccf83817ef340e6b6d6"
+        ],
+        "paths": [
+          "src/urllib3/util/retry.py"
+        ],
+        "disposition": null
+      },
+      {
+        "id": "5b37d4a59ac447be",
+        "kind": "investigate",
+        "question": "Does the new cap parameter get included in the params dict built by Retry.new(), so the limit is preserved across increment()/new() clones during a retry sequence?",
+        "why": "new() explicitly lists every constructor parameter to carry over; if the new cap argument is omitted there, it would silently revert to the default (unlimited) after the first retry, contradicting the 'callers can cap' requirement for subsequent attempts.",
+        "basis": [
+          "source:ae4c7f88a4d94aca82a58c8d409ea621:00c693bf81f34ccf83817ef340e6b6d6"
+        ],
+        "paths": [
+          "src/urllib3/util/retry.py"
+        ],
+        "disposition": null
+      },
+      {
+        "id": "0528d187cf15daee",
+        "kind": "judgment",
+        "question": "Should the new Retry-After cap interact with backoff_max/get_backoff_time at all, or remain strictly isolated to the sleep_for_retry/get_retry_after path?",
+        "why": "Retry already has a backoff_max that caps the independently-computed exponential backoff; introducing a second, similarly-named concept risks confusing API consumers and raises the question of which cap wins if both backoff and Retry-After paths could apply within sleep().",
+        "basis": [
+          "source:ae4c7f88a4d94aca82a58c8d409ea621:00c693bf81f34ccf83817ef340e6b6d6"
+        ],
+        "paths": [
+          "src/urllib3/util/retry.py"
+        ],
+        "disposition": null
+      },
+      {
+        "id": "c6bcc0c0f8e84dda",
+        "kind": "investigate",
+        "question": "Does docs/reference/urllib3.util.rst need a manual update, or is Retry's docstring pulled in automatically via autodoc, such that only the class docstring (and not this rst file) needs the zero/invalid-limit explanation?",
+        "why": "RUNTIME-1 requires explaining zero and invalid limits in API documentation; confirming whether this file is autodoc-only avoids missing a required manual doc edit or making a redundant one.",
+        "basis": [
+          "source:ae4c7f88a4d94aca82a58c8d409ea621:00c693bf81f34ccf83817ef340e6b6d6"
+        ],
+        "paths": [
+          "docs/reference/urllib3.util.rst"
+        ],
+        "disposition": null
+      },
+      {
+        "id": "e058ce145898b452",
+        "kind": "judgment",
+        "question": "Should sleep_for_retry still return True (indicating a retry happened) when the capped wait is zero, consistent with 'zero cap skips the wait but still retries'?",
+        "why": "sleep_for_retry currently returns True only if retry_after is truthy; if a zero cap makes retry_after evaluate to 0 (falsy), the existing `if retry_after:` check would incorrectly report no Retry-After-based retry occurred, diverging from the approved zero-cap behavior.",
+        "basis": [
+          "source:ae4c7f88a4d94aca82a58c8d409ea621:00c693bf81f34ccf83817ef340e6b6d6"
+        ],
+        "paths": [
+          "src/urllib3/util/retry.py"
+        ],
+        "disposition": null
+      }
+    ],
+    "model_pending": false,
+    "unaddressed": [
+      "3198dc3aef52014b",
+      "5b37d4a59ac447be",
+      "0528d187cf15daee",
+      "c6bcc0c0f8e84dda",
+      "e058ce145898b452"
+    ],
+    "notice": "Suggestions require host investigation. They do not authorize work or prove complete decision coverage."
+  },
+  "retrieval": {
+    "diagnostic": {
+      "backend": "local",
+      "model": "BAAI/bge-small-en-v1.5",
+      "indexed": 261,
+      "chunks": 263
+    },
+    "refs": [
+      "RUNTIME-1",
+      "326",
+      "1066",
+      "835",
+      "1652",
+      "396",
+      "955",
+      "e9171e8d77b4",
+      "1795",
+      "ef46f403db40",
+      "2952",
+      "DOCS-1",
+      "6af53ac41757",
+      "848",
+      "631",
+      "3466"
+    ]
+  },
+  "contacts": [
+    [
+      "Mira Example",
+      [
+        "inferred first contact selected from cited evidence; confirm or refer",
+        "Authored doc RUNTIME-1: Server-directed pause policy",
+        "A caller may cap the waiting period suggested by a server. The existing default remains unlimited. A zero cap skips the wait but still retries. Raw header parsing must remain unchanged. Reject negative, NaN and infinite limits. Explain zero and invalid limits in API documentation."
+      ],
+      0.25
+    ],
+    [
+      "Theo Example",
+      [
+        "inferred first contact; confirm or refer in Slack",
+        "inferred first contact: authored doc DOCS-1 for src/urllib3/util/retry.py; confirm or refer"
+      ],
+      0.25
+    ]
+  ],
+  "slack_readings": [
+    {
+      "message": "Not me, please ask Theo Example just this one.",
+      "expected": "handoff",
+      "reading": {
+        "kind": "handoff",
+        "to": "Theo Example",
+        "scope_kind": "none",
+        "contact_outcome": "",
+        "reply": "",
+        "answer": "",
+        "rationale": "",
+        "conditions": "",
+        "expires": "",
+        "scope": ""
+      }
+    },
+    {
+      "message": "I will look tomorrow.",
+      "expected": "chat",
+      "reading": {
+        "kind": "chat",
+        "reply": "Got it\u2014I'll check back tomorrow. While you're thinking it over, just to clarify: should a zero Retry-After cap mean no sleep at all, or should it mean something else? That'll help me frame the question correctly when we revisit it.",
+        "answer": "",
+        "rationale": "",
+        "to": "",
+        "conditions": "",
+        "expires": "",
+        "scope_kind": "",
+        "scope": "",
+        "contact_outcome": ""
+      }
+    },
+    {
+      "message": "Zero should skip sleeping while keeping the retry. This is for library-next only.",
+      "expected": "answer",
+      "reading": {
+        "kind": "answer",
+        "answer": "Zero should skip sleeping while keeping the retry. This is for library-next only.",
+        "rationale": "",
+        "original": "Zero should skip sleeping while keeping the retry. This is for library-next only.",
+        "answer_form": "complete",
+        "authored_verbatim": true
+      }
+    }
+  ],
+  "events": [
+    {
+      "kind": "discovery_reviewed",
+      "detail": {
+        "findings": [
+          {
+            "basis": [
+              "source:ae4c7f88a4d94aca82a58c8d409ea621:00c693bf81f34ccf83817ef340e6b6d6"
+            ],
+            "id": "3198dc3aef52014b",
+            "kind": "judgment",
+            "paths": [
+              "src/urllib3/util/retry.py"
+            ],
+            "question": "When an invalid cap (negative, NaN, or infinite) is supplied, should Retry raise immediately in __init__/new(), or only when the cap is actually used (e.g. in sleep/get_retry_after)?",
+            "why": "RUNTIME-1 mandates rejecting these values but doesn't specify timing; Retry.__init__ currently does no validation of its numeric params, and new()/increment() reconstruct Retry objects on every retry, so deferred validation could re-raise repeatedly or mask the error at construction time for library users who set this as a pool default."
+          },
+          {
+            "basis": [
+              "source:ae4c7f88a4d94aca82a58c8d409ea621:00c693bf81f34ccf83817ef340e6b6d6"
+            ],
+            "id": "5b37d4a59ac447be",
+            "kind": "investigate",
+            "paths": [
+              "src/urllib3/util/retry.py"
+            ],
+            "question": "Does the new cap parameter get included in the params dict built by Retry.new(), so the limit is preserved across increment()/new() clones during a retry sequence?",
+            "why": "new() explicitly lists every constructor parameter to carry over; if the new cap argument is omitted there, it would silently revert to the default (unlimited) after the first retry, contradicting the 'callers can cap' requirement for subsequent attempts."
+          },
+          {
+            "basis": [
+              "source:ae4c7f88a4d94aca82a58c8d409ea621:00c693bf81f34ccf83817ef340e6b6d6"
+            ],
+            "id": "0528d187cf15daee",
+            "kind": "judgment",
+            "paths": [
+              "src/urllib3/util/retry.py"
+            ],
+            "question": "Should the new Retry-After cap interact with backoff_max/get_backoff_time at all, or remain strictly isolated to the sleep_for_retry/get_retry_after path?",
+            "why": "Retry already has a backoff_max that caps the independently-computed exponential backoff; introducing a second, similarly-named concept risks confusing API consumers and raises the question of which cap wins if both backoff and Retry-After paths could apply within sleep()."
+          },
+          {
+            "basis": [
+              "source:ae4c7f88a4d94aca82a58c8d409ea621:00c693bf81f34ccf83817ef340e6b6d6"
+            ],
+            "id": "c6bcc0c0f8e84dda",
+            "kind": "investigate",
+            "paths": [
+              "docs/reference/urllib3.util.rst"
+            ],
+            "question": "Does docs/reference/urllib3.util.rst need a manual update, or is Retry's docstring pulled in automatically via autodoc, such that only the class docstring (and not this rst file) needs the zero/invalid-limit explanation?",
+            "why": "RUNTIME-1 requires explaining zero and invalid limits in API documentation; confirming whether this file is autodoc-only avoids missing a required manual doc edit or making a redundant one."
+          },
+          {
+            "basis": [
+              "source:ae4c7f88a4d94aca82a58c8d409ea621:00c693bf81f34ccf83817ef340e6b6d6"
+            ],
+            "id": "e058ce145898b452",
+            "kind": "judgment",
+            "paths": [
+              "src/urllib3/util/retry.py"
+            ],
+            "question": "Should sleep_for_retry still return True (indicating a retry happened) when the capped wait is zero, consistent with 'zero cap skips the wait but still retries'?",
+            "why": "sleep_for_retry currently returns True only if retry_after is truthy; if a zero cap makes retry_after evaluate to 0 (falsy), the existing `if retry_after:` check would incorrectly report no Retry-After-based retry occurred, diverging from the approved zero-cap behavior."
+          }
+        ],
+        "input_hash": "d9a16bc43a56e953de815723ba3a1db7b2a997817e74e71d33ccea2af5a42f21",
+        "phase": "investigation",
+        "review_id": "7e095425b4f54e2fa0a5654888272fee",
+        "status": "complete",
+        "summary": "The agent has correctly scoped the Retry-After cap addition to retry.py and located the relevant parsing/sleep methods, and an approved decision (RUNTIME-1) already settles the key behavioral questions (default unlimited, zero skips wait but still retries, raw header parsing unchanged, reject negative/NaN/infinite, document zero/invalid). However, several concrete implementation/judgment gaps remain that the decision record doesn't resolve, and the agent hasn't yet shown evidence of checking them.",
+        "task_id": "f185213cc2fb"
+      }
+    },
+    {
+      "kind": "contact_reasoned",
+      "detail": {
+        "attempt": 1,
+        "candidates": [
+          {
+            "evidence": {
+              "c1:e1": "inferred first contact; confirm or refer in Slack",
+              "c1:e2": "inferred first contact: authored doc DOCS-1 for src/urllib3/util/retry.py; confirm or refer",
+              "c1:e3": "Authored doc DOCS-1: Public API release notes",
+              "c1:e4": "New constructor options need a release note and API documentation covering defaults and boundary values."
+            },
+            "id": "c1",
+            "name": "Theo Example",
+            "person_id": "f6e4cb79596d"
+          },
+          {
+            "evidence": {
+              "c2:e1": "inferred first contact; confirm or refer in Slack",
+              "c2:e2": "inferred first contact: authored doc RUNTIME-1 for src/urllib3/util/retry.py; confirm or refer",
+              "c2:e3": "Authored doc RUNTIME-1: Server-directed pause policy",
+              "c2:e4": "A caller may cap the waiting period suggested by a server. The existing default remains unlimited. A zero cap skips the wait but still retries. Raw header parsing must remain unchanged. Reject negative, NaN and infinite limits. Explain zero and invalid limits in API documentation."
+            },
+            "id": "c2",
+            "name": "Mira Example",
+            "person_id": "7e7fd868e69b"
+          }
+        ],
+        "decision_id": "",
+        "evidence": [
+          "c2:e3",
+          "c2:e4"
+        ],
+        "query": "Can an application bound the pause before attempting the request again?",
+        "retrieval": {
+          "backend": "local",
+          "chunks": 263,
+          "indexed": 261,
+          "model": "BAAI/bge-small-en-v1.5"
+        },
+        "selected": "c2",
+        "task_id": "f185213cc2fb",
+        "why": "Mira authored RUNTIME-1, which directly documents the ability to cap the server-directed pause (Retry-After) before retrying, matching the question's concern."
+      }
+    }
+  ],
+  "seconds": 99.53,
+  "models": {
+    "main": "claude-sonnet-5",
+    "fast": "claude-haiku-4-5-20251001",
+    "embeddings": "BAAI/bge-small-en-v1.5"
+  }
+}

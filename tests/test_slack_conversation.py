@@ -17,6 +17,18 @@ from bridge.store import Invalid, Store
 
 
 class ConversationTests(DeliveryCase):
+    def test_polite_not_me_referral_is_interpreted_before_legacy_command_parser(self):
+        text = 'Not me, please ask Marisol Vega just this one.'
+        with patch('bridge.slack_chat.reading', return_value={
+                'kind': 'handoff', 'to': 'Marisol Vega', 'scope_kind': '', 'scope': '',
+                'reply': 'Ask Marisol for this question only.'}) as model:
+            response = self.reply(self.message, 'UWES', text)
+        self.assertTrue(model.called)
+        self.assertNotIn('Could not find', response)
+        self.assertEqual(self.store.get_decision(self.n['node_id'])['owner_name'], 'Wes Chen')
+        self.say('yes')
+        self.assertEqual(self.store.get_decision(self.n['node_id'])['owner_name'], 'Marisol Vega')
+
     def setUp(self):
         super().setUp()
         self.n=self.node(self.task())

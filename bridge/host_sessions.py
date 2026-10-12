@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS host_reports (
 ANSWER_EVENTS = ('owner_approved', 'answer_corrected', 'signature', 'signoff', 'owner_changed')
 WAKE_EVENTS = ('owner_approved', 'answer_corrected', 'signature', 'signoff', 'owner_changed',
                'source_review_required', 'followup_added', 'rule_ended', 'rule_made',
-               'dependent_flagged', 'prediction_withdrawn', 'context_evidence_restored', 'conformance_read')
+               'dependent_flagged', 'prediction_withdrawn', 'context_evidence_restored', 'conformance_read', 'discovery_reviewed')
 
 
 def migrate(db):

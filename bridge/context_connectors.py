@@ -357,8 +357,9 @@ def search(store, args, *, client=None):
                     store.graph._bump(repo)
                 store.graph.db.execute('UPDATE context_connections SET last_error=? WHERE repo=?', (error, repo))
     with store.graph.source_scope(task_id):
-        from .ladder import _meaningful_terms
-        sources = [dict(r) for r in store.graph.intents_matching(_meaningful_terms(query), repo=repo, limit=MAX_RESULTS)]
+        from .semantic_index import sources as retrieve_sources
+        retrieved, retrieval = retrieve_sources(store.graph, query, repo, MAX_RESULTS)
+        sources = [dict(r) for r in retrieved]
         observed = {r['source']['record_id'] for r in imported}
         for row, _ in store.graph._intent_corpus(repo)[0]:
             if row['record_id'] in observed and row['record_id'] not in {r.get('record_id') for r in sources}:
@@ -371,7 +372,7 @@ def search(store, args, *, client=None):
             'imported': len(imported), 'rejected': rejected, 'rejections': diagnostics, 'error': error,
             'sources': [{'record_id': r.get('record_id'), 'source_version_id': r.get('source_version_id')} for r in sources],
             'decisions': [r.id for r in memories]})
-    return {'repo': repo, 'sources': sources, 'related_decisions': [
+    return {'repo': repo, 'sources': sources, 'retrieval': retrieval, 'related_decisions': [
         {'decision_id': d.id, 'question': d.question, 'answer': d.answer,
          'relation': 'Shares exact source evidence; relevance and applicability still require review',
          'sources': cm.edges(store.graph.db, d.id)} for d in memories],

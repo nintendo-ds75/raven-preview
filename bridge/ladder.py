@@ -1517,6 +1517,19 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             return max(sim, ov)
 
         raw = store.similar_answered(emb, top_k=8, min_score=0.25, repo=repo, query=question)
+        if cfg.semantic_retrieval:
+            from .semantic_index import memories
+            from .graph import MEMORY_STATUSES, _row_to_decision
+            semantic, diagnostic = memories(store, question, repo)
+            known = {p.id for _, p in raw}
+            scores = dict(semantic)
+            for row in store._memory_rows(MEMORY_STATUSES, repo, set(scores)) if scores else []:
+                if row['id'] not in known:
+                    # Nomination, never a direct hit or permission. Composition
+                    # and applicability still decide whether this is reusable.
+                    raw.append((min(0.79, max(0.60, scores[row['id']])), _row_to_decision(row)))
+            store.append_event('semantic_retrieval', {'task_id': task_id, 'decision_id': did,
+                               'candidates': [key for key, _ in semantic], **diagnostic})
         rule_raw = list(raw)
         seen_rule = {candidate.id for _, candidate in rule_raw}
         for score, candidate in store.standing_grant_candidates(emb, repo=repo, query=question):
@@ -2758,7 +2771,11 @@ def _wide_select(store: Graph, cfg: Config, question: str, emb: list[float], ter
                  extra_rows: list | None = None, extra_emb: list[float] | None = None,
                  extra_mems: list | None = None, *, context: str = "", path: str = "", facts: dict | None = None):
     cands: dict[str, tuple[str, object]] = {}
+    from .semantic_index import sources
+    semantic_rows, _ = sources(store, question, repo)
+    linked = store.linked_answers([r['record_id'] for r in semantic_rows if r['record_id']], repo)
     mems: list = store.anchored_answers(repo)
+    mems.extend(p for p in linked if p.id not in {m.id for m in mems})
     for _, past in store.similar_answered(emb, top_k=6, min_score=0.02, repo=repo, query=question):
         if past.id not in {p.id for p in mems}:
             mems.append(past)
@@ -2779,6 +2796,7 @@ def _wide_select(store: Graph, cfg: Config, question: str, emb: list[float], ter
     for i, past in enumerate(mems[:10], 1):
         cands[f"m{i}"] = ("memory", past)
     rows: list = list(extra_rows or [])
+    rows.extend(r for r in semantic_rows if r['id'] not in {m['id'] for m in rows})
     seen = {r["ref"] for r in rows}
     for m in store.intents_matching(terms, limit=8, repo=repo):
         if m["ref"] not in seen:

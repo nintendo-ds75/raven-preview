@@ -366,6 +366,7 @@ def kickoff(store, cfg, task_id: str, title: str, goal: str, repo: str, paths: l
         discovery["narrow_edit"] = narrow
     verdict, why = triage(discovery, title, goal)
     discovery["verdict_source"] = "rules"
+    discovery['investigation_required'] = bool(cfg and cfg.semantic_retrieval and not narrow)
     # A repository name that matches nothing ingested is not the same as
     # a repository with nothing in it, and the two read identically: the
     # task resolves to no area, no prior decision is found, and the
@@ -1964,12 +1965,18 @@ def get_tree(store, task_id: str) -> dict:
                 parts.append('A declared work item is unlinked; inspect work_item_association and use bridge_link_work_item after exact lookup and read. This is context, not an approval gate')
             if 'ambiguous' in association_states:
                 parts.append('A declared work item matches multiple recorded identities. Inspect work_item_association.links and their origins; report the ambiguity until the intended work item is explicit. Adding another association cannot narrow existing links')
-    return {"source_anchors": source_anchors, "work_item_association": work_item, "task_id": task_id, "title": run["title"], "goal": run["goal"] or "", "repo": run["repo"],
+    from .investigation import latest as discovery_reviews
+    investigations = discovery_reviews(store, task_id)
+    if any(r['model_pending'] for r in investigations):
+        parts.append('Raven is reviewing the investigation; use bridge_wait or read discovery_reviews again')
+    elif investigations and investigations[0]['unaddressed']:
+        parts.append('Review discovery_reviews and address each finding through bridge_review_discovery')
+    return {"discovery_reviews": investigations, "source_anchors": source_anchors, "work_item_association": work_item, "task_id": task_id, "title": run["title"], "goal": run["goal"] or "", "repo": run["repo"],
             "requester": run["requester"] or "", "facts": _json_dict(run["facts"] if "facts" in run.keys() else ""),
             "status": run["status"], "verdict": run["verdict"] or "",
             "verdict_why": run["verdict_why"] or "", "counts": dict(counts),
             "needs_review": bool(run["needs_review"]) if "needs_review" in run.keys() else False,
-            "model_pending": bool(_json_dict(run["discovery"]).get("model_pending")) or any(n.get("model_pending") for n in nodes),
+            "model_pending": bool(_json_dict(run["discovery"]).get("model_pending")) or any(n.get("model_pending") for n in nodes) or any(r['model_pending'] for r in investigations),
             "nodes": nest(""), "followups": followups, "observed_at": observed_at,
             "observed_revision": observed_revision, "notes": notes,
             "scope_clarifications": scope_clarifications,
@@ -2167,6 +2174,10 @@ def finish_task(store, data, sleep=None, stop=None) -> dict:
             u["reason"] = reasons[u["path"]]
     if reasons:
         store.graph.append_event("uncovered_justified", {"task_id": task_id, "reasons": reasons})
+    from .investigation import finish_guard
+    discovery_guard = finish_guard(store, task_id, diff) if status == 'completed' else None
+    if discovery_guard:
+        return discovery_guard
     result = store.update_run(task_id, {"status": status})
     tree = get_tree(store, task_id)
     nodes = _flatten(tree["nodes"])
@@ -2260,6 +2271,7 @@ def finish_task(store, data, sleep=None, stop=None) -> dict:
     guidance = get_tree(store, task_id)
     guidance_review = guidance.get("review")
     return {**result, "counts": guidance["counts"], "next": guidance["next"],
+            "discovery_reviews": guidance.get("discovery_reviews", []),
             "guidance_snapshot": {
                 "observed_at": guidance["observed_at"], "task_status": guidance["status"],
                 "needs_review": guidance["needs_review"],
@@ -2676,6 +2688,7 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
         raise Invalid(f"node_id {node_id!r} is not on task {task_id}")
     watched = [node_id] if node_id else [nid for nid, n in before.items() if n["blocking"]]
     result = {"task_id": task_id, "timed_out": False, "waited_seconds": 0.0, "changed": [], "waiting_on": [],
+              "discovery_reviews": tree.get('discovery_reviews', []),
               "counts": tree["counts"], "timeout_applied": timeout, "observed_at": tree["observed_at"],
               "observed_revision": tree.get('observed_revision', {}),
               **({"review": tree["review"]} if tree.get("review") is not None else {})}
@@ -2710,8 +2723,7 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
         changed.append({**_change(store, before[node_id]), "from": "", "new": False})
     notes_before = len(tree.get("notes") or [])
     review_pending = not node_id and (tree.get('review') or {}).get('status') == 'running'
-    reading = (bool(_json_dict(_task(store, task_id)['discovery']).get('model_pending'))
-               or any(n.get('model_pending') for n in before.values()) or review_pending)
+    reading = tree.get('model_pending', False) or review_pending
     verdict_before = tree.get('verdict')
     if changed or result["notes"] or (not watched and not reading):
         result["changed"] = changed
@@ -2734,8 +2746,7 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
         sleep(max(0.0, min(interval, timeout - elapsed)))
         tree = get_tree(store, task_id)
         after = {n["node_id"]: n for n in _flatten(tree["nodes"])}
-        reading_now = (bool(_json_dict(_task(store, task_id)['discovery']).get('model_pending'))
-                       or any(n.get('model_pending') for n in after.values())
+        reading_now = (tree.get('model_pending', False)
                        or (not node_id and (tree.get('review') or {}).get('status') == 'running'))
         if tree.get('verdict') != verdict_before or (reading and not reading_now):
             result['task'] = _task_as_started(store, _task(store, task_id))
@@ -2754,6 +2765,7 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
     result["waited_seconds"] = round(clock() - start, 2)
     result["changed"] = changed
     result["counts"] = tree["counts"]
+    result['discovery_reviews'] = tree.get('discovery_reviews', [])
     result["observed_at"] = tree["observed_at"]
     result['observed_revision'] = tree.get('observed_revision', {})
     if tree.get("review") is not None:
@@ -3345,6 +3357,15 @@ def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, or
         scratch_ids = result.get('drafts') or []
         scratch = result.get('duplicate_stub') or result['id']
         outcome = dict(graph.db.execute('SELECT * FROM decisions WHERE id=?', (scratch,)).fetchone())
+        if not owner_id and outcome.get('signoff') != 'rule':
+            from .contact_reasoning import choose
+            with graph.source_scope(run['id']):
+                contacts = choose(graph, cfg, run['repo'], live['question'], paths=paths, context=ctx,
+                                  category=live.get('category') or '', facts=_json_dict(live.get('facts')),
+                                  requester=requester, task_id=run['id'], decision_id=did)
+            if contacts:
+                outcome['owner_id'] = graph.owner_id_for(contacts[0][0])
+                outcome['owner_evidence'] = '; '.join(contacts[0][1])
         if outcome['status'] in ('resolved','partial','assumed','proposed') and not outcome.get('signoff'):
             outcome['signoff'] = 'required'
         if not outcome.get('owner_id'):

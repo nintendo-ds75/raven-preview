@@ -1,0 +1,2 @@
+# Local inference; no organization text is sent to an embedding provider.
+fastembed==0.7.4

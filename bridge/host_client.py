@@ -24,6 +24,9 @@ HOOK_TIMEOUT_MESSAGE = ('Raven task registration did not finish before its deadl
 
 # Shared with MCP initialization; kept here so the copied hook stays standalone.
 DECISION_GUIDANCE = (
+    'After investigating an engaged task, call bridge_review_discovery with your observations, citations and discovered paths before asking people. '
+    'Raven will challenge missing decisions; adopt genuine judgments as nodes and record reasons for the other findings. '
+    'Before finishing, repeat with phase=finish and the actual diff. Users do not need to supply paths or a decision list. '
     'Create a decision node for a judgment or authorization choice, not a fact you can establish by inspection. '
     'Put code and test findings in the relevant decision context with revision, path/line or record/version '
     'citations and uncertainty; use facts only for known applicability facts, never inferred authority. '

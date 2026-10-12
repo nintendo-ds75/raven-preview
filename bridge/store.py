@@ -1343,6 +1343,8 @@ class Store:
             }
             if full_history:
                 out.update(revisions=execution["revisions"], ownership=ownership_rows(db, limit=0))
+                out['discovery_reviews'] = [dict(row) for row in db.execute(
+                    'SELECT * FROM investigation_reviews ORDER BY created_at,id')]
             return out
 
     def list_runs(self, page=1, size=50, status=""):

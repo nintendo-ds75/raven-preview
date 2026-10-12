@@ -208,7 +208,7 @@ Embeddings are always local (a hashed bag of stemmed words); no embedding API is
 - Ownership: an ownership graph ingested from Git history, blame, CODEOWNERS, reviews and imported record authors, linked to Slack contacts. Answers and referrals teach scoped first contacts; explicit ownership overrides remain optional.
 - Decision memory: search signed and evidence-resolved answers by stemmed lexical overlap, hashed-embedding cosine, and backend-native text search (SQLite FTS5 or PostgreSQL), over question, context, answer, and rationale, recency-weighted, with superseded rows excluded and the newest of a same-subject pair ranked first.
 - The ladder: applicable prior answers and model-checked records can resolve with a citation; without answerability checking, retrieved records remain context for a person. Predictions are labeled as such and never sign-off; corrections withdraw dependent suggestions and supersede.
-- MCP: twenty tools for tasks, source import, connection status and evidence export over the standard HTTP transport share the same data with the web inbox. None of them approves anything.
+- MCP: twenty-one tools for tasks, source import, connection status and evidence export over the standard HTTP transport share the same data with the web inbox. None of them approves anything.
 - Visibility: activity feed, live inbox refresh, per-decision event history including every rung's verdict, the ownership graph, and full JSON history export.
 - Local protections: Host/Origin validation, CSRF tokens for REST writes, HTML escaping, a restrictive content security policy, and optimistic concurrency checks for inbox answers.
 
@@ -309,7 +309,7 @@ If a relevant learned route depends on material facts missing from the current t
 
 **With inference configured**, a fast model (`BRIDGE_FAST_MODEL`) can map a question with no path to the tree's directories, write the brief the owner reads and advise the kickoff verdict from the same digest the rules saw. A prior decision or pending question on the paths still engages. Without inference the deterministic protocol remains available.
 
-The twenty tools exposed to agents (the running server's `tools/list` is the authoritative schema):
+The twenty-one tools exposed to agents (the running server's `tools/list` is the authoritative schema):
 
 | Tool | Purpose |
 | --- | --- |
@@ -329,6 +329,7 @@ The twenty tools exposed to agents (the running server's `tools/list` is the aut
 | `bridge_lookup_record` | Find an exact external work-item/source identity or current display ref in one repository. Returns explicit ambiguity or bounded observed-version metadata and typed task/decision links, without an import or an internal ID prerequisite; lookup never approves anything. |
 | `bridge_link_work_item` | Add an existing record's exact current version as task `work_item` or `context`, without reimporting. Requires `task_id`, exact `repo`, `record_id`, `source_version_id`, canonical `provider`, `namespace`, and `object_kind`. Optional `external_id` or `ref` (never both) must resolve uniquely to that record. Additive and idempotent; never supporting evidence or approval. See [the association contract](context-memory.md#link-an-existing-work-item). |
 | `bridge_search_context` | Retrieve operator-configured Airweave excerpts into the same versioned graph, join them to related human decisions, and attach observed source versions to the task. Unknown permissions and transient Slack search results are excluded. |
+| `bridge_review_discovery` | Review the host’s cited investigation and current diff for missing judgments. Returns a durable review; the host adopts questions or records reasons. It grants no approval. |
 | `bridge_host_event` | Bind an authenticated coding-host session, register task prompts from installed hooks, and lease/acknowledge durable resume notifications. Raven does not execute callback commands. |
 | `bridge_context_sources` | What context Raven can read: each native source (Slack public channels, Jira projects, documentation sites) with its state, last sync, record count and refusals by reason, the sources not configured and how to enable them, GitHub sync and Airweave. Read-only. |
 | `bridge_connection_status` | What is connected and what is not: readiness findings, ingested sources and records, GitHub sync per repository with how to make it current, Slack contact discovery, failed deliveries and replies, and the triage channel. |

@@ -1,0 +1,211 @@
+{
+  "repo": "urllib3/urllib3",
+  "revision": "3d934808397b9cee14c6f399a4e6c9ddeb17a00d",
+  "checks": {
+    "discovery_completed": false,
+    "discovery_found_choices": false,
+    "review_created_no_decisions": true,
+    "learned_retrieval_active": true,
+    "policy_retrieved": true,
+    "runtime_contact_found": true,
+    "no_authority_invented": true,
+    "natural_reply_intents": true
+  },
+  "limits": [
+    "No coding host was launched.",
+    "Slack statements and policy records are synthetic.",
+    "The repository and inference calls are real."
+  ],
+  "ingest": {
+    "files": 45,
+    "commits": 250,
+    "merges": 165,
+    "owners": 34,
+    "prs": 83,
+    "truncated": 250,
+    "repo": "urllib3/urllib3",
+    "integrators": [
+      "Andrey Petrov",
+      "Cory Benfield"
+    ],
+    "squashed": 94,
+    "maintainers": 0,
+    "bots_skipped": 0,
+    "github": {
+      "pulls": 0,
+      "approvals": 0,
+      "records": 0
+    }
+  },
+  "discovery": {
+    "review_id": "58c93610ec194492814febbd4ec7ab92",
+    "phase": "investigation",
+    "input_hash": "398430fec2b85308dc7faedd2891271f9b4576e059716e2e126aa64196f2c582",
+    "status": "unavailable",
+    "summary": "Model review unavailable; the host must check decision coverage.",
+    "findings": [],
+    "error": "ValueError",
+    "model_pending": false,
+    "unaddressed": [],
+    "notice": "Suggestions require host investigation. They do not authorize work or prove complete decision coverage."
+  },
+  "retrieval": {
+    "diagnostic": {
+      "backend": "local",
+      "model": "BAAI/bge-small-en-v1.5",
+      "indexed": 261,
+      "chunks": 263
+    },
+    "refs": [
+      "RUNTIME-1",
+      "326",
+      "835",
+      "1066",
+      "396",
+      "1652",
+      "955",
+      "1795",
+      "e9171e8d77b4",
+      "ef46f403db40",
+      "DOCS-1",
+      "2952",
+      "6af53ac41757",
+      "848",
+      "631",
+      "3466"
+    ]
+  },
+  "contacts": [
+    [
+      "Mira Example",
+      [
+        "inferred first contact selected from cited evidence; confirm or refer",
+        "inferred first contact: authored doc RUNTIME-1 for src/urllib3/util/retry.py; confirm or refer",
+        "Authored doc RUNTIME-1: Server-directed pause policy",
+        "A caller may cap the waiting period suggested by a server. The existing default remains unlimited. A zero cap skips the wait but still retries. Raw header parsing must remain unchanged. Reject negative, NaN and infinite limits. Explain zero and invalid limits in API documentation."
+      ],
+      0.25
+    ],
+    [
+      "Theo Example",
+      [
+        "inferred first contact; confirm or refer in Slack",
+        "inferred first contact: authored doc DOCS-1 for src/urllib3/util/retry.py; confirm or refer"
+      ],
+      0.25
+    ]
+  ],
+  "slack_readings": [
+    {
+      "message": "Not me, please ask Theo Example just this one.",
+      "expected": "handoff",
+      "reading": {
+        "kind": "handoff",
+        "to": "Theo Example",
+        "scope_kind": "none",
+        "contact_outcome": "",
+        "reply": "",
+        "answer": "",
+        "rationale": "",
+        "conditions": "",
+        "expires": "",
+        "scope": ""
+      }
+    },
+    {
+      "message": "I will look tomorrow.",
+      "expected": "chat",
+      "reading": {
+        "kind": "chat",
+        "reply": "Got it. When you're ready, we need to decide: should a zero Retry-After cap disable retries, allow immediate retry, or something else? I can explain the options or wait for your input tomorrow.",
+        "answer": "",
+        "rationale": "",
+        "to": "",
+        "conditions": "",
+        "expires": "",
+        "scope_kind": "",
+        "scope": "",
+        "contact_outcome": ""
+      }
+    },
+    {
+      "message": "Zero should skip sleeping while keeping the retry. This is for library-next only.",
+      "expected": "answer",
+      "reading": {
+        "kind": "answer",
+        "answer": "Zero should skip sleeping while keeping the retry. This is for library-next only.",
+        "rationale": "",
+        "original": "Zero should skip sleeping while keeping the retry. This is for library-next only.",
+        "answer_form": "complete",
+        "authored_verbatim": true
+      }
+    }
+  ],
+  "events": [
+    {
+      "kind": "discovery_reviewed",
+      "detail": {
+        "error": "ValueError",
+        "findings": [],
+        "input_hash": "398430fec2b85308dc7faedd2891271f9b4576e059716e2e126aa64196f2c582",
+        "phase": "investigation",
+        "review_id": "58c93610ec194492814febbd4ec7ab92",
+        "status": "unavailable",
+        "summary": "Model review unavailable; the host must check decision coverage.",
+        "task_id": "57d01da9fcf8"
+      }
+    },
+    {
+      "kind": "contact_reasoned",
+      "detail": {
+        "attempt": 1,
+        "candidates": [
+          {
+            "evidence": {
+              "c1:e1": "inferred first contact; confirm or refer in Slack",
+              "c1:e2": "inferred first contact: authored doc DOCS-1 for src/urllib3/util/retry.py; confirm or refer",
+              "c1:e3": "Authored doc DOCS-1: Public API release notes",
+              "c1:e4": "New constructor options need a release note and API documentation covering defaults and boundary values."
+            },
+            "id": "c1",
+            "name": "Theo Example",
+            "person_id": "4eb3252accb6"
+          },
+          {
+            "evidence": {
+              "c2:e1": "inferred first contact; confirm or refer in Slack",
+              "c2:e2": "inferred first contact: authored doc RUNTIME-1 for src/urllib3/util/retry.py; confirm or refer",
+              "c2:e3": "Authored doc RUNTIME-1: Server-directed pause policy",
+              "c2:e4": "A caller may cap the waiting period suggested by a server. The existing default remains unlimited. A zero cap skips the wait but still retries. Raw header parsing must remain unchanged. Reject negative, NaN and infinite limits. Explain zero and invalid limits in API documentation."
+            },
+            "id": "c2",
+            "name": "Mira Example",
+            "person_id": "60da6e5495a5"
+          }
+        ],
+        "decision_id": "",
+        "evidence": [
+          "c2:e2",
+          "c2:e3",
+          "c2:e4"
+        ],
+        "query": "Can an application bound the pause before attempting the request again?",
+        "retrieval": {
+          "backend": "local",
+          "chunks": 263,
+          "indexed": 261,
+          "model": "BAAI/bge-small-en-v1.5"
+        },
+        "selected": "c2",
+        "task_id": "57d01da9fcf8",
+        "why": "Mira authored the doc on the server-directed pause policy, directly describing capping the retry delay\u2014matching this question and making her the right first contact to confirm or refer."
+      }
+    }
+  ],
+  "seconds": 82.75,
+  "models": {
+    "main": "claude-sonnet-5",
+    "fast": "claude-haiku-4-5-20251001",
+    "embeddings": "BAAI/bge-small-en-v1.5"
+  }
+}

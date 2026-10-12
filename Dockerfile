@@ -6,8 +6,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 bridge \
     && mkdir /data && chown bridge:bridge /data
-COPY requirements-postgres.txt requirements-agents.txt requirements-teams.txt ./
+COPY requirements-postgres.txt requirements-agents.txt requirements-teams.txt requirements-semantic.txt ./
 RUN pip install --no-cache-dir -r requirements-postgres.txt
+ARG INSTALL_SEMANTIC=true
+ENV FASTEMBED_CACHE_PATH=/opt/raven-models
+RUN if [ "$INSTALL_SEMANTIC" = true ]; then \
+      pip install --no-cache-dir -r requirements-semantic.txt \
+      && python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='BAAI/bge-small-en-v1.5', cache_dir='/opt/raven-models')" \
+      && chmod -R a+rX /opt/raven-models; fi
 ARG INSTALL_TEAMS=false
 RUN if [ "$INSTALL_TEAMS" = true ]; then pip install --no-cache-dir -r requirements-teams.txt; fi
 ARG INSTALL_AGENTS=false
