@@ -1,0 +1,187 @@
+diff --git a/changelog/3686.feature.rst b/changelog/3686.feature.rst
+new file mode 100644
+index 00000000..b9164888
+--- /dev/null
++++ b/changelog/3686.feature.rst
+@@ -0,0 +1,8 @@
++Added ``retry_after_max`` to ``Retry`` to cap how long urllib3 will actually
++sleep when respecting a server's ``Retry-After`` header. The parsed and
++reported ``Retry-After`` value is unaffected; only the sleep itself is
++bounded. Defaults to ``None`` (no limit), preserving the existing behavior.
++Setting ``retry_after_max`` to ``0`` still honors the ``Retry-After`` header
++(no exponential backoff fallback) but skips the actual wait. Negative,
++``NaN``, and infinite values raise ``ValueError`` at construction time. The
++configured limit survives retry cloning.
+diff --git a/src/urllib3/util/retry.py b/src/urllib3/util/retry.py
+index 0456cceb..65b16f34 100644
+--- a/src/urllib3/util/retry.py
++++ b/src/urllib3/util/retry.py
+@@ -2,6 +2,7 @@ from __future__ import annotations
+ 
+ import email
+ import logging
++import math
+ import random
+ import re
+ import time
+@@ -174,6 +175,30 @@ class Retry:
+         Whether to respect Retry-After header on status codes defined as
+         :attr:`Retry.RETRY_AFTER_STATUS_CODES` or not.
+ 
++    :param float retry_after_max:
++        The maximum number of seconds to actually sleep for when respecting
++        a server's ``Retry-After`` header. This only bounds the sleep
++        itself; the parsed and reported ``Retry-After`` value (for example
++        from :meth:`~Retry.get_retry_after`) is unaffected.
++
++        By default, there is no limit and urllib3 will sleep for however
++        long the server requests. Set this if a server-provided
++        ``Retry-After`` could exceed a duration your application can
++        afford to wait.
++
++        Setting ``retry_after_max`` to ``0`` does not disable respecting the
++        ``Retry-After`` header: a present header still counts as handled (so
++        urllib3 won't fall back to exponential backoff), it just means
++        urllib3 won't actually wait before retrying. This is unrelated to
++        the server sending a ``Retry-After`` value of ``0``, which is
++        unaffected by this setting.
++
++        Must be a non-negative, finite number, or ``None``; a negative,
++        ``NaN``, or infinite value raises ``ValueError``.
++
++        This limit is preserved across retries (including by :meth:`~Retry.new`
++        and :meth:`~Retry.increment`).
++
+     :param Collection remove_headers_on_redirect:
+         Sequence of headers to remove from the request when a response
+         indicating a redirect is returned before firing off the redirected
+@@ -219,6 +244,7 @@ class Retry:
+             str
+         ] = DEFAULT_REMOVE_HEADERS_ON_REDIRECT,
+         backoff_jitter: float = 0.0,
++        retry_after_max: float | None = None,
+     ) -> None:
+         self.total = total
+         self.connect = connect
+@@ -244,6 +270,17 @@ class Retry:
+         )
+         self.backoff_jitter = backoff_jitter
+ 
++        if retry_after_max is not None and (
++            retry_after_max < 0
++            or math.isnan(retry_after_max)
++            or math.isinf(retry_after_max)
++        ):
++            raise ValueError(
++                f"retry_after_max must be a non-negative, finite number or "
++                f"None, got {retry_after_max!r}"
++            )
++        self.retry_after_max = retry_after_max
++
+     def new(self, **kw: typing.Any) -> Self:
+         params = dict(
+             total=self.total,
+@@ -262,6 +299,7 @@ class Retry:
+             remove_headers_on_redirect=self.remove_headers_on_redirect,
+             respect_retry_after_header=self.respect_retry_after_header,
+             backoff_jitter=self.backoff_jitter,
++            retry_after_max=self.retry_after_max,
+         )
+ 
+         params.update(kw)
+@@ -335,6 +373,8 @@ class Retry:
+     def sleep_for_retry(self, response: BaseHTTPResponse) -> bool:
+         retry_after = self.get_retry_after(response)
+         if retry_after:
++            if self.retry_after_max is not None:
++                retry_after = min(retry_after, self.retry_after_max)
+             time.sleep(retry_after)
+             return True
+ 
+diff --git a/test/test_retry.py b/test/test_retry.py
+index 85206b90..7181e135 100644
+--- a/test/test_retry.py
++++ b/test/test_retry.py
+@@ -358,6 +358,58 @@ class TestRetry:
+         retry = Retry()
+         assert retry.parse_retry_after(value) == expected
+ 
++    @pytest.mark.parametrize("retry_after_max", [None, 10])
++    def test_parse_retry_after_unaffected_by_max(
++        self, retry_after_max: float | None
++    ) -> None:
++        # retry_after_max only bounds the actual sleep, not the parsed value.
++        retry = Retry(retry_after_max=retry_after_max)
++        assert retry.parse_retry_after("1000") == 1000
++
++    @pytest.mark.parametrize("retry_after_max", [None, 10])
++    def test_get_retry_after_unaffected_by_max(
++        self, retry_after_max: float | None
++    ) -> None:
++        # retry_after_max only bounds the actual sleep, not the reported value.
++        retry = Retry(retry_after_max=retry_after_max)
++        response = HTTPResponse(status=503, headers={"Retry-After": "1000"})
++        assert retry.get_retry_after(response) == 1000
++
++    def test_retry_after_max_propagated(self) -> None:
++        retry = Retry(retry_after_max=42)
++        new_retry = retry.new()
++        assert new_retry.retry_after_max == 42
++
++    def test_retry_after_max_propagated_through_increment(self) -> None:
++        retry = Retry(retry_after_max=42)
++        new_retry = retry.increment(method="GET")
++        assert new_retry.retry_after_max == 42
++
++    @pytest.mark.parametrize(
++        "retry_after_max", [-1, -0.5, float("nan"), float("inf"), float("-inf")]
++    )
++    def test_retry_after_max_invalid(self, retry_after_max: float) -> None:
++        with pytest.raises(ValueError):
++            Retry(retry_after_max=retry_after_max)
++
++    @pytest.mark.parametrize("retry_after_max", [0, 0.0, 1, 100.5, None])
++    def test_retry_after_max_valid(self, retry_after_max: float | None) -> None:
++        retry = Retry(retry_after_max=retry_after_max)
++        assert retry.retry_after_max == retry_after_max
++
++    def test_retry_after_max_zero_skips_sleep_without_backoff(self) -> None:
++        retry = Retry(backoff_factor=1, retry_after_max=0)
++        # Build up backoff history so get_backoff_time() would be non-zero
++        # if sleep() fell through to the exponential backoff path.
++        retry = retry.increment(method="GET")
++        retry = retry.increment(method="GET")
++
++        with mock.patch("time.sleep") as sleep_mock:
++            response = HTTPResponse(status=503, headers={"Retry-After": "3600"})
++            retry.sleep(response)
++
++            sleep_mock.assert_called_once_with(0)
++
+     @pytest.mark.parametrize("respect_retry_after_header", [True, False])
+     def test_respect_retry_after_header_propagated(
+         self, respect_retry_after_header: bool
+@@ -426,3 +478,23 @@ class TestRetry:
+                 sleep_mock.assert_called_with(sleep_duration)
+             else:
+                 sleep_mock.assert_not_called()
++
++    def test_respect_retry_after_header_sleep_capped(self) -> None:
++        retry = Retry(retry_after_max=60)
++
++        with mock.patch("time.sleep") as sleep_mock:
++            response = HTTPResponse(status=503, headers={"Retry-After": "3600"})
++
++            retry.sleep(response)
++
++            sleep_mock.assert_called_with(60)
++
++    def test_respect_retry_after_header_sleep_not_capped(self) -> None:
++        retry = Retry(retry_after_max=3600)
++
++        with mock.patch("time.sleep") as sleep_mock:
++            response = HTTPResponse(status=503, headers={"Retry-After": "60"})
++
++            retry.sleep(response)
++
++            sleep_mock.assert_called_with(60)

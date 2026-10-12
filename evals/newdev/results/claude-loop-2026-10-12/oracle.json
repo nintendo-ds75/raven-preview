@@ -1,0 +1,6 @@
+{
+  "parameter": "retry_after_max",
+  "default": null,
+  "policy": "Default remains unlimited; cap only sleep, not raw parse/get_retry_after. Zero skips waiting but still counts as handled Retry-After (no exponential fallback). Reject negatives, NaN and infinities immediately at construction. Preserve cap in new()/increment(). Do not change exponential backoff behavior. Explain constructor/default/zero/invalid values in API docs and add a changelog.",
+  "boundary": "Synthetic org policy, not historical urllib3 policy."
+}

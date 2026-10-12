@@ -1,0 +1,844 @@
+{
+  "bundle": {
+    "algorithm": "sha256",
+    "id": "ddd453556635c9545a304ecd40d99084e5e9155fa632e154eaec560742d9acb7",
+    "payload": {
+      "change": {
+        "bytes": 7839,
+        "diff": "diff --git a/changelog/3686.feature.rst b/changelog/3686.feature.rst\nnew file mode 100644\nindex 00000000..b9164888\n--- /dev/null\n+++ b/changelog/3686.feature.rst\n@@ -0,0 +1,8 @@\n+Added ``retry_after_max`` to ``Retry`` to cap how long urllib3 will actually\n+sleep when respecting a server's ``Retry-After`` header. The parsed and\n+reported ``Retry-After`` value is unaffected; only the sleep itself is\n+bounded. Defaults to ``None`` (no limit), preserving the existing behavior.\n+Setting ``retry_after_max`` to ``0`` still honors the ``Retry-After`` header\n+(no exponential backoff fallback) but skips the actual wait. Negative,\n+``NaN``, and infinite values raise ``ValueError`` at construction time. The\n+configured limit survives retry cloning.\ndiff --git a/src/urllib3/util/retry.py b/src/urllib3/util/retry.py\nindex 0456cceb..65b16f34 100644\n--- a/src/urllib3/util/retry.py\n+++ b/src/urllib3/util/retry.py\n@@ -2,6 +2,7 @@ from __future__ import annotations\n \n import email\n import logging\n+import math\n import random\n import re\n import time\n@@ -174,6 +175,30 @@ class Retry:\n         Whether to respect Retry-After header on status codes defined as\n         :attr:`Retry.RETRY_AFTER_STATUS_CODES` or not.\n \n+    :param float retry_after_max:\n+        The maximum number of seconds to actually sleep for when respecting\n+        a server's ``Retry-After`` header. This only bounds the sleep\n+        itself; the parsed and reported ``Retry-After`` value (for example\n+        from :meth:`~Retry.get_retry_after`) is unaffected.\n+\n+        By default, there is no limit and urllib3 will sleep for however\n+        long the server requests. Set this if a server-provided\n+        ``Retry-After`` could exceed a duration your application can\n+        afford to wait.\n+\n+        Setting ``retry_after_max`` to ``0`` does not disable respecting the\n+        ``Retry-After`` header: a present header still counts as handled (so\n+        urllib3 won't fall back to exponential backoff), it just means\n+        urllib3 won't actually wait before retrying. This is unrelated to\n+        the server sending a ``Retry-After`` value of ``0``, which is\n+        unaffected by this setting.\n+\n+        Must be a non-negative, finite number, or ``None``; a negative,\n+        ``NaN``, or infinite value raises ``ValueError``.\n+\n+        This limit is preserved across retries (including by :meth:`~Retry.new`\n+        and :meth:`~Retry.increment`).\n+\n     :param Collection remove_headers_on_redirect:\n         Sequence of headers to remove from the request when a response\n         indicating a redirect is returned before firing off the redirected\n@@ -219,6 +244,7 @@ class Retry:\n             str\n         ] = DEFAULT_REMOVE_HEADERS_ON_REDIRECT,\n         backoff_jitter: float = 0.0,\n+        retry_after_max: float | None = None,\n     ) -> None:\n         self.total = total\n         self.connect = connect\n@@ -244,6 +270,17 @@ class Retry:\n         )\n         self.backoff_jitter = backoff_jitter\n \n+        if retry_after_max is not None and (\n+            retry_after_max < 0\n+            or math.isnan(retry_after_max)\n+            or math.isinf(retry_after_max)\n+        ):\n+            raise ValueError(\n+                f\"retry_after_max must be a non-negative, finite number or \"\n+                f\"None, got {retry_after_max!r}\"\n+            )\n+        self.retry_after_max = retry_after_max\n+\n     def new(self, **kw: typing.Any) -> Self:\n         params = dict(\n             total=self.total,\n@@ -262,6 +299,7 @@ class Retry:\n             remove_headers_on_redirect=self.remove_headers_on_redirect,\n             respect_retry_after_header=self.respect_retry_after_header,\n             backoff_jitter=self.backoff_jitter,\n+            retry_after_max=self.retry_after_max,\n         )\n \n         params.update(kw)\n@@ -335,6 +373,8 @@ class Retry:\n     def sleep_for_retry(self, response: BaseHTTPResponse) -> bool:\n         retry_after = self.get_retry_after(response)\n         if retry_after:\n+            if self.retry_after_max is not None:\n+                retry_after = min(retry_after, self.retry_after_max)\n             time.sleep(retry_after)\n             return True\n \ndiff --git a/test/test_retry.py b/test/test_retry.py\nindex 85206b90..7181e135 100644\n--- a/test/test_retry.py\n+++ b/test/test_retry.py\n@@ -358,6 +358,58 @@ class TestRetry:\n         retry = Retry()\n         assert retry.parse_retry_after(value) == expected\n \n+    @pytest.mark.parametrize(\"retry_after_max\", [None, 10])\n+    def test_parse_retry_after_unaffected_by_max(\n+        self, retry_after_max: float | None\n+    ) -> None:\n+        # retry_after_max only bounds the actual sleep, not the parsed value.\n+        retry = Retry(retry_after_max=retry_after_max)\n+        assert retry.parse_retry_after(\"1000\") == 1000\n+\n+    @pytest.mark.parametrize(\"retry_after_max\", [None, 10])\n+    def test_get_retry_after_unaffected_by_max(\n+        self, retry_after_max: float | None\n+    ) -> None:\n+        # retry_after_max only bounds the actual sleep, not the reported value.\n+        retry = Retry(retry_after_max=retry_after_max)\n+        response = HTTPResponse(status=503, headers={\"Retry-After\": \"1000\"})\n+        assert retry.get_retry_after(response) == 1000\n+\n+    def test_retry_after_max_propagated(self) -> None:\n+        retry = Retry(retry_after_max=42)\n+        new_retry = retry.new()\n+        assert new_retry.retry_after_max == 42\n+\n+    def test_retry_after_max_propagated_through_increment(self) -> None:\n+        retry = Retry(retry_after_max=42)\n+        new_retry = retry.increment(method=\"GET\")\n+        assert new_retry.retry_after_max == 42\n+\n+    @pytest.mark.parametrize(\n+        \"retry_after_max\", [-1, -0.5, float(\"nan\"), float(\"inf\"), float(\"-inf\")]\n+    )\n+    def test_retry_after_max_invalid(self, retry_after_max: float) -> None:\n+        with pytest.raises(ValueError):\n+            Retry(retry_after_max=retry_after_max)\n+\n+    @pytest.mark.parametrize(\"retry_after_max\", [0, 0.0, 1, 100.5, None])\n+    def test_retry_after_max_valid(self, retry_after_max: float | None) -> None:\n+        retry = Retry(retry_after_max=retry_after_max)\n+        assert retry.retry_after_max == retry_after_max\n+\n+    def test_retry_after_max_zero_skips_sleep_without_backoff(self) -> None:\n+        retry = Retry(backoff_factor=1, retry_after_max=0)\n+        # Build up backoff history so get_backoff_time() would be non-zero\n+        # if sleep() fell through to the exponential backoff path.\n+        retry = retry.increment(method=\"GET\")\n+        retry = retry.increment(method=\"GET\")\n+\n+        with mock.patch(\"time.sleep\") as sleep_mock:\n+            response = HTTPResponse(status=503, headers={\"Retry-After\": \"3600\"})\n+            retry.sleep(response)\n+\n+            sleep_mock.assert_called_once_with(0)\n+\n     @pytest.mark.parametrize(\"respect_retry_after_header\", [True, False])\n     def test_respect_retry_after_header_propagated(\n         self, respect_retry_after_header: bool\n@@ -426,3 +478,23 @@ class TestRetry:\n                 sleep_mock.assert_called_with(sleep_duration)\n             else:\n                 sleep_mock.assert_not_called()\n+\n+    def test_respect_retry_after_header_sleep_capped(self) -> None:\n+        retry = Retry(retry_after_max=60)\n+\n+        with mock.patch(\"time.sleep\") as sleep_mock:\n+            response = HTTPResponse(status=503, headers={\"Retry-After\": \"3600\"})\n+\n+            retry.sleep(response)\n+\n+            sleep_mock.assert_called_with(60)\n+\n+    def test_respect_retry_after_header_sleep_not_capped(self) -> None:\n+        retry = Retry(retry_after_max=3600)\n+\n+        with mock.patch(\"time.sleep\") as sleep_mock:\n+            response = HTTPResponse(status=503, headers={\"Retry-After\": \"60\"})\n+\n+            retry.sleep(response)\n+\n+            sleep_mock.assert_called_with(60)\n",
+        "sha256": "8309f0a2816c5089c89ad51d248d1de57b82cf00a49a94058e51347868a6ed22"
+      },
+      "checks": {
+        "independently_verified": false,
+        "provenance": "coding-host-reported",
+        "text": "/opt/venv/bin/python -m pytest test/test_retry.py test/test_poolmanager.py -q -> 116 passed, 1 skipped (includes test_retry_after_max_propagated_through_increment, which directly verifies increment() propagates retry_after_max). flake8/mypy/black not installed in this venv; manually verified no line exceeds flake8's configured max-line-length (99)."
+      },
+      "decisions": [
+        {
+          "answer": "",
+          "answer_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "answered_by": "",
+          "applicability": "",
+          "attribution": {
+            "actor_basis": "",
+            "actor_id": "",
+            "actor_name": "",
+            "answered_at": "",
+            "signed_hash": "",
+            "signed_revision": ""
+          },
+          "authority_evidence": "",
+          "authorized": false,
+          "blocking": false,
+          "category": "policy",
+          "citations": [
+            {
+              "id": "5cd04c21c4fa",
+              "kind": "decision"
+            }
+          ],
+          "duplicate_of": "",
+          "evidence": "",
+          "facts": {},
+          "needs_review": false,
+          "node_id": "5cd04c21c4fa",
+          "parent_id": "ee43bf873a9d",
+          "path": "src/urllib3/util/retry.py",
+          "question": "What must the release note and user documentation say about zero and invalid Retry-After limits?",
+          "rationale": "",
+          "required_signers": [],
+          "resolution": null,
+          "reusable": false,
+          "rule_conditions": "",
+          "rule_expires": "",
+          "rule_scope": "",
+          "signature_records": [],
+          "signatures": [],
+          "signed_by": "",
+          "signoff": "",
+          "source_decision_id": "5cd04c21c4fa",
+          "source_revision": "2026-10-12T21:09:06.846158+00:00",
+          "sources": [],
+          "status": "adopted",
+          "updated_at": "2026-10-12T21:09:06.846158+00:00"
+        },
+        {
+          "answer": "For library-next, the Retry API docstring and the changelog fragment must explicitly say: retry_after_max defaults to None and leaves existing behavior unchanged; zero skips waiting while still handling Retry-After, without exponential-backoff fallback; negative values, NaN, and either infinity raise ValueError at construction; parsing and reported Retry-After values are never capped. Mention that the configured limit survives retry cloning. No separate user-guide page is needed",
+          "answer_sha256": "af3108435bc8e4b7e86c42e93d63aa971cf4716ef209cc3ac80067aa8cc2507b",
+          "answered_by": "Theo Example",
+          "applicability": "{}",
+          "attribution": {
+            "actor_basis": "owner",
+            "actor_id": "8a6aab2a3ab7",
+            "actor_name": "Theo Example",
+            "answered_at": "",
+            "signed_hash": "af3108435bc8e4b7",
+            "signed_revision": "2026-10-12T21:16:05.705290+00:00"
+          },
+          "authority_evidence": "handed on by Engineer 654255: \"Not me, please ask <@U12THEO> just this one. Theo decides the release documentation.\"",
+          "authorized": true,
+          "blocking": false,
+          "category": "policy",
+          "citations": [
+            {
+              "id": "ab037067279b",
+              "kind": "decision"
+            },
+            {
+              "decision_id": "ab037067279b",
+              "decision_version_id": "27a93f071ed4406d95ee2f9b76bbb566",
+              "detail": "",
+              "id": "ee43bf873a9d",
+              "kind": "derived",
+              "source_decision_id": "ee43bf873a9d",
+              "source_version_id": "39022fa463f74b918e9bbfa51bb16953"
+            }
+          ],
+          "duplicate_of": "",
+          "evidence": "",
+          "facts": {},
+          "needs_review": false,
+          "node_id": "ab037067279b",
+          "parent_id": "ee43bf873a9d",
+          "path": "src/urllib3/util/retry.py",
+          "question": "What must the release note and user documentation say about zero and invalid Retry-After limits?",
+          "rationale": "the API reference includes the docstring. This is my documentation decision for this task because callers need clear opt-in and edge-case behavior.",
+          "required_signers": [],
+          "resolution": null,
+          "reusable": false,
+          "rule_conditions": "",
+          "rule_expires": "",
+          "rule_scope": "",
+          "signature_records": [
+            {
+              "at": "2026-10-12T21:16:05.705290+00:00",
+              "by": "Theo Example",
+              "hash": "af3108435bc8e4b7",
+              "revision": "2026-10-12T21:16:05.705290+00:00",
+              "scope": {
+                "applicability": {},
+                "category": "policy",
+                "context": "Implemented per Mira's signed answer on ee43bf873a9d: `retry_after_max=0` still honors/handles the Retry-After header (so no exponential-backoff fallback) but causes `time.sleep(0)` — effectively no wait (src/urllib3/util/retry.py sleep_for_retry(), lines ~360-368, verified by test_retry_after_max_zero_skips_sleep_without_backoff in test/test_retry.py). Negative, NaN, and +/-infinity values raise `ValueError` at `Retry.__init__` construction time (src/urllib3/util/retry.py lines ~260-269, verified by test_retry_after_max_invalid/test_retry_after_max_valid).\n\nDocumented both of these in two places:\n1. The `Retry` class docstring param entry for `retry_after_max` (src/urllib3/util/retry.py lines ~178-191): \"A value of 0 means the Retry-After header is still honored (so no exponential backoff is applied), but urllib3 won't actually wait before retrying.\" and \"Must be a non-negative, finite number, or None; a negative, NaN, or infinite value raises ValueError.\"\n2. The towncrier release-note fragment changelog/3686.feature.rst: \"A value of 0 still honors the header (no exponential backoff fallback) but skips the actual wait. Negative, NaN, and infinite values raise ValueError at construction time.\"\nPaths: src/urllib3/util/retry.py, changelog/3686.feature.rst, test/test_retry.py",
+                "facts": {},
+                "followup_required": 0,
+                "id": "ab037067279b",
+                "options": [],
+                "path": "src/urllib3/util/retry.py",
+                "question": "What must the release note and user documentation say about zero and invalid Retry-After limits?",
+                "repo": "urllib3/urllib3",
+                "required_signers": [],
+                "reusable": 0,
+                "rule_conditions": "",
+                "rule_ended_at": "",
+                "rule_expires": "",
+                "rule_scope": "",
+                "run_id": "66ab400660f4",
+                "scope_key": "2f63c88d50079c4c5113",
+                "scope_paths": [
+                  "src/urllib3/util/retry.py",
+                  "changelog/3686.feature.rst",
+                  "test/test_retry.py"
+                ]
+              }
+            }
+          ],
+          "signatures": [
+            "Theo Example"
+          ],
+          "signed_by": "Theo Example",
+          "signoff": "signed",
+          "source_decision_id": "ab037067279b",
+          "source_revision": "2026-10-12T21:16:05.705290+00:00",
+          "sources": [
+            {
+              "author": "Mira Example",
+              "availability": "available",
+              "decision_version_id": "27a93f071ed4406d95ee2f9b76bbb566",
+              "external_id": "101",
+              "fingerprint": "8dbf51fb293d76b4eeebf4d439c248b62f0b3131a8a04e0853aa8fdff6450286",
+              "kind": "ticket",
+              "namespace": "127.0.0.1:17521",
+              "observed_at": "2026-10-12T20:26:21.947866+00:00",
+              "provenance": "import",
+              "provider": "jira",
+              "record_id": "6ff9cf6d53914e8197240186da07dc92",
+              "ref": "NET-101",
+              "repo": "urllib3/urllib3",
+              "role": "contradiction",
+              "sequence": 1,
+              "source_created_at": "2025-10-01T10:00:00Z",
+              "source_updated_at": "2025-10-01T10:00:00Z",
+              "source_version": "2025-10-01T10:00:00Z",
+              "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+              "title": "NET-101: Retry-After compatibility policy",
+              "url": "http://127.0.0.1:17521/jira/browse/NET-101"
+            },
+            {
+              "author": "Mira Example",
+              "availability": "available",
+              "decision_version_id": "27a93f071ed4406d95ee2f9b76bbb566",
+              "external_id": "101",
+              "fingerprint": "8dbf51fb293d76b4eeebf4d439c248b62f0b3131a8a04e0853aa8fdff6450286",
+              "kind": "ticket",
+              "namespace": "127.0.0.1:17521",
+              "observed_at": "2026-10-12T20:26:21.947866+00:00",
+              "provenance": "import",
+              "provider": "jira",
+              "record_id": "6ff9cf6d53914e8197240186da07dc92",
+              "ref": "NET-101",
+              "repo": "urllib3/urllib3",
+              "role": "support",
+              "sequence": 1,
+              "source_created_at": "2025-10-01T10:00:00Z",
+              "source_updated_at": "2025-10-01T10:00:00Z",
+              "source_version": "2025-10-01T10:00:00Z",
+              "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+              "title": "NET-101: Retry-After compatibility policy",
+              "url": "http://127.0.0.1:17521/jira/browse/NET-101"
+            }
+          ],
+          "status": "answered",
+          "updated_at": "2026-10-12T21:16:05.705290+00:00"
+        },
+        {
+          "answer": "For library-next, make retry_after_max optional and default it to None so existing clients keep unlimited Retry-After sleeping. Cap only the actual waiting step; parse_retry_after and get_retry_after must report the unchanged header delay. A zero cap skips sleeping but still handles the header, so it must not fall through to exponential backoff. Reject negative values, NaN, and either infinity with ValueError at construction. Preserve the value through new() and increment(), and leave exponential backoff unchanged. This is my decision for this task",
+          "answer_sha256": "99f990d3e1cc4388c8f11fed3fd9c61edd1ab591d3100b1aed057775d81a2859",
+          "answered_by": "Mira Example",
+          "applicability": "{}",
+          "attribution": {
+            "actor_basis": "owner",
+            "actor_id": "fb1168b4618d",
+            "actor_name": "Mira Example",
+            "answered_at": "",
+            "signed_hash": "99f990d3e1cc4388",
+            "signed_revision": "2026-10-12T21:06:11.311422+00:00"
+          },
+          "authority_evidence": "inferred first contact selected from cited evidence; confirm or refer; Type: Task\nStatus: Done\nResolution: Done\n\nFor library-next, existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning. Runtime policy questions go to Mira; release documentation questions go to Theo. No final policy exists yet for zero or invalid limits.; For library-next, existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning. Runtime policy questions go to Mira; release documentation questions go to Theo. No final policy exists yet for zero or invalid limits.",
+          "authorized": true,
+          "blocking": false,
+          "category": "policy",
+          "citations": [
+            {
+              "id": "ee43bf873a9d",
+              "kind": "decision"
+            },
+            {
+              "decision_id": "ab037067279b",
+              "decision_version_id": "27a93f071ed4406d95ee2f9b76bbb566",
+              "detail": "",
+              "id": "ab037067279b",
+              "kind": "derived",
+              "source_decision_id": "ee43bf873a9d",
+              "source_version_id": "39022fa463f74b918e9bbfa51bb16953"
+            }
+          ],
+          "duplicate_of": "",
+          "evidence": "",
+          "facts": {},
+          "needs_review": false,
+          "node_id": "ee43bf873a9d",
+          "parent_id": "",
+          "path": "src/urllib3/util/retry.py",
+          "question": "Should the new Retry-After upper bound be an opt-in parameter (default unlimited, i.e. no behavior change unless a caller sets it) rather than a new non-None default?",
+          "rationale": "callers need an explicit finite waiting budget without changing default behavior.",
+          "required_signers": [],
+          "resolution": null,
+          "reusable": false,
+          "rule_conditions": "",
+          "rule_expires": "",
+          "rule_scope": "",
+          "signature_records": [
+            {
+              "at": "2026-10-12T21:06:11.311422+00:00",
+              "by": "Mira Example",
+              "hash": "99f990d3e1cc4388",
+              "revision": "2026-10-12T21:06:11.311422+00:00",
+              "scope": {
+                "applicability": {},
+                "category": "policy",
+                "context": "Implemented as `Retry(retry_after_max: float | None = None)` in src/urllib3/util/retry.py. Default None preserves exact current behavior (verified by running the full existing test/test_retry.py suite unmodified: 67 passed before my changes, still pass after). When set, it clamps the value computed by `Retry.parse_retry_after()` (lines ~308-323, after the existing `seconds = max(seconds, 0)` floor) via `seconds = min(seconds, self.retry_after_max)`, which covers both the integer-seconds and HTTP-date forms of the Retry-After header, and is threaded through `Retry.new()` (lines 247-268) so it survives across retries. This mirrors the existing `backoff_max` parameter, which already caps the *computed backoff* delay the same way (same file, same pattern, introduced per commit f69b1c89 \"Make the maximum backoff time configurable\"). Task explicitly requires \"optional caller-controlled upper bound... without unexpectedly changing existing retry behavior,\" which this directly satisfies: no behavior changes for any caller who does not pass retry_after_max.\nPaths: src/urllib3/util/retry.py, test/test_retry.py, changelog/3686.feature.rst\nOptions: Opt-in, default None (no cap) - zero behavior change for existing callers, matches task wording | Non-None default cap (e.g. backoff_max's 120s) - would silently change behavior for services already relying on long Retry-After waits, violates task requirement",
+                "facts": {},
+                "followup_required": 0,
+                "id": "ee43bf873a9d",
+                "options": [
+                  "Opt-in, default None (no cap) - zero behavior change for existing callers, matches task wording",
+                  "Non-None default cap (e.g. backoff_max's 120s) - would silently change behavior for services already relying on long Retry-After waits, violates task requirement"
+                ],
+                "path": "src/urllib3/util/retry.py",
+                "question": "Should the new Retry-After upper bound be an opt-in parameter (default unlimited, i.e. no behavior change unless a caller sets it) rather than a new non-None default?",
+                "repo": "urllib3/urllib3",
+                "required_signers": [],
+                "reusable": 0,
+                "rule_conditions": "",
+                "rule_ended_at": "",
+                "rule_expires": "",
+                "rule_scope": "",
+                "run_id": "66ab400660f4",
+                "scope_key": "19c90392dfcb2367758b",
+                "scope_paths": [
+                  "src/urllib3/util/retry.py",
+                  "test/test_retry.py",
+                  "changelog/3686.feature.rst"
+                ]
+              }
+            }
+          ],
+          "signatures": [
+            "Mira Example"
+          ],
+          "signed_by": "Mira Example",
+          "signoff": "signed",
+          "source_decision_id": "ee43bf873a9d",
+          "source_revision": "2026-10-12T21:06:11.311422+00:00",
+          "sources": [
+            {
+              "author": "Mira Example",
+              "availability": "available",
+              "decision_version_id": "39022fa463f74b918e9bbfa51bb16953",
+              "external_id": "101",
+              "fingerprint": "8dbf51fb293d76b4eeebf4d439c248b62f0b3131a8a04e0853aa8fdff6450286",
+              "kind": "ticket",
+              "namespace": "127.0.0.1:17521",
+              "observed_at": "2026-10-12T20:26:21.947866+00:00",
+              "provenance": "import",
+              "provider": "jira",
+              "record_id": "6ff9cf6d53914e8197240186da07dc92",
+              "ref": "NET-101",
+              "repo": "urllib3/urllib3",
+              "role": "support",
+              "sequence": 1,
+              "source_created_at": "2025-10-01T10:00:00Z",
+              "source_updated_at": "2025-10-01T10:00:00Z",
+              "source_version": "2025-10-01T10:00:00Z",
+              "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+              "title": "NET-101: Retry-After compatibility policy",
+              "url": "http://127.0.0.1:17521/jira/browse/NET-101"
+            }
+          ],
+          "status": "answered",
+          "updated_at": "2026-10-12T21:06:11.311422+00:00"
+        }
+      ],
+      "limitations": [
+        "SHA-256 protects integrity, not the identity of the exporter or a human digital signature.",
+        "Human signoffs and authority are assertions recorded by this Raven workspace.",
+        "Test results are reported by the coding host; Raven did not independently execute them.",
+        "A model diff review is advisory and does not prove code correctness.",
+        "This bundle grants no authority for another task or a different scope."
+      ],
+      "review": {
+        "diff_hash": "8309f0a2816c5089",
+        "finished_at": "2026-10-12T21:26:03.010011+00:00",
+        "follows": [
+          {
+            "node_id": "ee43bf873a9d",
+            "question": "Should the new Retry-After upper bound be an opt-in parameter (default unlimited, i.e. no behavior change unless a caller sets it) rather than a new non-None default?",
+            "requirements": [
+              {
+                "at": "retry_after_max: float | None = None,",
+                "found": "honored",
+                "kind": "must",
+                "needs": "retry_after_max optional parameter defaulting to None (no change in default behavior)",
+                "state": "ok"
+              },
+              {
+                "at": "if self.retry_after_max is not None:",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Cap applies only to the actual sleep/wait step, not to parsed or reported values",
+                "state": "ok"
+              },
+              {
+                "at": "if self.retry_after_max is not None:",
+                "found": "honored",
+                "kind": "must",
+                "needs": "parse_retry_after and get_retry_after must report the unchanged header delay",
+                "state": "ok"
+              },
+              {
+                "at": "retry_after = min(retry_after, self.retry_after_max)",
+                "found": "honored",
+                "kind": "must",
+                "needs": "A zero cap skips sleeping but still handles the header; must not fall through to exponential backoff",
+                "state": "ok"
+              },
+              {
+                "at": "retry_after_max < 0",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Reject negative values with ValueError at construction",
+                "state": "ok"
+              },
+              {
+                "at": "math.isnan(retry_after_max)",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Reject NaN with ValueError at construction",
+                "state": "ok"
+              },
+              {
+                "at": "math.isinf(retry_after_max)",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Reject infinity (either sign) with ValueError at construction",
+                "state": "ok"
+              },
+              {
+                "at": "retry_after_max=self.retry_after_max,",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Preserve retry_after_max through new()",
+                "state": "ok"
+              },
+              {
+                "at": "retry_after_max=self.retry_after_max,",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Preserve retry_after_max through increment()",
+                "not_shown": "increment() method implementation is not shown in the diff; it is assumed to call new() to propagate retry_after_max, but this cannot be verified from the shown code.",
+                "state": "unclear"
+              },
+              {
+                "at": "def sleep_for_retry(self, response: BaseHTTPResponse) -> bool:",
+                "found": "honored",
+                "kind": "must_not",
+                "needs": "Leave exponential backoff unchanged",
+                "state": "ok"
+              }
+            ],
+            "unexamined": [
+              "increment() method implementation is not shown in the diff; it is assumed to call new() to propagate retry_after_max, but this cannot be verified from the shown code."
+            ],
+            "verdict": "unclear",
+            "why": "The review is inconclusive: increment() method implementation is not shown in the diff; it is assumed to call new() to propagate retry_after_max, but this cannot be verified from the shown code.. All stated requirements for retry_after_max as an opt-in, None-default cap confined to the sleep step are reflected in the diff's constructor validation, new()/increment() propagation, and sleep_for_retry capping, with no changes to parse_retry_after, get_retry_after, or backoff logic."
+          },
+          {
+            "node_id": "ab037067279b",
+            "question": "What must the release note and user documentation say about zero and invalid Retry-After limits?",
+            "requirements": [
+              {
+                "at": "By default, there is no limit and urllib3 will sleep for however",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Docstring must explicitly say retry_after_max defaults to None and preserves existing behavior",
+                "state": "ok"
+              },
+              {
+                "at": "Defaults to ``None`` (no limit), preserving the existing behavior.",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Changelog must explicitly say retry_after_max defaults to None and preserves existing behavior",
+                "state": "ok"
+              },
+              {
+                "at": "so urllib3 won't fall back to exponential backoff), it just means",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Docstring must say zero skips waiting while still handling Retry-After, without backoff fallback",
+                "state": "ok"
+              },
+              {
+                "at": "Setting ``retry_after_max`` to ``0`` still honors the ``Retry-After`` header",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Changelog must say zero skips waiting while still handling Retry-After, without backoff fallback",
+                "state": "ok"
+              },
+              {
+                "at": "Must be a non-negative, finite number, or ``None``; a negative,",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Docstring must say negative, NaN, and infinite values raise ValueError at construction",
+                "state": "ok"
+              },
+              {
+                "at": "Negative, NaN, and infinite values raise ``ValueError`` at construction time.",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Changelog must say negative, NaN, and infinite values raise ValueError at construction",
+                "note": "the line quoted for it is not in the diff",
+                "state": "unclear"
+              },
+              {
+                "at": "from :meth:`~Retry.get_retry_after`) is unaffected.",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Docstring must say parsing and reported Retry-After values are never capped",
+                "state": "ok"
+              },
+              {
+                "at": "reported ``Retry-After`` value is unaffected; only the sleep itself is",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Changelog must say parsing and reported Retry-After values are never capped",
+                "state": "ok"
+              },
+              {
+                "at": "This limit is preserved across retries (including by :meth:`~Retry.new`",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Docstring must mention configured limit survives retry cloning",
+                "not_shown": "Retry.increment() implementation is not shown in the diff; its propagation of retry_after_max is only confirmed by a test, not by visible code.",
+                "state": "unclear"
+              },
+              {
+                "at": "The configured limit survives retry cloning.",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Changelog must mention configured limit survives retry cloning",
+                "not_shown": "Retry.increment() implementation is not shown in the diff; whether it truly forwards retry_after_max to new() cannot be verified from the shown code.",
+                "state": "unclear"
+              },
+              {
+                "at": "diff --git a/changelog/3686.feature.rst b/changelog/3686.feature.rst",
+                "found": "honored",
+                "kind": "must_not",
+                "needs": "No separate user-guide page is needed",
+                "state": "ok"
+              }
+            ],
+            "unexamined": [
+              "Retry.increment() implementation is not shown in the diff; its propagation of retry_after_max is only confirmed by a test, not by visible code.",
+              "Retry.increment() implementation is not shown in the diff; whether it truly forwards retry_after_max to new() cannot be verified from the shown code."
+            ],
+            "verdict": "unclear",
+            "why": "The review is inconclusive: Retry.increment() implementation is not shown in the diff; its propagation of retry_after_max is only confirmed by a test, not by visible code.; Retry.increment() implementation is not shown in the diff; whether it truly forwards retry_after_max to new() cannot be verified from the shown code.. All required statements about defaults, zero handling, invalid-value errors, uncapped parsing, and clone persistence appear verbatim in both the docstring and changelog fragment, and no separate user-guide page was added."
+          }
+        ],
+        "id": "9ed27a6242f4",
+        "review_inputs": {
+          "ab037067279b": "28ff89e9ac0c8eacb0c4e46e945b26866cc4674f02aafc1a2abc314bdb56f501",
+          "ee43bf873a9d": "bddf67352c7c22f374d7f3c58c486c5cb9e8ddfc665446aa6360e7e6fae86b16"
+        },
+        "revisions": {
+          "ab037067279b": "af3108435bc8e4b7",
+          "ee43bf873a9d": "99f990d3e1cc4388"
+        },
+        "seconds": 122.6,
+        "status": "done"
+      },
+      "schema": "raven-proof-v1",
+      "task": {
+        "goal": "Our services sometimes receive Retry-After delays longer than they can afford to wait. Add an optional caller-controlled upper bound for Retry-After sleeping without unexpectedly changing existing retry behavior. Investigate, implement, document and test the change. This is for the library-next release.",
+        "id": "66ab400660f4",
+        "repo": "urllib3/urllib3",
+        "requester": "Engineer 177b2c",
+        "status": "completed",
+        "title": "Our services sometimes receive Retry-After delays longer than they can afford to wait. Add an optional caller-controlled upper bound for Retry-After sleeping without unexpectedly changing existing retry behavior. Investigate, implement, document and test the change. This is for the library-next rele"
+      }
+    }
+  },
+  "integrity": {
+    "valid": true,
+    "errors": [],
+    "authenticity_verified": false
+  },
+  "stale": false,
+  "current_reuse": {
+    "ee43bf873a9d": {
+      "requires_source_review": false,
+      "notice": ""
+    },
+    "5cd04c21c4fa": {
+      "requires_source_review": false,
+      "notice": ""
+    },
+    "ab037067279b": {
+      "requires_source_review": false,
+      "notice": ""
+    }
+  },
+  "current_sources": {
+    "5cd04c21c4fa": [],
+    "ab037067279b": [
+      {
+        "record_id": "6ff9cf6d53914e8197240186da07dc92",
+        "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+        "sequence": 1,
+        "provider": "jira",
+        "namespace": "127.0.0.1:17521",
+        "external_id": "101",
+        "kind": "ticket",
+        "repo": "urllib3/urllib3",
+        "ref": "NET-101",
+        "url": "http://127.0.0.1:17521/jira/browse/NET-101",
+        "title": "NET-101: Retry-After compatibility policy",
+        "author": "Mira Example",
+        "source_created_at": "2025-10-01T10:00:00Z",
+        "source_updated_at": "2025-10-01T10:00:00Z",
+        "source_version": "2025-10-01T10:00:00Z",
+        "observed_at": "2026-10-12T20:26:21.947866+00:00",
+        "provenance": "import",
+        "fingerprint": "8dbf51fb293d76b4eeebf4d439c248b62f0b3131a8a04e0853aa8fdff6450286",
+        "availability": "available",
+        "head_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+        "current": true,
+        "role": "contradiction",
+        "decision_version_id": "27a93f071ed4406d95ee2f9b76bbb566",
+        "stale": false
+      },
+      {
+        "record_id": "6ff9cf6d53914e8197240186da07dc92",
+        "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+        "sequence": 1,
+        "provider": "jira",
+        "namespace": "127.0.0.1:17521",
+        "external_id": "101",
+        "kind": "ticket",
+        "repo": "urllib3/urllib3",
+        "ref": "NET-101",
+        "url": "http://127.0.0.1:17521/jira/browse/NET-101",
+        "title": "NET-101: Retry-After compatibility policy",
+        "author": "Mira Example",
+        "source_created_at": "2025-10-01T10:00:00Z",
+        "source_updated_at": "2025-10-01T10:00:00Z",
+        "source_version": "2025-10-01T10:00:00Z",
+        "observed_at": "2026-10-12T20:26:21.947866+00:00",
+        "provenance": "import",
+        "fingerprint": "8dbf51fb293d76b4eeebf4d439c248b62f0b3131a8a04e0853aa8fdff6450286",
+        "availability": "available",
+        "head_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+        "current": true,
+        "role": "support",
+        "decision_version_id": "27a93f071ed4406d95ee2f9b76bbb566",
+        "stale": false
+      }
+    ],
+    "ee43bf873a9d": [
+      {
+        "record_id": "6ff9cf6d53914e8197240186da07dc92",
+        "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+        "sequence": 1,
+        "provider": "jira",
+        "namespace": "127.0.0.1:17521",
+        "external_id": "101",
+        "kind": "ticket",
+        "repo": "urllib3/urllib3",
+        "ref": "NET-101",
+        "url": "http://127.0.0.1:17521/jira/browse/NET-101",
+        "title": "NET-101: Retry-After compatibility policy",
+        "author": "Mira Example",
+        "source_created_at": "2025-10-01T10:00:00Z",
+        "source_updated_at": "2025-10-01T10:00:00Z",
+        "source_version": "2025-10-01T10:00:00Z",
+        "observed_at": "2026-10-12T20:26:21.947866+00:00",
+        "provenance": "import",
+        "fingerprint": "8dbf51fb293d76b4eeebf4d439c248b62f0b3131a8a04e0853aa8fdff6450286",
+        "availability": "available",
+        "head_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+        "current": true,
+        "role": "support",
+        "decision_version_id": "39022fa463f74b918e9bbfa51bb16953",
+        "stale": false
+      }
+    ]
+  },
+  "stale_reasons": [],
+  "markdown": "# Raven change proof\n\nTask: 66ab400660f4\nRepository: urllib3/urllib3\n\n> Our services sometimes receive Retry-After delays longer than they can afford to wait. Add an optional caller-controlled upper bound for Retry-After sleeping without unexpectedly changing existing retry behavior. Investigate, implement, document and test the change. This is for the library-next rele\n\nProof SHA-256: ddd453556635c9545a304ecd40d99084e5e9155fa632e154eaec560742d9acb7\nDiff SHA-256: 8309f0a2816c5089c89ad51d248d1de57b82cf00a49a94058e51347868a6ed22\n\n## Decision record\n\n### 5cd04c21c4fa\n> What must the release note and user documentation say about zero and invalid Retry-After limits?\n\n> (none)\n\nRecorded signoff: none\n> By: not recorded\n> Scope: {}\n> Evidence: No external evidence recorded\n\n### ab037067279b\n> What must the release note and user documentation say about zero and invalid Retry-After limits?\n\n> For library-next, the Retry API docstring and the changelog fragment must explicitly say: retry_after_max defaults to None and leaves existing behavior unchanged; zero skips waiting while still handling Retry-After, without exponential-backoff fallback; negative values, NaN, and either infinity raise ValueError at construction; parsing and reported Retry-After values are never capped. Mention that the configured limit survives retry cloning. No separate user-guide page is needed\n\nRecorded signoff: signed\n> By: Theo Example\n> Scope: {}\n> Evidence: No external evidence recorded\n> Source: NET-101 (contradiction), version 1 / c00be7c0b8ca486e8bbc5c588f9e2c44; http://127.0.0.1:17521/jira/browse/NET-101\n> Source: NET-101 (support), version 1 / c00be7c0b8ca486e8bbc5c588f9e2c44; http://127.0.0.1:17521/jira/browse/NET-101\n\n### ee43bf873a9d\n> Should the new Retry-After upper bound be an opt-in parameter (default unlimited, i.e. no behavior change unless a caller sets it) rather than a new non-None default?\n\n> For library-next, make retry_after_max optional and default it to None so existing clients keep unlimited Retry-After sleeping. Cap only the actual waiting step; parse_retry_after and get_retry_after must report the unchanged header delay. A zero cap skips sleeping but still handles the header, so it must not fall through to exponential backoff. Reject negative values, NaN, and either infinity with ValueError at construction. Preserve the value through new() and increment(), and leave exponential backoff unchanged. This is my decision for this task\n\nRecorded signoff: signed\n> By: Mira Example\n> Scope: {}\n> Evidence: No external evidence recorded\n> Source: NET-101 (support), version 1 / c00be7c0b8ca486e8bbc5c588f9e2c44; http://127.0.0.1:17521/jira/browse/NET-101\n\n## Host-reported checks\n> /opt/venv/bin/python -m pytest test/test_retry.py test/test_poolmanager.py -q -> 116 passed, 1 skipped (includes test_retry_after_max_propagated_through_increment, which directly verifies increment() propagates retry_after_max). flake8/mypy/black not installed in this venv; manually verified no line exceeds flake8's configured max-line-length (99).\n\n## Trust limits\n- SHA-256 protects integrity, not the identity of the exporter or a human digital signature.\n- Human signoffs and authority are assertions recorded by this Raven workspace.\n- Test results are reported by the coding host; Raven did not independently execute them.\n- A model diff review is advisory and does not prove code correctness.\n- This bundle grants no authority for another task or a different scope.\n",
+  "review": {
+    "id": "9ed27a6242f4",
+    "status": "done",
+    "follows": [
+      {
+        "node_id": "ee43bf873a9d",
+        "question": "Should the new Retry-After upper bound be an opt-in parameter (default unlimited, i.e. no behavior change unless a caller sets it) rather than a new non-None default?",
+        "requirements": [
+          {
+            "at": "retry_after_max: float | None = None,",
+            "found": "honored",
+            "kind": "must",
+            "needs": "retry_after_max optional parameter defaulting to None (no change in default behavior)",
+            "state": "ok"
+          },
+          {
+            "at": "if self.retry_after_max is not None:",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Cap applies only to the actual sleep/wait step, not to parsed or reported values",
+            "state": "ok"
+          },
+          {
+            "at": "if self.retry_after_max is not None:",
+            "found": "honored",
+            "kind": "must",
+            "needs": "parse_retry_after and get_retry_after must report the unchanged header delay",
+            "state": "ok"
+          },
+          {
+            "at": "retry_after = min(retry_after, self.retry_after_max)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "A zero cap skips sleeping but still handles the header; must not fall through to exponential backoff",
+            "state": "ok"
+          },
+          {
+            "at": "retry_after_max < 0",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Reject negative values with ValueError at construction",
+            "state": "ok"
+          },
+          {
+            "at": "math.isnan(retry_after_max)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Reject NaN with ValueError at construction",
+            "state": "ok"
+          },
+          {
+            "at": "math.isinf(retry_after_max)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Reject infinity (either sign) with ValueError at construction",
+            "state": "ok"
+          },
+          {
+            "at": "retry_after_max=self.retry_after_max,",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Preserve retry_after_max through new()",
+            "state": "ok"
+          },
+          {
+            "at": "retry_after_max=self.retry_after_max,",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Preserve retry_after_max through increment()",
+            "not_shown": "increment() method implementation is not shown in the diff; it is assumed to call new() to propagate retry_after_max, but this cannot be verified from the shown code.",
+            "state": "unclear"
+          },
+          {
+            "at": "def sleep_for_retry(self, response: BaseHTTPResponse) -> bool:",
+            "found": "honored",
+            "kind": "must_not",
+            "needs": "Leave exponential backoff unchanged",
+            "state": "ok"
+          }
+        ],
+        "unexamined": [
+          "increment() method implementation is not shown in the diff; it is assumed to call new() to propagate retry_after_max, but this cannot be verified from the shown code."
+        ],
+        "verdict": "unclear",
+        "why": "The review is inconclusive: increment() method implementation is not shown in the diff; it is assumed to call new() to propagate retry_after_max, but this cannot be verified from the shown code.. All stated requirements for retry_after_max as an opt-in, None-default cap confined to the sleep step are reflected in the diff's constructor validation, new()/increment() propagation, and sleep_for_retry capping, with no changes to parse_retry_after, get_retry_after, or backoff logic."
+      },
+      {
+        "node_id": "ab037067279b",
+        "question": "What must the release note and user documentation say about zero and invalid Retry-After limits?",
+        "requirements": [
+          {
+            "at": "By default, there is no limit and urllib3 will sleep for however",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docstring must explicitly say retry_after_max defaults to None and preserves existing behavior",
+            "state": "ok"
+          },
+          {
+            "at": "Defaults to ``None`` (no limit), preserving the existing behavior.",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Changelog must explicitly say retry_after_max defaults to None and preserves existing behavior",
+            "state": "ok"
+          },
+          {
+            "at": "so urllib3 won't fall back to exponential backoff), it just means",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docstring must say zero skips waiting while still handling Retry-After, without backoff fallback",
+            "state": "ok"
+          },
+          {
+            "at": "Setting ``retry_after_max`` to ``0`` still honors the ``Retry-After`` header",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Changelog must say zero skips waiting while still handling Retry-After, without backoff fallback",
+            "state": "ok"
+          },
+          {
+            "at": "Must be a non-negative, finite number, or ``None``; a negative,",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docstring must say negative, NaN, and infinite values raise ValueError at construction",
+            "state": "ok"
+          },
+          {
+            "at": "Negative, NaN, and infinite values raise ``ValueError`` at construction time.",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Changelog must say negative, NaN, and infinite values raise ValueError at construction",
+            "note": "the line quoted for it is not in the diff",
+            "state": "unclear"
+          },
+          {
+            "at": "from :meth:`~Retry.get_retry_after`) is unaffected.",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docstring must say parsing and reported Retry-After values are never capped",
+            "state": "ok"
+          },
+          {
+            "at": "reported ``Retry-After`` value is unaffected; only the sleep itself is",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Changelog must say parsing and reported Retry-After values are never capped",
+            "state": "ok"
+          },
+          {
+            "at": "This limit is preserved across retries (including by :meth:`~Retry.new`",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docstring must mention configured limit survives retry cloning",
+            "not_shown": "Retry.increment() implementation is not shown in the diff; its propagation of retry_after_max is only confirmed by a test, not by visible code.",
+            "state": "unclear"
+          },
+          {
+            "at": "The configured limit survives retry cloning.",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Changelog must mention configured limit survives retry cloning",
+            "not_shown": "Retry.increment() implementation is not shown in the diff; whether it truly forwards retry_after_max to new() cannot be verified from the shown code.",
+            "state": "unclear"
+          },
+          {
+            "at": "diff --git a/changelog/3686.feature.rst b/changelog/3686.feature.rst",
+            "found": "honored",
+            "kind": "must_not",
+            "needs": "No separate user-guide page is needed",
+            "state": "ok"
+          }
+        ],
+        "unexamined": [
+          "Retry.increment() implementation is not shown in the diff; its propagation of retry_after_max is only confirmed by a test, not by visible code.",
+          "Retry.increment() implementation is not shown in the diff; whether it truly forwards retry_after_max to new() cannot be verified from the shown code."
+        ],
+        "verdict": "unclear",
+        "why": "The review is inconclusive: Retry.increment() implementation is not shown in the diff; its propagation of retry_after_max is only confirmed by a test, not by visible code.; Retry.increment() implementation is not shown in the diff; whether it truly forwards retry_after_max to new() cannot be verified from the shown code.. All required statements about defaults, zero handling, invalid-value errors, uncapped parsing, and clone persistence appear verbatim in both the docstring and changelog fragment, and no separate user-guide page was added."
+      }
+    ],
+    "diff_hash": "8309f0a2816c5089",
+    "seconds": 122.6,
+    "finished_at": "2026-10-12T21:26:03.010011+00:00",
+    "revisions": {
+      "ab037067279b": "af3108435bc8e4b7",
+      "ee43bf873a9d": "99f990d3e1cc4388"
+    },
+    "review_inputs": {
+      "ab037067279b": "28ff89e9ac0c8eacb0c4e46e945b26866cc4674f02aafc1a2abc314bdb56f501",
+      "ee43bf873a9d": "bddf67352c7c22f374d7f3c58c486c5cb9e8ddfc665446aa6360e7e6fae86b16"
+    }
+  },
+  "review_pending": false,
+  "review_snapshot_current": true,
+  "review_comparison": {
+    "saved": {
+      "id": "9ed27a6242f4",
+      "status": "done"
+    },
+    "current": {
+      "id": "9ed27a6242f4",
+      "status": "done"
+    },
+    "same_review_id": true,
+    "description": "Saved bundle.payload.review: id=9ed27a6242f4, status=done. Current top-level review: id=9ed27a6242f4, status=done. The review IDs match. A status change alone does not establish a new attempt or pass; an ID can be reused on retry and does not identify a unique attempt. The saved snapshot matches the current reading."
+  },
+  "next": "Attach the bundle and summary to the code review; review and tests remain required"
+}

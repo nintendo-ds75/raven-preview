@@ -143,6 +143,30 @@ class EventHTTPTests(SharedServer):
     def rpc(self, method, params):
         return self.post('/mcp', {'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params}, token=self.token)
 
+    def test_modern_claude_discovery_exposes_callable_tools_and_legacy_stays_compatible(self):
+        meta = {'io.modelcontextprotocol/protocolVersion': events.VERSION,
+                'io.modelcontextprotocol/clientInfo': {'name': 'claude-code', 'version': '2.1.296'},
+                'io.modelcontextprotocol/clientCapabilities': {'roots': {'listChanged': True}}}
+        for method in ('server/discover', 'tools/list', 'events/list'):
+            result = self.rpc(method, {'_meta': meta})['result']
+            self.assertEqual(result['resultType'], 'complete')
+            self.assertEqual(result['ttlMs'], 0)
+            self.assertEqual(result['cacheScope'], 'private')
+            self.assertIn('io.modelcontextprotocol/serverInfo', result['_meta'])
+            if method == 'tools/list':
+                self.assertIn('bridge_get_tree', [t['name'] for t in result['tools']])
+            if method == 'server/discover':
+                self.assertTrue(result['instructions'])
+        for task, failed in ((self.task, False), ('missing-task', True)):
+            result = self.rpc('tools/call', {'_meta': meta, 'name': 'bridge_get_tree',
+                                           'arguments': {'task_id': task}})['result']
+            self.assertEqual(result['resultType'], 'complete')
+            self.assertEqual(result['isError'], failed)
+            self.assertTrue(result['content'])
+        self.assertNotIn('resultType', self.rpc('tools/list', {})['result'])
+        self.assertNotIn('resultType', self.rpc('tools/call', {'name': 'bridge_get_tree',
+                         'arguments': {'task_id': self.task}})['result'])
+
     def test_discover_subscribe_callback_and_unsubscribe_over_authenticated_http(self):
         discovery = self.rpc('server/discover', {})['result']
         self.assertIn(events.VERSION, discovery['supportedVersions'])

@@ -203,13 +203,28 @@ class SourceReviewCases:
 
     def test_all_sources_count_toward_transport_limit(self):
         for number in range(4):
-            item = self.source('EXTRA-' + str(number), body='Complete source ' + 'x' * 2200)
+            item = self.source('EXTRA-' + str(number), body='Complete source ' + 'x' * 10000)
             with self.graph.transaction():
                 cm.attach(self.graph.db, self.node_id, [cm.pin(self.source_row(item))])
         self.chat('sign off')
         self.assertIsNone(self.held())
         self.assertIn('too large', self.last_text())
         self.assertEqual(self.consent_count(), 0)
+
+    def test_slack_can_confirm_complete_review_larger_than_teams_budget(self):
+        self.source(body='Complete source ' + 'x' * 13000 + ' END OF COMPLETE SOURCE')
+        self.chat('sign off')
+        if self.delivery.channel != 'slack':
+            self.assertIsNone(self.held())
+            self.assertFalse(self.decision()['authorized'])
+            return
+        held = self.held()
+        self.assertIsNotNone(held, self.last_text())
+        self.assertGreater(len(held['prompt'].encode()), 12000)
+        self.assertLessEqual(len(held['prompt'].encode()), 36000)
+        self.assertIn('END OF COMPLETE SOURCE', held['prompt'])
+        self.confirm(held)
+        self.assertTrue(self.decision()['authorized'], self.last_text())
 
     def test_model_and_delivery_run_outside_writer_lock(self):
         from contextlib import ExitStack
@@ -317,7 +332,7 @@ class SourceReviewCases:
         self.assertIn('/#runs/', self.last_text())
 
     def test_oversized_complete_review_is_not_truncated_into_consent(self):
-        self.source(body='Wide source ' + '\U0001f642' * 5000 + ' END OF COMPLETE SOURCE')
+        self.source(body='Wide source ' + '\U0001f642' * 12000 + ' END OF COMPLETE SOURCE')
         self.chat('sign off')
         self.assertIsNone(self.held())
         self.assertIn('too large', self.last_text())

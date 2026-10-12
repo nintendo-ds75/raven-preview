@@ -14,6 +14,13 @@ from bridge.server import make_server
 
 
 class RetryAfterTests(DeliveryCase):
+    def test_slack_truncation_cannot_acknowledge_a_delivered_readback(self):
+        transport = SlackTransport('fixture-token')
+        with patch.object(transport, '_call', return_value={'ok': True, 'ts': '123.000001',
+                'response_metadata': {'warnings': ['message_truncated']}}):
+            with self.assertRaisesRegex(RuntimeError, 'truncated'):
+                transport.post_reply('D1', 'complete review', [], '123.000000', 'event-1')
+
     def test_slack_429_preserves_server_retry_after_without_leaking_token(self):
         headers = Message()
         headers['Retry-After'] = '120'

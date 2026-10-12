@@ -106,6 +106,23 @@ class ReasoningTests(OfflineCase):
             self.g.add_decision(self.task, 'A newly discovered choice?', '', 'pending', repo='example/service')
             self.assertFalse(investigation.finish_guard(self.store, self.task, 'patch')['finished'])
 
+    def test_exact_node_id_citation_is_bound_but_unknown_or_partial_ids_are_not(self):
+        node = self.g.add_decision(self.task, 'Which release note?', '', 'pending', repo='example/service')
+        def reading(basis):
+            return {'findings': [{'kind': 'investigate', 'question': 'Is the changelog number a placeholder?',
+                'why': 'The host has no assigned issue number.', 'basis': [basis], 'paths': []}]}
+        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
+                patch('bridge.investigation.Client.complete_json') as model:
+            model.return_value = reading(node)
+            result = self.review()
+            self.assertEqual(result['status'], 'complete')
+            self.assertEqual(result['findings'][0]['basis'], [f'decision:{node}'])
+            self.assertTrue(result['unaddressed'])
+            for bad in (node[:6], 'foreign-node'):
+                model.return_value = reading(bad)
+                rejected = self.review(observations=f'Check {bad}')
+                self.assertEqual(rejected['status'], 'unavailable')
+
     def test_contact_model_selects_cited_candidate_and_cannot_invent_person(self):
         from bridge.contact_reasoning import choose
         self.g.add_person('Ari Example', slack_id='UARI')
@@ -160,6 +177,41 @@ class ReasoningTests(OfflineCase):
         self.assertEqual(retried['status'], 'complete')
         self.assertEqual(failed['review_id'], retried['review_id'])
         self.assertEqual(model.call_count, 2)
+
+    def test_cold_retrieval_returns_a_durable_receipt_before_encoding_finishes(self):
+        entered, release = threading.Event(), threading.Event()
+        original = investigation._retrieve
+        def cold(store, payload):
+            entered.set()
+            if not release.wait(5):
+                raise AssertionError('Cold retrieval blocked the MCP caller')
+            return original(store, payload)
+        args = {'task_id': self.task, 'observations': 'Investigated the retry code.'}
+        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
+                patch.object(investigation, '_retrieve', side_effect=cold), \
+                patch('bridge.investigation.Client.complete_json', return_value={'findings': []}):
+            try:
+                pending = investigation.review(self.store, args, Config(model_api='none'), defer=True)
+                self.assertTrue(pending['model_pending'])
+                self.assertTrue(entered.wait(2))
+                retry = investigation.review(self.store, args, Config(model_api='none'), defer=True)
+                self.assertEqual(retry['review_id'], pending['review_id'])
+                self.assertEqual(canvas.get_tree(self.store, self.task)['discovery_reviews'][0]['review_id'], pending['review_id'])
+            finally:
+                release.set()
+                self.assertTrue(canvas.wait_for_background(5))
+        self.assertEqual(self.g.count_events('discovery_reviewed', self.task), 1)
+
+    def test_unverified_path_annotation_does_not_discard_a_cited_judgment(self):
+        reading = {'findings': [{'kind': 'judgment', 'question': 'What should a zero limit do?',
+            'why': 'The host found no decided policy.', 'basis': ['host'], 'paths': ['src/retry.py']}]}
+        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
+                patch('bridge.investigation.Client.complete_json', return_value=reading):
+            result = self.review(paths=[])
+        self.assertEqual(result['status'], 'complete')
+        self.assertEqual(result['findings'][0]['paths'], [])
+        self.assertEqual(result['findings'][0]['unverified_paths'], ['src/retry.py'])
+        self.assertTrue(result['unaddressed'])
 
     def test_killed_worker_becomes_visible_and_can_retry_from_just_review_id(self):
         with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('bridge.canvas._start_background'):

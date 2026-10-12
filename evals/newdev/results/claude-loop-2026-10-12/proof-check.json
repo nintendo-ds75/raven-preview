@@ -1,0 +1,18 @@
+{
+  "change_fields": [
+    "bytes",
+    "diff",
+    "sha256"
+  ],
+  "sha256": "8309f0a2816c5089c89ad51d248d1de57b82cf00a49a94058e51347868a6ed22",
+  "patch_bytes": 7839,
+  "exact_patch_matches": true,
+  "review_snapshot_current": true,
+  "review_pending": false,
+  "decision_count": 3,
+  "checks": {
+    "independently_verified": false,
+    "provenance": "coding-host-reported",
+    "text": "/opt/venv/bin/python -m pytest test/test_retry.py test/test_poolmanager.py -q -> 116 passed, 1 skipped (includes test_retry_after_max_propagated_through_increment, which directly verifies increment() propagates retry_after_max). flake8/mypy/black not installed in this venv; manually verified no line exceeds flake8's configured max-line-length (99)."
+  }
+}

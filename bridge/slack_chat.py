@@ -86,6 +86,8 @@ If facts needed to answer are missing, say which; do not guess. Offer to ask the
 context: useful facts the person supplies without making a decision. Their actual text is recorded as a task note.
 followup: they request the agent investigate a separate question. Put that question in answer; required=true
 only when they explicitly say it must be answered before continuing or finishing.
+Preserve any named intended recipient and other constraints in the follow-up question.
+Naming a recipient requests contact; it does not establish that person's authority.
 rule: they explicitly want their SIGNED answer reused in future. Only for kind=rule, copy conditions and an explicit ISO expiry
 if stated, otherwise leave empty. Never suggest a rule merely because the same answer was given before.
 For kind=rule, use scope_kind=none only if the person explicitly says this question only; otherwise leave blank.
@@ -456,7 +458,8 @@ def apply(delivery, d, person, action, actor, review_data=None):
         canvas.sign_off(store,d['id'],by,actor=actor,transaction_db=transaction_db)
         return f"Signed by {person['name']}. The coding agent can now read it."
     if kind == 'followup':
-        canvas.add_followups(store, load(), d['id'], {**by,'questions':[action['answer']], 'required':action.get('required') is True}, actor=actor)
+        canvas.add_followups(store, load(), d['id'], {**by,'questions':[action['answer']],
+            'context': action.get('original', ''), 'required':action.get('required') is True}, actor=actor)
         return 'I added that question to the task' + (' as required before finishing.' if action.get('required') is True else ' for the agent to consider.')
     if kind == 'reframe':
         from . import reframe
@@ -666,7 +669,9 @@ def respond(delivery, note, d, person, text, actor, action_token='', occurrence=
                         'This changes contact suggestions only.')
     elif kind=='answer': summary='Record your decision as:\n'+action['answer']+(('\nReason: '+action['rationale']) if action.get('rationale') else '')
     elif kind=='signoff': summary='Sign the complete answer above in your name:\n'+(d.get('answer') or '')
-    elif kind=='followup': summary=('Require an answer before finishing: ' if action.get('required') is True else 'Ask the agent to consider: ')+action['answer']
+    elif kind=='followup':
+        summary=('Require an answer before finishing: ' if action.get('required') is True else 'Ask the agent to consider: ')+action['answer']
+        summary += '\nYour original request will accompany the question:\n' + text
     elif kind=='reframe': summary='Replace the current question with:\n'+action['answer']+'\nClear its old signatures and mark dependent work for review.'
     else: summary='Make your signed answer reusable in the same scope. Conditions: '+(action.get('conditions') or 'none')+'. Expiry: '+(action.get('expires') or 'none')+'.'
     action['original']=text

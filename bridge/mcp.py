@@ -20,6 +20,29 @@ from .store import Invalid
 MAX_LINE = 1 << 20
 PROTOCOL_VERSION = '2025-06-18'
 SUPPORTED_HTTP_VERSIONS = frozenset((PROTOCOL_VERSION, '2025-03-26', '2026-07-28'))
+MODERN_VERSION = '2026-07-28'
+VERSION_META = 'io.modelcontextprotocol/protocolVersion'
+
+
+def request_version(params, header=None):
+    meta = params.get('_meta', {}) if isinstance(params, dict) else {}
+    return meta.get(VERSION_META, header) if isinstance(meta, dict) else header
+
+
+def result_envelope(method, result, params, header=None):
+    """Encode for this request, not for whichever client connected last.
+
+    Modern clients validate complete/cache envelopes before exposing tools
+    to the model. Legacy hosts still consume the original response shape.
+    """
+    if method != 'server/discover' and request_version(params, header) != MODERN_VERSION:
+        return result
+    result = {**result, 'resultType': 'complete', '_meta': {
+        **result.get('_meta', {}),
+        'io.modelcontextprotocol/serverInfo': {'name': 'bridge', 'version': '0.2.0'}}}
+    if method in ('server/discover', 'tools/list', 'events/list'):
+        result.update(ttlMs=0, cacheScope='private')
+    return result
 
 # Viewer-owned credentials retain evidence/review access, but never acquire
 # write privileges merely because they use the agent protocol. New tools are
@@ -424,7 +447,7 @@ def params_error(method, params):
     return None
 
 
-def dispatch(store, message, notify=None):
+def dispatch(store, message, notify=None, version=None):
     if not isinstance(message, dict) or message.get("jsonrpc") != "2.0" or not isinstance(message.get("method"), str):
         return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid request"}}
     if "id" not in message:
@@ -459,7 +482,7 @@ def dispatch(store, message, notify=None):
             result = {"content": [{"type": "text", "text": f"{type(error).__name__}: {error}"}], "isError": True}
     else:
         return {**response, "error": {"code": -32601, "message": "Method not found"}}
-    return {**response, "result": result}
+    return {**response, "result": result_envelope(method, result, params, version)}
 
 
 def serve_stdio(store):

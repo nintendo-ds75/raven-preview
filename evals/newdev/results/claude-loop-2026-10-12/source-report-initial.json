@@ -1,0 +1,78 @@
+{
+  "sources": [
+    {
+      "id": "037ddda6aea93b7d",
+      "kind": "docs",
+      "repo": "urllib3/urllib3",
+      "target": "http://127.0.0.1:17521/",
+      "label": "http://127.0.0.1:17521",
+      "state": "current",
+      "credentials_present": true,
+      "last_success_at": "2026-10-12T20:26:22.136554+00:00",
+      "last_attempt_at": "2026-10-12T20:26:22.136554+00:00",
+      "records": 2,
+      "refused": {
+        "robots_disallowed": 1
+      },
+      "audience": "workspace-shared (administrator attested)",
+      "limits": [
+        "Only the registered origin is read, through llms.txt or sitemap.xml, else the page itself",
+        "Content behind a login is not fetched"
+      ],
+      "do": ""
+    },
+    {
+      "id": "64e565cc12676125",
+      "kind": "jira",
+      "repo": "urllib3/urllib3",
+      "target": "NET",
+      "label": "NET · Network policy",
+      "state": "current",
+      "credentials_present": true,
+      "last_success_at": "2026-10-12T20:26:21.934775+00:00",
+      "last_attempt_at": "2026-10-12T20:26:21.934775+00:00",
+      "records": 2,
+      "refused": {
+        "issue_security_level": 1
+      },
+      "audience": "workspace-shared (administrator attested)",
+      "limits": [
+        "Issues with a security level and restricted comments are not imported",
+        "Deleted issues are not visible to polling; their last version is kept"
+      ],
+      "do": ""
+    },
+    {
+      "id": "8f086f0d84d29726",
+      "kind": "slack",
+      "repo": "urllib3/urllib3",
+      "target": "C0POLICY1",
+      "label": "#library-policy",
+      "state": "current",
+      "credentials_present": true,
+      "last_success_at": "2026-10-12T20:26:22.001961+00:00",
+      "last_attempt_at": "2026-10-12T20:26:22.001961+00:00",
+      "records": 1,
+      "refused": {},
+      "audience": "workspace-shared (administrator attested)",
+      "limits": [
+        "Public channels only; private channels, DMs and Slack Connect channels are never read",
+        "Deleted messages are not visible to polling; their last version is kept"
+      ],
+      "do": ""
+    }
+  ],
+  "not_configured": [],
+  "github": [],
+  "airweave": {
+    "backend": "airweave",
+    "configured": false,
+    "connections": [],
+    "freshness_seconds": 300,
+    "credential_configured": false,
+    "last_success_means": "Last successful search transport, not proof that any source was admitted or that permissions were independently verified.",
+    "notice": "Only workspace-shared collections; unknown source ACLs and transient Slack results are excluded."
+  },
+  "sync_minutes": 15.0,
+  "note": "Records are evidence, never approval. Only sources an administrator attested as shared with every reader are imported; polling cannot see deletions."
+}

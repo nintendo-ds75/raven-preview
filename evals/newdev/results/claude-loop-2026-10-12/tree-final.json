@@ -1,0 +1,808 @@
+{
+  "discovery_reviews": [
+    {
+      "review_id": "08c2803b3aa44fb395c05d49e8730918",
+      "phase": "finish",
+      "input_hash": "d23937b14c522f47ea398f5bfa327d3920f479f326e4af7dfa15077ceca6b6f8",
+      "status": "complete",
+      "summary": "The diff adds an opt-in retry_after_max parameter to Retry, matching the approved decisions: default None preserves existing behavior, only the sleep is capped (parse/get_retry_after unchanged), zero cap skips sleeping without falling back to backoff, invalid values (negative/NaN/±inf) raise ValueError, and the value propagates through new()/increment(). Docstring and changelog explicitly disambiguate the retry_after_max=0 vs header=0 cases per the host's finish-review fix, and tests cover propagation, validation, capping, and the backoff-fallback edge case. The two previously-flagged cosmetic/bookkeeping issues (placeholder changelog id, stale duplicate decision node) are explicitly acknowledged and not re-raised here.",
+      "findings": [
+        {
+          "id": "a06c685e3bb3386e",
+          "kind": "investigate",
+          "question": "Were the runtime-policy decision (zero/invalid retry_after_max semantics) and the documentation-wording decision actually reviewed by Mira and Theo respectively, as the task source specifies for routing these two categories of open questions?",
+          "why": "The originating task note explicitly says runtime policy questions go to Mira and release documentation questions go to Theo, and states no final policy existed yet for zero/invalid limits; both decisions were later marked 'approved' without any indication of who approved them or whether the specified reviewers were consulted, which matters since this is a public API behavior choice (ValueError on construction, backoff-fallback semantics) for a released library feature.",
+          "basis": [
+            "source:6ff9cf6d53914e8197240186da07dc92:c00be7c0b8ca486e8bbc5c588f9e2c44",
+            "decision:ee43bf873a9d",
+            "decision:ab037067279b"
+          ],
+          "paths": [],
+          "unverified_paths": [
+            "src/urllib3/util/retry.py",
+            "changelog/3686.feature.rst"
+          ],
+          "disposition": {
+            "decision_id": "ee43bf873a9d",
+            "reason": "Confirmed on bridge_get_tree: node ee43bf873a9d shows answered_by/signed_by Mira Example, signoff signed, authorized true -- Mira is NET-101's named owner for runtime policy questions, matching the routing NET-101 specifies. Node ab037067279b shows answered_by/signed_by Theo Example, signoff signed, authorized true -- Theo is NET-101's named owner for release documentation questions, and the task record shows this node was explicitly referred to Theo by the initial routee ('Not me, please ask Theo; Theo decides the release documentation'), confirming correct routing before sign-off."
+          }
+        }
+      ],
+      "model_pending": false,
+      "unaddressed": [],
+      "notice": "Suggestions require host investigation. They do not authorize work or prove complete decision coverage."
+    },
+    {
+      "review_id": "be6d7f17ac8c44d2b521c3e0d2ebe0ba",
+      "phase": "finish",
+      "input_hash": "afd8a9c6b2822339e18b66f36cb860adf8e0296d99d7f86cb5bb35c9c6d3c6a8",
+      "status": "unavailable",
+      "summary": "Model review unavailable; the host must check decision coverage.",
+      "findings": [],
+      "error": "ValueError",
+      "rejected_output": {
+        "summary": "Agent's investigation thoroughly verifies that the implementation satisfies both signed decisions (Mira's runtime-policy answer ee43bf873a9d and Theo's documentation answer ab037067279b): retry_after_max defaults to None, caps only the sleep_for_retry() wait (not parsing/reporting), zero-cap still honors the header without backoff fallback, invalid values raise ValueError, and the value survives new()/increment(). Tests (116 passed) and docstring/changelog wording align with the decisions. Two minor loose ends remain that were not fully closed out.",
+        "findings": [
+          {
+            "kind": "investigate",
+            "question": "Is the changelog fragment filename `changelog/3686.feature.rst` tied to a real GitHub issue/PR number, or is 3686 a placeholder guess that needs correcting before merge?",
+            "why": "The agent explicitly flagged this as an unresolved best-effort guess; towncrier fragment IDs are conventionally tied to an actual issue/PR number, and an incorrect ID could break changelog tooling or create confusion in the release notes even though it doesn't affect runtime behavior.",
+            "basis": [
+              "ab037067279b"
+            ],
+            "paths": []
+          },
+          {
+            "kind": "investigate",
+            "question": "Decision 5cd04c21c4fa (same question as ab037067279b) is recorded with status 'adopted' but a null answer -- should this stale/duplicate entry be reconciled or closed to avoid ambiguity in the decision record?",
+            "why": "Having two entries for the same documentation question, one unanswered ('adopted'/null) and one answered ('approved'), could confuse future readers of the decision log about which is authoritative, even though the implementation correctly follows the answered one (ab037067279b).",
+            "basis": [
+              "decision:5cd04c21c4fa",
+              "decision:ab037067279b"
+            ],
+            "paths": []
+          }
+        ]
+      },
+      "model_pending": false,
+      "unaddressed": [],
+      "notice": "Suggestions require host investigation. They do not authorize work or prove complete decision coverage."
+    },
+    {
+      "review_id": "042ec67af3ff442ab3347cb35651cd43",
+      "phase": "investigation",
+      "input_hash": "e59fd51601ea3424b372974c6e348d03ea2ed08987720aea17658de034179ff0",
+      "status": "unavailable",
+      "summary": "Model review unavailable; the host must check decision coverage.",
+      "findings": [],
+      "error": "ValueError",
+      "rejected_output": {
+        "summary": "Agent added an opt-in retry_after_max cap, threaded through new() and tested propagation/sleep clamping, which covers the headline ask. However the implementation diverges from an explicit documented constraint ('bound only the waiting step', parsing/reported values must stay unchanged) by mutating parse_retry_after's return value itself, and it leaves the explicitly flagged open policy question about zero/invalid limits unresolved and unvalidated. A changelog fragment id was also guessed without an anchoring issue.",
+        "findings": [
+          {
+            "kind": "investigate",
+            "question": "Does capping the value inside parse_retry_after (rather than only at the sleep/waiting step) violate the stated requirement that 'Parsing and reported header values stay unchanged; bound only the waiting step'?",
+            "why": "The task source explicitly separates parsing/reporting from the waiting step, but the implementation applies min(seconds, retry_after_max) inside parse_retry_after itself, so get_retry_after()/parse_retry_after() now return an already-clamped value for both integer-seconds and HTTP-date forms. If any caller (logging, introspection, future features) relies on the raw parsed Retry-After value, this silently changes reported data rather than only delaying the sleep call, contradicting the documented compatibility constraint.",
+            "basis": [
+              "source:6ff9cf6d53914e8197240186da07dc92:c00be7c0b8ca486e8bbc5c588f9e2c44",
+              "source:b3aa80e6e6f749e7b27115d3476624af:92419e68af5747728a040d2f27a81a76",
+              "source:0435cd3bdbe04cfaa9675b0508d7cd0c:98825f2aee8142af89fb3331223aa6e8",
+              "source:fedbebc3081f4612b09795dcff3b75d1:9efbe4c8a1ee4fc898039cb11dff3ad7"
+            ],
+            "paths": [
+              "src/urllib3/util/retry.py"
+            ]
+          },
+          {
+            "kind": "judgment",
+            "question": "What should happen when retry_after_max is 0 or negative — reject at construction, treat as 'always use minimum/zero wait', or treat as 'no cap'? The task notes explicitly state no final policy exists yet for this case.",
+            "why": "The implementation applies `min(seconds, self.retry_after_max)` with no validation, so retry_after_max=0 silently forces immediate retries (defeating respect_retry_after_header) and a negative value would do the same or behave unexpectedly; since this was called out as an explicitly open policy question rather than something the agent can decide unilaterally, a human (noted as Mira for runtime policy) should confirm the intended behavior before release.",
+            "basis": [
+              "source:6ff9cf6d53914e8197240186da07dc92:c00be7c0b8ca486e8bbc5c588f9e2c44",
+              "source:0435cd3bdbe04cfaa9675b0508d7cd0c:98825f2aee8142af89fb3331223aa6e8"
+            ],
+            "paths": [
+              "src/urllib3/util/retry.py"
+            ]
+          },
+          {
+            "kind": "investigate",
+            "question": "Is changelog fragment id 3686 actually free/correct, given no GitHub issue number exists to anchor it and the agent only guessed based on the latest numbers seen in git log?",
+            "why": "Towncrier fragment ids are typically tied to an issue/PR number; an incorrect or colliding id could produce a malformed or misleading changelog entry on release, and this was flagged by the agent itself as a guess rather than a verified value.",
+            "basis": [
+              "source:af1ca0fd182d4881b926c72ddf75b925:9e68a8b66da34ba88d5648b8e12a8316"
+            ],
+            "paths": [
+              "changelog/3686.feature.rst"
+            ]
+          }
+        ]
+      },
+      "model_pending": false,
+      "unaddressed": [],
+      "notice": "Suggestions require host investigation. They do not authorize work or prove complete decision coverage."
+    }
+  ],
+  "source_anchors": [
+    {
+      "record_id": "6ff9cf6d53914e8197240186da07dc92",
+      "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+      "sequence": 1,
+      "provider": "jira",
+      "namespace": "127.0.0.1:17521",
+      "external_id": "101",
+      "kind": "ticket",
+      "repo": "urllib3/urllib3",
+      "ref": "NET-101",
+      "url": "http://127.0.0.1:17521/jira/browse/NET-101",
+      "title": "NET-101: Retry-After compatibility policy",
+      "author": "Mira Example",
+      "source_created_at": "2025-10-01T10:00:00Z",
+      "source_updated_at": "2025-10-01T10:00:00Z",
+      "source_version": "2025-10-01T10:00:00Z",
+      "observed_at": "2026-10-12T20:26:21.947866+00:00",
+      "provenance": "import",
+      "fingerprint": "8dbf51fb293d76b4eeebf4d439c248b62f0b3131a8a04e0853aa8fdff6450286",
+      "availability": "available",
+      "head_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+      "current": true,
+      "role": "work_item"
+    }
+  ],
+  "work_item_association": {
+    "declared": "",
+    "status": "undeclared",
+    "record_ids": [],
+    "links": [
+      {
+        "record_id": "6ff9cf6d53914e8197240186da07dc92",
+        "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+        "provider": "jira",
+        "namespace": "127.0.0.1:17521",
+        "kind": "ticket",
+        "external_id": "101",
+        "ref": "NET-101",
+        "role": "work_item",
+        "current": true,
+        "origin": "task",
+        "relation": "task_anchor"
+      }
+    ],
+    "historical": true,
+    "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+  },
+  "task_id": "66ab400660f4",
+  "title": "Our services sometimes receive Retry-After delays longer than they can afford to wait. Add an optional caller-controlled upper bound for Retry-After sleeping without unexpectedly changing existing retry behavior. Investigate, implement, document and test the change. This is for the library-next rele",
+  "goal": "Our services sometimes receive Retry-After delays longer than they can afford to wait. Add an optional caller-controlled upper bound for Retry-After sleeping without unexpectedly changing existing retry behavior. Investigate, implement, document and test the change. This is for the library-next release.",
+  "repo": "urllib3/urllib3",
+  "requester": "Engineer 177b2c",
+  "facts": {},
+  "status": "completed",
+  "verdict": "engage",
+  "verdict_why": "the task speaks of changing existing retry behavior, release, in \"Our services sometimes receive Retry-After delays longer than they can afford to wait. Add an optional…\", which is a call for Engineer 654255 as a first contact; ask them to confirm who decides or refer (the model agrees: Task introduces optional caller-controlled upper bound for Retry-After delays—a user-facing behavior change affecting retry semantics for library-next release that needs confirmation on whether this should be opt-in (backward compatible) or what the default should be, especially given existing services' timeout constraints.)",
+  "counts": {
+    "answered": 2,
+    "adopted": 1,
+    "unrouted": 0,
+    "needs_review": 0,
+    "parent_changed_after": 0,
+    "signoff_required": 0,
+    "blocking": 0
+  },
+  "needs_review": false,
+  "model_pending": false,
+  "nodes": [
+    {
+      "node_id": "ee43bf873a9d",
+      "task_id": "66ab400660f4",
+      "parent_id": "",
+      "depth": 0,
+      "client_ref": "",
+      "origin": "agent",
+      "question": "Should the new Retry-After upper bound be an opt-in parameter (default unlimited, i.e. no behavior change unless a caller sets it) rather than a new non-None default?",
+      "status": "answered",
+      "kind": "agent",
+      "answer": "For library-next, make retry_after_max optional and default it to None so existing clients keep unlimited Retry-After sleeping. Cap only the actual waiting step; parse_retry_after and get_retry_after must report the unchanged header delay. A zero cap skips sleeping but still handles the header, so it must not fall through to exponential backoff. Reject negative values, NaN, and either infinity with ValueError at construction. Preserve the value through new() and increment(), and leave exponential backoff unchanged. This is my decision for this task",
+      "prediction": "",
+      "evidence": "",
+      "owner": "Mira Example",
+      "source": "human",
+      "source_id": "",
+      "source_revision": "",
+      "routing_reason": "Routed from the ownership graph: inferred first contact; confirm or refer in Slack; authored 5 of the last 68 changes under test/test_retry.py (55% recency weighted); note: Engineer 111008 holds history under src/urllib3/ but has been inactive for 19 months, so Raven did not route to them; area: the agent is working in … [cut: the owner evidence has the rest]",
+      "owner_evidence": "inferred first contact selected from cited evidence; confirm or refer; Type: Task\nStatus: Done\nResolution: Done\n\nFor library-next, existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning. Runtime policy questions go to Mira; release documentation questions go to Theo. No final policy exists yet for zero or invalid limits.; For library-next, existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning. Runtime policy questions go to Mira; release documentation questions go to Theo. No final policy exists yet for zero or invalid limits.",
+      "answered_by": "Mira Example",
+      "rationale": "callers need an explicit finite waiting budget without changing default behavior.",
+      "signoff": "signed",
+      "signed_by": "Mira Example",
+      "brief": "",
+      "path": "src/urllib3/util/retry.py",
+      "category": "policy",
+      "created_at": "2026-10-12T20:40:54.928068+00:00",
+      "updated_at": "2026-10-12T21:06:11.311422+00:00",
+      "needs_review": false,
+      "review_reason": "",
+      "authorized": true,
+      "blocking": false,
+      "duplicate_of": "",
+      "reusable": false,
+      "rule_conditions": "",
+      "rule_expires": "",
+      "rule_scope": "",
+      "facts": {},
+      "required_signers": [],
+      "signatures": [
+        "Mira Example"
+      ],
+      "historical_signatures": [],
+      "followup_required": false,
+      "partial": false,
+      "model_pending": false,
+      "options": [
+        "Opt-in, default None (no cap) - zero behavior change for existing callers, matches task wording",
+        "Non-None default cap (e.g. backoff_max's 120s) - would silently change behavior for services already relying on long Retry-After waits, violates task requirement"
+      ],
+      "next": "act on the answer from Mira Example; follow-up questions they added are children of this node in bridge_get_tree",
+      "standing_grant": {
+        "recorded": false,
+        "state": "not_declared",
+        "scope": "",
+        "conditions": "",
+        "expires_at": "",
+        "granted_by": "",
+        "granted_at": "",
+        "ended_at": "",
+        "source_needs_review": false,
+        "source_provenance_uncertain": false,
+        "request_applicability": "not_evaluated_by_this_read",
+        "notice": "This decision declares no standing reuse grant of its own. Its current authorized/signoff result is separate and may be based on a source rule. Do not treat this decision as a new reusable rule; preserve its recorded answer and original context."
+      },
+      "fact_revision": "facts:3e1acf375d5e06e6bbe4eeaab784825589b53ced167f1008f1385e538b230e29",
+      "sources": [
+        {
+          "record_id": "6ff9cf6d53914e8197240186da07dc92",
+          "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+          "sequence": 1,
+          "provider": "jira",
+          "namespace": "127.0.0.1:17521",
+          "external_id": "101",
+          "kind": "ticket",
+          "repo": "urllib3/urllib3",
+          "ref": "NET-101",
+          "url": "http://127.0.0.1:17521/jira/browse/NET-101",
+          "title": "NET-101: Retry-After compatibility policy",
+          "author": "Mira Example",
+          "source_created_at": "2025-10-01T10:00:00Z",
+          "source_updated_at": "2025-10-01T10:00:00Z",
+          "source_version": "2025-10-01T10:00:00Z",
+          "observed_at": "2026-10-12T20:26:21.947866+00:00",
+          "provenance": "import",
+          "fingerprint": "8dbf51fb293d76b4eeebf4d439c248b62f0b3131a8a04e0853aa8fdff6450286",
+          "availability": "available",
+          "head_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+          "current": true,
+          "role": "support",
+          "decision_version_id": "39022fa463f74b918e9bbfa51bb16953",
+          "stale": false
+        }
+      ],
+      "work_item_association": {
+        "declared": "",
+        "status": "undeclared",
+        "record_ids": [],
+        "links": [
+          {
+            "record_id": "6ff9cf6d53914e8197240186da07dc92",
+            "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+            "provider": "jira",
+            "namespace": "127.0.0.1:17521",
+            "kind": "ticket",
+            "external_id": "101",
+            "ref": "NET-101",
+            "role": "work_item",
+            "current": true,
+            "origin": "task",
+            "relation": "task_anchor"
+          }
+        ],
+        "historical": true,
+        "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+      },
+      "source_reuse_requires_review": false,
+      "source_provenance": "versioned",
+      "source_notice": "",
+      "related": [
+        {
+          "id": "ab037067279b",
+          "kind": "derived",
+          "note": "Version-pinned joint composition",
+          "source_decision_id": "ee43bf873a9d",
+          "source_version_id": "39022fa463f74b918e9bbfa51bb16953",
+          "decision_id": "ab037067279b",
+          "decision_version_id": "27a93f071ed4406d95ee2f9b76bbb566"
+        }
+      ],
+      "depends_on": [],
+      "dependents": [],
+      "parent_changed_after": false,
+      "children": [
+        {
+          "node_id": "5cd04c21c4fa",
+          "task_id": "66ab400660f4",
+          "parent_id": "ee43bf873a9d",
+          "depth": 1,
+          "client_ref": "",
+          "origin": "human",
+          "question": "What must the release note and user documentation say about zero and invalid Retry-After limits?",
+          "status": "adopted",
+          "kind": "followup",
+          "answer": "",
+          "prediction": "",
+          "evidence": "",
+          "owner": "",
+          "source": "human",
+          "source_id": "",
+          "source_revision": "",
+          "routing_reason": "resolution ladder",
+          "owner_evidence": "",
+          "answered_by": "",
+          "rationale": "",
+          "signoff": "",
+          "signed_by": "",
+          "brief": "",
+          "path": "src/urllib3/util/retry.py",
+          "category": "policy",
+          "created_at": "2026-10-12T21:07:22.164799+00:00",
+          "updated_at": "2026-10-12T21:09:06.846158+00:00",
+          "needs_review": false,
+          "review_reason": "",
+          "authorized": false,
+          "blocking": false,
+          "duplicate_of": "",
+          "reusable": false,
+          "rule_conditions": "",
+          "rule_expires": "",
+          "rule_scope": "",
+          "facts": {},
+          "required_signers": [],
+          "signatures": [],
+          "historical_signatures": [],
+          "followup_required": true,
+          "partial": false,
+          "model_pending": false,
+          "options": [],
+          "next": " Read parent node ee43bf873a9d (its current context is here or in bridge_get_tree) before adding more questions; reconcile what its answer already covers. Parent context does not authorize this child or transfer its owner's authority.",
+          "standing_grant": {
+            "recorded": false,
+            "state": "not_declared",
+            "scope": "",
+            "conditions": "",
+            "expires_at": "",
+            "granted_by": "",
+            "granted_at": "",
+            "ended_at": "",
+            "source_needs_review": false,
+            "source_provenance_uncertain": false,
+            "request_applicability": "not_evaluated_by_this_read",
+            "notice": "This decision declares no standing reuse grant of its own. Its current authorized/signoff result is separate and may be based on a source rule. Do not treat this decision as a new reusable rule; preserve its recorded answer and original context."
+          },
+          "fact_revision": "facts:49ec7c33928db939e032fa9d6739e5e09aeff019fecd6f5f1773f6072955ec7d",
+          "sources": [],
+          "work_item_association": {
+            "declared": "",
+            "status": "undeclared",
+            "record_ids": [],
+            "links": [
+              {
+                "record_id": "6ff9cf6d53914e8197240186da07dc92",
+                "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+                "provider": "jira",
+                "namespace": "127.0.0.1:17521",
+                "kind": "ticket",
+                "external_id": "101",
+                "ref": "NET-101",
+                "role": "work_item",
+                "current": true,
+                "origin": "task",
+                "relation": "task_anchor"
+              }
+            ],
+            "historical": true,
+            "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+          },
+          "source_reuse_requires_review": false,
+          "source_provenance": "unknown",
+          "source_notice": "",
+          "parent": {
+            "node_id": "ee43bf873a9d",
+            "status": "answered",
+            "authorized": true,
+            "needs_review": false,
+            "updated_at": "2026-10-12T21:06:11.311422+00:00"
+          },
+          "related": [],
+          "depends_on": [],
+          "dependents": [],
+          "parent_changed_after": false,
+          "children": []
+        },
+        {
+          "node_id": "ab037067279b",
+          "task_id": "66ab400660f4",
+          "parent_id": "ee43bf873a9d",
+          "depth": 1,
+          "client_ref": "",
+          "origin": "human",
+          "question": "What must the release note and user documentation say about zero and invalid Retry-After limits?",
+          "status": "answered",
+          "kind": "prediction",
+          "answer": "For library-next, the Retry API docstring and the changelog fragment must explicitly say: retry_after_max defaults to None and leaves existing behavior unchanged; zero skips waiting while still handling Retry-After, without exponential-backoff fallback; negative values, NaN, and either infinity raise ValueError at construction; parsing and reported Retry-After values are never capped. Mention that the configured limit survives retry cloning. No separate user-guide page is needed",
+          "prediction": "",
+          "evidence": "",
+          "owner": "Theo Example",
+          "source": "human",
+          "source_id": "",
+          "source_revision": "",
+          "routing_reason": "Referred to Theo Example by Engineer 654255",
+          "owner_evidence": "handed on by Engineer 654255: \"Not me, please ask <@U12THEO> just this one. Theo decides the release documentation.\"",
+          "answered_by": "Theo Example",
+          "rationale": "the API reference includes the docstring. This is my documentation decision for this task because callers need clear opt-in and edge-case behavior.",
+          "signoff": "signed",
+          "signed_by": "Theo Example",
+          "brief": "",
+          "path": "src/urllib3/util/retry.py",
+          "category": "policy",
+          "created_at": "2026-10-12T21:09:06.181005+00:00",
+          "updated_at": "2026-10-12T21:16:05.705290+00:00",
+          "needs_review": false,
+          "review_reason": "",
+          "authorized": true,
+          "blocking": false,
+          "duplicate_of": "",
+          "reusable": false,
+          "rule_conditions": "",
+          "rule_expires": "",
+          "rule_scope": "",
+          "facts": {},
+          "required_signers": [],
+          "signatures": [
+            "Theo Example"
+          ],
+          "historical_signatures": [],
+          "followup_required": false,
+          "partial": false,
+          "model_pending": false,
+          "options": [],
+          "next": "act on the answer from Theo Example; follow-up questions they added are children of this node in bridge_get_tree Read parent node ee43bf873a9d (its current context is here or in bridge_get_tree) before adding more questions; reconcile what its answer already covers. Parent context does not authorize this child or transfer its owner's authority.",
+          "standing_grant": {
+            "recorded": false,
+            "state": "not_declared",
+            "scope": "",
+            "conditions": "",
+            "expires_at": "",
+            "granted_by": "",
+            "granted_at": "",
+            "ended_at": "",
+            "source_needs_review": false,
+            "source_provenance_uncertain": false,
+            "request_applicability": "not_evaluated_by_this_read",
+            "notice": "This decision declares no standing reuse grant of its own. Its current authorized/signoff result is separate and may be based on a source rule. Do not treat this decision as a new reusable rule; preserve its recorded answer and original context."
+          },
+          "fact_revision": "facts:f9092d21c13da26f56306ef71692eedb331ec64740091d71b5167f609332221b",
+          "sources": [
+            {
+              "record_id": "6ff9cf6d53914e8197240186da07dc92",
+              "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+              "sequence": 1,
+              "provider": "jira",
+              "namespace": "127.0.0.1:17521",
+              "external_id": "101",
+              "kind": "ticket",
+              "repo": "urllib3/urllib3",
+              "ref": "NET-101",
+              "url": "http://127.0.0.1:17521/jira/browse/NET-101",
+              "title": "NET-101: Retry-After compatibility policy",
+              "author": "Mira Example",
+              "source_created_at": "2025-10-01T10:00:00Z",
+              "source_updated_at": "2025-10-01T10:00:00Z",
+              "source_version": "2025-10-01T10:00:00Z",
+              "observed_at": "2026-10-12T20:26:21.947866+00:00",
+              "provenance": "import",
+              "fingerprint": "8dbf51fb293d76b4eeebf4d439c248b62f0b3131a8a04e0853aa8fdff6450286",
+              "availability": "available",
+              "head_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+              "current": true,
+              "role": "contradiction",
+              "decision_version_id": "27a93f071ed4406d95ee2f9b76bbb566",
+              "stale": false
+            },
+            {
+              "record_id": "6ff9cf6d53914e8197240186da07dc92",
+              "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+              "sequence": 1,
+              "provider": "jira",
+              "namespace": "127.0.0.1:17521",
+              "external_id": "101",
+              "kind": "ticket",
+              "repo": "urllib3/urllib3",
+              "ref": "NET-101",
+              "url": "http://127.0.0.1:17521/jira/browse/NET-101",
+              "title": "NET-101: Retry-After compatibility policy",
+              "author": "Mira Example",
+              "source_created_at": "2025-10-01T10:00:00Z",
+              "source_updated_at": "2025-10-01T10:00:00Z",
+              "source_version": "2025-10-01T10:00:00Z",
+              "observed_at": "2026-10-12T20:26:21.947866+00:00",
+              "provenance": "import",
+              "fingerprint": "8dbf51fb293d76b4eeebf4d439c248b62f0b3131a8a04e0853aa8fdff6450286",
+              "availability": "available",
+              "head_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+              "current": true,
+              "role": "support",
+              "decision_version_id": "27a93f071ed4406d95ee2f9b76bbb566",
+              "stale": false
+            }
+          ],
+          "work_item_association": {
+            "declared": "",
+            "status": "undeclared",
+            "record_ids": [],
+            "links": [
+              {
+                "record_id": "6ff9cf6d53914e8197240186da07dc92",
+                "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+                "provider": "jira",
+                "namespace": "127.0.0.1:17521",
+                "kind": "ticket",
+                "external_id": "101",
+                "ref": "NET-101",
+                "role": "work_item",
+                "current": true,
+                "origin": "task",
+                "relation": "task_anchor"
+              }
+            ],
+            "historical": true,
+            "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+          },
+          "source_reuse_requires_review": false,
+          "source_provenance": "versioned",
+          "source_notice": "",
+          "parent": {
+            "node_id": "ee43bf873a9d",
+            "status": "answered",
+            "authorized": true,
+            "needs_review": false,
+            "updated_at": "2026-10-12T21:06:11.311422+00:00"
+          },
+          "related": [
+            {
+              "id": "ee43bf873a9d",
+              "kind": "derived",
+              "note": "Version-pinned joint composition",
+              "source_decision_id": "ee43bf873a9d",
+              "source_version_id": "39022fa463f74b918e9bbfa51bb16953",
+              "decision_id": "ab037067279b",
+              "decision_version_id": "27a93f071ed4406d95ee2f9b76bbb566"
+            }
+          ],
+          "depends_on": [],
+          "dependents": [],
+          "parent_changed_after": false,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "followups": [],
+  "observed_at": "2026-10-12T21:27:21.313461+00:00",
+  "observed_revision": {
+    "5cd04c21c4fa": {
+      "max_event_id": 1503,
+      "event_count": 1
+    },
+    "ab037067279b": {
+      "max_event_id": 1531,
+      "event_count": 3
+    },
+    "ee43bf873a9d": {
+      "max_event_id": 1501,
+      "event_count": 2
+    }
+  },
+  "notes": [],
+  "scope_clarifications": [],
+  "next": "no node waits on anyone",
+  "review": {
+    "id": "9ed27a6242f4",
+    "status": "done",
+    "follows": [
+      {
+        "node_id": "ee43bf873a9d",
+        "question": "Should the new Retry-After upper bound be an opt-in parameter (default unlimited, i.e. no behavior change unless a caller sets it) rather than a new non-None default?",
+        "requirements": [
+          {
+            "at": "retry_after_max: float | None = None,",
+            "found": "honored",
+            "kind": "must",
+            "needs": "retry_after_max optional parameter defaulting to None (no change in default behavior)",
+            "state": "ok"
+          },
+          {
+            "at": "if self.retry_after_max is not None:",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Cap applies only to the actual sleep/wait step, not to parsed or reported values",
+            "state": "ok"
+          },
+          {
+            "at": "if self.retry_after_max is not None:",
+            "found": "honored",
+            "kind": "must",
+            "needs": "parse_retry_after and get_retry_after must report the unchanged header delay",
+            "state": "ok"
+          },
+          {
+            "at": "retry_after = min(retry_after, self.retry_after_max)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "A zero cap skips sleeping but still handles the header; must not fall through to exponential backoff",
+            "state": "ok"
+          },
+          {
+            "at": "retry_after_max < 0",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Reject negative values with ValueError at construction",
+            "state": "ok"
+          },
+          {
+            "at": "math.isnan(retry_after_max)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Reject NaN with ValueError at construction",
+            "state": "ok"
+          },
+          {
+            "at": "math.isinf(retry_after_max)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Reject infinity (either sign) with ValueError at construction",
+            "state": "ok"
+          },
+          {
+            "at": "retry_after_max=self.retry_after_max,",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Preserve retry_after_max through new()",
+            "state": "ok"
+          },
+          {
+            "at": "retry_after_max=self.retry_after_max,",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Preserve retry_after_max through increment()",
+            "not_shown": "increment() method implementation is not shown in the diff; it is assumed to call new() to propagate retry_after_max, but this cannot be verified from the shown code.",
+            "state": "unclear"
+          },
+          {
+            "at": "def sleep_for_retry(self, response: BaseHTTPResponse) -> bool:",
+            "found": "honored",
+            "kind": "must_not",
+            "needs": "Leave exponential backoff unchanged",
+            "state": "ok"
+          }
+        ],
+        "unexamined": [
+          "increment() method implementation is not shown in the diff; it is assumed to call new() to propagate retry_after_max, but this cannot be verified from the shown code."
+        ],
+        "verdict": "unclear",
+        "why": "The review is inconclusive: increment() method implementation is not shown in the diff; it is assumed to call new() to propagate retry_after_max, but this cannot be verified from the shown code.. All stated requirements for retry_after_max as an opt-in, None-default cap confined to the sleep step are reflected in the diff's constructor validation, new()/increment() propagation, and sleep_for_retry capping, with no changes to parse_retry_after, get_retry_after, or backoff logic."
+      },
+      {
+        "node_id": "ab037067279b",
+        "question": "What must the release note and user documentation say about zero and invalid Retry-After limits?",
+        "requirements": [
+          {
+            "at": "By default, there is no limit and urllib3 will sleep for however",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docstring must explicitly say retry_after_max defaults to None and preserves existing behavior",
+            "state": "ok"
+          },
+          {
+            "at": "Defaults to ``None`` (no limit), preserving the existing behavior.",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Changelog must explicitly say retry_after_max defaults to None and preserves existing behavior",
+            "state": "ok"
+          },
+          {
+            "at": "so urllib3 won't fall back to exponential backoff), it just means",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docstring must say zero skips waiting while still handling Retry-After, without backoff fallback",
+            "state": "ok"
+          },
+          {
+            "at": "Setting ``retry_after_max`` to ``0`` still honors the ``Retry-After`` header",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Changelog must say zero skips waiting while still handling Retry-After, without backoff fallback",
+            "state": "ok"
+          },
+          {
+            "at": "Must be a non-negative, finite number, or ``None``; a negative,",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docstring must say negative, NaN, and infinite values raise ValueError at construction",
+            "state": "ok"
+          },
+          {
+            "at": "Negative, NaN, and infinite values raise ``ValueError`` at construction time.",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Changelog must say negative, NaN, and infinite values raise ValueError at construction",
+            "note": "the line quoted for it is not in the diff",
+            "state": "unclear"
+          },
+          {
+            "at": "from :meth:`~Retry.get_retry_after`) is unaffected.",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docstring must say parsing and reported Retry-After values are never capped",
+            "state": "ok"
+          },
+          {
+            "at": "reported ``Retry-After`` value is unaffected; only the sleep itself is",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Changelog must say parsing and reported Retry-After values are never capped",
+            "state": "ok"
+          },
+          {
+            "at": "This limit is preserved across retries (including by :meth:`~Retry.new`",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docstring must mention configured limit survives retry cloning",
+            "not_shown": "Retry.increment() implementation is not shown in the diff; its propagation of retry_after_max is only confirmed by a test, not by visible code.",
+            "state": "unclear"
+          },
+          {
+            "at": "The configured limit survives retry cloning.",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Changelog must mention configured limit survives retry cloning",
+            "not_shown": "Retry.increment() implementation is not shown in the diff; whether it truly forwards retry_after_max to new() cannot be verified from the shown code.",
+            "state": "unclear"
+          },
+          {
+            "at": "diff --git a/changelog/3686.feature.rst b/changelog/3686.feature.rst",
+            "found": "honored",
+            "kind": "must_not",
+            "needs": "No separate user-guide page is needed",
+            "state": "ok"
+          }
+        ],
+        "unexamined": [
+          "Retry.increment() implementation is not shown in the diff; its propagation of retry_after_max is only confirmed by a test, not by visible code.",
+          "Retry.increment() implementation is not shown in the diff; whether it truly forwards retry_after_max to new() cannot be verified from the shown code."
+        ],
+        "verdict": "unclear",
+        "why": "The review is inconclusive: Retry.increment() implementation is not shown in the diff; its propagation of retry_after_max is only confirmed by a test, not by visible code.; Retry.increment() implementation is not shown in the diff; whether it truly forwards retry_after_max to new() cannot be verified from the shown code.. All required statements about defaults, zero handling, invalid-value errors, uncapped parsing, and clone persistence appear verbatim in both the docstring and changelog fragment, and no separate user-guide page was added."
+      }
+    ],
+    "diff_hash": "8309f0a2816c5089",
+    "seconds": 122.6,
+    "finished_at": "2026-10-12T21:26:03.010011+00:00",
+    "revisions": {
+      "ab037067279b": "af3108435bc8e4b7",
+      "ee43bf873a9d": "99f990d3e1cc4388"
+    },
+    "review_inputs": {
+      "ab037067279b": "28ff89e9ac0c8eacb0c4e46e945b26866cc4674f02aafc1a2abc314bdb56f501",
+      "ee43bf873a9d": "bddf67352c7c22f374d7f3c58c486c5cb9e8ddfc665446aa6360e7e6fae86b16"
+    }
+  },
+  "read_acknowledged": true
+}

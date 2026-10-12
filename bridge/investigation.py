@@ -29,7 +29,9 @@ cross-team effects and undocumented assumptions only when the supplied evidence
 supports a concrete concern. Code facts and tests the agent can establish itself
 are investigations, not approval requests. Do not invent requirements or people.
 Already registered decisions do not need duplicate questions. A typo-only change
-can have no findings. Return JSON {"summary":"brief coverage assessment",
+can have no findings. A decision with status adopted is a follow-up placeholder
+whose question has been taken onto the active tree, not an unanswered duplicate.
+Return JSON {"summary":"brief coverage assessment",
 "findings":[{"kind":"judgment|investigate", "question":"one clear question",
 "why":"why it matters here", "basis":["IDs from evidence"], "paths":["paths"]}]}.
 At most 12 findings. Cite at least one supplied evidence ID for each finding.
@@ -45,22 +47,38 @@ def _task(store, task_id):
 
 
 def _input(store, task, observations, paths, diff, phase):
-    from .semantic_index import sources
-    from .llm import clip_marked
     g = store.graph
     with g.source_scope(task['id']):
-        rows, retrieval = sources(g, (task['goal'] + '\n' + observations)[:2000], task['repo'], 10)
+        rows = [dict(r) for r, _ in g._intent_corpus(task['repo'])[0]]
     nodes = [dict(r) for r in g.db.execute('SELECT id,question,answer,status,path,updated_at FROM decisions '
                                           'WHERE run_id=? AND draft=0 ORDER BY created_at', (task['id'],))]
     evidence = {'host': observations, 'task': task['goal'] or task['title']}
     evidence.update({f'decision:{n["id"]}': n for n in nodes})
-    evidence.update({f'source:{r["record_id"]}:{r["source_version_id"]}': {
-        'ref': r['ref'], 'status': r['status'], 'body': clip_marked(r['body'], 3000, 'read the full source before relying on it')}
-        for r in rows if r['record_id']})
     if diff:
         evidence['diff'] = diff
     return {'task_id': task['id'], 'repo': task['repo'], 'facts': task['facts'], 'phase': phase,
-            'paths': paths, 'evidence': evidence, 'retrieval': retrieval}
+            'paths': paths, 'evidence': evidence, 'retrieval': {'backend': 'pending'},
+            'source_snapshot': cm.digest(sorted(rows, key=lambda r: str(r['id'])))}
+
+
+def _retrieve(store, payload):
+    """Cold embedding/index work belongs to the durable background review.
+
+    The request identity captures eligible source revisions without encoding
+    them. Save the exact selected evidence before inference for auditability.
+    """
+    from .semantic_index import sources
+    from .llm import clip_marked
+    g = store.graph
+    with g.source_scope(payload['task_id']):
+        rows, diagnostic = sources(g, (payload['evidence']['task'] + '\n' + payload['evidence']['host'])[:2000], payload['repo'], 10)
+        current = [dict(r) for r, _ in g._intent_corpus(payload['repo'])[0]]
+    if cm.digest(sorted(current, key=lambda r: str(r['id']))) != payload['source_snapshot']:
+        raise ValueError('Source context changed during retrieval; retry the review')
+    payload['retrieval'] = diagnostic
+    payload['evidence'].update({f'source:{r["record_id"]}:{r["source_version_id"]}': {
+        'ref': r['ref'], 'status': r['status'], 'body': clip_marked(r['body'], 3000, 'read the full source before relying on it')}
+        for r in rows if r['record_id']})
 
 
 def _view(row):
@@ -136,21 +154,37 @@ def _complete(store, review_id, payload, cfg):
     if cfg.semantic_retrieval:
         raw = None
         try:
+            _retrieve(store, payload)
+            with g.transaction():
+                g.db.execute('UPDATE investigation_reviews SET input=? WHERE id=?', (json.dumps(payload), review_id))
             raw = Client(cfg).complete_json('discovery_review', SYSTEM, json.dumps(payload), max_tokens=2400)
             if not isinstance(raw, dict) or not isinstance(raw.get('findings'), list) or len(raw['findings']) > 12:
                 raise ValueError('Invalid discovery review')
             findings = []
             for f in raw['findings']:
+                # Hosts and reviewers see both node IDs and evidence keys.
+                # Accept an exact node ID only when that same decision was
+                # supplied; never guess a source version or match a prefix.
+                if isinstance(f, dict) and isinstance(f.get('basis'), list):
+                    f = {**f, 'basis': [f'decision:{b}' if isinstance(b, str)
+                        and b not in payload['evidence'] and f'decision:{b}' in payload['evidence']
+                        else b for b in f['basis']]}
                 if (not isinstance(f, dict) or f.get('kind') not in ('judgment', 'investigate')
                         or not isinstance(f.get('question'), str) or not f['question'].strip()
                         or len(f['question']) > 2000 or not isinstance(f.get('why'), str)
                         or not isinstance(f.get('basis'), list) or not f['basis']
                         or any(not isinstance(b, str) or b not in payload['evidence'] for b in f['basis'])
                         or not isinstance(f.get('paths', []), list)
-                        or any(p not in paths for p in f.get('paths', []))):
+                        or any(not isinstance(p, str) or len(p) > 1000 for p in f.get('paths', []))):
                     raise ValueError('Unbound discovery finding')
                 finding = {k: f[k] for k in ('kind', 'question', 'why', 'basis')}
-                finding['paths'] = f.get('paths', [])
+                finding['paths'] = [p for p in f.get('paths', []) if p in paths]
+                # A path annotation is not the cited basis. Preserve a valid
+                # question when the host supplied no paths, without promoting
+                # model-named files into verified scope or routing authority.
+                unverified = [p for p in f.get('paths', []) if p not in paths]
+                if unverified:
+                    finding['unverified_paths'] = unverified
                 findings.append({'id': cm.digest(finding)[:16], **finding})
             result = {'status': 'complete', 'summary': str(raw.get('summary') or '')[:3000], 'findings': findings}
         except (LLMError, ValueError, TypeError) as error:
@@ -158,12 +192,12 @@ def _complete(store, review_id, payload, cfg):
             if raw is not None:
                 result['rejected_output'] = raw
     with g.transaction():
-        row = g.db.execute('SELECT result FROM investigation_reviews WHERE id=?', (review_id,)).fetchone()
+        row = g.db.execute('SELECT result,input_hash FROM investigation_reviews WHERE id=?', (review_id,)).fetchone()
         if row is None or json.loads(row['result'])['status'] != 'pending':
             return
         g.db.execute('UPDATE investigation_reviews SET result=? WHERE id=?', (json.dumps(result), review_id))
         g.append_event('discovery_reviewed', {'task_id': payload['task_id'], 'review_id': review_id,
-                       'phase': payload['phase'], 'input_hash': cm.digest(payload), **result})
+                       'phase': payload['phase'], 'input_hash': row['input_hash'], **result})
 
 
 def address(store, task_id, args):

@@ -133,7 +133,7 @@ class ScopeCallbacks:
         held = self.propose(True)
         # Multibyte values prove the budget is bytes after display escaping.
         self.graph.db.execute('UPDATE decisions SET facts=? WHERE id=?',
-                             (json.dumps({'customer': '界' * 5000}), self.decision_id))
+                             (json.dumps({'customer': '界' * 15000}), self.decision_id))
         self.send_unheld('Exclude the load test.', True)
         self.assertIsNone(self.held())
         self.assertIn('No shortened read-back can be confirmed', self.sent_prompt())

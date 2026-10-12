@@ -1,0 +1,1 @@
+Our services sometimes receive Retry-After delays longer than they can afford to wait. Add an optional caller-controlled upper bound for Retry-After sleeping without unexpectedly changing existing retry behavior. Investigate, implement, document and test the change. This is for the library-next release.

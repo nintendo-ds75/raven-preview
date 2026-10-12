@@ -510,7 +510,7 @@ class AnswerSelectionTests(DeliveryCase):
 
     def test_oversized_current_source_review_has_no_confirmable_answer_hold(self):
         self.setup_source()
-        self.source('The complete source must remain visible. ' + 'source detail ' * 1000,
+        self.source('The complete source must remain visible. ' + '界' * 15000,
             source_version='external-long')
         response = self.send('answer: Exclude internal load tests for this task.')
         self.assertIn('too large', response)

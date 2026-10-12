@@ -1423,10 +1423,10 @@ def _clip(text: str, limit: int, rest: str) -> str:
     return f"{cut} … _[cut here: {rest}]_"
 
 
-def complete_chat_text(text):
+def complete_chat_text(text, platform=''):
     """Final escaped text must fit both supported chat delivery shapes."""
-    from .readback import MAX_PROMPT_BYTES
-    return len(text.encode('utf-8')) <= MAX_PROMPT_BYTES and len(_sections(text, 2900)) <= 50
+    from .readback import prompt_budget
+    return len(text.encode('utf-8')) <= prompt_budget(platform) and len(_sections(text, 2900)) <= 50
 
 
 def _sections(text: str, size: int) -> list[str]:
@@ -1544,7 +1544,10 @@ class SlackTransport:
     def post_reply(self, channel, text, blocks, thread_ts, event_id):
         payload = {"channel": channel, "text": text, "blocks": blocks, "thread_ts": thread_ts,
                    "client_msg_id": str(uuid.uuid5(uuid.NAMESPACE_URL, "raven-slack:" + event_id)), "unfurl_links": False}
-        return self._call("chat.postMessage", payload)["ts"]
+        result = self._call("chat.postMessage", payload)
+        if 'message_truncated' in (result.get('response_metadata', {}).get('warnings') or []):
+            raise RuntimeError('Slack truncated the review; no delivered confirmation may be recorded')
+        return result["ts"]
 
     def search_context(self, query, action_token):
         if not action_token:

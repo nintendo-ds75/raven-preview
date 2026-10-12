@@ -1,0 +1,450 @@
+{
+  "id": "ee43bf873a9d",
+  "run_id": "66ab400660f4",
+  "question": "Should the new Retry-After upper bound be an opt-in parameter (default unlimited, i.e. no behavior change unless a caller sets it) rather than a new non-None default?",
+  "context": "Implemented as `Retry(retry_after_max: float | None = None)` in src/urllib3/util/retry.py. Default None preserves exact current behavior (verified by running the full existing test/test_retry.py suite unmodified: 67 passed before my changes, still pass after). When set, it clamps the value computed by `Retry.parse_retry_after()` (lines ~308-323, after the existing `seconds = max(seconds, 0)` floor) via `seconds = min(seconds, self.retry_after_max)`, which covers both the integer-seconds and HTTP-date forms of the Retry-After header, and is threaded through `Retry.new()` (lines 247-268) so it survives across retries. This mirrors the existing `backoff_max` parameter, which already caps the *computed backoff* delay the same way (same file, same pattern, introduced per commit f69b1c89 \"Make the maximum backoff time configurable\"). Task explicitly requires \"optional caller-controlled upper bound... without unexpectedly changing existing retry behavior,\" which this directly satisfies: no behavior changes for any caller who does not pass retry_after_max.\nPaths: src/urllib3/util/retry.py, test/test_retry.py, changelog/3686.feature.rst\nOptions: Opt-in, default None (no cap) - zero behavior change for existing callers, matches task wording | Non-None default cap (e.g. backoff_max's 120s) - would silently change behavior for services already relying on long Retry-After waits, violates task requirement",
+  "path": "src/urllib3/util/retry.py",
+  "owner_id": "d3975f7af84e",
+  "routing_reason": "Routed from the ownership graph: inferred first contact; confirm or refer in Slack; authored 5 of the last 68 changes under test/test_retry.py (55% recency weighted); note: Engineer 111008 holds history under src/urllib3/ but has been inactive for 19 months, so Raven did not route to them; area: the agent is working in … [cut: the owner evidence has the rest]",
+  "status": "resolved",
+  "prediction": null,
+  "source_id": null,
+  "answer": "Opt-in, default None (no cap) — zero behavior change for existing callers. Additionally, per NET-101: the cap applies only to the actual sleep/waiting step, never to the parsed or reported Retry-After value.",
+  "rationale": "NET-101 (\"Retry-After compatibility policy\", status Done) states: \"existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning.\" I revised the implementation to match exactly: `retry_after_max` defaults to None (src/urllib3/util/retry.py:231), is carried through `Retry.new()` so it survives cloning across retries (line 276), and is applied only inside `sleep_for_retry()` right before the `time.sleep()` call (lines 349-352) — `parse_retry_after()` and `get_retry_after()` are unchanged and still return the true header-derived value. Tests updated accordingly: test_parse_retry_after_unaffected_by_max / test_get_retry_after_unaffected_by_max assert parsing/reporting ignore the cap; test_respect_retry_after_header_sleep_capped / _not_capped assert the actual time.sleep() call is bounded. NET-101 explicitly notes no final policy exists yet for zero or invalid retry_after_max values, so I did not add special-case validation for those — a bare numeric min() comparison is used, matching the \"no final policy\" state.",
+  "answered_by": "",
+  "created_at": "2026-10-12T20:40:54.928068+00:00",
+  "updated_at": "2026-10-12T20:59:06.402186+00:00",
+  "model_pending": 0,
+  "category": "policy",
+  "source": "agent",
+  "evidence": "settled by the agent: NET-101 (\"Retry-After compatibility policy\", status Done) states: \"existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning.\" I revised the implementation to match exactly: `retry_after_max` defaults to None (src/urllib3/util/retry.py:231), is carried through `Retry.new()` so it survives cloning across retries (line 276), and is applied only inside `sleep_for_retry()` right before the `time.sleep()` call (lines 349-352) — `parse_retry_after()` and `get_retry_after()` are unchanged and still return the true header-derived value. Tests updated accordingly: test_parse_retry_after_unaffected_by_max / test_get_retry_after_unaffected_by_max assert parsing/reporting ignore the cap; test_respect_retry_after_header_sleep_capped / _not_capped assert the actual time.sleep() call is bounded. NET-101 explicitly notes no final policy exists yet for zero or invalid retry_after_max values, so I did not add special-case validation for those — a bare numeric min() comparison is used, matching the \"no final policy\" state.",
+  "owner_evidence": "inferred first contact selected from cited evidence; confirm or refer; Type: Task\nStatus: Done\nResolution: Done\n\nFor library-next, existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning. Runtime policy questions go to Mira; release documentation questions go to Theo. No final policy exists yet for zero or invalid limits.; For library-next, existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning. Runtime policy questions go to Mira; release documentation questions go to Theo. No final policy exists yet for zero or invalid limits.",
+  "superseded_by": "",
+  "supersedes": "",
+  "options": "[\"Opt-in, default None (no cap) - zero behavior change for existing callers, matches task wording\",\"Non-None default cap (e.g. backoff_max's 120s) - would silently change behavior for services already relying on long Retry-After waits, violates task requirement\"]",
+  "repo": "urllib3/urllib3",
+  "kind": "agent",
+  "parent_id": "",
+  "client_ref": "",
+  "depth": 0,
+  "origin": "agent",
+  "signoff": "required",
+  "signed_by": "",
+  "brief": "",
+  "source_revision": "",
+  "needs_review": 0,
+  "review_reason": "",
+  "signed_revision": "",
+  "reusable": 0,
+  "rule_conditions": "",
+  "rule_expires": "",
+  "rule_by": "",
+  "rule_at": "",
+  "rule_scope": "",
+  "rule_ended_at": "",
+  "required_signers": "",
+  "signatures": "[]",
+  "actor_id": "",
+  "actor_name": "",
+  "actor_basis": "",
+  "facts": "",
+  "applicability": "",
+  "draft": 0,
+  "signed_hash": "",
+  "scope_key": "19c90392dfcb2367758b",
+  "scope_paths": "[\"src/urllib3/util/retry.py\",\"test/test_retry.py\",\"changelog/3686.feature.rst\"]",
+  "followup_required": 0,
+  "source_reuse_state": "human",
+  "independent_source_replacement": 0,
+  "historical_parent_revalidated": 0,
+  "rowid": 1,
+  "search_vector": "'-101':255,276,419 '-268':122 '-323':81 '-352':361 '0':88 '120s':221 '231':333 '247':121 '276':345 '308':80 '349':360 '67':60 'accord':382 'across':126,342 'actual':262,413 'add':439 'addit':252 'allow':300 'alreadi':136,228 'appli':258,348 'assert':397,411 'backoff':132,140,156,218 'bare':447 'behavior':19,50,173,179,204,225,247,289 'bound':8,167,308,417 'call':358,415 'caller':23,164,183,208,251,296 'caller-control':163 'caller-suppli':295 'cap':137,202,216,245,257,401,408,410 'carri':335 'case':442 'chang':20,64,170,180,205,224,248 'changelog/3686.feature.rst':194 'clamp':71 'clone':318,341 'commit':151 'comparison':450 'compat':280,292 'comput':74,139 'configur':158 'constructor':313 'control':165 'cover':98 'current':49 'date':107 'default':15,33,45,199,215,242,294,329 'delay':141 'deriv':378 'direct':176 'done':283 'e.g':217 'exact':48,325 'exist':56,84,131,171,207,250,285,425 'explicit':160,420 'f69b1c89':152 'file':146 'final':423,456 'float':40 'floor':89 'form':108 'full':55 'get':366,391 'header':114,304,377,406 'header-deriv':376 'http':106 'http-date':105 'i.e':17 'ignor':399 'implement':34,322 'insid':350 'integ':102 'integer-second':101 'introduc':149 'invalid':430 'limit':298 'line':79,120,344,359 'long':231 'make':153 'match':209,324,453 'max':39,86,96,133,190,219,328,389,396,433 'maximum':155 'min':92,449 'mirror':129 'must':290,315 'net':254,275,418 'never':265 'new':3,29 'non':31,213 'non-non':30,212 'none':32,41,42,46,200,214,243,331 'note':421 'numer':448 'opt':12,197,240 'opt-in':11,196,239 'option':162,195,314 'paramet':14,134 'pars':268,301,362,384 'parsing/reporting':398 'pass':61,66,187 'path':191 'pattern':148 'per':150,253 'polici':281,424,457 'preserv':47 'rather':26 'reli':229 'remain':291 'report':270,303 'requir':161,238 'respect':403 'retri':5,36,37,77,112,127,172,188,233,272,278,287,317,326,343,353,363,367,385,392,404,431 'retry-aft':4,111,232,271,277,286 'retry.new':119,337 'retry.parse':76 'return':373 'revis':320 'right':354 'run':53 'satisfi':177 'second':85,87,91,93,103 'self.retry':94 'servic':227 'set':24,69 'silent':223 'sleep':351,407 'sleep/waiting':263 'special':441 'special-cas':440 'src/urllib3/util/retry.py':44,192,332 'state':284,458 'status':282 'stay':306 'step':264,312 'still':65,372 'suit':58 'suppli':297 'surviv':125,316,340 'task':159,210,237 'test':380,383,390,402 'test/test_retry.py':57,193 'thread':117 'time':157 'time.sleep':357,414 'true':375 'unaffect':387,394 'unchang':307,370 'unexpect':169 'unless':21 'unlimit':16 'unmodifi':59 'updat':381 'upper':7,166 'use':452 'valid':443 'valu':73,274,305,379,434 'verifi':51 'via':90 'violat':236 'wait':235,311 'way':144 'without':168 'word':211 'would':222 'yet':426 'zero':203,246,428",
+  "source_reuse_uncertain": false,
+  "owner_name": "Mira Example",
+  "owner_team": "",
+  "run_title": "Our services sometimes receive Retry-After delays longer than they can afford to wait. Add an optional caller-controlled upper bound for Retry-After sleeping without unexpectedly changing existing retry behavior. Investigate, implement, document and test the change. This is for the library-next rele",
+  "agent": "claude",
+  "task_status": "working",
+  "events": [
+    {
+      "id": 1476,
+      "decision_id": "ee43bf873a9d",
+      "run_id": "66ab400660f4",
+      "kind": "ask_drafted",
+      "detail": "{\"decision_id\":\"ee43bf873a9d\",\"owner\":\"Engineer 654255\",\"score\":0.528,\"task_id\":\"66ab400660f4\"}",
+      "created_at": "2026-10-12T20:40:57.505355+00:00"
+    },
+    {
+      "id": 1478,
+      "decision_id": "ee43bf873a9d",
+      "run_id": "66ab400660f4",
+      "kind": "judgment_requested",
+      "detail": "Routed from the ownership graph: inferred first contact; confirm or refer in Slack; authored 5 of the last 68 changes under test/test_retry.py (55% recency weighted); note: Engineer 111008 holds history under src/urllib3/ but has been inactive for 19 months, so Raven did not route to them; area: the agent is working in … [cut: the owner evidence has the rest]",
+      "created_at": "2026-10-12T20:40:57.534262+00:00"
+    },
+    {
+      "id": 1479,
+      "decision_id": "ee43bf873a9d",
+      "run_id": "66ab400660f4",
+      "kind": "node_added",
+      "detail": "{\"adopted\":\"\",\"client_ref\":\"\",\"decision_id\":\"ee43bf873a9d\",\"depth\":0,\"parent_id\":\"\",\"status\":\"pending\",\"task_id\":\"66ab400660f4\"}",
+      "created_at": "2026-10-12T20:40:57.557736+00:00"
+    },
+    {
+      "id": 1480,
+      "decision_id": "ee43bf873a9d",
+      "run_id": "66ab400660f4",
+      "kind": "semantic_retrieval",
+      "detail": "{\"backend\":\"disabled\",\"candidates\":[],\"decision_id\":\"ee43bf873a9d\",\"indexed\":0,\"task_id\":\"66ab400660f4\"}",
+      "created_at": "2026-10-12T20:40:57.638384+00:00"
+    },
+    {
+      "id": 1481,
+      "decision_id": "ee43bf873a9d",
+      "run_id": "66ab400660f4",
+      "kind": "expand",
+      "detail": "{\"added_candidates\":8,\"decision_id\":\"ee43bf873a9d\",\"phrases\":[\"max retry delay cap\",\"backoff ceiling default\",\"rate limit header clamp\",\"configurable timeout threshold\",\"breaking change default value\",\"feature flag rollout\",\"max_retry_after parameter\",\"backward compatible default\"],\"task_id\":\"66ab400660f4\"}",
+      "created_at": "2026-10-12T20:41:01.847424+00:00"
+    },
+    {
+      "id": 1483,
+      "decision_id": "ee43bf873a9d",
+      "run_id": "66ab400660f4",
+      "kind": "ask_drafted",
+      "detail": "{\"decision_id\":\"ee43bf873a9d\",\"owner\":\"Engineer 654255\",\"score\":0.528,\"task_id\":\"66ab400660f4\"}",
+      "created_at": "2026-10-12T20:56:38.493936+00:00"
+    },
+    {
+      "id": 1485,
+      "decision_id": "ee43bf873a9d",
+      "run_id": "66ab400660f4",
+      "kind": "judgment_requested",
+      "detail": "{}",
+      "created_at": "2026-10-12T20:56:38.540827+00:00"
+    },
+    {
+      "id": 1486,
+      "decision_id": "ee43bf873a9d",
+      "run_id": "66ab400660f4",
+      "kind": "contact_reasoned",
+      "detail": "{\"attempt\":1,\"candidates\":[{\"evidence\":{\"c1:e1\":\"inferred first contact; confirm or refer in Slack\",\"c1:e2\":\"authored 5 of the last 68 changes under test/test_retry.py (55% recency weighted)\",\"c1:e3\":\"note: Engineer 111008 holds history under src/urllib3/ but has been inactive for 19 months, so Raven did not route to them\",\"c1:e4\":\"area: the agent is working in test/test_retry.py\",\"c1:e5\":\"GitHub not synced for urllib3/urllib3: past reviews are known from git trailers and merge commits only\",\"c1:e6\":\"Authored pr 3658: Use retrying sockets logic (#3658)\",\"c1:e7\":\"It was not used at all by mistake.\",\"c1:e8\":\"Authored pr 1743: Fix test_preserve_chunked_on_retry flakiness (#1743)\",\"c1:e9\":\"Specifically requesting a retry still tests the same code path, but is\\nmore reliable and will avoid strange broken connections on AppVeyor.\\n\\nThe downside is that the test now takes one second, as we do not allow\\nfractional Retry-After values.\"},\"id\":\"c1\",\"name\":\"Engineer 654255\",\"person_id\":\"57a046ecf06a\"},{\"evidence\":{\"c2:e1\":\"inferred first contact; confirm or refer in Slack\",\"c2:e2\":\"authored 10 of the last 134 changes under changelog/ (16% recency weighted)\"},\"id\":\"c2\",\"name\":\"Engineer ac3bb9\",\"person_id\":\"87b555c1007b\"},{\"evidence\":{\"c3:e1\":\"inferred first contact; confirm or refer in Slack\",\"c3:e2\":\"authored 2 of the last 68 changes under test/test_retry.py (17% recency weighted)\"},\"id\":\"c3\",\"name\":\"Engineer d4421b\",\"person_id\":\"bc632f55b776\"},{\"evidence\":{\"c4:e1\":\"inferred first contact; confirm or refer in Slack\",\"c4:e2\":\"authored 7 of the last 37 changes under src/urllib3/util/retry.py (4% recency weighted)\"},\"id\":\"c4\",\"name\":\"Engineer e097f7\",\"person_id\":\"d5300122c811\"},{\"evidence\":{\"c5:e1\":\"inferred first contact; confirm or refer in Slack\",\"c5:e2\":\"authored 1 of the last 184 changes under src/urllib3/util/ (10% recency weighted)\"},\"id\":\"c5\",\"name\":\"Engineer 4831f9\",\"person_id\":\"5256092490aa\"},{\"evidence\":{\"c6:e1\":\"inferred first contact; confirm or refer in Slack\",\"c6:e2\":\"inferred first contact: authored pr 3364 for src/urllib3/util/retry.py; confirm or refer\"},\"id\":\"c6\",\"name\":\"Engineer 61ce1a\",\"person_id\":\"98697d0df68d\"},{\"evidence\":{\"c7:e1\":\"inferred first contact; confirm or refer in Slack\",\"c7:e2\":\"inferred first contact: authored pr 3037 for src/urllib3/util/retry.py; confirm or refer\"},\"id\":\"c7\",\"name\":\"Engineer 43c4b8\",\"person_id\":\"31068ae66bc0\"},{\"evidence\":{\"c8:e1\":\"inferred first contact; confirm or refer in Slack\",\"c8:e2\":\"inferred first contact: authored pr 2952 for src/urllib3/util/retry.py; confirm or refer\"},\"id\":\"c8\",\"name\":\"Engineer 5e66e6\",\"person_id\":\"665e289aef9f\"},{\"evidence\":{\"c9:e1\":\"inferred first contact; confirm or refer in Slack\",\"c9:e2\":\"inferred first contact: authored pr 2340 for src/urllib3/util/retry.py; confirm or refer\"},\"id\":\"c9\",\"name\":\"Engineer 657783\",\"person_id\":\"6103eef9856a\"},{\"evidence\":{\"c10:e1\":\"inferred first contact; confirm or refer in Slack\",\"c10:e2\":\"inferred first contact: authored pr 1607 for src/urllib3/util/retry.py; confirm or refer\",\"c10:e3\":\"Authored pr 1607: Improve implementation of respect_retry_after_header (#1607)\",\"c10:e4\":\"\"},\"id\":\"c10\",\"name\":\"Engineer 409caf\",\"person_id\":\"62a09d33cee6\"},{\"evidence\":{\"c11:e1\":\"inferred first contact; confirm or refer in Slack\",\"c11:e2\":\"inferred first contact: authored pr 1511 for src/urllib3/util/retry.py; confirm or refer\"},\"id\":\"c11\",\"name\":\"Engineer 08166e\",\"person_id\":\"6ce95bb2c296\"},{\"evidence\":{\"c12:e1\":\"inferred first contact; confirm or refer in Slack\",\"c12:e2\":\"inferred first contact: authored pr 1436 for src/urllib3/util/retry.py; confirm or refer\"},\"id\":\"c12\",\"name\":\"Engineer 5812d1\",\"person_id\":\"1a248c6928b0\"},{\"evidence\":{\"c13:e1\":\"Authored ticket source:96438bb7afab45303b50be6320f4949c4307c14428581fc0f6ed58b42347c1a7: NET-101: Retry-After compatibility policy\",\"c13:e2\":\"Type: Task\\nStatus: Done\\nResolution: Done\\n\\nFor library-next, existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning. Runtime policy questions go to Mira; release documentation questions go to Theo. No final policy exists yet for zero or invalid limits.\",\"c13:e3\":\"Authored slack source:92ca64af3caffc0bcc8a475cce42fc1d1dbf9bb867d0324814a8daac4946c4a3: #library-policy message: For library-next, existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning. Runtime policy questions go \",\"c13:e4\":\"For library-next, existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning. Runtime policy questions go to Mira; release documentation questions go to Theo. No final policy exists yet for zero or invalid limits.\"},\"id\":\"c13\",\"name\":\"Mira Example\",\"person_id\":\"fb1168b4618d\"},{\"evidence\":{\"c14:e1\":\"Authored commit 418ab48a0c93: Don't check for None as value to method on read error\",\"c14:e2\":\"We shouldn't allow method to be None. Tests are changed so that the\\nmethod argument is passed when it previously was not (except for tests\\nabout errors during connection setup).\"},\"id\":\"c14\",\"name\":\"Engineer ceb1d2\",\"person_id\":\"e56a3bbb6ffa\"},{\"evidence\":{\"c15:e1\":\"Authored commit b6d45c4e702f: Support retry for 413, 429 and 503 status code\",\"c15:e2\":\"Add status_retry_after_list parameter for Retry.__init__() to specify\\nstatus codes to handle Retry-After header.\"},\"id\":\"c15\",\"name\":\"Engineer e783ec\",\"person_id\":\"039a71a05f51\"},{\"evidence\":{\"c16:e1\":\"Authored commit 7c14966fc134: The ``connection_from_*`` methods now accept pool_kwargs\",\"c16:e2\":\"This introduces two changes. The first is that connection pools are\\nkeyed off the entire request context rather than a sub-set of the\\nrequest context. The second is that it is possible to override\\nconnection pool keyword arguments when calling ``connection_from_*`` by\\nproviding a new keyword argument, ``pool_kwargs``. This is nice because\\nwithout it, users that want to change these arguments (when, say,\\nadjusting SSL configurations) need to make sure they update the keyword\\narguments and get a new pool in a thread-safe manner.\\n\\nSigned-off-by: Engineer aa82c0 <engineer-154987@example.invalid>\"},\"id\":\"c16\",\"name\":\"Engineer aa82c0\",\"person_id\":\"86651146b38f\"},{\"evidence\":{\"c17:e1\":\"Authored pr 3667: Clarify that `MaxRetryError.url` may be `None` (#3667)\",\"c17:e2\":\"\"},\"id\":\"c17\",\"name\":\"Engineer d4c266\",\"person_id\":\"e92bfb9a5aa8\"}],\"decision_id\":\"ee43bf873a9d\",\"evidence\":[\"c13:e2\",\"c13:e4\"],\"query\":\"Should the new Retry-After upper bound be an opt-in parameter (default unlimited, i.e. no behavior change unless a caller sets it) rather than a new non-None default?\",\"retrieval\":{\"backend\":\"local\",\"chunks\":1461,\"indexed\":1442,\"model\":\"BAAI/bge-small-en-v1.5\"},\"selected\":\"c13\",\"task_id\":\"66ab400660f4\",\"why\":\"The policy ticket explicitly states Retry-After behavior must remain compatible by default, caller-supplied limits are allowed, and constructor options must survive retry cloning — directly confirming the opt-in/default-None design. It also designates Mira as the contact for runtime policy questions like this.\"}",
+      "created_at": "2026-10-12T20:56:44.129851+00:00"
+    },
+    {
+      "id": 1487,
+      "decision_id": "ee43bf873a9d",
+      "run_id": "66ab400660f4",
+      "kind": "brief_withheld",
+      "detail": "{\"decision_id\":\"ee43bf873a9d\",\"task_id\":\"66ab400660f4\",\"why\":\"unsupported: backoff_max's default is 120 seconds\"}",
+      "created_at": "2026-10-12T20:56:48.198993+00:00"
+    },
+    {
+      "id": 1488,
+      "decision_id": "ee43bf873a9d",
+      "run_id": "66ab400660f4",
+      "kind": "model_read",
+      "detail": "{\"decision_id\":\"ee43bf873a9d\",\"task_id\":\"66ab400660f4\"}",
+      "created_at": "2026-10-12T20:56:48.206678+00:00"
+    },
+    {
+      "id": 1489,
+      "decision_id": "ee43bf873a9d",
+      "run_id": "66ab400660f4",
+      "kind": "notification_queued",
+      "detail": "{\"decision_id\":\"ee43bf873a9d\",\"destination\":\"dm\",\"error\":\"\",\"kind\":\"ask\",\"task_id\":\"66ab400660f4\",\"to\":\"Mira Example\"}",
+      "created_at": "2026-10-12T20:56:48.244000+00:00"
+    },
+    {
+      "id": 1490,
+      "decision_id": "ee43bf873a9d",
+      "run_id": "66ab400660f4",
+      "kind": "notification_sent",
+      "detail": "{\"decision_id\":\"ee43bf873a9d\",\"kind\":\"ask\",\"task_id\":\"66ab400660f4\",\"to\":\"Mira Example\"}",
+      "created_at": "2026-10-12T20:56:50.076482+00:00"
+    },
+    {
+      "id": 1493,
+      "decision_id": "ee43bf873a9d",
+      "run_id": "66ab400660f4",
+      "kind": "source_review_required",
+      "detail": "{\"decision_id\":\"ee43bf873a9d\",\"reason\":\"The agent added source evidence; review the complete proposal before signing.\",\"source_evidence\":[{\"record_id\":\"6ff9cf6d53914e8197240186da07dc92\",\"role\":\"support\",\"source_version_id\":\"c00be7c0b8ca486e8bbc5c588f9e2c44\"}],\"task_id\":\"66ab400660f4\"}",
+      "created_at": "2026-10-12T20:59:06.410215+00:00"
+    },
+    {
+      "id": 1494,
+      "decision_id": "ee43bf873a9d",
+      "run_id": "66ab400660f4",
+      "kind": "node_settled",
+      "detail": "{\"decision_id\":\"ee43bf873a9d\",\"task_id\":\"66ab400660f4\"}",
+      "created_at": "2026-10-12T20:59:06.411052+00:00"
+    },
+    {
+      "id": 1495,
+      "decision_id": "ee43bf873a9d",
+      "run_id": "66ab400660f4",
+      "kind": "notification_queued",
+      "detail": "{\"decision_id\":\"ee43bf873a9d\",\"destination\":\"dm\",\"error\":\"\",\"kind\":\"signoff\",\"task_id\":\"66ab400660f4\",\"to\":\"Mira Example\"}",
+      "created_at": "2026-10-12T20:59:06.420825+00:00"
+    },
+    {
+      "id": 1496,
+      "decision_id": "ee43bf873a9d",
+      "run_id": "66ab400660f4",
+      "kind": "notification_sent",
+      "detail": "{\"decision_id\":\"ee43bf873a9d\",\"kind\":\"signoff\",\"task_id\":\"66ab400660f4\",\"to\":\"Mira Example\"}",
+      "created_at": "2026-10-12T20:59:07.478103+00:00"
+    }
+  ],
+  "approval_pending": true,
+  "authorized": false,
+  "revision": null,
+  "sources": [
+    {
+      "record_id": "6ff9cf6d53914e8197240186da07dc92",
+      "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+      "sequence": 1,
+      "provider": "jira",
+      "namespace": "127.0.0.1:17521",
+      "external_id": "101",
+      "kind": "ticket",
+      "repo": "urllib3/urllib3",
+      "ref": "NET-101",
+      "url": "http://127.0.0.1:17521/jira/browse/NET-101",
+      "title": "NET-101: Retry-After compatibility policy",
+      "author": "Mira Example",
+      "source_created_at": "2025-10-01T10:00:00Z",
+      "source_updated_at": "2025-10-01T10:00:00Z",
+      "source_version": "2025-10-01T10:00:00Z",
+      "observed_at": "2026-10-12T20:26:21.947866+00:00",
+      "provenance": "import",
+      "fingerprint": "8dbf51fb293d76b4eeebf4d439c248b62f0b3131a8a04e0853aa8fdff6450286",
+      "availability": "available",
+      "head_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+      "current": true,
+      "role": "support",
+      "decision_version_id": "f8dda6c7b85f4ec8a47c78907dd797a5",
+      "stale": false
+    }
+  ],
+  "source_anchors": [
+    {
+      "record_id": "6ff9cf6d53914e8197240186da07dc92",
+      "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+      "sequence": 1,
+      "provider": "jira",
+      "namespace": "127.0.0.1:17521",
+      "external_id": "101",
+      "kind": "ticket",
+      "repo": "urllib3/urllib3",
+      "ref": "NET-101",
+      "url": "http://127.0.0.1:17521/jira/browse/NET-101",
+      "title": "NET-101: Retry-After compatibility policy",
+      "author": "Mira Example",
+      "source_created_at": "2025-10-01T10:00:00Z",
+      "source_updated_at": "2025-10-01T10:00:00Z",
+      "source_version": "2025-10-01T10:00:00Z",
+      "observed_at": "2026-10-12T20:26:21.947866+00:00",
+      "provenance": "import",
+      "fingerprint": "8dbf51fb293d76b4eeebf4d439c248b62f0b3131a8a04e0853aa8fdff6450286",
+      "availability": "available",
+      "head_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+      "current": true,
+      "role": "work_item"
+    }
+  ],
+  "work_item_association": {
+    "declared": "",
+    "status": "undeclared",
+    "record_ids": [],
+    "links": [
+      {
+        "record_id": "6ff9cf6d53914e8197240186da07dc92",
+        "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+        "provider": "jira",
+        "namespace": "127.0.0.1:17521",
+        "kind": "ticket",
+        "external_id": "101",
+        "ref": "NET-101",
+        "role": "work_item",
+        "current": true,
+        "origin": "task",
+        "relation": "task_anchor"
+      }
+    ],
+    "historical": false,
+    "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+  },
+  "work_item_history": [
+    {
+      "id": 1492,
+      "decision_id": null,
+      "run_id": "66ab400660f4",
+      "kind": "work_item_linked",
+      "detail": "{\"external_id\":\"101\",\"namespace\":\"127.0.0.1:17521\",\"object_kind\":\"ticket\",\"provider\":\"jira\",\"reason\":\"Explicit task association, never supporting evidence or approval.\",\"record_id\":\"6ff9cf6d53914e8197240186da07dc92\",\"ref\":\"NET-101\",\"role\":\"work_item\",\"source_version_id\":\"c00be7c0b8ca486e8bbc5c588f9e2c44\",\"task_id\":\"66ab400660f4\"}",
+      "created_at": "2026-10-12T20:57:52.345983+00:00"
+    }
+  ],
+  "context_history": [
+    {
+      "id": "884196a15a814f5a9786e94b1dec2f68",
+      "sequence": 1,
+      "snapshot": "{\"decision\":{\"actor_basis\":\"\",\"actor_id\":\"\",\"actor_name\":\"\",\"answer\":null,\"answered_by\":null,\"applicability\":\"\",\"brief\":\"\",\"category\":\"policy\",\"client_ref\":\"\",\"context\":\"Implemented as `Retry(retry_after_max: float | None = None)` in src/urllib3/util/retry.py. Default None preserves exact current behavior (verified by running the full existing test/test_retry.py suite unmodified: 67 passed before my changes, still pass after). When set, it clamps the value computed by `Retry.parse_retry_after()` (lines ~308-323, after the existing `seconds = max(seconds, 0)` floor) via `seconds = min(seconds, self.retry_after_max)`, which covers both the integer-seconds and HTTP-date forms of the Retry-After header, and is threaded through `Retry.new()` (lines 247-268) so it survives across retries. This mirrors the existing `backoff_max` parameter, which already caps the *computed backoff* delay the same way (same file, same pattern, introduced per commit f69b1c89 \\\"Make the maximum backoff time configurable\\\"). Task explicitly requires \\\"optional caller-controlled upper bound... without unexpectedly changing existing retry behavior,\\\" which this directly satisfies: no behavior changes for any caller who does not pass retry_after_max.\\nPaths: src/urllib3/util/retry.py, test/test_retry.py, changelog/3686.feature.rst\\nOptions: Opt-in, default None (no cap) - zero behavior change for existing callers, matches task wording | Non-None default cap (e.g. backoff_max's 120s) - would silently change behavior for services already relying on long Retry-After waits, violates task requirement\",\"created_at\":\"2026-10-12T20:40:54.928068+00:00\",\"depth\":0,\"draft\":0,\"evidence\":\"memory: nothing similar answered before; records: candidates matched background words but not the question's focus terms (unless, upper, rather); records: ticket NET-101 [Done]: NET-101: Retry-After compatibility policy never mentions set, the condition this question turns on; records: no candidate mentions set, the condition this question turns on; records: ticket NET-101 [Done]: NET-101: Retry-After compatibility policy was the best candidate but does not state the answer; assumption: 'policy' is not a low-stakes category\",\"facts\":\"\",\"followup_required\":0,\"historical_parent_revalidated\":0,\"id\":\"ee43bf873a9d\",\"independent_source_replacement\":0,\"kind\":\"new\",\"model_pending\":1,\"needs_review\":0,\"options\":\"[\\\"Opt-in, default None (no cap) - zero behavior change for existing callers, matches task wording\\\",\\\"Non-None default cap (e.g. backoff_max's 120s) - would silently change behavior for services already relying on long Retry-After waits, violates task requirement\\\"]\",\"origin\":\"agent\",\"owner_evidence\":\"inferred first contact selected from cited evidence; confirm or refer; Type: Task\\nStatus: Done\\nResolution: Done\\n\\nFor library-next, existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning. Runtime policy questions go to Mira; release documentation questions go to Theo. No final policy exists yet for zero or invalid limits.; For library-next, existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning. Runtime policy questions go to Mira; release documentation questions go to Theo. No final policy exists yet for zero or invalid limits.\",\"owner_id\":\"d3975f7af84e\",\"parent_id\":\"\",\"path\":\"src/urllib3/util/retry.py\",\"prediction\":null,\"question\":\"Should the new Retry-After upper bound be an opt-in parameter (default unlimited, i.e. no behavior change unless a caller sets it) rather than a new non-None default?\",\"rationale\":null,\"repo\":\"urllib3/urllib3\",\"required_signers\":\"\",\"reusable\":0,\"review_reason\":\"\",\"routing_reason\":\"Routed from the ownership graph: inferred first contact; confirm or refer in Slack; authored 5 of the last 68 changes under test/test_retry.py (55% recency weighted); note: Engineer 111008 holds history under src/urllib3/ but has been inactive for 19 months, so Raven did not route to them; area: the agent is working in … [cut: the owner evidence has the rest]\",\"rule_at\":\"\",\"rule_by\":\"\",\"rule_conditions\":\"\",\"rule_ended_at\":\"\",\"rule_expires\":\"\",\"rule_scope\":\"\",\"run_id\":\"66ab400660f4\",\"scope_key\":\"19c90392dfcb2367758b\",\"scope_paths\":\"[\\\"src/urllib3/util/retry.py\\\",\\\"test/test_retry.py\\\",\\\"changelog/3686.feature.rst\\\"]\",\"signatures\":\"\",\"signed_by\":\"\",\"signed_hash\":\"\",\"signed_revision\":\"\",\"signoff\":\"\",\"source\":\"\",\"source_id\":null,\"source_revision\":\"\",\"status\":\"pending\",\"superseded_by\":\"\",\"supersedes\":\"\",\"updated_at\":\"2026-10-12T20:56:48.203030+00:00\"},\"derivations\":[],\"provenance\":\"human-or-local\",\"reason\":\"evidence-attached\",\"sources\":[]}",
+      "recorded_at": "2026-10-12T20:56:48.209848+00:00"
+    },
+    {
+      "id": "b9021336487347f0ae154a18584288a1",
+      "sequence": 2,
+      "snapshot": "{\"decision\":{\"actor_basis\":\"\",\"actor_id\":\"\",\"actor_name\":\"\",\"answer\":null,\"answered_by\":null,\"applicability\":\"\",\"brief\":\"\",\"category\":\"policy\",\"client_ref\":\"\",\"context\":\"Implemented as `Retry(retry_after_max: float | None = None)` in src/urllib3/util/retry.py. Default None preserves exact current behavior (verified by running the full existing test/test_retry.py suite unmodified: 67 passed before my changes, still pass after). When set, it clamps the value computed by `Retry.parse_retry_after()` (lines ~308-323, after the existing `seconds = max(seconds, 0)` floor) via `seconds = min(seconds, self.retry_after_max)`, which covers both the integer-seconds and HTTP-date forms of the Retry-After header, and is threaded through `Retry.new()` (lines 247-268) so it survives across retries. This mirrors the existing `backoff_max` parameter, which already caps the *computed backoff* delay the same way (same file, same pattern, introduced per commit f69b1c89 \\\"Make the maximum backoff time configurable\\\"). Task explicitly requires \\\"optional caller-controlled upper bound... without unexpectedly changing existing retry behavior,\\\" which this directly satisfies: no behavior changes for any caller who does not pass retry_after_max.\\nPaths: src/urllib3/util/retry.py, test/test_retry.py, changelog/3686.feature.rst\\nOptions: Opt-in, default None (no cap) - zero behavior change for existing callers, matches task wording | Non-None default cap (e.g. backoff_max's 120s) - would silently change behavior for services already relying on long Retry-After waits, violates task requirement\",\"created_at\":\"2026-10-12T20:40:54.928068+00:00\",\"depth\":0,\"draft\":0,\"evidence\":\"memory: nothing similar answered before; records: candidates matched background words but not the question's focus terms (unless, upper, rather); records: ticket NET-101 [Done]: NET-101: Retry-After compatibility policy never mentions set, the condition this question turns on; records: no candidate mentions set, the condition this question turns on; records: ticket NET-101 [Done]: NET-101: Retry-After compatibility policy was the best candidate but does not state the answer; assumption: 'policy' is not a low-stakes category\",\"facts\":\"\",\"followup_required\":0,\"historical_parent_revalidated\":0,\"id\":\"ee43bf873a9d\",\"independent_source_replacement\":0,\"kind\":\"new\",\"model_pending\":0,\"needs_review\":0,\"options\":\"[\\\"Opt-in, default None (no cap) - zero behavior change for existing callers, matches task wording\\\",\\\"Non-None default cap (e.g. backoff_max's 120s) - would silently change behavior for services already relying on long Retry-After waits, violates task requirement\\\"]\",\"origin\":\"agent\",\"owner_evidence\":\"inferred first contact selected from cited evidence; confirm or refer; Type: Task\\nStatus: Done\\nResolution: Done\\n\\nFor library-next, existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning. Runtime policy questions go to Mira; release documentation questions go to Theo. No final policy exists yet for zero or invalid limits.; For library-next, existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning. Runtime policy questions go to Mira; release documentation questions go to Theo. No final policy exists yet for zero or invalid limits.\",\"owner_id\":\"d3975f7af84e\",\"parent_id\":\"\",\"path\":\"src/urllib3/util/retry.py\",\"prediction\":null,\"question\":\"Should the new Retry-After upper bound be an opt-in parameter (default unlimited, i.e. no behavior change unless a caller sets it) rather than a new non-None default?\",\"rationale\":null,\"repo\":\"urllib3/urllib3\",\"required_signers\":\"\",\"reusable\":0,\"review_reason\":\"\",\"routing_reason\":\"Routed from the ownership graph: inferred first contact; confirm or refer in Slack; authored 5 of the last 68 changes under test/test_retry.py (55% recency weighted); note: Engineer 111008 holds history under src/urllib3/ but has been inactive for 19 months, so Raven did not route to them; area: the agent is working in … [cut: the owner evidence has the rest]\",\"rule_at\":\"\",\"rule_by\":\"\",\"rule_conditions\":\"\",\"rule_ended_at\":\"\",\"rule_expires\":\"\",\"rule_scope\":\"\",\"run_id\":\"66ab400660f4\",\"scope_key\":\"19c90392dfcb2367758b\",\"scope_paths\":\"[\\\"src/urllib3/util/retry.py\\\",\\\"test/test_retry.py\\\",\\\"changelog/3686.feature.rst\\\"]\",\"signatures\":\"\",\"signed_by\":\"\",\"signed_hash\":\"\",\"signed_revision\":\"\",\"signoff\":\"\",\"source\":\"\",\"source_id\":null,\"source_revision\":\"\",\"status\":\"pending\",\"superseded_by\":\"\",\"supersedes\":\"\",\"updated_at\":\"2026-10-12T20:56:48.203030+00:00\"},\"derivations\":[],\"provenance\":\"human-or-local\",\"reason\":\"before-agent-proposal\",\"sources\":[]}",
+      "recorded_at": "2026-10-12T20:59:06.400338+00:00"
+    },
+    {
+      "id": "f8dda6c7b85f4ec8a47c78907dd797a5",
+      "sequence": 3,
+      "snapshot": "{\"decision\":{\"actor_basis\":\"\",\"actor_id\":\"\",\"actor_name\":\"\",\"answer\":\"Opt-in, default None (no cap) — zero behavior change for existing callers. Additionally, per NET-101: the cap applies only to the actual sleep/waiting step, never to the parsed or reported Retry-After value.\",\"answered_by\":\"\",\"applicability\":\"\",\"brief\":\"\",\"category\":\"policy\",\"client_ref\":\"\",\"context\":\"Implemented as `Retry(retry_after_max: float | None = None)` in src/urllib3/util/retry.py. Default None preserves exact current behavior (verified by running the full existing test/test_retry.py suite unmodified: 67 passed before my changes, still pass after). When set, it clamps the value computed by `Retry.parse_retry_after()` (lines ~308-323, after the existing `seconds = max(seconds, 0)` floor) via `seconds = min(seconds, self.retry_after_max)`, which covers both the integer-seconds and HTTP-date forms of the Retry-After header, and is threaded through `Retry.new()` (lines 247-268) so it survives across retries. This mirrors the existing `backoff_max` parameter, which already caps the *computed backoff* delay the same way (same file, same pattern, introduced per commit f69b1c89 \\\"Make the maximum backoff time configurable\\\"). Task explicitly requires \\\"optional caller-controlled upper bound... without unexpectedly changing existing retry behavior,\\\" which this directly satisfies: no behavior changes for any caller who does not pass retry_after_max.\\nPaths: src/urllib3/util/retry.py, test/test_retry.py, changelog/3686.feature.rst\\nOptions: Opt-in, default None (no cap) - zero behavior change for existing callers, matches task wording | Non-None default cap (e.g. backoff_max's 120s) - would silently change behavior for services already relying on long Retry-After waits, violates task requirement\",\"created_at\":\"2026-10-12T20:40:54.928068+00:00\",\"depth\":0,\"draft\":0,\"evidence\":\"settled by the agent: NET-101 (\\\"Retry-After compatibility policy\\\", status Done) states: \\\"existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning.\\\" I revised the implementation to match exactly: `retry_after_max` defaults to None (src/urllib3/util/retry.py:231), is carried through `Retry.new()` so it survives cloning across retries (line 276), and is applied only inside `sleep_for_retry()` right before the `time.sleep()` call (lines 349-352) — `parse_retry_after()` and `get_retry_after()` are unchanged and still return the true header-derived value. Tests updated accordingly: test_parse_retry_after_unaffected_by_max / test_get_retry_after_unaffected_by_max assert parsing/reporting ignore the cap; test_respect_retry_after_header_sleep_capped / _not_capped assert the actual time.sleep() call is bounded. NET-101 explicitly notes no final policy exists yet for zero or invalid retry_after_max values, so I did not add special-case validation for those — a bare numeric min() comparison is used, matching the \\\"no final policy\\\" state.\",\"facts\":\"\",\"followup_required\":0,\"historical_parent_revalidated\":0,\"id\":\"ee43bf873a9d\",\"independent_source_replacement\":0,\"kind\":\"agent\",\"model_pending\":0,\"needs_review\":0,\"options\":\"[\\\"Opt-in, default None (no cap) - zero behavior change for existing callers, matches task wording\\\",\\\"Non-None default cap (e.g. backoff_max's 120s) - would silently change behavior for services already relying on long Retry-After waits, violates task requirement\\\"]\",\"origin\":\"agent\",\"owner_evidence\":\"inferred first contact selected from cited evidence; confirm or refer; Type: Task\\nStatus: Done\\nResolution: Done\\n\\nFor library-next, existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning. Runtime policy questions go to Mira; release documentation questions go to Theo. No final policy exists yet for zero or invalid limits.; For library-next, existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning. Runtime policy questions go to Mira; release documentation questions go to Theo. No final policy exists yet for zero or invalid limits.\",\"owner_id\":\"d3975f7af84e\",\"parent_id\":\"\",\"path\":\"src/urllib3/util/retry.py\",\"prediction\":null,\"question\":\"Should the new Retry-After upper bound be an opt-in parameter (default unlimited, i.e. no behavior change unless a caller sets it) rather than a new non-None default?\",\"rationale\":\"NET-101 (\\\"Retry-After compatibility policy\\\", status Done) states: \\\"existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning.\\\" I revised the implementation to match exactly: `retry_after_max` defaults to None (src/urllib3/util/retry.py:231), is carried through `Retry.new()` so it survives cloning across retries (line 276), and is applied only inside `sleep_for_retry()` right before the `time.sleep()` call (lines 349-352) — `parse_retry_after()` and `get_retry_after()` are unchanged and still return the true header-derived value. Tests updated accordingly: test_parse_retry_after_unaffected_by_max / test_get_retry_after_unaffected_by_max assert parsing/reporting ignore the cap; test_respect_retry_after_header_sleep_capped / _not_capped assert the actual time.sleep() call is bounded. NET-101 explicitly notes no final policy exists yet for zero or invalid retry_after_max values, so I did not add special-case validation for those — a bare numeric min() comparison is used, matching the \\\"no final policy\\\" state.\",\"repo\":\"urllib3/urllib3\",\"required_signers\":\"\",\"reusable\":0,\"review_reason\":\"\",\"routing_reason\":\"Routed from the ownership graph: inferred first contact; confirm or refer in Slack; authored 5 of the last 68 changes under test/test_retry.py (55% recency weighted); note: Engineer 111008 holds history under src/urllib3/ but has been inactive for 19 months, so Raven did not route to them; area: the agent is working in … [cut: the owner evidence has the rest]\",\"rule_at\":\"\",\"rule_by\":\"\",\"rule_conditions\":\"\",\"rule_ended_at\":\"\",\"rule_expires\":\"\",\"rule_scope\":\"\",\"run_id\":\"66ab400660f4\",\"scope_key\":\"19c90392dfcb2367758b\",\"scope_paths\":\"[\\\"src/urllib3/util/retry.py\\\",\\\"test/test_retry.py\\\",\\\"changelog/3686.feature.rst\\\"]\",\"signatures\":\"[]\",\"signed_by\":\"\",\"signed_hash\":\"\",\"signed_revision\":\"\",\"signoff\":\"required\",\"source\":\"agent\",\"source_id\":null,\"source_revision\":\"\",\"status\":\"resolved\",\"superseded_by\":\"\",\"supersedes\":\"\",\"updated_at\":\"2026-10-12T20:59:06.402186+00:00\"},\"derivations\":[],\"provenance\":\"versioned\",\"reason\":\"agent-proposal\",\"sources\":[{\"author\":\"Mira Example\",\"availability\":\"available\",\"external_id\":\"101\",\"fingerprint\":\"8dbf51fb293d76b4eeebf4d439c248b62f0b3131a8a04e0853aa8fdff6450286\",\"kind\":\"ticket\",\"namespace\":\"127.0.0.1:17521\",\"observed_at\":\"2026-10-12T20:26:21.947866+00:00\",\"provenance\":\"import\",\"provider\":\"jira\",\"record_id\":\"6ff9cf6d53914e8197240186da07dc92\",\"ref\":\"NET-101\",\"repo\":\"urllib3/urllib3\",\"role\":\"support\",\"sequence\":1,\"source_created_at\":\"2025-10-01T10:00:00Z\",\"source_updated_at\":\"2025-10-01T10:00:00Z\",\"source_version\":\"2025-10-01T10:00:00Z\",\"source_version_id\":\"c00be7c0b8ca486e8bbc5c588f9e2c44\",\"stale\":false,\"title\":\"NET-101: Retry-After compatibility policy\",\"url\":\"http://127.0.0.1:17521/jira/browse/NET-101\"}]}",
+      "recorded_at": "2026-10-12T20:59:06.408277+00:00"
+    }
+  ],
+  "source_provenance": "versioned",
+  "source_reuse_requires_review": false,
+  "source_notice": "",
+  "source_revalidation": {
+    "available": true,
+    "has_reliance": true,
+    "sources": [
+      {
+        "record_id": "6ff9cf6d53914e8197240186da07dc92",
+        "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+        "role": "support",
+        "previous_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+        "changed": false,
+        "snapshot": {
+          "access_scope": "{\"audience\":\"workspace-shared\",\"jira_project\":\"NET\"}",
+          "author": "Mira Example",
+          "availability": "available",
+          "body": "Type: Task\nStatus: Done\nResolution: Done\n\nFor library-next, existing Retry-After behavior must remain compatible by default. Caller-supplied limits are allowed. Parsing and reported header values stay unchanged; bound only the waiting step. Constructor options must survive retry cloning. Runtime policy questions go to Mira; release documentation questions go to Theo. No final policy exists yet for zero or invalid limits.",
+          "created_at": "2025-10-01T10:00:00Z",
+          "display_ref": "NET-101",
+          "external_id": "101",
+          "kind": "ticket",
+          "namespace": "127.0.0.1:17521",
+          "object_kind": "ticket",
+          "paths": [],
+          "provider": "jira",
+          "ref": "source:96438bb7afab45303b50be6320f4949c4307c14428581fc0f6ed58b42347c1a7",
+          "repo": "urllib3/urllib3",
+          "resolved": 1,
+          "source_created_at": "2025-10-01T10:00:00Z",
+          "source_sequence": null,
+          "source_updated_at": "2025-10-01T10:00:00Z",
+          "source_version": "2025-10-01T10:00:00Z",
+          "status": "Done",
+          "title": "NET-101: Retry-After compatibility policy",
+          "url": "http://127.0.0.1:17521/jira/browse/NET-101"
+        }
+      }
+    ],
+    "retires_rule": false,
+    "pins": [
+      {
+        "record_id": "6ff9cf6d53914e8197240186da07dc92",
+        "source_version_id": "c00be7c0b8ca486e8bbc5c588f9e2c44",
+        "role": "support"
+      }
+    ],
+    "decision_pins": [],
+    "dependencies": [],
+    "notice": "Review the complete displayed source snapshots and source decisions before confirming these exact pins. A newer source change will refuse this review; nothing is refreshed by an ordinary yes.",
+    "blocked_on_unknown_provenance_only": false,
+    "review_path": "/#runs/66ab400660f4"
+  },
+  "approval_scope": {
+    "id": "ee43bf873a9d",
+    "run_id": "66ab400660f4",
+    "repo": "urllib3/urllib3",
+    "question": "Should the new Retry-After upper bound be an opt-in parameter (default unlimited, i.e. no behavior change unless a caller sets it) rather than a new non-None default?",
+    "context": "Implemented as `Retry(retry_after_max: float | None = None)` in src/urllib3/util/retry.py. Default None preserves exact current behavior (verified by running the full existing test/test_retry.py suite unmodified: 67 passed before my changes, still pass after). When set, it clamps the value computed by `Retry.parse_retry_after()` (lines ~308-323, after the existing `seconds = max(seconds, 0)` floor) via `seconds = min(seconds, self.retry_after_max)`, which covers both the integer-seconds and HTTP-date forms of the Retry-After header, and is threaded through `Retry.new()` (lines 247-268) so it survives across retries. This mirrors the existing `backoff_max` parameter, which already caps the *computed backoff* delay the same way (same file, same pattern, introduced per commit f69b1c89 \"Make the maximum backoff time configurable\"). Task explicitly requires \"optional caller-controlled upper bound... without unexpectedly changing existing retry behavior,\" which this directly satisfies: no behavior changes for any caller who does not pass retry_after_max.\nPaths: src/urllib3/util/retry.py, test/test_retry.py, changelog/3686.feature.rst\nOptions: Opt-in, default None (no cap) - zero behavior change for existing callers, matches task wording | Non-None default cap (e.g. backoff_max's 120s) - would silently change behavior for services already relying on long Retry-After waits, violates task requirement",
+    "path": "src/urllib3/util/retry.py",
+    "scope_paths": [
+      "src/urllib3/util/retry.py",
+      "test/test_retry.py",
+      "changelog/3686.feature.rst"
+    ],
+    "scope_key": "19c90392dfcb2367758b",
+    "category": "policy",
+    "facts": {},
+    "options": [
+      "Opt-in, default None (no cap) - zero behavior change for existing callers, matches task wording",
+      "Non-None default cap (e.g. backoff_max's 120s) - would silently change behavior for services already relying on long Retry-After waits, violates task requirement"
+    ],
+    "applicability": {},
+    "required_signers": [],
+    "followup_required": 0,
+    "reusable": 0,
+    "rule_conditions": "",
+    "rule_scope": "",
+    "rule_expires": "",
+    "rule_ended_at": ""
+  },
+  "approval_scope_labels": {
+    "id": "Decision",
+    "run_id": "Task",
+    "repo": "Repository",
+    "question": "Question",
+    "context": "Context",
+    "path": "Path",
+    "scope_paths": "Scope paths",
+    "scope_key": "Scope key",
+    "category": "Category",
+    "facts": "Facts",
+    "options": "Options",
+    "applicability": "Applicability",
+    "required_signers": "Required signers",
+    "followup_required": "Required follow-up",
+    "reusable": "Reusable rule",
+    "rule_conditions": "Rule conditions",
+    "rule_scope": "Rule scope",
+    "rule_expires": "Rule expiry",
+    "rule_ended_at": "Rule ended"
+  },
+  "approval_scope_text": "Decision scope (recorded fields; no facts inferred from prose):\nDecision: ee43bf873a9d\nTask: 66ab400660f4\nRepository: urllib3/urllib3\nQuestion: Should the new Retry-After upper bound be an opt-in parameter (default unlimited, i.e. no behavior change unless a caller sets it) rather than a new non-None default?\nContext: Implemented as `Retry(retry_after_max: float | None = None)` in src/urllib3/util/retry.py. Default None preserves exact current behavior (verified by running the full existing test/test_retry.py suite unmodified: 67 passed before my changes, still pass after). When set, it clamps the value computed by `Retry.parse_retry_after()` (lines ~308-323, after the existing `seconds = max(seconds, 0)` floor) via `seconds = min(seconds, self.retry_after_max)`, which covers both the integer-seconds and HTTP-date forms of the Retry-After header, and is threaded through `Retry.new()` (lines 247-268) so it survives across retries. This mirrors the existing `backoff_max` parameter, which already caps the *computed backoff* delay the same way (same file, same pattern, introduced per commit f69b1c89 \"Make the maximum backoff time configurable\"). Task explicitly requires \"optional caller-controlled upper bound... without unexpectedly changing existing retry behavior,\" which this directly satisfies: no behavior changes for any caller who does not pass retry_after_max.\nPaths: src/urllib3/util/retry.py, test/test_retry.py, changelog/3686.feature.rst\nOptions: Opt-in, default None (no cap) - zero behavior change for existing callers, matches task wording | Non-None default cap (e.g. backoff_max's 120s) - would silently change behavior for services already relying on long Retry-After waits, violates task requirement\nPath: src/urllib3/util/retry.py\nScope paths: [\"src/urllib3/util/retry.py\", \"test/test_retry.py\", \"changelog/3686.feature.rst\"]\nScope key: 19c90392dfcb2367758b\nCategory: policy\nFacts: {}\nOptions: [\"Opt-in, default None (no cap) - zero behavior change for existing callers, matches task wording\", \"Non-None default cap (e.g. backoff_max's 120s) - would silently change behavior for services already relying on long Retry-After waits, violates task requirement\"]\nApplicability: {}",
+  "standing_grant": {
+    "recorded": false,
+    "state": "not_declared",
+    "scope": "",
+    "conditions": "",
+    "expires_at": "",
+    "granted_by": "",
+    "granted_at": "",
+    "ended_at": "",
+    "source_needs_review": false,
+    "source_provenance_uncertain": false,
+    "request_applicability": "not_evaluated_by_this_read",
+    "notice": "This decision declares no standing reuse grant of its own. Its current authorized/signoff result is separate and may be based on a source rule. Do not treat this decision as a new reusable rule; preserve its recorded answer and original context."
+  },
+  "fact_revision": "facts:65dc19929b999e0e86d2445bc262a1c7d895ec7a1bd1148410412eb6df2b2e65",
+  "handon": {
+    "default": {
+      "scope_kind": "path",
+      "scope": "src/urllib3/util/*",
+      "label": "decisions on src/urllib3/util/*"
+    },
+    "options": [
+      {
+        "scope_kind": "path",
+        "scope": "src/urllib3/util/*",
+        "label": "decisions on src/urllib3/util/*"
+      },
+      {
+        "scope_kind": "none",
+        "scope": "",
+        "label": "this question only"
+      }
+    ],
+    "why_none": ""
+  },
+  "allowed_actions": [
+    "followup",
+    "note"
+  ],
+  "records_named": ""
+}

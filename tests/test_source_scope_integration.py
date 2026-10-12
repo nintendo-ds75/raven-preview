@@ -21,6 +21,7 @@ from bridge import canvas, context_memory as cm, proof, source_review
 from bridge.approval_scope import snapshot as approval_scope, review_epoch, transport_text
 from bridge.config import Config
 from bridge.delivery import _sections, complete_chat_text
+from bridge.readback import prompt_budget
 from bridge.store import Invalid, Store
 from bridge.teams import ConnectorAuth, TeamsBotTransport, TeamsConfig, TeamsDelivery
 
@@ -112,20 +113,21 @@ class CombinedSourceScopeCases:
         self.assertEqual(self.consent_count(), 1)
 
     def test_complete_combined_prompt_obeys_utf8_and_block_limits(self):
+        budget = prompt_budget(self.delivery.channel)
         self.set_scope()
         self.source(body='COMPLETE_SOURCE ' + '界' * 700 + ' SOURCE_END')
         answer = 'COMPLETE_ACTION ' + '界' * 700 + ' ACTION_END'
         held = self.offer('answer: ' + answer)
         self.assertEqual(held['prompt'], self.last_text())
-        self.assertTrue(complete_chat_text(held['prompt']))
-        self.assertLessEqual(len(held['prompt'].encode('utf-8')), 12000)
+        self.assertTrue(complete_chat_text(held['prompt'], self.delivery.channel))
+        self.assertLessEqual(len(held['prompt'].encode('utf-8')), budget)
         self.assertLessEqual(len(_sections(held['prompt'], 2900)), 50)
         self.assertEqual(''.join(_sections(held['prompt'], 2900)), held['prompt'])
         self.assertIn('SOURCE_END', held['prompt'])
         self.assertIn(transport_text('ACTION_END'), held['prompt'])
         # The source and action each fit; their complete composition does not.
-        oversized = 'COMPLETE_ACTION ' + '界' * 3000 + ' ACTION_END'
-        self.assertLess(len(oversized.encode('utf-8')), 12000)
+        oversized = 'COMPLETE_ACTION ' + '界' * ((budget - 3000) // 3) + ' ACTION_END'
+        self.assertLess(len(oversized.encode('utf-8')), budget)
         self.chat('answer: ' + oversized)
         self.assertIsNone(self.held())
         self.assertIn('too large', self.last_text().lower())
@@ -265,16 +267,19 @@ class CombinedSourceScopeCases:
         self.assertEqual(self.graph.count_events('rule_ended', decision_id=self.node_id), 0)
 
     def test_final_combined_byte_budget_includes_rule_effect_and_confirmation(self):
+        budget = prompt_budget(self.delivery.channel)
         self.grant_current_rule()
-        self.source(body='Changed source premise for the final combined message budget.')
+        # Grow source context for Slack so the answer itself remains short;
+        # it is the combined review, not the answer field, that hits the cap.
+        self.source(body='Changed source premise for the final combined message budget.' + '界' * ((budget - 12000) // 3))
         base_answer = 'Final combined budget '
         initial = self.offer('answer: ' + base_answer + 'x')
         self.assertIn('retire the existing standing rule', initial['prompt'])
-        padding = 12000 - len(initial['prompt'].encode('utf-8'))
+        padding = budget - len(initial['prompt'].encode('utf-8'))
         self.assertGreater(padding, 0)
         answer = base_answer + 'x' * (padding + 1)
         held = self.offer('answer: ' + answer)
-        self.assertEqual(len(held['prompt'].encode('utf-8')), 12000)
+        self.assertEqual(len(held['prompt'].encode('utf-8')), budget)
         self.assertLessEqual(len(_sections(held['prompt'], 2900)), 50)
         self.assertEqual(held['prompt'], self.last_text())
         self.chat('answer: ' + answer + 'x')

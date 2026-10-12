@@ -1,0 +1,6 @@
+{
+  "json_rpc_rows": 106,
+  "non_json_diagnostic_lines": 64,
+  "raw_private_sha256": "50fecea202c138be78738e5dd56ff23b34f3edde12916eab70d8aca83efe3078",
+  "note": "Diagnostic lines came from pre-fix gateway disconnections. The proxy was repaired to forward SSE incrementally."
+}

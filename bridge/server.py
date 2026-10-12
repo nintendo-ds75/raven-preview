@@ -982,7 +982,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
 
         def mcp_http(self, message):
             """Stateless Streamable HTTP: each POST answers one JSON-RPC request."""
-            from .mcp import dispatch, params_error, SUPPORTED_HTTP_VERSIONS
+            from .mcp import dispatch, params_error, result_envelope, request_version, SUPPORTED_HTTP_VERSIONS, INSTRUCTIONS
             version = self.headers.get('MCP-Protocol-Version')
             if version is not None and version not in SUPPORTED_HTTP_VERSIONS:
                 return self.send(400, {'jsonrpc': '2.0', 'id': message.get('id'),
@@ -997,6 +997,11 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
             if error:
                 return self.send(200, {"jsonrpc": "2.0", "id": message["id"],
                                        "error": {"code": -32602, "message": error}})
+            requested_version = request_version(params, version)
+            if (requested_version is not None and (not isinstance(requested_version, str) or requested_version not in SUPPORTED_HTTP_VERSIONS)
+                    or version is not None and requested_version != version):
+                return self.send(400, {'jsonrpc': '2.0', 'id': message['id'],
+                    'error': {'code': -32602, 'message': 'Unsupported or conflicting MCP protocol version'}})
             if message['method'] == 'server/discover' or message['method'].startswith('events/'):
                 from . import mcp_events
                 rpc = {'jsonrpc': '2.0', 'id': message['id']}
@@ -1004,8 +1009,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     if not auth.enabled or not self.me or not self.me.id:
                         raise Invalid('MCP Events requires an authenticated personal connection')
                     if message['method'] == 'server/discover':
-                        value = {'resultType': 'complete', 'supportedVersions': [mcp_events.VERSION],
-                                 'capabilities': {'tools': {}, 'events': {}}}
+                        value = {'supportedVersions': [mcp_events.VERSION],
+                                 'capabilities': {'tools': {}, 'events': {}}, 'instructions': INSTRUCTIONS}
                     elif message['method'] == 'events/list':
                         value = {'events': [mcp_events.DEFINITION]}
                     elif message['method'] in ('events/subscribe', 'events/unsubscribe'):
@@ -1017,7 +1022,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                                        remove=message['method'] == 'events/unsubscribe')
                     else:
                         return self.send(200, {**rpc, 'error': {'code': -32601, 'message': 'Method not found'}})
-                    return self.send(200, {**rpc, 'result': value})
+                    return self.send(200, {**rpc, 'result': result_envelope(message['method'], value, params, version)})
                 except mcp_events.CallbackError as failure:
                     return self.send(200, {**rpc, 'error': {'code': -32015, 'message': 'CallbackEndpointError',
                                                          'data': {'reason': failure.reason}}})
@@ -1028,27 +1033,27 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                 if (isinstance(params, dict) and params.get("name") in ("bridge_wait", "bridge_finish_task")
                         and _progress_token(params) is not None
                         and "text/event-stream" in self.headers.get("Accept", "")):
-                    return self.stream_wait(message["id"], params)
+                    return self.stream_wait(message["id"], params, version=version)
                 if not isinstance(params, dict):
                     result = {"jsonrpc": "2.0", "id": message["id"],
                               "error": {"code": -32602, "message": "Invalid params"}}
                 else:
                     call = self.call_mcp_tool(params)
-                    result = {"jsonrpc": "2.0", "id": message["id"], "result": {
+                    result = {"jsonrpc": "2.0", "id": message["id"], "result": result_envelope('tools/call', {
                         "content": [{"type": "text", "text": json.dumps(call["result"]) if not call["isError"]
-                                     else str(call["result"])}], "isError": call["isError"]}}
+                                     else str(call["result"])}], "isError": call["isError"]}, params, version)}
             else:
-                result = dispatch(store, message)
+                result = dispatch(store, message, version=version)
             return self.send(200, result)
 
-        def stream_wait(self, rpc_id, params):
+        def stream_wait(self, rpc_id, params, version=None):
             """A wait kept alive: the answer is an event stream carrying a
             progress notification every 15 seconds and then the result, so
             the wait runs to the agent's timeout instead of this server's
             request bound, and a live call never looks idle to the client.
             Measured live on a397f1c: bound to 50 seconds, one task took 28
             wait calls, and the host ran out of budget before finishing."""
-            from .mcp import PROGRESS_MESSAGES, progress_sleep
+            from .mcp import PROGRESS_MESSAGES, progress_sleep, result_envelope
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-store")
@@ -1065,9 +1070,9 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                 message = PROGRESS_MESSAGES.get(params.get("name"), PROGRESS_MESSAGES[None])
                 call = self.call_mcp_tool(params, sleep=progress_sleep(params["_meta"]["progressToken"], emit,
                                                                        message=message), cap=__import__("bridge.canvas", fromlist=["call_budget"]).call_budget())
-                emit({"jsonrpc": "2.0", "id": rpc_id, "result": {
+                emit({"jsonrpc": "2.0", "id": rpc_id, "result": result_envelope('tools/call', {
                     "content": [{"type": "text", "text": json.dumps(call["result"]) if not call["isError"]
-                                 else str(call["result"])}], "isError": call["isError"]}})
+                                 else str(call["result"])}], "isError": call["isError"]}, params, version)})
             except (BrokenPipeError, ConnectionResetError):
                 return  # the client went away; nothing is lost by not waiting
             except Exception as error:

@@ -1,0 +1,9 @@
+{
+  "baseline": "3d934808397b9cee14c6f399a4e6c9ddeb17a00d",
+  "cutoff": "2025-10-11T00:00:00Z",
+  "oracle_sha256": "d4216e4b6f3e4ebac9fc56f783d7c020efba83bd060c059d1e1a379e9ad06b99",
+  "brief": "Our services sometimes receive Retry-After delays longer than they can afford to wait. Add an optional caller-controlled upper bound for Retry-After sleeping without unexpectedly changing existing retry behavior. Investigate, implement, document and test the change. This is for the library-next release.",
+  "brief_kind": "synthetic business task on frozen real history",
+  "no_future_upstream_change_is_an_answer_key": true,
+  "independent_tests_sha256": "7a19b3afeb58a90f0493cd0ba64da98a2809ca77fe73edb5b68cc745ff0e402b"
+}

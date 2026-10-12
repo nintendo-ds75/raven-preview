@@ -86,8 +86,12 @@ def prepare(delivery, decision_id, kind, summary, snapshot=None):
                 'Confirming this code approves the proposed answer with these exact source versions and source-decision revisions; '
                 'it retains their dependence. Historical completed decisions remain historical, not newly signed. '
                 'Use a fresh review if anything changes. A bare yes cannot confirm a source review.\n```\n' + displayed + '\n```')
-    # Include a conservative allowance for the generated instruction/code.
-    if len(summary.encode('utf-8')) + 256 > MAX_REVIEW_BYTES:
+    # Reject a review that cannot fit even before its confirmation is added.
+    # readback.save checks the actual combined prompt, including rule effects
+    # and its generated code; a guessed allowance rejects valid boundary text.
+    from .readback import prompt_budget
+    budget = prompt_budget('slack') if delivery.channel == 'slack' else MAX_REVIEW_BYTES
+    if len(summary.encode('utf-8')) > budget:
         return '', summary, fallback(delivery, decision, review,
             'The complete source review is too large for one chat read-back. No shortened source review can be confirmed here.')
     return json.dumps(payload, sort_keys=True), summary, ''

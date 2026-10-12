@@ -14,6 +14,13 @@ from datetime import datetime, timezone
 _SIGNOFF_COMMAND = re.compile(
     r"^(sign(?:ed)?[- ]?off|approve[d]?|lgtm|yes,? sign(?:ed)?(?: off)?|ok(?:ay)?,? sign(?:ed)?(?: off)?)\W*$", re.I)
 MAX_PROMPT_BYTES = 12000
+SLACK_PROMPT_BYTES = 36000
+
+
+def prompt_budget(platform):
+    # chat.postMessage text truncates at 40,000 characters; a byte cap is
+    # conservative for Unicode too. Teams keeps its smaller envelope budget.
+    return SLACK_PROMPT_BYTES if platform == 'slack' else MAX_PROMPT_BYTES
 
 _TOKEN = re.compile(r'^\s*(confirm|yes|decline|no)\s+([0-9a-f]{12})\s*[.!]?\s*$', re.I)
 _ANSWER_TOKEN = re.compile(r'^\s*confirm\s+answer\s+([0-9a-f]{12})\s*[.!]?\s*$', re.I)
@@ -187,7 +194,7 @@ def save(delivery, channel, thread, person_id, occurrence, event_id, values, sum
     # Measure the complete escaped prompt, including its confirmation code.
     # A provider-truncated message cannot constitute reviewed consent.
     from .delivery import complete_chat_text
-    if not complete_chat_text(prompt):
+    if not complete_chat_text(prompt, platform=delivery.channel):
         delivery._forget_reading(channel, thread, person_id)
         return ('Nothing recorded: the complete answer and decision scope are too large for one chat read-back. '
                 'No shortened read-back can be confirmed. Open this decision in Raven to review its full scope and answer.')

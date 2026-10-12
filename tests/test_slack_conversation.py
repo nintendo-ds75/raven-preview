@@ -947,6 +947,17 @@ class ConversationTests(DeliveryCase):
         child=self.graph.db.execute('SELECT followup_required FROM decisions WHERE parent_id=?',(self.n['node_id'],)).fetchone()
         self.assertEqual(child['followup_required'],1)
 
+    def test_followup_keeps_the_humans_named_recipient_when_model_omits_it(self):
+        request = 'Before finishing, ask Theo Example what the release documentation must say.'
+        offered = self.say(request, {'kind': 'followup', 'answer': 'What must the release documentation say?', 'required': True})
+        self.assertIn('Theo Example', offered)
+        self.say('yes')
+        child = self.graph.db.execute('SELECT * FROM decisions WHERE parent_id=?', (self.n['node_id'],)).fetchone()
+        self.assertIn(request, child['context'])
+        adopted = canvas.add_node(self.store, Config(model_api='none'), {'task_id': child['run_id'], 'adopt': child['id'],
+            'question': child['question'], 'context': 'The agent inspected the docs.'})
+        self.assertIn(request, self.store.get_decision(adopted['node_id'])['context'])
+
     def test_unrelated_person_cannot_confirm_someone_elses_answer(self):
         self.say('Exclude traffic',{'kind':'answer','answer':'Exclude traffic.'})
         said=self.say('yes',{'kind':'signoff'},who='UPRI')

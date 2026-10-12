@@ -1,0 +1,65 @@
+{
+  "baseline": "129845b012216b05e037abbed3f9364528d72114",
+  "full_python_suite": {
+    "ran": 2364,
+    "skipped": 138,
+    "passed": true,
+    "seconds": 530.414,
+    "runtime": "Docker Python 3.13, networking disabled"
+  },
+  "postgres": {
+    "ran": 148,
+    "skipped": 28,
+    "passed": true
+  },
+  "independent_and_urllib3": {
+    "passed": 127,
+    "skipped": 1
+  },
+  "dom_suites": {
+    "passed": 7,
+    "real_browser": "Accountless Slack decision page opened with computer use; showed two signed answers and history."
+  },
+  "image": {
+    "sha256": "d7913e3891eabe053f106c89ce882f07d29ebba154fc34023d81818a9e998850",
+    "built": true,
+    "packaged_contracts": {
+      "ran": 198,
+      "skipped": 60,
+      "passed": true
+    }
+  },
+  "public_artifact_known_credential_scan": "passed",
+  "public_audit_chain": "passed",
+  "exact_proof_patch_match": true,
+  "live_run": "completed with repairs",
+  "slack": "simulated HTTP API and signed Events payloads",
+  "inference": "real",
+  "host": "Claude Code 2.1.296",
+  "supervisor": "installed local adapter, two real same-session resumes",
+  "not_claimed": [
+    "real Slack installation",
+    "cloud MCP Events subscriber",
+    "perfect routing",
+    "complete decision coverage",
+    "unattended first install"
+  ],
+  "tracked_files_known_credential_scan": "passed",
+  "fixture_hygiene": {
+    "ran": 9,
+    "passed": true
+  },
+  "ruff": "passed",
+  "approval_boundaries": {
+    "ran": 163,
+    "skipped": 60,
+    "passed": true
+  },
+  "intermediate_full_suite": {
+    "ran": 2364,
+    "skipped": 138,
+    "failures": 4,
+    "reason": "Four boundary tests still assumed the previous Slack size limit; corrected and re-run."
+  },
+  "code_whitespace": "passed; exact captured patch excluded from whitespace normalization"
+}

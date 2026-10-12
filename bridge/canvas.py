@@ -1003,6 +1003,8 @@ def add_node(store, cfg, data, *, _cached_rule_attempt=False) -> dict:
         candidate = _node(store, adopt, task_id, "adopt")
         if candidate.status != "suggested":
             raise Invalid("adopt must name a follow-up question a person added to this task")
+        if candidate.context:
+            context = candidate.context + ('\nAgent investigation:\n' + context if context else '')
     # A retry of a node already on this tree must not become a new scope
     # question merely because the retry omitted its node-specific facts.
     for existing in graph.db.execute(
@@ -2954,6 +2956,7 @@ def _add_followups(store, cfg, decision_id: str, data, actor=None) -> dict:
     # left unadopted and the task finished.
     required = str(data.get("required") or "").strip().lower() in ("1", "true", "yes", "on")
     by = _text(data, "by", 100) or d.answered_by or d.owner or "a person"
+    original = _text(data, "context")
     created: list[dict] = []
     for q in questions:
         exists = graph.db.execute(
@@ -2965,7 +2968,8 @@ def _add_followups(store, cfg, decision_id: str, data, actor=None) -> dict:
             created.append(node_view(store, exists["id"], repeated=True))
             continue
         nid = graph.add_decision(d.task_id, q, d.category or "", "suggested", source="human",
-                                 repo=d.repo, context=f"added by {by} after answering: {_clip(d.question, 200)}",
+                                 repo=d.repo, context=f"added by {by} after answering: {_clip(d.question, 200)}" +
+                                 ('\nOriginal human request (context, not authority):\n' + original if original else ''),
                                  path=d.path or "unknown", kind="followup")
         graph.update_decision(nid, parent_id=d.id, depth=d.depth + 1, origin="human")
         if required:
