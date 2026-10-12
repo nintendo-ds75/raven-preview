@@ -394,6 +394,7 @@ Read `/api/state` to get the current state and `csrf_token`. Writes require `Con
 - `GET /api/sync` (the GitHub sync state per repository), `POST /api/sync` with `repo` (admin; runs one sync, or registers the repository when the server has no token); `POST /webhooks/github` (verified by `X-Hub-Signature-256`, no session)
 - `POST /api/tasks/:id/notes` with `text` and `by` (context a person adds to a running task; the agent reads it in `bridge_get_tree` and `bridge_wait` returns it), `GET /api/tasks/:id/trace` (every event, notification and node standing of a task, in order)
 - `POST /api/records` with `repo`, `kind` (`ticket`, `doc`, `slack`, `note`), `ref`, `title`, `body`, optional `author`, `url` (the immutable locator), `created_at`, `paths`, `status`: a record from outside git, evidence the ladder cites, never sign-off; `GET /api/inbox?overdue=1` (open questions older than `overdue_hours`, a setting alongside `slack_capture_repo`)
+- `GET /api/context/sources` (what Raven can read); `POST /api/context/sources` with `kind`, `repo`, `target`, `workspace_shared: true` and `POST /api/context/sources/:id/sync|disable` (admin); `POST /api/context/scan` with `repo`, `GET /api/context/suggestions?repo=...` and `POST /api/context/suggestions/dismiss` with `repo`, `kind`, `target`, optional `undo` (admin; [suggested sources](context-sources.md#suggested-sources))
 
 ## What is enforced, and what is guidance
 

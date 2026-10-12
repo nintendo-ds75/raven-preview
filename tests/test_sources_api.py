@@ -69,3 +69,18 @@ class SourcesAPITests(SharedServer):
     def test_the_report_tool_is_read_only_for_agents(self):
         from bridge.mcp import READ_ONLY_TOOLS
         self.assertIn('bridge_context_sources', READ_ONLY_TOOLS)
+
+    def test_only_an_administrator_scans_reads_and_dismisses_suggestions(self):
+        # A suggestion can name a project not every reader may see.
+        for token in (self.member, self.agent):
+            self.assertEqual(self.status_of('GET', '/api/context/suggestions', token=token), 403)
+            self.assertEqual(self.status_of('POST', '/api/context/scan', {'repo': 'example/service'}, token=token), 403)
+            self.assertEqual(self.status_of('POST', '/api/context/suggestions/dismiss',
+                                            {'repo': 'example/service', 'kind': 'docs', 'target': 'x'}, token=token), 403)
+        [scan] = self.post('/api/context/scan', {'repo': 'example/service'}, token=BOOTSTRAP)['scans']
+        self.assertEqual((scan['repo'], scan['suggestions'], scan['read']['checkout']), ('example/service', [], False))
+        self.post('/api/context/suggestions/dismiss', {'repo': 'example/service', 'kind': 'docs',
+                                                       'target': 'https://docs.example.invalid/'}, token=BOOTSTRAP)
+        self.assertEqual(self.get('/api/context/suggestions?repo=example/service', token=BOOTSTRAP)['scans'][0]['repo'],
+                         'example/service')
+        self.assertNotIn('suggestions', self.mcp('bridge_context_sources', {}, self.agent)['result'])

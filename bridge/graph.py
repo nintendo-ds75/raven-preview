@@ -345,6 +345,8 @@ def migrate(db: sqlite3.Connection) -> None:
     migrate_workbench_hosts(db)
     from .sources import migrate as migrate_sources
     migrate_sources(db)
+    from .source_scan import migrate as migrate_scan
+    migrate_scan(db)
     from .semantic_index import migrate as migrate_semantic
     migrate_semantic(db)
     from .investigation import migrate as migrate_investigation

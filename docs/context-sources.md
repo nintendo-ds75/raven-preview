@@ -133,3 +133,53 @@ search does not prove absence, and a blocked source must stay blocked. Ask a
 person for the remaining judgment or authorization, not facts available by
 inspection. This guidance does not add an approval gate or relax any existing
 sign-off requirement.
+
+## Suggested sources
+
+An administrator does not have to know channel IDs and project keys up front.
+`python -m bridge.sources scan --repo owner/name` (or `POST /api/context/scan`)
+reads what the repository points to and checks it against what the configured
+credentials can list:
+
+| Where the scan looks | What it finds |
+| --- | --- |
+| Service catalog files (`catalog-info.yaml`, `cortex.yaml`, `opslevel.yml`, `.coderabbit.yaml`) | Declared Slack channels and Jira project keys |
+| Issue-template contact links, package metadata (`pyproject.toml`, `package.json`, `Cargo.toml`, `setup.cfg`), checked-in MCP configurations | Slack channel links, documentation sites, the repository's MCP servers |
+| Agent instruction files (`AGENTS.md`, `CLAUDE.md`, `.claude/rules/`, `.cursor/rules/`, Copilot instructions) | Slack, Jira and documentation links |
+| README, CONTRIBUTING, SECURITY, CODEOWNERS, the pull request template, `docs/*.md` | Slack links and `#channel` mentions, Jira links, documentation sites |
+| Commit and pull request titles in the graph | Jira keys such as `BILL-12`, kept only when Jira lists the project |
+
+Files are read at the revision Raven ingested, from Git's object store, so a
+later commit or an uncommitted edit does not change the result. Source code is
+not read. No URL found in the repository is fetched; a documentation site is
+probed only when an administrator connects it.
+
+Listing reads metadata only: open public Slack channels (`conversations.list`,
+the `channels:read` scope the connector already needs) and the Jira projects
+Raven's account can browse (`/rest/api/3/project/search`). Anything a connector
+would refuse is shown with the reason and never suggested: a private, archived
+or externally shared channel, a project Raven's account cannot browse, or a
+project on another Jira site. Without credentials, the pointers the repository
+contains are listed with the setting that would confirm them.
+
+Each suggestion has a score from 0 to 100 and up to three reasons with the file
+and line they came from. The score weighs how deliberate the pointer is
+(60), how recently the source changed when the provider says (25, Jira only),
+and whether its name matches the repository (15). A workspace-wide channel
+that only matches by name loses 10 points. A source scoring 50 or more is
+recommended. No model is involved: the same inputs give the same suggestions,
+and each scan records a hash of its inputs in the event log.
+
+MCP servers the repository declares for its coding agents are listed as
+companions with their name and endpoint only. Their headers, environment and
+arguments are never read, because they can hold credentials.
+
+Nothing is connected by the scan. An administrator connects a suggestion with
+the usual `sources add ... --workspace-shared` (or `POST /api/context/sources`),
+which probes it live and records the attestation. `python -m bridge.sources
+dismiss <kind> --repo owner/name --target <target>` (or
+`POST /api/context/suggestions/dismiss`) hides a suggestion from later scans;
+`--undo` brings it back. `suggestions` (or `GET /api/context/suggestions`)
+shows the latest scan with each suggestion's state: suggested, dismissed or
+connected. Suggestions can name a Jira project not every reader may see, so all
+of these are for administrators only; agents and members never see them.

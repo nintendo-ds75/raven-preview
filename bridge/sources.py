@@ -390,8 +390,9 @@ class SourceSyncer:
 def main():
     import argparse
     from .store import Store
-    parser = argparse.ArgumentParser(description='Native context sources: add, run, disable, report')
-    parser.add_argument('action', choices=['add', 'sync', 'disable', 'status'])
+    parser = argparse.ArgumentParser(description='Native context sources: add, run, disable, report, and '
+                                                 'suggest sources for a repository')
+    parser.add_argument('action', choices=['add', 'sync', 'disable', 'status', 'scan', 'suggestions', 'dismiss'])
     parser.add_argument('kind', nargs='?', choices=KINDS)
     parser.add_argument('--db', default=os.environ.get('DATABASE_URL') or '.bridge/bridge.db')
     parser.add_argument('--repo', default='')
@@ -400,6 +401,8 @@ def main():
     parser.add_argument('--workspace-shared', action='store_true',
                         help='Attest the source is shared with every reader of this workspace')
     parser.add_argument('--max-pages', type=int, default=0, help='docs: page limit (default 200)')
+    parser.add_argument('--checkout', default='', help='scan: read this checkout instead of the ingested one')
+    parser.add_argument('--undo', action='store_true', help='dismiss: suggest it again')
     args = parser.parse_args()
     store = Store(args.db)
     try:
@@ -413,9 +416,17 @@ def main():
             result = [sync(store, args.id)] if args.id else SourceSyncer(store).tick()
         elif args.action == 'disable':
             result = disable(store, args.id, by='cli')
+        elif args.action in ('scan', 'suggestions', 'dismiss'):
+            from . import source_scan
+            if args.action == 'scan':
+                result = source_scan.scan(store, args.repo, checkout=args.checkout or None, by='cli')
+            elif args.action == 'dismiss':
+                result = source_scan.dismiss(store, args.repo, args.kind, args.target, by='cli', undo=args.undo)
+            else:
+                result = source_scan.suggestions(store, args.repo)
         else:
             result = report(store)
-    except (Invalid, SourceError) as error:
+    except (Invalid, SourceError, RuntimeError) as error:
         parser.exit(1, f'{error}\n')
     print(json.dumps(result, indent=2, sort_keys=True))
 

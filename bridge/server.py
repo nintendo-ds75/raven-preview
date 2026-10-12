@@ -279,6 +279,11 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                 if url.path == "/api/context/sources":
                     from .sources import report
                     return self.send(200, report(store))
+                if url.path == "/api/context/suggestions":
+                    # Suggestions can name a project not every reader may see.
+                    self.require("admin")
+                    from .source_scan import suggestions
+                    return self.send(200, suggestions(store, parse_qs(url.query).get("repo", [""])[0]))
                 if url.path == "/api/sync":
                     from .github import sync_states
                     return self.send(200, {"sync": sync_states(store.graph),
@@ -794,6 +799,16 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     result = sources.register(store, field(data, "kind", limit=20), field(data, "repo", limit=300),
                                               field(data, "target", limit=1000), shared=data.get("workspace_shared") is True,
                                               options=options, by=getattr(self.me, "name", "") or "local operator")
+                elif path in ("/api/context/scan", "/api/context/suggestions/dismiss"):
+                    self.require("admin")
+                    from . import source_scan
+                    by = getattr(self.me, "name", "") or "local operator"
+                    if path == "/api/context/scan":
+                        result = source_scan.scan(store, field(data, "repo", limit=300), by=by)
+                    else:
+                        result = source_scan.dismiss(store, field(data, "repo", limit=300), field(data, "kind", limit=20),
+                                                     field(data, "target", limit=1000), by=by,
+                                                     undo=data.get("undo") is True)
                 elif path.startswith("/api/context/sources/") and path.rsplit("/", 1)[-1] in ("sync", "disable"):
                     self.require("admin")
                     from . import sources
