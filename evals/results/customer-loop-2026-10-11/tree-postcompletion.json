@@ -1,0 +1,789 @@
+{
+  "source_anchors": [],
+  "work_item_association": {
+    "declared": "",
+    "status": "undeclared",
+    "record_ids": [],
+    "links": [],
+    "historical": true,
+    "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+  },
+  "task_id": "f07804519b5e",
+  "title": "Our services sometimes receive Retry-After delays longer than they can afford to wait. Add an optional caller-controlled upper bound for Retry-After sleeping without unexpectedly changing existing retry behavior. Investigate the code, discover the policy and compatibility choices, obtain the needed",
+  "goal": "Our services sometimes receive Retry-After delays longer than they can afford to wait. Add an optional caller-controlled upper bound for Retry-After sleeping without unexpectedly changing existing retry behavior. Investigate the code, discover the policy and compatibility choices, obtain the needed decisions through Raven, implement the change, document it and test the edge cases. This is for the library-next release. No customer-specific policy is implied.",
+  "repo": "urllib3/urllib3",
+  "requester": "Engineer 177b2c",
+  "facts": {},
+  "status": "completed",
+  "verdict": "engage",
+  "verdict_why": "the task speaks of changing existing retry behavior, compatibility, policy, release, in \"Our services sometimes receive Retry-After delays longer than they can afford to wait. Add an optional…\", which is a call for Engineer 654255 as a first contact; ask them to confirm who decides or refer (the model agrees: Task involves changing retry behavior and policy for a library-next release with backward compatibility implications; Engineer 654255 should confirm ownership of retry policy decisions.)",
+  "counts": {
+    "answered": 3,
+    "suggested": 1,
+    "blocking": 1,
+    "unrouted": 0,
+    "needs_review": 0,
+    "parent_changed_after": 0,
+    "signoff_required": 0
+  },
+  "needs_review": false,
+  "model_pending": false,
+  "nodes": [
+    {
+      "node_id": "fd56d4641f41",
+      "task_id": "f07804519b5e",
+      "parent_id": "",
+      "depth": 0,
+      "client_ref": "retry-after-max-param",
+      "origin": "agent",
+      "question": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+      "status": "answered",
+      "kind": "evidence",
+      "answer": "Use a new optional retry_after_max constructor argument in seconds. Default it to None so existing callers are unchanged. A finite limit must be opt-in, not a global default. This is my decision for library-next.",
+      "prediction": "",
+      "evidence": "",
+      "owner": "Engineer a9717c",
+      "source": "human",
+      "source_id": "",
+      "source_revision": "",
+      "routing_reason": "Referred to Engineer a9717c by Engineer 654255",
+      "owner_evidence": "handed on by Engineer 654255: \"Could you ask <@UC6A9ECF3F4> instead? They maintain runtime retry behavior.\"",
+      "answered_by": "Engineer a9717c",
+      "rationale": "No separate rationale recorded; any reason is included in the complete authored answer.",
+      "signoff": "signed",
+      "signed_by": "Engineer a9717c",
+      "brief": "",
+      "path": "src/urllib3/util/retry.py",
+      "category": "compat",
+      "created_at": "2026-10-12T00:24:34.450389+00:00",
+      "updated_at": "2026-10-12T00:28:30.930589+00:00",
+      "needs_review": false,
+      "review_reason": "",
+      "authorized": true,
+      "blocking": false,
+      "duplicate_of": "",
+      "reusable": false,
+      "rule_conditions": "",
+      "rule_expires": "",
+      "rule_scope": "",
+      "facts": {},
+      "required_signers": [],
+      "signatures": [
+        "Engineer a9717c"
+      ],
+      "historical_signatures": [],
+      "followup_required": false,
+      "partial": false,
+      "model_pending": false,
+      "options": [
+        "New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention",
+        "Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly",
+        "Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry"
+      ],
+      "next": "act on the answer from Engineer a9717c; follow-up questions they added are children of this node in bridge_get_tree",
+      "standing_grant": {
+        "recorded": false,
+        "state": "not_declared",
+        "scope": "",
+        "conditions": "",
+        "expires_at": "",
+        "granted_by": "",
+        "granted_at": "",
+        "ended_at": "",
+        "source_needs_review": false,
+        "source_provenance_uncertain": false,
+        "request_applicability": "not_evaluated_by_this_read",
+        "notice": "This decision declares no standing reuse grant of its own. Its current authorized/signoff result is separate and may be based on a source rule. Do not treat this decision as a new reusable rule; preserve its recorded answer and original context."
+      },
+      "fact_revision": "facts:78fe2762b73449adcc94319f6ad37623c6163da23f4b2fe316458679edffd40c",
+      "sources": [
+        {
+          "record_id": "b64b41565de24567a9477f4ec666088a",
+          "source_version_id": "82bed881b23044799e13ff268bd92025",
+          "sequence": 1,
+          "provider": "jira",
+          "namespace": "127.0.0.1:17481",
+          "external_id": "101",
+          "kind": "ticket",
+          "repo": "urllib3/urllib3",
+          "ref": "NET-101",
+          "url": "http://127.0.0.1:17481/jira/browse/NET-101",
+          "title": "NET-101: Retry-After compatibility policy",
+          "author": "Engineer a9717c",
+          "source_created_at": "2025-10-01T10:00:00Z",
+          "source_updated_at": "2026-10-11T18:00:00Z",
+          "source_version": "2026-10-11T18:00:00Z",
+          "observed_at": "2026-10-12T00:20:04.817162+00:00",
+          "provenance": "import",
+          "fingerprint": "8ded797d16588f21710de8a22399d80773f7c3eb38d16ab07cf66c29470acf56",
+          "availability": "available",
+          "head_id": "82bed881b23044799e13ff268bd92025",
+          "current": true,
+          "role": "support",
+          "decision_version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+          "stale": false
+        }
+      ],
+      "work_item_association": {
+        "declared": "",
+        "status": "undeclared",
+        "record_ids": [],
+        "links": [],
+        "historical": true,
+        "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+      },
+      "source_reuse_requires_review": false,
+      "source_provenance": "versioned",
+      "source_notice": "",
+      "related": [
+        {
+          "id": "ba9cb7882864",
+          "kind": "derived",
+          "note": "Explicitly reviewed current human-source revision",
+          "source_decision_id": "fd56d4641f41",
+          "source_version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+          "decision_id": "ba9cb7882864",
+          "decision_version_id": "dcbef5096da14642b65f87295c60b21b"
+        },
+        {
+          "id": "773c57f186e9",
+          "kind": "derived",
+          "note": "Explicitly reviewed current human-source revision",
+          "source_decision_id": "fd56d4641f41",
+          "source_version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+          "decision_id": "773c57f186e9",
+          "decision_version_id": "d2639585554542e18d02fb8f0c173e6d"
+        },
+        {
+          "id": "725d237f150c",
+          "kind": "derived",
+          "note": "Version-pinned joint composition",
+          "source_decision_id": "fd56d4641f41",
+          "source_version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+          "decision_id": "725d237f150c",
+          "decision_version_id": "72b9d8e6c85e4eb9a25d0b9980f60339"
+        },
+        {
+          "id": "594aa7d99a57",
+          "kind": "derived",
+          "note": "Version-pinned joint composition",
+          "source_decision_id": "fd56d4641f41",
+          "source_version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+          "decision_id": "594aa7d99a57",
+          "decision_version_id": "098bded4452a4de3aae65cae48c39b96"
+        }
+      ],
+      "depends_on": [],
+      "dependents": [],
+      "parent_changed_after": false,
+      "children": [
+        {
+          "node_id": "ba9cb7882864",
+          "task_id": "f07804519b5e",
+          "parent_id": "fd56d4641f41",
+          "depth": 1,
+          "client_ref": "retry-after-max-clamp-vs-abandon",
+          "origin": "agent",
+          "question": "When a parsed Retry-After value exceeds the caller-supplied `retry_after_max`, should the behavior be to clamp only the sleep duration (still retry, just wait `retry_after_max` seconds instead of the full header value), or to treat the bound as exceeded and give up the retry (raise/stop) instead of sleeping a shorter time?",
+          "status": "answered",
+          "kind": "new",
+          "answer": "Clamp the sleep duration and then retry as before. Do not stop or raise merely because the server asks for more than the caller limit. This cap must not change retry eligibility, counters or the ordinary exponential backoff path.",
+          "prediction": "",
+          "evidence": "",
+          "owner": "Engineer a9717c",
+          "source": "human",
+          "source_id": "",
+          "source_revision": "",
+          "routing_reason": "Referred to Engineer a9717c by Engineer 654255",
+          "owner_evidence": "handed on by Engineer 654255: \"not me @Engineer a9717c just this one\"",
+          "answered_by": "Engineer a9717c",
+          "rationale": "The limit bounds waiting time without changing whether retries are allowed.",
+          "signoff": "signed",
+          "signed_by": "Engineer a9717c",
+          "brief": "The task adds an optional upper bound on Retry-After sleep duration to handle cases where services cannot wait as long as the server requests. The decision is whether exceeding this bound should clamp the sleep time to the maximum (retry still happens, just waits shorter) or abandon the retry entirely (raise an error instead of sleeping). The clamping approach keeps sleep-time capping separate from retry eligibility, matching how the existing `backoff_max` works; the abandonment approach would change whether retries happen at all based on the bound, which is a larger behavioral shift not described in the task.",
+          "path": "src/urllib3/util/retry.py",
+          "category": "policy",
+          "created_at": "2026-10-12T00:24:46.654679+00:00",
+          "updated_at": "2026-10-12T00:29:19.377509+00:00",
+          "needs_review": false,
+          "review_reason": "",
+          "authorized": true,
+          "blocking": false,
+          "duplicate_of": "",
+          "reusable": false,
+          "rule_conditions": "",
+          "rule_expires": "",
+          "rule_scope": "",
+          "facts": {},
+          "required_signers": [],
+          "signatures": [
+            "Engineer a9717c"
+          ],
+          "historical_signatures": [],
+          "followup_required": false,
+          "partial": false,
+          "model_pending": false,
+          "options": [
+            "Clamp only the sleep duration to `retry_after_max` and still perform the retry as today -- minimal, consistent with `backoff_max` precedent and the task's framing of bounding the sleep",
+            "Abandon/raise when Retry-After exceeds the bound instead of sleeping a capped amount -- larger behavior change, alters retry eligibility and counters, not requested by the task"
+          ],
+          "next": "act on the answer from Engineer a9717c; follow-up questions they added are children of this node in bridge_get_tree Read parent node fd56d4641f41 (its current context is here or in bridge_get_tree) before adding more questions; reconcile what its answer already covers. Parent context does not authorize this child or transfer its owner's authority.",
+          "standing_grant": {
+            "recorded": false,
+            "state": "not_declared",
+            "scope": "",
+            "conditions": "",
+            "expires_at": "",
+            "granted_by": "",
+            "granted_at": "",
+            "ended_at": "",
+            "source_needs_review": false,
+            "source_provenance_uncertain": false,
+            "request_applicability": "not_evaluated_by_this_read",
+            "notice": "This decision declares no standing reuse grant of its own. Its current authorized/signoff result is separate and may be based on a source rule. Do not treat this decision as a new reusable rule; preserve its recorded answer and original context."
+          },
+          "fact_revision": "facts:50170315350cc140b9716c631e661a03ae55c261535e02ee2853bd53fad34a7e",
+          "sources": [
+            {
+              "record_id": "b64b41565de24567a9477f4ec666088a",
+              "source_version_id": "82bed881b23044799e13ff268bd92025",
+              "sequence": 1,
+              "provider": "jira",
+              "namespace": "127.0.0.1:17481",
+              "external_id": "101",
+              "kind": "ticket",
+              "repo": "urllib3/urllib3",
+              "ref": "NET-101",
+              "url": "http://127.0.0.1:17481/jira/browse/NET-101",
+              "title": "NET-101: Retry-After compatibility policy",
+              "author": "Engineer a9717c",
+              "source_created_at": "2025-10-01T10:00:00Z",
+              "source_updated_at": "2026-10-11T18:00:00Z",
+              "source_version": "2026-10-11T18:00:00Z",
+              "observed_at": "2026-10-12T00:20:04.817162+00:00",
+              "provenance": "import",
+              "fingerprint": "8ded797d16588f21710de8a22399d80773f7c3eb38d16ab07cf66c29470acf56",
+              "availability": "available",
+              "head_id": "82bed881b23044799e13ff268bd92025",
+              "current": true,
+              "role": "support",
+              "decision_version_id": "dcbef5096da14642b65f87295c60b21b",
+              "stale": false
+            }
+          ],
+          "work_item_association": {
+            "declared": "",
+            "status": "undeclared",
+            "record_ids": [],
+            "links": [],
+            "historical": true,
+            "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+          },
+          "source_reuse_requires_review": false,
+          "source_provenance": "versioned",
+          "source_notice": "",
+          "parent": {
+            "node_id": "fd56d4641f41",
+            "status": "answered",
+            "authorized": true,
+            "needs_review": false,
+            "updated_at": "2026-10-12T00:28:30.930589+00:00"
+          },
+          "related": [
+            {
+              "id": "773c57f186e9",
+              "kind": "related",
+              "note": "same question, possibly different scope: this one names 325-341, decision ba9cb7882864 names 196-197, 335-341, 387-407"
+            },
+            {
+              "id": "fd56d4641f41",
+              "kind": "derived",
+              "note": "Explicitly reviewed current human-source revision",
+              "source_decision_id": "fd56d4641f41",
+              "source_version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+              "decision_id": "ba9cb7882864",
+              "decision_version_id": "dcbef5096da14642b65f87295c60b21b"
+            },
+            {
+              "id": "ad6bd5303775",
+              "kind": "derived",
+              "note": "Version-pinned joint composition",
+              "source_decision_id": "ba9cb7882864",
+              "source_version_id": "dcbef5096da14642b65f87295c60b21b",
+              "decision_id": "ad6bd5303775",
+              "decision_version_id": "2c9a1c4112014857801a578169aaf539"
+            }
+          ],
+          "depends_on": [],
+          "dependents": [],
+          "parent_changed_after": false,
+          "children": []
+        },
+        {
+          "node_id": "773c57f186e9",
+          "task_id": "f07804519b5e",
+          "parent_id": "fd56d4641f41",
+          "depth": 1,
+          "client_ref": "retry-after-max-scope-of-cap",
+          "origin": "agent",
+          "question": "Should `retry_after_max` only affect the internal `time.sleep()` duration inside `sleep_for_retry()`, leaving `Retry.get_retry_after()` returning the server's raw/uncapped parsed `Retry-After` value (so other callers reading that method still see the true header value), rather than also capping `get_retry_after()`'s return value?",
+          "status": "answered",
+          "kind": "new",
+          "answer": "Apply the cap only to the actual sleep in sleep_for_retry. Keep parse_retry_after and get_retry_after returning the original parsed server value. Preserve the configured limit in new() and increment().",
+          "prediction": "",
+          "evidence": "",
+          "owner": "Engineer a9717c",
+          "source": "human",
+          "source_id": "",
+          "source_revision": "",
+          "routing_reason": "Referred to Engineer a9717c by Engineer 654255",
+          "owner_evidence": "handed on by Engineer 654255: \"not me @Engineer a9717c just this one\"",
+          "answered_by": "Engineer a9717c",
+          "rationale": "Public header parsing must retain its meaning for existing callers. Cloned retries must preserve the caller’s chosen limit.",
+          "signoff": "signed",
+          "signed_by": "Engineer a9717c",
+          "brief": "The code needs to add an optional upper bound for Retry-After delays that `sleep_for_retry()` will respect. The question is whether to cap the value only at the `time.sleep()` call site in `sleep_for_retry()`, leaving the public method `get_retry_after()` returning the server's true uncapped Retry-After value as documented, or to cap it inside `get_retry_after()` itself so all callers see the bounded value. Capping only at the sleep call preserves existing public-method semantics for external callers who may rely on `get_retry_after()` reporting the true header value for logging or metrics; capping inside `get_retry_after()` changes the documented meaning of that public method for any external code already calling it directly.",
+          "path": "src/urllib3/util/retry.py",
+          "category": "compat",
+          "created_at": "2026-10-12T00:24:53.744356+00:00",
+          "updated_at": "2026-10-12T00:34:57.952594+00:00",
+          "needs_review": false,
+          "review_reason": "",
+          "authorized": true,
+          "blocking": false,
+          "duplicate_of": "",
+          "reusable": false,
+          "rule_conditions": "",
+          "rule_expires": "",
+          "rule_scope": "",
+          "facts": {},
+          "required_signers": [],
+          "signatures": [
+            "Engineer a9717c"
+          ],
+          "historical_signatures": [],
+          "followup_required": false,
+          "partial": false,
+          "model_pending": false,
+          "options": [
+            "Keep `get_retry_after()` returning the true uncapped value; apply `retry_after_max` only where `sleep_for_retry()` passes the duration to `time.sleep()` -- preserves existing public-method semantics",
+            "Cap the value inside `get_retry_after()` itself so every caller of that method sees the bounded value -- changes documented behavior of an existing public method for any external caller"
+          ],
+          "next": "act on the answer from Engineer a9717c; follow-up questions they added are children of this node in bridge_get_tree Read parent node fd56d4641f41 (its current context is here or in bridge_get_tree) before adding more questions; reconcile what its answer already covers. Parent context does not authorize this child or transfer its owner's authority.",
+          "standing_grant": {
+            "recorded": false,
+            "state": "not_declared",
+            "scope": "",
+            "conditions": "",
+            "expires_at": "",
+            "granted_by": "",
+            "granted_at": "",
+            "ended_at": "",
+            "source_needs_review": false,
+            "source_provenance_uncertain": false,
+            "request_applicability": "not_evaluated_by_this_read",
+            "notice": "This decision declares no standing reuse grant of its own. Its current authorized/signoff result is separate and may be based on a source rule. Do not treat this decision as a new reusable rule; preserve its recorded answer and original context."
+          },
+          "fact_revision": "facts:d0626eb14e35d43e6693c9d06f7a3b25d20fa5dd365fd572ca2da24b1f01016e",
+          "sources": [
+            {
+              "record_id": "b64b41565de24567a9477f4ec666088a",
+              "source_version_id": "82bed881b23044799e13ff268bd92025",
+              "sequence": 1,
+              "provider": "jira",
+              "namespace": "127.0.0.1:17481",
+              "external_id": "101",
+              "kind": "ticket",
+              "repo": "urllib3/urllib3",
+              "ref": "NET-101",
+              "url": "http://127.0.0.1:17481/jira/browse/NET-101",
+              "title": "NET-101: Retry-After compatibility policy",
+              "author": "Engineer a9717c",
+              "source_created_at": "2025-10-01T10:00:00Z",
+              "source_updated_at": "2026-10-11T18:00:00Z",
+              "source_version": "2026-10-11T18:00:00Z",
+              "observed_at": "2026-10-12T00:20:04.817162+00:00",
+              "provenance": "import",
+              "fingerprint": "8ded797d16588f21710de8a22399d80773f7c3eb38d16ab07cf66c29470acf56",
+              "availability": "available",
+              "head_id": "82bed881b23044799e13ff268bd92025",
+              "current": true,
+              "role": "support",
+              "decision_version_id": "d2639585554542e18d02fb8f0c173e6d",
+              "stale": false
+            }
+          ],
+          "work_item_association": {
+            "declared": "",
+            "status": "undeclared",
+            "record_ids": [],
+            "links": [],
+            "historical": true,
+            "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+          },
+          "source_reuse_requires_review": false,
+          "source_provenance": "versioned",
+          "source_notice": "",
+          "parent": {
+            "node_id": "fd56d4641f41",
+            "status": "answered",
+            "authorized": true,
+            "needs_review": false,
+            "updated_at": "2026-10-12T00:28:30.930589+00:00"
+          },
+          "related": [
+            {
+              "id": "ba9cb7882864",
+              "kind": "related",
+              "note": "same question, possibly different scope: this one names 325-341, decision ba9cb7882864 names 196-197, 335-341, 387-407"
+            },
+            {
+              "id": "fd56d4641f41",
+              "kind": "derived",
+              "note": "Explicitly reviewed current human-source revision",
+              "source_decision_id": "fd56d4641f41",
+              "source_version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+              "decision_id": "773c57f186e9",
+              "decision_version_id": "d2639585554542e18d02fb8f0c173e6d"
+            }
+          ],
+          "depends_on": [],
+          "dependents": [],
+          "parent_changed_after": false,
+          "children": [
+            {
+              "node_id": "ce6a2d6a372c",
+              "task_id": "f07804519b5e",
+              "parent_id": "773c57f186e9",
+              "depth": 2,
+              "client_ref": "",
+              "origin": "human",
+              "question": "For a zero-second retry_after_max, should a positive Retry-After header lead to an immediate retry without falling back to exponential backoff?",
+              "status": "suggested",
+              "kind": "followup",
+              "answer": "",
+              "prediction": "",
+              "evidence": "",
+              "owner": "",
+              "source": "human",
+              "source_id": "",
+              "source_revision": "",
+              "routing_reason": "resolution ladder",
+              "owner_evidence": "",
+              "answered_by": "",
+              "rationale": "",
+              "signoff": "",
+              "signed_by": "",
+              "brief": "",
+              "path": "src/urllib3/util/retry.py",
+              "category": "compat",
+              "created_at": "2026-10-12T00:36:51.433396+00:00",
+              "updated_at": "2026-10-12T00:36:51.435890+00:00",
+              "needs_review": false,
+              "review_reason": "",
+              "authorized": false,
+              "blocking": true,
+              "duplicate_of": "",
+              "reusable": false,
+              "rule_conditions": "",
+              "rule_expires": "",
+              "rule_scope": "",
+              "facts": {},
+              "required_signers": [],
+              "signatures": [],
+              "historical_signatures": [],
+              "followup_required": true,
+              "partial": false,
+              "model_pending": false,
+              "options": [],
+              "next": "a person added this question and marked it required: adopt it with bridge_add_node(adopt=<node_id>); the task cannot finish until it is answered Read parent node 773c57f186e9 (its current context is here or in bridge_get_tree) before adding more questions; reconcile what its answer already covers. Parent context does not authorize this child or transfer its owner's authority.",
+              "standing_grant": {
+                "recorded": false,
+                "state": "not_declared",
+                "scope": "",
+                "conditions": "",
+                "expires_at": "",
+                "granted_by": "",
+                "granted_at": "",
+                "ended_at": "",
+                "source_needs_review": false,
+                "source_provenance_uncertain": false,
+                "request_applicability": "not_evaluated_by_this_read",
+                "notice": "This decision declares no standing reuse grant of its own. Its current authorized/signoff result is separate and may be based on a source rule. Do not treat this decision as a new reusable rule; preserve its recorded answer and original context."
+              },
+              "fact_revision": "facts:a1d14f071d25949314b44589a3e4acf94bed79722f810643e40dc59b868205c1",
+              "sources": [],
+              "work_item_association": {
+                "declared": "",
+                "status": "undeclared",
+                "record_ids": [],
+                "links": [],
+                "historical": true,
+                "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+              },
+              "source_reuse_requires_review": false,
+              "source_provenance": "unknown",
+              "source_notice": "",
+              "parent": {
+                "node_id": "773c57f186e9",
+                "status": "answered",
+                "authorized": true,
+                "needs_review": false,
+                "updated_at": "2026-10-12T00:34:57.952594+00:00"
+              },
+              "related": [],
+              "depends_on": [],
+              "dependents": [],
+              "parent_changed_after": false,
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "followups": [
+    {
+      "node_id": "ce6a2d6a372c",
+      "task_id": "f07804519b5e",
+      "parent_id": "773c57f186e9",
+      "depth": 2,
+      "client_ref": "",
+      "origin": "human",
+      "question": "For a zero-second retry_after_max, should a positive Retry-After header lead to an immediate retry without falling back to exponential backoff?",
+      "status": "suggested",
+      "kind": "followup",
+      "answer": "",
+      "prediction": "",
+      "evidence": "",
+      "owner": "",
+      "source": "human",
+      "source_id": "",
+      "source_revision": "",
+      "routing_reason": "resolution ladder",
+      "owner_evidence": "",
+      "answered_by": "",
+      "rationale": "",
+      "signoff": "",
+      "signed_by": "",
+      "brief": "",
+      "path": "src/urllib3/util/retry.py",
+      "category": "compat",
+      "created_at": "2026-10-12T00:36:51.433396+00:00",
+      "updated_at": "2026-10-12T00:36:51.435890+00:00",
+      "needs_review": false,
+      "review_reason": "",
+      "authorized": false,
+      "blocking": true,
+      "duplicate_of": "",
+      "reusable": false,
+      "rule_conditions": "",
+      "rule_expires": "",
+      "rule_scope": "",
+      "facts": {},
+      "required_signers": [],
+      "signatures": [],
+      "historical_signatures": [],
+      "followup_required": true,
+      "partial": false,
+      "model_pending": false,
+      "options": [],
+      "next": "a person added this question and marked it required: adopt it with bridge_add_node(adopt=<node_id>); the task cannot finish until it is answered Read parent node 773c57f186e9 (its current context is here or in bridge_get_tree) before adding more questions; reconcile what its answer already covers. Parent context does not authorize this child or transfer its owner's authority.",
+      "standing_grant": {
+        "recorded": false,
+        "state": "not_declared",
+        "scope": "",
+        "conditions": "",
+        "expires_at": "",
+        "granted_by": "",
+        "granted_at": "",
+        "ended_at": "",
+        "source_needs_review": false,
+        "source_provenance_uncertain": false,
+        "request_applicability": "not_evaluated_by_this_read",
+        "notice": "This decision declares no standing reuse grant of its own. Its current authorized/signoff result is separate and may be based on a source rule. Do not treat this decision as a new reusable rule; preserve its recorded answer and original context."
+      },
+      "fact_revision": "facts:a1d14f071d25949314b44589a3e4acf94bed79722f810643e40dc59b868205c1",
+      "sources": [],
+      "work_item_association": {
+        "declared": "",
+        "status": "undeclared",
+        "record_ids": [],
+        "links": [],
+        "historical": true,
+        "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+      },
+      "source_reuse_requires_review": false,
+      "source_provenance": "unknown",
+      "source_notice": "",
+      "parent": {
+        "node_id": "773c57f186e9",
+        "status": "answered",
+        "authorized": true,
+        "needs_review": false,
+        "updated_at": "2026-10-12T00:34:57.952594+00:00"
+      },
+      "related": [],
+      "depends_on": [],
+      "dependents": [],
+      "parent_changed_after": false
+    }
+  ],
+  "observed_at": "2026-10-12T00:40:12.582939+00:00",
+  "observed_revision": {
+    "773c57f186e9": {
+      "max_event_id": 1536,
+      "event_count": 4
+    },
+    "ba9cb7882864": {
+      "max_event_id": 1527,
+      "event_count": 4
+    },
+    "ce6a2d6a372c": {
+      "max_event_id": 1543,
+      "event_count": 1
+    },
+    "fd56d4641f41": {
+      "max_event_id": 1522,
+      "event_count": 2
+    }
+  },
+  "notes": [],
+  "scope_clarifications": [],
+  "next": "1 follow-up question added by people, adopt with bridge_add_node(adopt=...) (all required: the task cannot finish until it is adopted and answered)",
+  "review": {
+    "id": "ae56f820c6f8",
+    "status": "done",
+    "follows": [
+      {
+        "node_id": "fd56d4641f41",
+        "question": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+        "requirements": [
+          {
+            "at": "retry_after_max: float | None = None,",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Add new optional retry_after_max constructor parameter (seconds)",
+            "state": "ok"
+          },
+          {
+            "at": "retry_after_max: float | None = None,",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Default retry_after_max to None so existing callers unchanged",
+            "state": "ok"
+          },
+          {
+            "at": "self.retry_after_max = retry_after_max",
+            "found": "honored",
+            "kind": "must_not",
+            "needs": "Finite limit must be opt-in, not a global/module-level default",
+            "state": "ok"
+          }
+        ],
+        "verdict": "follows",
+        "why": "All three requirements are directly satisfied by the new per-instance constructor parameter defaulting to None and stored as an instance attribute, not a global."
+      },
+      {
+        "node_id": "ba9cb7882864",
+        "question": "When a parsed Retry-After value exceeds the caller-supplied `retry_after_max`, should the behavior be to clamp only the sleep duration (still retry, just wait `retry_after_max` seconds instead of the full header value), or to treat the bound as exceeded and give up the retry (raise/stop) instead of sleeping a shorter time?",
+        "requirements": [
+          {
+            "at": "retry_after = min(retry_after, self.retry_after_max)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Clamp the sleep duration when Retry-After exceeds retry_after_max, still retry",
+            "state": "ok"
+          },
+          {
+            "at": "time.sleep(retry_after)",
+            "found": "honored",
+            "kind": "must_not",
+            "needs": "Do not stop or raise merely because header exceeds retry_after_max",
+            "state": "ok"
+          },
+          {
+            "at": "def sleep_for_retry(self, response: BaseHTTPResponse) -> bool:",
+            "found": "honored",
+            "kind": "must_not",
+            "needs": "Cap must not change retry eligibility or counters",
+            "state": "ok"
+          },
+          {
+            "at": "if retry_after:",
+            "found": "honored",
+            "kind": "must_not",
+            "needs": "Cap must not change ordinary exponential backoff path",
+            "state": "ok"
+          },
+          {
+            "at": "raise ValueError(\n                \"retry_after_max must be a non-negative, finite number or None, \"",
+            "found": "violated",
+            "kind": "must_not",
+            "needs": "Added ValueError validation rejecting negative, NaN, or infinite retry_after_max values in __init__, a new input-validation branch not authorized by the decisions",
+            "note": "the diff adds a condition no signed answer states",
+            "state": "departs"
+          }
+        ],
+        "verdict": "departs",
+        "why": "The diff adds a condition no signed answer states: Added ValueError validation rejecting negative, NaN, or infinite retry_after_max values in __init__, a new input-validation branch not authorized by the decisions"
+      },
+      {
+        "node_id": "773c57f186e9",
+        "question": "Should `retry_after_max` only affect the internal `time.sleep()` duration inside `sleep_for_retry()`, leaving `Retry.get_retry_after()` returning the server's raw/uncapped parsed `Retry-After` value (so other callers reading that method still see the true header value), rather than also capping `get_retry_after()`'s return value?",
+        "requirements": [
+          {
+            "at": "retry_after = min(retry_after, self.retry_after_max)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Cap applied only to actual sleep duration in sleep_for_retry",
+            "state": "ok"
+          },
+          {
+            "at": "retry_after = self.get_retry_after(response)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "parse_retry_after returns original parsed server value, uncapped",
+            "state": "ok"
+          },
+          {
+            "at": "retry_after = self.get_retry_after(response)",
+            "found": "honored",
+            "kind": "must_not",
+            "needs": "get_retry_after returns original parsed server value, uncapped",
+            "state": "ok"
+          },
+          {
+            "at": "retry_after_max=self.retry_after_max,",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Preserve configured retry_after_max limit in new()",
+            "state": "ok"
+          },
+          {
+            "found": "unseen",
+            "kind": "must",
+            "needs": "Preserve configured retry_after_max limit in increment()",
+            "state": "unclear"
+          }
+        ],
+        "verdict": "unclear",
+        "why": "increment() is not shown in the diff so propagation of retry_after_max there cannot be verified; all other requirements are directly supported by the shown lines"
+      }
+    ],
+    "diff_hash": "5bb4565bf7faef7d",
+    "seconds": 44.1,
+    "finished_at": "2026-10-12T00:36:42.455082+00:00",
+    "revisions": {
+      "773c57f186e9": "94d1b66ce433bafb",
+      "ba9cb7882864": "90e63eb782642dc4",
+      "fd56d4641f41": "9f7869f17f65ca44"
+    },
+    "review_inputs": {
+      "773c57f186e9": "a45637bfe0418efa7f2e65d1b03d8a142c4d73c994eda35de97d390f3aadd94e",
+      "ba9cb7882864": "417cc06863349fafe188eab1d373ee80c20f4f13c877c0414bef968aff0fd12e",
+      "fd56d4641f41": "589a0ad5777f762edd72a4cabf70efbd792962a5aba18ea88a254030809f0b1a"
+    }
+  },
+  "read_acknowledged": true
+}

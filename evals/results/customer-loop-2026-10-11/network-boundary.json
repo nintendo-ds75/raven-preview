@@ -1,0 +1,11 @@
+{
+  "future_repository": {
+    "error": "URLError",
+    "description": "<urlopen error Tunnel connection failed: 403 Forbidden>"
+  },
+  "inference": {
+    "status": 200
+  },
+  "base": "3d934808397b9cee14c6f399a4e6c9ddeb17a00d",
+  "remotes": []
+}

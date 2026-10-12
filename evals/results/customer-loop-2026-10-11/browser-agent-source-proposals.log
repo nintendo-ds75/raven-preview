@@ -1,0 +1,10 @@
+locator.innerText: Error: strict mode violation: locator('.source-snapshot-body') resolved to 2 elements:
+    1) <pre class="modal-context source-snapshot-body">SOURCE 1 COMPLETE START↵Context line with exact d…</pre> aka getByText('SOURCE 1 COMPLETE START')
+    2) <pre class="modal-context source-snapshot-body">SOURCE 2 COMPLETE START↵Context line with exact d…</pre> aka getByText('SOURCE 2 COMPLETE START')
+
+Call log:
+[2m  - waiting for locator('.source-snapshot-body')[22m
+
+    at /Users/pandapiggy/Claude/Projects/Bridge/raven-preview/tests/browser-agent-source-proposals.cjs:83:62 {
+  log: [ "  - waiting for locator('.source-snapshot-body')" ]
+}

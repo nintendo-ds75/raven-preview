@@ -1,0 +1,802 @@
+{
+  "bundle": {
+    "algorithm": "sha256",
+    "id": "d5c68c7ef47dab92d13bfaf69e92d7a581428336740728a740d7338480382fea",
+    "payload": {
+      "change": {
+        "bytes": 5255,
+        "diff": "diff --git a/changelog/3686.feature.rst b/changelog/3686.feature.rst\nnew file mode 100644\nindex 00000000..945cd20c\n--- /dev/null\n+++ b/changelog/3686.feature.rst\n@@ -0,0 +1 @@\n+Added ``retry_after_max`` to ``Retry`` to optionally cap how long urllib3 will sleep for a ``Retry-After`` response header. By default there is no cap, preserving existing behavior.\ndiff --git a/src/urllib3/util/retry.py b/src/urllib3/util/retry.py\nindex 0456cceb..955cb6cd 100644\n--- a/src/urllib3/util/retry.py\n+++ b/src/urllib3/util/retry.py\n@@ -2,6 +2,7 @@ from __future__ import annotations\n \n import email\n import logging\n+import math\n import random\n import re\n import time\n@@ -174,6 +175,15 @@ class Retry:\n         Whether to respect Retry-After header on status codes defined as\n         :attr:`Retry.RETRY_AFTER_STATUS_CODES` or not.\n \n+    :param float retry_after_max:\n+        The maximum number of seconds to sleep for when respecting a\n+        server's ``Retry-After`` header. If the header requests a longer\n+        wait than this, the sleep is capped to ``retry_after_max`` seconds\n+        instead.\n+\n+        By default, there is no cap (``None``) and the full value of the\n+        header is used, preserving historical behavior.\n+\n     :param Collection remove_headers_on_redirect:\n         Sequence of headers to remove from the request when a response\n         indicating a redirect is returned before firing off the redirected\n@@ -219,7 +229,18 @@ class Retry:\n             str\n         ] = DEFAULT_REMOVE_HEADERS_ON_REDIRECT,\n         backoff_jitter: float = 0.0,\n+        retry_after_max: float | None = None,\n     ) -> None:\n+        if retry_after_max is not None and (\n+            math.isnan(retry_after_max)\n+            or math.isinf(retry_after_max)\n+            or retry_after_max < 0\n+        ):\n+            raise ValueError(\n+                \"retry_after_max must be a non-negative, finite number or None, \"\n+                f\"got {retry_after_max!r}\"\n+            )\n+\n         self.total = total\n         self.connect = connect\n         self.read = read\n@@ -243,6 +264,7 @@ class Retry:\n             h.lower() for h in remove_headers_on_redirect\n         )\n         self.backoff_jitter = backoff_jitter\n+        self.retry_after_max = retry_after_max\n \n     def new(self, **kw: typing.Any) -> Self:\n         params = dict(\n@@ -262,6 +284,7 @@ class Retry:\n             remove_headers_on_redirect=self.remove_headers_on_redirect,\n             respect_retry_after_header=self.respect_retry_after_header,\n             backoff_jitter=self.backoff_jitter,\n+            retry_after_max=self.retry_after_max,\n         )\n \n         params.update(kw)\n@@ -335,6 +358,8 @@ class Retry:\n     def sleep_for_retry(self, response: BaseHTTPResponse) -> bool:\n         retry_after = self.get_retry_after(response)\n         if retry_after:\n+            if self.retry_after_max is not None:\n+                retry_after = min(retry_after, self.retry_after_max)\n             time.sleep(retry_after)\n             return True\n \ndiff --git a/test/test_retry.py b/test/test_retry.py\nindex 85206b90..ea8dd674 100644\n--- a/test/test_retry.py\n+++ b/test/test_retry.py\n@@ -426,3 +426,52 @@ class TestRetry:\n                 sleep_mock.assert_called_with(sleep_duration)\n             else:\n                 sleep_mock.assert_not_called()\n+\n+    @pytest.mark.parametrize(\n+        \"retry_after_max\", [-1, -0.1, float(\"nan\"), float(\"inf\")]\n+    )\n+    def test_retry_after_max_invalid(self, retry_after_max: float) -> None:\n+        with pytest.raises(ValueError):\n+            Retry(retry_after_max=retry_after_max)\n+\n+    def test_retry_after_max_propagated(self) -> None:\n+        retry = Retry(retry_after_max=5)\n+        new_retry = retry.new()\n+        assert new_retry.retry_after_max == 5\n+\n+    def test_retry_after_max_default_is_unbounded(self) -> None:\n+        assert Retry().retry_after_max is None\n+\n+    @pytest.mark.parametrize(\n+        \"retry_after_header,retry_after_max,sleep_duration\",\n+        [\n+            # Below the cap: sleeps for the full header value.\n+            (\"60\", 3600, 60),\n+            # Above the cap: sleep is clamped to retry_after_max.\n+            (\"3600\", 60, 60),\n+            # No cap: sleeps for the full header value, unchanged.\n+            (\"3600\", None, 3600),\n+            # Exactly at the cap: sleeps for that value.\n+            (\"60\", 60, 60),\n+        ],\n+    )\n+    def test_retry_after_max_caps_sleep(\n+        self,\n+        retry_after_header: str,\n+        retry_after_max: float | None,\n+        sleep_duration: float,\n+    ) -> None:\n+        retry = Retry(retry_after_max=retry_after_max)\n+\n+        with mock.patch(\"time.sleep\") as sleep_mock:\n+            response = HTTPResponse(\n+                status=503, headers={\"Retry-After\": retry_after_header}\n+            )\n+            retry.sleep(response)\n+            sleep_mock.assert_called_with(sleep_duration)\n+\n+    def test_retry_after_max_does_not_affect_get_retry_after(self) -> None:\n+        \"\"\"retry_after_max only caps the sleep call, not the reported value.\"\"\"\n+        retry = Retry(retry_after_max=10)\n+        response = HTTPResponse(status=503, headers={\"Retry-After\": \"3600\"})\n+        assert retry.get_retry_after(response) == 3600\n",
+        "sha256": "5bb4565bf7faef7dacff2d0454dd0339d19ac2518b421a6c8d129b5a04366f09"
+      },
+      "checks": {
+        "independently_verified": false,
+        "provenance": "coding-host-reported",
+        "text": "/opt/venv/bin/python -m pytest test/test_retry.py -q: 72 passed. Also ran test/test_retry.py plus test/test_connectionpool.py together (146 passed) to check for regressions in retry-dependent code."
+      },
+      "decisions": [
+        {
+          "answer": "Apply the cap only to the actual sleep in sleep_for_retry. Keep parse_retry_after and get_retry_after returning the original parsed server value. Preserve the configured limit in new() and increment().",
+          "answer_sha256": "94d1b66ce433bafbd8af3e71e9ae8e633466057082a0ddc44091c540fddaf8d9",
+          "answered_by": "Engineer a9717c",
+          "applicability": "{}",
+          "attribution": {
+            "actor_basis": "owner",
+            "actor_id": "ff9f5a612a5e",
+            "actor_name": "Engineer a9717c",
+            "answered_at": "",
+            "signed_hash": "94d1b66ce433bafb",
+            "signed_revision": "2026-10-12T00:34:57.952594+00:00"
+          },
+          "authority_evidence": "handed on by Engineer 654255: \"not me @Engineer a9717c just this one\"",
+          "authorized": true,
+          "blocking": false,
+          "category": "compat",
+          "citations": [
+            {
+              "id": "773c57f186e9",
+              "kind": "decision"
+            },
+            {
+              "detail": "",
+              "id": "ba9cb7882864",
+              "kind": "related"
+            },
+            {
+              "decision_id": "773c57f186e9",
+              "decision_version_id": "d2639585554542e18d02fb8f0c173e6d",
+              "detail": "",
+              "id": "fd56d4641f41",
+              "kind": "derived",
+              "source_decision_id": "fd56d4641f41",
+              "source_version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc"
+            }
+          ],
+          "duplicate_of": "",
+          "evidence": "",
+          "facts": {},
+          "needs_review": false,
+          "node_id": "773c57f186e9",
+          "parent_id": "fd56d4641f41",
+          "path": "src/urllib3/util/retry.py",
+          "question": "Should `retry_after_max` only affect the internal `time.sleep()` duration inside `sleep_for_retry()`, leaving `Retry.get_retry_after()` returning the server's raw/uncapped parsed `Retry-After` value (so other callers reading that method still see the true header value), rather than also capping `get_retry_after()`'s return value?",
+          "rationale": "Public header parsing must retain its meaning for existing callers. Cloned retries must preserve the caller’s chosen limit.",
+          "required_signers": [],
+          "resolution": null,
+          "reusable": false,
+          "rule_conditions": "",
+          "rule_expires": "",
+          "rule_scope": "",
+          "signature_records": [
+            {
+              "at": "2026-10-12T00:34:57.952594+00:00",
+              "by": "Engineer a9717c",
+              "hash": "94d1b66ce433bafb",
+              "revision": "2026-10-12T00:34:57.952594+00:00",
+              "scope": {
+                "applicability": {},
+                "category": "compat",
+                "context": "src/urllib3/util/retry.py:325-341. `get_retry_after()` is a public method that parses and returns the Retry-After header value in seconds; `sleep_for_retry()` calls it and then sleeps. `get_retry_after()` has no other callers inside this repo (checked via grep across src/urllib3), but it is a public, documented method on a public class, so external callers/subclasses may rely on it reporting the true header value (e.g. for logging/metrics) independent of any sleep cap. Capping inside `get_retry_after()` itself would silently change that public method's documented meaning ('Get the value of Retry-After in seconds') for anyone already calling it directly, whereas capping only at the `time.sleep()` call site in `sleep_for_retry()` confines the change to actual sleeping.\nPaths: src/urllib3/util/retry.py\nOptions: Keep `get_retry_after()` returning the true uncapped value; apply `retry_after_max` only where `sleep_for_retry()` passes the duration to `time.sleep()` -- preserves existing public-method semantics | Cap the value inside `get_retry_after()` itself so every caller of that method sees the bounded value -- changes documented behavior of an existing public method for any external caller",
+                "facts": {},
+                "followup_required": 0,
+                "id": "773c57f186e9",
+                "options": [
+                  "Keep `get_retry_after()` returning the true uncapped value; apply `retry_after_max` only where `sleep_for_retry()` passes the duration to `time.sleep()` -- preserves existing public-method semantics",
+                  "Cap the value inside `get_retry_after()` itself so every caller of that method sees the bounded value -- changes documented behavior of an existing public method for any external caller"
+                ],
+                "path": "src/urllib3/util/retry.py",
+                "question": "Should `retry_after_max` only affect the internal `time.sleep()` duration inside `sleep_for_retry()`, leaving `Retry.get_retry_after()` returning the server's raw/uncapped parsed `Retry-After` value (so other callers reading that method still see the true header value), rather than also capping `get_retry_after()`'s return value?",
+                "repo": "urllib3/urllib3",
+                "required_signers": [],
+                "reusable": 0,
+                "rule_conditions": "",
+                "rule_ended_at": "",
+                "rule_expires": "",
+                "rule_scope": "",
+                "run_id": "f07804519b5e",
+                "scope_key": "9bf2a0f2a4df14e1d461",
+                "scope_paths": [
+                  "src/urllib3/util/retry.py"
+                ]
+              }
+            }
+          ],
+          "signatures": [
+            "Engineer a9717c"
+          ],
+          "signed_by": "Engineer a9717c",
+          "signoff": "signed",
+          "source_decision_id": "773c57f186e9",
+          "source_revision": "2026-10-12T00:34:57.952594+00:00",
+          "sources": [
+            {
+              "author": "Engineer a9717c",
+              "availability": "available",
+              "decision_version_id": "d2639585554542e18d02fb8f0c173e6d",
+              "external_id": "101",
+              "fingerprint": "8ded797d16588f21710de8a22399d80773f7c3eb38d16ab07cf66c29470acf56",
+              "kind": "ticket",
+              "namespace": "127.0.0.1:17481",
+              "observed_at": "2026-10-12T00:20:04.817162+00:00",
+              "provenance": "import",
+              "provider": "jira",
+              "record_id": "b64b41565de24567a9477f4ec666088a",
+              "ref": "NET-101",
+              "repo": "urllib3/urllib3",
+              "role": "support",
+              "sequence": 1,
+              "source_created_at": "2025-10-01T10:00:00Z",
+              "source_updated_at": "2026-10-11T18:00:00Z",
+              "source_version": "2026-10-11T18:00:00Z",
+              "source_version_id": "82bed881b23044799e13ff268bd92025",
+              "title": "NET-101: Retry-After compatibility policy",
+              "url": "http://127.0.0.1:17481/jira/browse/NET-101"
+            }
+          ],
+          "status": "answered",
+          "updated_at": "2026-10-12T00:34:57.952594+00:00"
+        },
+        {
+          "answer": "Clamp the sleep duration and then retry as before. Do not stop or raise merely because the server asks for more than the caller limit. This cap must not change retry eligibility, counters or the ordinary exponential backoff path.",
+          "answer_sha256": "90e63eb782642dc451c4f121055e2ddb0ff28ea5b16b1772acfef39ede47784c",
+          "answered_by": "Engineer a9717c",
+          "applicability": "{}",
+          "attribution": {
+            "actor_basis": "owner",
+            "actor_id": "ff9f5a612a5e",
+            "actor_name": "Engineer a9717c",
+            "answered_at": "",
+            "signed_hash": "90e63eb782642dc4",
+            "signed_revision": "2026-10-12T00:29:19.377509+00:00"
+          },
+          "authority_evidence": "handed on by Engineer 654255: \"not me @Engineer a9717c just this one\"",
+          "authorized": true,
+          "blocking": false,
+          "category": "policy",
+          "citations": [
+            {
+              "id": "ba9cb7882864",
+              "kind": "decision"
+            },
+            {
+              "detail": "",
+              "id": "773c57f186e9",
+              "kind": "related"
+            },
+            {
+              "decision_id": "ba9cb7882864",
+              "decision_version_id": "dcbef5096da14642b65f87295c60b21b",
+              "detail": "",
+              "id": "fd56d4641f41",
+              "kind": "derived",
+              "source_decision_id": "fd56d4641f41",
+              "source_version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc"
+            }
+          ],
+          "duplicate_of": "",
+          "evidence": "",
+          "facts": {},
+          "needs_review": false,
+          "node_id": "ba9cb7882864",
+          "parent_id": "fd56d4641f41",
+          "path": "src/urllib3/util/retry.py",
+          "question": "When a parsed Retry-After value exceeds the caller-supplied `retry_after_max`, should the behavior be to clamp only the sleep duration (still retry, just wait `retry_after_max` seconds instead of the full header value), or to treat the bound as exceeded and give up the retry (raise/stop) instead of sleeping a shorter time?",
+          "rationale": "The limit bounds waiting time without changing whether retries are allowed.",
+          "required_signers": [],
+          "resolution": null,
+          "reusable": false,
+          "rule_conditions": "",
+          "rule_expires": "",
+          "rule_scope": "",
+          "signature_records": [
+            {
+              "at": "2026-10-12T00:29:19.377509+00:00",
+              "by": "Engineer a9717c",
+              "hash": "90e63eb782642dc4",
+              "revision": "2026-10-12T00:29:19.377509+00:00",
+              "scope": {
+                "applicability": {},
+                "category": "policy",
+                "context": "src/urllib3/util/retry.py:335-341 `sleep_for_retry()` calls `time.sleep(retry_after)` for the full value from `get_retry_after()`; `is_retry()` (line 387-407) and `increment()` (line 428+) separately decide whether a retry is attempted and decrement counters, independent of sleep duration. The task frames this purely as bounding 'Retry-After sleeping' (a wait-time ceiling), analogous to how `backoff_max` (line 196-197) already caps exponential-backoff sleep duration without altering whether a retry happens or counters decrement. Changing retry eligibility based on the bound would be a larger behavioral/API change (new exception path, interaction with `is_retry`/`increment`) not implied by the task wording.\nPaths: src/urllib3/util/retry.py\nOptions: Clamp only the sleep duration to `retry_after_max` and still perform the retry as today -- minimal, consistent with `backoff_max` precedent and the task's framing of bounding the sleep | Abandon/raise when Retry-After exceeds the bound instead of sleeping a capped amount -- larger behavior change, alters retry eligibility and counters, not requested by the task",
+                "facts": {},
+                "followup_required": 0,
+                "id": "ba9cb7882864",
+                "options": [
+                  "Clamp only the sleep duration to `retry_after_max` and still perform the retry as today -- minimal, consistent with `backoff_max` precedent and the task's framing of bounding the sleep",
+                  "Abandon/raise when Retry-After exceeds the bound instead of sleeping a capped amount -- larger behavior change, alters retry eligibility and counters, not requested by the task"
+                ],
+                "path": "src/urllib3/util/retry.py",
+                "question": "When a parsed Retry-After value exceeds the caller-supplied `retry_after_max`, should the behavior be to clamp only the sleep duration (still retry, just wait `retry_after_max` seconds instead of the full header value), or to treat the bound as exceeded and give up the retry (raise/stop) instead of sleeping a shorter time?",
+                "repo": "urllib3/urllib3",
+                "required_signers": [],
+                "reusable": 0,
+                "rule_conditions": "",
+                "rule_ended_at": "",
+                "rule_expires": "",
+                "rule_scope": "",
+                "run_id": "f07804519b5e",
+                "scope_key": "3baca689d675a298ced0",
+                "scope_paths": [
+                  "src/urllib3/util/retry.py"
+                ]
+              }
+            }
+          ],
+          "signatures": [
+            "Engineer a9717c"
+          ],
+          "signed_by": "Engineer a9717c",
+          "signoff": "signed",
+          "source_decision_id": "ba9cb7882864",
+          "source_revision": "2026-10-12T00:29:19.377509+00:00",
+          "sources": [
+            {
+              "author": "Engineer a9717c",
+              "availability": "available",
+              "decision_version_id": "dcbef5096da14642b65f87295c60b21b",
+              "external_id": "101",
+              "fingerprint": "8ded797d16588f21710de8a22399d80773f7c3eb38d16ab07cf66c29470acf56",
+              "kind": "ticket",
+              "namespace": "127.0.0.1:17481",
+              "observed_at": "2026-10-12T00:20:04.817162+00:00",
+              "provenance": "import",
+              "provider": "jira",
+              "record_id": "b64b41565de24567a9477f4ec666088a",
+              "ref": "NET-101",
+              "repo": "urllib3/urllib3",
+              "role": "support",
+              "sequence": 1,
+              "source_created_at": "2025-10-01T10:00:00Z",
+              "source_updated_at": "2026-10-11T18:00:00Z",
+              "source_version": "2026-10-11T18:00:00Z",
+              "source_version_id": "82bed881b23044799e13ff268bd92025",
+              "title": "NET-101: Retry-After compatibility policy",
+              "url": "http://127.0.0.1:17481/jira/browse/NET-101"
+            }
+          ],
+          "status": "answered",
+          "updated_at": "2026-10-12T00:29:19.377509+00:00"
+        },
+        {
+          "answer": "Use a new optional retry_after_max constructor argument in seconds. Default it to None so existing callers are unchanged. A finite limit must be opt-in, not a global default. This is my decision for library-next.",
+          "answer_sha256": "9f7869f17f65ca44a4b06511298c10bf89a1bbe9a2578f6f46d27a7799a608bc",
+          "answered_by": "Engineer a9717c",
+          "applicability": "{}",
+          "attribution": {
+            "actor_basis": "owner",
+            "actor_id": "ff9f5a612a5e",
+            "actor_name": "Engineer a9717c",
+            "answered_at": "",
+            "signed_hash": "9f7869f17f65ca44",
+            "signed_revision": "2026-10-12T00:28:30.930589+00:00"
+          },
+          "authority_evidence": "handed on by Engineer 654255: \"Could you ask <@UC6A9ECF3F4> instead? They maintain runtime retry behavior.\"",
+          "authorized": true,
+          "blocking": false,
+          "category": "compat",
+          "citations": [
+            {
+              "id": "fd56d4641f41",
+              "kind": "decision"
+            },
+            {
+              "decision_id": "ba9cb7882864",
+              "decision_version_id": "dcbef5096da14642b65f87295c60b21b",
+              "detail": "",
+              "id": "ba9cb7882864",
+              "kind": "derived",
+              "source_decision_id": "fd56d4641f41",
+              "source_version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc"
+            },
+            {
+              "decision_id": "773c57f186e9",
+              "decision_version_id": "d2639585554542e18d02fb8f0c173e6d",
+              "detail": "",
+              "id": "773c57f186e9",
+              "kind": "derived",
+              "source_decision_id": "fd56d4641f41",
+              "source_version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc"
+            }
+          ],
+          "duplicate_of": "",
+          "evidence": "",
+          "facts": {},
+          "needs_review": false,
+          "node_id": "fd56d4641f41",
+          "parent_id": "",
+          "path": "src/urllib3/util/retry.py",
+          "question": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+          "rationale": "No separate rationale recorded; any reason is included in the complete authored answer.",
+          "required_signers": [],
+          "resolution": null,
+          "reusable": false,
+          "rule_conditions": "",
+          "rule_expires": "",
+          "rule_scope": "",
+          "signature_records": [
+            {
+              "at": "2026-10-12T00:28:30.930589+00:00",
+              "by": "Engineer a9717c",
+              "hash": "9f7869f17f65ca44",
+              "revision": "2026-10-12T00:28:30.930589+00:00",
+              "scope": {
+                "applicability": {},
+                "category": "compat",
+                "context": "src/urllib3/util/retry.py:202-245 `Retry.__init__` currently has no cap on Retry-After; `sleep_for_retry` (line 335-341) sleeps for the full parsed `Retry-After` value with no limit. `backoff_max` (DEFAULT_BACKOFF_MAX=120, line 196-197, 213, 237) is the existing precedent for a similarly-named cap, but it applies only to the exponential-backoff path, not to Retry-After. Task requires the change not unexpectedly alter existing retry behavior for callers who don't opt in, so the new knob must default to a no-op (None/unbounded) to preserve compatibility for library-next.\nPaths: src/urllib3/util/retry.py\nOptions: New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention | Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly | Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry",
+                "facts": {},
+                "followup_required": 0,
+                "id": "fd56d4641f41",
+                "options": [
+                  "New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention",
+                  "Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly",
+                  "Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry"
+                ],
+                "path": "src/urllib3/util/retry.py",
+                "question": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+                "repo": "urllib3/urllib3",
+                "required_signers": [],
+                "reusable": 0,
+                "rule_conditions": "",
+                "rule_ended_at": "",
+                "rule_expires": "",
+                "rule_scope": "",
+                "run_id": "f07804519b5e",
+                "scope_key": "9fac6460ef1df4219c9e",
+                "scope_paths": [
+                  "src/urllib3/util/retry.py"
+                ]
+              }
+            }
+          ],
+          "signatures": [
+            "Engineer a9717c"
+          ],
+          "signed_by": "Engineer a9717c",
+          "signoff": "signed",
+          "source_decision_id": "fd56d4641f41",
+          "source_revision": "2026-10-12T00:28:30.930589+00:00",
+          "sources": [
+            {
+              "author": "Engineer a9717c",
+              "availability": "available",
+              "decision_version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+              "external_id": "101",
+              "fingerprint": "8ded797d16588f21710de8a22399d80773f7c3eb38d16ab07cf66c29470acf56",
+              "kind": "ticket",
+              "namespace": "127.0.0.1:17481",
+              "observed_at": "2026-10-12T00:20:04.817162+00:00",
+              "provenance": "import",
+              "provider": "jira",
+              "record_id": "b64b41565de24567a9477f4ec666088a",
+              "ref": "NET-101",
+              "repo": "urllib3/urllib3",
+              "role": "support",
+              "sequence": 1,
+              "source_created_at": "2025-10-01T10:00:00Z",
+              "source_updated_at": "2026-10-11T18:00:00Z",
+              "source_version": "2026-10-11T18:00:00Z",
+              "source_version_id": "82bed881b23044799e13ff268bd92025",
+              "title": "NET-101: Retry-After compatibility policy",
+              "url": "http://127.0.0.1:17481/jira/browse/NET-101"
+            }
+          ],
+          "status": "answered",
+          "updated_at": "2026-10-12T00:28:30.930589+00:00"
+        }
+      ],
+      "limitations": [
+        "SHA-256 protects integrity, not the identity of the exporter or a human digital signature.",
+        "Human signoffs and authority are assertions recorded by this Raven workspace.",
+        "Test results are reported by the coding host; Raven did not independently execute them.",
+        "A model diff review is advisory and does not prove code correctness.",
+        "This bundle grants no authority for another task or a different scope."
+      ],
+      "review": {
+        "diff_hash": "5bb4565bf7faef7d",
+        "finished_at": "2026-10-12T00:36:42.455082+00:00",
+        "follows": [
+          {
+            "node_id": "fd56d4641f41",
+            "question": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+            "requirements": [
+              {
+                "at": "retry_after_max: float | None = None,",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Add new optional retry_after_max constructor parameter (seconds)",
+                "state": "ok"
+              },
+              {
+                "at": "retry_after_max: float | None = None,",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Default retry_after_max to None so existing callers unchanged",
+                "state": "ok"
+              },
+              {
+                "at": "self.retry_after_max = retry_after_max",
+                "found": "honored",
+                "kind": "must_not",
+                "needs": "Finite limit must be opt-in, not a global/module-level default",
+                "state": "ok"
+              }
+            ],
+            "verdict": "follows",
+            "why": "All three requirements are directly satisfied by the new per-instance constructor parameter defaulting to None and stored as an instance attribute, not a global."
+          },
+          {
+            "node_id": "ba9cb7882864",
+            "question": "When a parsed Retry-After value exceeds the caller-supplied `retry_after_max`, should the behavior be to clamp only the sleep duration (still retry, just wait `retry_after_max` seconds instead of the full header value), or to treat the bound as exceeded and give up the retry (raise/stop) instead of sleeping a shorter time?",
+            "requirements": [
+              {
+                "at": "retry_after = min(retry_after, self.retry_after_max)",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Clamp the sleep duration when Retry-After exceeds retry_after_max, still retry",
+                "state": "ok"
+              },
+              {
+                "at": "time.sleep(retry_after)",
+                "found": "honored",
+                "kind": "must_not",
+                "needs": "Do not stop or raise merely because header exceeds retry_after_max",
+                "state": "ok"
+              },
+              {
+                "at": "def sleep_for_retry(self, response: BaseHTTPResponse) -> bool:",
+                "found": "honored",
+                "kind": "must_not",
+                "needs": "Cap must not change retry eligibility or counters",
+                "state": "ok"
+              },
+              {
+                "at": "if retry_after:",
+                "found": "honored",
+                "kind": "must_not",
+                "needs": "Cap must not change ordinary exponential backoff path",
+                "state": "ok"
+              },
+              {
+                "at": "raise ValueError(\n                \"retry_after_max must be a non-negative, finite number or None, \"",
+                "found": "violated",
+                "kind": "must_not",
+                "needs": "Added ValueError validation rejecting negative, NaN, or infinite retry_after_max values in __init__, a new input-validation branch not authorized by the decisions",
+                "note": "the diff adds a condition no signed answer states",
+                "state": "departs"
+              }
+            ],
+            "verdict": "departs",
+            "why": "The diff adds a condition no signed answer states: Added ValueError validation rejecting negative, NaN, or infinite retry_after_max values in __init__, a new input-validation branch not authorized by the decisions"
+          },
+          {
+            "node_id": "773c57f186e9",
+            "question": "Should `retry_after_max` only affect the internal `time.sleep()` duration inside `sleep_for_retry()`, leaving `Retry.get_retry_after()` returning the server's raw/uncapped parsed `Retry-After` value (so other callers reading that method still see the true header value), rather than also capping `get_retry_after()`'s return value?",
+            "requirements": [
+              {
+                "at": "retry_after = min(retry_after, self.retry_after_max)",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Cap applied only to actual sleep duration in sleep_for_retry",
+                "state": "ok"
+              },
+              {
+                "at": "retry_after = self.get_retry_after(response)",
+                "found": "honored",
+                "kind": "must",
+                "needs": "parse_retry_after returns original parsed server value, uncapped",
+                "state": "ok"
+              },
+              {
+                "at": "retry_after = self.get_retry_after(response)",
+                "found": "honored",
+                "kind": "must_not",
+                "needs": "get_retry_after returns original parsed server value, uncapped",
+                "state": "ok"
+              },
+              {
+                "at": "retry_after_max=self.retry_after_max,",
+                "found": "honored",
+                "kind": "must",
+                "needs": "Preserve configured retry_after_max limit in new()",
+                "state": "ok"
+              },
+              {
+                "found": "unseen",
+                "kind": "must",
+                "needs": "Preserve configured retry_after_max limit in increment()",
+                "state": "unclear"
+              }
+            ],
+            "verdict": "unclear",
+            "why": "increment() is not shown in the diff so propagation of retry_after_max there cannot be verified; all other requirements are directly supported by the shown lines"
+          }
+        ],
+        "id": "ae56f820c6f8",
+        "review_inputs": {
+          "773c57f186e9": "a45637bfe0418efa7f2e65d1b03d8a142c4d73c994eda35de97d390f3aadd94e",
+          "ba9cb7882864": "417cc06863349fafe188eab1d373ee80c20f4f13c877c0414bef968aff0fd12e",
+          "fd56d4641f41": "589a0ad5777f762edd72a4cabf70efbd792962a5aba18ea88a254030809f0b1a"
+        },
+        "revisions": {
+          "773c57f186e9": "94d1b66ce433bafb",
+          "ba9cb7882864": "90e63eb782642dc4",
+          "fd56d4641f41": "9f7869f17f65ca44"
+        },
+        "seconds": 44.1,
+        "status": "done"
+      },
+      "schema": "raven-proof-v1",
+      "task": {
+        "goal": "Our services sometimes receive Retry-After delays longer than they can afford to wait. Add an optional caller-controlled upper bound for Retry-After sleeping without unexpectedly changing existing retry behavior. Investigate the code, discover the policy and compatibility choices, obtain the needed decisions through Raven, implement the change, document it and test the edge cases. This is for the library-next release. No customer-specific policy is implied.",
+        "id": "f07804519b5e",
+        "repo": "urllib3/urllib3",
+        "requester": "Engineer 177b2c",
+        "status": "completed",
+        "title": "Our services sometimes receive Retry-After delays longer than they can afford to wait. Add an optional caller-controlled upper bound for Retry-After sleeping without unexpectedly changing existing retry behavior. Investigate the code, discover the policy and compatibility choices, obtain the needed"
+      }
+    }
+  },
+  "integrity": {
+    "valid": true,
+    "errors": [],
+    "authenticity_verified": false
+  },
+  "stale": true,
+  "current_reuse": {
+    "fd56d4641f41": {
+      "requires_source_review": false,
+      "notice": ""
+    },
+    "ba9cb7882864": {
+      "requires_source_review": false,
+      "notice": ""
+    },
+    "773c57f186e9": {
+      "requires_source_review": false,
+      "notice": ""
+    },
+    "ce6a2d6a372c": {
+      "requires_source_review": false,
+      "notice": ""
+    }
+  },
+  "current_sources": {
+    "773c57f186e9": [
+      {
+        "record_id": "b64b41565de24567a9477f4ec666088a",
+        "source_version_id": "82bed881b23044799e13ff268bd92025",
+        "sequence": 1,
+        "provider": "jira",
+        "namespace": "127.0.0.1:17481",
+        "external_id": "101",
+        "kind": "ticket",
+        "repo": "urllib3/urllib3",
+        "ref": "NET-101",
+        "url": "http://127.0.0.1:17481/jira/browse/NET-101",
+        "title": "NET-101: Retry-After compatibility policy",
+        "author": "Engineer a9717c",
+        "source_created_at": "2025-10-01T10:00:00Z",
+        "source_updated_at": "2026-10-11T18:00:00Z",
+        "source_version": "2026-10-11T18:00:00Z",
+        "observed_at": "2026-10-12T00:20:04.817162+00:00",
+        "provenance": "import",
+        "fingerprint": "8ded797d16588f21710de8a22399d80773f7c3eb38d16ab07cf66c29470acf56",
+        "availability": "available",
+        "head_id": "82bed881b23044799e13ff268bd92025",
+        "current": true,
+        "role": "support",
+        "decision_version_id": "d2639585554542e18d02fb8f0c173e6d",
+        "stale": false
+      }
+    ],
+    "ba9cb7882864": [
+      {
+        "record_id": "b64b41565de24567a9477f4ec666088a",
+        "source_version_id": "82bed881b23044799e13ff268bd92025",
+        "sequence": 1,
+        "provider": "jira",
+        "namespace": "127.0.0.1:17481",
+        "external_id": "101",
+        "kind": "ticket",
+        "repo": "urllib3/urllib3",
+        "ref": "NET-101",
+        "url": "http://127.0.0.1:17481/jira/browse/NET-101",
+        "title": "NET-101: Retry-After compatibility policy",
+        "author": "Engineer a9717c",
+        "source_created_at": "2025-10-01T10:00:00Z",
+        "source_updated_at": "2026-10-11T18:00:00Z",
+        "source_version": "2026-10-11T18:00:00Z",
+        "observed_at": "2026-10-12T00:20:04.817162+00:00",
+        "provenance": "import",
+        "fingerprint": "8ded797d16588f21710de8a22399d80773f7c3eb38d16ab07cf66c29470acf56",
+        "availability": "available",
+        "head_id": "82bed881b23044799e13ff268bd92025",
+        "current": true,
+        "role": "support",
+        "decision_version_id": "dcbef5096da14642b65f87295c60b21b",
+        "stale": false
+      }
+    ],
+    "ce6a2d6a372c": [],
+    "fd56d4641f41": [
+      {
+        "record_id": "b64b41565de24567a9477f4ec666088a",
+        "source_version_id": "82bed881b23044799e13ff268bd92025",
+        "sequence": 1,
+        "provider": "jira",
+        "namespace": "127.0.0.1:17481",
+        "external_id": "101",
+        "kind": "ticket",
+        "repo": "urllib3/urllib3",
+        "ref": "NET-101",
+        "url": "http://127.0.0.1:17481/jira/browse/NET-101",
+        "title": "NET-101: Retry-After compatibility policy",
+        "author": "Engineer a9717c",
+        "source_created_at": "2025-10-01T10:00:00Z",
+        "source_updated_at": "2026-10-11T18:00:00Z",
+        "source_version": "2026-10-11T18:00:00Z",
+        "observed_at": "2026-10-12T00:20:04.817162+00:00",
+        "provenance": "import",
+        "fingerprint": "8ded797d16588f21710de8a22399d80773f7c3eb38d16ab07cf66c29470acf56",
+        "availability": "available",
+        "head_id": "82bed881b23044799e13ff268bd92025",
+        "current": true,
+        "role": "support",
+        "decision_version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+        "stale": false
+      }
+    ]
+  },
+  "stale_reasons": [
+    "A decision, signature, authority, or scope changed since this proof"
+  ],
+  "markdown": "# Raven change proof\n\nTask: f07804519b5e\nRepository: urllib3/urllib3\n\n> Our services sometimes receive Retry-After delays longer than they can afford to wait. Add an optional caller-controlled upper bound for Retry-After sleeping without unexpectedly changing existing retry behavior. Investigate the code, discover the policy and compatibility choices, obtain the needed\n\nProof SHA-256: d5c68c7ef47dab92d13bfaf69e92d7a581428336740728a740d7338480382fea\nDiff SHA-256: 5bb4565bf7faef7dacff2d0454dd0339d19ac2518b421a6c8d129b5a04366f09\n\n## Decision record\n\n### 773c57f186e9\n> Should `retry_after_max` only affect the internal `time.sleep()` duration inside `sleep_for_retry()`, leaving `Retry.get_retry_after()` returning the server's raw/uncapped parsed `Retry-After` value (so other callers reading that method still see the true header value), rather than also capping `get_retry_after()`'s return value?\n\n> Apply the cap only to the actual sleep in sleep_for_retry. Keep parse_retry_after and get_retry_after returning the original parsed server value. Preserve the configured limit in new() and increment().\n\nRecorded signoff: signed\n> By: Engineer a9717c\n> Scope: {}\n> Evidence: No external evidence recorded\n> Source: NET-101 (support), version 1 / 82bed881b23044799e13ff268bd92025; http://127.0.0.1:17481/jira/browse/NET-101\n\n### ba9cb7882864\n> When a parsed Retry-After value exceeds the caller-supplied `retry_after_max`, should the behavior be to clamp only the sleep duration (still retry, just wait `retry_after_max` seconds instead of the full header value), or to treat the bound as exceeded and give up the retry (raise/stop) instead of sleeping a shorter time?\n\n> Clamp the sleep duration and then retry as before. Do not stop or raise merely because the server asks for more than the caller limit. This cap must not change retry eligibility, counters or the ordinary exponential backoff path.\n\nRecorded signoff: signed\n> By: Engineer a9717c\n> Scope: {}\n> Evidence: No external evidence recorded\n> Source: NET-101 (support), version 1 / 82bed881b23044799e13ff268bd92025; http://127.0.0.1:17481/jira/browse/NET-101\n\n### fd56d4641f41\n> Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?\n\n> Use a new optional retry_after_max constructor argument in seconds. Default it to None so existing callers are unchanged. A finite limit must be opt-in, not a global default. This is my decision for library-next.\n\nRecorded signoff: signed\n> By: Engineer a9717c\n> Scope: {}\n> Evidence: No external evidence recorded\n> Source: NET-101 (support), version 1 / 82bed881b23044799e13ff268bd92025; http://127.0.0.1:17481/jira/browse/NET-101\n\n## Host-reported checks\n> /opt/venv/bin/python -m pytest test/test_retry.py -q: 72 passed. Also ran test/test_retry.py plus test/test_connectionpool.py together (146 passed) to check for regressions in retry-dependent code.\n\n## Trust limits\n- SHA-256 protects integrity, not the identity of the exporter or a human digital signature.\n- Human signoffs and authority are assertions recorded by this Raven workspace.\n- Test results are reported by the coding host; Raven did not independently execute them.\n- A model diff review is advisory and does not prove code correctness.\n- This bundle grants no authority for another task or a different scope.\n",
+  "review": {
+    "id": "ae56f820c6f8",
+    "status": "done",
+    "follows": [
+      {
+        "node_id": "fd56d4641f41",
+        "question": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+        "requirements": [
+          {
+            "at": "retry_after_max: float | None = None,",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Add new optional retry_after_max constructor parameter (seconds)",
+            "state": "ok"
+          },
+          {
+            "at": "retry_after_max: float | None = None,",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Default retry_after_max to None so existing callers unchanged",
+            "state": "ok"
+          },
+          {
+            "at": "self.retry_after_max = retry_after_max",
+            "found": "honored",
+            "kind": "must_not",
+            "needs": "Finite limit must be opt-in, not a global/module-level default",
+            "state": "ok"
+          }
+        ],
+        "verdict": "follows",
+        "why": "All three requirements are directly satisfied by the new per-instance constructor parameter defaulting to None and stored as an instance attribute, not a global."
+      },
+      {
+        "node_id": "ba9cb7882864",
+        "question": "When a parsed Retry-After value exceeds the caller-supplied `retry_after_max`, should the behavior be to clamp only the sleep duration (still retry, just wait `retry_after_max` seconds instead of the full header value), or to treat the bound as exceeded and give up the retry (raise/stop) instead of sleeping a shorter time?",
+        "requirements": [
+          {
+            "at": "retry_after = min(retry_after, self.retry_after_max)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Clamp the sleep duration when Retry-After exceeds retry_after_max, still retry",
+            "state": "ok"
+          },
+          {
+            "at": "time.sleep(retry_after)",
+            "found": "honored",
+            "kind": "must_not",
+            "needs": "Do not stop or raise merely because header exceeds retry_after_max",
+            "state": "ok"
+          },
+          {
+            "at": "def sleep_for_retry(self, response: BaseHTTPResponse) -> bool:",
+            "found": "honored",
+            "kind": "must_not",
+            "needs": "Cap must not change retry eligibility or counters",
+            "state": "ok"
+          },
+          {
+            "at": "if retry_after:",
+            "found": "honored",
+            "kind": "must_not",
+            "needs": "Cap must not change ordinary exponential backoff path",
+            "state": "ok"
+          },
+          {
+            "at": "raise ValueError(\n                \"retry_after_max must be a non-negative, finite number or None, \"",
+            "found": "violated",
+            "kind": "must_not",
+            "needs": "Added ValueError validation rejecting negative, NaN, or infinite retry_after_max values in __init__, a new input-validation branch not authorized by the decisions",
+            "note": "the diff adds a condition no signed answer states",
+            "state": "departs"
+          }
+        ],
+        "verdict": "departs",
+        "why": "The diff adds a condition no signed answer states: Added ValueError validation rejecting negative, NaN, or infinite retry_after_max values in __init__, a new input-validation branch not authorized by the decisions"
+      },
+      {
+        "node_id": "773c57f186e9",
+        "question": "Should `retry_after_max` only affect the internal `time.sleep()` duration inside `sleep_for_retry()`, leaving `Retry.get_retry_after()` returning the server's raw/uncapped parsed `Retry-After` value (so other callers reading that method still see the true header value), rather than also capping `get_retry_after()`'s return value?",
+        "requirements": [
+          {
+            "at": "retry_after = min(retry_after, self.retry_after_max)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Cap applied only to actual sleep duration in sleep_for_retry",
+            "state": "ok"
+          },
+          {
+            "at": "retry_after = self.get_retry_after(response)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "parse_retry_after returns original parsed server value, uncapped",
+            "state": "ok"
+          },
+          {
+            "at": "retry_after = self.get_retry_after(response)",
+            "found": "honored",
+            "kind": "must_not",
+            "needs": "get_retry_after returns original parsed server value, uncapped",
+            "state": "ok"
+          },
+          {
+            "at": "retry_after_max=self.retry_after_max,",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Preserve configured retry_after_max limit in new()",
+            "state": "ok"
+          },
+          {
+            "found": "unseen",
+            "kind": "must",
+            "needs": "Preserve configured retry_after_max limit in increment()",
+            "state": "unclear"
+          }
+        ],
+        "verdict": "unclear",
+        "why": "increment() is not shown in the diff so propagation of retry_after_max there cannot be verified; all other requirements are directly supported by the shown lines"
+      }
+    ],
+    "diff_hash": "5bb4565bf7faef7d",
+    "seconds": 44.1,
+    "finished_at": "2026-10-12T00:36:42.455082+00:00",
+    "revisions": {
+      "773c57f186e9": "94d1b66ce433bafb",
+      "ba9cb7882864": "90e63eb782642dc4",
+      "fd56d4641f41": "9f7869f17f65ca44"
+    },
+    "review_inputs": {
+      "773c57f186e9": "a45637bfe0418efa7f2e65d1b03d8a142c4d73c994eda35de97d390f3aadd94e",
+      "ba9cb7882864": "417cc06863349fafe188eab1d373ee80c20f4f13c877c0414bef968aff0fd12e",
+      "fd56d4641f41": "589a0ad5777f762edd72a4cabf70efbd792962a5aba18ea88a254030809f0b1a"
+    }
+  },
+  "review_pending": false,
+  "review_snapshot_current": true,
+  "review_comparison": {
+    "saved": {
+      "id": "ae56f820c6f8",
+      "status": "done"
+    },
+    "current": {
+      "id": "ae56f820c6f8",
+      "status": "done"
+    },
+    "same_review_id": true,
+    "description": "Saved bundle.payload.review: id=ae56f820c6f8, status=done. Current top-level review: id=ae56f820c6f8, status=done. The review IDs match. A status change alone does not establish a new attempt or pass; an ID can be reused on retry and does not identify a unique attempt. The saved snapshot matches the current reading."
+  },
+  "next": "Reread the tree and finish with the current complete diff"
+}

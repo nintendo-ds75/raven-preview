@@ -1,0 +1,1418 @@
+{
+  "before": {
+    "record": {
+      "source": {
+        "record_id": "b64b41565de24567a9477f4ec666088a",
+        "source_version_id": "82bed881b23044799e13ff268bd92025",
+        "sequence": 1,
+        "provider": "jira",
+        "namespace": "127.0.0.1:17481",
+        "external_id": "101",
+        "kind": "ticket",
+        "repo": "urllib3/urllib3",
+        "ref": "NET-101",
+        "url": "http://127.0.0.1:17481/jira/browse/NET-101",
+        "title": "NET-101: Retry-After compatibility policy",
+        "author": "Engineer a9717c",
+        "source_created_at": "2025-10-01T10:00:00Z",
+        "source_updated_at": "2026-10-11T18:00:00Z",
+        "source_version": "2026-10-11T18:00:00Z",
+        "observed_at": "2026-10-12T00:20:04.817162+00:00",
+        "provenance": "import",
+        "fingerprint": "8ded797d16588f21710de8a22399d80773f7c3eb38d16ab07cf66c29470acf56",
+        "availability": "available",
+        "head_id": "82bed881b23044799e13ff268bd92025",
+        "current": true
+      },
+      "versions": [
+        {
+          "id": "82bed881b23044799e13ff268bd92025",
+          "record_id": "b64b41565de24567a9477f4ec666088a",
+          "sequence": 1,
+          "fingerprint": "8ded797d16588f21710de8a22399d80773f7c3eb38d16ab07cf66c29470acf56",
+          "snapshot": {
+            "access_scope": "{\"audience\": \"workspace-shared\", \"jira_project\": \"NET\"}",
+            "author": "Engineer a9717c",
+            "availability": "available",
+            "body": "Type: Task\nStatus: Done\nResolution: Done\n\nExisting callers must retain their current Retry-After behavior unless they opt in to a limit. This applies to library-next. Negative, NaN and infinite limits are invalid. The proposed default cap in NET-102 was cancelled, not adopted.",
+            "created_at": "2025-10-01T10:00:00Z",
+            "display_ref": "NET-101",
+            "external_id": "101",
+            "kind": "ticket",
+            "namespace": "127.0.0.1:17481",
+            "object_kind": "ticket",
+            "paths": [],
+            "provider": "jira",
+            "ref": "source:6929e43f8242d9a42a0fb20730b6f252845d0fd98a3aee1995daf44f1404b53e",
+            "repo": "urllib3/urllib3",
+            "resolved": 1,
+            "source_created_at": "2025-10-01T10:00:00Z",
+            "source_sequence": null,
+            "source_updated_at": "2026-10-11T18:00:00Z",
+            "source_version": "2026-10-11T18:00:00Z",
+            "status": "Done",
+            "title": "NET-101: Retry-After compatibility policy",
+            "url": "http://127.0.0.1:17481/jira/browse/NET-101"
+          },
+          "source_updated_at": "2026-10-11T18:00:00Z",
+          "source_version": "2026-10-11T18:00:00Z",
+          "source_sequence": null,
+          "observed_at": "2026-10-12T00:20:04.817162+00:00",
+          "provenance": "import"
+        }
+      ],
+      "latest_observation": {
+        "observed_at": "2026-10-12T00:33:25.013171+00:00",
+        "source_updated_at": "2026-10-11T18:00:00Z",
+        "source_sequence": null,
+        "source_version": "2026-10-11T18:00:00Z",
+        "meaning": "Latest accepted local import; not a provider fetch, policy adoption or approval"
+      },
+      "identities": [
+        {
+          "provider": "jira",
+          "namespace": "127.0.0.1:17481",
+          "object_kind": "ticket",
+          "external_id": "101"
+        }
+      ],
+      "source_ordering": "provided"
+    },
+    "decision": {
+      "recorded_history": {
+        "decision_id": "fd56d4641f41",
+        "scope": "this_decision_only",
+        "saved_state_count": 4,
+        "approval_states": {
+          "count": 1,
+          "latest": {
+            "id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+            "sequence": 4,
+            "recorded_at": "2026-10-12T00:28:30.939813+00:00",
+            "snapshot_omitted": true,
+            "state_basis": "immutable recorded state; current authorization is separate",
+            "read": {
+              "decision_id": "fd56d4641f41",
+              "version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc"
+            }
+          }
+        },
+        "signed_states": {
+          "count": 1,
+          "latest": {
+            "id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+            "sequence": 4,
+            "recorded_at": "2026-10-12T00:28:30.939813+00:00",
+            "snapshot_omitted": true,
+            "state_basis": "immutable recorded state; current authorization is separate",
+            "read": {
+              "decision_id": "fd56d4641f41",
+              "version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc"
+            }
+          }
+        },
+        "rule_use_states": {
+          "count": 0,
+          "latest": null
+        },
+        "notice": "Immutable saved-state classification on this decision only, not signature verification or current authorization. Counts measure saved states, not distinct approvals or grants; groups overlap. A rule use is not a new human signature. Zero means no matching saved states on this decision, not proof that no approval occurred here or elsewhere. Preserved answer/rationale text alone does not establish or erase recorded signoff or rule use. Read the exact versions and linked decisions for historical evidence; current permission is separate."
+      },
+      "id": "fd56d4641f41",
+      "run_id": "f07804519b5e",
+      "question": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+      "context": "src/urllib3/util/retry.py:202-245 `Retry.__init__` currently has no cap on Retry-After; `sleep_for_retry` (line 335-341) sleeps for the full parsed `Retry-After` value with no limit. `backoff_max` (DEFAULT_BACKOFF_MAX=120, line 196-197, 213, 237) is the existing precedent for a similarly-named cap, but it applies only to the exponential-backoff path, not to Retry-After. Task requires the change not unexpectedly alter existing retry behavior for callers who don't opt in, so the new knob must default to a no-op (None/unbounded) to preserve compatibility for library-next.\nPaths: src/urllib3/util/retry.py\nOptions: New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention | Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly | Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry",
+      "path": "src/urllib3/util/retry.py",
+      "owner_id": "5fd2a8260caf",
+      "routing_reason": "Referred to Engineer a9717c by Engineer 654255",
+      "status": "approved",
+      "prediction": null,
+      "source_id": null,
+      "answer": "Use a new optional retry_after_max constructor argument in seconds. Default it to None so existing callers are unchanged. A finite limit must be opt-in, not a global default. This is my decision for library-next.",
+      "rationale": "No separate rationale recorded; any reason is included in the complete authored answer.",
+      "answered_by": "Engineer a9717c",
+      "created_at": "2026-10-12T00:24:34.450389+00:00",
+      "updated_at": "2026-10-12T00:28:30.930589+00:00",
+      "model_pending": 0,
+      "category": "compat",
+      "source": "human",
+      "evidence": "",
+      "owner_evidence": "handed on by Engineer 654255: \"Could you ask <@UC6A9ECF3F4> instead? They maintain runtime retry behavior.\"",
+      "superseded_by": "",
+      "supersedes": "",
+      "options": "[\"New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention\", \"Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly\", \"Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry\"]",
+      "repo": "urllib3/urllib3",
+      "kind": "evidence",
+      "parent_id": "",
+      "client_ref": "retry-after-max-param",
+      "depth": 0,
+      "origin": "agent",
+      "signoff": "signed",
+      "signed_by": "Engineer a9717c",
+      "brief": "",
+      "source_revision": "",
+      "needs_review": 0,
+      "review_reason": "",
+      "signed_revision": "2026-10-12T00:28:30.930589+00:00",
+      "reusable": 0,
+      "rule_conditions": "",
+      "rule_expires": "",
+      "rule_by": "",
+      "rule_at": "",
+      "rule_scope": "",
+      "rule_ended_at": "",
+      "required_signers": "",
+      "signatures": "[{\"at\": \"2026-10-12T00:28:30.930589+00:00\", \"by\": \"Engineer a9717c\", \"hash\": \"9f7869f17f65ca44\", \"revision\": \"2026-10-12T00:28:30.930589+00:00\", \"scope\": {\"applicability\": {}, \"category\": \"compat\", \"context\": \"src/urllib3/util/retry.py:202-245 `Retry.__init__` currently has no cap on Retry-After; `sleep_for_retry` (line 335-341) sleeps for the full parsed `Retry-After` value with no limit. `backoff_max` (DEFAULT_BACKOFF_MAX=120, line 196-197, 213, 237) is the existing precedent for a similarly-named cap, but it applies only to the exponential-backoff path, not to Retry-After. Task requires the change not unexpectedly alter existing retry behavior for callers who don't opt in, so the new knob must default to a no-op (None/unbounded) to preserve compatibility for library-next.\\nPaths: src/urllib3/util/retry.py\\nOptions: New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention | Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly | Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry\", \"facts\": {}, \"followup_required\": 0, \"id\": \"fd56d4641f41\", \"options\": [\"New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention\", \"Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly\", \"Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry\"], \"path\": \"src/urllib3/util/retry.py\", \"question\": \"Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?\", \"repo\": \"urllib3/urllib3\", \"required_signers\": [], \"reusable\": 0, \"rule_conditions\": \"\", \"rule_ended_at\": \"\", \"rule_expires\": \"\", \"rule_scope\": \"\", \"run_id\": \"f07804519b5e\", \"scope_key\": \"9fac6460ef1df4219c9e\", \"scope_paths\": [\"src/urllib3/util/retry.py\"]}}]",
+      "actor_id": "ff9f5a612a5e",
+      "actor_name": "Engineer a9717c",
+      "actor_basis": "owner",
+      "facts": "",
+      "applicability": "{}",
+      "draft": 0,
+      "signed_hash": "9f7869f17f65ca44",
+      "scope_key": "9fac6460ef1df4219c9e",
+      "scope_paths": "[\"src/urllib3/util/retry.py\"]",
+      "followup_required": 0,
+      "source_reuse_state": "tracked",
+      "independent_source_replacement": 0,
+      "historical_parent_revalidated": 0,
+      "rowid": 1,
+      "search_vector": "'-197':80 '-245':44 '-341':59 '120':77,184 '196':79 '202':43 '213':81 '237':82 '335':58 'alreadi':230 'alter':114 'answer':286 'appli':95 'argument':212,242 'author':285 'backoff':72,75,101,170,182,227 'behavior':29,117,166,198 'bound':7 'call':210 'call-tim':209 'caller':119,160,195,251 'cap':49,92,158,187 'chang':111,196 'compat':139 'complet':284 'configur':231 'constructor':149,217,241 'convent':173 'current':28,46,197 'decis':269 'default':21,37,74,130,154,168,178,245,265 'e.g':14,179 'exist':85,115,165,194,250 'exponenti':100 'exponential-backoff':99 'expos':201 'field':218 'finit':36,177,255 'float':18 'full':63 'give':174 'global':264 'global/module-level':40 'header':225 'i.e':25 'ident':26 'includ':281 'inconsist':219 'knob':128 'librari':142,272 'library-next':141,271 'limit':71,256 'line':57,78 'match':169 'max':17,73,76,153,171,183,228,240 'must':129,257 'name':91,172 'new':10,127,147,236 'next':143,273 'no-op':133 'none':19,23,156,248 'none/unbounded':136 'op':135 'opt':123,161,260 'opt-in':259 'option':11,146,148,237 'paramet':13,33,150 'pars':64 'path':102,144 'preced':86 'preserv':138,163 'rather':30,213 'rational':276 'reason':279 'record':277 'requir':109 'respect':222 'retri':4,15,52,56,66,106,116,151,189,208,216,223,233,238 'retry-aft':3,51,65,105,188 'retry.__init__':12,45 'second':244 'separ':275 'set':41 'silent':186 'similar':90 'similarly-nam':89 'sleep':54,60,191,205,206 'src/urllib3/util/retry.py':42,145 'task':108 'time':211 'unbound':24 'unchang':253 'unexpect':113,199 'unless':159 'upper':6 'use':234 'valu':68 'would':185",
+      "source_reuse_uncertain": false,
+      "owner_name": "Engineer a9717c",
+      "owner_team": "",
+      "run_title": "Our services sometimes receive Retry-After delays longer than they can afford to wait. Add an optional caller-controlled upper bound for Retry-After sleeping without unexpectedly changing existing retry behavior. Investigate the code, discover the policy and compatibility choices, obtain the needed",
+      "agent": "claude",
+      "task_status": "completed",
+      "approval_pending": false,
+      "authorized": true,
+      "sources": [
+        {
+          "record_id": "b64b41565de24567a9477f4ec666088a",
+          "source_version_id": "82bed881b23044799e13ff268bd92025",
+          "sequence": 1,
+          "provider": "jira",
+          "namespace": "127.0.0.1:17481",
+          "external_id": "101",
+          "kind": "ticket",
+          "repo": "urllib3/urllib3",
+          "ref": "NET-101",
+          "url": "http://127.0.0.1:17481/jira/browse/NET-101",
+          "title": "NET-101: Retry-After compatibility policy",
+          "author": "Engineer a9717c",
+          "source_created_at": "2025-10-01T10:00:00Z",
+          "source_updated_at": "2026-10-11T18:00:00Z",
+          "source_version": "2026-10-11T18:00:00Z",
+          "observed_at": "2026-10-12T00:20:04.817162+00:00",
+          "provenance": "import",
+          "fingerprint": "8ded797d16588f21710de8a22399d80773f7c3eb38d16ab07cf66c29470acf56",
+          "availability": "available",
+          "head_id": "82bed881b23044799e13ff268bd92025",
+          "current": true,
+          "role": "support",
+          "decision_version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+          "stale": false
+        }
+      ],
+      "source_anchors": [],
+      "work_item_association": {
+        "declared": "",
+        "status": "undeclared",
+        "record_ids": [],
+        "links": [],
+        "historical": true,
+        "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+      },
+      "source_provenance": "versioned",
+      "source_reuse_requires_review": false,
+      "source_notice": "",
+      "source_revalidation": {
+        "available": true,
+        "has_reliance": true,
+        "sources": [
+          {
+            "record_id": "b64b41565de24567a9477f4ec666088a",
+            "source_version_id": "82bed881b23044799e13ff268bd92025",
+            "role": "support",
+            "previous_version_id": "82bed881b23044799e13ff268bd92025",
+            "changed": false,
+            "snapshot": {
+              "access_scope": "{\"audience\": \"workspace-shared\", \"jira_project\": \"NET\"}",
+              "author": "Engineer a9717c",
+              "availability": "available",
+              "body": "Type: Task\nStatus: Done\nResolution: Done\n\nExisting callers must retain their current Retry-After behavior unless they opt in to a limit. This applies to library-next. Negative, NaN and infinite limits are invalid. The proposed default cap in NET-102 was cancelled, not adopted.",
+              "created_at": "2025-10-01T10:00:00Z",
+              "display_ref": "NET-101",
+              "external_id": "101",
+              "kind": "ticket",
+              "namespace": "127.0.0.1:17481",
+              "object_kind": "ticket",
+              "paths": [],
+              "provider": "jira",
+              "ref": "source:6929e43f8242d9a42a0fb20730b6f252845d0fd98a3aee1995daf44f1404b53e",
+              "repo": "urllib3/urllib3",
+              "resolved": 1,
+              "source_created_at": "2025-10-01T10:00:00Z",
+              "source_sequence": null,
+              "source_updated_at": "2026-10-11T18:00:00Z",
+              "source_version": "2026-10-11T18:00:00Z",
+              "status": "Done",
+              "title": "NET-101: Retry-After compatibility policy",
+              "url": "http://127.0.0.1:17481/jira/browse/NET-101"
+            }
+          }
+        ],
+        "retires_rule": false,
+        "pins": [
+          {
+            "record_id": "b64b41565de24567a9477f4ec666088a",
+            "source_version_id": "82bed881b23044799e13ff268bd92025",
+            "role": "support"
+          }
+        ],
+        "decision_pins": [],
+        "dependencies": [],
+        "notice": "Review the complete displayed source snapshots and source decisions before confirming these exact pins. A newer source change will refuse this review; nothing is refreshed by an ordinary yes.",
+        "blocked_on_unknown_provenance_only": false,
+        "review_path": "/#runs/f07804519b5e"
+      },
+      "approval_scope": {
+        "id": "fd56d4641f41",
+        "run_id": "f07804519b5e",
+        "repo": "urllib3/urllib3",
+        "question": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+        "context": "src/urllib3/util/retry.py:202-245 `Retry.__init__` currently has no cap on Retry-After; `sleep_for_retry` (line 335-341) sleeps for the full parsed `Retry-After` value with no limit. `backoff_max` (DEFAULT_BACKOFF_MAX=120, line 196-197, 213, 237) is the existing precedent for a similarly-named cap, but it applies only to the exponential-backoff path, not to Retry-After. Task requires the change not unexpectedly alter existing retry behavior for callers who don't opt in, so the new knob must default to a no-op (None/unbounded) to preserve compatibility for library-next.\nPaths: src/urllib3/util/retry.py\nOptions: New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention | Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly | Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry",
+        "path": "src/urllib3/util/retry.py",
+        "scope_paths": [
+          "src/urllib3/util/retry.py"
+        ],
+        "scope_key": "9fac6460ef1df4219c9e",
+        "category": "compat",
+        "facts": {},
+        "options": [
+          "New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention",
+          "Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly",
+          "Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry"
+        ],
+        "applicability": {},
+        "required_signers": [],
+        "followup_required": 0,
+        "reusable": 0,
+        "rule_conditions": "",
+        "rule_scope": "",
+        "rule_expires": "",
+        "rule_ended_at": ""
+      },
+      "approval_scope_labels": {
+        "id": "Decision",
+        "run_id": "Task",
+        "repo": "Repository",
+        "question": "Question",
+        "context": "Context",
+        "path": "Path",
+        "scope_paths": "Scope paths",
+        "scope_key": "Scope key",
+        "category": "Category",
+        "facts": "Facts",
+        "options": "Options",
+        "applicability": "Applicability",
+        "required_signers": "Required signers",
+        "followup_required": "Required follow-up",
+        "reusable": "Reusable rule",
+        "rule_conditions": "Rule conditions",
+        "rule_scope": "Rule scope",
+        "rule_expires": "Rule expiry",
+        "rule_ended_at": "Rule ended"
+      },
+      "approval_scope_text": "Decision scope (recorded fields; no facts inferred from prose):\nDecision: fd56d4641f41\nTask: f07804519b5e\nRepository: urllib3/urllib3\nQuestion: Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?\nContext: src/urllib3/util/retry.py:202-245 `Retry.__init__` currently has no cap on Retry-After; `sleep_for_retry` (line 335-341) sleeps for the full parsed `Retry-After` value with no limit. `backoff_max` (DEFAULT_BACKOFF_MAX=120, line 196-197, 213, 237) is the existing precedent for a similarly-named cap, but it applies only to the exponential-backoff path, not to Retry-After. Task requires the change not unexpectedly alter existing retry behavior for callers who don't opt in, so the new knob must default to a no-op (None/unbounded) to preserve compatibility for library-next.\nPaths: src/urllib3/util/retry.py\nOptions: New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention | Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly | Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry\nPath: src/urllib3/util/retry.py\nScope paths: [\"src/urllib3/util/retry.py\"]\nScope key: 9fac6460ef1df4219c9e\nCategory: compat\nFacts: {}\nOptions: [\"New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention\", \"Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly\", \"Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry\"]\nApplicability: {}",
+      "standing_grant": {
+        "recorded": false,
+        "state": "not_declared",
+        "scope": "",
+        "conditions": "",
+        "expires_at": "",
+        "granted_by": "",
+        "granted_at": "",
+        "ended_at": "",
+        "source_needs_review": false,
+        "source_provenance_uncertain": false,
+        "request_applicability": "not_evaluated_by_this_read",
+        "notice": "This decision declares no standing reuse grant of its own. Its current authorized/signoff result is separate and may be based on a source rule. Do not treat this decision as a new reusable rule; preserve its recorded answer and original context."
+      },
+      "fact_revision": "facts:78fe2762b73449adcc94319f6ad37623c6163da23f4b2fe316458679edffd40c",
+      "saved_revision": {
+        "id": "0d66637c512a4dbcb2797a744147b2e0",
+        "decision_id": "fd56d4641f41",
+        "created_at": "2026-10-12T00:28:30.935795+00:00",
+        "identifier_kind": "decision_revisions",
+        "notice": "Saved signed-revision metadata, not current authorization. This ID is not a decision_versions ID.",
+        "read": {
+          "decision_id": "fd56d4641f41",
+          "detail": "full"
+        }
+      },
+      "context_history": [
+        {
+          "id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+          "sequence": 4,
+          "recorded_at": "2026-10-12T00:28:30.939813+00:00",
+          "status_preview": "approved",
+          "signoff_preview": "signed",
+          "needs_review_preview": "0",
+          "signed_by_preview": "Engineer a9717c",
+          "answered_by_preview": "Engineer a9717c",
+          "source_id_preview": "",
+          "source_revision_preview": "",
+          "reusable_preview": "0",
+          "rule_scope_preview": "",
+          "rule_conditions_preview": "",
+          "rule_expires_preview": "",
+          "rule_ended_at_preview": "",
+          "status_characters": 8,
+          "signoff_characters": 6,
+          "needs_review_characters": 1,
+          "signed_by_characters": 15,
+          "answered_by_characters": 15,
+          "source_id_characters": 0,
+          "source_revision_characters": 0,
+          "reusable_characters": 1,
+          "rule_scope_characters": 0,
+          "rule_conditions_characters": 0,
+          "rule_expires_characters": 0,
+          "rule_ended_at_characters": 0,
+          "question_preview": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+          "question_characters": 271,
+          "answer_preview": "Use a new optional retry_after_max constructor argument in seconds. Default it to None so existing callers are unchanged. A finite limit must be opt-in, not a global default. This is my decision for library-next.",
+          "answer_characters": 212,
+          "rationale_preview": "No separate rationale recorded; any reason is included in the complete authored answer.",
+          "rationale_characters": 87,
+          "snapshot_omitted": true,
+          "state_basis": "immutable recorded state; current authorization is separate",
+          "read": {
+            "decision_id": "fd56d4641f41",
+            "version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc"
+          }
+        },
+        {
+          "id": "2157bc8b5d2f484d9dd47c02df9eeee0",
+          "sequence": 3,
+          "recorded_at": "2026-10-12T00:28:30.917665+00:00",
+          "status_preview": "partial",
+          "signoff_preview": "required",
+          "needs_review_preview": "0",
+          "signed_by_preview": "",
+          "answered_by_preview": "Engineer a9717c",
+          "source_id_preview": "",
+          "source_revision_preview": "",
+          "reusable_preview": "0",
+          "rule_scope_preview": "",
+          "rule_conditions_preview": "",
+          "rule_expires_preview": "",
+          "rule_ended_at_preview": "",
+          "status_characters": 7,
+          "signoff_characters": 8,
+          "needs_review_characters": 1,
+          "signed_by_characters": 0,
+          "answered_by_characters": 15,
+          "source_id_characters": 0,
+          "source_revision_characters": 0,
+          "reusable_characters": 1,
+          "rule_scope_characters": 0,
+          "rule_conditions_characters": 0,
+          "rule_expires_characters": 0,
+          "rule_ended_at_characters": 0,
+          "question_preview": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+          "question_characters": 271,
+          "answer_preview": "The upper bound must default to unbounded (identical to current behavior) and be something callers opt into individually, not a global or module-level setting. Existing callers must retain their current Retry-After behavior unless they opt in to a limit. This applies to library-next. Negative, NaN, ",
+          "answer_characters": 632,
+          "rationale_preview": "",
+          "rationale_characters": 0,
+          "snapshot_omitted": true,
+          "state_basis": "immutable recorded state; current authorization is separate",
+          "read": {
+            "decision_id": "fd56d4641f41",
+            "version_id": "2157bc8b5d2f484d9dd47c02df9eeee0"
+          }
+        },
+        {
+          "id": "86f5c71e7e5144c1bb9fa46aec357295",
+          "sequence": 2,
+          "recorded_at": "2026-10-12T00:24:59.198199+00:00",
+          "status_preview": "partial",
+          "signoff_preview": "required",
+          "needs_review_preview": "0",
+          "signed_by_preview": "",
+          "answered_by_preview": "Engineer a9717c",
+          "source_id_preview": "",
+          "source_revision_preview": "",
+          "reusable_preview": "0",
+          "rule_scope_preview": "",
+          "rule_conditions_preview": "",
+          "rule_expires_preview": "",
+          "rule_ended_at_preview": "",
+          "status_characters": 7,
+          "signoff_characters": 8,
+          "needs_review_characters": 1,
+          "signed_by_characters": 0,
+          "answered_by_characters": 15,
+          "source_id_characters": 0,
+          "source_revision_characters": 0,
+          "reusable_characters": 1,
+          "rule_scope_characters": 0,
+          "rule_conditions_characters": 0,
+          "rule_expires_characters": 0,
+          "rule_ended_at_characters": 0,
+          "question_preview": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+          "question_characters": 271,
+          "answer_preview": "The upper bound must default to unbounded (identical to current behavior) and be something callers opt into individually, not a global or module-level setting. Existing callers must retain their current Retry-After behavior unless they opt in to a limit. This applies to library-next. Negative, NaN, ",
+          "answer_characters": 632,
+          "rationale_preview": "",
+          "rationale_characters": 0,
+          "snapshot_omitted": true,
+          "state_basis": "immutable recorded state; current authorization is separate",
+          "read": {
+            "decision_id": "fd56d4641f41",
+            "version_id": "86f5c71e7e5144c1bb9fa46aec357295"
+          }
+        },
+        {
+          "id": "0bf8a5c350fd4fb9bb2484c0ae8aa1f9",
+          "sequence": 1,
+          "recorded_at": "2026-10-12T00:24:36.397917+00:00",
+          "status_preview": "assumed",
+          "signoff_preview": "",
+          "needs_review_preview": "0",
+          "signed_by_preview": "",
+          "answered_by_preview": "",
+          "source_id_preview": "",
+          "source_revision_preview": "",
+          "reusable_preview": "0",
+          "rule_scope_preview": "",
+          "rule_conditions_preview": "",
+          "rule_expires_preview": "",
+          "rule_ended_at_preview": "",
+          "status_characters": 7,
+          "signoff_characters": 0,
+          "needs_review_characters": 1,
+          "signed_by_characters": 0,
+          "answered_by_characters": 0,
+          "source_id_characters": 0,
+          "source_revision_characters": 0,
+          "reusable_characters": 1,
+          "rule_scope_characters": 0,
+          "rule_conditions_characters": 0,
+          "rule_expires_characters": 0,
+          "rule_ended_at_characters": 0,
+          "question_preview": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+          "question_characters": 271,
+          "answer_preview": "Preserve existing behavior for current users; only new usage gets the new path. (no relevant precedent in this repo; this is a default, not something your team has decided)",
+          "answer_characters": 172,
+          "rationale_preview": "",
+          "rationale_characters": 0,
+          "snapshot_omitted": true,
+          "state_basis": "immutable recorded state; current authorization is separate",
+          "read": {
+            "decision_id": "fd56d4641f41",
+            "version_id": "0bf8a5c350fd4fb9bb2484c0ae8aa1f9"
+          }
+        }
+      ],
+      "historical_approvals": [
+        {
+          "id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+          "sequence": 4,
+          "recorded_at": "2026-10-12T00:28:30.939813+00:00",
+          "status_preview": "approved",
+          "signoff_preview": "signed",
+          "needs_review_preview": "0",
+          "signed_by_preview": "Engineer a9717c",
+          "answered_by_preview": "Engineer a9717c",
+          "source_id_preview": "",
+          "source_revision_preview": "",
+          "reusable_preview": "0",
+          "rule_scope_preview": "",
+          "rule_conditions_preview": "",
+          "rule_expires_preview": "",
+          "rule_ended_at_preview": "",
+          "status_characters": 8,
+          "signoff_characters": 6,
+          "needs_review_characters": 1,
+          "signed_by_characters": 15,
+          "answered_by_characters": 15,
+          "source_id_characters": 0,
+          "source_revision_characters": 0,
+          "reusable_characters": 1,
+          "rule_scope_characters": 0,
+          "rule_conditions_characters": 0,
+          "rule_expires_characters": 0,
+          "rule_ended_at_characters": 0,
+          "question_preview": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+          "question_characters": 271,
+          "answer_preview": "Use a new optional retry_after_max constructor argument in seconds. Default it to None so existing callers are unchanged. A finite limit must be opt-in, not a global default. This is my decision for library-next.",
+          "answer_characters": 212,
+          "rationale_preview": "No separate rationale recorded; any reason is included in the complete authored answer.",
+          "rationale_characters": 87,
+          "snapshot_omitted": true,
+          "state_basis": "immutable recorded state; current authorization is separate",
+          "read": {
+            "decision_id": "fd56d4641f41",
+            "version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc"
+          }
+        }
+      ],
+      "projection": {
+        "detail": "summary",
+        "notice": "Current fields describe the decision now. Historical summaries describe saved states, never current authorization or permission for a new request. Read relevant saved versions and linked decisions before claiming there was no approval or only one prior decision. Previews and omitted fields are incomplete evidence; use their exact-version or full-detail reads. History counts measure saved snapshots, not distinct human approval actions; repeated recorded states are not additional signatures or grants. Human HTTP review retains the complete record.",
+        "omitted_fields": {
+          "events": {
+            "total": 17,
+            "read": {
+              "decision_id": "fd56d4641f41",
+              "detail": "full"
+            }
+          },
+          "work_item_history": {
+            "total": 0,
+            "read": {
+              "decision_id": "fd56d4641f41",
+              "detail": "full"
+            }
+          },
+          "revision": {
+            "json_characters": 541,
+            "read": {
+              "decision_id": "fd56d4641f41",
+              "detail": "full"
+            }
+          }
+        },
+        "full_read": {
+          "decision_id": "fd56d4641f41",
+          "detail": "full"
+        },
+        "history_format": "metadata and labeled previews; use version_id for complete snapshot"
+      },
+      "pagination": {
+        "limit": 10,
+        "snapshot": "cabc7e7e6e627e0d78cecc5f4967749fbb51b8f1031726719c88ca221bba4ca9",
+        "max_content_bytes": 32768,
+        "has_more": false,
+        "next_cursor": null,
+        "collections": {
+          "context_history": {
+            "total": 4,
+            "offset": 0,
+            "returned": 4,
+            "has_more": false,
+            "truncated": false
+          },
+          "historical_approvals": {
+            "total": 1,
+            "offset": 0,
+            "returned": 1,
+            "has_more": false,
+            "truncated": false
+          }
+        },
+        "notice": "Independent history and recorded-approval pages. Repeat the same decision_id and limit with next_cursor; restart if results change. Recorded approvals include saved human approvals and rule uses, not current permission."
+      }
+    },
+    "sources": {
+      "sources": [
+        {
+          "id": "e31a01083dad0418",
+          "kind": "docs",
+          "repo": "urllib3/urllib3",
+          "target": "http://127.0.0.1:17481/",
+          "label": "http://127.0.0.1:17481",
+          "state": "current",
+          "credentials_present": "[redacted]",
+          "last_success_at": "2026-10-12T00:33:24.946849+00:00",
+          "last_attempt_at": "2026-10-12T00:33:24.946849+00:00",
+          "records": 2,
+          "refused": {
+            "robots_disallowed": 2
+          },
+          "audience": "workspace-shared (administrator attested)",
+          "limits": [
+            "Only the registered origin is read, through llms.txt or sitemap.xml, else the page itself",
+            "Content behind a login is not fetched"
+          ],
+          "do": ""
+        },
+        {
+          "id": "64e565cc12676125",
+          "kind": "jira",
+          "repo": "urllib3/urllib3",
+          "target": "NET",
+          "label": "NET · Network policy",
+          "state": "current",
+          "credentials_present": "[redacted]",
+          "last_success_at": "2026-10-12T00:33:24.997028+00:00",
+          "last_attempt_at": "2026-10-12T00:33:24.997028+00:00",
+          "records": 2,
+          "refused": {
+            "issue_security_level": 2
+          },
+          "audience": "workspace-shared (administrator attested)",
+          "limits": [
+            "Issues with a security level and restricted comments are not imported",
+            "Deleted issues are not visible to polling; their last version is kept"
+          ],
+          "do": ""
+        },
+        {
+          "id": "8f086f0d84d29726",
+          "kind": "slack",
+          "repo": "urllib3/urllib3",
+          "target": "C0POLICY1",
+          "label": "#library-policy",
+          "state": "current",
+          "credentials_present": "[redacted]",
+          "last_success_at": "2026-10-12T00:33:25.021868+00:00",
+          "last_attempt_at": "2026-10-12T00:33:25.021868+00:00",
+          "records": 1,
+          "refused": {},
+          "audience": "workspace-shared (administrator attested)",
+          "limits": [
+            "Public channels only; private channels, DMs and Slack Connect channels are never read",
+            "Deleted messages are not visible to polling; their last version is kept"
+          ],
+          "do": ""
+        }
+      ],
+      "not_configured": [],
+      "github": [],
+      "airweave": {
+        "backend": "airweave",
+        "configured": false,
+        "connections": [],
+        "freshness_seconds": 300,
+        "credential_configured": "[redacted]",
+        "last_success_means": "Last successful search transport, not proof that any source was admitted or that permissions were independently verified.",
+        "notice": "Only workspace-shared collections; unknown source ACLs and transient Slack results are excluded."
+      },
+      "sync_minutes": 15.0,
+      "note": "Records are evidence, never approval. Only sources an administrator attested as shared with every reader are imported; polling cannot see deletions."
+    }
+  },
+  "jira_sync": {
+    "error": "Jira refused the credentials (HTTP 403); check JIRA_EMAIL and JIRA_API_TOKEN and the account's project access"
+  },
+  "slack_sync": {
+    "error": "Slack channel C0POLICY1 is no longer readable as context: it is private. Nothing new was imported"
+  },
+  "after": {
+    "record": {
+      "source": {
+        "record_id": "b64b41565de24567a9477f4ec666088a",
+        "source_version_id": "82bed881b23044799e13ff268bd92025",
+        "sequence": 1,
+        "provider": "jira",
+        "namespace": "127.0.0.1:17481",
+        "external_id": "101",
+        "kind": "ticket",
+        "repo": "urllib3/urllib3",
+        "ref": "NET-101",
+        "url": "http://127.0.0.1:17481/jira/browse/NET-101",
+        "title": "NET-101: Retry-After compatibility policy",
+        "author": "Engineer a9717c",
+        "source_created_at": "2025-10-01T10:00:00Z",
+        "source_updated_at": "2026-10-11T18:00:00Z",
+        "source_version": "2026-10-11T18:00:00Z",
+        "observed_at": "2026-10-12T00:20:04.817162+00:00",
+        "provenance": "import",
+        "fingerprint": "8ded797d16588f21710de8a22399d80773f7c3eb38d16ab07cf66c29470acf56",
+        "availability": "available",
+        "head_id": "82bed881b23044799e13ff268bd92025",
+        "current": true
+      },
+      "versions": [
+        {
+          "id": "82bed881b23044799e13ff268bd92025",
+          "record_id": "b64b41565de24567a9477f4ec666088a",
+          "sequence": 1,
+          "fingerprint": "8ded797d16588f21710de8a22399d80773f7c3eb38d16ab07cf66c29470acf56",
+          "snapshot": {
+            "access_scope": "{\"audience\": \"workspace-shared\", \"jira_project\": \"NET\"}",
+            "author": "Engineer a9717c",
+            "availability": "available",
+            "body": "Type: Task\nStatus: Done\nResolution: Done\n\nExisting callers must retain their current Retry-After behavior unless they opt in to a limit. This applies to library-next. Negative, NaN and infinite limits are invalid. The proposed default cap in NET-102 was cancelled, not adopted.",
+            "created_at": "2025-10-01T10:00:00Z",
+            "display_ref": "NET-101",
+            "external_id": "101",
+            "kind": "ticket",
+            "namespace": "127.0.0.1:17481",
+            "object_kind": "ticket",
+            "paths": [],
+            "provider": "jira",
+            "ref": "source:6929e43f8242d9a42a0fb20730b6f252845d0fd98a3aee1995daf44f1404b53e",
+            "repo": "urllib3/urllib3",
+            "resolved": 1,
+            "source_created_at": "2025-10-01T10:00:00Z",
+            "source_sequence": null,
+            "source_updated_at": "2026-10-11T18:00:00Z",
+            "source_version": "2026-10-11T18:00:00Z",
+            "status": "Done",
+            "title": "NET-101: Retry-After compatibility policy",
+            "url": "http://127.0.0.1:17481/jira/browse/NET-101"
+          },
+          "source_updated_at": "2026-10-11T18:00:00Z",
+          "source_version": "2026-10-11T18:00:00Z",
+          "source_sequence": null,
+          "observed_at": "2026-10-12T00:20:04.817162+00:00",
+          "provenance": "import"
+        }
+      ],
+      "latest_observation": {
+        "observed_at": "2026-10-12T00:33:25.013171+00:00",
+        "source_updated_at": "2026-10-11T18:00:00Z",
+        "source_sequence": null,
+        "source_version": "2026-10-11T18:00:00Z",
+        "meaning": "Latest accepted local import; not a provider fetch, policy adoption or approval"
+      },
+      "identities": [
+        {
+          "provider": "jira",
+          "namespace": "127.0.0.1:17481",
+          "object_kind": "ticket",
+          "external_id": "101"
+        }
+      ],
+      "source_ordering": "provided"
+    },
+    "decision": {
+      "recorded_history": {
+        "decision_id": "fd56d4641f41",
+        "scope": "this_decision_only",
+        "saved_state_count": 4,
+        "approval_states": {
+          "count": 1,
+          "latest": {
+            "id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+            "sequence": 4,
+            "recorded_at": "2026-10-12T00:28:30.939813+00:00",
+            "snapshot_omitted": true,
+            "state_basis": "immutable recorded state; current authorization is separate",
+            "read": {
+              "decision_id": "fd56d4641f41",
+              "version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc"
+            }
+          }
+        },
+        "signed_states": {
+          "count": 1,
+          "latest": {
+            "id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+            "sequence": 4,
+            "recorded_at": "2026-10-12T00:28:30.939813+00:00",
+            "snapshot_omitted": true,
+            "state_basis": "immutable recorded state; current authorization is separate",
+            "read": {
+              "decision_id": "fd56d4641f41",
+              "version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc"
+            }
+          }
+        },
+        "rule_use_states": {
+          "count": 0,
+          "latest": null
+        },
+        "notice": "Immutable saved-state classification on this decision only, not signature verification or current authorization. Counts measure saved states, not distinct approvals or grants; groups overlap. A rule use is not a new human signature. Zero means no matching saved states on this decision, not proof that no approval occurred here or elsewhere. Preserved answer/rationale text alone does not establish or erase recorded signoff or rule use. Read the exact versions and linked decisions for historical evidence; current permission is separate."
+      },
+      "id": "fd56d4641f41",
+      "run_id": "f07804519b5e",
+      "question": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+      "context": "src/urllib3/util/retry.py:202-245 `Retry.__init__` currently has no cap on Retry-After; `sleep_for_retry` (line 335-341) sleeps for the full parsed `Retry-After` value with no limit. `backoff_max` (DEFAULT_BACKOFF_MAX=120, line 196-197, 213, 237) is the existing precedent for a similarly-named cap, but it applies only to the exponential-backoff path, not to Retry-After. Task requires the change not unexpectedly alter existing retry behavior for callers who don't opt in, so the new knob must default to a no-op (None/unbounded) to preserve compatibility for library-next.\nPaths: src/urllib3/util/retry.py\nOptions: New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention | Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly | Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry",
+      "path": "src/urllib3/util/retry.py",
+      "owner_id": "5fd2a8260caf",
+      "routing_reason": "Referred to Engineer a9717c by Engineer 654255",
+      "status": "approved",
+      "prediction": null,
+      "source_id": null,
+      "answer": "Use a new optional retry_after_max constructor argument in seconds. Default it to None so existing callers are unchanged. A finite limit must be opt-in, not a global default. This is my decision for library-next.",
+      "rationale": "No separate rationale recorded; any reason is included in the complete authored answer.",
+      "answered_by": "Engineer a9717c",
+      "created_at": "2026-10-12T00:24:34.450389+00:00",
+      "updated_at": "2026-10-12T00:28:30.930589+00:00",
+      "model_pending": 0,
+      "category": "compat",
+      "source": "human",
+      "evidence": "",
+      "owner_evidence": "handed on by Engineer 654255: \"Could you ask <@UC6A9ECF3F4> instead? They maintain runtime retry behavior.\"",
+      "superseded_by": "",
+      "supersedes": "",
+      "options": "[\"New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention\", \"Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly\", \"Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry\"]",
+      "repo": "urllib3/urllib3",
+      "kind": "evidence",
+      "parent_id": "",
+      "client_ref": "retry-after-max-param",
+      "depth": 0,
+      "origin": "agent",
+      "signoff": "signed",
+      "signed_by": "Engineer a9717c",
+      "brief": "",
+      "source_revision": "",
+      "needs_review": 0,
+      "review_reason": "",
+      "signed_revision": "2026-10-12T00:28:30.930589+00:00",
+      "reusable": 0,
+      "rule_conditions": "",
+      "rule_expires": "",
+      "rule_by": "",
+      "rule_at": "",
+      "rule_scope": "",
+      "rule_ended_at": "",
+      "required_signers": "",
+      "signatures": "[{\"at\": \"2026-10-12T00:28:30.930589+00:00\", \"by\": \"Engineer a9717c\", \"hash\": \"9f7869f17f65ca44\", \"revision\": \"2026-10-12T00:28:30.930589+00:00\", \"scope\": {\"applicability\": {}, \"category\": \"compat\", \"context\": \"src/urllib3/util/retry.py:202-245 `Retry.__init__` currently has no cap on Retry-After; `sleep_for_retry` (line 335-341) sleeps for the full parsed `Retry-After` value with no limit. `backoff_max` (DEFAULT_BACKOFF_MAX=120, line 196-197, 213, 237) is the existing precedent for a similarly-named cap, but it applies only to the exponential-backoff path, not to Retry-After. Task requires the change not unexpectedly alter existing retry behavior for callers who don't opt in, so the new knob must default to a no-op (None/unbounded) to preserve compatibility for library-next.\\nPaths: src/urllib3/util/retry.py\\nOptions: New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention | Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly | Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry\", \"facts\": {}, \"followup_required\": 0, \"id\": \"fd56d4641f41\", \"options\": [\"New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention\", \"Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly\", \"Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry\"], \"path\": \"src/urllib3/util/retry.py\", \"question\": \"Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?\", \"repo\": \"urllib3/urllib3\", \"required_signers\": [], \"reusable\": 0, \"rule_conditions\": \"\", \"rule_ended_at\": \"\", \"rule_expires\": \"\", \"rule_scope\": \"\", \"run_id\": \"f07804519b5e\", \"scope_key\": \"9fac6460ef1df4219c9e\", \"scope_paths\": [\"src/urllib3/util/retry.py\"]}}]",
+      "actor_id": "ff9f5a612a5e",
+      "actor_name": "Engineer a9717c",
+      "actor_basis": "owner",
+      "facts": "",
+      "applicability": "{}",
+      "draft": 0,
+      "signed_hash": "9f7869f17f65ca44",
+      "scope_key": "9fac6460ef1df4219c9e",
+      "scope_paths": "[\"src/urllib3/util/retry.py\"]",
+      "followup_required": 0,
+      "source_reuse_state": "tracked",
+      "independent_source_replacement": 0,
+      "historical_parent_revalidated": 0,
+      "rowid": 1,
+      "search_vector": "'-197':80 '-245':44 '-341':59 '120':77,184 '196':79 '202':43 '213':81 '237':82 '335':58 'alreadi':230 'alter':114 'answer':286 'appli':95 'argument':212,242 'author':285 'backoff':72,75,101,170,182,227 'behavior':29,117,166,198 'bound':7 'call':210 'call-tim':209 'caller':119,160,195,251 'cap':49,92,158,187 'chang':111,196 'compat':139 'complet':284 'configur':231 'constructor':149,217,241 'convent':173 'current':28,46,197 'decis':269 'default':21,37,74,130,154,168,178,245,265 'e.g':14,179 'exist':85,115,165,194,250 'exponenti':100 'exponential-backoff':99 'expos':201 'field':218 'finit':36,177,255 'float':18 'full':63 'give':174 'global':264 'global/module-level':40 'header':225 'i.e':25 'ident':26 'includ':281 'inconsist':219 'knob':128 'librari':142,272 'library-next':141,271 'limit':71,256 'line':57,78 'match':169 'max':17,73,76,153,171,183,228,240 'must':129,257 'name':91,172 'new':10,127,147,236 'next':143,273 'no-op':133 'none':19,23,156,248 'none/unbounded':136 'op':135 'opt':123,161,260 'opt-in':259 'option':11,146,148,237 'paramet':13,33,150 'pars':64 'path':102,144 'preced':86 'preserv':138,163 'rather':30,213 'rational':276 'reason':279 'record':277 'requir':109 'respect':222 'retri':4,15,52,56,66,106,116,151,189,208,216,223,233,238 'retry-aft':3,51,65,105,188 'retry.__init__':12,45 'second':244 'separ':275 'set':41 'silent':186 'similar':90 'similarly-nam':89 'sleep':54,60,191,205,206 'src/urllib3/util/retry.py':42,145 'task':108 'time':211 'unbound':24 'unchang':253 'unexpect':113,199 'unless':159 'upper':6 'use':234 'valu':68 'would':185",
+      "source_reuse_uncertain": false,
+      "owner_name": "Engineer a9717c",
+      "owner_team": "",
+      "run_title": "Our services sometimes receive Retry-After delays longer than they can afford to wait. Add an optional caller-controlled upper bound for Retry-After sleeping without unexpectedly changing existing retry behavior. Investigate the code, discover the policy and compatibility choices, obtain the needed",
+      "agent": "claude",
+      "task_status": "completed",
+      "approval_pending": false,
+      "authorized": true,
+      "sources": [
+        {
+          "record_id": "b64b41565de24567a9477f4ec666088a",
+          "source_version_id": "82bed881b23044799e13ff268bd92025",
+          "sequence": 1,
+          "provider": "jira",
+          "namespace": "127.0.0.1:17481",
+          "external_id": "101",
+          "kind": "ticket",
+          "repo": "urllib3/urllib3",
+          "ref": "NET-101",
+          "url": "http://127.0.0.1:17481/jira/browse/NET-101",
+          "title": "NET-101: Retry-After compatibility policy",
+          "author": "Engineer a9717c",
+          "source_created_at": "2025-10-01T10:00:00Z",
+          "source_updated_at": "2026-10-11T18:00:00Z",
+          "source_version": "2026-10-11T18:00:00Z",
+          "observed_at": "2026-10-12T00:20:04.817162+00:00",
+          "provenance": "import",
+          "fingerprint": "8ded797d16588f21710de8a22399d80773f7c3eb38d16ab07cf66c29470acf56",
+          "availability": "available",
+          "head_id": "82bed881b23044799e13ff268bd92025",
+          "current": true,
+          "role": "support",
+          "decision_version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+          "stale": false
+        }
+      ],
+      "source_anchors": [],
+      "work_item_association": {
+        "declared": "",
+        "status": "undeclared",
+        "record_ids": [],
+        "links": [],
+        "historical": true,
+        "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+      },
+      "source_provenance": "versioned",
+      "source_reuse_requires_review": false,
+      "source_notice": "",
+      "source_revalidation": {
+        "available": true,
+        "has_reliance": true,
+        "sources": [
+          {
+            "record_id": "b64b41565de24567a9477f4ec666088a",
+            "source_version_id": "82bed881b23044799e13ff268bd92025",
+            "role": "support",
+            "previous_version_id": "82bed881b23044799e13ff268bd92025",
+            "changed": false,
+            "snapshot": {
+              "access_scope": "{\"audience\": \"workspace-shared\", \"jira_project\": \"NET\"}",
+              "author": "Engineer a9717c",
+              "availability": "available",
+              "body": "Type: Task\nStatus: Done\nResolution: Done\n\nExisting callers must retain their current Retry-After behavior unless they opt in to a limit. This applies to library-next. Negative, NaN and infinite limits are invalid. The proposed default cap in NET-102 was cancelled, not adopted.",
+              "created_at": "2025-10-01T10:00:00Z",
+              "display_ref": "NET-101",
+              "external_id": "101",
+              "kind": "ticket",
+              "namespace": "127.0.0.1:17481",
+              "object_kind": "ticket",
+              "paths": [],
+              "provider": "jira",
+              "ref": "source:6929e43f8242d9a42a0fb20730b6f252845d0fd98a3aee1995daf44f1404b53e",
+              "repo": "urllib3/urllib3",
+              "resolved": 1,
+              "source_created_at": "2025-10-01T10:00:00Z",
+              "source_sequence": null,
+              "source_updated_at": "2026-10-11T18:00:00Z",
+              "source_version": "2026-10-11T18:00:00Z",
+              "status": "Done",
+              "title": "NET-101: Retry-After compatibility policy",
+              "url": "http://127.0.0.1:17481/jira/browse/NET-101"
+            }
+          }
+        ],
+        "retires_rule": false,
+        "pins": [
+          {
+            "record_id": "b64b41565de24567a9477f4ec666088a",
+            "source_version_id": "82bed881b23044799e13ff268bd92025",
+            "role": "support"
+          }
+        ],
+        "decision_pins": [],
+        "dependencies": [],
+        "notice": "Review the complete displayed source snapshots and source decisions before confirming these exact pins. A newer source change will refuse this review; nothing is refreshed by an ordinary yes.",
+        "blocked_on_unknown_provenance_only": false,
+        "review_path": "/#runs/f07804519b5e"
+      },
+      "approval_scope": {
+        "id": "fd56d4641f41",
+        "run_id": "f07804519b5e",
+        "repo": "urllib3/urllib3",
+        "question": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+        "context": "src/urllib3/util/retry.py:202-245 `Retry.__init__` currently has no cap on Retry-After; `sleep_for_retry` (line 335-341) sleeps for the full parsed `Retry-After` value with no limit. `backoff_max` (DEFAULT_BACKOFF_MAX=120, line 196-197, 213, 237) is the existing precedent for a similarly-named cap, but it applies only to the exponential-backoff path, not to Retry-After. Task requires the change not unexpectedly alter existing retry behavior for callers who don't opt in, so the new knob must default to a no-op (None/unbounded) to preserve compatibility for library-next.\nPaths: src/urllib3/util/retry.py\nOptions: New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention | Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly | Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry",
+        "path": "src/urllib3/util/retry.py",
+        "scope_paths": [
+          "src/urllib3/util/retry.py"
+        ],
+        "scope_key": "9fac6460ef1df4219c9e",
+        "category": "compat",
+        "facts": {},
+        "options": [
+          "New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention",
+          "Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly",
+          "Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry"
+        ],
+        "applicability": {},
+        "required_signers": [],
+        "followup_required": 0,
+        "reusable": 0,
+        "rule_conditions": "",
+        "rule_scope": "",
+        "rule_expires": "",
+        "rule_ended_at": ""
+      },
+      "approval_scope_labels": {
+        "id": "Decision",
+        "run_id": "Task",
+        "repo": "Repository",
+        "question": "Question",
+        "context": "Context",
+        "path": "Path",
+        "scope_paths": "Scope paths",
+        "scope_key": "Scope key",
+        "category": "Category",
+        "facts": "Facts",
+        "options": "Options",
+        "applicability": "Applicability",
+        "required_signers": "Required signers",
+        "followup_required": "Required follow-up",
+        "reusable": "Reusable rule",
+        "rule_conditions": "Rule conditions",
+        "rule_scope": "Rule scope",
+        "rule_expires": "Rule expiry",
+        "rule_ended_at": "Rule ended"
+      },
+      "approval_scope_text": "Decision scope (recorded fields; no facts inferred from prose):\nDecision: fd56d4641f41\nTask: f07804519b5e\nRepository: urllib3/urllib3\nQuestion: Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?\nContext: src/urllib3/util/retry.py:202-245 `Retry.__init__` currently has no cap on Retry-After; `sleep_for_retry` (line 335-341) sleeps for the full parsed `Retry-After` value with no limit. `backoff_max` (DEFAULT_BACKOFF_MAX=120, line 196-197, 213, 237) is the existing precedent for a similarly-named cap, but it applies only to the exponential-backoff path, not to Retry-After. Task requires the change not unexpectedly alter existing retry behavior for callers who don't opt in, so the new knob must default to a no-op (None/unbounded) to preserve compatibility for library-next.\nPaths: src/urllib3/util/retry.py\nOptions: New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention | Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly | Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry\nPath: src/urllib3/util/retry.py\nScope paths: [\"src/urllib3/util/retry.py\"]\nScope key: 9fac6460ef1df4219c9e\nCategory: compat\nFacts: {}\nOptions: [\"New optional constructor parameter `retry_after_max` defaulting to None (no cap unless caller opts in) -- preserves all existing behavior by default, matches `backoff_max` naming convention\", \"Give it a finite default (e.g. same as backoff_max=120) -- would silently cap Retry-After sleeps for all existing callers, changing current behavior unexpectedly\", \"Only expose it as a `sleep()`/`sleep_for_retry()` call-time argument rather than a Retry constructor field -- inconsistent with how `respect_retry_after_header` and `backoff_max` are already configured on Retry\"]\nApplicability: {}",
+      "standing_grant": {
+        "recorded": false,
+        "state": "not_declared",
+        "scope": "",
+        "conditions": "",
+        "expires_at": "",
+        "granted_by": "",
+        "granted_at": "",
+        "ended_at": "",
+        "source_needs_review": false,
+        "source_provenance_uncertain": false,
+        "request_applicability": "not_evaluated_by_this_read",
+        "notice": "This decision declares no standing reuse grant of its own. Its current authorized/signoff result is separate and may be based on a source rule. Do not treat this decision as a new reusable rule; preserve its recorded answer and original context."
+      },
+      "fact_revision": "facts:78fe2762b73449adcc94319f6ad37623c6163da23f4b2fe316458679edffd40c",
+      "saved_revision": {
+        "id": "0d66637c512a4dbcb2797a744147b2e0",
+        "decision_id": "fd56d4641f41",
+        "created_at": "2026-10-12T00:28:30.935795+00:00",
+        "identifier_kind": "decision_revisions",
+        "notice": "Saved signed-revision metadata, not current authorization. This ID is not a decision_versions ID.",
+        "read": {
+          "decision_id": "fd56d4641f41",
+          "detail": "full"
+        }
+      },
+      "context_history": [
+        {
+          "id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+          "sequence": 4,
+          "recorded_at": "2026-10-12T00:28:30.939813+00:00",
+          "status_preview": "approved",
+          "signoff_preview": "signed",
+          "needs_review_preview": "0",
+          "signed_by_preview": "Engineer a9717c",
+          "answered_by_preview": "Engineer a9717c",
+          "source_id_preview": "",
+          "source_revision_preview": "",
+          "reusable_preview": "0",
+          "rule_scope_preview": "",
+          "rule_conditions_preview": "",
+          "rule_expires_preview": "",
+          "rule_ended_at_preview": "",
+          "status_characters": 8,
+          "signoff_characters": 6,
+          "needs_review_characters": 1,
+          "signed_by_characters": 15,
+          "answered_by_characters": 15,
+          "source_id_characters": 0,
+          "source_revision_characters": 0,
+          "reusable_characters": 1,
+          "rule_scope_characters": 0,
+          "rule_conditions_characters": 0,
+          "rule_expires_characters": 0,
+          "rule_ended_at_characters": 0,
+          "question_preview": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+          "question_characters": 271,
+          "answer_preview": "Use a new optional retry_after_max constructor argument in seconds. Default it to None so existing callers are unchanged. A finite limit must be opt-in, not a global default. This is my decision for library-next.",
+          "answer_characters": 212,
+          "rationale_preview": "No separate rationale recorded; any reason is included in the complete authored answer.",
+          "rationale_characters": 87,
+          "snapshot_omitted": true,
+          "state_basis": "immutable recorded state; current authorization is separate",
+          "read": {
+            "decision_id": "fd56d4641f41",
+            "version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc"
+          }
+        },
+        {
+          "id": "2157bc8b5d2f484d9dd47c02df9eeee0",
+          "sequence": 3,
+          "recorded_at": "2026-10-12T00:28:30.917665+00:00",
+          "status_preview": "partial",
+          "signoff_preview": "required",
+          "needs_review_preview": "0",
+          "signed_by_preview": "",
+          "answered_by_preview": "Engineer a9717c",
+          "source_id_preview": "",
+          "source_revision_preview": "",
+          "reusable_preview": "0",
+          "rule_scope_preview": "",
+          "rule_conditions_preview": "",
+          "rule_expires_preview": "",
+          "rule_ended_at_preview": "",
+          "status_characters": 7,
+          "signoff_characters": 8,
+          "needs_review_characters": 1,
+          "signed_by_characters": 0,
+          "answered_by_characters": 15,
+          "source_id_characters": 0,
+          "source_revision_characters": 0,
+          "reusable_characters": 1,
+          "rule_scope_characters": 0,
+          "rule_conditions_characters": 0,
+          "rule_expires_characters": 0,
+          "rule_ended_at_characters": 0,
+          "question_preview": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+          "question_characters": 271,
+          "answer_preview": "The upper bound must default to unbounded (identical to current behavior) and be something callers opt into individually, not a global or module-level setting. Existing callers must retain their current Retry-After behavior unless they opt in to a limit. This applies to library-next. Negative, NaN, ",
+          "answer_characters": 632,
+          "rationale_preview": "",
+          "rationale_characters": 0,
+          "snapshot_omitted": true,
+          "state_basis": "immutable recorded state; current authorization is separate",
+          "read": {
+            "decision_id": "fd56d4641f41",
+            "version_id": "2157bc8b5d2f484d9dd47c02df9eeee0"
+          }
+        },
+        {
+          "id": "86f5c71e7e5144c1bb9fa46aec357295",
+          "sequence": 2,
+          "recorded_at": "2026-10-12T00:24:59.198199+00:00",
+          "status_preview": "partial",
+          "signoff_preview": "required",
+          "needs_review_preview": "0",
+          "signed_by_preview": "",
+          "answered_by_preview": "Engineer a9717c",
+          "source_id_preview": "",
+          "source_revision_preview": "",
+          "reusable_preview": "0",
+          "rule_scope_preview": "",
+          "rule_conditions_preview": "",
+          "rule_expires_preview": "",
+          "rule_ended_at_preview": "",
+          "status_characters": 7,
+          "signoff_characters": 8,
+          "needs_review_characters": 1,
+          "signed_by_characters": 0,
+          "answered_by_characters": 15,
+          "source_id_characters": 0,
+          "source_revision_characters": 0,
+          "reusable_characters": 1,
+          "rule_scope_characters": 0,
+          "rule_conditions_characters": 0,
+          "rule_expires_characters": 0,
+          "rule_ended_at_characters": 0,
+          "question_preview": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+          "question_characters": 271,
+          "answer_preview": "The upper bound must default to unbounded (identical to current behavior) and be something callers opt into individually, not a global or module-level setting. Existing callers must retain their current Retry-After behavior unless they opt in to a limit. This applies to library-next. Negative, NaN, ",
+          "answer_characters": 632,
+          "rationale_preview": "",
+          "rationale_characters": 0,
+          "snapshot_omitted": true,
+          "state_basis": "immutable recorded state; current authorization is separate",
+          "read": {
+            "decision_id": "fd56d4641f41",
+            "version_id": "86f5c71e7e5144c1bb9fa46aec357295"
+          }
+        },
+        {
+          "id": "0bf8a5c350fd4fb9bb2484c0ae8aa1f9",
+          "sequence": 1,
+          "recorded_at": "2026-10-12T00:24:36.397917+00:00",
+          "status_preview": "assumed",
+          "signoff_preview": "",
+          "needs_review_preview": "0",
+          "signed_by_preview": "",
+          "answered_by_preview": "",
+          "source_id_preview": "",
+          "source_revision_preview": "",
+          "reusable_preview": "0",
+          "rule_scope_preview": "",
+          "rule_conditions_preview": "",
+          "rule_expires_preview": "",
+          "rule_ended_at_preview": "",
+          "status_characters": 7,
+          "signoff_characters": 0,
+          "needs_review_characters": 1,
+          "signed_by_characters": 0,
+          "answered_by_characters": 0,
+          "source_id_characters": 0,
+          "source_revision_characters": 0,
+          "reusable_characters": 1,
+          "rule_scope_characters": 0,
+          "rule_conditions_characters": 0,
+          "rule_expires_characters": 0,
+          "rule_ended_at_characters": 0,
+          "question_preview": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+          "question_characters": 271,
+          "answer_preview": "Preserve existing behavior for current users; only new usage gets the new path. (no relevant precedent in this repo; this is a default, not something your team has decided)",
+          "answer_characters": 172,
+          "rationale_preview": "",
+          "rationale_characters": 0,
+          "snapshot_omitted": true,
+          "state_basis": "immutable recorded state; current authorization is separate",
+          "read": {
+            "decision_id": "fd56d4641f41",
+            "version_id": "0bf8a5c350fd4fb9bb2484c0ae8aa1f9"
+          }
+        }
+      ],
+      "historical_approvals": [
+        {
+          "id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+          "sequence": 4,
+          "recorded_at": "2026-10-12T00:28:30.939813+00:00",
+          "status_preview": "approved",
+          "signoff_preview": "signed",
+          "needs_review_preview": "0",
+          "signed_by_preview": "Engineer a9717c",
+          "answered_by_preview": "Engineer a9717c",
+          "source_id_preview": "",
+          "source_revision_preview": "",
+          "reusable_preview": "0",
+          "rule_scope_preview": "",
+          "rule_conditions_preview": "",
+          "rule_expires_preview": "",
+          "rule_ended_at_preview": "",
+          "status_characters": 8,
+          "signoff_characters": 6,
+          "needs_review_characters": 1,
+          "signed_by_characters": 15,
+          "answered_by_characters": 15,
+          "source_id_characters": 0,
+          "source_revision_characters": 0,
+          "reusable_characters": 1,
+          "rule_scope_characters": 0,
+          "rule_conditions_characters": 0,
+          "rule_expires_characters": 0,
+          "rule_ended_at_characters": 0,
+          "question_preview": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+          "question_characters": 271,
+          "answer_preview": "Use a new optional retry_after_max constructor argument in seconds. Default it to None so existing callers are unchanged. A finite limit must be opt-in, not a global default. This is my decision for library-next.",
+          "answer_characters": 212,
+          "rationale_preview": "No separate rationale recorded; any reason is included in the complete authored answer.",
+          "rationale_characters": 87,
+          "snapshot_omitted": true,
+          "state_basis": "immutable recorded state; current authorization is separate",
+          "read": {
+            "decision_id": "fd56d4641f41",
+            "version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc"
+          }
+        }
+      ],
+      "projection": {
+        "detail": "summary",
+        "notice": "Current fields describe the decision now. Historical summaries describe saved states, never current authorization or permission for a new request. Read relevant saved versions and linked decisions before claiming there was no approval or only one prior decision. Previews and omitted fields are incomplete evidence; use their exact-version or full-detail reads. History counts measure saved snapshots, not distinct human approval actions; repeated recorded states are not additional signatures or grants. Human HTTP review retains the complete record.",
+        "omitted_fields": {
+          "events": {
+            "total": 17,
+            "read": {
+              "decision_id": "fd56d4641f41",
+              "detail": "full"
+            }
+          },
+          "work_item_history": {
+            "total": 0,
+            "read": {
+              "decision_id": "fd56d4641f41",
+              "detail": "full"
+            }
+          },
+          "revision": {
+            "json_characters": 541,
+            "read": {
+              "decision_id": "fd56d4641f41",
+              "detail": "full"
+            }
+          }
+        },
+        "full_read": {
+          "decision_id": "fd56d4641f41",
+          "detail": "full"
+        },
+        "history_format": "metadata and labeled previews; use version_id for complete snapshot"
+      },
+      "pagination": {
+        "limit": 10,
+        "snapshot": "cabc7e7e6e627e0d78cecc5f4967749fbb51b8f1031726719c88ca221bba4ca9",
+        "max_content_bytes": 32768,
+        "has_more": false,
+        "next_cursor": null,
+        "collections": {
+          "context_history": {
+            "total": 4,
+            "offset": 0,
+            "returned": 4,
+            "has_more": false,
+            "truncated": false
+          },
+          "historical_approvals": {
+            "total": 1,
+            "offset": 0,
+            "returned": 1,
+            "has_more": false,
+            "truncated": false
+          }
+        },
+        "notice": "Independent history and recorded-approval pages. Repeat the same decision_id and limit with next_cursor; restart if results change. Recorded approvals include saved human approvals and rule uses, not current permission."
+      }
+    },
+    "sources": {
+      "sources": [
+        {
+          "id": "e31a01083dad0418",
+          "kind": "docs",
+          "repo": "urllib3/urllib3",
+          "target": "http://127.0.0.1:17481/",
+          "label": "http://127.0.0.1:17481",
+          "state": "current",
+          "credentials_present": "[redacted]",
+          "last_success_at": "2026-10-12T00:33:24.946849+00:00",
+          "last_attempt_at": "2026-10-12T00:33:24.946849+00:00",
+          "records": 2,
+          "refused": {
+            "robots_disallowed": 2
+          },
+          "audience": "workspace-shared (administrator attested)",
+          "limits": [
+            "Only the registered origin is read, through llms.txt or sitemap.xml, else the page itself",
+            "Content behind a login is not fetched"
+          ],
+          "do": ""
+        },
+        {
+          "id": "64e565cc12676125",
+          "kind": "jira",
+          "repo": "urllib3/urllib3",
+          "target": "NET",
+          "label": "NET · Network policy",
+          "state": "needs_attention",
+          "credentials_present": "[redacted]",
+          "last_success_at": "2026-10-12T00:33:24.997028+00:00",
+          "last_attempt_at": "2026-10-12T00:38:53.794600+00:00",
+          "records": 2,
+          "refused": {
+            "issue_security_level": 2
+          },
+          "audience": "workspace-shared (administrator attested)",
+          "limits": [
+            "Jira refused the credentials (HTTP 403); check JIRA_EMAIL and JIRA_API_TOKEN and the account's project access",
+            "Issues with a security level and restricted comments are not imported",
+            "Deleted issues are not visible to polling; their last version is kept"
+          ],
+          "do": "Fix the error above, then run the source again"
+        },
+        {
+          "id": "8f086f0d84d29726",
+          "kind": "slack",
+          "repo": "urllib3/urllib3",
+          "target": "C0POLICY1",
+          "label": "#library-policy",
+          "state": "needs_attention",
+          "credentials_present": "[redacted]",
+          "last_success_at": "2026-10-12T00:33:25.021868+00:00",
+          "last_attempt_at": "2026-10-12T00:38:53.822889+00:00",
+          "records": 1,
+          "refused": {},
+          "audience": "workspace-shared (administrator attested)",
+          "limits": [
+            "Slack channel C0POLICY1 is no longer readable as context: it is private. Nothing new was imported",
+            "Public channels only; private channels, DMs and Slack Connect channels are never read",
+            "Deleted messages are not visible to polling; their last version is kept"
+          ],
+          "do": "Fix the error above, then run the source again"
+        }
+      ],
+      "not_configured": [],
+      "github": [],
+      "airweave": {
+        "backend": "airweave",
+        "configured": false,
+        "connections": [],
+        "freshness_seconds": 300,
+        "credential_configured": "[redacted]",
+        "last_success_means": "Last successful search transport, not proof that any source was admitted or that permissions were independently verified.",
+        "notice": "Only workspace-shared collections; unknown source ACLs and transient Slack results are excluded."
+      },
+      "sync_minutes": 15.0,
+      "note": "Records are evidence, never approval. Only sources an administrator attested as shared with every reader are imported; polling cannot see deletions."
+    }
+  },
+  "restored": [
+    {
+      "connection_id": "64e565cc12676125",
+      "records": 2,
+      "changed": 0,
+      "refused": {
+        "issue_security_level": 1
+      }
+    },
+    {
+      "connection_id": "8f086f0d84d29726",
+      "records": 1,
+      "changed": 0,
+      "refused": {}
+    }
+  ]
+}

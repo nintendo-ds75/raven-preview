@@ -1,0 +1,29 @@
+test_bad_values (__main__.IndependentChecks.test_bad_values) ... ok
+test_cap_preserves_retry_and_parsing (__main__.IndependentChecks.test_cap_preserves_retry_and_parsing) ... ok
+test_clone (__main__.IndependentChecks.test_clone) ... ok
+test_default_unchanged (__main__.IndependentChecks.test_default_unchanged) ... ok
+test_docs_explain_invalid_values (__main__.IndependentChecks.test_docs_explain_invalid_values) ... FAIL
+test_docs_explain_zero (__main__.IndependentChecks.test_docs_explain_zero) ... FAIL
+test_documentation (__main__.IndependentChecks.test_documentation) ... ok
+test_header_below_cap (__main__.IndependentChecks.test_header_below_cap) ... ok
+test_ordinary_backoff_unchanged (__main__.IndependentChecks.test_ordinary_backoff_unchanged) ... ok
+test_zero_does_not_fall_through_to_backoff (__main__.IndependentChecks.test_zero_does_not_fall_through_to_backoff) ... ok
+
+======================================================================
+FAIL: test_docs_explain_invalid_values (__main__.IndependentChecks.test_docs_explain_invalid_values)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 44, in test_docs_explain_invalid_values
+AssertionError: False is not true : The preregistered docs oracle requires invalid-value behavior
+
+======================================================================
+FAIL: test_docs_explain_zero (__main__.IndependentChecks.test_docs_explain_zero)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<stdin>", line 41, in test_docs_explain_zero
+AssertionError: Regex didn't match: '\\bzero\\b|``0``' not found in "\n        The maximum number of seconds to sleep for when respecting a\n        server's ``Retry-After`` header. If the header requests a longer\n        wait than this, the sleep is capped to ``retry_after_max`` seconds\n        instead.\n\n        By default, there is no cap (``None``) and the full value of the\n        header is used, preserving historical behavior.\n\n    " : The preregistered docs oracle requires the zero-limit meaning
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.020s
+
+FAILED (failures=2)

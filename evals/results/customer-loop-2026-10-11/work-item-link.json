@@ -1,0 +1,30 @@
+{
+  "task_id": "79f3cb8f5565",
+  "changed": true,
+  "relation": "task_anchor",
+  "source": {
+    "record_id": "b64b41565de24567a9477f4ec666088a",
+    "source_version_id": "7257ed25629944669863fe51f67e345d",
+    "sequence": 2,
+    "provider": "jira",
+    "namespace": "127.0.0.1:17481",
+    "external_id": "101",
+    "kind": "ticket",
+    "repo": "urllib3/urllib3",
+    "ref": "NET-101",
+    "url": "http://127.0.0.1:17481/jira/browse/NET-101",
+    "title": "NET-101: Retry-After compatibility policy",
+    "author": "Engineer a9717c",
+    "source_created_at": "2025-10-01T10:00:00Z",
+    "source_updated_at": "2026-10-12T00:46:08.749608+00:00",
+    "source_version": "2026-10-12T00:46:08.749608+00:00",
+    "observed_at": "2026-10-12T00:46:08.808314+00:00",
+    "provenance": "import",
+    "fingerprint": "eab5f69c1b44ab4a5ccb1530ff90ee008619c0713d0d507afa86f86ee9c89a36",
+    "availability": "available",
+    "head_id": "7257ed25629944669863fe51f67e345d",
+    "current": true,
+    "role": "work_item"
+  },
+  "notice": "Task association only. No decision evidence, signature, approval or existing dependency was changed."
+}

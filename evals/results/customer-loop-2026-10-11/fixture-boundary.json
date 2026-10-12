@@ -1,0 +1,35 @@
+{
+  "fixture": {
+    "baseline": "3d934808397b9cee14c6f399a4e6c9ddeb17a00d",
+    "boundary": "Only mount checkout and records into the host; filesystem/network isolation is external.",
+    "brief_provenance": {
+      "kind": "blinded_reconstruction",
+      "no_expected_people": true,
+      "no_future_references": true,
+      "no_solution": true,
+      "reviewed_brief_sha256": "a763b21a8da821ec3e63dc640b622fbb24c7bcc647ef238f3b7775d22db63764",
+      "reviewer": "evaluation-operator"
+    },
+    "brief_sha256": "a763b21a8da821ec3e63dc640b622fbb24c7bcc647ef238f3b7775d22db63764",
+    "cutoff": "2025-10-11T00:00:00Z",
+    "history_count": 4299,
+    "object_count": 22449,
+    "objects_sha256": "06cb4be5af41e6fd964601774548af4f5f36a495e0d39c2ac08ccdb8c7ab05a6",
+    "records_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "schema": "raven-replay-fixture-v1",
+    "sha256": "fe52d847db5f4dccbe3a3ee26030dc60e07b6fd4077172b1995a908b3ea21314",
+    "tree": "35e067a081d01239be3b12967086574a58d9a3a3"
+  },
+  "chronological_boundary": {
+    "baseline": "3d934808397b9cee14c6f399a4e6c9ddeb17a00d",
+    "tree": "35e067a081d01239be3b12967086574a58d9a3a3",
+    "objects_sha256": "06cb4be5af41e6fd964601774548af4f5f36a495e0d39c2ac08ccdb8c7ab05a6",
+    "object_count": 22449,
+    "history_count": 4299,
+    "cutoff_exclusive_utc": "2025-10-11T00:00:00Z",
+    "strict_author_and_committer_time": true,
+    "submodules": false,
+    "promisor": false,
+    "refs": []
+  }
+}

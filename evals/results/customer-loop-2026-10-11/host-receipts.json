@@ -1,0 +1,22 @@
+[
+  {
+    "name": "initial-host",
+    "subtype": "success",
+    "num_turns": 66,
+    "duration_ms": 810959,
+    "duration_api_ms": 260408,
+    "total_cost_usd": 1.9792488000000004,
+    "permission_denials": [],
+    "result": "All three Raven decisions were signed off by Engineer a9717c (owner of runtime retry policy) and the implementation matches them exactly. The task is marked `completed`.\n\n**What was decided and implemented** (`src/urllib3/util/retry.py`):\n- New optional `Retry(retry_after_max=...)` constructor parameter, in seconds, default `None` (unbounded — identical to current behavior; opt-in only, not a global default), per Jira NET-101 policy.\n- When a `Retry-After` value exceeds `retry_after_max`, only the `time.sleep()` duration in `sleep_for_retry()` is clamped — the retry still proceeds, with no change to retry eligibility, counters, or the backoff path.\n- `get_retry_after()`/`parse_retry_after()` keep returning the server's true uncapped value; the cap applies only at the sleep call site, and it's preserved across `.new()` (so it survives cloning in `increment()`).\n- Invalid limits (negative, NaN, infinite) raise `ValueError`, per NET-101's stated compatibility policy.\n- Added a changelog fragment (`changelog/3686.feature.rst`) and docstring entry.\n- Added tests covering: invalid values, propagation through `.new()`, default-is-unbounded, clamping behavior at/above/below the cap and with no cap, and that `get_retry_after()` stays uncapped.\n\nTests: `/opt/venv/bin/python -m pytest test/test_retry.py` → 72 passed; combined with `test_connectionpool.py` → 146 passed.\n\nOne note: Raven's automated diff review flagged the `ValueError` validation as a \"departs\" on the clamp-vs-abandon decision node specifically, since that node's signed answer text didn't itself mention validation. That validation requirement actually traces to the NET-101 ticket cited as evidence on all three decisions (\"Negative, NaN and infinite limits are invalid\"), so it's a misattribution across sibling nodes rather than a real conflict — flagging it here for transparency rather than treating it as resolved."
+  },
+  {
+    "name": "supervisor-resume",
+    "subtype": "success",
+    "num_turns": 18,
+    "duration_ms": 219558,
+    "duration_api_ms": 383249,
+    "total_cost_usd": 3.5539305999999993,
+    "permission_denials": [],
+    "result": "Still unsigned. I'll report progress to the user now rather than waiting silently longer, and note the implementation already matches the predicted answer, pending Engineer 654255's sign-off.\n\nThe original task (`f07804519b5e`) is complete and shipped. A reviewer added one more edge-case question afterward — for `retry_after_max=0`, should a positive `Retry-After` header cause an immediate retry (current behavior) or fall back to exponential backoff? Since that original task is locked, I opened a new task (`0b57d4a93abf`) for it. Raven's evidence-based prediction agrees with the current shipped behavior (immediate retry, no backoff fallback, consistent with the signed decisions on the cap substituting for Retry-After sleep), but it's still awaiting Engineer 654255's sign-off — no code changes are needed unless that answer comes back differently. I'll keep monitoring; let me know if you'd like me to keep polling or move on."
+  }
+]

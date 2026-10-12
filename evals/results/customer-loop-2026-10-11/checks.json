@@ -1,0 +1,85 @@
+{
+  "tested_commit": "07e236ffaf6e9008c0c4e0d620b68989e8dc3380",
+  "python": {
+    "run": 2329,
+    "skipped": 117,
+    "failures": 0,
+    "seconds": 394.369
+  },
+  "postgres_focused": {
+    "run": 151,
+    "failures": 0,
+    "seconds": 76.013
+  },
+  "upstream_retry_and_connectionpool": {
+    "passed": 146
+  },
+  "independent_oracle": {
+    "run": 10,
+    "passed": 8,
+    "failed": [
+      "docs explain zero limit",
+      "docs explain invalid values"
+    ],
+    "note": "The initial eight checks passed; two further assertions implement documentation requirements already in the unchanged preregistered oracle."
+  },
+  "browser_suites": {
+    "brief-browser": {
+      "passed": true,
+      "tail": "ok  phone   app: \"Task page in messages\" off hides the app's button; static brings back \"Open task page\"\nTask page checks passed: 70 steps across 1440px and 390px."
+    },
+    "browser-agent-source-proposals": {
+      "passed": false,
+      "tail": "  log: [ \"  - waiting for locator('.source-snapshot-body')\" ]\n}"
+    },
+    "browser-agents": {
+      "passed": true,
+      "tail": "Agents browser checks passed: task intake, routed review, delivery with browser closed, run output, escaping, mobile."
+    },
+    "browser-context-memory": {
+      "passed": true,
+      "tail": "{\"checks\": [\"complete current source display\", \"close is not approval\", \"deliberate bound revalidation\", \"retains source dependence\", \"source race refused\", \"reopen and revalidate current head\", \"human-only independent owner replacement\", \"pure-human complete scope display\", \"exact human version rebound\", \"accountless full source review on phone\"], \"decision_id\": \"cb83aadd6a4d\", \"ok\": true}"
+    },
+    "browser-interview": {
+      "passed": true,
+      "tail": "Interview browser checks passed (mocked speech APIs; no real microphone/provider test)."
+    },
+    "browser-minimal-run-ui": {
+      "passed": true,
+      "tail": "{\"browser\": \"Chromium\", \"checks\": [\"bounded questions/history/notes\", \"contact evidence and referral trace\", \"polling draft/disclosure/cursor\", \"per-run drafts through Back navigation\", \"mobile overflow\", \"source observations and unsafe links\", \"unknown and read-only access\", \"real Ask start/node retry with Unicode and stable keys\", \"synthetic API doubles: empty, initial loading and tree error, stale historical answer\", \"synthetic API doubles: workspace 401/403 revocation versus transient503\", \"browser keyboard Enter and duplicate requestSubmit while POST is pending\", \"late-dialog and navigation-away-back response guards\", \"four-question synthetic design review desktop/mobile\", \"exact historical answer textarea value and source decision identity\", \"expanded evidence pins, contact, history and final Ask desktop/mobile captures\"], \"fixture\": \"Fresh synthetic 2026-10-09; not recovered prior UI\", \"limits\": [\"Synthetic provider-free fixture only\", \"API-response doubles test presentation and lifecycle, not authority mechanisms\", \"The four-question design-review scene is synthetic API data; its human response has an explicit supplied current-run event\"], \"ok\": true, \"screenshots\": [\"fresh-minimal-run-desktop-draft.png\", \"fresh-minimal-run-mobile-overview.png\", \"fresh-minimal-run-ask-mobile.png\", \"fresh-minimal-run-ask-retry.png\", \"fresh-minimal-run-synthetic-empty.png\", \"fresh-minimal-run-synthetic-initial-tree-error.png\", \"fresh-minimal-run-synthetic-initial-loading.png\", \"fresh-minimal-run-synthetic-stale-history.png\", \"fresh-minimal-run-synthetic-workspace-401.png\", \"fresh-minimal-run-synthetic-workspace-403.png\", \"fresh-minimal-run-synthetic-workspace-503.png\", \"fresh-minimal-run-synthetic-scope-retry.png\", \"fresh-minimal-run-design-review-desktop.png\", \"fresh-minimal-run-design-review-mobile.png\", \"fresh-minimal-run-design-review-evidence.png\", \"fresh-minimal-run-design-review-source-decision.png\", \"fresh-minimal-run-design-review-contact.png\", \"fresh-minimal-run-design-review-history.png\", \"fresh-minimal-run-design-review-ask-desktop.png\", \"fresh-minimal-run-design-review-ask-mobile.png\"]}"
+    },
+    "browser-owner-context": {
+      "passed": true,
+      "tail": "{\"browser\": \"Chromium\", \"checks\": [\"concise exact structured heading\", \"complete request retained\", \"complete question and scope facts\", \"expandable exact JSON and original text\", \"desktop and mobile layout\", \"unusual nested and escaped values\", \"draft survives details toggles\", \"shared task and modal presentation\", \"close/reopen and back navigation\", \"stored title/goal, source pins, revisions and signatures unchanged\", \"no browser errors\"], \"fixture\": \"New synthetic UI, not the recovered task\", \"ok\": true, \"screenshots\": [\"new-synthetic-ui-owner-context-desktop.png\", \"new-synthetic-ui-owner-context-mobile.png\"]}"
+    },
+    "browser-work-item-links": {
+      "passed": true,
+      "tail": "{\"browser\": \"Chromium\", \"checks\": [\"MCP exact lookup/read remains unlinked\", \"MCP explicit link\", \"REST idempotent retry\", \"task unlinked-to-linked display\", \"owner association history\", \"one task history event\", \"historical version retained after source update\", \"close/reopen never signs\", \"no context approval controls\", \"decision answer/revision/edges/signatures unchanged\", \"decision-only association origin and identity\", \"ambiguous node displays both task identities\", \"closed unlinked task suggests new task\", \"no browser errors\"], \"ok\": true, \"screenshots\": [\"work-item-unlinked-task.png\", \"work-item-linked-owner-history.png\", \"work-item-linked-task-history.png\", \"work-item-historical-task.png\", \"work-item-decision-only-owner.png\", \"work-item-ambiguous-node.png\", \"work-item-historical-unlinked-task.png\"]}"
+    },
+    "browser": {
+      "passed": true,
+      "tail": "Browser checks passed: seeded canvas task, sign-off from Needs review, routing, approval → MCP retrieval, corrections, persistence, export, escaping, setup copy, and five mobile views."
+    }
+  },
+  "dom_suites": {
+    "run": 8,
+    "passed": 8
+  },
+  "walkthrough": {
+    "passed": 36,
+    "total": 37,
+    "failed": "Exact tool allowlist omits three newly shipped read/agent tools"
+  },
+  "backup_restore": {
+    "tables_restored": 66,
+    "database": "separate disposable database; no production database overwritten"
+  },
+  "limits": [
+    "No real Slack/Jira/GitHub installation",
+    "No live Airweave/Glean deployment",
+    "No live Codex/Cursor host",
+    "No new live standing-rule or multi-approver panel",
+    "One synthetic feature task against real frozen history; no held-out future-commit accuracy claim",
+    "Browser viewport override did not change actual viewport; mobile claims are from automated suites only"
+  ]
+}

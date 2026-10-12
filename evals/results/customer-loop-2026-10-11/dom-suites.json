@@ -1,0 +1,42 @@
+[
+  {
+    "suite": "audit-viewer",
+    "exit_code": 0,
+    "output": "6 audit-viewer state assertions passed\n"
+  },
+  {
+    "suite": "brief-source-state",
+    "exit_code": 0,
+    "output": "31 source review state checks passed (parsed DOM/API doubles, not Chromium).\n"
+  },
+  {
+    "suite": "interview-ui-unit",
+    "exit_code": 0,
+    "output": "Interview UI logic checks passed (DOM/audio stubs, not browser verification).\n"
+  },
+  {
+    "suite": "minimal-run-ui-unit",
+    "exit_code": 0,
+    "output": "Fresh minimal run UI: 41 checks passed (queued DOM/API doubles, not Chromium).\n"
+  },
+  {
+    "suite": "modal-lifecycle-ui-unit",
+    "exit_code": 0,
+    "output": "Modal lifecycle: 18 checks passed (queued DOM/API doubles, not Chromium).\n"
+  },
+  {
+    "suite": "web-agent-source-review",
+    "exit_code": 0,
+    "output": "Fresh source review rendering checks passed\n"
+  },
+  {
+    "suite": "web-work-item-context",
+    "exit_code": 0,
+    "output": "Work-item context rendering checks passed\n"
+  },
+  {
+    "suite": "web-setup",
+    "exit_code": 0,
+    "output": "Web setup checks passed\n"
+  }
+]

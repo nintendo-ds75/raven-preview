@@ -1,0 +1,285 @@
+[
+  {
+    "label": "same-release",
+    "task_id": "79f3cb8f5565",
+    "node": {
+      "node_id": "725d237f150c",
+      "task_id": "79f3cb8f5565",
+      "parent_id": "",
+      "depth": 0,
+      "client_ref": "same-release",
+      "origin": "agent",
+      "question": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+      "status": "resolved",
+      "kind": "evidence",
+      "answer": "Use a new optional retry_after_max constructor argument in seconds. Default it to None so existing callers are unchanged. A finite limit must be opt-in, not a global default. This is my decision for library-next.",
+      "prediction": "",
+      "evidence": "Engineer a9717c answered this (direct, decision fd56d4641f41, similarity 1.00, decayed score 1.00)",
+      "owner": "Engineer a9717c",
+      "source": "memory",
+      "source_id": "fd56d4641f41",
+      "source_revision": "2026-10-12T00:28:30.930589+00:00",
+      "routing_reason": "resolution ladder",
+      "owner_evidence": "signs off; signs off; Engineer a9717c signed the reused answer in decision fd56d4641f41",
+      "answered_by": "Engineer a9717c",
+      "rationale": "",
+      "signoff": "required",
+      "signed_by": "",
+      "brief": "",
+      "path": "src/urllib3/util/retry.py",
+      "category": "compat",
+      "created_at": "2026-10-12T00:38:40.496846+00:00",
+      "updated_at": "2026-10-12T00:38:42.931639+00:00",
+      "needs_review": false,
+      "review_reason": "",
+      "authorized": false,
+      "blocking": true,
+      "duplicate_of": "",
+      "reusable": false,
+      "rule_conditions": "",
+      "rule_expires": "",
+      "rule_scope": "",
+      "facts": {
+        "release": "library-next"
+      },
+      "required_signers": [],
+      "signatures": [],
+      "historical_signatures": [],
+      "followup_required": false,
+      "partial": false,
+      "model_pending": true,
+      "options": [],
+      "next": "Still reading the evidence in the background; use bridge_wait or bridge_get_tree. ",
+      "standing_grant": {
+        "recorded": false,
+        "state": "not_declared",
+        "scope": "",
+        "conditions": "",
+        "expires_at": "",
+        "granted_by": "",
+        "granted_at": "",
+        "ended_at": "",
+        "source_needs_review": false,
+        "source_provenance_uncertain": false,
+        "request_applicability": "not_evaluated_by_this_read",
+        "notice": "This decision declares no standing reuse grant of its own. Its current authorized/signoff result is separate and may be based on a source rule. Do not treat this decision as a new reusable rule; preserve its recorded answer and original context."
+      },
+      "sources": [],
+      "work_item_association": {
+        "declared": "",
+        "status": "undeclared",
+        "record_ids": [],
+        "links": [],
+        "historical": false,
+        "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+      },
+      "source_reuse_requires_review": false,
+      "source_provenance": "unknown",
+      "source_notice": "External source provenance is unknown for this answer. Existing human authority is separate. A new sign-off approves the exact answer and scope; it does not verify or reconstruct legacy source citations.",
+      "related": [
+        {
+          "id": "fd56d4641f41",
+          "kind": "derived",
+          "note": "Version-pinned joint composition",
+          "source_decision_id": "fd56d4641f41",
+          "source_version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+          "decision_id": "725d237f150c",
+          "decision_version_id": "50f49ed20ba945b09871b4412c721076"
+        }
+      ],
+      "depends_on": [],
+      "dependents": [],
+      "fact_revision": "facts:f66b765ccea75c2e6901e8256924fca743362cde738d60c0bc247cf1285064cd",
+      "ranked": [
+        {
+          "owner": "Engineer a9717c",
+          "evidence": [
+            "signs off; Engineer a9717c signed the reused answer in decision fd56d4641f41"
+          ],
+          "score": 2.0
+        },
+        {
+          "owner": "Engineer a9717c",
+          "evidence": [
+            "inferred first contact; confirm or refer in Slack",
+            "learned first contact: Engineer a9717c answered decision fd56d4641f41; confirm or refer, not permanent authority; contact scope: typed_context_unknown: confirm the unestablished source or material scope; observation 0f1fdf58bb7d4b0a649e786fab74097786153a563036180ca5971d63940e2b69"
+          ],
+          "score": 2.65
+        },
+        {
+          "owner": "Engineer 654255",
+          "evidence": [
+            "inferred first contact; confirm or refer in Slack",
+            "learned helpful connector: Engineer 654255 referred along the completed chain for decision fd56d4641f41; ask for a referral, not presumed expertise or authority; contact scope: typed_context_unknown: confirm the unestablished source or material scope; observation 1c0b9f28e6e5458edae567d6a246946136c19f4b6480ac88ed0cd0ba93a94631"
+          ],
+          "score": 1.65
+        },
+        {
+          "owner": "Engineer ac3bb9",
+          "evidence": [
+            "inferred first contact; confirm or refer in Slack",
+            "authored 4 of the last 184 changes under src/urllib3/util/ (15% recency weighted)"
+          ],
+          "score": 0.036
+        },
+        {
+          "owner": "Engineer e097f7",
+          "evidence": [
+            "inferred first contact; confirm or refer in Slack",
+            "authored 7 of the last 37 changes under src/urllib3/util/retry.py (4% recency weighted)"
+          ],
+          "score": 0.03
+        }
+      ],
+      "delivery": {
+        "enabled": true,
+        "channel": "slack",
+        "notice": "People answer in Slack; use bridge_wait and bridge_get_tree. No web account is required.",
+        "notifications": []
+      }
+    },
+    "seconds": 8.31
+  },
+  {
+    "label": "other-release",
+    "task_id": "eec62a241ecf",
+    "node": {
+      "node_id": "594aa7d99a57",
+      "task_id": "eec62a241ecf",
+      "parent_id": "",
+      "depth": 0,
+      "client_ref": "other-release",
+      "origin": "agent",
+      "question": "Should the Retry-After upper bound be a new optional `Retry.__init__` parameter (e.g. `retry_after_max: float | None`) that defaults to `None` (unbounded, i.e. identical to current behavior), rather than a parameter with a finite default or a global/module-level setting?",
+      "status": "predicted",
+      "kind": "prediction",
+      "answer": "Use a new optional retry_after_max constructor argument in seconds. Default it to None so existing callers are unchanged. A finite limit must be opt-in, not a global default. This is my decision for library-next.",
+      "prediction": "Use a new optional retry_after_max constructor argument in seconds. Default it to None so existing callers are unchanged. A finite limit must be opt-in, not a global default. This is my decision for library-next.",
+      "evidence": "prediction: Engineer a9717c answered a question like this in decision fd56d4641f41, which may be another scope (this one names release=1, decision fd56d4641f41 names 196-197, 202-245, 335-341); Raven cannot tell whether it carries over (direct, decision fd56d4641f41, similarity 1.00, decayed score 1.00); confirm with the owner before acting on it",
+      "owner": "Engineer a9717c",
+      "source": "memory",
+      "source_id": "fd56d4641f41",
+      "source_revision": "2026-10-12T00:28:30.930589+00:00",
+      "routing_reason": "resolution ladder",
+      "owner_evidence": "signs off; inferred first contact; confirm or refer in Slack; learned first contact: Engineer a9717c answered decision fd56d4641f41; confirm or refer, not permanent authority; contact scope: typed_context_unknown: confirm the unestablished source or material scope; observation 0f1fdf58bb7d4b0a649e786fab74097786153a563036180ca5971d63940e2b69",
+      "answered_by": "",
+      "rationale": "",
+      "signoff": "required",
+      "signed_by": "",
+      "brief": "",
+      "path": "src/urllib3/util/retry.py",
+      "category": "compat",
+      "created_at": "2026-10-12T00:38:48.604261+00:00",
+      "updated_at": "2026-10-12T00:38:50.878629+00:00",
+      "needs_review": false,
+      "review_reason": "",
+      "authorized": false,
+      "blocking": true,
+      "duplicate_of": "",
+      "reusable": false,
+      "rule_conditions": "",
+      "rule_expires": "",
+      "rule_scope": "",
+      "facts": {
+        "release": "1.26.x"
+      },
+      "required_signers": [],
+      "signatures": [],
+      "historical_signatures": [],
+      "followup_required": false,
+      "partial": false,
+      "model_pending": true,
+      "options": [],
+      "next": "Still reading the evidence in the background; use bridge_wait or bridge_get_tree. ",
+      "standing_grant": {
+        "recorded": false,
+        "state": "not_declared",
+        "scope": "",
+        "conditions": "",
+        "expires_at": "",
+        "granted_by": "",
+        "granted_at": "",
+        "ended_at": "",
+        "source_needs_review": false,
+        "source_provenance_uncertain": false,
+        "request_applicability": "not_evaluated_by_this_read",
+        "notice": "This decision declares no standing reuse grant of its own. Its current authorized/signoff result is separate and may be based on a source rule. Do not treat this decision as a new reusable rule; preserve its recorded answer and original context."
+      },
+      "sources": [],
+      "work_item_association": {
+        "declared": "",
+        "status": "undeclared",
+        "record_ids": [],
+        "links": [],
+        "historical": false,
+        "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+      },
+      "source_reuse_requires_review": false,
+      "source_provenance": "unknown",
+      "source_notice": "External source provenance is unknown for this answer. Existing human authority is separate. A new sign-off approves the exact answer and scope; it does not verify or reconstruct legacy source citations.",
+      "related": [
+        {
+          "id": "fd56d4641f41",
+          "kind": "derived",
+          "note": "Version-pinned joint composition",
+          "source_decision_id": "fd56d4641f41",
+          "source_version_id": "4fbf6245bfdf4c0e91fe69c4928ad9fc",
+          "decision_id": "594aa7d99a57",
+          "decision_version_id": "6ac498ca0b4442b8bcacd75de7596148"
+        }
+      ],
+      "depends_on": [],
+      "dependents": [],
+      "fact_revision": "facts:58e1f3894e72c43c1560c1a2ad682eb74924bb748c056dc3568ec7deaeed61ba",
+      "ranked": [
+        {
+          "owner": "Engineer a9717c",
+          "evidence": [
+            "inferred first contact; confirm or refer in Slack",
+            "learned first contact: Engineer a9717c answered decision fd56d4641f41; confirm or refer, not permanent authority; contact scope: typed_context_unknown: confirm the unestablished source or material scope; observation 0f1fdf58bb7d4b0a649e786fab74097786153a563036180ca5971d63940e2b69"
+          ],
+          "score": 2.65
+        },
+        {
+          "owner": "Engineer 654255",
+          "evidence": [
+            "inferred first contact; confirm or refer in Slack",
+            "learned helpful connector: Engineer 654255 referred along the completed chain for decision fd56d4641f41; ask for a referral, not presumed expertise or authority; contact scope: typed_context_unknown: confirm the unestablished source or material scope; observation 1c0b9f28e6e5458edae567d6a246946136c19f4b6480ac88ed0cd0ba93a94631"
+          ],
+          "score": 1.65
+        },
+        {
+          "owner": "Engineer ac3bb9",
+          "evidence": [
+            "inferred first contact; confirm or refer in Slack",
+            "authored 4 of the last 184 changes under src/urllib3/util/ (15% recency weighted)"
+          ],
+          "score": 0.036
+        },
+        {
+          "owner": "Engineer e097f7",
+          "evidence": [
+            "inferred first contact; confirm or refer in Slack",
+            "authored 7 of the last 37 changes under src/urllib3/util/retry.py (4% recency weighted)"
+          ],
+          "score": 0.03
+        },
+        {
+          "owner": "Engineer 4831f9",
+          "evidence": [
+            "inferred first contact; confirm or refer in Slack",
+            "authored 1 of the last 184 changes under src/urllib3/util/ (10% recency weighted)"
+          ],
+          "score": 0.024
+        }
+      ],
+      "delivery": {
+        "enabled": true,
+        "channel": "slack",
+        "notice": "People answer in Slack; use bridge_wait and bridge_get_tree. No web account is required.",
+        "notifications": []
+      }
+    },
+    "seconds": 7.95
+  }
+]

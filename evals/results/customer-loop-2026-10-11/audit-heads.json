@@ -1,0 +1,8 @@
+{
+  "original_private_ledger_head": "59ac1abc1f4fe509aba24db643328e9a8b1be65e0c0f9e42eee5101574e90777",
+  "public_redacted_ledger_head": "96e4e631f5018632b36f2ab393dcd322a9905da5a60ea81494ea7177ae37b346",
+  "events": 76,
+  "host_mcp_exchanges": 89,
+  "oracle_sha256": "ab1795c0fc8520dc76035f1a9612db496a8e0e965727baf7b063775f6ca7b4fa",
+  "notice": "Public export is redacted and rehashed. These hashes detect later edits against this retained manifest; they are not signatures or independent attestation. The original private ledger is retained locally; credentials and the private oracle are not published."
+}
