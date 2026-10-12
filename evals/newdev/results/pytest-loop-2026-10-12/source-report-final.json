@@ -1,0 +1,81 @@
+{
+  "sources": [
+    {
+      "id": "e02000b4559ca775",
+      "kind": "docs",
+      "repo": "pytest-dev/pytest",
+      "target": "http://127.0.0.1:17531/",
+      "label": "http://127.0.0.1:17531",
+      "state": "needs_attention",
+      "credentials_present": true,
+      "last_success_at": "2026-10-12T23:04:32.560115+00:00",
+      "last_attempt_at": "2026-10-12T23:22:00.739998+00:00",
+      "records": 2,
+      "refused": {
+        "robots_disallowed": 3
+      },
+      "audience": "workspace-shared (administrator attested)",
+      "limits": [
+        "http://127.0.0.1:17531/llms.txt is unreachable: [Errno 111] Connection refused",
+        "Only the registered origin is read, through llms.txt or sitemap.xml, else the page itself",
+        "Content behind a login is not fetched"
+      ],
+      "do": "Fix the error above, then run the source again"
+    },
+    {
+      "id": "1a740470ecbdf819",
+      "kind": "jira",
+      "repo": "pytest-dev/pytest",
+      "target": "NET",
+      "label": "NET · Reporting policy",
+      "state": "needs_attention",
+      "credentials_present": true,
+      "last_success_at": "2026-10-12T23:04:32.648847+00:00",
+      "last_attempt_at": "2026-10-12T23:22:00.763059+00:00",
+      "records": 2,
+      "refused": {
+        "issue_security_level": 3
+      },
+      "audience": "workspace-shared (administrator attested)",
+      "limits": [
+        "Jira is unreachable: [Errno 111] Connection refused",
+        "Issues with a security level and restricted comments are not imported",
+        "Deleted issues are not visible to polling; their last version is kept"
+      ],
+      "do": "Fix the error above, then run the source again"
+    },
+    {
+      "id": "905a0d0b1f721d74",
+      "kind": "slack",
+      "repo": "pytest-dev/pytest",
+      "target": "C0POLICY1",
+      "label": "#library-policy",
+      "state": "needs_attention",
+      "credentials_present": true,
+      "last_success_at": "2026-10-12T23:04:32.668438+00:00",
+      "last_attempt_at": "2026-10-12T23:22:00.767277+00:00",
+      "records": 1,
+      "refused": {},
+      "audience": "workspace-shared (administrator attested)",
+      "limits": [
+        "Slack is unreachable: [Errno 111] Connection refused",
+        "Public channels only; private channels, DMs and Slack Connect channels are never read",
+        "Deleted messages are not visible to polling; their last version is kept"
+      ],
+      "do": "Fix the error above, then run the source again"
+    }
+  ],
+  "not_configured": [],
+  "github": [],
+  "airweave": {
+    "backend": "airweave",
+    "configured": false,
+    "connections": [],
+    "freshness_seconds": 300,
+    "credential_configured": false,
+    "last_success_means": "Last successful search transport, not proof that any source was admitted or that permissions were independently verified.",
+    "notice": "Only workspace-shared collections; unknown source ACLs and transient Slack results are excluded."
+  },
+  "sync_minutes": 15.0,
+  "note": "Records are evidence, never approval. Only sources an administrator attested as shared with every reader are imported; polling cannot see deletions."
+}

@@ -104,6 +104,22 @@ class BriefCase(OfflineCase):
         return self.store.get_decision(decision_id)
 
 
+class RequiredFollowupProgressTests(BriefCase):
+    def test_required_followup_is_visible_in_progress_before_adoption(self):
+        task = self.task()
+        node = self.node(task)
+        link = self.link(self.mint(self.wes, task, node['node_id']))
+        canvas.add_followups(self.store, CFG, node['node_id'], {
+            'questions': ['Which release note is required?'], 'required': True}, actor=link.actor)
+        canvas.add_followups(self.store, CFG, node['node_id'], {
+            'questions': ['Could we add an optional diagram?']}, actor=link.actor)
+        view = briefing.overview(self.store, link)
+        self.assertEqual(view['progress']['total'], 2)
+        self.assertEqual(view['progress']['waiting'], 2)
+        suggested = [n for n in view['nodes'] if n['raw_status'] == 'suggested']
+        self.assertEqual(sum(n['blocking'] for n in suggested), 1)
+
+
 class Http:
     """Requests to a server started by the test, with no redirects
     followed and the status always returned."""

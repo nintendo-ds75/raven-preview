@@ -91,12 +91,15 @@ async function load({quiet = false} = {}) {
   render();
 }
 
-function stateOf(n) { const [label, color] = stateLabels[n.state] || [n.state, 'gray']; return pill(label, color); }
+function stateOf(n) {
+  if (n.raw_status === 'suggested' && n.blocking) return pill('Required follow-up', 'lilac');
+  const [label, color] = stateLabels[n.state] || [n.state, 'gray']; return pill(label, color);
+}
 
 // Who a blocking decision still waits on: its owner and the signers it
 // needs, less those who have signed.
 const owedBy = n => unique([n.owner, ...(n.required_signers || [])]).filter(x => !(n.signatures || []).some(s => same(s, x)));
-const counted = n => !['duplicate', 'adopted', 'suggested'].includes(n.raw_status);
+const counted = n => !['duplicate', 'adopted'].includes(n.raw_status) && (n.raw_status !== 'suggested' || n.blocking);
 
 // Where the person stands on the decision they were sent: it waits on
 // them, it wants their sign-off, they have already decided it (a
@@ -280,13 +283,14 @@ function decisionsCard(nodes) {
   const you = x => same(x, me) ? 'You' : x;
   // The state, then the people it is about: who signed, or who it waits on.
   const who = n => {
+    if (n.raw_status === 'suggested' && n.blocking) return 'The coding agent must adopt this';
     if (n.signatures.length) return n.signatures.map(you).join(', ');
     const owed = owedBy(n).map(you).sort((a, b) => (b === 'You') - (a === 'You'));
     if (n.blocking) return owed.length ? owed.join(', ') : 'No owner yet';
     return n.owner ? you(n.owner) : 'No owner yet';
   };
   const focus = data.focus?.node_id;
-  return `<section class="task-panel" aria-labelledby="decisions-title"><h2 id="decisions-title">Decisions</h2><p class="brief-intro">Everything the task needed a call on. Only signed answers count as approval.</p>
+  return `<section class="task-panel" aria-labelledby="decisions-title"><h2 id="decisions-title">Decisions</h2><p class="brief-intro">Decisions and follow-ups recorded on this task. Only authorized answers count as approval.</p>
     ${shown.length ? `<ol class="brief-decisions">${shown.map(n => n.node_id === focus
       // The decision the card above is about, said once.
       // A button, not a #fragment link: the fragment holds the token, and
@@ -526,7 +530,13 @@ function heroLine(standing) {
   const blocking = data.nodes.filter(n => n.blocking && counted(n));
   const mineOwed = blocking.filter(n => owedBy(n).some(x => same(x, me)));
   const others = unique(blocking.flatMap(owedBy).filter(x => !same(x, me)));
-  const waitsOn = others.length ? `The task now waits on ${listed(others)}.` : 'Nothing on this task waits on anyone now.';
+  const required = blocking.filter(n => n.raw_status === 'suggested').length;
+  const unassigned = blocking.filter(n => n.raw_status !== 'suggested' && !owedBy(n).length).length;
+  const waitsOn = [
+    others.length ? `The task now waits on ${listed(others)}.` : '',
+    required ? `The coding agent must adopt ${plural(required, 'required follow-up')} before finishing.` : '',
+    unassigned ? `The task still has ${plural(unassigned, 'unassigned decision')}.` : '',
+  ].filter(Boolean).join(' ') || 'No recorded decision is waiting for a person.';
   return standing === 'answer' ? `${esc(data.requester.name || 'A teammate')}’s coding agent needs ${mineOwed.length > 1 ? plural(mineOwed.length, 'decision') : 'one decision'} from you.`
     : standing === 'sign' ? 'An answer here is waiting for your sign-off.'
     : standing === 'cosign' ? 'An answer is recorded. You can add your signature or correct it.'

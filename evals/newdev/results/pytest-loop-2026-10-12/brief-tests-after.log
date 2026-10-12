@@ -1,0 +1,773 @@
+127.0.0.1 - - [12/Oct/2026 23:00:09] "GET /api/brief HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:09] "GET /api/brief HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:09] "GET /api/brief HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:09] "GET /api/brief HTTP/1.1" 200 -
+./app/bridge/approval_scope.py:69: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83601e40>
+  return all(safe(item) for item in value)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/approval_scope.py:69: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff84b03b50>
+  return all(safe(item) for item in value)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/approval_scope.py:69: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e2f0>
+  return all(safe(item) for item in value)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/approval_scope.py:69: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e4d0>
+  return all(safe(item) for item in value)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/approval_scope.py:69: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e5c0>
+  return all(safe(item) for item in value)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/approval_scope.py:69: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e6b0>
+  return all(safe(item) for item in value)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.127.0.0.1 - - [12/Oct/2026 23:00:11] "GET /api/brief HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:11] "POST /api/brief/account HTTP/1.1" 400 -
+.127.0.0.1 - - [12/Oct/2026 23:00:11] "POST /api/brief/account HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:11] "GET /api/me HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:12] "GET /api/brief HTTP/1.1" 200 -
+./app/bridge/fact_revisions.py:40: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83601c60>
+  for item in db.execute(f'SELECT decision_id,id,fingerprint FROM decision_versions WHERE decision_id IN ({marks}) ORDER BY sequence', chunk):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:40: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff84b03b50>
+  for item in db.execute(f'SELECT decision_id,id,fingerprint FROM decision_versions WHERE decision_id IN ({marks}) ORDER BY sequence', chunk):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:40: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e6b0>
+  for item in db.execute(f'SELECT decision_id,id,fingerprint FROM decision_versions WHERE decision_id IN ({marks}) ORDER BY sequence', chunk):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:40: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e5c0>
+  for item in db.execute(f'SELECT decision_id,id,fingerprint FROM decision_versions WHERE decision_id IN ({marks}) ORDER BY sequence', chunk):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:40: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0ef20>
+  for item in db.execute(f'SELECT decision_id,id,fingerprint FROM decision_versions WHERE decision_id IN ({marks}) ORDER BY sequence', chunk):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:40: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e2f0>
+  for item in db.execute(f'SELECT decision_id,id,fingerprint FROM decision_versions WHERE decision_id IN ({marks}) ORDER BY sequence', chunk):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:40: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0040>
+  for item in db.execute(f'SELECT decision_id,id,fingerprint FROM decision_versions WHERE decision_id IN ({marks}) ORDER BY sequence', chunk):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:40: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0c70>
+  for item in db.execute(f'SELECT decision_id,id,fingerprint FROM decision_versions WHERE decision_id IN ({marks}) ORDER BY sequence', chunk):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:40: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0d60>
+  for item in db.execute(f'SELECT decision_id,id,fingerprint FROM decision_versions WHERE decision_id IN ({marks}) ORDER BY sequence', chunk):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+127.0.0.1 - - [12/Oct/2026 23:00:12] "POST /api/brief/account HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:12] "POST /api/brief/account HTTP/1.1" 400 -
+.127.0.0.1 - - [12/Oct/2026 23:00:13] "POST /api/brief/account HTTP/1.1" 400 -
+.127.0.0.1 - - [12/Oct/2026 23:00:14] "POST /api/brief/account HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:14] "GET /api/me HTTP/1.1" 200 -
+.127.0.0.1 - - [12/Oct/2026 23:00:14] "POST /api/brief/account HTTP/1.1" 400 -
+./app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff84b03b50>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff836032e0>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83602110>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e4d0>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0f1f0>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff84b03c40>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e6b0>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0c70>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be05e0>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be1120>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be14e0>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be1990>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+127.0.0.1 - - [12/Oct/2026 23:00:15] "POST /api/brief/account HTTP/1.1" 400 -
+.127.0.0.1 - - [12/Oct/2026 23:00:16] "GET /api/brief HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:16] "POST /api/brief/account HTTP/1.1" 400 -
+127.0.0.1 - - [12/Oct/2026 23:00:16] "POST /api/brief/account HTTP/1.1" 400 -
+127.0.0.1 - - [12/Oct/2026 23:00:16] "POST /api/brief/account HTTP/1.1" 200 -
+.127.0.0.1 - - [12/Oct/2026 23:00:17] "POST /api/brief/account HTTP/1.1" 400 -
+../app/bridge/graph.py:351: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0d030>
+  db.execute(f"ALTER TABLE decisions ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:351: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e6b0>
+  db.execute(f"ALTER TABLE decisions ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:351: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0f010>
+  db.execute(f"ALTER TABLE decisions ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:351: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83602110>
+  db.execute(f"ALTER TABLE decisions ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:351: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff836032e0>
+  db.execute(f"ALTER TABLE decisions ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:351: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff84b03b50>
+  db.execute(f"ALTER TABLE decisions ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:351: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83601c60>
+  db.execute(f"ALTER TABLE decisions ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:351: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be13f0>
+  db.execute(f"ALTER TABLE decisions ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:351: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be05e0>
+  db.execute(f"ALTER TABLE decisions ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:351: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be2a70>
+  db.execute(f"ALTER TABLE decisions ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:351: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be25c0>
+  db.execute(f"ALTER TABLE decisions ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:351: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be2f20>
+  db.execute(f"ALTER TABLE decisions ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.../app/bridge/graph.py:1529: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83601c60>
+  return self.memo("", "people" if active_only else "people_all", (), lambda: self.db.execute(sql).fetchall(), build)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1529: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0fa60>
+  return self.memo("", "people" if active_only else "people_all", (), lambda: self.db.execute(sql).fetchall(), build)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1529: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e5c0>
+  return self.memo("", "people" if active_only else "people_all", (), lambda: self.db.execute(sql).fetchall(), build)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1529: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0ef20>
+  return self.memo("", "people" if active_only else "people_all", (), lambda: self.db.execute(sql).fetchall(), build)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+127.0.0.1 - - [12/Oct/2026 23:00:18] "POST /api/brief/note HTTP/1.1" 403 -
+127.0.0.1 - - [12/Oct/2026 23:00:18] "POST /api/brief/answer HTTP/1.1" 403 -
+.../app/bridge/fact_revisions.py:40: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83601e40>
+  for item in db.execute(f'SELECT decision_id,id,fingerprint FROM decision_versions WHERE decision_id IN ({marks}) ORDER BY sequence', chunk):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:40: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0fa60>
+  for item in db.execute(f'SELECT decision_id,id,fingerprint FROM decision_versions WHERE decision_id IN ({marks}) ORDER BY sequence', chunk):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:40: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0f010>
+  for item in db.execute(f'SELECT decision_id,id,fingerprint FROM decision_versions WHERE decision_id IN ({marks}) ORDER BY sequence', chunk):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:40: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be25c0>
+  for item in db.execute(f'SELECT decision_id,id,fingerprint FROM decision_versions WHERE decision_id IN ({marks}) ORDER BY sequence', chunk):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.../app/bridge/canvas.py:1615: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e4d0>
+  task_status = store.graph.db.execute('SELECT status FROM runs WHERE id=?', (row['run_id'],)).fetchone()['status']
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/canvas.py:1615: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0f010>
+  task_status = store.graph.db.execute('SELECT status FROM runs WHERE id=?', (row['run_id'],)).fetchone()['status']
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/canvas.py:1615: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0ef20>
+  task_status = store.graph.db.execute('SELECT status FROM runs WHERE id=?', (row['run_id'],)).fetchone()['status']
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/canvas.py:1615: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be2d40>
+  task_status = store.graph.db.execute('SELECT status FROM runs WHERE id=?', (row['run_id'],)).fetchone()['status']
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+127.0.0.1 - - [12/Oct/2026 23:00:20] "POST /api/brief/answer HTTP/1.1" 403 -
+.../app/bridge/graph.py:2138: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be18a0>
+  marks = ",".join("?" for _ in statuses)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:2138: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff84b02200>
+  marks = ",".join("?" for _ in statuses)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:2138: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be1e40>
+  marks = ",".join("?" for _ in statuses)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:2138: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff84b022f0>
+  marks = ",".join("?" for _ in statuses)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:2138: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be05e0>
+  marks = ",".join("?" for _ in statuses)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+127.0.0.1 - - [12/Oct/2026 23:00:21] "GET /api/brief?focus=077a3433a606 HTTP/1.1" 200 -
+.127.0.0.1 - - [12/Oct/2026 23:00:22] "GET /api/brief?focus=f0b9974b954a HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:22] "GET /api/brief HTTP/1.1" 200 -
+.127.0.0.1 - - [12/Oct/2026 23:00:23] "POST /api/brief/refer HTTP/1.1" 400 -
+127.0.0.1 - - [12/Oct/2026 23:00:23] "POST /api/brief/refer HTTP/1.1" 400 -
+./app/bridge/graph.py:355: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff84b02200>
+  db.execute(f"ALTER TABLE runs ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:355: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff84b022f0>
+  db.execute(f"ALTER TABLE runs ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:355: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0f010>
+  db.execute(f"ALTER TABLE runs ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:355: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be2d40>
+  db.execute(f"ALTER TABLE runs ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:355: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be33d0>
+  db.execute(f"ALTER TABLE runs ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:355: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be05e0>
+  db.execute(f"ALTER TABLE runs ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:355: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be18a0>
+  db.execute(f"ALTER TABLE runs ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:355: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be3a60>
+  db.execute(f"ALTER TABLE runs ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:355: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be3b50>
+  db.execute(f"ALTER TABLE runs ADD COLUMN {name} {decl}")
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+127.0.0.1 - - [12/Oct/2026 23:00:24] "GET /api/brief HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:24] "POST /api/brief/refer HTTP/1.1" 200 -
+.127.0.0.1 - - [12/Oct/2026 23:00:24] "GET /api/brief HTTP/1.1" 200 -
+./app/bridge/graph.py:1522: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be3a60>
+  d = dict(r)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1522: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be34c0>
+  d = dict(r)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1522: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff84b02200>
+  d = dict(r)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1522: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be1e40>
+  d = dict(r)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1522: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be33d0>
+  d = dict(r)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+127.0.0.1 - - [12/Oct/2026 23:00:25] "POST /api/brief/refer HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:25] "GET /api/brief HTTP/1.1" 200 -
+.127.0.0.1 - - [12/Oct/2026 23:00:26] "POST /api/brief/refer HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:26] "GET /api/brief HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:26] "POST /api/brief/refer HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:26] "GET /api/brief HTTP/1.1" 200 -
+./usr/local/lib/python3.13/json/encoder.py:254: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff84b022f0>
+  _iterencode = c_make_encoder(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/local/lib/python3.13/json/encoder.py:254: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be32e0>
+  _iterencode = c_make_encoder(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/local/lib/python3.13/json/encoder.py:254: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e5c0>
+  _iterencode = c_make_encoder(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/local/lib/python3.13/json/encoder.py:254: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be3e20>
+  _iterencode = c_make_encoder(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/local/lib/python3.13/json/encoder.py:254: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be34c0>
+  _iterencode = c_make_encoder(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/local/lib/python3.13/json/encoder.py:254: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be3a60>
+  _iterencode = c_make_encoder(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/local/lib/python3.13/json/encoder.py:254: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e4040>
+  _iterencode = c_make_encoder(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/local/lib/python3.13/json/encoder.py:254: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be3970>
+  _iterencode = c_make_encoder(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.127.0.0.1 - - [12/Oct/2026 23:00:27] "POST /api/brief/refer HTTP/1.1" 400 -
+127.0.0.1 - - [12/Oct/2026 23:00:27] "POST /api/brief/refer HTTP/1.1" 400 -
+127.0.0.1 - - [12/Oct/2026 23:00:27] "POST /api/brief/refer HTTP/1.1" 400 -
+127.0.0.1 - - [12/Oct/2026 23:00:27] "POST /api/brief/refer HTTP/1.1" 400 -
+127.0.0.1 - - [12/Oct/2026 23:00:28] "POST /api/brief/refer HTTP/1.1" 400 -
+127.0.0.1 - - [12/Oct/2026 23:00:28] "POST /api/brief/refer HTTP/1.1" 403 -
+.../app/bridge/llm.py:42: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e5c0>
+  if token.endswith(suf) and len(token) - len(suf) >= 3:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/llm.py:42: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be34c0>
+  if token.endswith(suf) and len(token) - len(suf) >= 3:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/llm.py:42: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be3880>
+  if token.endswith(suf) and len(token) - len(suf) >= 3:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/llm.py:42: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be32e0>
+  if token.endswith(suf) and len(token) - len(suf) >= 3:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/llm.py:42: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff84b02200>
+  if token.endswith(suf) and len(token) - len(suf) >= 3:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/llm.py:42: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff84b022f0>
+  if token.endswith(suf) and len(token) - len(suf) >= 3:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/llm.py:42: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e4400>
+  if token.endswith(suf) and len(token) - len(suf) >= 3:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/llm.py:42: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e44f0>
+  if token.endswith(suf) and len(token) - len(suf) >= 3:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/llm.py:42: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be15d0>
+  if token.endswith(suf) and len(token) - len(suf) >= 3:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/llm.py:42: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e4040>
+  if token.endswith(suf) and len(token) - len(suf) >= 3:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/llm.py:42: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e46d0>
+  if token.endswith(suf) and len(token) - len(suf) >= 3:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/llm.py:42: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e4b80>
+  if token.endswith(suf) and len(token) - len(suf) >= 3:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+...../app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0b80>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0fd30>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be1c60>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be16c0>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83602110>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be2f20>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff84b03c40>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e2f0>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be1120>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0f1f0>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0c70>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be1990>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83601c60>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be1300>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be1030>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e4d0>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be3100>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0fa60>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be26b0>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e4220>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be1e40>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e4f40>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e49a0>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff84b022f0>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be18a0>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be3b50>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be3f10>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be3880>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be3e20>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be34c0>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:32: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e46d0>
+  events, versions, pins, links = (defaultdict(list) for _ in range(4))
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+..127.0.0.1 - - [12/Oct/2026 23:00:31] "POST /api/brief/note HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:31] "GET /api/brief HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:31] "GET /api/brief HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:31] "POST /api/brief/withdraw HTTP/1.1" 400 -
+127.0.0.1 - - [12/Oct/2026 23:00:31] "POST /api/brief/withdraw HTTP/1.1" 400 -
+127.0.0.1 - - [12/Oct/2026 23:00:31] "POST /api/brief/withdraw HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:31] "POST /api/brief/withdraw HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:31] "GET /api/brief HTTP/1.1" 200 -
+/app/bridge/context_memory.py:702: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83601c60>
+  root = db.execute('SELECT * FROM decisions WHERE id=?', (decision_id,)).fetchone()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/context_memory.py:702: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff84b02b60>
+  root = db.execute('SELECT * FROM decisions WHERE id=?', (decision_id,)).fetchone()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/context_memory.py:702: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e4d0>
+  root = db.execute('SELECT * FROM decisions WHERE id=?', (decision_id,)).fetchone()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/context_memory.py:702: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0f010>
+  root = db.execute('SELECT * FROM decisions WHERE id=?', (decision_id,)).fetchone()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/context_memory.py:702: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0f1f0>
+  root = db.execute('SELECT * FROM decisions WHERE id=?', (decision_id,)).fetchone()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/context_memory.py:702: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e6b0>
+  root = db.execute('SELECT * FROM decisions WHERE id=?', (decision_id,)).fetchone()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/context_memory.py:702: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0d030>
+  root = db.execute('SELECT * FROM decisions WHERE id=?', (decision_id,)).fetchone()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/context_memory.py:702: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0fd30>
+  root = db.execute('SELECT * FROM decisions WHERE id=?', (decision_id,)).fetchone()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/context_memory.py:702: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0ef20>
+  root = db.execute('SELECT * FROM decisions WHERE id=?', (decision_id,)).fetchone()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/context_memory.py:702: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be34c0>
+  root = db.execute('SELECT * FROM decisions WHERE id=?', (decision_id,)).fetchone()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+127.0.0.1 - - [12/Oct/2026 23:00:31] "GET /api/brief HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:31] "POST /api/brief/withdraw HTTP/1.1" 400 -
+./usr/local/lib/python3.13/re/_parser.py:292: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0ef20>
+  def tell(self):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+127.0.0.1 - - [12/Oct/2026 23:00:32] "GET /api/state HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:32] "POST /api/tasks/8dac41cd9217/link HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:32] "GET /api/brief HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:32] "POST /api/tasks/8dac41cd9217/link HTTP/1.1" 400 -
+127.0.0.1 - - [12/Oct/2026 23:00:32] "POST /api/tasks/8dac41cd9217/link HTTP/1.1" 403 -
+.127.0.0.1 - - [12/Oct/2026 23:00:32] "POST /api/tasks/eb18e1efaae3/link HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:32] "POST /api/tasks/eb18e1efaae3/link HTTP/1.1" 200 -
+.127.0.0.1 - - [12/Oct/2026 23:00:33] "GET /api/state HTTP/1.1" 200 -
+./app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83601e40>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e4d0>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be3970>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0f010>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be1c60>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be1b70>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be2f20>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0220>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0b80>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e46d0>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+127.0.0.1 - - [12/Oct/2026 23:00:34] "GET /api/brief HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:34] "POST /api/brief/answer HTTP/1.1" 400 -
+.127.0.0.1 - - [12/Oct/2026 23:00:34] "GET /api/brief HTTP/1.1" 200 -
+./app/bridge/context_memory.py:757: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be16c0>
+  linked = {r['related_id'] for r in db.execute("SELECT related_id FROM decision_links WHERE decision_id=? AND kind IN ('derived','depends')", (current_id,))}
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/context_memory.py:757: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be1b70>
+  linked = {r['related_id'] for r in db.execute("SELECT related_id FROM decision_links WHERE decision_id=? AND kind IN ('derived','depends')", (current_id,))}
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/context_memory.py:757: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be1210>
+  linked = {r['related_id'] for r in db.execute("SELECT related_id FROM decision_links WHERE decision_id=? AND kind IN ('derived','depends')", (current_id,))}
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/context_memory.py:757: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0220>
+  linked = {r['related_id'] for r in db.execute("SELECT related_id FROM decision_links WHERE decision_id=? AND kind IN ('derived','depends')", (current_id,))}
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/context_memory.py:757: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0ef20>
+  linked = {r['related_id'] for r in db.execute("SELECT related_id FROM decision_links WHERE decision_id=? AND kind IN ('derived','depends')", (current_id,))}
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+127.0.0.1 - - [12/Oct/2026 23:00:35] "GET /api/brief HTTP/1.1" 401 -
+.127.0.0.1 - - [12/Oct/2026 23:00:36] "GET /api/brief HTTP/1.1" 401 -
+127.0.0.1 - - [12/Oct/2026 23:00:36] "POST /api/brief/note HTTP/1.1" 401 -
+./app/bridge/approval_scope.py:69: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be2f20>
+  return all(safe(item) for item in value)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/approval_scope.py:69: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83601c60>
+  return all(safe(item) for item in value)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/approval_scope.py:69: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0220>
+  return all(safe(item) for item in value)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/approval_scope.py:69: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be16c0>
+  return all(safe(item) for item in value)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/approval_scope.py:69: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e4c70>
+  return all(safe(item) for item in value)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+127.0.0.1 - - [12/Oct/2026 23:00:37] "GET /api/brief HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:37] "GET /api/brief HTTP/1.1" 401 -
+.127.0.0.1 - - [12/Oct/2026 23:00:38] "GET /api/brief HTTP/1.1" 401 -
+127.0.0.1 - - [12/Oct/2026 23:00:38] "GET /api/brief HTTP/1.1" 401 -
+127.0.0.1 - - [12/Oct/2026 23:00:38] "GET /api/brief HTTP/1.1" 401 -
+127.0.0.1 - - [12/Oct/2026 23:00:38] "GET /api/brief HTTP/1.1" 401 -
+127.0.0.1 - - [12/Oct/2026 23:00:38] "GET /api/brief HTTP/1.1" 401 -
+127.0.0.1 - - [12/Oct/2026 23:00:38] "GET /api/brief HTTP/1.1" 401 -
+./app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83601c60>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0b80>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0ef20>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be1b70>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e5300>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e4c70>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e55d0>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+127.0.0.1 - - [12/Oct/2026 23:00:38] "GET /brief HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:38] "GET /brief.js HTTP/1.1" 200 -
+.127.0.0.1 - - [12/Oct/2026 23:00:39] "GET /api/brief HTTP/1.1" 200 -
+./app/bridge/graph.py:1014: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e5990>
+  return self._sentinel.execute("PRAGMA data_version").fetchone()[0]
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+127.0.0.1 - - [12/Oct/2026 23:00:40] "GET /api/brief?token=[redacted] HTTP/1.1" 401 -
+127.0.0.1 - - [12/Oct/2026 23:00:40] "GET /api/brief?link=[redacted] HTTP/1.1" 401 -
+127.0.0.1 - - [12/Oct/2026 23:00:40] "GET /api/brief?X-Raven-Link=[redacted] HTTP/1.1" 401 -
+127.0.0.1 - - [12/Oct/2026 23:00:40] "GET /api/brief HTTP/1.1" 401 -
+127.0.0.1 - - [12/Oct/2026 23:00:40] "POST /api/brief/note HTTP/1.1" 401 -
+.../app/bridge/graph.py:1016: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0f40>
+  def memo(self, repo: str, name: str, key_extra: Any, source: Callable[[], Any],
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1016: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0220>
+  def memo(self, repo: str, name: str, key_extra: Any, source: Callable[[], Any],
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1016: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be16c0>
+  def memo(self, repo: str, name: str, key_extra: Any, source: Callable[[], Any],
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:1016: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e5b70>
+  def memo(self, repo: str, name: str, key_extra: Any, source: Callable[[], Any],
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.../usr/local/lib/python3.13/json/encoder.py:254: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0ef20>
+  _iterencode = c_make_encoder(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/local/lib/python3.13/json/encoder.py:254: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0f40>
+  _iterencode = c_make_encoder(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/local/lib/python3.13/json/encoder.py:254: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0220>
+  _iterencode = c_make_encoder(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/local/lib/python3.13/json/encoder.py:254: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e5990>
+  _iterencode = c_make_encoder(
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+...<string>:2: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0ef20>
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<string>:2: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be16c0>
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<string>:2: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0220>
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<string>:2: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e5990>
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.../app/bridge/graph.py:783: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0ef20>
+  items = raw.items()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:783: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be1b70>
+  items = raw.items()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:783: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0220>
+  items = raw.items()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/graph.py:783: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e6890>
+  items = raw.items()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+127.0.0.1 - - [12/Oct/2026 23:00:43] "GET /api/brief HTTP/1.1" 401 -
+127.0.0.1 - - [12/Oct/2026 23:00:43] "POST /api/brief/resend HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:43] "GET /api/brief HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:43] "POST /api/brief/resend HTTP/1.1" 200 -
+.127.0.0.1 - - [12/Oct/2026 23:00:44] "POST /api/brief/resend HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:44] "POST /api/brief/resend HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:44] "POST /api/brief/resend HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:44] "POST /api/brief/resend HTTP/1.1" 200 -
+.127.0.0.1 - - [12/Oct/2026 23:00:44] "POST /api/brief/resend HTTP/1.1" 200 -
+.127.0.0.1 - - [12/Oct/2026 23:00:45] "POST /api/brief/note HTTP/1.1" 200 -
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff84b03c40>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff836032e0>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be33d0>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e6b0>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83a0e5c0>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be3e20>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0a90>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e48b0>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83602110>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be1a80>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e4130>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e53f0>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e4220>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e58a0>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be35b0>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e6020>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff83601c60>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e62f0>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e5e40>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e67a0>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e6110>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e6c50>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e64d0>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be0f40>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff82be16c0>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e65c0>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e72e0>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e74c0>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e7100>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e6f20>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e7790>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e7c40>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/fact_revisions.py:39: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff8210c400>
+  events[item['decision_id']].append({'id': item['id'], 'kind': item['kind']})
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+127.0.0.1 - - [12/Oct/2026 23:00:45] "GET /api/brief HTTP/1.1" 200 -
+.127.0.0.1 - - [12/Oct/2026 23:00:45] "POST /api/brief/note HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:45] "POST /api/brief/note HTTP/1.1" 400 -
+.127.0.0.1 - - [12/Oct/2026 23:00:46] "POST /api/brief/note HTTP/1.1" 415 -
+127.0.0.1 - - [12/Oct/2026 23:00:46] "POST /api/brief/note HTTP/1.1" 403 -
+.127.0.0.1 - - [12/Oct/2026 23:00:47] "POST /api/tasks/9c91bccfae7d/link HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:47] "GET /api/brief HTTP/1.1" 200 -
+./app/bridge/ladder.py:1550: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e7c40>
+  scored = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in raw),
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/ladder.py:1550: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e7790>
+  scored = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in raw),
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/ladder.py:1550: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e74c0>
+  scored = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in raw),
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/ladder.py:1550: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e7b50>
+  scored = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in raw),
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/ladder.py:1550: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e6f20>
+  scored = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in raw),
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/ladder.py:1550: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e5990>
+  scored = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in raw),
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/ladder.py:1550: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e71f0>
+  scored = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in raw),
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/ladder.py:1550: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e6d40>
+  scored = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in raw),
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/ladder.py:1550: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e67a0>
+  scored = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in raw),
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/app/bridge/ladder.py:1550: ResourceWarning: unclosed database in <sqlite3.Connection object at 0xffff821e5e40>
+  scored = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in raw),
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+127.0.0.1 - - [12/Oct/2026 23:00:48] "POST /api/tasks/cccb20bfadb7/link HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:48] "GET /api/brief HTTP/1.1" 200 -
+.127.0.0.1 - - [12/Oct/2026 23:00:48] "POST /api/settings HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 23:00:48] "POST /api/settings HTTP/1.1" 400 -
+127.0.0.1 - - [12/Oct/2026 23:00:48] "POST /api/settings HTTP/1.1" 400 -
+127.0.0.1 - - [12/Oct/2026 23:00:48] "POST /api/settings HTTP/1.1" 403 -
+127.0.0.1 - - [12/Oct/2026 23:00:48] "GET /api/people HTTP/1.1" 200 -
+.127.0.0.1 - - [12/Oct/2026 23:00:49] "POST /api/tasks/31fa9083e94e/link HTTP/1.1" 400 -
+127.0.0.1 - - [12/Oct/2026 23:00:49] "POST /api/tasks/31fa9083e94e/link HTTP/1.1" 400 -
+127.0.0.1 - - [12/Oct/2026 23:00:49] "POST /api/tasks/no-such-task/link HTTP/1.1" 400 -
+127.0.0.1 - - [12/Oct/2026 23:00:49] "POST /api/tasks/31fa9083e94e/link HTTP/1.1" 403 -
+127.0.0.1 - - [12/Oct/2026 23:00:49] "POST /api/tasks/31fa9083e94e/link HTTP/1.1" 403 -
+127.0.0.1 - - [12/Oct/2026 23:00:49] "POST /api/tasks/31fa9083e94e/link HTTP/1.1" 403 -
+127.0.0.1 - - [12/Oct/2026 23:00:49] "POST /api/tasks/31fa9083e94e/link HTTP/1.1" 400 -
+.
+----------------------------------------------------------------------
+Ran 76 tests in 40.944s
+
+OK

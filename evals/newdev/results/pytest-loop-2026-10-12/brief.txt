@@ -1,0 +1,1 @@
+Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML reports, while keeping existing runs compatible. Make the behavior predictable for Unicode and failed tests, keep useful diagnostics, and document it for teams configuring CI. Please implement and test the change.

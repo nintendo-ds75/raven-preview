@@ -1,0 +1,11 @@
+{
+  "canonical_diff_bytes": 14350,
+  "submitted_bytes": 14350,
+  "same_canonical_bytes": false,
+  "same_file_sections": true,
+  "matches_host_capture": true,
+  "hash_supplied": "bb20337feefdc3e3e5e63de8d73ce0f08e37deef1278126b6866dc5b4a8276ed",
+  "hash_matches": true,
+  "canonical_sha256": "29ce4e1b7cc0e5d0dc423305ec4602f4f3c60ae19ebeb16ace1a484a0f78a4fc",
+  "submitted_sha256": "bb20337feefdc3e3e5e63de8d73ce0f08e37deef1278126b6866dc5b4a8276ed"
+}

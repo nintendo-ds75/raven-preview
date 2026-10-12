@@ -1,0 +1,52 @@
+{
+  "raven_revision": "4746708bbd8c85f2d9d970520c24411f8401caf4",
+  "repo": "pytest-dev/pytest",
+  "independent_checks": {
+    "baseline": "9/18",
+    "before_human": "9/18",
+    "after_correction": "18/18",
+    "final": "18/18"
+  },
+  "pytest_junit": {
+    "passed": 144,
+    "skipped": 2
+  },
+  "raven_tests": {
+    "briefing": 76,
+    "proof": 27,
+    "postgres_isolated": 12,
+    "dom_wrappers": 2,
+    "existing_source_review_dom_cases": 31,
+    "ruff": "passed",
+    "full_suite_repeated": false
+  },
+  "live": {
+    "actual_claude_host": true,
+    "supervisor_real_resumes": 2,
+    "first_deliveries_matching_explicit_fixture_owner": "0/2",
+    "handoff_recoveries": "2/2",
+    "core_loop_outbound_slack_messages": 23,
+    "providers": "Slack/Jira/docs simulated; git, inference, coding host, Docker and PostgreSQL real"
+  },
+  "proof": {
+    "exact_submitted_patch_sha256": "bb20337feefdc3e3e5e63de8d73ce0f08e37deef1278126b6866dc5b4a8276ed",
+    "bytes": 14350,
+    "immutable_bundle_preserved_after_reuse_and_restart": true,
+    "false_stale_after_later_reuse_fixed": true,
+    "review_attempt_seconds": [
+      140.2,
+      121.1
+    ]
+  },
+  "publication": {
+    "credential_and_path_scan": "passed",
+    "issues": [],
+    "json_files_parsed": true,
+    "public_patch_hash_matches_private": true,
+    "audit_chain": {
+      "valid": true,
+      "head": "263368cb8b7bbc988fd76f13a6e0e6a28a5b3c79a03d5debec3adf43af9fb51e"
+    },
+    "copyright_notice": "upstream MIT notice intentionally preserved verbatim"
+  }
+}

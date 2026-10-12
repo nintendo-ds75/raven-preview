@@ -1,0 +1,654 @@
+{
+  "discovery_reviews": [
+    {
+      "review_id": "5cb3293f90e6464999aa95c426725fd0",
+      "phase": "finish",
+      "input_hash": "eeaaf168b37afdbb34755698faecae2697e6994fde80469e29b7ef02c39d8aa8",
+      "status": "complete",
+      "summary": "Both required decisions (behavior by Lina Imani, docs/changelog by Owen Vale) are approved and the diff matches their verbatim answers: option name junit_output_limit, 0=unlimited, head-only truncation to N Unicode code points per raw section before headers/escaping, fixed marker text, uniform application to pass/fail tests, failure/error text untouched, negative/non-integer rejected via UsageError, and docs/changelog match the approved wording including the clarification that this is not a byte/file-size cap. Tests (144 passed, 2 skipped) cover default-disabled, truncation+marker, unicode safety, failure diagnostics untouched, and both invalid-value rejections. No outstanding unresolved decisions found (the junitxml.py trim-everything-to-65536-bytes alternative was already cancelled). Remaining gaps are code-level facts the agent could verify itself rather than open policy questions.",
+      "findings": [
+        {
+          "id": "ecac5bc65fe9a023",
+          "kind": "investigate",
+          "question": "Is _NodeReporter's output-truncation code path (the block adding `_truncate_content` calls) invoked exactly once per test report, or could it run multiple times across setup/call/teardown phases, causing an already-truncated section (including its marker text) to be re-sliced and produce a nested/duplicate truncation marker?",
+          "why": "The diff only shows one call site truncating content_out/content_log/content_err; if this helper is invoked per-phase rather than once on the final merged content, repeated truncation could corrupt or duplicate the marker, which is not covered by the current tests (tests only check single-phase stdout/stderr).",
+          "basis": [
+            "decision:d52b4fae4a70"
+          ],
+          "paths": [],
+          "disposition": {
+            "decision_id": "",
+            "reason": "Verified by running actual pytest (not just reading code): write_captured_output can be called up to twice per test (once at report.when==\"call\" via the `if not self.log_passing_tests: reporter.write_captured_output(report)` branch in pytest_runtest_logreport, src/_pytest/junitxml.py ~pytest_runtest_logreport, and once unconditionally at report.when==\"teardown\"), but the teardown call is always guarded by `if not self.xml.log_passing_tests and report.passed: return` at the top of write_captured_output (src/_pytest/junitxml.py write_captured_output). Empirically (python -m pytest --junitxml, junit_log_passing_tests=False, a failing test with an autouse fixture printing at teardown): only ONE <system-out> element is ever written, with no duplicate/nested truncation marker, in both the log_passing_tests=False (only call-phase write fires) and log_passing_tests=True (only teardown-phase write fires, using report.capstdout which is pytest's own pre-existing cumulative concatenation of all phases' \"Captured stdout *\" sections, unrelated to this change) cases. _truncate_content is therefore invoked at most once per section per test, never on already-truncated content, so no nested/duplicate marker is possible. No code change or decision needed."
+          }
+        },
+        {
+          "id": "8ebfc5a23bd35f0d",
+          "kind": "investigate",
+          "question": "Does `.. versionadded:: 8.5` in reference.rst correctly match the actual next pytest release version being targeted by this change?",
+          "why": "An incorrect version tag in the confval docs could mislead users about when the option becomes available; this is a factual detail the agent can confirm against the repo's current version/changelog state rather than a design decision.",
+          "basis": [
+            "decision:76a710754fb5"
+          ],
+          "paths": [],
+          "unverified_paths": [
+            "doc/en/reference/reference.rst"
+          ],
+          "disposition": {
+            "decision_id": "",
+            "reason": "Verified: src/_pytest/_version.py reports __version__ = '8.5.0.dev0', confirming 8.5 is the correct next-release version for the .. versionadded:: 8.5 directive added to doc/en/reference/reference.rst. No change needed."
+          }
+        }
+      ],
+      "model_pending": false,
+      "unaddressed": [],
+      "notice": "Suggestions require host investigation. They do not authorize work or prove complete decision coverage."
+    },
+    {
+      "review_id": "0912a1e612e1408a9c3447f645aa3ca5",
+      "phase": "finish",
+      "input_hash": "e7646a107896f258f799a7c2ad871b1af06e982dfded3fff3ef1b01bb4fca638",
+      "status": "complete",
+      "summary": "The diff implements a reasonable opt-in truncation feature with tests and docs, but it ships the exact configuration shape (option name, character-based units, zero-means-disabled semantics, and the truncation marker text) without any evidence that the designated decision-owner reviewed or approved these specifics, even though the retrieved decision notes explicitly require that sign-off before shipping.",
+      "findings": [
+        {
+          "id": "01c73a308a7eac73",
+          "kind": "judgment",
+          "question": "Has Lina Imani actually confirmed the limit units (characters), the meaning of 0 (disabled), the truncation marker text/format, and the exact ini option name (junit_logging_truncation_limit) before this change ships?",
+          "why": "The compatibility decision notes explicitly state 'Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping' and that 'the exact setting name and limit units have not been approved yet.' The implementation unilaterally picks all of these (character-based limit, default '0' = disabled, a custom '...[N chars truncated]...' marker, and the name junit_logging_truncation_limit) with no evidence in the diff or task notes that this required approval was obtained, only a tracking ticket marked Done whose resolution doesn't confirm the actual design was reviewed.",
+          "basis": [
+            "source:e71e37c68b2841ba827f1e54b79f60e8:c271bb7a106449538e10685d6fa9ce81",
+            "source:e1655ec2cd8d407881ef0bc4318a0f0b:2c05ef1ab1d4405cafbf65e6c0341149",
+            "source:5fd595c933b941789464059f9dd99ba8:091c34263914408997e38ffb0709129b"
+          ],
+          "paths": [],
+          "disposition": {
+            "decision_id": "d52b4fae4a70",
+            "reason": "Lina Imani (reporting-behavior owner) signed off on node d52b4fae4a70 with an explicit, different design than first shipped (renamed to junit_output_limit, head-only truncation, fixed marker, uniform pass/fail application). Implementation, tests and docs were revised to match her answer exactly."
+          }
+        }
+      ],
+      "model_pending": false,
+      "unaddressed": [],
+      "notice": "Suggestions require host investigation. They do not authorize work or prove complete decision coverage."
+    },
+    {
+      "review_id": "957665650e7e4eff9149d42f69b2b03d",
+      "phase": "investigation",
+      "input_hash": "d4f7d4fd4e34efcc90031b23d74965d99af2bf8a94da7cc914ae651ca08b2238",
+      "status": "complete",
+      "summary": "The agent implemented and tested an opt-in truncation feature with reasonable unicode-safety and default-disabled design, but it proceeds to lock in several decisions (setting name, units, zero semantics, truncation marker, and truncation applying to failing-test output) that the registered requirements explicitly reserve for owner sign-off, without evidence that sign-off was obtained.",
+      "findings": [
+        {
+          "id": "5f29f0a31c48ffbb",
+          "kind": "judgment",
+          "question": "Has Lina Imani (owner of reporting behavior decisions) actually confirmed the chosen setting name `junit_logging_truncation_limit`, the character-based units, the zero=unlimited semantics, and the head+tail `[N chars truncated]` marker format before this ships?",
+          "why": "The compatibility requirement explicitly states 'the exact setting name and limit units have not been approved yet' and that Lina Imani must confirm these before shipping, yet the investigation shows the agent unilaterally chose all of these without any recorded approval.",
+          "basis": [
+            "source:e1655ec2cd8d407881ef0bc4318a0f0b:2c05ef1ab1d4405cafbf65e6c0341149",
+            "source:5fd595c933b941789464059f9dd99ba8:091c34263914408997e38ffb0709129b",
+            "source:e71e37c68b2841ba827f1e54b79f60e8:c271bb7a106449538e10685d6fa9ce81"
+          ],
+          "paths": [
+            "src/_pytest/junitxml.py"
+          ],
+          "disposition": {
+            "decision_id": "d52b4fae4a70",
+            "reason": "Lina Imani signed off on d52b4fae4a70, rejecting the original unilateral design and specifying junit_output_limit, char units, 0=unlimited, head-only truncation with a fixed marker. Implementation/tests/docs now match her answer verbatim."
+          }
+        },
+        {
+          "id": "7f56b3900c7b17f8",
+          "kind": "judgment",
+          "question": "Does the requirement 'Failure and error diagnostics must not be truncated by an output limit' mean captured stdout/stderr/log output attached to failing tests must remain untruncated, or does it only cover the `<failure>`/`<error>` traceback text itself? The agent explicitly applied truncation identically to failing and passing tests' captured output.",
+          "why": "The agent's own rationale ('Truncation applies identically to passing and failing tests... since the task only asked for predictable behavior... not for them to bypass the limit') directly conflicts with the plain reading of the stated compatibility requirement that failure/error diagnostics must not be truncated, and this is exactly the kind of behavioral nuance the ticket reserves for the reporting-behavior owner to confirm.",
+          "basis": [
+            "source:e1655ec2cd8d407881ef0bc4318a0f0b:2c05ef1ab1d4405cafbf65e6c0341149",
+            "source:5fd595c933b941789464059f9dd99ba8:091c34263914408997e38ffb0709129b"
+          ],
+          "paths": [
+            "src/_pytest/junitxml.py",
+            "testing/test_junitxml.py"
+          ],
+          "disposition": {
+            "decision_id": "d52b4fae4a70",
+            "reason": "Resolved by Lina Imani's answer: the limit now applies equally to passing and failing tests' captured stdout/stderr/log streams (the ambiguous uniform-application choice was correct), while the <failure>/<error> diagnostic text itself (not the captured streams) remains fully untouched by _truncate_content, matching her explicit instruction to preserve complete failure/error traceback diagnostics."
+          }
+        },
+        {
+          "id": "f704288b53cdb988",
+          "kind": "judgment",
+          "question": "Was Owen Vale (owner of configuration documentation and changelog) consulted or did he sign off on the new confval entry and changelog fragment before they were authored by the agent?",
+          "why": "The requirement explicitly assigns ownership of documentation/changelog to Owen Vale, but the agent authored doc/en/reference/reference.rst and changelog/13802.feature.rst unilaterally with no indication of review by the named owner.",
+          "basis": [
+            "source:e1655ec2cd8d407881ef0bc4318a0f0b:2c05ef1ab1d4405cafbf65e6c0341149",
+            "source:327f6f43481740b1b08fe5ab04e7b91b:fb62f2458c3d416dbdb4d38d7cb35556"
+          ],
+          "paths": [
+            "doc/en/reference/reference.rst",
+            "changelog/13802.feature.rst"
+          ],
+          "disposition": {
+            "decision_id": "d52b4fae4a70",
+            "reason": "Follow-up node 76a710754fb5 (adopted under d52b4fae4a70) routes the documentation/changelog confirmation to the owner the ownership graph resolves for doc/en and changelog/ paths; it is pending human sign-off and task finish is correctly blocked on it."
+          }
+        }
+      ],
+      "model_pending": false,
+      "unaddressed": [],
+      "notice": "Suggestions require host investigation. They do not authorize work or prove complete decision coverage."
+    }
+  ],
+  "source_anchors": [],
+  "work_item_association": {
+    "declared": "",
+    "status": "undeclared",
+    "record_ids": [],
+    "links": [],
+    "historical": true,
+    "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+  },
+  "task_id": "1cfa3e5d9198",
+  "title": "Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML reports, while keeping existing runs compatible. Make the behavior predictable for Unicode and failed tests, keep useful diagnostics, and document it for teams configuring CI. Please im",
+  "goal": "Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML reports, while keeping existing runs compatible. Make the behavior predictable for Unicode and failed tests, keep useful diagnostics, and document it for teams configuring CI. Please implement and test the change.",
+  "repo": "pytest-dev/pytest",
+  "requester": "Engineer 177b2c",
+  "facts": {},
+  "status": "completed",
+  "verdict": "engage",
+  "verdict_why": "the task speaks of opt-in, in \"Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML…\", which is a call for Engineer 3c43b9 as a first contact; ask them to confirm who decides or refer (the model agrees: This task introduces a new opt-in configuration option that changes CI report behavior and upload sizes—a user-facing tradeoff affecting how teams configure pytest and manage their CI infrastructure that Engineer 3c43b9 should confirm ownership over.)",
+  "counts": {
+    "answered": 2,
+    "adopted": 1,
+    "unrouted": 0,
+    "needs_review": 0,
+    "parent_changed_after": 0,
+    "signoff_required": 0,
+    "blocking": 0
+  },
+  "needs_review": false,
+  "model_pending": false,
+  "nodes": [
+    {
+      "node_id": "d52b4fae4a70",
+      "task_id": "1cfa3e5d9198",
+      "parent_id": "",
+      "depth": 0,
+      "client_ref": "",
+      "origin": "agent",
+      "question": "Confirm the JUnit XML captured-output truncation design before shipping: ini option name `junit_logging_truncation_limit`, limit units = Unicode characters (not bytes), 0 = disabled (unlimited, backward compatible), and truncation marker text `\\n...[N chars truncated]...\\n` placed in the middle (keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself).",
+      "status": "answered",
+      "kind": "new",
+      "answer": "I want a few changes. Call the ini setting junit_output_limit. Default 0 means unlimited. Positive values keep the first N Unicode code points of each raw captured stdout, stderr and log section independently, before adding headers or XML escaping. If cut, append a newline, [... output truncated ...], then a newline; the marker and header do not count toward N. No tail retention. Apply this equally to passing and failing tests' captured streams. Preserve the complete failure/error traceback diagnostics, and preserve existing junit_logging and junit_log_passing_tests filtering. Reject negative and non-integer settings with a clear configuration error. This keeps CI output bounded without hiding why a test failed.",
+      "prediction": "",
+      "evidence": "",
+      "owner": "Lina Imani",
+      "source": "human",
+      "source_id": "",
+      "source_revision": "",
+      "routing_reason": "Referred to Lina Imani by Engineer 3c43b9",
+      "owner_evidence": "handed on by Engineer 3c43b9: \"Actually, not me <@U0LINA> just this one. Lina owns this reporting policy.\"",
+      "answered_by": "Lina Imani",
+      "rationale": "No separate rationale recorded; any reason is included in the complete authored answer.",
+      "signoff": "signed",
+      "signed_by": "Lina Imani",
+      "brief": "",
+      "path": "unknown",
+      "category": "policy",
+      "created_at": "2026-10-12T22:51:55.375042+00:00",
+      "updated_at": "2026-10-12T22:56:16.511385+00:00",
+      "needs_review": false,
+      "review_reason": "",
+      "authorized": true,
+      "blocking": false,
+      "duplicate_of": "",
+      "reusable": false,
+      "rule_conditions": "",
+      "rule_expires": "",
+      "rule_scope": "",
+      "facts": {},
+      "required_signers": [],
+      "signatures": [
+        "Lina Imani"
+      ],
+      "historical_signatures": [],
+      "followup_required": false,
+      "partial": false,
+      "model_pending": false,
+      "options": [
+        "Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format)",
+        "Approve the overall approach but require a different option name",
+        "Approve but require byte-based units instead of characters",
+        "Approve but require a different truncation strategy (e.g. tail-only, not head+tail)",
+        "Reject: wants a different approach entirely"
+      ],
+      "next": "act on the answer from Lina Imani; follow-up questions they added are children of this node in bridge_get_tree",
+      "standing_grant": {
+        "recorded": false,
+        "state": "not_declared",
+        "scope": "",
+        "conditions": "",
+        "expires_at": "",
+        "granted_by": "",
+        "granted_at": "",
+        "ended_at": "",
+        "source_needs_review": false,
+        "source_provenance_uncertain": false,
+        "request_applicability": "not_evaluated_by_this_read",
+        "notice": "This decision declares no standing reuse grant of its own. Its current authorized/signoff result is separate and may be based on a source rule. Do not treat this decision as a new reusable rule; preserve its recorded answer and original context."
+      },
+      "fact_revision": "facts:5b32695f885affe204be784a58ff3449dd9d1362ff3b7be157c03a7bdffe72a2",
+      "sources": [],
+      "work_item_association": {
+        "declared": "",
+        "status": "undeclared",
+        "record_ids": [],
+        "links": [],
+        "historical": true,
+        "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+      },
+      "source_reuse_requires_review": false,
+      "source_provenance": "unknown",
+      "source_notice": "",
+      "related": [
+        {
+          "id": "76a710754fb5",
+          "kind": "derived",
+          "note": "Explicitly reviewed current human-source revision",
+          "source_decision_id": "d52b4fae4a70",
+          "source_version_id": "f84aafa6cc2d4a83ba051b49d7c7ec46",
+          "decision_id": "76a710754fb5",
+          "decision_version_id": "be86f4c49702457a8c0f2b17bc9d28c2"
+        }
+      ],
+      "depends_on": [],
+      "dependents": [],
+      "parent_changed_after": false,
+      "children": [
+        {
+          "node_id": "b76cc17540a9",
+          "task_id": "1cfa3e5d9198",
+          "parent_id": "d52b4fae4a70",
+          "depth": 1,
+          "client_ref": "",
+          "origin": "human",
+          "question": "Confirm the documentation and changelog for the new JUnit output option (junit_output_limit: default 0 = unlimited; positive values truncate captured stdout/stderr/log sections to first N Unicode code points independently, before headers/escaping; truncation appends newline + [... output truncated ...] + newline; marker and header do not count toward N; no tail retention; applies equally to passing and failing tests; preserves complete failure/error traceback diagnostics and existing junit_logging/junit_log_passing_tests filtering; rejects negative/non-integer settings).",
+          "status": "adopted",
+          "kind": "followup",
+          "answer": "",
+          "prediction": "",
+          "evidence": "",
+          "owner": "",
+          "source": "human",
+          "source_id": "",
+          "source_revision": "",
+          "routing_reason": "resolution ladder",
+          "owner_evidence": "",
+          "answered_by": "",
+          "rationale": "",
+          "signoff": "",
+          "signed_by": "",
+          "brief": "",
+          "path": "unknown",
+          "category": "policy",
+          "created_at": "2026-10-12T22:57:17.555728+00:00",
+          "updated_at": "2026-10-12T23:01:38.035916+00:00",
+          "needs_review": false,
+          "review_reason": "",
+          "authorized": false,
+          "blocking": false,
+          "duplicate_of": "",
+          "reusable": false,
+          "rule_conditions": "",
+          "rule_expires": "",
+          "rule_scope": "",
+          "facts": {},
+          "required_signers": [],
+          "signatures": [],
+          "historical_signatures": [],
+          "followup_required": true,
+          "partial": false,
+          "model_pending": false,
+          "options": [],
+          "next": " Read parent node d52b4fae4a70 (its current context is here or in bridge_get_tree) before adding more questions; reconcile what its answer already covers. Parent context does not authorize this child or transfer its owner's authority.",
+          "standing_grant": {
+            "recorded": false,
+            "state": "not_declared",
+            "scope": "",
+            "conditions": "",
+            "expires_at": "",
+            "granted_by": "",
+            "granted_at": "",
+            "ended_at": "",
+            "source_needs_review": false,
+            "source_provenance_uncertain": false,
+            "request_applicability": "not_evaluated_by_this_read",
+            "notice": "This decision declares no standing reuse grant of its own. Its current authorized/signoff result is separate and may be based on a source rule. Do not treat this decision as a new reusable rule; preserve its recorded answer and original context."
+          },
+          "fact_revision": "facts:81a4c4734c75be360a91fc4cf44acdb242e1d32ca9bd0b7f3f2cdf04a5580776",
+          "sources": [],
+          "work_item_association": {
+            "declared": "",
+            "status": "undeclared",
+            "record_ids": [],
+            "links": [],
+            "historical": true,
+            "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+          },
+          "source_reuse_requires_review": false,
+          "source_provenance": "unknown",
+          "source_notice": "",
+          "parent": {
+            "node_id": "d52b4fae4a70",
+            "status": "answered",
+            "authorized": true,
+            "needs_review": false,
+            "updated_at": "2026-10-12T22:56:16.511385+00:00"
+          },
+          "related": [],
+          "depends_on": [],
+          "dependents": [],
+          "parent_changed_after": false,
+          "children": []
+        },
+        {
+          "node_id": "76a710754fb5",
+          "task_id": "1cfa3e5d9198",
+          "parent_id": "d52b4fae4a70",
+          "depth": 1,
+          "client_ref": "",
+          "origin": "human",
+          "question": "Confirm the documentation and changelog for the new JUnit output option (junit_output_limit: default 0 = unlimited; positive values truncate captured stdout/stderr/log sections to first N Unicode code points independently, before headers/escaping; truncation appends newline + [... output truncated ...] + newline; marker and header do not count toward N; no tail retention; applies equally to passing and failing tests; preserves complete failure/error traceback diagnostics and existing junit_logging/junit_log_passing_tests filtering; rejects negative/non-integer settings).",
+          "status": "answered",
+          "kind": "new",
+          "answer": "The docs should include a reference entry for junit_output_limit and a feature changelog fragment. Show an ini example with junit_logging=all and junit_output_limit=2000. Explain that the limit is per raw captured section in Unicode characters, not a total XML file-size or byte cap; headers, the visible truncation marker, and full failure tracebacks can exceed it. Mention zero is unlimited and the existing passing-test filter still applies. That is the release documentation I approve.",
+          "prediction": "",
+          "evidence": "",
+          "owner": "Owen Vale",
+          "source": "human",
+          "source_id": "",
+          "source_revision": "",
+          "routing_reason": "Referred to Owen Vale by Lina Imani",
+          "owner_evidence": "handed on by Lina Imani: \"Not me <@U0OWEN> just this one. I asked for Owen Vale to make the docs decision, not for me to answer it.\"",
+          "answered_by": "Owen Vale",
+          "rationale": "No separate rationale recorded; any reason is included in the complete authored answer.",
+          "signoff": "signed",
+          "signed_by": "Owen Vale",
+          "brief": "",
+          "path": "unknown",
+          "category": "policy",
+          "created_at": "2026-10-12T23:01:26.366276+00:00",
+          "updated_at": "2026-10-12T23:05:10.367224+00:00",
+          "needs_review": false,
+          "review_reason": "",
+          "authorized": true,
+          "blocking": false,
+          "duplicate_of": "",
+          "reusable": false,
+          "rule_conditions": "",
+          "rule_expires": "",
+          "rule_scope": "",
+          "facts": {},
+          "required_signers": [],
+          "signatures": [
+            "Owen Vale"
+          ],
+          "historical_signatures": [],
+          "followup_required": false,
+          "partial": false,
+          "model_pending": false,
+          "options": [],
+          "next": "act on the answer from Owen Vale; follow-up questions they added are children of this node in bridge_get_tree Read parent node d52b4fae4a70 (its current context is here or in bridge_get_tree) before adding more questions; reconcile what its answer already covers. Parent context does not authorize this child or transfer its owner's authority.",
+          "standing_grant": {
+            "recorded": false,
+            "state": "not_declared",
+            "scope": "",
+            "conditions": "",
+            "expires_at": "",
+            "granted_by": "",
+            "granted_at": "",
+            "ended_at": "",
+            "source_needs_review": false,
+            "source_provenance_uncertain": false,
+            "request_applicability": "not_evaluated_by_this_read",
+            "notice": "This decision declares no standing reuse grant of its own. Its current authorized/signoff result is separate and may be based on a source rule. Do not treat this decision as a new reusable rule; preserve its recorded answer and original context."
+          },
+          "fact_revision": "facts:2eabc5ac950b53446ab96b4765aeca80de0784a1bd0b1b6e26269bad9c302bbb",
+          "sources": [],
+          "work_item_association": {
+            "declared": "",
+            "status": "undeclared",
+            "record_ids": [],
+            "links": [],
+            "historical": true,
+            "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+          },
+          "source_reuse_requires_review": false,
+          "source_provenance": "unknown",
+          "source_notice": "",
+          "parent": {
+            "node_id": "d52b4fae4a70",
+            "status": "answered",
+            "authorized": true,
+            "needs_review": false,
+            "updated_at": "2026-10-12T22:56:16.511385+00:00"
+          },
+          "related": [
+            {
+              "id": "d52b4fae4a70",
+              "kind": "derived",
+              "note": "Explicitly reviewed current human-source revision",
+              "source_decision_id": "d52b4fae4a70",
+              "source_version_id": "f84aafa6cc2d4a83ba051b49d7c7ec46",
+              "decision_id": "76a710754fb5",
+              "decision_version_id": "be86f4c49702457a8c0f2b17bc9d28c2"
+            }
+          ],
+          "depends_on": [],
+          "dependents": [],
+          "parent_changed_after": false,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "followups": [],
+  "observed_at": "2026-10-12T23:17:54.257199+00:00",
+  "observed_revision": {
+    "76a710754fb5": {
+      "max_event_id": 3266,
+      "event_count": 2
+    },
+    "b76cc17540a9": {
+      "max_event_id": 3229,
+      "event_count": 1
+    },
+    "d52b4fae4a70": {
+      "max_event_id": 3225,
+      "event_count": 2
+    }
+  },
+  "notes": [],
+  "scope_clarifications": [],
+  "next": "no node waits on anyone",
+  "review": {
+    "id": "d26acb26ca23",
+    "status": "done",
+    "follows": [
+      {
+        "node_id": "d52b4fae4a70",
+        "question": "Confirm the JUnit XML captured-output truncation design before shipping: ini option name `junit_logging_truncation_limit`, limit units = Unicode characters (not bytes), 0 = disabled (unlimited, backward compatible), and truncation marker text `\\n...[N chars truncated]...\\n` placed in the middle (keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself).",
+        "requirements": [
+          {
+            "at": "\"junit_output_limit\",",
+            "found": "honored",
+            "kind": "must",
+            "needs": "ini option named junit_output_limit",
+            "state": "ok"
+          },
+          {
+            "at": "default=\"0\",",
+            "found": "honored",
+            "kind": "must",
+            "needs": "default 0 means unlimited",
+            "state": "ok"
+          },
+          {
+            "at": "content_out = _truncate_content(content_out, limit)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "positive values keep first N Unicode code points of stdout, stderr, log independently",
+            "state": "ok"
+          },
+          {
+            "at": "content_log = _truncate_content(content_log, limit)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "truncation applied before headers/XML escaping",
+            "state": "ok"
+          },
+          {
+            "at": "_TRUNCATION_MARKER = \"\\n[... output truncated ...]\\n\"",
+            "found": "honored",
+            "kind": "must",
+            "needs": "append newline, [... output truncated ...], newline marker",
+            "state": "ok"
+          },
+          {
+            "at": "return content[:limit] + _TRUNCATION_MARKER",
+            "found": "honored",
+            "kind": "must",
+            "needs": "no tail retention, only head kept",
+            "state": "ok"
+          },
+          {
+            "at": "return content[:limit] + _TRUNCATION_MARKER",
+            "found": "honored",
+            "kind": "must",
+            "needs": "marker and header do not count toward N",
+            "state": "ok"
+          },
+          {
+            "at": "content_err = _truncate_content(content_err, limit)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "apply equally to passing and failing tests' captured streams",
+            "state": "ok"
+          },
+          {
+            "at": "limit = self.xml.output_limit",
+            "found": "honored",
+            "kind": "must",
+            "needs": "preserve complete failure/error traceback diagnostics",
+            "state": "ok"
+          },
+          {
+            "at": "if self.xml.logging in [\"log\", \"all\"]:",
+            "found": "honored",
+            "kind": "must",
+            "needs": "preserve existing junit_logging and junit_log_passing_tests filtering",
+            "state": "ok"
+          },
+          {
+            "at": "raise pytest.UsageError(",
+            "found": "honored",
+            "kind": "must",
+            "needs": "reject negative and non-integer settings with clear configuration error",
+            "state": "ok"
+          }
+        ],
+        "verdict": "follows",
+        "why": "All authorized requirements for junit_output_limit (naming, default, per-section unicode truncation, marker text, no tail, equal pass/fail handling, preserved failure text and filtering, and validation errors) are implemented as specified in the diff."
+      },
+      {
+        "node_id": "76a710754fb5",
+        "question": "Confirm the documentation and changelog for the new JUnit output option (junit_output_limit: default 0 = unlimited; positive values truncate captured stdout/stderr/log sections to first N Unicode code points independently, before headers/escaping; truncation appends newline + [... output truncated ...] + newline; marker and header do not count toward N; no tail retention; applies equally to passing and failing tests; preserves complete failure/error traceback diagnostics and existing junit_logging/junit_log_passing_tests filtering; rejects negative/non-integer settings).",
+        "requirements": [
+          {
+            "at": ".. confval:: junit_output_limit",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docs must include a confval reference entry for junit_output_limit",
+            "state": "ok"
+          },
+          {
+            "at": "Added a new :confval:`junit_output_limit` ini option (default ``0``, disabled)",
+            "found": "honored",
+            "kind": "must",
+            "needs": "A feature changelog fragment for junit_output_limit must exist",
+            "state": "ok"
+          },
+          {
+            "at": "junit_output_limit = 2000",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docs must show an ini example with junit_logging=all and junit_output_limit=2000",
+            "state": "ok"
+          },
+          {
+            "at": "If ``junit_logging != \"no\"``, limits the number of Unicode characters kept,",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docs must explain limit is per raw captured section counted in Unicode characters",
+            "state": "ok"
+          },
+          {
+            "at": "``<system-err>`` element or of the XML file: it only bounds each raw",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docs must explain this is not a total XML file-size or byte cap",
+            "state": "ok"
+          },
+          {
+            "at": "captured section before the header, truncation marker and full failure",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docs must explain headers can push final content past the limit (don't count toward N)",
+            "state": "ok"
+          },
+          {
+            "at": "captured section before the header, truncation marker and full failure",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docs must explain the visible truncation marker can push final content past the limit",
+            "state": "ok"
+          },
+          {
+            "at": "tracebacks are added, so the final written content can still exceed the",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docs must explain full failure tracebacks can push final content past the limit",
+            "state": "ok"
+          },
+          {
+            "at": "output, preserving the behavior from previous pytest versions (zero means",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docs must mention zero means unlimited",
+            "state": "ok"
+          },
+          {
+            "at": "and ``junit_log_passing_tests`` filtering keep working unchanged.",
+            "found": "honored",
+            "kind": "must",
+            "needs": "Docs must mention existing junit_log_passing_tests filter still applies",
+            "state": "ok"
+          }
+        ],
+        "verdict": "follows",
+        "why": "All documentation and changelog requirements from this decision are present and match the authorized wording in reference.rst and the changelog fragment."
+      }
+    ],
+    "diff_hash": "bb20337feefdc3e3",
+    "seconds": 121.1,
+    "finished_at": "2026-10-12T23:15:54.343783+00:00",
+    "revisions": {
+      "76a710754fb5": "16a2a144791d17b3",
+      "d52b4fae4a70": "017fea61a9b16a8e"
+    },
+    "review_inputs": {
+      "76a710754fb5": "a9b9dfedf553211429bde46f8bff0fc3430fc266090a40f216041d4489a84de6",
+      "d52b4fae4a70": "d605acde0b6e32144775d7b848c3690c95824a680f44ab872390ce5432ebda16"
+    }
+  },
+  "read_acknowledged": true
+}

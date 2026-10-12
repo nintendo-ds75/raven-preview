@@ -1,0 +1,38 @@
+{
+  "repo": "pytest-dev/pytest",
+  "rev": "661682c25a9ff844a66ebd9b95d9925b8c4b65c8",
+  "cutoff_exclusive": "2025-10-12T00:00:00Z",
+  "window_start": "2024-10-12",
+  "human_commits": 328,
+  "authors": 83,
+  "authors_10_plus": 5,
+  "top_author_share": 0.18292682926829268,
+  "top_five_share": 0.600609756097561,
+  "ancestral_commits": 16850,
+  "source_remotes": [],
+  "host_remotes": [],
+  "oracle_outside_host_mount": true,
+  "historical_tag": {
+    "name": "8.5.0.dev0",
+    "commit": "5cb901b7d34097d192bb4a43763b52452adb689b"
+  },
+  "host_build_version": "8.5.0.dev0",
+  "frozen_pack_sha256": "b0d2373b3b1fef2214df35134f90440f6d1224cdbd42f42942e9336d748aaf6c",
+  "oracle_sha256_before_host": "5b38f9b8ca98b6d624fa61639e1060cb7f4ec7482b72efb597cb13b8300735c7",
+  "independent_test_sha256_before_host": "661a223f9c7905838aa38b07376b2e1adce10286d2181b7f48f6082426c9a343",
+  "baseline_tests": "135 passed, 2 skipped",
+  "baseline_oracle": "9/18 pass; limit and invalid-config behavior absent",
+  "fixture_directory_people": 355,
+  "inference_model": "claude-sonnet-5",
+  "Raven_revision": "4746708bbd8c85f2d9d970520c24411f8401caf4",
+  "host_refs": [
+    "661682c25a9ff844a66ebd9b95d9925b8c4b65c8 refs/heads/main",
+    "5cb901b7d34097d192bb4a43763b52452adb689b refs/tags/8.5.0.dev0"
+  ],
+  "host_fsck": "",
+  "source_refs": [
+    "661682c25a9ff844a66ebd9b95d9925b8c4b65c8 refs/heads/main",
+    "5cb901b7d34097d192bb4a43763b52452adb689b refs/tags/8.5.0.dev0"
+  ],
+  "source_fsck": ""
+}

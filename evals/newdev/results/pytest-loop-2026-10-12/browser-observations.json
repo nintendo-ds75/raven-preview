@@ -1,0 +1,21 @@
+{
+  "surface": "actual Codex in-app browser, accountless Slack recipient link",
+  "viewer": "Lina Imani",
+  "before_followup": "1 of 1 signed; complete answer and handoff history visible",
+  "after_required_followup_bug": "You’re done. Nothing on this task waits on anyone now.",
+  "corroboration": "Slack confirmed required follow-up and host received it; backend omitted suggested nodes from progress, UI omitted them from hero blockers",
+  "read_only": true,
+  "after_fix_and_restart": {
+    "headline": "You’re done. No recorded decision is waiting for a person.",
+    "progress": "2 of 2 signed",
+    "task_status": "Agent reported complete",
+    "visible": [
+      "both signed answers",
+      "original request",
+      "handoff and answer history",
+      "people involved",
+      "context discussion"
+    ],
+    "limit": "Pending required-follow-up rendering is regression-tested; this final live task had already adopted it."
+  }
+}

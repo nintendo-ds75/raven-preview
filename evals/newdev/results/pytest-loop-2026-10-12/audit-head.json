@@ -1,0 +1,6 @@
+{
+  "private_head": "f8135f451db0571e464413e2480cd8d19c11688a66d694e90f572d72b48eee57",
+  "public_head": "263368cb8b7bbc988fd76f13a6e0e6a28a5b3c79a03d5debec3adf43af9fb51e",
+  "events": 36,
+  "note": "Public projection is independently rechained after credentials, workstation paths and public-repository identities are redacted."
+}

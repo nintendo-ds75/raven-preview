@@ -73,6 +73,35 @@ class ProofTests(ContractCase):
         self.assertEqual(exported["bundle"], old)
         self.assertTrue(exported["integrity"]["valid"])
 
+    def test_later_reuse_does_not_invalidate_the_original_proof(self):
+        task, node, _ = self.complete()
+        before = proof.export(self.store, {"task_id": task})
+        other = self.start(title="A later billing integration")
+        reused = self.node(other)
+        self.assertFalse(reused['authorized'])
+        links = self.store.graph.links_for([node['node_id']])[node['node_id']]
+        self.assertTrue(any(link.get('decision_id') == reused['node_id']
+                            and link.get('source_decision_id') == node['node_id'] for link in links))
+        after = proof.export(self.store, {"task_id": task})
+        self.assertEqual(after['bundle'], before['bundle'])
+        self.assertFalse(after['stale'])
+
+    def test_a_new_incoming_derivation_still_invalidates_the_proof(self):
+        task, node, _ = self.complete()
+        before = proof.export(self.store, {"task_id": task})
+        other = self.start(title="A separate source decision")
+        source = self.node(other, question="Which contract supplies the billing rate?")
+        self.answer(source['node_id'], 'Use the negotiated contract.')
+        self.store.graph.add_link(node['node_id'], source['node_id'], 'derived')
+        from bridge.context_memory import snapshot_decision
+        version = snapshot_decision(self.store.graph.db, source['node_id'])
+        self.store.graph.db.execute(
+            'UPDATE decision_links SET source_version_id=? WHERE decision_id=? AND related_id=?',
+            (version, node['node_id'], source['node_id']))
+        after = proof.export(self.store, {"task_id": task})
+        self.assertEqual(after['bundle'], before['bundle'])
+        self.assertTrue(after['stale'])
+
     def test_unfinished_or_missing_diff_cannot_create_proof(self):
         task = self.start()
         self.node(task)

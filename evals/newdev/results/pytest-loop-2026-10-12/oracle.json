@@ -1,0 +1,18 @@
+{
+  "setting": "junit_output_limit",
+  "default": 0,
+  "zero": "unlimited",
+  "units": "Unicode code points in each raw captured stdout, stderr, log section separately, before headers and XML escaping",
+  "truncate": "prefix N characters followed by a newline, [... output truncated ...], newline; marker and headers outside budget",
+  "validation": "non-negative integer, invalid config rejected clearly",
+  "preserve": [
+    "junit_logging modes",
+    "junit_log_passing_tests",
+    "full failure and error diagnostics",
+    "xunit1 and xunit2 well-formed XML"
+  ],
+  "docs": "ini reference and feature changelog",
+  "synthetic_behavior_owner": "Lina Imani",
+  "synthetic_docs_owner": "Owen Vale",
+  "not_held_out_upstream_change": true
+}

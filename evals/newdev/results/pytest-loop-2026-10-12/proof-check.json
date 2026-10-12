@@ -1,0 +1,18 @@
+{
+  "change_fields": [
+    "bytes",
+    "diff",
+    "sha256"
+  ],
+  "sha256": "bb20337feefdc3e3e5e63de8d73ce0f08e37deef1278126b6866dc5b4a8276ed",
+  "patch_bytes": 14350,
+  "exact_patch_matches": true,
+  "review_snapshot_current": true,
+  "review_pending": false,
+  "decision_count": 3,
+  "checks": {
+    "independently_verified": false,
+    "provenance": "coding-host-reported",
+    "text": "Ran `/opt/venv/bin/python -m pytest testing/test_junitxml.py -q`: 144 passed, 2 skipped. Also manually verified via `pytest --junitxml` runs that write_captured_output/_truncate_content never double-fires or nests its marker across setup/call/teardown phases (guarded by the existing log_passing_tests early-return), and that doc/en/reference/reference.rst's `.. versionadded:: 8.5` matches src/_pytest/_version.py (8.5.0.dev0). Advisory diff review d26acb26ca23 completed: both signed decisions verdict \"follows\"."
+  }
+}

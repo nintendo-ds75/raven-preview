@@ -1,0 +1,14 @@
+F
+======================================================================
+FAIL: test_required_followup_is_visible_in_progress_before_adoption (test_brief.RequiredFollowupProgressTests.test_required_followup_is_visible_in_progress_before_adoption)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/app/tests/test_brief.py", line 117, in test_required_followup_is_visible_in_progress_before_adoption
+    self.assertEqual(view['progress']['total'], 2)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 2
+
+----------------------------------------------------------------------
+Ran 1 test in 0.951s
+
+FAILED (failures=1)

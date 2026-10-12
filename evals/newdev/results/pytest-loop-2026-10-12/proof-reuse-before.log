@@ -1,0 +1,13 @@
+F
+======================================================================
+FAIL: test_later_reuse_does_not_invalidate_the_original_proof (test_proof.ProofTests.test_later_reuse_does_not_invalidate_the_original_proof)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<RAVEN_CHECKOUT>/tests/test_proof.py", line 87, in test_later_reuse_does_not_invalidate_the_original_proof
+    self.assertFalse(after['stale'])
+AssertionError: True is not false
+
+----------------------------------------------------------------------
+Ran 1 test in 0.165s
+
+FAILED (failures=1)

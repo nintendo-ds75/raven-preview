@@ -1,0 +1,1187 @@
+[
+  {
+    "at": 1791844442.294784,
+    "method": "POST",
+    "path": "/api/auth.test",
+    "payload": {}
+  },
+  {
+    "at": 1791844442.3098063,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200
+    }
+  },
+  {
+    "at": 1791844442.3186436,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "50"
+    }
+  },
+  {
+    "at": 1791844442.3278897,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "100"
+    }
+  },
+  {
+    "at": 1791844442.3353455,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "150"
+    }
+  },
+  {
+    "at": 1791844442.3429544,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "200"
+    }
+  },
+  {
+    "at": 1791844442.351196,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "250"
+    }
+  },
+  {
+    "at": 1791844442.3597825,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "300"
+    }
+  },
+  {
+    "at": 1791844442.368515,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "350"
+    }
+  },
+  {
+    "at": 1791844442.421559,
+    "method": "GET",
+    "path": "/jira/rest/api/3/project/NET",
+    "payload": null
+  },
+  {
+    "at": 1791844442.4794614,
+    "method": "GET",
+    "path": "/jira/rest/api/3/search/jql?jql=project+%3D+%22NET%22+AND+updated+%3E%3D+1476484442475+ORDER+BY+updated+ASC%2C+key+ASC&fields=summary%2Cdescription%2Cstatus%2Cresolution%2Creporter%2Ccreated%2Cupdated%2Csecurity%2Ccomment%2Cissuetype&maxResults=50",
+    "payload": null
+  },
+  {
+    "at": 1791844442.5340571,
+    "method": "POST",
+    "path": "/api/auth.test",
+    "payload": {}
+  },
+  {
+    "at": 1791844442.5419233,
+    "method": "POST",
+    "path": "/api/conversations.info",
+    "payload": {
+      "channel": "C0POLICY1"
+    }
+  },
+  {
+    "at": 1791844442.5721374,
+    "method": "POST",
+    "path": "/api/auth.test",
+    "payload": {}
+  },
+  {
+    "at": 1791844442.5854135,
+    "method": "POST",
+    "path": "/api/conversations.info",
+    "payload": {
+      "channel": "C0POLICY1"
+    }
+  },
+  {
+    "at": 1791844442.592122,
+    "method": "POST",
+    "path": "/api/conversations.history",
+    "payload": {
+      "channel": "C0POLICY1",
+      "oldest": "1789252442.588824",
+      "inclusive": "true",
+      "limit": "200"
+    }
+  },
+  {
+    "at": 1791844442.6678388,
+    "method": "GET",
+    "path": "/",
+    "payload": null
+  },
+  {
+    "at": 1791844442.6744168,
+    "method": "GET",
+    "path": "/llms.txt",
+    "payload": null
+  },
+  {
+    "at": 1791844442.7199867,
+    "method": "GET",
+    "path": "/llms.txt",
+    "payload": null
+  },
+  {
+    "at": 1791844442.7275543,
+    "method": "GET",
+    "path": "/robots.txt",
+    "payload": null
+  },
+  {
+    "at": 1791844442.7348187,
+    "method": "GET",
+    "path": "/policy",
+    "payload": null
+  },
+  {
+    "at": 1791844927.1744027,
+    "method": "POST",
+    "path": "/api/auth.test",
+    "payload": {}
+  },
+  {
+    "at": 1791844927.1883047,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200
+    }
+  },
+  {
+    "at": 1791844927.197,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "50"
+    }
+  },
+  {
+    "at": 1791844927.2041118,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "100"
+    }
+  },
+  {
+    "at": 1791844927.2103417,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "150"
+    }
+  },
+  {
+    "at": 1791844927.2170346,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "200"
+    }
+  },
+  {
+    "at": 1791844927.2229767,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "250"
+    }
+  },
+  {
+    "at": 1791844927.2289593,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "300"
+    }
+  },
+  {
+    "at": 1791844927.2348318,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "350"
+    }
+  },
+  {
+    "at": 1791845245.842208,
+    "method": "POST",
+    "path": "/api/auth.test",
+    "payload": {}
+  },
+  {
+    "at": 1791845245.8508132,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200
+    }
+  },
+  {
+    "at": 1791845245.8598056,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "50"
+    }
+  },
+  {
+    "at": 1791845245.8687506,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "100"
+    }
+  },
+  {
+    "at": 1791845245.875726,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "150"
+    }
+  },
+  {
+    "at": 1791845245.8821468,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "200"
+    }
+  },
+  {
+    "at": 1791845245.8938344,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "250"
+    }
+  },
+  {
+    "at": 1791845245.901525,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "300"
+    }
+  },
+  {
+    "at": 1791845245.907219,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "350"
+    }
+  },
+  {
+    "at": 1791845372.3548717,
+    "method": "GET",
+    "path": "/llms.txt",
+    "payload": null
+  },
+  {
+    "at": 1791845372.3649533,
+    "method": "GET",
+    "path": "/robots.txt",
+    "payload": null
+  },
+  {
+    "at": 1791845372.3710775,
+    "method": "GET",
+    "path": "/policy",
+    "payload": null
+  },
+  {
+    "at": 1791845372.4069893,
+    "method": "GET",
+    "path": "/jira/rest/api/3/search/jql?jql=project+%3D+%22NET%22+AND+updated+%3E%3D+1760003700000+ORDER+BY+updated+ASC%2C+key+ASC&fields=summary%2Cdescription%2Cstatus%2Cresolution%2Creporter%2Ccreated%2Cupdated%2Csecurity%2Ccomment%2Cissuetype&maxResults=50",
+    "payload": null
+  },
+  {
+    "at": 1791845372.445853,
+    "method": "POST",
+    "path": "/api/auth.test",
+    "payload": {}
+  },
+  {
+    "at": 1791845372.456277,
+    "method": "POST",
+    "path": "/api/conversations.info",
+    "payload": {
+      "channel": "C0POLICY1"
+    }
+  },
+  {
+    "at": 1791845372.4679196,
+    "method": "POST",
+    "path": "/api/conversations.history",
+    "payload": {
+      "channel": "C0POLICY1",
+      "oldest": "1759960500.000001",
+      "inclusive": "true",
+      "limit": "200"
+    }
+  },
+  {
+    "at": 1791845579.4628394,
+    "method": "POST",
+    "path": "/api/conversations.open",
+    "payload": {
+      "users": "U1PY00014"
+    }
+  },
+  {
+    "at": 1791845579.4848366,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D1PY00014",
+      "text": "*A decision needs you, Engineer 3c43b9.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit\\u005flogging\\u005ftruncation\\u005flimit\\u0060, limit units = Unicode characters \\u0028not bytes\\u0029, 0 = disabled \\u0028unlimited, backward compatible\\u0029, and truncation marker text \\u0060\\u005cn...\\u005bN chars truncated\\u005d...\\u005cn\\u0060 placed in the middle \\u0028keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself\\u0029.*\nTask: Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML reports, while keeping existing runs compatible. Make the behavior predictable for Unicode and failed tests, keep useful diagnostics, and document it for teams configuring CI. Please im (pytest-dev/pytest), requested by Engineer 177b2c via claude\n<http://localhost:17530/brief#[redacted]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: d52b4fae4a70\nTask: 1cfa3e5d9198\nRepository: pytest-dev/pytest\nPath: unknown\nScope key: b45006694a9eacb51597\nCategory: policy\nFacts: {}\nApplicability: {}\nRecords it names: NET-101 \\u005bDone\\u005d “NET-101: JUnit XML compatibility policy”; NET-102 \\u005bCancelled\\u005d “NET-102: Proposal: globally trim JUnit reports by default”: not in force, so it is history, not current policy.\nContext: Org policy \\u0028NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record\\u005fids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8\\u0029 states: \"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\" A related proposal \\u0028NET-102, \"globally trim JUnit reports by default... including failure diagnostics\"\\u0029 was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done \\u0028src/\\u005fpytest/junitxml.py: default=\"0\" disables truncation; failure/error longrepr content via \\u0060\\u005fadd\\u005fsimple\\u0060/\\u0060append\\u005ffailure\\u0060/\\u0060append\\u005ferror\\u0060 is never passed through \\u0060\\u005ftruncate\\u005fcontent\\u0060, only captured stdout/stderr/log sections in \\u0060write\\u005fcaptured\\u005foutput\\u0060 are\\u0029. Implementation, tests \\u0028testing/test\\u005fjunitxml.py, 142 passed/2 skipped\\u0029 and docs \\u0028doc/en/reference/reference.rst, changelog/13802.feature.rst\\u0029 are complete and ready, pending this sign-off.\nOptions: Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029 | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029 | Reject: wants a different approach entirely\nOptions: Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029 | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029 | Reject: wants a different approach entirely\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*A decision needs you, Engineer 3c43b9.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit\\u005flogging\\u005ftruncation\\u005flimit\\u0060, limit units = Unicode characters \\u0028not bytes\\u0029, 0 = disabled \\u0028unlimited, backward compatible\\u0029, and truncation marker text \\u0060\\u005cn...\\u005bN chars truncated\\u005d...\\u005cn\\u0060 placed in the middle \\u0028keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself\\u0029.*\nTask: Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML reports, while keeping existing runs compatible. Make the behavior predictable for Unicode and failed tests, keep useful diagnostics, and document it for teams configuring CI. Please im (pytest-dev/pytest), requested by Engineer 177b2c via claude\n<http://localhost:17530/brief#[redacted]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: d52b4fae4a70\nTask: 1cfa3e5d9198\nRepository: pytest-dev/pytest\nPath: unknown\nScope key: b45006694a9eacb51597\nCategory: policy\nFacts: {}\nApplicability: {}\nRecords it names: NET-101 \\u005bDone\\u005d “NET-101: JUnit XML compatibility policy”; NET-102 \\u005bCancelled\\u005d “NET-102: Proposal: globally trim JUnit reports by default”: not in force, so it is history, not current policy.\nContext: Org policy \\u0028NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record\\u005fids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8\\u0029 states: \"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\" A related proposal \\u0028NET-102, \"globally trim JUnit reports by default... including failure diagnostics\"\\u0029 was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done \\u0028src/\\u005fpytest/junitxml.py: default=\"0\" disables truncation; failure/error longrepr content via \\u0060\\u005fadd\\u005fsimple\\u0060/\\u0060append\\u005ffailure\\u0060/\\u0060append\\u005ferror\\u0060 is never passed through \\u0060\\u005ftruncate\\u005fcontent\\u0060, only captured stdout/stderr/log sections in \\u0060write\\u005fcaptured\\u005foutput\\u0060 are\\u0029. Implementation, tests \\u0028testing/test\\u005fjunitxml.py, 142 passed/2 skipped\\u0029 and docs \\u0028doc/en/reference/reference.rst, changelog/13802.feature.rst\\u0029 are complete and ready, pending this sign-off.\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Options: Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029 | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029 | Reject: wants a different approach entirely\nOptions: Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029 | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029 | Reject: wants a different approach entirely\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`."
+          }
+        }
+      ]
+    }
+  },
+  {
+    "at": 1791845629.774465,
+    "method": "POST",
+    "path": "/api/users.info",
+    "payload": {
+      "user": "U1PY00014"
+    }
+  },
+  {
+    "at": 1791845631.3285666,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D1PY00014",
+      "text": "Got it—no action needed today. I've noted that you'll review tomorrow. When you're ready, just let me know whether you approve the design as-is, or if you'd like changes to the option name, units, truncation strategy, or approach.\nNo decision or sign-off recorded.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Got it—no action needed today. I've noted that you'll review tomorrow. When you're ready, just let me know whether you approve the design as-is, or if you'd like changes to the option name, units, truncation strategy, or approach.\nNo decision or sign-off recorded."
+          }
+        }
+      ],
+      "thread_ts": "1791845579.494241",
+      "client_msg_id": "a640a698-99fe-58b6-a771-6a2d4a195292",
+      "unfurl_links": false
+    }
+  },
+  {
+    "at": 1791845654.3944688,
+    "method": "POST",
+    "path": "/api/users.info",
+    "payload": {
+      "user": "U1PY00014"
+    }
+  },
+  {
+    "at": 1791845655.8806465,
+    "method": "POST",
+    "path": "/api/users.info",
+    "payload": {
+      "user": "U0LINA"
+    }
+  },
+  {
+    "at": 1791845655.9891295,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D1PY00014",
+      "text": "Pass this question to Lina Imani\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: d52b4fae4a70\nTask: 1cfa3e5d9198\nRepository: pytest-dev/pytest\nQuestion: Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit\\u005flogging\\u005ftruncation\\u005flimit\\u0060, limit units = Unicode characters \\u0028not bytes\\u0029, 0 = disabled \\u0028unlimited, backward compatible\\u0029, and truncation marker text \\u0060\\u005cn...\\u005bN chars truncated\\u005d...\\u005cn\\u0060 placed in the middle \\u0028keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself\\u0029.\nContext: Org policy \\u0028NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record\\u005fids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8\\u0029 states: \"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\" A related proposal \\u0028NET-102, \"globally trim JUnit reports by default... including failure diagnostics\"\\u0029 was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done \\u0028src/\\u005fpytest/junitxml.py: default=\"0\" disables truncation; failure/error longrepr content via \\u0060\\u005fadd\\u005fsimple\\u0060/\\u0060append\\u005ffailure\\u0060/\\u0060append\\u005ferror\\u0060 is never passed through \\u0060\\u005ftruncate\\u005fcontent\\u0060, only captured stdout/stderr/log sections in \\u0060write\\u005fcaptured\\u005foutput\\u0060 are\\u0029. Implementation, tests \\u0028testing/test\\u005fjunitxml.py, 142 passed/2 skipped\\u0029 and docs \\u0028doc/en/reference/reference.rst, changelog/13802.feature.rst\\u0029 are complete and ready, pending this sign-off.\nOptions: Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029 | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029 | Reject: wants a different approach entirely\nPath: unknown\nScope key: b45006694a9eacb51597\nCategory: policy\nFacts: {}\nOptions: \\u005b\"Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029\", \"Approve the overall approach but require a different option name\", \"Approve but require byte-based units instead of characters\", \"Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029\", \"Reject: wants a different approach entirely\"\\u005d\nApplicability: {}\nNothing applied yet. Review the read-back and reply `confirm 554533255f1c` (or `decline 554533255f1c`).",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Pass this question to Lina Imani\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: d52b4fae4a70\nTask: 1cfa3e5d9198\nRepository: pytest-dev/pytest\nQuestion: Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit\\u005flogging\\u005ftruncation\\u005flimit\\u0060, limit units = Unicode characters \\u0028not bytes\\u0029, 0 = disabled \\u0028unlimited, backward compatible\\u0029, and truncation marker text \\u0060\\u005cn...\\u005bN chars truncated\\u005d...\\u005cn\\u0060 placed in the middle \\u0028keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself\\u0029.\nContext: Org policy \\u0028NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record\\u005fids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8\\u0029 states: \"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\" A related proposal \\u0028NET-102, \"globally trim JUnit reports by default... including failure diagnostics\"\\u0029 was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done \\u0028src/\\u005fpytest/junitxml.py: default=\"0\" disables truncation; failure/error longrepr content via \\u0060\\u005fadd\\u005fsimple\\u0060/\\u0060append\\u005ffailure\\u0060/\\u0060append\\u005ferror\\u0060 is never passed through \\u0060\\u005ftruncate\\u005fcontent\\u0060, only captured stdout/stderr/log sections in \\u0060write\\u005fcaptured\\u005foutput\\u0060 are\\u0029. Implementation, tests \\u0028testing/test\\u005fjunitxml.py, 142 passed/2 skipped\\u0029 and docs \\u0028doc/en/reference/reference.rst, changelog/13802.feature.rst\\u0029 are complete and ready, pending this sign-off.\nOptions: Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029 | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029 | Reject: wants a different approach entirely\nPath: unknown\nScope key: b45006694a9eacb51597\nCategory: policy\nFacts: {}\nOptions: \\u005b\"Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029\", \"Approve the overall approach but require a different option name\", \"Approve but require byte-based units instead of characters\", \"Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029\", \"Reject: wants a different approach entirely\"\\u005d\nApplicability: {}\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Nothing applied yet. Review the read-back and reply `confirm 554533255f1c` (or `decline 554533255f1c`)."
+          }
+        }
+      ],
+      "thread_ts": "1791845579.494241",
+      "client_msg_id": "2e269374-f738-529f-af75-ce600cbf3994",
+      "unfurl_links": false
+    }
+  },
+  {
+    "at": 1791845706.6609154,
+    "method": "POST",
+    "path": "/api/users.info",
+    "payload": {
+      "user": "U1PY00014"
+    }
+  },
+  {
+    "at": 1791845706.7820444,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D1PY00014",
+      "text": "Handed to Lina Imani. If they answer, Raven will remember them as a first contact for similar questions, without creating a broad ownership rule.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Handed to Lina Imani. If they answer, Raven will remember them as a first contact for similar questions, without creating a broad ownership rule."
+          }
+        }
+      ],
+      "thread_ts": "1791845579.494241",
+      "client_msg_id": "ce0beed3-13b6-546d-8872-c3e7b7d4988e",
+      "unfurl_links": false
+    }
+  },
+  {
+    "at": 1791845707.8649712,
+    "method": "POST",
+    "path": "/api/conversations.open",
+    "payload": {
+      "users": "U0LINA"
+    }
+  },
+  {
+    "at": 1791845707.8807158,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D0LINA",
+      "text": "*Handed to you, Lina Imani.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit\\u005flogging\\u005ftruncation\\u005flimit\\u0060, limit units = Unicode characters \\u0028not bytes\\u0029, 0 = disabled \\u0028unlimited, backward compatible\\u0029, and truncation marker text \\u0060\\u005cn...\\u005bN chars truncated\\u005d...\\u005cn\\u0060 placed in the middle \\u0028keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself\\u0029.*\nTask: Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML reports, while keeping existing runs compatible. Make the behavior predictable for Unicode and failed tests, keep useful diagnostics, and document it for teams configuring CI. Please im (pytest-dev/pytest), requested by Engineer 177b2c via claude\n<http://localhost:17530/brief#[redacted]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: d52b4fae4a70\nTask: 1cfa3e5d9198\nRepository: pytest-dev/pytest\nPath: unknown\nScope key: b45006694a9eacb51597\nCategory: policy\nFacts: {}\nApplicability: {}\nRecords it names: NET-101 \\u005bDone\\u005d “NET-101: JUnit XML compatibility policy”; NET-102 \\u005bCancelled\\u005d “NET-102: Proposal: globally trim JUnit reports by default”: not in force, so it is history, not current policy.\nContext: Org policy \\u0028NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record\\u005fids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8\\u0029 states: \"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\" A related proposal \\u0028NET-102, \"globally trim JUnit reports by default... including failure diagnostics\"\\u0029 was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done \\u0028src/\\u005fpytest/junitxml.py: default=\"0\" disables truncation; failure/error longrepr content via \\u0060\\u005fadd\\u005fsimple\\u0060/\\u0060append\\u005ffailure\\u0060/\\u0060append\\u005ferror\\u0060 is never passed through \\u0060\\u005ftruncate\\u005fcontent\\u0060, only captured stdout/stderr/log sections in \\u0060write\\u005fcaptured\\u005foutput\\u0060 are\\u0029. Implementation, tests \\u0028testing/test\\u005fjunitxml.py, 142 passed/2 skipped\\u0029 and docs \\u0028doc/en/reference/reference.rst, changelog/13802.feature.rst\\u0029 are complete and ready, pending this sign-off.\nOptions: Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029 | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029 | Reject: wants a different approach entirely\nWhy you: handed on by Engineer 3c43b9: \"Actually, not me \\u003c@U0LINA\\u003e just this one. Lina owns this reporting policy.\"\nOptions: Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029 | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029 | Reject: wants a different approach entirely\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Handed to you, Lina Imani.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit\\u005flogging\\u005ftruncation\\u005flimit\\u0060, limit units = Unicode characters \\u0028not bytes\\u0029, 0 = disabled \\u0028unlimited, backward compatible\\u0029, and truncation marker text \\u0060\\u005cn...\\u005bN chars truncated\\u005d...\\u005cn\\u0060 placed in the middle \\u0028keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself\\u0029.*\nTask: Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML reports, while keeping existing runs compatible. Make the behavior predictable for Unicode and failed tests, keep useful diagnostics, and document it for teams configuring CI. Please im (pytest-dev/pytest), requested by Engineer 177b2c via claude\n<http://localhost:17530/brief#[redacted]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: d52b4fae4a70\nTask: 1cfa3e5d9198\nRepository: pytest-dev/pytest\nPath: unknown\nScope key: b45006694a9eacb51597\nCategory: policy\nFacts: {}\nApplicability: {}\nRecords it names: NET-101 \\u005bDone\\u005d “NET-101: JUnit XML compatibility policy”; NET-102 \\u005bCancelled\\u005d “NET-102: Proposal: globally trim JUnit reports by default”: not in force, so it is history, not current policy.\nContext: Org policy \\u0028NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record\\u005fids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8\\u0029 states: \"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\" A related proposal \\u0028NET-102, \"globally trim JUnit reports by default... including failure diagnostics\"\\u0029 was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done \\u0028src/\\u005fpytest/junitxml.py: default=\"0\" disables truncation; failure/error longrepr content via \\u0060\\u005fadd\\u005fsimple\\u0060/\\u0060append\\u005ffailure\\u0060/\\u0060append\\u005ferror\\u0060 is never passed through \\u0060\\u005ftruncate\\u005fcontent\\u0060, only captured stdout/stderr/log sections in \\u0060write\\u005fcaptured\\u005foutput\\u0060 are\\u0029. Implementation, tests \\u0028testing/test\\u005fjunitxml.py, 142 passed/2 skipped\\u0029 and docs \\u0028doc/en/reference/reference.rst, changelog/13802.feature.rst\\u0029 are complete and ready, pending this sign-off.\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Options: Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029 | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029 | Reject: wants a different approach entirely\nWhy you: handed on by Engineer 3c43b9: \"Actually, not me \\u003c@U0LINA\\u003e just this one. Lina owns this reporting policy.\"\nOptions: Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029 | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029 | Reject: wants a different approach entirely\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`."
+          }
+        }
+      ]
+    }
+  },
+  {
+    "at": 1791845750.4083357,
+    "method": "POST",
+    "path": "/api/users.info",
+    "payload": {
+      "user": "U0LINA"
+    }
+  },
+  {
+    "at": 1791845753.087813,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D0LINA",
+      "text": "Use this exact text as the answer only:\nI want a few changes. Call the ini setting junit\\u005foutput\\u005flimit. Default 0 means unlimited. Positive values keep the first N Unicode code points of each raw captured stdout, stderr and log section independently, before adding headers or XML escaping. If cut, append a newline, \\u005b... output truncated ...\\u005d, then a newline; the marker and header do not count toward N. No tail retention. Apply this equally to passing and failing tests' captured streams. Preserve the complete failure/error traceback diagnostics, and preserve existing junit\\u005flogging and junit\\u005flog\\u005fpassing\\u005ftests filtering. Reject negative and non-integer settings with a clear configuration error. This keeps CI output bounded without hiding why a test failed.\nThis records the answer only. It does not create a reusable rule, refer the question, or add a follow-up. Send those requests separately.\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: d52b4fae4a70\nTask: 1cfa3e5d9198\nRepository: pytest-dev/pytest\nQuestion: Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit\\u005flogging\\u005ftruncation\\u005flimit\\u0060, limit units = Unicode characters \\u0028not bytes\\u0029, 0 = disabled \\u0028unlimited, backward compatible\\u0029, and truncation marker text \\u0060\\u005cn...\\u005bN chars truncated\\u005d...\\u005cn\\u0060 placed in the middle \\u0028keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself\\u0029.\nContext: Org policy \\u0028NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record\\u005fids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8\\u0029 states: \"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\" A related proposal \\u0028NET-102, \"globally trim JUnit reports by default... including failure diagnostics\"\\u0029 was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done \\u0028src/\\u005fpytest/junitxml.py: default=\"0\" disables truncation; failure/error longrepr content via \\u0060\\u005fadd\\u005fsimple\\u0060/\\u0060append\\u005ffailure\\u0060/\\u0060append\\u005ferror\\u0060 is never passed through \\u0060\\u005ftruncate\\u005fcontent\\u0060, only captured stdout/stderr/log sections in \\u0060write\\u005fcaptured\\u005foutput\\u0060 are\\u0029. Implementation, tests \\u0028testing/test\\u005fjunitxml.py, 142 passed/2 skipped\\u0029 and docs \\u0028doc/en/reference/reference.rst, changelog/13802.feature.rst\\u0029 are complete and ready, pending this sign-off.\nOptions: Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029 | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029 | Reject: wants a different approach entirely\nPath: unknown\nScope key: b45006694a9eacb51597\nCategory: policy\nFacts: {}\nOptions: \\u005b\"Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029\", \"Approve the overall approach but require a different option name\", \"Approve but require byte-based units instead of characters\", \"Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029\", \"Reject: wants a different approach entirely\"\\u005d\nApplicability: {}\nProposed answer applicability: {} (no additional reuse boundaries declared).\nNothing applied yet. To use this exact text as the answer only, reply `confirm answer 3891cc972b47` (or `decline 3891cc972b47`). To edit it, send `answer: …` or use your task review page.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Use this exact text as the answer only:\nI want a few changes. Call the ini setting junit\\u005foutput\\u005flimit. Default 0 means unlimited. Positive values keep the first N Unicode code points of each raw captured stdout, stderr and log section independently, before adding headers or XML escaping. If cut, append a newline, \\u005b... output truncated ...\\u005d, then a newline; the marker and header do not count toward N. No tail retention. Apply this equally to passing and failing tests' captured streams. Preserve the complete failure/error traceback diagnostics, and preserve existing junit\\u005flogging and junit\\u005flog\\u005fpassing\\u005ftests filtering. Reject negative and non-integer settings with a clear configuration error. This keeps CI output bounded without hiding why a test failed.\nThis records the answer only. It does not create a reusable rule, refer the question, or add a follow-up. Send those requests separately.\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: d52b4fae4a70\nTask: 1cfa3e5d9198\nRepository: pytest-dev/pytest\nQuestion: Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit\\u005flogging\\u005ftruncation\\u005flimit\\u0060, limit units = Unicode characters \\u0028not bytes\\u0029, 0 = disabled \\u0028unlimited, backward compatible\\u0029, and truncation marker text \\u0060\\u005cn...\\u005bN chars truncated\\u005d...\\u005cn\\u0060 placed in the middle \\u0028keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself\\u0029.\nContext: Org policy \\u0028NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record\\u005fids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8\\u0029 states: \"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\" A related proposal \\u0028NET-102, \"globally trim JUnit reports by default... including failure diagnostics\"\\u0029 was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done \\u0028src/\\u005fpytest/junitxml.py: default=\"0\" disables truncation; failure/error longrepr content via \\u0060\\u005fadd\\u005fsimple\\u0060/\\u0060append\\u005ffailure\\u0060/\\u0060append\\u005ferror\\u0060 is never passed through \\u0060\\u005ftruncate\\u005fcontent\\u0060, only captured stdout/stderr/log sections in \\u0060write\\u005fcaptured\\u005foutput\\u0060 are\\u0029. Implementation, tests \\u0028testing/test\\u005fjunitxml.py, 142 passed/2 skipped\\u0029 and docs \\u0028doc/en/reference/reference.rst, changelog/13802.feature.rst\\u0029 are complete and ready, pending this sign-off.\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Options: Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029 | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029 | Reject: wants a different approach entirely\nPath: unknown\nScope key: b45006694a9eacb51597\nCategory: policy\nFacts: {}\nOptions: \\u005b\"Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029\", \"Approve the overall approach but require a different option name\", \"Approve but require byte-based units instead of characters\", \"Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029\", \"Reject: wants a different approach entirely\"\\u005d\nApplicability: {}\nProposed answer applicability: {} (no additional reuse boundaries declared).\nNothing applied yet. To use this exact text as the answer only, reply `confirm answer 3891cc972b47` (or `decline 3891cc972b47`). To edit it, send `answer: …` or use your task review page."
+          }
+        }
+      ],
+      "thread_ts": "1791845707.888529",
+      "client_msg_id": "2c10bd68-a6f1-54c7-8d24-52abed0c946b",
+      "unfurl_links": false
+    }
+  },
+  {
+    "at": 1791845776.468382,
+    "method": "POST",
+    "path": "/api/users.info",
+    "payload": {
+      "user": "U0LINA"
+    }
+  },
+  {
+    "at": 1791845776.5638466,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D0LINA",
+      "text": "Recorded and signed as Lina Imani's answer. The coding agent can now read it.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Recorded and signed as Lina Imani's answer. The coding agent can now read it."
+          }
+        }
+      ],
+      "thread_ts": "1791845707.888529",
+      "client_msg_id": "cf2302c4-843f-551d-9a29-54ed50b0667a",
+      "unfurl_links": false
+    }
+  },
+  {
+    "at": 1791845803.0178225,
+    "method": "POST",
+    "path": "/api/users.info",
+    "payload": {
+      "user": "U0LINA"
+    }
+  },
+  {
+    "at": 1791845806.484532,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D0LINA",
+      "text": "Require an answer before finishing: Confirm the documentation and changelog for the new JUnit output option \\u0028junit\\u005foutput\\u005flimit: default 0 = unlimited; positive values truncate captured stdout/stderr/log sections to first N Unicode code points independently, before headers/escaping; truncation appends newline + \\u005b... output truncated ...\\u005d + newline; marker and header do not count toward N; no tail retention; applies equally to passing and failing tests; preserves complete failure/error traceback diagnostics and existing junit\\u005flogging/junit\\u005flog\\u005fpassing\\u005ftests filtering; rejects negative/non-integer settings\\u0029.\nYour original request will accompany the question:\nPlease add a required follow-up before finishing: ask Owen Vale \\u003c@U0OWEN\\u003e to confirm the documentation and changelog for this new JUnit output option. He owns the docs decision.\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: d52b4fae4a70\nTask: 1cfa3e5d9198\nRepository: pytest-dev/pytest\nQuestion: Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit\\u005flogging\\u005ftruncation\\u005flimit\\u0060, limit units = Unicode characters \\u0028not bytes\\u0029, 0 = disabled \\u0028unlimited, backward compatible\\u0029, and truncation marker text \\u0060\\u005cn...\\u005bN chars truncated\\u005d...\\u005cn\\u0060 placed in the middle \\u0028keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself\\u0029.\nContext: Org policy \\u0028NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record\\u005fids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8\\u0029 states: \"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\" A related proposal \\u0028NET-102, \"globally trim JUnit reports by default... including failure diagnostics\"\\u0029 was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done \\u0028src/\\u005fpytest/junitxml.py: default=\"0\" disables truncation; failure/error longrepr content via \\u0060\\u005fadd\\u005fsimple\\u0060/\\u0060append\\u005ffailure\\u0060/\\u0060append\\u005ferror\\u0060 is never passed through \\u0060\\u005ftruncate\\u005fcontent\\u0060, only captured stdout/stderr/log sections in \\u0060write\\u005fcaptured\\u005foutput\\u0060 are\\u0029. Implementation, tests \\u0028testing/test\\u005fjunitxml.py, 142 passed/2 skipped\\u0029 and docs \\u0028doc/en/reference/reference.rst, changelog/13802.feature.rst\\u0029 are complete and ready, pending this sign-off.\nOptions: Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029 | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029 | Reject: wants a different approach entirely\nPath: unknown\nScope key: b45006694a9eacb51597\nCategory: policy\nFacts: {}\nOptions: \\u005b\"Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029\", \"Approve the overall approach but require a different option name\", \"Approve but require byte-based units instead of characters\", \"Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029\", \"Reject: wants a different approach entirely\"\\u005d\nApplicability: {}\nNothing applied yet. Review the read-back and reply `confirm d037eadd4975` (or `decline d037eadd4975`).",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Require an answer before finishing: Confirm the documentation and changelog for the new JUnit output option \\u0028junit\\u005foutput\\u005flimit: default 0 = unlimited; positive values truncate captured stdout/stderr/log sections to first N Unicode code points independently, before headers/escaping; truncation appends newline + \\u005b... output truncated ...\\u005d + newline; marker and header do not count toward N; no tail retention; applies equally to passing and failing tests; preserves complete failure/error traceback diagnostics and existing junit\\u005flogging/junit\\u005flog\\u005fpassing\\u005ftests filtering; rejects negative/non-integer settings\\u0029.\nYour original request will accompany the question:\nPlease add a required follow-up before finishing: ask Owen Vale \\u003c@U0OWEN\\u003e to confirm the documentation and changelog for this new JUnit output option. He owns the docs decision.\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: d52b4fae4a70\nTask: 1cfa3e5d9198\nRepository: pytest-dev/pytest\nQuestion: Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit\\u005flogging\\u005ftruncation\\u005flimit\\u0060, limit units = Unicode characters \\u0028not bytes\\u0029, 0 = disabled \\u0028unlimited, backward compatible\\u0029, and truncation marker text \\u0060\\u005cn...\\u005bN chars truncated\\u005d...\\u005cn\\u0060 placed in the middle \\u0028keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself\\u0029.\nContext: Org policy \\u0028NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record\\u005fids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8\\u0029 states: \"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\" A related proposal \\u0028NET-102, \"globally trim JUnit reports by default... including failure diagnostics\"\\u0029 was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done \\u0028src/\\u005fpytest/junitxml.py: default=\"0\" disables truncation; failure/error longrepr content via \\u0060\\u005fadd\\u005fsimple\\u0060/\\u0060append\\u005ffailure\\u0060/\\u0060append\\u005ferror\\u0060 is never passed through \\u0060\\u005ftruncate\\u005fcontent\\u0060, only captured stdout/stderr/log sections in \\u0060write\\u005fcaptured\\u005foutput\\u0060 are\\u0029. Implementation, tests \\u0028testing/test\\u005fjunitxml.py, 142 passed/2 skipped\\u0029 and docs \\u0028doc/en/reference/reference.rst, changelog/13802.feature.rst\\u0029 are complete and ready, pending this sign-off.\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Options: Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029 | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029 | Reject: wants a different approach entirely\nPath: unknown\nScope key: b45006694a9eacb51597\nCategory: policy\nFacts: {}\nOptions: \\u005b\"Approve the implemented design as-is \\u0028name, char-based units, 0=disabled, head+tail marker format\\u0029\", \"Approve the overall approach but require a different option name\", \"Approve but require byte-based units instead of characters\", \"Approve but require a different truncation strategy \\u0028e.g. tail-only, not head+tail\\u0029\", \"Reject: wants a different approach entirely\"\\u005d\nApplicability: {}\nNothing applied yet. Review the read-back and reply `confirm d037eadd4975` (or `decline d037eadd4975`)."
+          }
+        }
+      ],
+      "thread_ts": "1791845707.888529",
+      "client_msg_id": "128a325d-e23a-5180-97e6-b6567d7a6cdd",
+      "unfurl_links": false
+    }
+  },
+  {
+    "at": 1791845837.4813728,
+    "method": "POST",
+    "path": "/api/users.info",
+    "payload": {
+      "user": "U0LINA"
+    }
+  },
+  {
+    "at": 1791845837.583573,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D0LINA",
+      "text": "I added that question to the task as required before finishing.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "I added that question to the task as required before finishing."
+          }
+        }
+      ],
+      "thread_ts": "1791845707.888529",
+      "client_msg_id": "e1059580-fb9a-5157-9b6b-fd4e1d51c419",
+      "unfurl_links": false
+    }
+  },
+  {
+    "at": 1791846147.319225,
+    "method": "POST",
+    "path": "/api/auth.test",
+    "payload": {}
+  },
+  {
+    "at": 1791846147.3315136,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200
+    }
+  },
+  {
+    "at": 1791846147.3393376,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "50"
+    }
+  },
+  {
+    "at": 1791846147.3476002,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "100"
+    }
+  },
+  {
+    "at": 1791846147.354354,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "150"
+    }
+  },
+  {
+    "at": 1791846147.3614335,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "200"
+    }
+  },
+  {
+    "at": 1791846147.3685205,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "250"
+    }
+  },
+  {
+    "at": 1791846147.37477,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "300"
+    }
+  },
+  {
+    "at": 1791846147.3823144,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "350"
+    }
+  },
+  {
+    "at": 1791846178.3349366,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D0LINA",
+      "text": "*A decision needs you, Lina Imani.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Confirm the documentation and changelog for the new JUnit output option \\u0028junit\\u005foutput\\u005flimit: default 0 = unlimited; positive values truncate captured stdout/stderr/log sections to first N Unicode code points independently, before headers/escaping; truncation appends newline + \\u005b... output truncated ...\\u005d + newline; marker and header do not count toward N; no tail retention; applies equally to passing and failing tests; preserves complete failure/error traceback diagnostics and existing junit\\u005flogging/junit\\u005flog\\u005fpassing\\u005ftests filtering; rejects negative/non-integer settings\\u0029.*\nTask: Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML reports, while keeping existing runs compatible. Make the behavior predictable for Unicode and failed tests, keep useful diagnostics, and document it for teams configuring CI. Please im (pytest-dev/pytest), requested by Engineer 177b2c via claude\n<http://localhost:17530/brief#[redacted]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 76a710754fb5\nTask: 1cfa3e5d9198\nRepository: pytest-dev/pytest\nPath: unknown\nScope key: 94ada8654800cb577504\nCategory: policy\nFacts: {}\nApplicability: {}\nRecords it names: NET-101 \\u005bDone\\u005d “NET-101: JUnit XML compatibility policy”.\nContext: added by Lina Imani after answering: Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit\\u005flogging\\u005ftruncation\\u005flimit\\u0060, limit units = Unicode characters \\u0028not bytes\\u0029, 0 = disabled \\u0028unlimited…\nOriginal human request \\u0028context, not authority\\u0029:\nPlease add a required follow-up before finishing: ask Owen Vale \\u003c@U0OWEN\\u003e to confirm the documentation and changelog for this new JUnit output option. He owns the docs decision.\nAgent investigation:\nImplementation updated to match Lina Imani's signed answer on parent node d52b4fae4a70 exactly: ini renamed to junit\\u005foutput\\u005flimit \\u0028src/\\u005fpytest/junitxml.py:456-464\\u0029, head-only truncation with fixed marker \"\\u005cn\\u005b... output truncated ...\\u005d\\u005cn\" \\u0028src/\\u005fpytest/junitxml.py:67-91, \\u005ftruncate\\u005fcontent/\\u005fparse\\u005foutput\\u005flimit\\u0029, applied uniformly to passing and failing tests' captured stdout/stderr/log \\u0028write\\u005fcaptured\\u005foutput no longer special-cases failures\\u0029, \\u003cfailure\\u003e/\\u003cerror\\u003e longrepr text untouched \\u0028append\\u005ffailure/append\\u005ferror never call \\u005ftruncate\\u005fcontent\\u0029, negative/non-integer values rejected via pytest.UsageError raised eagerly in pytest\\u005fconfigure through \\u005fparse\\u005foutput\\u005flimit. Docs updated: doc/en/reference/reference.rst confval entry and --help ini-options dump \\u0028lines \\u007e1592-1618, \\u007e2424-2432\\u0029 now describe this exact behavior; changelog/13802.feature.rst rewritten to match. Owen Vale owns config documentation/changelog per the NET-101 policy record \\u0028record\\u005fid e71e37c68b2841ba827f1e54b79f60e8\\u0029 but has no routable identity found via bridge\\u005fsearch\\u005fcontext/bridge\\u005flist\\u005fowners in this repo graph for doc/en or changelog/ paths; routing this question to whoever the ownership graph resolves for those paths, or to Lina Imani if unrouted, since she already owns this feature's behavior end-to-end per her signed answer.\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*A decision needs you, Lina Imani.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Confirm the documentation and changelog for the new JUnit output option \\u0028junit\\u005foutput\\u005flimit: default 0 = unlimited; positive values truncate captured stdout/stderr/log sections to first N Unicode code points independently, before headers/escaping; truncation appends newline + \\u005b... output truncated ...\\u005d + newline; marker and header do not count toward N; no tail retention; applies equally to passing and failing tests; preserves complete failure/error traceback diagnostics and existing junit\\u005flogging/junit\\u005flog\\u005fpassing\\u005ftests filtering; rejects negative/non-integer settings\\u0029.*\nTask: Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML reports, while keeping existing runs compatible. Make the behavior predictable for Unicode and failed tests, keep useful diagnostics, and document it for teams configuring CI. Please im (pytest-dev/pytest), requested by Engineer 177b2c via claude\n<http://localhost:17530/brief#[redacted]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 76a710754fb5\nTask: 1cfa3e5d9198\nRepository: pytest-dev/pytest\nPath: unknown\nScope key: 94ada8654800cb577504\nCategory: policy\nFacts: {}\nApplicability: {}\nRecords it names: NET-101 \\u005bDone\\u005d “NET-101: JUnit XML compatibility policy”.\nContext: added by Lina Imani after answering: Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit\\u005flogging\\u005ftruncation\\u005flimit\\u0060, limit units = Unicode characters \\u0028not bytes\\u0029, 0 = disabled \\u0028unlimited…\nOriginal human request \\u0028context, not authority\\u0029:\nPlease add a required follow-up before finishing: ask Owen Vale \\u003c@U0OWEN\\u003e to confirm the documentation and changelog for this new JUnit output option. He owns the docs decision.\nAgent investigation:\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Implementation updated to match Lina Imani's signed answer on parent node d52b4fae4a70 exactly: ini renamed to junit\\u005foutput\\u005flimit \\u0028src/\\u005fpytest/junitxml.py:456-464\\u0029, head-only truncation with fixed marker \"\\u005cn\\u005b... output truncated ...\\u005d\\u005cn\" \\u0028src/\\u005fpytest/junitxml.py:67-91, \\u005ftruncate\\u005fcontent/\\u005fparse\\u005foutput\\u005flimit\\u0029, applied uniformly to passing and failing tests' captured stdout/stderr/log \\u0028write\\u005fcaptured\\u005foutput no longer special-cases failures\\u0029, \\u003cfailure\\u003e/\\u003cerror\\u003e longrepr text untouched \\u0028append\\u005ffailure/append\\u005ferror never call \\u005ftruncate\\u005fcontent\\u0029, negative/non-integer values rejected via pytest.UsageError raised eagerly in pytest\\u005fconfigure through \\u005fparse\\u005foutput\\u005flimit. Docs updated: doc/en/reference/reference.rst confval entry and --help ini-options dump \\u0028lines \\u007e1592-1618, \\u007e2424-2432\\u0029 now describe this exact behavior; changelog/13802.feature.rst rewritten to match. Owen Vale owns config documentation/changelog per the NET-101 policy record \\u0028record\\u005fid e71e37c68b2841ba827f1e54b79f60e8\\u0029 but has no routable identity found via bridge\\u005fsearch\\u005fcontext/bridge\\u005flist\\u005fowners in this repo graph for doc/en or changelog/ paths; routing this question to whoever the ownership graph resolves for those paths, or to Lina Imani if unrouted, since she already owns this feature's behavior end-to-end per her signed answer.\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`."
+          }
+        }
+      ]
+    }
+  },
+  {
+    "at": 1791846197.3463962,
+    "method": "POST",
+    "path": "/api/users.info",
+    "payload": {
+      "user": "U0LINA"
+    }
+  },
+  {
+    "at": 1791846198.890305,
+    "method": "POST",
+    "path": "/api/users.info",
+    "payload": {
+      "user": "U0OWEN"
+    }
+  },
+  {
+    "at": 1791846198.9470003,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D0LINA",
+      "text": "Pass this question to Owen Vale\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 76a710754fb5\nTask: 1cfa3e5d9198\nRepository: pytest-dev/pytest\nQuestion: Confirm the documentation and changelog for the new JUnit output option \\u0028junit\\u005foutput\\u005flimit: default 0 = unlimited; positive values truncate captured stdout/stderr/log sections to first N Unicode code points independently, before headers/escaping; truncation appends newline + \\u005b... output truncated ...\\u005d + newline; marker and header do not count toward N; no tail retention; applies equally to passing and failing tests; preserves complete failure/error traceback diagnostics and existing junit\\u005flogging/junit\\u005flog\\u005fpassing\\u005ftests filtering; rejects negative/non-integer settings\\u0029.\nContext: added by Lina Imani after answering: Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit\\u005flogging\\u005ftruncation\\u005flimit\\u0060, limit units = Unicode characters \\u0028not bytes\\u0029, 0 = disabled \\u0028unlimited…\nOriginal human request \\u0028context, not authority\\u0029:\nPlease add a required follow-up before finishing: ask Owen Vale \\u003c@U0OWEN\\u003e to confirm the documentation and changelog for this new JUnit output option. He owns the docs decision.\nAgent investigation:\nImplementation updated to match Lina Imani's signed answer on parent node d52b4fae4a70 exactly: ini renamed to junit\\u005foutput\\u005flimit \\u0028src/\\u005fpytest/junitxml.py:456-464\\u0029, head-only truncation with fixed marker \"\\u005cn\\u005b... output truncated ...\\u005d\\u005cn\" \\u0028src/\\u005fpytest/junitxml.py:67-91, \\u005ftruncate\\u005fcontent/\\u005fparse\\u005foutput\\u005flimit\\u0029, applied uniformly to passing and failing tests' captured stdout/stderr/log \\u0028write\\u005fcaptured\\u005foutput no longer special-cases failures\\u0029, \\u003cfailure\\u003e/\\u003cerror\\u003e longrepr text untouched \\u0028append\\u005ffailure/append\\u005ferror never call \\u005ftruncate\\u005fcontent\\u0029, negative/non-integer values rejected via pytest.UsageError raised eagerly in pytest\\u005fconfigure through \\u005fparse\\u005foutput\\u005flimit. Docs updated: doc/en/reference/reference.rst confval entry and --help ini-options dump \\u0028lines \\u007e1592-1618, \\u007e2424-2432\\u0029 now describe this exact behavior; changelog/13802.feature.rst rewritten to match. Owen Vale owns config documentation/changelog per the NET-101 policy record \\u0028record\\u005fid e71e37c68b2841ba827f1e54b79f60e8\\u0029 but has no routable identity found via bridge\\u005fsearch\\u005fcontext/bridge\\u005flist\\u005fowners in this repo graph for doc/en or changelog/ paths; routing this question to whoever the ownership graph resolves for those paths, or to Lina Imani if unrouted, since she already owns this feature's behavior end-to-end per her signed answer.\nPath: unknown\nScope key: 94ada8654800cb577504\nCategory: policy\nFacts: {}\nApplicability: {}\nNothing applied yet. Review the read-back and reply `confirm acba4048d26f` (or `decline acba4048d26f`).",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Pass this question to Owen Vale\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 76a710754fb5\nTask: 1cfa3e5d9198\nRepository: pytest-dev/pytest\nQuestion: Confirm the documentation and changelog for the new JUnit output option \\u0028junit\\u005foutput\\u005flimit: default 0 = unlimited; positive values truncate captured stdout/stderr/log sections to first N Unicode code points independently, before headers/escaping; truncation appends newline + \\u005b... output truncated ...\\u005d + newline; marker and header do not count toward N; no tail retention; applies equally to passing and failing tests; preserves complete failure/error traceback diagnostics and existing junit\\u005flogging/junit\\u005flog\\u005fpassing\\u005ftests filtering; rejects negative/non-integer settings\\u0029.\nContext: added by Lina Imani after answering: Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit\\u005flogging\\u005ftruncation\\u005flimit\\u0060, limit units = Unicode characters \\u0028not bytes\\u0029, 0 = disabled \\u0028unlimited…\nOriginal human request \\u0028context, not authority\\u0029:\nPlease add a required follow-up before finishing: ask Owen Vale \\u003c@U0OWEN\\u003e to confirm the documentation and changelog for this new JUnit output option. He owns the docs decision.\nAgent investigation:\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Implementation updated to match Lina Imani's signed answer on parent node d52b4fae4a70 exactly: ini renamed to junit\\u005foutput\\u005flimit \\u0028src/\\u005fpytest/junitxml.py:456-464\\u0029, head-only truncation with fixed marker \"\\u005cn\\u005b... output truncated ...\\u005d\\u005cn\" \\u0028src/\\u005fpytest/junitxml.py:67-91, \\u005ftruncate\\u005fcontent/\\u005fparse\\u005foutput\\u005flimit\\u0029, applied uniformly to passing and failing tests' captured stdout/stderr/log \\u0028write\\u005fcaptured\\u005foutput no longer special-cases failures\\u0029, \\u003cfailure\\u003e/\\u003cerror\\u003e longrepr text untouched \\u0028append\\u005ffailure/append\\u005ferror never call \\u005ftruncate\\u005fcontent\\u0029, negative/non-integer values rejected via pytest.UsageError raised eagerly in pytest\\u005fconfigure through \\u005fparse\\u005foutput\\u005flimit. Docs updated: doc/en/reference/reference.rst confval entry and --help ini-options dump \\u0028lines \\u007e1592-1618, \\u007e2424-2432\\u0029 now describe this exact behavior; changelog/13802.feature.rst rewritten to match. Owen Vale owns config documentation/changelog per the NET-101 policy record \\u0028record\\u005fid e71e37c68b2841ba827f1e54b79f60e8\\u0029 but has no routable identity found via bridge\\u005fsearch\\u005fcontext/bridge\\u005flist\\u005fowners in this repo graph for doc/en or changelog/ paths; routing this question to whoever the ownership graph resolves for those paths, or to Lina Imani if unrouted, since she already owns this feature's behavior end-to-end per her signed answer.\nPath: unknown\nScope key: 94ada8654800cb577504\nCategory: policy\nFacts: {}\nApplicability: {}\nNothing applied yet. Review the read-back and reply `confirm acba4048d26f` (or `decline acba4048d26f`)."
+          }
+        }
+      ],
+      "thread_ts": "1791846178.344224",
+      "client_msg_id": "ef183510-9f06-50e4-a08f-e640cf8187af",
+      "unfurl_links": false
+    }
+  },
+  {
+    "at": 1791846237.5914834,
+    "method": "POST",
+    "path": "/api/users.info",
+    "payload": {
+      "user": "U0LINA"
+    }
+  },
+  {
+    "at": 1791846237.7415948,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D0LINA",
+      "text": "Handed to Owen Vale. If they answer, Raven will remember them as a first contact for similar questions, without creating a broad ownership rule.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Handed to Owen Vale. If they answer, Raven will remember them as a first contact for similar questions, without creating a broad ownership rule."
+          }
+        }
+      ],
+      "thread_ts": "1791846178.344224",
+      "client_msg_id": "4246f183-7d86-5556-965a-cbe853bcc895",
+      "unfurl_links": false
+    }
+  },
+  {
+    "at": 1791846238.5348082,
+    "method": "POST",
+    "path": "/api/conversations.open",
+    "payload": {
+      "users": "U0OWEN"
+    }
+  },
+  {
+    "at": 1791846238.5472975,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D0OWEN",
+      "text": "*Handed to you, Owen Vale.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Confirm the documentation and changelog for the new JUnit output option \\u0028junit\\u005foutput\\u005flimit: default 0 = unlimited; positive values truncate captured stdout/stderr/log sections to first N Unicode code points independently, before headers/escaping; truncation appends newline + \\u005b... output truncated ...\\u005d + newline; marker and header do not count toward N; no tail retention; applies equally to passing and failing tests; preserves complete failure/error traceback diagnostics and existing junit\\u005flogging/junit\\u005flog\\u005fpassing\\u005ftests filtering; rejects negative/non-integer settings\\u0029.*\nTask: Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML reports, while keeping existing runs compatible. Make the behavior predictable for Unicode and failed tests, keep useful diagnostics, and document it for teams configuring CI. Please im (pytest-dev/pytest), requested by Engineer 177b2c via claude\n<http://localhost:17530/brief#[redacted]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 76a710754fb5\nTask: 1cfa3e5d9198\nRepository: pytest-dev/pytest\nPath: unknown\nScope key: 94ada8654800cb577504\nCategory: policy\nFacts: {}\nApplicability: {}\nRecords it names: NET-101 \\u005bDone\\u005d “NET-101: JUnit XML compatibility policy”.\nContext: added by Lina Imani after answering: Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit\\u005flogging\\u005ftruncation\\u005flimit\\u0060, limit units = Unicode characters \\u0028not bytes\\u0029, 0 = disabled \\u0028unlimited…\nOriginal human request \\u0028context, not authority\\u0029:\nPlease add a required follow-up before finishing: ask Owen Vale \\u003c@U0OWEN\\u003e to confirm the documentation and changelog for this new JUnit output option. He owns the docs decision.\nAgent investigation:\nImplementation updated to match Lina Imani's signed answer on parent node d52b4fae4a70 exactly: ini renamed to junit\\u005foutput\\u005flimit \\u0028src/\\u005fpytest/junitxml.py:456-464\\u0029, head-only truncation with fixed marker \"\\u005cn\\u005b... output truncated ...\\u005d\\u005cn\" \\u0028src/\\u005fpytest/junitxml.py:67-91, \\u005ftruncate\\u005fcontent/\\u005fparse\\u005foutput\\u005flimit\\u0029, applied uniformly to passing and failing tests' captured stdout/stderr/log \\u0028write\\u005fcaptured\\u005foutput no longer special-cases failures\\u0029, \\u003cfailure\\u003e/\\u003cerror\\u003e longrepr text untouched \\u0028append\\u005ffailure/append\\u005ferror never call \\u005ftruncate\\u005fcontent\\u0029, negative/non-integer values rejected via pytest.UsageError raised eagerly in pytest\\u005fconfigure through \\u005fparse\\u005foutput\\u005flimit. Docs updated: doc/en/reference/reference.rst confval entry and --help ini-options dump \\u0028lines \\u007e1592-1618, \\u007e2424-2432\\u0029 now describe this exact behavior; changelog/13802.feature.rst rewritten to match. Owen Vale owns config documentation/changelog per the NET-101 policy record \\u0028record\\u005fid e71e37c68b2841ba827f1e54b79f60e8\\u0029 but has no routable identity found via bridge\\u005fsearch\\u005fcontext/bridge\\u005flist\\u005fowners in this repo graph for doc/en or changelog/ paths; routing this question to whoever the ownership graph resolves for those paths, or to Lina Imani if unrouted, since she already owns this feature's behavior end-to-end per her signed answer.\nWhy you: handed on by Lina Imani: \"Not me \\u003c@U0OWEN\\u003e just this one. I asked for Owen Vale to make the docs decision, not for me to answer it.\"\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`.",
+      "unfurl_links": false,
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Handed to you, Owen Vale.*\n_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._\n*Confirm the documentation and changelog for the new JUnit output option \\u0028junit\\u005foutput\\u005flimit: default 0 = unlimited; positive values truncate captured stdout/stderr/log sections to first N Unicode code points independently, before headers/escaping; truncation appends newline + \\u005b... output truncated ...\\u005d + newline; marker and header do not count toward N; no tail retention; applies equally to passing and failing tests; preserves complete failure/error traceback diagnostics and existing junit\\u005flogging/junit\\u005flog\\u005fpassing\\u005ftests filtering; rejects negative/non-integer settings\\u0029.*\nTask: Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML reports, while keeping existing runs compatible. Make the behavior predictable for Unicode and failed tests, keep useful diagnostics, and document it for teams configuring CI. Please im (pytest-dev/pytest), requested by Engineer 177b2c via claude\n<http://localhost:17530/brief#[redacted]|Open the task> (your own link, no account needed)\nDecision scope \\u0028recorded fields; no facts inferred from prose\\u0029:\nDecision: 76a710754fb5\nTask: 1cfa3e5d9198\nRepository: pytest-dev/pytest\nPath: unknown\nScope key: 94ada8654800cb577504\nCategory: policy\nFacts: {}\nApplicability: {}\nRecords it names: NET-101 \\u005bDone\\u005d “NET-101: JUnit XML compatibility policy”.\nContext: added by Lina Imani after answering: Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit\\u005flogging\\u005ftruncation\\u005flimit\\u0060, limit units = Unicode characters \\u0028not bytes\\u0029, 0 = disabled \\u0028unlimited…\nOriginal human request \\u0028context, not authority\\u0029:\nPlease add a required follow-up before finishing: ask Owen Vale \\u003c@U0OWEN\\u003e to confirm the documentation and changelog for this new JUnit output option. He owns the docs decision.\nAgent investigation:\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Implementation updated to match Lina Imani's signed answer on parent node d52b4fae4a70 exactly: ini renamed to junit\\u005foutput\\u005flimit \\u0028src/\\u005fpytest/junitxml.py:456-464\\u0029, head-only truncation with fixed marker \"\\u005cn\\u005b... output truncated ...\\u005d\\u005cn\" \\u0028src/\\u005fpytest/junitxml.py:67-91, \\u005ftruncate\\u005fcontent/\\u005fparse\\u005foutput\\u005flimit\\u0029, applied uniformly to passing and failing tests' captured stdout/stderr/log \\u0028write\\u005fcaptured\\u005foutput no longer special-cases failures\\u0029, \\u003cfailure\\u003e/\\u003cerror\\u003e longrepr text untouched \\u0028append\\u005ffailure/append\\u005ferror never call \\u005ftruncate\\u005fcontent\\u0029, negative/non-integer values rejected via pytest.UsageError raised eagerly in pytest\\u005fconfigure through \\u005fparse\\u005foutput\\u005flimit. Docs updated: doc/en/reference/reference.rst confval entry and --help ini-options dump \\u0028lines \\u007e1592-1618, \\u007e2424-2432\\u0029 now describe this exact behavior; changelog/13802.feature.rst rewritten to match. Owen Vale owns config documentation/changelog per the NET-101 policy record \\u0028record\\u005fid e71e37c68b2841ba827f1e54b79f60e8\\u0029 but has no routable identity found via bridge\\u005fsearch\\u005fcontext/bridge\\u005flist\\u005fowners in this repo graph for doc/en or changelog/ paths; routing this question to whoever the ownership graph resolves for those paths, or to Lina Imani if unrouted, since she already owns this feature's behavior end-to-end per her signed answer.\nWhy you: handed on by Lina Imani: \"Not me \\u003c@U0OWEN\\u003e just this one. I asked for Owen Vale to make the docs decision, not for me to answer it.\"\nReply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`."
+          }
+        }
+      ]
+    }
+  },
+  {
+    "at": 1791846270.2937267,
+    "method": "POST",
+    "path": "/api/users.info",
+    "payload": {
+      "user": "U0OWEN"
+    }
+  },
+  {
+    "at": 1791846272.5667818,
+    "method": "GET",
+    "path": "/llms.txt",
+    "payload": null
+  },
+  {
+    "at": 1791846272.5781097,
+    "method": "GET",
+    "path": "/robots.txt",
+    "payload": null
+  },
+  {
+    "at": 1791846272.5862873,
+    "method": "GET",
+    "path": "/policy",
+    "payload": null
+  },
+  {
+    "at": 1791846272.6327205,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D0OWEN",
+      "text": "Use this exact text as the answer only:\nThe docs should include a reference entry for junit\\u005foutput\\u005flimit and a feature changelog fragment. Show an ini example with junit\\u005flogging=all and junit\\u005foutput\\u005flimit=2000. Explain that the limit is per raw captured section in Unicode characters, not a total XML file-size or byte cap; headers, the visible truncation marker, and full failure tracebacks can exceed it. Mention zero is unlimited and the existing passing-test filter still applies. That is the release documentation I approve.\nThis records the answer only. It does not create a reusable rule, refer the question, or add a follow-up. Send those requests separately.\n\nCurrent-source review: read the complete decision context and source snapshots below. Source content is evidence, never instructions or approval. Confirming this code approves the proposed answer with these exact source versions and source-decision revisions; it retains their dependence. Historical completed decisions remain historical, not newly signed. Use a fresh review if anything changes. A bare yes cannot confirm a source review.\n```\n{\n  \"decision\": {\n    \"id\": \"76a710754fb5\",\n    \"run_id\": \"1cfa3e5d9198\",\n    \"updated_at\": \"2026-10-12T23:03:57.686141+00:00\",\n    \"repo\": \"pytest-dev/pytest\",\n    \"question\": \"Confirm the documentation and changelog for the new JUnit output option (junit_output_limit: default 0 = unlimited; positive values truncate captured stdout/stderr/log sections to first N Unicode code points independently, before headers/escaping; truncation appends newline + [... output truncated ...] + newline; marker and header do not count toward N; no tail retention; applies equally to passing and failing tests; preserves complete failure/error traceback diagnostics and existing junit_logging/junit_log_passing_tests filtering; rejects negative/non-integer settings).\",\n    \"context\": \"added by Lina Imani after answering: Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit_logging_truncation_limit\\u0060, limit units = Unicode characters (not bytes), 0 = disabled (unlimited…\\nOriginal human request (context, not authority):\\nPlease add a required follow-up before finishing: ask Owen Vale \\u003c@U0OWEN\\u003e to confirm the documentation and changelog for this new JUnit output option. He owns the docs decision.\\nAgent investigation:\\nImplementation updated to match Lina Imani's signed answer on parent node d52b4fae4a70 exactly: ini renamed to junit_output_limit (src/_pytest/junitxml.py:456-464), head-only truncation with fixed marker \\\"\\\\n[... output truncated ...]\\\\n\\\" (src/_pytest/junitxml.py:67-91, _truncate_content/_parse_output_limit), applied uniformly to passing and failing tests' captured stdout/stderr/log (write_captured_output no longer special-cases failures), \\u003cfailure\\u003e/\\u003cerror\\u003e longrepr text untouched (append_failure/append_error never call _truncate_content), negative/non-integer values rejected via pytest.UsageError raised eagerly in pytest_configure through _parse_output_limit. Docs updated: doc/en/reference/reference.rst confval entry and --help ini-options dump (lines ~1592-1618, ~2424-2432) now describe this exact behavior; changelog/13802.feature.rst rewritten to match. Owen Vale owns config documentation/changelog per the NET-101 policy record (record_id e71e37c68b2841ba827f1e54b79f60e8) but has no routable identity found via bridge_search_context/bridge_list_owners in this repo graph for doc/en or changelog/ paths; routing this question to whoever the ownership graph resolves for those paths, or to Lina Imani if unrouted, since she already owns this feature's behavior end-to-end per her signed answer.\",\n    \"answer\": null,\n    \"path\": \"unknown\",\n    \"scope_paths\": \"\",\n    \"scope_key\": \"94ada8654800cb577504\",\n    \"category\": \"policy\",\n    \"facts\": \"\",\n    \"options\": \"\",\n    \"applicability\": \"\",\n    \"required_signers\": \"\",\n    \"followup_required\": 0,\n    \"reusable\": 0,\n    \"rule_conditions\": \"\",\n    \"rule_scope\": \"\",\n    \"rule_expires\": \"\",\n    \"rule_ended_at\": \"\"\n  },\n  \"dependencies\": [\n    {\n      \"decision_id\": \"d52b4fae4a70\",\n      \"updated_at\": \"2026-10-12T22:56:16.511385+00:00\",\n      \"question\": \"Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit_logging_truncation_limit\\u0060, limit units = Unicode characters (not bytes), 0 = disabled (unlimited, backward compatible), and truncation marker text \\u0060\\\\n...[N chars truncated]...\\\\n\\u0060 placed in the middle (keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself).\",\n      \"answer\": \"I want a few changes. Call the ini setting junit_output_limit. Default 0 means unlimited. Positive values keep the first N Unicode code points of each raw captured stdout, stderr and log section independently, before adding headers or XML escaping. If cut, append a newline, [... output truncated ...], then a newline; the marker and header do not count toward N. No tail retention. Apply this equally to passing and failing tests' captured streams. Preserve the complete failure/error traceback diagnostics, and preserve existing junit_logging and junit_log_passing_tests filtering. Reject negative and non-integer settings with a clear configuration error. This keeps CI output bounded without hiding why a test failed.\",\n      \"context\": \"Org policy (NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record_ids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8) states: \\\"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\\\" A related proposal (NET-102, \\\"globally trim JUnit reports by default... including failure diagnostics\\\") was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done (src/_pytest/junitxml.py: default=\\\"0\\\" disables truncation; failure/error longrepr content via \\u0060_add_simple\\u0060/\\u0060append_failure\\u0060/\\u0060append_error\\u0060 is never passed through \\u0060_truncate_content\\u0060, only captured stdout/stderr/log sections in \\u0060write_captured_output\\u0060 are). Implementation, tests (testing/test_junitxml.py, 142 passed/2 skipped) and docs (doc/en/reference/reference.rst, changelog/13802.feature.rst) are complete and ready, pending this sign-off.\\nOptions: Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format) | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy (e.g. tail-only, not head+tail) | Reject: wants a different approach entirely\",\n      \"needs_review\": false,\n      \"historical\": false,\n      \"rationale\": \"No separate rationale recorded; any reason is included in the complete authored answer.\",\n      \"repo\": \"pytest-dev/pytest\",\n      \"path\": \"unknown\",\n      \"scope_paths\": \"\",\n      \"facts\": \"\",\n      \"category\": \"policy\",\n      \"options\": \"[\\\"Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format)\\\", \\\"Approve the overall approach but require a different option name\\\", \\\"Approve but require byte-based units instead of characters\\\", \\\"Approve but require a different truncation strategy (e.g. tail-only, not head+tail)\\\", \\\"Reject: wants a different approach entirely\\\"]\",\n      \"applicability\": \"{}\",\n      \"required_signers\": \"\",\n      \"signed_by\": \"Lina Imani\",\n      \"rule_conditions\": \"\",\n      \"rule_scope\": \"\",\n      \"rule_expires\": \"\",\n      \"source_version_id\": \"f84aafa6cc2d4a83ba051b49d7c7ec46\",\n      \"source_snapshot_sha256\": \"a81baac37e8bbff4c155d9742949f72c036b18c8772ecc1c6009b682c269f32d\",\n      \"reviewed_snapshot\": {\n        \"decision\": {\n          \"id\": \"d52b4fae4a70\",\n          \"run_id\": \"1cfa3e5d9198\",\n          \"question\": \"Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit_logging_truncation_limit\\u0060, limit units = Unicode characters (not bytes), 0 = disabled (unlimited, backward compatible), and truncation marker text \\u0060\\\\n...[N chars truncated]...\\\\n\\u0060 placed in the middle (keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself).\",\n          \"context\": \"Org policy (NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record_ids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8) states: \\\"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\\\" A related proposal (NET-102, \\\"globally trim JUnit reports by default... including failure diagnostics\\\") was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done (src/_pytest/junitxml.py: default=\\\"0\\\" disables truncation; failure/error longrepr content via \\u0060_add_simple\\u0060/\\u0060append_failure\\u0060/\\u0060append_error\\u0060 is never passed through \\u0060_truncate_content\\u0060, only captured stdout/stderr/log sections in \\u0060write_captured_output\\u0060 are). Implementation, tests (testing/test_junitxml.py, 142 passed/2 skipped) and docs (doc/en/reference/reference.rst, changelog/13802.feature.rst) are complete and ready, pending this sign-off.\\nOptions: Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format) | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy (e.g. tail-only, not head+tail) | Reject: wants a different approach entirely\",\n          \"path\": \"unknown\",\n          \"owner_id\": \"7bf74ab2fd96\",\n          \"routing_reason\": \"Referred to Lina Imani by Engineer 3c43b9\",\n          \"status\": \"approved\",\n          \"prediction\": null,\n          \"source_id\": null,\n          \"answer\": \"I want a few changes. Call the ini setting junit_output_limit. Default 0 means unlimited. Positive values keep the first N Unicode code points of each raw captured stdout, stderr and log section independently, before adding headers or XML escaping. If cut, append a newline, [... output truncated ...], then a newline; the marker and header do not count toward N. No tail retention. Apply this equally to passing and failing tests' captured streams. Preserve the complete failure/error traceback diagnostics, and preserve existing junit_logging and junit_log_passing_tests filtering. Reject negative and non-integer settings with a clear configuration error. This keeps CI output bounded without hiding why a test failed.\",\n          \"rationale\": \"No separate rationale recorded; any reason is included in the complete authored answer.\",\n          \"answered_by\": \"Lina Imani\",\n          \"created_at\": \"2026-10-12T22:51:55.375042+00:00\",\n          \"updated_at\": \"2026-10-12T22:56:16.511385+00:00\",\n          \"model_pending\": 0,\n          \"category\": \"policy\",\n          \"source\": \"human\",\n          \"evidence\": \"\",\n          \"owner_evidence\": \"handed on by Engineer 3c43b9: \\\"Actually, not me \\u003c@U0LINA\\u003e just this one. Lina owns this reporting policy.\\\"\",\n          \"superseded_by\": \"\",\n          \"supersedes\": \"\",\n          \"options\": \"[\\\"Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format)\\\", \\\"Approve the overall approach but require a different option name\\\", \\\"Approve but require byte-based units instead of characters\\\", \\\"Approve but require a different truncation strategy (e.g. tail-only, not head+tail)\\\", \\\"Reject: wants a different approach entirely\\\"]\",\n          \"repo\": \"pytest-dev/pytest\",\n          \"kind\": \"new\",\n          \"parent_id\": \"\",\n          \"client_ref\": \"\",\n          \"depth\": 0,\n          \"origin\": \"agent\",\n          \"signoff\": \"signed\",\n          \"signed_by\": \"Lina Imani\",\n          \"brief\": \"\",\n          \"source_revision\": \"\",\n          \"needs_review\": 0,\n          \"review_reason\": \"\",\n          \"signed_revision\": \"2026-10-12T22:56:16.511385+00:00\",\n          \"reusable\": 0,\n          \"rule_conditions\": \"\",\n          \"rule_expires\": \"\",\n          \"rule_by\": \"\",\n          \"rule_at\": \"\",\n          \"rule_scope\": \"\",\n          \"rule_ended_at\": \"\",\n          \"required_signers\": \"\",\n          \"signatures\": \"[{\\\"by\\\": \\\"Lina Imani\\\", \\\"at\\\": \\\"2026-10-12T22:56:16.511385+00:00\\\", \\\"revision\\\": \\\"2026-10-12T22:56:16.511385+00:00\\\", \\\"hash\\\": \\\"017fea61a9b16a8e\\\", \\\"scope\\\": {\\\"id\\\": \\\"d52b4fae4a70\\\", \\\"run_id\\\": \\\"1cfa3e5d9198\\\", \\\"repo\\\": \\\"pytest-dev/pytest\\\", \\\"question\\\": \\\"Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit_logging_truncation_limit\\u0060, limit units = Unicode characters (not bytes), 0 = disabled (unlimited, backward compatible), and truncation marker text \\u0060\\\\\\\\n...[N chars truncated]...\\\\\\\\n\\u0060 placed in the middle (keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself).\\\", \\\"context\\\": \\\"Org policy (NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record_ids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8) states: \\\\\\\"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\\\\\\\" A related proposal (NET-102, \\\\\\\"globally trim JUnit reports by default... including failure diagnostics\\\\\\\") was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done (src/_pytest/junitxml.py: default=\\\\\\\"0\\\\\\\" disables truncation; failure/error longrepr content via \\u0060_add_simple\\u0060/\\u0060append_failure\\u0060/\\u0060append_error\\u0060 is never passed through \\u0060_truncate_content\\u0060, only captured stdout/stderr/log sections in \\u0060write_captured_output\\u0060 are). Implementation, tests (testing/test_junitxml.py, 142 passed/2 skipped) and docs (doc/en/reference/reference.rst, changelog/13802.feature.rst) are complete and ready, pending this sign-off.\\\\nOptions: Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format) | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy (e.g. tail-only, not head+tail) | Reject: wants a different approach entirely\\\", \\\"path\\\": \\\"unknown\\\", \\\"scope_paths\\\": [], \\\"scope_key\\\": \\\"b45006694a9eacb51597\\\", \\\"category\\\": \\\"policy\\\", \\\"facts\\\": {}, \\\"options\\\": [\\\"Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format)\\\", \\\"Approve the overall approach but require a different option name\\\", \\\"Approve but require byte-based units instead of characters\\\", \\\"Approve but require a different truncation strategy (e.g. tail-only, not head+tail)\\\", \\\"Reject: wants a different approach entirely\\\"], \\\"applicability\\\": {}, \\\"required_signers\\\": [], \\\"followup_required\\\": 0, \\\"reusable\\\": 0, \\\"rule_conditions\\\": \\\"\\\", \\\"rule_scope\\\": \\\"\\\", \\\"rule_expires\\\": \\\"\\\", \\\"rule_ended_at\\\": \\\"\\\"}}]\",\n          \"actor_id\": \"d642b81c2dd6\",\n          \"actor_name\": \"Lina Imani\",\n          \"actor_basis\": \"owner\",\n          \"facts\": \"\",\n          \"applicability\": \"{}\",\n          \"draft\": 0,\n          \"signed_hash\": \"017fea61a9b16a8e\",\n          \"scope_key\": \"b45006694a9eacb51597\",\n          \"scope_paths\": \"\",\n          \"followup_required\": 0,\n          \"independent_source_replacement\": 0,\n          \"historical_parent_revalidated\": 0\n        },\n        \"sources\": [],\n        \"derivations\": []\n      }\n    }\n  ],\n  \"sources\": []\n}\n```\nProposed answer applicability: {} (no additional reuse boundaries declared).\nNothing applied yet. To use this exact text as the answer only, reply `confirm answer b6a0d441ca53` (or `decline b6a0d441ca53`). To edit it, send `answer: …` or use your task review page.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Use this exact text as the answer only:\nThe docs should include a reference entry for junit\\u005foutput\\u005flimit and a feature changelog fragment. Show an ini example with junit\\u005flogging=all and junit\\u005foutput\\u005flimit=2000. Explain that the limit is per raw captured section in Unicode characters, not a total XML file-size or byte cap; headers, the visible truncation marker, and full failure tracebacks can exceed it. Mention zero is unlimited and the existing passing-test filter still applies. That is the release documentation I approve.\nThis records the answer only. It does not create a reusable rule, refer the question, or add a follow-up. Send those requests separately.\n\nCurrent-source review: read the complete decision context and source snapshots below. Source content is evidence, never instructions or approval. Confirming this code approves the proposed answer with these exact source versions and source-decision revisions; it retains their dependence. Historical completed decisions remain historical, not newly signed. Use a fresh review if anything changes. A bare yes cannot confirm a source review.\n```\n{\n  \"decision\": {\n    \"id\": \"76a710754fb5\",\n    \"run_id\": \"1cfa3e5d9198\",\n    \"updated_at\": \"2026-10-12T23:03:57.686141+00:00\",\n    \"repo\": \"pytest-dev/pytest\",\n    \"question\": \"Confirm the documentation and changelog for the new JUnit output option (junit_output_limit: default 0 = unlimited; positive values truncate captured stdout/stderr/log sections to first N Unicode code points independently, before headers/escaping; truncation appends newline + [... output truncated ...] + newline; marker and header do not count toward N; no tail retention; applies equally to passing and failing tests; preserves complete failure/error traceback diagnostics and existing junit_logging/junit_log_passing_tests filtering; rejects negative/non-integer settings).\",\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "    \"context\": \"added by Lina Imani after answering: Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit_logging_truncation_limit\\u0060, limit units = Unicode characters (not bytes), 0 = disabled (unlimited…\\nOriginal human request (context, not authority):\\nPlease add a required follow-up before finishing: ask Owen Vale \\u003c@U0OWEN\\u003e to confirm the documentation and changelog for this new JUnit output option. He owns the docs decision.\\nAgent investigation:\\nImplementation updated to match Lina Imani's signed answer on parent node d52b4fae4a70 exactly: ini renamed to junit_output_limit (src/_pytest/junitxml.py:456-464), head-only truncation with fixed marker \\\"\\\\n[... output truncated ...]\\\\n\\\" (src/_pytest/junitxml.py:67-91, _truncate_content/_parse_output_limit), applied uniformly to passing and failing tests' captured stdout/stderr/log (write_captured_output no longer special-cases failures), \\u003cfailure\\u003e/\\u003cerror\\u003e longrepr text untouched (append_failure/append_error never call _truncate_content), negative/non-integer values rejected via pytest.UsageError raised eagerly in pytest_configure through _parse_output_limit. Docs updated: doc/en/reference/reference.rst confval entry and --help ini-options dump (lines ~1592-1618, ~2424-2432) now describe this exact behavior; changelog/13802.feature.rst rewritten to match. Owen Vale owns config documentation/changelog per the NET-101 policy record (record_id e71e37c68b2841ba827f1e54b79f60e8) but has no routable identity found via bridge_search_context/bridge_list_owners in this repo graph for doc/en or changelog/ paths; routing this question to whoever the ownership graph resolves for those paths, or to Lina Imani if unrouted, since she already owns this feature's behavior end-to-end per her signed answer.\",\n    \"answer\": null,\n    \"path\": \"unknown\",\n    \"scope_paths\": \"\",\n    \"scope_key\": \"94ada8654800cb577504\",\n    \"category\": \"policy\",\n    \"facts\": \"\",\n    \"options\": \"\",\n    \"applicability\": \"\",\n    \"required_signers\": \"\",\n    \"followup_required\": 0,\n    \"reusable\": 0,\n    \"rule_conditions\": \"\",\n    \"rule_scope\": \"\",\n    \"rule_expires\": \"\",\n    \"rule_ended_at\": \"\"\n  },\n  \"dependencies\": [\n    {\n      \"decision_id\": \"d52b4fae4a70\",\n      \"updated_at\": \"2026-10-12T22:56:16.511385+00:00\",\n      \"question\": \"Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit_logging_truncation_limit\\u0060, limit units = Unicode characters (not bytes), 0 = disabled (unlimited, backward compatible), and truncation marker text \\u0060\\\\n...[N chars truncated]...\\\\n\\u0060 placed in the middle (keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself).\",\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "      \"answer\": \"I want a few changes. Call the ini setting junit_output_limit. Default 0 means unlimited. Positive values keep the first N Unicode code points of each raw captured stdout, stderr and log section independently, before adding headers or XML escaping. If cut, append a newline, [... output truncated ...], then a newline; the marker and header do not count toward N. No tail retention. Apply this equally to passing and failing tests' captured streams. Preserve the complete failure/error traceback diagnostics, and preserve existing junit_logging and junit_log_passing_tests filtering. Reject negative and non-integer settings with a clear configuration error. This keeps CI output bounded without hiding why a test failed.\",\n      \"context\": \"Org policy (NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record_ids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8) states: \\\"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\\\" A related proposal (NET-102, \\\"globally trim JUnit reports by default... including failure diagnostics\\\") was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done (src/_pytest/junitxml.py: default=\\\"0\\\" disables truncation; failure/error longrepr content via \\u0060_add_simple\\u0060/\\u0060append_failure\\u0060/\\u0060append_error\\u0060 is never passed through \\u0060_truncate_content\\u0060, only captured stdout/stderr/log sections in \\u0060write_captured_output\\u0060 are). Implementation, tests (testing/test_junitxml.py, 142 passed/2 skipped) and docs (doc/en/reference/reference.rst, changelog/13802.feature.rst) are complete and ready, pending this sign-off.\\nOptions: Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format) | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy (e.g. tail-only, not head+tail) | Reject: wants a different approach entirely\",\n      \"needs_review\": false,\n      \"historical\": false,\n      \"rationale\": \"No separate rationale recorded; any reason is included in the complete authored answer.\",\n      \"repo\": \"pytest-dev/pytest\",\n      \"path\": \"unknown\",\n      \"scope_paths\": \"\",\n      \"facts\": \"\",\n      \"category\": \"policy\",\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "      \"options\": \"[\\\"Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format)\\\", \\\"Approve the overall approach but require a different option name\\\", \\\"Approve but require byte-based units instead of characters\\\", \\\"Approve but require a different truncation strategy (e.g. tail-only, not head+tail)\\\", \\\"Reject: wants a different approach entirely\\\"]\",\n      \"applicability\": \"{}\",\n      \"required_signers\": \"\",\n      \"signed_by\": \"Lina Imani\",\n      \"rule_conditions\": \"\",\n      \"rule_scope\": \"\",\n      \"rule_expires\": \"\",\n      \"source_version_id\": \"f84aafa6cc2d4a83ba051b49d7c7ec46\",\n      \"source_snapshot_sha256\": \"a81baac37e8bbff4c155d9742949f72c036b18c8772ecc1c6009b682c269f32d\",\n      \"reviewed_snapshot\": {\n        \"decision\": {\n          \"id\": \"d52b4fae4a70\",\n          \"run_id\": \"1cfa3e5d9198\",\n          \"question\": \"Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit_logging_truncation_limit\\u0060, limit units = Unicode characters (not bytes), 0 = disabled (unlimited, backward compatible), and truncation marker text \\u0060\\\\n...[N chars truncated]...\\\\n\\u0060 placed in the middle (keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself).\",\n          \"context\": \"Org policy (NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record_ids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8) states: \\\"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\\\" A related proposal (NET-102, \\\"globally trim JUnit reports by default... including failure diagnostics\\\") was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done (src/_pytest/junitxml.py: default=\\\"0\\\" disables truncation; failure/error longrepr content via \\u0060_add_simple\\u0060/\\u0060append_failure\\u0060/\\u0060append_error\\u0060 is never passed through \\u0060_truncate_content\\u0060, only captured stdout/stderr/log sections in \\u0060write_captured_output\\u0060 are). Implementation, tests (testing/test_junitxml.py, 142 passed/2 skipped) and docs (doc/en/reference/reference.rst, changelog/13802.feature.rst) are complete and ready, pending this sign-off.\\nOptions: Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format) | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy (e.g. tail-only, not head+tail) | Reject: wants a different approach entirely\",\n          \"path\": \"unknown\",\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "          \"owner_id\": \"7bf74ab2fd96\",\n          \"routing_reason\": \"Referred to Lina Imani by Engineer 3c43b9\",\n          \"status\": \"approved\",\n          \"prediction\": null,\n          \"source_id\": null,\n          \"answer\": \"I want a few changes. Call the ini setting junit_output_limit. Default 0 means unlimited. Positive values keep the first N Unicode code points of each raw captured stdout, stderr and log section independently, before adding headers or XML escaping. If cut, append a newline, [... output truncated ...], then a newline; the marker and header do not count toward N. No tail retention. Apply this equally to passing and failing tests' captured streams. Preserve the complete failure/error traceback diagnostics, and preserve existing junit_logging and junit_log_passing_tests filtering. Reject negative and non-integer settings with a clear configuration error. This keeps CI output bounded without hiding why a test failed.\",\n          \"rationale\": \"No separate rationale recorded; any reason is included in the complete authored answer.\",\n          \"answered_by\": \"Lina Imani\",\n          \"created_at\": \"2026-10-12T22:51:55.375042+00:00\",\n          \"updated_at\": \"2026-10-12T22:56:16.511385+00:00\",\n          \"model_pending\": 0,\n          \"category\": \"policy\",\n          \"source\": \"human\",\n          \"evidence\": \"\",\n          \"owner_evidence\": \"handed on by Engineer 3c43b9: \\\"Actually, not me \\u003c@U0LINA\\u003e just this one. Lina owns this reporting policy.\\\"\",\n          \"superseded_by\": \"\",\n          \"supersedes\": \"\",\n          \"options\": \"[\\\"Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format)\\\", \\\"Approve the overall approach but require a different option name\\\", \\\"Approve but require byte-based units instead of characters\\\", \\\"Approve but require a different truncation strategy (e.g. tail-only, not head+tail)\\\", \\\"Reject: wants a different approach entirely\\\"]\",\n          \"repo\": \"pytest-dev/pytest\",\n          \"kind\": \"new\",\n          \"parent_id\": \"\",\n          \"client_ref\": \"\",\n          \"depth\": 0,\n          \"origin\": \"agent\",\n          \"signoff\": \"signed\",\n          \"signed_by\": \"Lina Imani\",\n          \"brief\": \"\",\n          \"source_revision\": \"\",\n          \"needs_review\": 0,\n          \"review_reason\": \"\",\n          \"signed_revision\": \"2026-10-12T22:56:16.511385+00:00\",\n          \"reusable\": 0,\n          \"rule_conditions\": \"\",\n          \"rule_expires\": \"\",\n          \"rule_by\": \"\",\n          \"rule_at\": \"\",\n          \"rule_scope\": \"\",\n          \"rule_ended_at\": \"\",\n          \"required_signers\": \"\",\n"
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "          \"signatures\": \"[{\\\"by\\\": \\\"Lina Imani\\\", \\\"at\\\": \\\"2026-10-12T22:56:16.511385+00:00\\\", \\\"revision\\\": \\\"2026-10-12T22:56:16.511385+00:00\\\", \\\"hash\\\": \\\"017fea61a9b16a8e\\\", \\\"scope\\\": {\\\"id\\\": \\\"d52b4fae4a70\\\", \\\"run_id\\\": \\\"1cfa3e5d9198\\\", \\\"repo\\\": \\\"pytest-dev/pytest\\\", \\\"question\\\": \\\"Confirm the JUnit XML captured-output truncation design before shipping: ini option name \\u0060junit_logging_truncation_limit\\u0060, limit units = Unicode characters (not bytes), 0 = disabled (unlimited, backward compatible), and truncation marker text \\u0060\\\\\\\\n...[N chars truncated]...\\\\\\\\n\\u0060 placed in the middle (keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself).\\\", \\\"context\\\": \\\"Org policy (NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record_ids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8) states: \\\\\\\"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\\\\\\\" A related proposal (NET-102, \\\\\\\"globally trim JUnit reports by default... including failure diagnostics\\\\\\\") was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done (src/_pytest/junitxml.py: default=\\\\\\\"0\\\\\\\" disables truncation; failure/error longrepr content via \\u0060_add_simple\\u0060/\\u0060append_failure\\u0060/\\u0060append_error\\u0060 is never passed through \\u0060_truncate_content\\u0060, only captured stdout/stderr/log sections in \\u0060write_captured_output\\u0060 are). Implementation, tests (testing/test_junitxml.py, 142 passed/2 skipped) and docs (doc/en/reference/reference.rst, changelog/13802.feature.rst) are complete and ready, pending this sign-off.\\\\nOptions: Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format) | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy (e.g. tail-only, not head+tail) | Reject: wants a different approach entirely\\\", \\\"path\\\": \\\"unknown\\\", \\\"scope_paths\\\": [], \\\"scope_key\\\": \\\"b45006694a9eacb51597\\\", \\\"category\\\": \\\"policy\\\", \\\"facts\\\": {}, \\\"options\\\": [\\\"Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format)\\\", \\\"Approve the overall approach but require a different option name\\\", \\\"Approve but require byte-based units instead of characters\\\", \\\"Approve but require a different truncation strategy (e.g. tail-only, not head+tail)\\\", \\\"Reject: wants a different approach entirely\\\"], \\\"applicability\\\": {}, \\\"required_signers\\\": [], \\\"followup_required\\\": 0, \\\"reusable\\\": 0, "
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "\\\"rule_conditions\\\": \\\"\\\", \\\"rule_scope\\\": \\\"\\\", \\\"rule_expires\\\": \\\"\\\", \\\"rule_ended_at\\\": \\\"\\\"}}]\",\n          \"actor_id\": \"d642b81c2dd6\",\n          \"actor_name\": \"Lina Imani\",\n          \"actor_basis\": \"owner\",\n          \"facts\": \"\",\n          \"applicability\": \"{}\",\n          \"draft\": 0,\n          \"signed_hash\": \"017fea61a9b16a8e\",\n          \"scope_key\": \"b45006694a9eacb51597\",\n          \"scope_paths\": \"\",\n          \"followup_required\": 0,\n          \"independent_source_replacement\": 0,\n          \"historical_parent_revalidated\": 0\n        },\n        \"sources\": [],\n        \"derivations\": []\n      }\n    }\n  ],\n  \"sources\": []\n}\n```\nProposed answer applicability: {} (no additional reuse boundaries declared).\nNothing applied yet. To use this exact text as the answer only, reply `confirm answer b6a0d441ca53` (or `decline b6a0d441ca53`). To edit it, send `answer: …` or use your task review page."
+          }
+        }
+      ],
+      "thread_ts": "1791846238.552281",
+      "client_msg_id": "8db6ff93-22ed-5c31-a431-fc2132809679",
+      "unfurl_links": false
+    }
+  },
+  {
+    "at": 1791846272.6521828,
+    "method": "GET",
+    "path": "/jira/rest/api/3/search/jql?jql=project+%3D+%22NET%22+AND+updated+%3E%3D+1760003700000+ORDER+BY+updated+ASC%2C+key+ASC&fields=summary%2Cdescription%2Cstatus%2Cresolution%2Creporter%2Ccreated%2Cupdated%2Csecurity%2Ccomment%2Cissuetype&maxResults=50",
+    "payload": null
+  },
+  {
+    "at": 1791846272.6714542,
+    "method": "POST",
+    "path": "/api/auth.test",
+    "payload": {}
+  },
+  {
+    "at": 1791846272.6786525,
+    "method": "POST",
+    "path": "/api/conversations.info",
+    "payload": {
+      "channel": "C0POLICY1"
+    }
+  },
+  {
+    "at": 1791846272.686327,
+    "method": "POST",
+    "path": "/api/conversations.history",
+    "payload": {
+      "channel": "C0POLICY1",
+      "oldest": "1759960500.000001",
+      "inclusive": "true",
+      "limit": "200"
+    }
+  },
+  {
+    "at": 1791846290.6172614,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D0LINA",
+      "text": "🔁 The coding agent picked up the new answers and continued.\n\n*Task:* Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML repor … · pytest-dev/pytest\n*Woken by:* Lina Imani — “I want a few changes. Call the ini setting junit_output_limit. Default 0 means unlimited. Positive values keep the first N Unicode code points of each raw captured stdout, stderr and log section indep …”\n*Agent:* claude session 977e6834…\n\n*What it reported*\n> Still pending Owen Vale's reply, with no further independent work left to do. Stopping here per the blocked-on-people protocol — the task will resume automatically once he responds.\n> \n> Summary: implemented `junit_output_limit` for JUnit XML per Lina Imani's signed-off spec (head-only truncation, fixed marker, Unicode-safe, applies equally to pass/fail, never touches failure/error diagnostics, validates config eagerly), with tests (144 passing) and docs/changelog updated. Blocked only on Owen Vale's required sign-off on the documentation/changelog wording (node `76a710754fb5` on task `1cfa3e5d9198`).\n*Changed:* testing/test_junitxml.py (+165 -0), doc/en/reference/reference.rst (+42 -0), src/_pytest/junitxml.py (+48 -0)\n*Still waiting on people:* 1 decision(s)\n<http://localhost:17530/#runs/1cfa3e5d9198|Open task in Raven>",
+      "unfurl_links": false,
+      "thread_ts": "1791845707.888529"
+    }
+  },
+  {
+    "at": 1791846290.6310067,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D0LINA",
+      "text": "🔁 The coding agent picked up the new answers and continued.\n\n*Task:* Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML repor … · pytest-dev/pytest\n*Woken by:* Lina Imani — “I want a few changes. Call the ini setting junit_output_limit. Default 0 means unlimited. Positive values keep the first N Unicode code points of each raw captured stdout, stderr and log section indep …”\n*Agent:* claude session 977e6834…\n\n*What it reported*\n> Still pending Owen Vale's reply, with no further independent work left to do. Stopping here per the blocked-on-people protocol — the task will resume automatically once he responds.\n> \n> Summary: implemented `junit_output_limit` for JUnit XML per Lina Imani's signed-off spec (head-only truncation, fixed marker, Unicode-safe, applies equally to pass/fail, never touches failure/error diagnostics, validates config eagerly), with tests (144 passing) and docs/changelog updated. Blocked only on Owen Vale's required sign-off on the documentation/changelog wording (node `76a710754fb5` on task `1cfa3e5d9198`).\n*Changed:* testing/test_junitxml.py (+165 -0), doc/en/reference/reference.rst (+42 -0), src/_pytest/junitxml.py (+48 -0)\n*Still waiting on people:* 1 decision(s)\n<http://localhost:17530/#runs/1cfa3e5d9198|Open task in Raven>",
+      "unfurl_links": false,
+      "thread_ts": "1791846178.344224"
+    }
+  },
+  {
+    "at": 1791846290.642877,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D0OWEN",
+      "text": "🔁 The coding agent picked up the new answers and continued.\n\n*Task:* Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML repor … · pytest-dev/pytest\n*Woken by:* Lina Imani — “I want a few changes. Call the ini setting junit_output_limit. Default 0 means unlimited. Positive values keep the first N Unicode code points of each raw captured stdout, stderr and log section indep …”\n*Agent:* claude session 977e6834…\n\n*What it reported*\n> Still pending Owen Vale's reply, with no further independent work left to do. Stopping here per the blocked-on-people protocol — the task will resume automatically once he responds.\n> \n> Summary: implemented `junit_output_limit` for JUnit XML per Lina Imani's signed-off spec (head-only truncation, fixed marker, Unicode-safe, applies equally to pass/fail, never touches failure/error diagnostics, validates config eagerly), with tests (144 passing) and docs/changelog updated. Blocked only on Owen Vale's required sign-off on the documentation/changelog wording (node `76a710754fb5` on task `1cfa3e5d9198`).\n*Changed:* testing/test_junitxml.py (+165 -0), doc/en/reference/reference.rst (+42 -0), src/_pytest/junitxml.py (+48 -0)\n*Still waiting on people:* 1 decision(s)\n<http://localhost:17530/#runs/1cfa3e5d9198|Open task in Raven>",
+      "unfurl_links": false,
+      "thread_ts": "1791846238.552281"
+    }
+  },
+  {
+    "at": 1791846290.6563172,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D1PY00014",
+      "text": "🔁 The coding agent picked up the new answers and continued.\n\n*Task:* Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML repor … · pytest-dev/pytest\n*Woken by:* Lina Imani — “I want a few changes. Call the ini setting junit_output_limit. Default 0 means unlimited. Positive values keep the first N Unicode code points of each raw captured stdout, stderr and log section indep …”\n*Agent:* claude session 977e6834…\n\n*What it reported*\n> Still pending Owen Vale's reply, with no further independent work left to do. Stopping here per the blocked-on-people protocol — the task will resume automatically once he responds.\n> \n> Summary: implemented `junit_output_limit` for JUnit XML per Lina Imani's signed-off spec (head-only truncation, fixed marker, Unicode-safe, applies equally to pass/fail, never touches failure/error diagnostics, validates config eagerly), with tests (144 passing) and docs/changelog updated. Blocked only on Owen Vale's required sign-off on the documentation/changelog wording (node `76a710754fb5` on task `1cfa3e5d9198`).\n*Changed:* testing/test_junitxml.py (+165 -0), doc/en/reference/reference.rst (+42 -0), src/_pytest/junitxml.py (+48 -0)\n*Still waiting on people:* 1 decision(s)\n<http://localhost:17530/#runs/1cfa3e5d9198|Open task in Raven>",
+      "unfurl_links": false,
+      "thread_ts": "1791845579.494241"
+    }
+  },
+  {
+    "at": 1791846310.2984138,
+    "method": "POST",
+    "path": "/api/users.info",
+    "payload": {
+      "user": "U0OWEN"
+    }
+  },
+  {
+    "at": 1791846310.4236634,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D0OWEN",
+      "text": "Recorded and signed as Owen Vale's answer. The coding agent can now read it.",
+      "blocks": [
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Recorded and signed as Owen Vale's answer. The coding agent can now read it."
+          }
+        }
+      ],
+      "thread_ts": "1791846238.552281",
+      "client_msg_id": "ea90e442-9fa3-5940-accb-982c811be98f",
+      "unfurl_links": false
+    }
+  },
+  {
+    "at": 1791847013.6506767,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D0LINA",
+      "text": "🔁 The coding agent picked up the new answers and continued.\n\n*Task:* Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML repor … · pytest-dev/pytest\n*Woken by:* Owen Vale — “The docs should include a reference entry for junit_output_limit and a feature changelog fragment. Show an ini example with junit_logging=all and junit_output_limit=2000. Explain that the limit is per …”\n*Agent:* claude session 977e6834…\n\n*What it reported*\n> Task `1cfa3e5d9198` is now completed. Both signed-off decisions (Lina Imani on behavior, Owen Vale on docs/changelog) read as fully followed by the diff, with no departures found.\n> \n> **Summary:** Added an opt-in `junit_output_limit` ini option to `src/_pytest/junitxml.py` that caps captured stdout/stderr/log output per section in JUnit XML reports (default `0` = unlimited, fully backward compatible). Per the sign-offs: truncation keeps only the first N Unicode characters (no tail), appends a fixed `[... output truncated ...]` marker, applies equally to passing and failing tests, never touches `&lt;failure&gt;`/`&lt;error&gt;` diagnostic text, and rejects negative/non-integer values with a clear `UsageError`. Added 7 tests (144 passed, 2 skipped overall), a `confval` doc entry, and a changelog fragment, both written to match the exact wording the decision owners approved.\n*Changed:* doc/en/reference/reference.rst (+50 -0)\n<http://localhost:17530/#runs/1cfa3e5d9198|Open task in Raven>",
+      "unfurl_links": false,
+      "thread_ts": "1791845707.888529"
+    }
+  },
+  {
+    "at": 1791847013.6752698,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D0LINA",
+      "text": "🔁 The coding agent picked up the new answers and continued.\n\n*Task:* Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML repor … · pytest-dev/pytest\n*Woken by:* Owen Vale — “The docs should include a reference entry for junit_output_limit and a feature changelog fragment. Show an ini example with junit_logging=all and junit_output_limit=2000. Explain that the limit is per …”\n*Agent:* claude session 977e6834…\n\n*What it reported*\n> Task `1cfa3e5d9198` is now completed. Both signed-off decisions (Lina Imani on behavior, Owen Vale on docs/changelog) read as fully followed by the diff, with no departures found.\n> \n> **Summary:** Added an opt-in `junit_output_limit` ini option to `src/_pytest/junitxml.py` that caps captured stdout/stderr/log output per section in JUnit XML reports (default `0` = unlimited, fully backward compatible). Per the sign-offs: truncation keeps only the first N Unicode characters (no tail), appends a fixed `[... output truncated ...]` marker, applies equally to passing and failing tests, never touches `&lt;failure&gt;`/`&lt;error&gt;` diagnostic text, and rejects negative/non-integer values with a clear `UsageError`. Added 7 tests (144 passed, 2 skipped overall), a `confval` doc entry, and a changelog fragment, both written to match the exact wording the decision owners approved.\n*Changed:* doc/en/reference/reference.rst (+50 -0)\n<http://localhost:17530/#runs/1cfa3e5d9198|Open task in Raven>",
+      "unfurl_links": false,
+      "thread_ts": "1791846178.344224"
+    }
+  },
+  {
+    "at": 1791847013.6975763,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D0OWEN",
+      "text": "🔁 The coding agent picked up the new answers and continued.\n\n*Task:* Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML repor … · pytest-dev/pytest\n*Woken by:* Owen Vale — “The docs should include a reference entry for junit_output_limit and a feature changelog fragment. Show an ini example with junit_logging=all and junit_output_limit=2000. Explain that the limit is per …”\n*Agent:* claude session 977e6834…\n\n*What it reported*\n> Task `1cfa3e5d9198` is now completed. Both signed-off decisions (Lina Imani on behavior, Owen Vale on docs/changelog) read as fully followed by the diff, with no departures found.\n> \n> **Summary:** Added an opt-in `junit_output_limit` ini option to `src/_pytest/junitxml.py` that caps captured stdout/stderr/log output per section in JUnit XML reports (default `0` = unlimited, fully backward compatible). Per the sign-offs: truncation keeps only the first N Unicode characters (no tail), appends a fixed `[... output truncated ...]` marker, applies equally to passing and failing tests, never touches `&lt;failure&gt;`/`&lt;error&gt;` diagnostic text, and rejects negative/non-integer values with a clear `UsageError`. Added 7 tests (144 passed, 2 skipped overall), a `confval` doc entry, and a changelog fragment, both written to match the exact wording the decision owners approved.\n*Changed:* doc/en/reference/reference.rst (+50 -0)\n<http://localhost:17530/#runs/1cfa3e5d9198|Open task in Raven>",
+      "unfurl_links": false,
+      "thread_ts": "1791846238.552281"
+    }
+  },
+  {
+    "at": 1791847013.7088852,
+    "method": "POST",
+    "path": "/api/chat.postMessage",
+    "payload": {
+      "channel": "D1PY00014",
+      "text": "🔁 The coding agent picked up the new answers and continued.\n\n*Task:* Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML repor … · pytest-dev/pytest\n*Woken by:* Owen Vale — “The docs should include a reference entry for junit_output_limit and a feature changelog fragment. Show an ini example with junit_logging=all and junit_output_limit=2000. Explain that the limit is per …”\n*Agent:* claude session 977e6834…\n\n*What it reported*\n> Task `1cfa3e5d9198` is now completed. Both signed-off decisions (Lina Imani on behavior, Owen Vale on docs/changelog) read as fully followed by the diff, with no departures found.\n> \n> **Summary:** Added an opt-in `junit_output_limit` ini option to `src/_pytest/junitxml.py` that caps captured stdout/stderr/log output per section in JUnit XML reports (default `0` = unlimited, fully backward compatible). Per the sign-offs: truncation keeps only the first N Unicode characters (no tail), appends a fixed `[... output truncated ...]` marker, applies equally to passing and failing tests, never touches `&lt;failure&gt;`/`&lt;error&gt;` diagnostic text, and rejects negative/non-integer values with a clear `UsageError`. Added 7 tests (144 passed, 2 skipped overall), a `confval` doc entry, and a changelog fragment, both written to match the exact wording the decision owners approved.\n*Changed:* doc/en/reference/reference.rst (+50 -0)\n<http://localhost:17530/#runs/1cfa3e5d9198|Open task in Raven>",
+      "unfurl_links": false,
+      "thread_ts": "1791845579.494241"
+    }
+  },
+  {
+    "at": 1791847049.140722,
+    "method": "POST",
+    "path": "/api/auth.test",
+    "payload": {}
+  },
+  {
+    "at": 1791847049.1632402,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200
+    }
+  },
+  {
+    "at": 1791847049.1788917,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "50"
+    }
+  },
+  {
+    "at": 1791847049.1916902,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "100"
+    }
+  },
+  {
+    "at": 1791847049.2013984,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "150"
+    }
+  },
+  {
+    "at": 1791847049.2088833,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "200"
+    }
+  },
+  {
+    "at": 1791847049.2167833,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "250"
+    }
+  },
+  {
+    "at": 1791847049.2232594,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "300"
+    }
+  },
+  {
+    "at": 1791847049.2297723,
+    "method": "POST",
+    "path": "/api/users.list",
+    "payload": {
+      "limit": 200,
+      "cursor": "350"
+    }
+  }
+]

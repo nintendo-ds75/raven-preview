@@ -998,7 +998,8 @@ def overview(store, link: Link, workspace: str = "", has_account: bool = False, 
     focus = (_focus(store, link, nodes, focus_id) if focus_id else None) or _focus(store, link, nodes)
     run = graph.db.execute("SELECT * FROM runs WHERE id=?", (link.run_id,)).fetchone()
     keys = run.keys()
-    counted = [n for n in flat if n["status"] not in ("duplicate", "suggested", "adopted")]
+    counted = [n for n in flat if n["status"] not in ("duplicate", "adopted")
+               and (n["status"] != "suggested" or n["blocking"])]
     return {
         "workspace": workspace,
         "viewer": {"name": link.person["name"], "role": actor.role, "has_account": has_account,

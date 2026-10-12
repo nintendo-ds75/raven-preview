@@ -1,0 +1,354 @@
+diff --git a/doc/en/reference/reference.rst b/doc/en/reference/reference.rst
+index a2d275fdc..b98d1078a 100644
+--- a/doc/en/reference/reference.rst
++++ b/doc/en/reference/reference.rst
+@@ -1589,6 +1589,46 @@ passed multiple times. The expected format is ``name=value``. For example::
+         junit_log_passing_tests = False
+ 
+ 
++.. confval:: junit_output_limit
++
++    .. versionadded:: 8.5
++
++    If ``junit_logging != "no"``, limits the number of Unicode characters kept,
++    per test and per section (captured stdout, stderr and log), when writing
++    captured output to the JUnit XML file. This is useful to prevent CI report
++    uploads from becoming huge when tests print or log a lot.
++
++    The limit applies independently to each section's own raw content, before
++    pytest's ``Captured Log``/``Captured Out``/``Captured Err`` headers are
++    added and before XML escaping, and is counted in Unicode characters, not
++    bytes, so multi-byte characters are never split. When a section's content
++    exceeds the limit, only its first N characters are kept and a fixed
++    truncation marker is appended (there is no retention of the end of the
++    content); the marker and the header do not count towards the limit. The
++    limit applies equally to passing and failing tests' captured output
++    streams, but it never affects the ``<failure>``/``<error>`` diagnostic
++    text itself, which is always written in full. Existing ``junit_logging``
++    and ``junit_log_passing_tests`` filtering keep working unchanged.
++
++    This is **not** a cap on the overall size of a ``<system-out>``/
++    ``<system-err>`` element or of the XML file: it only bounds each raw
++    captured section before the header, truncation marker and full failure
++    tracebacks are added, so the final written content can still exceed the
++    configured number of characters.
++
++    Default is ``0``, which disables truncation and keeps the full captured
++    output, preserving the behavior from previous pytest versions (zero means
++    unlimited). Setting it to a negative or non-integer value is a
++    configuration error. Opt in by setting it to a positive number of
++    characters:
++
++    .. code-block:: ini
++
++        [pytest]
++        junit_logging = all
++        junit_output_limit = 2000
++
++
+ .. confval:: junit_suite_name
+ 
+     To set the name of the root test suite xml item, you can configure the ``junit_suite_name`` option in your config file:
+@@ -2389,6 +2429,16 @@ All the command-line flags can be obtained by running ``pytest --help``::
+                             Duration time to report: one of total|call
+       junit_family (string):
+                             Emit XML for schema: one of legacy|xunit1|xunit2
++      junit_output_limit (string):
++                            Maximum number of Unicode characters to keep, per
++                            test and per section (captured stdout, stderr,
++                            log), when writing captured output to the JUnit
++                            report. Longer output is truncated, keeping only
++                            the start and appending a truncation marker. Does
++                            not affect the <failure>/<error> diagnostic text
++                            itself. Use 0 (the default) to disable truncation
++                            and keep the full output, preserving previous
++                            behavior.
+       doctest_optionflags (args):
+                             Option flags for doctests
+       doctest_encoding (string):
+diff --git a/src/_pytest/junitxml.py b/src/_pytest/junitxml.py
+index ae8d2b94d..33829e21f 100644
+--- a/src/_pytest/junitxml.py
++++ b/src/_pytest/junitxml.py
+@@ -61,6 +61,36 @@ def bin_xml_escape(arg: object) -> str:
+     return re.sub(illegal_xml_re, repl, str(arg))
+ 
+ 
++_TRUNCATION_MARKER = "\n[... output truncated ...]\n"
++
++
++def _truncate_content(content: str, limit: int) -> str:
++    """Truncate ``content`` to at most ``limit`` characters, keeping the start.
++
++    Operates on Unicode code points rather than bytes, so multi-byte
++    characters are never split. The appended marker does not count towards
++    ``limit``.
++    """
++    if limit <= 0 or len(content) <= limit:
++        return content
++    return content[:limit] + _TRUNCATION_MARKER
++
++
++def _parse_output_limit(value: str) -> int:
++    """Parse and validate the ``junit_output_limit`` ini value."""
++    try:
++        limit = int(value)
++    except ValueError:
++        raise pytest.UsageError(
++            f"junit_output_limit must be an integer, got {value!r}"
++        ) from None
++    if limit < 0:
++        raise pytest.UsageError(
++            f"junit_output_limit must be a non-negative integer, got {limit}"
++        )
++    return limit
++
++
+ def merge_family(left, right) -> None:
+     result = {}
+     for kl, vl in left.items():
+@@ -165,6 +195,10 @@ class _NodeReporter:
+         content_err = report.capstderr
+         if self.xml.logging == "no":
+             return
++        limit = self.xml.output_limit
++        content_out = _truncate_content(content_out, limit)
++        content_log = _truncate_content(content_log, limit)
++        content_err = _truncate_content(content_err, limit)
+         content_all = ""
+         if self.xml.logging in ["log", "all"]:
+             content_all = self._prepare_content(content_log, " Captured Log ")
+@@ -418,6 +452,17 @@ def pytest_addoption(parser: Parser) -> None:
+         "Emit XML for schema: one of legacy|xunit1|xunit2",
+         default="xunit2",
+     )
++    parser.addini(
++        "junit_output_limit",
++        "Maximum number of Unicode characters to keep, per test and per "
++        "section (captured stdout, stderr, log), when writing captured "
++        "output to the JUnit report. Longer output is truncated, keeping "
++        "only the start and appending a truncation marker. Does not affect "
++        "the <failure>/<error> diagnostic text itself. Use 0 (the default) "
++        "to disable truncation and keep the full output, preserving "
++        "previous behavior.",
++        default="0",
++    )
+ 
+ 
+ def pytest_configure(config: Config) -> None:
+@@ -433,6 +478,7 @@ def pytest_configure(config: Config) -> None:
+             config.getini("junit_duration_report"),
+             junit_family,
+             config.getini("junit_log_passing_tests"),
++            _parse_output_limit(config.getini("junit_output_limit")),
+         )
+         config.pluginmanager.register(config.stash[xml_key])
+ 
+@@ -465,6 +511,7 @@ class LogXML:
+         report_duration: str = "total",
+         family="xunit1",
+         log_passing_tests: bool = True,
++        output_limit: int = 0,
+     ) -> None:
+         logfile = os.path.expanduser(os.path.expandvars(logfile))
+         self.logfile = os.path.normpath(os.path.abspath(logfile))
+@@ -472,6 +519,7 @@ class LogXML:
+         self.suite_name = suite_name
+         self.logging = logging
+         self.log_passing_tests = log_passing_tests
++        self.output_limit = output_limit
+         self.report_duration = report_duration
+         self.family = family
+         self.stats: dict[str, int] = dict.fromkeys(
+diff --git a/testing/test_junitxml.py b/testing/test_junitxml.py
+index 5a603c05b..66dd27ea1 100644
+--- a/testing/test_junitxml.py
++++ b/testing/test_junitxml.py
+@@ -1010,6 +1010,8 @@ def test_dont_configure_on_workers(tmp_path: Path) -> None:
+             self.stash = Stash()
+ 
+         def getini(self, name: str) -> str:
++            if name == "junit_output_limit":
++                return "0"
+             return "pytest"
+ 
+         junitprefix = None
+@@ -1823,6 +1825,169 @@ def test_logging_passing_tests_disabled_logs_output_for_failing_test_issue5430(
+         assert len(node.find_by_tag("system-out")) == 0
+ 
+ 
++@parametrize_families
++def test_junit_output_limit_disabled_by_default(
++    pytester: Pytester, run_and_parse: RunAndParse, xunit_family: str
++) -> None:
++    """By default no truncation happens, preserving previous behavior."""
++    pytester.makeini(
++        f"""
++        [pytest]
++        junit_logging=system-out
++        junit_family={xunit_family}
++    """
++    )
++    pytester.makepyfile(
++        """
++        def test_func():
++            print("x" * 1000)
++    """
++    )
++    result, dom = run_and_parse(family=xunit_family)
++    assert result.ret == 0
++    node = dom.get_first_by_tag("testcase")
++    system_out = node.get_first_by_tag("system-out")
++    assert "x" * 1000 in system_out.text
++
++
++@parametrize_families
++def test_junit_output_limit_truncates_keeping_only_the_start(
++    pytester: Pytester, run_and_parse: RunAndParse, xunit_family: str
++) -> None:
++    """junit_output_limit truncates each captured output section
++    independently, keeping only the first N Unicode characters and
++    appending a fixed truncation marker (no tail retention)."""
++    pytester.makeini(
++        f"""
++        [pytest]
++        junit_logging=out-err
++        junit_output_limit=50
++        junit_family={xunit_family}
++    """
++    )
++    pytester.makepyfile(
++        """
++        import sys
++
++        def test_func():
++            sys.stdout.write("o" * 1000)
++            sys.stderr.write("e" * 1000)
++    """
++    )
++    result, dom = run_and_parse(family=xunit_family)
++    assert result.ret == 0
++    node = dom.get_first_by_tag("testcase")
++
++    system_out = node.get_first_by_tag("system-out")
++    assert "o" * 50 + "\n[... output truncated ...]\n" in system_out.text
++    assert "o" * 51 not in system_out.text
++
++    system_err = node.get_first_by_tag("system-err")
++    assert "e" * 50 + "\n[... output truncated ...]\n" in system_err.text
++    assert "e" * 51 not in system_err.text
++
++
++@parametrize_families
++def test_junit_output_limit_applies_equally_to_failed_tests(
++    pytester: Pytester, run_and_parse: RunAndParse, xunit_family: str
++) -> None:
++    """Captured output is truncated the same way for passing and failing
++    tests, but the <failure> diagnostic text itself is never truncated."""
++    pytester.makeini(
++        f"""
++        [pytest]
++        junit_logging=system-out
++        junit_output_limit=10
++        junit_family={xunit_family}
++    """
++    )
++    pytester.makepyfile(
++        """
++        import sys
++
++        def test_func():
++            sys.stdout.write("x" * 1000)
++            assert False, "y" * 1000
++    """
++    )
++    result, dom = run_and_parse(family=xunit_family)
++    assert result.ret == 1
++    node = dom.get_first_by_tag("testcase")
++
++    system_out = node.get_first_by_tag("system-out")
++    assert "x" * 10 + "\n[... output truncated ...]\n" in system_out.text
++    assert "x" * 11 not in system_out.text
++
++    failure = node.get_first_by_tag("failure")
++    assert "y" * 1000 in failure.text
++    assert "truncated" not in failure.text
++
++
++def test_junit_output_limit_unicode(
++    pytester: Pytester, run_and_parse: RunAndParse
++) -> None:
++    """Truncation operates on Unicode code points, never splitting a
++    multi-byte character."""
++    pytester.makeini(
++        """
++        [pytest]
++        junit_logging=system-out
++        junit_output_limit=20
++    """
++    )
++    pytester.makepyfile(
++        """
++        # -*- coding: utf-8 -*-
++        def test_func():
++            print("é" * 100)
++    """
++    )
++    result, dom = run_and_parse()
++    assert result.ret == 0
++    node = dom.get_first_by_tag("testcase")
++    system_out = node.get_first_by_tag("system-out")
++    assert "é" * 20 + "\n[... output truncated ...]\n" in system_out.text
++    assert "é" * 21 not in system_out.text
++    # No mangled byte of the "é" UTF-8 encoding anywhere in the output.
++    import string
++
++    allowed = string.ascii_letters + string.digits + string.punctuation + " \n"
++    for ch in system_out.text:
++        assert ch == "é" or ch in allowed
++
++
++def test_junit_output_limit_rejects_non_integer(pytester: Pytester) -> None:
++    pytester.makeini(
++        """
++        [pytest]
++        junit_output_limit=not-a-number
++    """
++    )
++    pytester.makepyfile("def test_func(): pass")
++    xml_path = pytester.path.joinpath("junit.xml")
++    result = pytester.runpytest(f"--junitxml={xml_path}")
++    assert result.ret == pytest.ExitCode.USAGE_ERROR
++    result.stderr.fnmatch_lines(
++        ["*junit_output_limit must be an integer, got 'not-a-number'*"]
++    )
++
++
++def test_junit_output_limit_rejects_negative(pytester: Pytester) -> None:
++    pytester.makeini(
++        """
++        [pytest]
++        junit_output_limit=-1
++    """
++    )
++    pytester.makepyfile("def test_func(): pass")
++    xml_path = pytester.path.joinpath("junit.xml")
++    result = pytester.runpytest(f"--junitxml={xml_path}")
++    assert result.ret == pytest.ExitCode.USAGE_ERROR
++    result.stderr.fnmatch_lines(
++        ["*junit_output_limit must be a non-negative integer, got -1*"]
++    )
++
++
+ def test_no_message_quiet(pytester: Pytester) -> None:
+     """Do not show the summary banner when --quiet is given (#13700)."""
+     pytester.makepyfile("def test(): pass")
+diff --git a/changelog/13802.feature.rst b/changelog/13802.feature.rst
+new file mode 100644
+index 000000000..25644eece
+--- /dev/null
++++ b/changelog/13802.feature.rst
+@@ -0,0 +1,3 @@
++Added a new :confval:`junit_output_limit` ini option (default ``0``, disabled) to limit how many Unicode characters of captured output (stdout, stderr, log) are kept per test and per section when writing the JUnit XML report. This helps avoid huge CI report uploads for test suites that print or log a lot.
++
++When enabled (e.g. ``junit_output_limit = 2000``), each raw captured section exceeding the limit is truncated to its first N Unicode characters (never splitting a multi-byte character) with a fixed truncation marker appended, before pytest's own headers are added -- this is a per-section character limit, not a byte or total file-size cap, so the header, marker and full failure tracebacks can still push the final written content past N characters. Truncation applies equally to passing and failing tests' captured output, and never affects the ``<failure>``/``<error>`` diagnostic text itself, which is always written in full. Existing ``junit_logging``/``junit_log_passing_tests`` filtering and configurations without this option (the default ``0`` means unlimited) are unaffected, as the feature is opt-in.

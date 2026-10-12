@@ -1,0 +1,9 @@
+{
+  "host_network": "internal Docker network",
+  "only_external_proxy_destination": "api.anthropic.com:443",
+  "github_probe": "Tunnel connection failed: 403 Forbidden",
+  "host_mount": "frozen writable checkout only",
+  "oracle_mounted": false,
+  "source_mount": "frozen readonly checkout only",
+  "app_has_inference_egress": true
+}

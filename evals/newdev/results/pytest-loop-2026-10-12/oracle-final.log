@@ -1,0 +1,19 @@
+PASS xunit1 reports actual test failure
+PASS xunit1 Unicode prefix uses code points
+PASS xunit1 stdout and log budgets independent
+PASS xunit1 stderr budget independent
+PASS xunit1 failure diagnostic intact
+PASS xunit2 reports actual test failure
+PASS xunit2 Unicode prefix uses code points
+PASS xunit2 stdout and log budgets independent
+PASS xunit2 stderr budget independent
+PASS xunit2 failure diagnostic intact
+PASS unlimited or below threshold None
+PASS unlimited or below threshold 0
+PASS unlimited or below threshold 999
+PASS passing output filtering preserved
+PASS logging disabled remains disabled
+PASS invalid configuration rejected -1
+PASS invalid configuration rejected 1.5
+PASS invalid configuration rejected garbage
+18/18 independent checks passed

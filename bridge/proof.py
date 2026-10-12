@@ -168,6 +168,22 @@ def export(store, data):
         return _export_snapshot(store, data)
 
 
+def _comparable_decisions(rows):
+    """Compare a decision's premises, not later consumers of its answer.
+
+    The tree exposes derivation links in both directions. A new consumer is
+    useful history, but changes neither this decision nor its authorization.
+    Keep the saved bundle untouched and retain every incoming/ambiguous link.
+    """
+    return [{**row, 'sources': row.get('sources', []),
+             'citations': [link for link in row.get('citations', []) if not (
+                 link.get('kind') == 'derived'
+                 and link.get('source_decision_id') == row['node_id']
+                 and link.get('decision_id')
+                 and link['decision_id'] != row['node_id'])]}
+            for row in rows]
+
+
 def _export_snapshot(store, data):
     """Return the saved finish proof, with an explicit live staleness check."""
     from . import canvas
@@ -181,8 +197,7 @@ def _export_snapshot(store, data):
     # Additive source metadata was absent in older v1 proofs. Compare absence
     # to an empty edge set without modifying the saved payload or inventing
     # historical provenance. Actual new pins still differ and are surfaced.
-    comparable = lambda rows: [{**row, 'sources': row.get('sources', [])} for row in rows]
-    if comparable(records) != comparable(bundle["payload"]["decisions"]):
+    if _comparable_decisions(records) != _comparable_decisions(bundle["payload"]["decisions"]):
         reasons.append("A decision, signature, authority, or scope changed since this proof")
     if run["status"] != "completed" or tree.get("needs_review"):
         reasons.append("The task is no longer completed and current")

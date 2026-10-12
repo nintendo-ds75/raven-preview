@@ -1,0 +1,390 @@
+[
+  {
+    "tool": "bridge_wait",
+    "at": 1791846736.3919919,
+    "call_seconds": 45.00654339790344,
+    "review": {
+      "id": "d26acb26ca23",
+      "status": "failed",
+      "follows": [
+        {
+          "incomplete": true,
+          "node_id": "d52b4fae4a70",
+          "question": "Confirm the JUnit XML captured-output truncation design before shipping: ini option name `junit_logging_truncation_limit`, limit units = Unicode characters (not bytes), 0 = disabled (unlimited, backward compatible), and truncation marker text `\\n...[N chars truncated]...\\n` placed in the middle (keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself).",
+          "requirements": [
+            {
+              "at": "\"junit_output_limit\",",
+              "found": "honored",
+              "kind": "must",
+              "needs": "ini option named junit_output_limit",
+              "note": "counterexample search did not complete",
+              "state": "unclear"
+            },
+            {
+              "at": "default=\"0\",",
+              "found": "honored",
+              "kind": "must",
+              "needs": "default value 0 meaning unlimited (backward compatible)",
+              "note": "counterexample search did not complete",
+              "state": "unclear"
+            },
+            {
+              "at": "content_out = _truncate_content(content_out, limit)",
+              "found": "honored",
+              "kind": "must",
+              "needs": "positive values truncate first N Unicode code points of stdout, stderr and log independently",
+              "note": "counterexample search did not complete",
+              "state": "unclear"
+            },
+            {
+              "at": "if limit <= 0 or len(content) <= limit:",
+              "found": "honored",
+              "kind": "must",
+              "needs": "limit counted in Unicode characters, not bytes",
+              "note": "counterexample search did not complete",
+              "state": "unclear"
+            },
+            {
+              "at": "content_all = self._prepare_content(content_log, \" Captured Log \")",
+              "found": "honored",
+              "kind": "must",
+              "needs": "truncation applied before headers added or XML escaping",
+              "note": "counterexample search did not complete",
+              "state": "unclear"
+            },
+            {
+              "at": "_TRUNCATION_MARKER = \"\\n[... output truncated ...]\\n\"",
+              "found": "honored",
+              "kind": "must",
+              "needs": "marker text is newline + '[... output truncated ...]' + newline",
+              "note": "counterexample search did not complete",
+              "state": "unclear"
+            },
+            {
+              "at": "return content[:limit] + _TRUNCATION_MARKER",
+              "found": "honored",
+              "kind": "must",
+              "needs": "marker and header text do not count toward N",
+              "note": "counterexample search did not complete",
+              "state": "unclear"
+            },
+            {
+              "at": "return content[:limit] + _TRUNCATION_MARKER",
+              "found": "honored",
+              "kind": "must",
+              "needs": "no tail retention, only head kept",
+              "note": "counterexample search did not complete",
+              "state": "unclear"
+            },
+            {
+              "at": "limit = self.xml.output_limit",
+              "found": "honored",
+              "kind": "must",
+              "needs": "truncation applies equally to passing and failing tests' captured streams",
+              "note": "counterexample search did not complete",
+              "state": "unclear"
+            },
+            {
+              "at": "content_err = _truncate_content(content_err, limit)",
+              "found": "honored",
+              "kind": "must_not",
+              "needs": "preserve complete failure/error traceback diagnostics, never truncated",
+              "note": "counterexample search did not complete",
+              "state": "unclear"
+            },
+            {
+              "at": "if self.xml.logging in [\"log\", \"all\"]:",
+              "found": "honored",
+              "kind": "must",
+              "needs": "preserve existing junit_logging filtering behavior",
+              "note": "counterexample search did not complete",
+              "state": "unclear"
+            },
+            {
+              "at": "self.log_passing_tests = log_passing_tests",
+              "found": "honored",
+              "kind": "must",
+              "needs": "preserve existing junit_log_passing_tests filtering behavior",
+              "note": "counterexample search did not complete",
+              "state": "unclear"
+            },
+            {
+              "at": "raise pytest.UsageError(\n            f\"junit_output_limit must be a non-negative integer, got {limit}\"",
+              "found": "honored",
+              "kind": "must",
+              "needs": "reject negative settings with clear configuration error",
+              "note": "counterexample search did not complete",
+              "state": "unclear"
+            },
+            {
+              "at": "raise pytest.UsageError(\n            f\"junit_output_limit must be an integer, got {value!r}\"",
+              "found": "honored",
+              "kind": "must",
+              "needs": "reject non-integer settings with clear configuration error",
+              "note": "counterexample search did not complete",
+              "state": "unclear"
+            }
+          ],
+          "unexamined": [
+            "no search for counterexamples: the model did not answer"
+          ],
+          "verdict": "unclear",
+          "why": "The review is inconclusive: no search for counterexamples: the model did not answer. The counterexample search did not complete; the first reading is inconclusive. All authorized requirements for junit_output_limit (naming, default, per-section Unicode truncation, marker text, header/escaping order, no tail retention, equal pass/fail application, preserved failure diagnostics and filtering, and validation errors) are implemented as described in the diff."
+        },
+        {
+          "node_id": "76a710754fb5",
+          "question": "Confirm the documentation and changelog for the new JUnit output option (junit_output_limit: default 0 = unlimited; positive values truncate captured stdout/stderr/log sections to first N Unicode code points independently, before headers/escaping; truncation appends newline + [... output truncated ...] + newline; marker and header do not count toward N; no tail retention; applies equally to passing and failing tests; preserves complete failure/error traceback diagnostics and existing junit_logging/junit_log_passing_tests filtering; rejects negative/non-integer settings).",
+          "requirements": [
+            {
+              "at": ".. confval:: junit_output_limit",
+              "found": "honored",
+              "kind": "must",
+              "needs": "Reference entry for junit_output_limit in docs",
+              "state": "ok"
+            },
+            {
+              "at": "Added a new :confval:`junit_output_limit` ini option (default ``0``, disabled)",
+              "found": "honored",
+              "kind": "must",
+              "needs": "Feature changelog fragment for junit_output_limit",
+              "state": "ok"
+            },
+            {
+              "at": "junit_output_limit = 2000",
+              "found": "honored",
+              "kind": "must",
+              "needs": "Show ini example with junit_logging=all and junit_output_limit=2000",
+              "state": "ok"
+            },
+            {
+              "at": "is counted in Unicode characters, not\n+    bytes",
+              "found": "honored",
+              "kind": "must",
+              "needs": "Explain limit is per raw captured section in Unicode characters, not a total XML file-size or byte cap",
+              "state": "ok"
+            },
+            {
+              "at": "so the final written content can still exceed the\n+    configured number of characters.",
+              "found": "honored",
+              "kind": "must",
+              "needs": "Explain headers, truncation marker, and full failure tracebacks can exceed the limit",
+              "state": "ok"
+            },
+            {
+              "at": "Default is ``0``, which disables truncation",
+              "found": "honored",
+              "kind": "must",
+              "needs": "Mention zero is unlimited",
+              "state": "ok"
+            },
+            {
+              "at": "Existing ``junit_logging``\n+    and ``junit_log_passing_tests`` filtering keep working unchanged.",
+              "found": "honored",
+              "kind": "must",
+              "needs": "Mention existing junit_log_passing_tests filter still applies",
+              "state": "ok"
+            }
+          ],
+          "verdict": "follows",
+          "why": "All documentation and changelog requirements for junit_output_limit are present and match the authorized wording in the reference.rst and changelog fragment additions."
+        }
+      ],
+      "diff_hash": "bb20337feefdc3e3",
+      "seconds": 140.2,
+      "finished_at": "2026-10-12T23:13:00.725726+00:00",
+      "revisions": {
+        "76a710754fb5": "16a2a144791d17b3",
+        "d52b4fae4a70": "017fea61a9b16a8e"
+      },
+      "review_inputs": {
+        "76a710754fb5": "a9b9dfedf553211429bde46f8bff0fc3430fc266090a40f216041d4489a84de6",
+        "d52b4fae4a70": "d605acde0b6e32144775d7b848c3690c95824a680f44ab872390ce5432ebda16"
+      }
+    }
+  },
+  {
+    "tool": "bridge_wait",
+    "at": 1791846928.3949592,
+    "call_seconds": 26.673022031784058,
+    "review": {
+      "id": "d26acb26ca23",
+      "status": "done",
+      "follows": [
+        {
+          "node_id": "d52b4fae4a70",
+          "question": "Confirm the JUnit XML captured-output truncation design before shipping: ini option name `junit_logging_truncation_limit`, limit units = Unicode characters (not bytes), 0 = disabled (unlimited, backward compatible), and truncation marker text `\\n...[N chars truncated]...\\n` placed in the middle (keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself).",
+          "requirements": [
+            {
+              "at": "\"junit_output_limit\",",
+              "found": "honored",
+              "kind": "must",
+              "needs": "ini option named junit_output_limit",
+              "state": "ok"
+            },
+            {
+              "at": "default=\"0\",",
+              "found": "honored",
+              "kind": "must",
+              "needs": "default 0 means unlimited",
+              "state": "ok"
+            },
+            {
+              "at": "content_out = _truncate_content(content_out, limit)",
+              "found": "honored",
+              "kind": "must",
+              "needs": "positive values keep first N Unicode code points of stdout, stderr, log independently",
+              "state": "ok"
+            },
+            {
+              "at": "content_log = _truncate_content(content_log, limit)",
+              "found": "honored",
+              "kind": "must",
+              "needs": "truncation applied before headers/XML escaping",
+              "state": "ok"
+            },
+            {
+              "at": "_TRUNCATION_MARKER = \"\\n[... output truncated ...]\\n\"",
+              "found": "honored",
+              "kind": "must",
+              "needs": "append newline, [... output truncated ...], newline marker",
+              "state": "ok"
+            },
+            {
+              "at": "return content[:limit] + _TRUNCATION_MARKER",
+              "found": "honored",
+              "kind": "must",
+              "needs": "no tail retention, only head kept",
+              "state": "ok"
+            },
+            {
+              "at": "return content[:limit] + _TRUNCATION_MARKER",
+              "found": "honored",
+              "kind": "must",
+              "needs": "marker and header do not count toward N",
+              "state": "ok"
+            },
+            {
+              "at": "content_err = _truncate_content(content_err, limit)",
+              "found": "honored",
+              "kind": "must",
+              "needs": "apply equally to passing and failing tests' captured streams",
+              "state": "ok"
+            },
+            {
+              "at": "limit = self.xml.output_limit",
+              "found": "honored",
+              "kind": "must",
+              "needs": "preserve complete failure/error traceback diagnostics",
+              "state": "ok"
+            },
+            {
+              "at": "if self.xml.logging in [\"log\", \"all\"]:",
+              "found": "honored",
+              "kind": "must",
+              "needs": "preserve existing junit_logging and junit_log_passing_tests filtering",
+              "state": "ok"
+            },
+            {
+              "at": "raise pytest.UsageError(",
+              "found": "honored",
+              "kind": "must",
+              "needs": "reject negative and non-integer settings with clear configuration error",
+              "state": "ok"
+            }
+          ],
+          "verdict": "follows",
+          "why": "All authorized requirements for junit_output_limit (naming, default, per-section unicode truncation, marker text, no tail, equal pass/fail handling, preserved failure text and filtering, and validation errors) are implemented as specified in the diff."
+        },
+        {
+          "node_id": "76a710754fb5",
+          "question": "Confirm the documentation and changelog for the new JUnit output option (junit_output_limit: default 0 = unlimited; positive values truncate captured stdout/stderr/log sections to first N Unicode code points independently, before headers/escaping; truncation appends newline + [... output truncated ...] + newline; marker and header do not count toward N; no tail retention; applies equally to passing and failing tests; preserves complete failure/error traceback diagnostics and existing junit_logging/junit_log_passing_tests filtering; rejects negative/non-integer settings).",
+          "requirements": [
+            {
+              "at": ".. confval:: junit_output_limit",
+              "found": "honored",
+              "kind": "must",
+              "needs": "Docs must include a confval reference entry for junit_output_limit",
+              "state": "ok"
+            },
+            {
+              "at": "Added a new :confval:`junit_output_limit` ini option (default ``0``, disabled)",
+              "found": "honored",
+              "kind": "must",
+              "needs": "A feature changelog fragment for junit_output_limit must exist",
+              "state": "ok"
+            },
+            {
+              "at": "junit_output_limit = 2000",
+              "found": "honored",
+              "kind": "must",
+              "needs": "Docs must show an ini example with junit_logging=all and junit_output_limit=2000",
+              "state": "ok"
+            },
+            {
+              "at": "If ``junit_logging != \"no\"``, limits the number of Unicode characters kept,",
+              "found": "honored",
+              "kind": "must",
+              "needs": "Docs must explain limit is per raw captured section counted in Unicode characters",
+              "state": "ok"
+            },
+            {
+              "at": "``<system-err>`` element or of the XML file: it only bounds each raw",
+              "found": "honored",
+              "kind": "must",
+              "needs": "Docs must explain this is not a total XML file-size or byte cap",
+              "state": "ok"
+            },
+            {
+              "at": "captured section before the header, truncation marker and full failure",
+              "found": "honored",
+              "kind": "must",
+              "needs": "Docs must explain headers can push final content past the limit (don't count toward N)",
+              "state": "ok"
+            },
+            {
+              "at": "captured section before the header, truncation marker and full failure",
+              "found": "honored",
+              "kind": "must",
+              "needs": "Docs must explain the visible truncation marker can push final content past the limit",
+              "state": "ok"
+            },
+            {
+              "at": "tracebacks are added, so the final written content can still exceed the",
+              "found": "honored",
+              "kind": "must",
+              "needs": "Docs must explain full failure tracebacks can push final content past the limit",
+              "state": "ok"
+            },
+            {
+              "at": "output, preserving the behavior from previous pytest versions (zero means",
+              "found": "honored",
+              "kind": "must",
+              "needs": "Docs must mention zero means unlimited",
+              "state": "ok"
+            },
+            {
+              "at": "and ``junit_log_passing_tests`` filtering keep working unchanged.",
+              "found": "honored",
+              "kind": "must",
+              "needs": "Docs must mention existing junit_log_passing_tests filter still applies",
+              "state": "ok"
+            }
+          ],
+          "verdict": "follows",
+          "why": "All documentation and changelog requirements from this decision are present and match the authorized wording in reference.rst and the changelog fragment."
+        }
+      ],
+      "diff_hash": "bb20337feefdc3e3",
+      "seconds": 121.1,
+      "finished_at": "2026-10-12T23:15:54.343783+00:00",
+      "revisions": {
+        "76a710754fb5": "16a2a144791d17b3",
+        "d52b4fae4a70": "017fea61a9b16a8e"
+      },
+      "review_inputs": {
+        "76a710754fb5": "a9b9dfedf553211429bde46f8bff0fc3430fc266090a40f216041d4489a84de6",
+        "d52b4fae4a70": "d605acde0b6e32144775d7b848c3690c95824a680f44ab872390ce5432ebda16"
+      }
+    }
+  }
+]

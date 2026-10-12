@@ -1,0 +1,292 @@
+{
+  "id": "d52b4fae4a70",
+  "run_id": "1cfa3e5d9198",
+  "question": "Confirm the JUnit XML captured-output truncation design before shipping: ini option name `junit_logging_truncation_limit`, limit units = Unicode characters (not bytes), 0 = disabled (unlimited, backward compatible), and truncation marker text `\\n...[N chars truncated]...\\n` placed in the middle (keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself).",
+  "context": "Org policy (NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record_ids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8) states: \"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\" A related proposal (NET-102, \"globally trim JUnit reports by default... including failure diagnostics\") was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done (src/_pytest/junitxml.py: default=\"0\" disables truncation; failure/error longrepr content via `_add_simple`/`append_failure`/`append_error` is never passed through `_truncate_content`, only captured stdout/stderr/log sections in `write_captured_output` are). Implementation, tests (testing/test_junitxml.py, 142 passed/2 skipped) and docs (doc/en/reference/reference.rst, changelog/13802.feature.rst) are complete and ready, pending this sign-off.\nOptions: Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format) | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy (e.g. tail-only, not head+tail) | Reject: wants a different approach entirely",
+  "path": "unknown",
+  "owner_id": "cff5c8052f32",
+  "routing_reason": "Routed from the ownership graph: inferred first contact; confirm or refer in Slack; reviewed or accepted 7 of the last 80 changes under src/_pytest/junitxml.py (52% recency weighted; as merger on 7); approval uses the stronger of review and weighted merge shares; merge commits do not dilute the authorship history; authored 10 of … [cut: the owner evidence has the rest]",
+  "status": "pending",
+  "prediction": null,
+  "source_id": null,
+  "answer": null,
+  "rationale": null,
+  "answered_by": null,
+  "created_at": "2026-10-12T22:51:55.375042+00:00",
+  "updated_at": "2026-10-12T22:52:58.127210+00:00",
+  "model_pending": 0,
+  "category": "policy",
+  "source": "",
+  "evidence": "memory: nothing similar answered before; records: candidates matched background words but not the question's focus terms (design, middle, unicode); semantic: no candidate truly answers this, alone or jointly (expansion added 8 candidates); assumption: 'policy' is not a low-stakes category",
+  "owner_evidence": "inferred first contact selected from cited evidence; confirm or refer; reviewed or accepted 7 of the last 80 changes under src/_pytest/junitxml.py (52% recency weighted; as merger on 7); authored 10 of the last 80 changes under src/_pytest/junitxml.py (31% recency weighted); Authored pr 10446: Avoid truncation when truncating means longer output (#10446); Fixes #6267",
+  "superseded_by": "",
+  "supersedes": "",
+  "options": "[\"Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format)\",\"Approve the overall approach but require a different option name\",\"Approve but require byte-based units instead of characters\",\"Approve but require a different truncation strategy (e.g. tail-only, not head+tail)\",\"Reject: wants a different approach entirely\"]",
+  "repo": "pytest-dev/pytest",
+  "kind": "new",
+  "parent_id": "",
+  "client_ref": "",
+  "depth": 0,
+  "origin": "agent",
+  "signoff": "",
+  "signed_by": "",
+  "brief": "",
+  "source_revision": "",
+  "needs_review": 0,
+  "review_reason": "",
+  "signed_revision": "",
+  "reusable": 0,
+  "rule_conditions": "",
+  "rule_expires": "",
+  "rule_by": "",
+  "rule_at": "",
+  "rule_scope": "",
+  "rule_ended_at": "",
+  "required_signers": "",
+  "signatures": "",
+  "actor_id": "",
+  "actor_name": "",
+  "actor_basis": "",
+  "facts": "",
+  "applicability": "",
+  "draft": 0,
+  "signed_hash": "",
+  "scope_key": "b45006694a9eacb51597",
+  "scope_paths": "",
+  "followup_required": 0,
+  "source_reuse_state": "human",
+  "independent_source_replacement": 0,
+  "historical_parent_revalidated": 0,
+  "rowid": 1,
+  "search_vector": "'-101':62 '-102':118 '0':25,148,208 '142':179 '5fd595c933b941789464059f9dd99ba8':77 'add':155 'alreadi':144 'append':157,159 'appli':46 'approach':217,252 'approv':112,196,214,224,234 'as-i':200 'ask':88 'backward':28 'base':206,229 'behavior':86 'byte':24,228 'byte-bas':227 'cancelled/won':130 'captur':6,168,173 'captured-output':5 'changelog/13802.feature.rst':185 'char':36,205 'char-bas':204 'charact':22,233 'compat':29 'complet':187 'confirm':1,91 'content':153,166 'decis':87 'default':124,147 'design':9,199 'diagnost':127,141 'diagnostics-preserv':140 'differ':221,238,251 'disabl':26,149,209 'doc':74,183 'doc/en/reference/reference.rst':184 'done':145 'e.g':241 'e1655ec2cd8d407881ef0bc4318a0f0b':78 'e71e37c68b2841ba827f1e54b79f60e8':79 'entir':253 'error':160 'exact':103 'explicit':129 'fail':51 'failur':126,158 'failure/error':56,151 'format':213 'global':119 'head':44,210,246 'id':76 'imani':82 'implement':143,176,198 'includ':125 'ini':12 'instead':231 'junit':3,15,71,121 'keep':43 'librari':65 'library-polici':64 'limit':18,19,93,107 'lina':81 'log':16 'longrepr':57,152 'marker':32,99,212 'match':134 'mean':96 'messag':68 'middl':42 'n':34,35,38 'name':14,105,203,223 'net':61,117 'never':53,162 'opt':137 'opt-in-on':136 'option':13,195,222 'org':59 'output':7,72,174 'overal':216 'own':83 'pass':49,163 'passed/2':180 'pend':190 'place':39 'polici':60,66,73 'preserv':142 'propos':116 'readi':189 'record':75 'reject':248 'relat':115 'report':85,122 'requir':219,226,236 'section':170 'set':104 'ship':11,101 'sign':193 'sign-off':192 'simpl':156 'skip':181 'slack':67 'src/_pytest/junitxml.py':146 'state':80 'stdout/stderr/log':169 'strategi':240 'tail':45,211,243,247 'tail-on':242 'test':52,177 'testing/test_junitxml.py':178 'text':33 'ticket':63 'trim':120 'truncat':8,17,31,37,54,98,150,165,239 'unicod':21 'uniform':47 'unit':20,94,108,207,230 'unlimit':27 'via':154 'want':249 'write':172 'xml':4 'yet':113 'zero':95",
+  "source_reuse_uncertain": false,
+  "owner_name": "Engineer 3c43b9",
+  "owner_team": "",
+  "run_title": "Our CI report uploads get huge when tests print or log a lot. Add an opt-in limit for captured output in JUnit XML reports, while keeping existing runs compatible. Make the behavior predictable for Unicode and failed tests, keep useful diagnostics, and document it for teams configuring CI. Please im",
+  "agent": "claude",
+  "task_status": "needs_judgment",
+  "events": [
+    {
+      "id": 3204,
+      "decision_id": "d52b4fae4a70",
+      "run_id": "1cfa3e5d9198",
+      "kind": "ask_drafted",
+      "detail": "{\"decision_id\":\"d52b4fae4a70\",\"owner\":\"Engineer 3c43b9\",\"score\":0.475,\"task_id\":\"1cfa3e5d9198\"}",
+      "created_at": "2026-10-12T22:52:04.708931+00:00"
+    },
+    {
+      "id": 3206,
+      "decision_id": "d52b4fae4a70",
+      "run_id": "1cfa3e5d9198",
+      "kind": "judgment_requested",
+      "detail": "Routed from the ownership graph: inferred first contact; confirm or refer in Slack; reviewed or accepted 7 of the last 80 changes under src/_pytest/junitxml.py (52% recency weighted; as merger on 7); approval uses the stronger of review and weighted merge shares; merge commits do not dilute the authorship history; authored 10 of … [cut: the owner evidence has the rest]",
+      "created_at": "2026-10-12T22:52:04.736866+00:00"
+    },
+    {
+      "id": 3207,
+      "decision_id": "d52b4fae4a70",
+      "run_id": "1cfa3e5d9198",
+      "kind": "node_added",
+      "detail": "{\"adopted\":\"\",\"client_ref\":\"\",\"decision_id\":\"d52b4fae4a70\",\"depth\":0,\"parent_id\":\"\",\"status\":\"pending\",\"task_id\":\"1cfa3e5d9198\"}",
+      "created_at": "2026-10-12T22:52:04.762838+00:00"
+    },
+    {
+      "id": 3208,
+      "decision_id": "d52b4fae4a70",
+      "run_id": "1cfa3e5d9198",
+      "kind": "semantic_retrieval",
+      "detail": "{\"backend\":\"disabled\",\"candidates\":[],\"decision_id\":\"d52b4fae4a70\",\"indexed\":0,\"task_id\":\"1cfa3e5d9198\"}",
+      "created_at": "2026-10-12T22:52:04.851911+00:00"
+    },
+    {
+      "id": 3209,
+      "decision_id": "d52b4fae4a70",
+      "run_id": "1cfa3e5d9198",
+      "kind": "expand",
+      "detail": "{\"added_candidates\":8,\"decision_id\":\"d52b4fae4a70\",\"phrases\":[\"pytest junitxml output limit\",\"system-out truncation feature\",\"max output size config\",\"truncate long captured stdout\",\"ini setting default zero\",\"head tail elision marker\",\"junit report size reduction\",\"log-cli-level output cap\"],\"task_id\":\"1cfa3e5d9198\"}",
+      "created_at": "2026-10-12T22:52:14.891400+00:00"
+    },
+    {
+      "id": 3210,
+      "decision_id": "d52b4fae4a70",
+      "run_id": "1cfa3e5d9198",
+      "kind": "ask_drafted",
+      "detail": "{\"decision_id\":\"d52b4fae4a70\",\"owner\":\"Engineer 3c43b9\",\"score\":0.475,\"task_id\":\"1cfa3e5d9198\"}",
+      "created_at": "2026-10-12T22:52:36.412155+00:00"
+    },
+    {
+      "id": 3212,
+      "decision_id": "d52b4fae4a70",
+      "run_id": "1cfa3e5d9198",
+      "kind": "judgment_requested",
+      "detail": "{}",
+      "created_at": "2026-10-12T22:52:36.433572+00:00"
+    },
+    {
+      "id": 3213,
+      "decision_id": "d52b4fae4a70",
+      "run_id": "1cfa3e5d9198",
+      "kind": "contact_reasoned",
+      "detail": "{\"attempt\":1,\"candidates\":[{\"evidence\":{\"c1:e1\":\"inferred first contact; confirm or refer in Slack\",\"c1:e2\":\"reviewed or accepted 7 of the last 80 changes under src/_pytest/junitxml.py (52% recency weighted; as merger on 7)\",\"c1:e3\":\"approval uses the stronger of review and weighted merge shares; merge commits do not dilute the authorship history\",\"c1:e4\":\"authored 10 of the last 80 changes under src/_pytest/junitxml.py (31% recency weighted)\",\"c1:e5\":\"Authored pr 10446: Avoid truncation when truncating means longer output (#10446)\",\"c1:e6\":\"Fixes #6267\"},\"id\":\"c1\",\"name\":\"Engineer 3c43b9\",\"person_id\":\"006271d41f8e\"},{\"evidence\":{\"c2:e1\":\"inferred first contact; confirm or refer in Slack\",\"c2:e2\":\"reviewed or accepted 2 of the last 108 changes under src/_pytest/logging.py (4% recency weighted; as merger on 2)\",\"c2:e3\":\"approval uses the stronger of review and weighted merge shares; merge commits do not dilute the authorship history\",\"c2:e4\":\"authored 2 of the last 108 changes under src/_pytest/logging.py (28% recency weighted)\",\"c2:e5\":\"Authored pr 12017: assorted code updates and f string migrations (#12017)\",\"c2:e6\":\"* chore: setuponly - migrate to f string\\n\\n* chore: MockTiming - move impl to _pytest.timing\\n\\n* chore: fixture tests: migrate to f-strings\\n\\n* chore: skipping tests: migrate to f-strings\\n\\n* chore: junitxml tests: add more type annotations\\n\\n* chore: junitxml tests: introduce more typesafe helpers\\n\\n* add changelog\\n\\n* test junitxml: split the DomNode type to express the Document/Element difference\\n\\n* fixup: undo accidential name-mangling in the junitxml test helpers\\n\\n* fixup: junitxml logging test - restore validation for expected output nodes\\n\\n* fixup: have fake config .getini use correct types\\n\\n* Update changelog/12017.improvement.rst\\n\\nCo-authored-by: Engineer d08201 <engineer-59787a@example.invalid>\\n\\n* use contrib category for changelog\\n\\n* use datetime.fromisoformat instead of strptime\\n\\n* post rebase ruff fixes\\n\\n* add extra coverage for junit test helpers\\n\\n---------\\n\\nCo-authored-by: Engineer d08201 <engineer-59787a@example.invalid>\"},\"id\":\"c2\",\"name\":\"Engineer aa6218\",\"person_id\":\"57922cb3a75d\"},{\"evidence\":{\"c3:e1\":\"inferred first contact; confirm or refer in Slack\",\"c3:e2\":\"reviewed or accepted 1 of the last 80 changes under src/_pytest/junitxml.py (15% recency weighted; as merger on 1)\",\"c3:e3\":\"merge activity counts at 41% weight here; general integration alone is weak area evidence\",\"c3:e4\":\"approval uses the stronger of review and weighted merge shares; merge commits do not dilute the authorship history\"},\"id\":\"c3\",\"name\":\"Engineer 61182a\",\"person_id\":\"d4c1cc393ce5\"},{\"evidence\":{\"c4:e1\":\"inferred first contact; confirm or refer in Slack\",\"c4:e2\":\"authored 1 of the last 73 changes under testing/test_junitxml.py (14% recency weighted)\"},\"id\":\"c4\",\"name\":\"Engineer 9fe75d\",\"person_id\":\"de0e8c510b00\"},{\"evidence\":{\"c5:e1\":\"Authored pr 10190: JUnit XML: Escape error messages in setup/teardown (#10190)\",\"c5:e2\":\"Co-authored-by: engineer-d96aff, Simon (BSH) <redacted@example.invalid>\"},\"id\":\"c5\",\"name\":\"engineer-d96aff\",\"person_id\":\"9e8eb1f315e6\"},{\"evidence\":{\"c6:e1\":\"Authored commit 60173b59fd26: Move CLI options to correct help section\",\"c6:e2\":\"Before:\\n\\n    pytest-warnings:\\n      -W, --pythonwarnings PYTHONWARNINGS\\n                            Set which warnings to report, see -W option of Python itself\\n      --maxfail=num         Exit after first num failures or errors\\n      --strict-config       Any warnings encountered while parsing the `pytest` section of the configuration file raise errors\\n      --strict-markers      Markers not registered in the `markers` section of the configuration file raise errors\\n      --strict              (Deprecated) alias to --strict-markers\\n      -c, --config-file FILE\\n                            Load configuration from `FILE` instead of trying to locate one of the implicit configuration files.\\n      --continue-on-collection-errors\\n                            Force test execution even if collection errors occur\\n      --rootdir=ROOTDIR     Define root directory for tests. Can be relative path: 'root_dir', './root_dir', 'root_dir/another_dir/'; absolute path: '/home/user/root_dir'; path with variables: '$HOME/root_dir'.\\n\\nBut other than -W, those options aren't related to pytest-warnings at all.\\n\\nThis is a regression in 19e99ab4131fbd709ce0e5a17694e1be3b22f355, which added\\n`group = parser.getgroup(\\\"pytest-warnings\\\")` in the middle of those \\\"general\\\"\\noptions, thus moving the help section for some of them.\"},\"id\":\"c6\",\"name\":\"Engineer 416d10\",\"person_id\":\"3306293d6258\"},{\"evidence\":{\"c7:e1\":\"Authored commit 917ce9aa0102: Fix user_properties not saved to XML if fixture errors during teardown\",\"c7:e2\":\"Move handling of user_properties to `finalize()`.\\n\\nPreviously if a fixture failed during teardown, `pytest_runtest_logreport` would not be called with \\\"teardown\\\", resulting in the user properties not being saved on the JUnit XML file.\\n\\nFixes: #11367\"},\"id\":\"c7\",\"name\":\"Engineer 640dcf\",\"person_id\":\"ddba2d8be356\"}],\"decision_id\":\"d52b4fae4a70\",\"evidence\":[\"c1:e2\",\"c1:e4\",\"c1:e5\",\"c1:e6\"],\"query\":\"Confirm the JUnit XML captured-output truncation design before shipping: ini option name `junit_logging_truncation_limit`, limit units = Unicode characters (not bytes), 0 = disabled (unlimited, backward compatible), and truncation marker text `\\\\n...[N chars truncated]...\\\\n` placed in the middle (keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself).\",\"retrieval\":{\"backend\":\"local\",\"chunks\":3188,\"indexed\":3167,\"model\":\"BAAI/bge-small-en-v1.5\"},\"selected\":\"c1\",\"task_id\":\"1cfa3e5d9198\",\"why\":\"Engineer 3c43b9 has the strongest authorship/review history in src/_pytest/junitxml.py and directly authored a prior PR (#10446) specifically about truncation behavior in this output ('Avoid truncation when truncating means longer output'), making them the person who has actually dealt with this specific truncation-design concern and a sensible first contact to confirm details or refer to Lina Imani if needed.\"}",
+      "created_at": "2026-10-12T22:52:52.013237+00:00"
+    },
+    {
+      "id": 3214,
+      "decision_id": "d52b4fae4a70",
+      "run_id": "1cfa3e5d9198",
+      "kind": "brief_withheld",
+      "detail": "{\"decision_id\":\"d52b4fae4a70\",\"task_id\":\"1cfa3e5d9198\",\"why\":\"unsupported: The exact setting name and limit units have been approved; unsupported: Lina Imani has confirmed the limit units, zero meaning and truncation marker\"}",
+      "created_at": "2026-10-12T22:52:58.118820+00:00"
+    },
+    {
+      "id": 3215,
+      "decision_id": "d52b4fae4a70",
+      "run_id": "1cfa3e5d9198",
+      "kind": "model_read",
+      "detail": "{\"decision_id\":\"d52b4fae4a70\",\"task_id\":\"1cfa3e5d9198\"}",
+      "created_at": "2026-10-12T22:52:58.131630+00:00"
+    },
+    {
+      "id": 3216,
+      "decision_id": "d52b4fae4a70",
+      "run_id": "1cfa3e5d9198",
+      "kind": "notification_queued",
+      "detail": "{\"decision_id\":\"d52b4fae4a70\",\"destination\":\"dm\",\"error\":\"\",\"kind\":\"ask\",\"task_id\":\"1cfa3e5d9198\",\"to\":\"Engineer 3c43b9\"}",
+      "created_at": "2026-10-12T22:52:58.180613+00:00"
+    },
+    {
+      "id": 3217,
+      "decision_id": "d52b4fae4a70",
+      "run_id": "1cfa3e5d9198",
+      "kind": "notification_sent",
+      "detail": "{\"decision_id\":\"d52b4fae4a70\",\"kind\":\"ask\",\"task_id\":\"1cfa3e5d9198\",\"to\":\"Engineer 3c43b9\"}",
+      "created_at": "2026-10-12T22:52:59.505555+00:00"
+    }
+  ],
+  "approval_pending": true,
+  "authorized": false,
+  "revision": null,
+  "sources": [],
+  "source_anchors": [],
+  "work_item_association": {
+    "declared": "",
+    "status": "undeclared",
+    "record_ids": [],
+    "links": [],
+    "historical": false,
+    "notice": "No structured work-item ID declared. Existing recorded links are shown separately; prose and client references are not links."
+  },
+  "work_item_history": [],
+  "context_history": [
+    {
+      "id": "a8930c3a32d44cdc8d651029dd2a33a2",
+      "sequence": 1,
+      "snapshot": "{\"decision\":{\"actor_basis\":\"\",\"actor_id\":\"\",\"actor_name\":\"\",\"answer\":null,\"answered_by\":null,\"applicability\":\"\",\"brief\":\"\",\"category\":\"policy\",\"client_ref\":\"\",\"context\":\"Org policy (NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record_ids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8) states: \\\"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\\\" A related proposal (NET-102, \\\"globally trim JUnit reports by default... including failure diagnostics\\\") was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done (src/_pytest/junitxml.py: default=\\\"0\\\" disables truncation; failure/error longrepr content via `_add_simple`/`append_failure`/`append_error` is never passed through `_truncate_content`, only captured stdout/stderr/log sections in `write_captured_output` are). Implementation, tests (testing/test_junitxml.py, 142 passed/2 skipped) and docs (doc/en/reference/reference.rst, changelog/13802.feature.rst) are complete and ready, pending this sign-off.\\nOptions: Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format) | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy (e.g. tail-only, not head+tail) | Reject: wants a different approach entirely\",\"created_at\":\"2026-10-12T22:51:55.375042+00:00\",\"depth\":0,\"draft\":0,\"evidence\":\"memory: nothing similar answered before; records: candidates matched background words but not the question's focus terms (design, middle, unicode); semantic: no candidate truly answers this, alone or jointly (expansion added 8 candidates); assumption: 'policy' is not a low-stakes category\",\"facts\":\"\",\"followup_required\":0,\"historical_parent_revalidated\":0,\"id\":\"d52b4fae4a70\",\"independent_source_replacement\":0,\"kind\":\"new\",\"model_pending\":1,\"needs_review\":0,\"options\":\"[\\\"Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format)\\\",\\\"Approve the overall approach but require a different option name\\\",\\\"Approve but require byte-based units instead of characters\\\",\\\"Approve but require a different truncation strategy (e.g. tail-only, not head+tail)\\\",\\\"Reject: wants a different approach entirely\\\"]\",\"origin\":\"agent\",\"owner_evidence\":\"inferred first contact selected from cited evidence; confirm or refer; reviewed or accepted 7 of the last 80 changes under src/_pytest/junitxml.py (52% recency weighted; as merger on 7); authored 10 of the last 80 changes under src/_pytest/junitxml.py (31% recency weighted); Authored pr 10446: Avoid truncation when truncating means longer output (#10446); Fixes #6267\",\"owner_id\":\"cff5c8052f32\",\"parent_id\":\"\",\"path\":\"unknown\",\"prediction\":null,\"question\":\"Confirm the JUnit XML captured-output truncation design before shipping: ini option name `junit_logging_truncation_limit`, limit units = Unicode characters (not bytes), 0 = disabled (unlimited, backward compatible), and truncation marker text `\\\\n...[N chars truncated]...\\\\n` placed in the middle (keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself).\",\"rationale\":null,\"repo\":\"pytest-dev/pytest\",\"required_signers\":\"\",\"reusable\":0,\"review_reason\":\"\",\"routing_reason\":\"Routed from the ownership graph: inferred first contact; confirm or refer in Slack; reviewed or accepted 7 of the last 80 changes under src/_pytest/junitxml.py (52% recency weighted; as merger on 7); approval uses the stronger of review and weighted merge shares; merge commits do not dilute the authorship history; authored 10 of … [cut: the owner evidence has the rest]\",\"rule_at\":\"\",\"rule_by\":\"\",\"rule_conditions\":\"\",\"rule_ended_at\":\"\",\"rule_expires\":\"\",\"rule_scope\":\"\",\"run_id\":\"1cfa3e5d9198\",\"scope_key\":\"b45006694a9eacb51597\",\"scope_paths\":\"\",\"signatures\":\"\",\"signed_by\":\"\",\"signed_hash\":\"\",\"signed_revision\":\"\",\"signoff\":\"\",\"source\":\"\",\"source_id\":null,\"source_revision\":\"\",\"status\":\"pending\",\"superseded_by\":\"\",\"supersedes\":\"\",\"updated_at\":\"2026-10-12T22:52:58.127210+00:00\"},\"derivations\":[],\"provenance\":\"human-or-local\",\"reason\":\"evidence-attached\",\"sources\":[]}",
+      "recorded_at": "2026-10-12T22:52:58.136305+00:00"
+    }
+  ],
+  "source_provenance": "unknown",
+  "source_reuse_requires_review": false,
+  "source_notice": "",
+  "source_revalidation": {
+    "available": false,
+    "has_reliance": false,
+    "sources": [],
+    "retires_rule": false,
+    "pins": [],
+    "decision_pins": [],
+    "dependencies": [],
+    "notice": "No versioned source chain is available; legacy provenance remains unknown.",
+    "blocked_on_unknown_provenance_only": false,
+    "review_path": "/#runs/1cfa3e5d9198"
+  },
+  "approval_scope": {
+    "id": "d52b4fae4a70",
+    "run_id": "1cfa3e5d9198",
+    "repo": "pytest-dev/pytest",
+    "question": "Confirm the JUnit XML captured-output truncation design before shipping: ini option name `junit_logging_truncation_limit`, limit units = Unicode characters (not bytes), 0 = disabled (unlimited, backward compatible), and truncation marker text `\\n...[N chars truncated]...\\n` placed in the middle (keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself).",
+    "context": "Org policy (NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record_ids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8) states: \"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\" A related proposal (NET-102, \"globally trim JUnit reports by default... including failure diagnostics\") was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done (src/_pytest/junitxml.py: default=\"0\" disables truncation; failure/error longrepr content via `_add_simple`/`append_failure`/`append_error` is never passed through `_truncate_content`, only captured stdout/stderr/log sections in `write_captured_output` are). Implementation, tests (testing/test_junitxml.py, 142 passed/2 skipped) and docs (doc/en/reference/reference.rst, changelog/13802.feature.rst) are complete and ready, pending this sign-off.\nOptions: Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format) | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy (e.g. tail-only, not head+tail) | Reject: wants a different approach entirely",
+    "path": "unknown",
+    "scope_paths": [],
+    "scope_key": "b45006694a9eacb51597",
+    "category": "policy",
+    "facts": {},
+    "options": [
+      "Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format)",
+      "Approve the overall approach but require a different option name",
+      "Approve but require byte-based units instead of characters",
+      "Approve but require a different truncation strategy (e.g. tail-only, not head+tail)",
+      "Reject: wants a different approach entirely"
+    ],
+    "applicability": {},
+    "required_signers": [],
+    "followup_required": 0,
+    "reusable": 0,
+    "rule_conditions": "",
+    "rule_scope": "",
+    "rule_expires": "",
+    "rule_ended_at": ""
+  },
+  "approval_scope_labels": {
+    "id": "Decision",
+    "run_id": "Task",
+    "repo": "Repository",
+    "question": "Question",
+    "context": "Context",
+    "path": "Path",
+    "scope_paths": "Scope paths",
+    "scope_key": "Scope key",
+    "category": "Category",
+    "facts": "Facts",
+    "options": "Options",
+    "applicability": "Applicability",
+    "required_signers": "Required signers",
+    "followup_required": "Required follow-up",
+    "reusable": "Reusable rule",
+    "rule_conditions": "Rule conditions",
+    "rule_scope": "Rule scope",
+    "rule_expires": "Rule expiry",
+    "rule_ended_at": "Rule ended"
+  },
+  "approval_scope_text": "Decision scope (recorded fields; no facts inferred from prose):\nDecision: d52b4fae4a70\nTask: 1cfa3e5d9198\nRepository: pytest-dev/pytest\nQuestion: Confirm the JUnit XML captured-output truncation design before shipping: ini option name `junit_logging_truncation_limit`, limit units = Unicode characters (not bytes), 0 = disabled (unlimited, backward compatible), and truncation marker text `\\n...[N chars truncated]...\\n` placed in the middle (keeping head+tail, applied uniformly to passing and failing tests, never truncating the failure/error longrepr itself).\nContext: Org policy (NET-101 ticket, #library-policy Slack message, and a JUnit output policy doc; record_ids 5fd595c933b941789464059f9dd99ba8, e1655ec2cd8d407881ef0bc4318a0f0b, e71e37c68b2841ba827f1e54b79f60e8) states: \"Lina Imani owns the reporting behavior decision; ask her to confirm the limit units, zero meaning and truncation marker before shipping... The exact setting name and limit units have not been approved yet.\" A related proposal (NET-102, \"globally trim JUnit reports by default... including failure diagnostics\") was explicitly Cancelled/Won't Do, which matches the opt-in-only, diagnostics-preserving implementation already done (src/_pytest/junitxml.py: default=\"0\" disables truncation; failure/error longrepr content via `_add_simple`/`append_failure`/`append_error` is never passed through `_truncate_content`, only captured stdout/stderr/log sections in `write_captured_output` are). Implementation, tests (testing/test_junitxml.py, 142 passed/2 skipped) and docs (doc/en/reference/reference.rst, changelog/13802.feature.rst) are complete and ready, pending this sign-off.\nOptions: Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format) | Approve the overall approach but require a different option name | Approve but require byte-based units instead of characters | Approve but require a different truncation strategy (e.g. tail-only, not head+tail) | Reject: wants a different approach entirely\nPath: unknown\nScope key: b45006694a9eacb51597\nCategory: policy\nFacts: {}\nOptions: [\"Approve the implemented design as-is (name, char-based units, 0=disabled, head+tail marker format)\", \"Approve the overall approach but require a different option name\", \"Approve but require byte-based units instead of characters\", \"Approve but require a different truncation strategy (e.g. tail-only, not head+tail)\", \"Reject: wants a different approach entirely\"]\nApplicability: {}",
+  "standing_grant": {
+    "recorded": false,
+    "state": "not_declared",
+    "scope": "",
+    "conditions": "",
+    "expires_at": "",
+    "granted_by": "",
+    "granted_at": "",
+    "ended_at": "",
+    "source_needs_review": false,
+    "source_provenance_uncertain": false,
+    "request_applicability": "not_evaluated_by_this_read",
+    "notice": "This decision declares no standing reuse grant of its own. Its current authorized/signoff result is separate and may be based on a source rule. Do not treat this decision as a new reusable rule; preserve its recorded answer and original context."
+  },
+  "fact_revision": "facts:8bec275eba7a7846812df34d72ca4d51f9878f586508755cf105636d1894c4f5",
+  "handon": {
+    "default": {
+      "scope_kind": "category",
+      "scope": "compat",
+      "label": "compat decisions"
+    },
+    "options": [
+      {
+        "scope_kind": "category",
+        "scope": "compat",
+        "label": "compat decisions"
+      },
+      {
+        "scope_kind": "none",
+        "scope": "",
+        "label": "this question only"
+      }
+    ],
+    "why_none": ""
+  },
+  "allowed_actions": [
+    "followup",
+    "note"
+  ],
+  "records_named": "NET-101 [Done] “NET-101: JUnit XML compatibility policy”; NET-102 [Cancelled] “NET-102: Proposal: globally trim JUnit reports by default”: not in force, so it is history, not current policy"
+}

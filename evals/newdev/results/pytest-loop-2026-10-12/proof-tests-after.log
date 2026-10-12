@@ -1,0 +1,14 @@
+............Raven: reading the diff for task 70721ba071e4 failed: RuntimeError: still unavailable
+Raven: reading the diff for task 70721ba071e4 failed: RuntimeError: still unavailable
+.Raven: reading the diff for task a735d51637c5 failed: RuntimeError: temporary reader failure
+...Raven: reading the diff for task 27f9ec92d044 failed: RuntimeError: reader unavailable
+..Raven: reading the diff for task e2b5a1866912 returned incomplete model results
+..Raven: reading the diff for task caa89efb8d6b returned incomplete model results
+.Raven: reading the diff for task a054cb5d3fbe returned incomplete model results
+.Raven: reading the diff for task 232672862db7 failed: RuntimeError: temporary reader failure
+..Raven: reading the diff for task 0303d57866a4 failed: RuntimeError: temporary reader failure
+...
+----------------------------------------------------------------------
+Ran 27 tests in 2.828s
+
+OK

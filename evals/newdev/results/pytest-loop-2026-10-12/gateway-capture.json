@@ -1,0 +1,6 @@
+{
+  "json_rpc_rows": 69,
+  "non_json_diagnostic_lines": 0,
+  "raw_private_sha256": "8bd10ecba11329b0c99502fae6629177e72c3421351c07c7923ce92455f899ea",
+  "note": "The capture forwards SSE incrementally and records actual host requests and server replies."
+}

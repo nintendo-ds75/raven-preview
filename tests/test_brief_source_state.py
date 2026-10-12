@@ -7,6 +7,14 @@ from pathlib import Path
 
 class BriefSourceStateTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('node'), 'Node.js is required for DOM state checks')
+    def test_required_followup_state(self):
+        root = Path(__file__).resolve().parent.parent
+        result = subprocess.run(
+            [shutil.which('node'), str(root / 'tests' / 'brief-followup-state.cjs')],
+            cwd=root, text=True, capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(shutil.which('node'), 'Node.js is required for DOM state checks')
     def test_source_review_state(self):
         root = Path(__file__).resolve().parent.parent
         result = subprocess.run(
