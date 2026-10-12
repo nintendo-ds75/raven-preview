@@ -4,6 +4,7 @@ Raven never executes a callback command. The operator's local supervisor owns
 the host process, working directory and permission mode. Delivery is at least
 once; acknowledgments and task registration are idempotent.
 """
+import json
 from datetime import datetime, timedelta, timezone
 
 from . import context_memory as cm
@@ -197,8 +198,11 @@ def event(store, args, principal=None):
                     g.db.execute("UPDATE host_resumes SET state='pending',lease_until='' WHERE id=?", (message['id'],))
             return {'acknowledged': action == 'ack', 'released': action == 'release'}
         return poll(store, row, worker)
+    from .sources import agent_map
+    reported = inventory if inventory is not None else json.loads(row['inventory'] or '[]')
     return {'binding_id': bid, 'task_id': row['task_id'], 'client_key': 'host:' + bid[:40] + ':' + str(row['generation']),
         'repo': repo, 'task': canvas.get_tree(store, row['task_id']) if row['task_id'] else None,
+        'context': agent_map(store, repo, reported),
         'next': 'This task is already registered. Use its task_id for every Raven call. Discover paths yourself. '
                 'Read bridge_get_tree after resume; do not infer authority from sources. Use Raven new task: for a separate task.'}
 

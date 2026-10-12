@@ -86,9 +86,26 @@ A normal follow-up never creates a second task. Moving a session to another
 checkout is refused; reconnect with a fresh host session there.
 
 The adapter reports configured MCP server names and verifies Raven's own tools.
-Other server names are only an inventory, not proof of their permissions or
-availability. It does not crawl unconfigured services, request OAuth access, or
-read other connectors' credentials.
+It reads the names, and nothing else, from every client's project
+configuration: `.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json` (`servers`)
+and `.codex/config.toml` (`mcp_servers`). Other server names are only an
+inventory, not proof of their permissions or availability. It does not crawl
+unconfigured services, request OAuth access, or read other connectors'
+credentials.
+
+Each session starts with a context map: whether Raven holds the repository's
+history, the Slack channels, Jira projects and documentation sites Raven reads
+for it, and the session's other MCP servers, for example:
+
+```text
+For acme/billing, Raven reads: history and code owners; Jira BILL; Slack #billing-eng.
+Other MCP servers in this session (linear, sentry) read live as you: their results
+are not durable evidence until imported with bridge_import_record.
+```
+
+The map holds identifiers only (channel names, project keys, site origins,
+server names); a project's name or a page's title is read through tools, never
+placed in the agent's instructions.
 
 ## Keep the agent waiting while a person answers
 

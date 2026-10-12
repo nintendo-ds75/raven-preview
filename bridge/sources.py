@@ -13,7 +13,9 @@ See docs/context-sources.md.
 """
 import json
 import os
+import re
 import threading
+import urllib.parse
 from dataclasses import dataclass, field as dc_field
 from datetime import datetime, timedelta, timezone
 
@@ -318,6 +320,40 @@ def report(store):
             'note': ('Records are evidence, never approval. Only sources an administrator attested as shared with '
                      'every reader are imported. Unavailable or expired source access is withheld; refreshes '
                      'are bounded and are not an instantaneous deletion feed.')}
+
+
+# What may appear in an agent's session context: identifiers, never text
+# a person wrote (a Jira project's name or a page title is read through tools).
+AGENT_ID = re.compile(r'[A-Za-z0-9#._:/-]{1,120}')
+RAVEN_SERVERS = ('bridge', 'raven')
+
+
+def agent_map(store, repo, inventory=()):
+    """What a coding agent working in `repo` can use, for the host to show
+    at session start: whether Raven holds the repository's history, the
+    sources Raven reads for it, and the session's other MCP servers (from
+    the host's 'server:<name>' inventory). Identifiers only."""
+    repo = repo_key(str(repo or ''))
+    out = []
+    for connection in connections(store, enabled_only=True):
+        if connection['repo'] != repo:
+            continue
+        if connection['kind'] == 'slack' and connection['label'].startswith('#'):
+            ident = connection['label']
+        elif connection['kind'] == 'docs':
+            parts = urllib.parse.urlsplit(connection['target'])
+            ident = f'{parts.scheme}://{parts.netloc}'
+        else:
+            ident = connection['target']
+        if AGENT_ID.fullmatch(ident):
+            out.append({'kind': connection['kind'], 'id': ident, 'synced': bool(connection['last_success_at'])})
+    scopes = {repo, store.graph.resolve_repo(repo)} - {''}
+    history = any(store.graph.get_source(scope, 'git') for scope in scopes) or bool(store.graph.db.execute(
+        'SELECT 1 FROM changes WHERE repo=? LIMIT 1', (repo,)).fetchone())
+    servers = sorted({t[len('server:'):] for t in inventory or () if isinstance(t, str) and t.startswith('server:')}
+                     - set(RAVEN_SERVERS))
+    return {'repo': repo, 'history': history, 'sources': out,
+            'servers': [s for s in servers if AGENT_ID.fullmatch(s) and '/' not in s][:20]}
 
 
 def readiness(store):

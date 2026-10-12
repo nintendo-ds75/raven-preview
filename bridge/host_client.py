@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,11 @@ import time
 from urllib.request import Request, HTTPRedirectHandler, build_opener
 from urllib.parse import urlsplit
 import uuid
+
+try:  # Python 3.11+; an older interpreter skips Codex's TOML configuration
+    import tomllib
+except ImportError:  # pragma: no cover
+    tomllib = None
 
 HOOK_BUDGET_SECONDS = 45
 HOOK_TIMEOUT_MESSAGE = ('Raven task registration did not finish before its deadline. '
@@ -165,6 +171,61 @@ def capabilities(config, *, deadline=None):
     return [t['name'] for t in found]
 
 
+# Project MCP configurations and the key each client keeps its servers under.
+MCP_CONFIGS = (('.mcp.json', 'mcpServers'), ('.cursor/mcp.json', 'mcpServers'),
+               ('.vscode/mcp.json', 'servers'), ('.codex/config.toml', 'mcp_servers'))
+CONTEXT_ID = re.compile(r'[A-Za-z0-9#._:/-]{1,120}')
+SOURCE_NAMES = {'slack': 'Slack', 'jira': 'Jira', 'docs': 'documentation'}
+
+
+def configured_servers(project):
+    """Names of the MCP servers this project configures for any client.
+    Only names: entries can hold credentials and are never read further.
+    A file that does not parse is skipped."""
+    names = set()
+    for filename, key in MCP_CONFIGS:
+        path = Path(project) / filename
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text()
+            if filename.endswith('.toml'):
+                data = tomllib.loads(text) if tomllib else {}
+            else:
+                data = json.loads(text)
+        except (OSError, ValueError):
+            continue
+        servers = data.get(key) if isinstance(data, dict) else None
+        if isinstance(servers, dict):
+            names.update(n for n in servers if isinstance(n, str) and len(n) < 150)
+    return sorted(names)
+
+
+def context_text(context):
+    """The session's context map as guidance, from identifiers only."""
+    if not isinstance(context, dict) or not isinstance(context.get('repo'), str):
+        return ''
+    def safe(value):
+        return isinstance(value, str) and CONTEXT_ID.fullmatch(value)
+    repo = context['repo'] if safe(context['repo']) else 'this repository'
+    kinds = {}
+    for source in context.get('sources') or []:
+        if isinstance(source, dict) and source.get('kind') in SOURCE_NAMES and safe(source.get('id')):
+            kinds.setdefault(source['kind'], []).append(source['id'])
+    reads = ['history and code owners'] if context.get('history') else []
+    reads += [SOURCE_NAMES[k] + ' ' + ', '.join(v[:8]) for k, v in sorted(kinds.items())]
+    # CONTEXT_GUIDANCE says how to search; this says what there is to search.
+    if reads:
+        text = f'For {repo}, Raven reads: ' + '; '.join(reads) + '. '
+    else:
+        text = f'Raven has no context sources for {repo} yet. '
+    servers = [s for s in context.get('servers') or [] if safe(s)][:12]
+    if servers:
+        text += ('Other MCP servers in this session (' + ', '.join(servers) + ') read live as you: their results are '
+                 'not durable evidence until imported with bridge_import_record. ')
+    return text
+
+
 # Hooks that must never trap the agent: if Raven cannot answer, the host
 # stops or ends as it would without Raven.
 FAIL_OPEN_EVENTS = ('Stop', 'SessionEnd')
@@ -191,12 +252,7 @@ def hook(config, host, payload, *, deadline=None):
     if event_name not in ('SessionStart', 'UserPromptSubmit'):
         raise ValueError('Unsupported hook event')
     tools = capabilities(config, deadline=deadline)
-    reported = list(tools)
-    for filename in ('.mcp.json', '.cursor/mcp.json'):
-        path = Path(config['project']) / filename
-        if path.exists():
-            configured = json.loads(path.read_text()).get('mcpServers', {})
-            reported.extend('server:' + name for name in configured if isinstance(name, str) and len(name) < 150)
+    reported = list(tools) + ['server:' + name for name in configured_servers(config['project'])]
     action, prompt = 'connect', ''
     if event_name == 'UserPromptSubmit':
         action, prompt = 'prompt', payload.get('prompt', '')
@@ -210,7 +266,8 @@ def hook(config, host, payload, *, deadline=None):
         deadline=deadline)
     # Source and human text is intentionally not elevated into hook/developer
     # instructions. The host reads that untrusted content through normal tools.
-    text = ('Raven connection verified. Available tools: ' + ', '.join(tools) + '. ' + DECISION_GUIDANCE)
+    text = ('Raven connection verified. Available tools: ' + ', '.join(tools) + '. ' + DECISION_GUIDANCE
+            + context_text(result.get('context')))
     if result['task_id']:
         text += ('Task already registered as ' + result['task_id'] + '. Do not create another task for this prompt. '
                  'Read bridge_get_tree for current decisions and evidence. Discover the relevant files yourself. '
