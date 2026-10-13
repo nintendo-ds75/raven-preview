@@ -36,7 +36,12 @@ DECISION_GUIDANCE = (
     'uncertain evidence can require a real decision. If no human judgment is needed, do not invent a node just '
     'to use Raven: keep the registered task, do the work and checks, read the tree and finish through the normal '
     'protocol. Existing open decisions and required follow-ups still need that protocol; this guidance does '
-    'not clear nodes or grant approval. ')
+    'not clear nodes or grant approval. '
+    'Human requests are persisted in Raven before any optional notification. If the user permits it and '
+    'this host has an existing authorized employee Slack MCP, report its tool names through bridge_host_event '
+    'and use bridge_host_notification capabilities/claim/receipt. Verify the connector identities and permissions, '
+    'send only the short Raven link once when send_once is true, and never retry an unknown send. '
+    'Raven does not acquire Slack credentials. All expert clarification, answers and signoff stay in Raven. ')
 
 
 def remaining(deadline, ceiling=55):

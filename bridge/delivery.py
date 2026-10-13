@@ -163,6 +163,22 @@ class Delivery:
     def channel(self) -> str:
         return getattr(self.transport, "name", "teams" if self._teams_destination() else "slack")
 
+    @property
+    def conversational(self) -> bool:
+        """Slack replies affect decisions only after an explicit workspace opt-in."""
+        return self.channel != 'slack' or self.store.graph.get_setting('slack_interaction_mode') == 'conversation'
+
+    def _notification_only(self, row, kind):
+        base = self.base_url.rstrip('/')
+        parsed = urllib.parse.urlsplit(base)
+        if (parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password
+                or parsed.query or parsed.fragment):
+            raise Invalid('Configure a public HTTPS Raven URL before sending Slack notifications')
+        link = base + '/#runs/' + row['run_id'] + '/' + row['id']
+        text = ('A decision was updated in Raven. Review it there: ' if kind == 'answered' else
+                'Your judgment is requested in Raven. Review the task and answer there: ') + link
+        return {'text': text, 'blocks': None, 'review_complete': False, 'interaction_mode': 'notification'}
+
     # ---------------- enqueue ----------------
 
     def _destination(self, person_name: str, person_id: str = "") -> tuple[str, str, str, str]:
@@ -338,13 +354,21 @@ class Delivery:
             if graph.db.execute("SELECT 1 FROM notifications WHERE dedupe_key=?", (dedupe,)).fetchone():
                 return None
         nid = uuid.uuid4().hex[:12]
-        payload = render(self._with_records(row), kind, person_name, self.base_url, note,
-                         task_link=self._task_link(person_id if dest_kind == "dm" else "", row["run_id"],
-                                                   decision_id, nid),
-                         has_account=self._has_login(person_id), rule_hint=self._answered_in_slack(person_name))
+        configuration_error = ''
+        try:
+            payload = (render(self._with_records(row), kind, person_name, self.base_url, note,
+                             task_link=self._task_link(person_id if dest_kind == "dm" else "", row["run_id"],
+                                                       decision_id, nid),
+                             has_account=self._has_login(person_id), rule_hint=self._answered_in_slack(person_name))
+                       if self.conversational else self._notification_only(row, kind))
+        except Invalid as error:
+            if self.conversational:
+                raise
+            configuration_error = str(error)
+            payload = {'text':'', 'blocks':None, 'review_complete':False, 'interaction_mode':'notification'}
         payload['approval_review'] = {**review, 'complete': payload.pop('review_complete')}
-        state = "queued" if destination else "failed"
-        error = "" if destination else (f"{person_name} has no Slack id yet and no triage channel is configured")
+        state = "queued" if destination and not configuration_error else "failed"
+        error = configuration_error or ("" if destination else (f"{person_name} has no Slack id yet and no triage channel is configured"))
         # Newer state of the same decision to the same person supersedes
         # what has not gone out yet: one message, the current one.
         graph.db.execute("UPDATE notifications SET state='superseded' WHERE decision_id=? AND person_name=? "
@@ -355,7 +379,7 @@ class Delivery:
             "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0,0,?,?,?)",
             (nid, decision_id, row["run_id"], kind, self.channel, destination, person_id, person_name, revision,
              dedupe, json.dumps(payload), state, error, now_iso(), content_hash))
-        graph.append_event("notification_queued" if destination else "notification_failed",
+        graph.append_event("notification_queued" if state == 'queued' else "notification_failed",
                            {"task_id": row["run_id"], "decision_id": decision_id, "kind": kind, "to": person_name,
                             "destination": dest_kind, "error": error})
         return self.get(nid)
@@ -455,7 +479,7 @@ class Delivery:
                                             task_link=self._task_link(_pid if dest_kind == "dm" else "",
                                                                       decision["run_id"], row["decision_id"], nid),
                                             has_account=self._has_login(_pid),
-                                            rule_hint=self._answered_in_slack(row["person_name"]))
+                                            rule_hint=self._answered_in_slack(row["person_name"])) if self.conversational else self._notification_only(decision, row['kind'])
                 fresh['approval_review'] = {**self._notification_review(decision, row['kind']),
                                             'complete': fresh.pop('review_complete')}
                 payload = json.dumps(fresh)
@@ -485,6 +509,13 @@ class Delivery:
         for row in due:
             payload = json.loads(row["payload"])
             try:
+                if not self.conversational:
+                    current = graph.db.execute('SELECT * FROM decisions WHERE id=?', (row['decision_id'],)).fetchone()
+                    if current is None:
+                        raise Invalid('The notification decision no longer exists')
+                    payload = self._notification_only(current, row['kind'])
+                    # Even a previously queued rich payload is never sent after opting out.
+                    graph.db.execute('UPDATE notifications SET payload=? WHERE id=?', (json.dumps(payload), row['id']))
                 channel = row["destination"]
                 if channel.startswith("U") or channel.startswith("W"):
                     channel = self.transport.open_dm(channel)
@@ -595,6 +626,8 @@ class Delivery:
         operator can from Deliveries). A crash after the answer landed
         but before the receipt was marked is caught by the handler,
         which recognizes an answer already recorded by this person."""
+        if not self.conversational:
+            return ''
         graph = self.store.graph
         payload = {"channel": channel, "thread_ts": thread_ts, "user": user_id, "text": text, "occurrence": occurrence}
         if event_id:
@@ -1685,6 +1718,10 @@ def handle_slack_event(delivery: Delivery, event: dict) -> dict:
         result = slack_capture.queue_mutation(delivery.store.graph, event)
         slack_capture.process(delivery)
         return result
+    if not delivery.conversational:
+        # Notifications are one-way by default. No notes, answers, approvals,
+        # captures or conversational model calls originate from Slack replies.
+        return {"ok": True, "ignored": "notification_only"}
     text = inner.get("text") or ""
     if not isinstance(text, str):
         return {"ok": True, "ignored": "invalid_message_text"}

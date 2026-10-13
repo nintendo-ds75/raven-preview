@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#f7f8f5">
+  <meta name="theme-color" content="#0d0d0d">
   <title>Raven</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
@@ -21,16 +21,16 @@
     <div class="workspace"><span class="workspace-icon">R</span><div><strong id="workspace-name">Loading workspace…</strong></div></div>
 
     <nav aria-label="Workspace navigation">
-      <a href="#work" data-view="work" class="work-new"><span data-icon="plus"></span>New task</a>
+      <a href="#work" data-view="work" class="work-new" aria-label="New conversation"><span data-icon="plus"></span>New conversation</a>
       <a href="#inbox" data-view="inbox" aria-label="Judgment inbox"><span data-icon="inbox"></span>Inbox<span class="nav-count" id="inbox-count">0</span></a>
-      <a href="#runs" data-view="runs" aria-label="Tasks"><span data-icon="activity"></span>Tasks<span class="small-dot"></span></a>
-      <a href="#memory" data-view="memory" aria-label="Decision memory"><span data-icon="layers"></span>Memory</a>
-      <a href="#owners" data-view="owners" aria-label="People and ownership"><span data-icon="users"></span>People & ownership</a>
+      <a href="#runs" data-view="runs" aria-label="Tasks"><span data-icon="activity"></span>Tasks</a>
     </nav>
     <nav id="work-recents" class="work-recents" aria-label="Recent browser tasks"></nav>
     <div class="sidebar-bottom">
-      <div class="connect-card" id="agent-connect-prompt"><span data-icon="terminal"></span><strong>Start in your coding agent.</strong><p>Connect Raven over MCP.</p><a href="#connect">Connect an agent <span aria-hidden="true">↓</span></a></div>
-      <a class="settings-link" href="#connect"><span data-icon="settings"></span>Connections & setup</a>
+      <div hidden class="connect-card" id="agent-connect-prompt"><span data-icon="terminal"></span><strong>Start in your coding agent.</strong><p>Connect Raven over MCP.</p><a href="#connect">Connect an agent <span aria-hidden="true">↓</span></a></div>
+      <details class="workspace-tools"><summary>Workspace tools</summary><nav aria-label="Workspace tools">      <a href="#memory" data-view="memory" aria-label="Decision memory"><span data-icon="layers"></span>Memory</a>
+      <a href="#owners" data-view="owners" aria-label="People and ownership"><span data-icon="users"></span>People & ownership</a>
+<a class="settings-link" href="#connect"><span data-icon="settings"></span>Connections & setup</a></nav></details>
       <div class="profile" id="profile"><span class="avatar sage" id="profile-avatar">YO</span><div><strong id="profile-name">Local operator</strong><small id="profile-note">Self-hosted workspace</small></div><span class="online-dot"></span></div>
     </div>
   </aside>

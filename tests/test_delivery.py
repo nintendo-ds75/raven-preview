@@ -64,6 +64,8 @@ class DeliveryCase(OfflineCase):
         super().setUp()
         self.store = Store(Path(self.temp.name) / "delivery.db")
         self.graph = self.store.graph
+        # These fixtures explicitly exercise the legacy conversational transport.
+        self.graph.set_setting('slack_interaction_mode', 'conversation')
         self.slack = FakeSlack()
         self.reply_occurrences = {}
         self.reply_inputs = {}

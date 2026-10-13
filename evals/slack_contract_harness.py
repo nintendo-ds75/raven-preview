@@ -309,6 +309,8 @@ class RavenContractHarness:
         from bridge.store import Store
         self.store = Store(self.database)
         self.store.graph.set_setting('workspace_name', 'Synthetic Slack contract workspace')
+        # This harness validates the optional conversational Slack contract.
+        self.store.graph.set_setting('slack_interaction_mode', 'conversation')
         self.transport = SlackTransport(BOT_TOKEN, api_base=self.slack.url)
         delivery = self.store.connect_delivery(self.transport)
         # Installation/bootstrap calls only; no decisions are seeded or signed.

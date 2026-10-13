@@ -16,7 +16,7 @@ const context = {
   api: async (path, data) => { request = {path, data}; return {token: 'test-only-credential'}; },
 };
 vm.createContext(context);
-vm.runInContext(source.slice(source.indexOf('function workbenchSetupCard()')), context);
+vm.runInContext(source.slice(source.indexOf('function workbenchSetupCard()'), source.indexOf("document.addEventListener('submit'", source.indexOf('function workbenchSetupCard()'))), context);
 vm.runInContext(source.slice(source.indexOf('function sourceReplacementField('), source.indexOf('function applicabilityFields(')), context);
 vm.runInContext(source.slice(source.indexOf('function showHelp()'), source.indexOf('function openModal(')), context);
 vm.runInContext(source.slice(source.indexOf('function updateAgentConnectPrompt()'), source.indexOf('async function quickAgent(')), context);
@@ -63,7 +63,8 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   context.state.agent_connections = [];
   context.state.runs = [];
   context.updateAgentConnectPrompt();
-  assert.equal(nodes['#agent-connect-prompt'].hidden, false);
+  // Agent setup lives under Workspace tools rather than a persistent sidebar prompt.
+  assert.equal(nodes['#agent-connect-prompt'].hidden, true);
   context.state.agent_connections = [{label: 'Codex', last_used_at: ''}];
   context.updateAgentConnectPrompt();
   assert.equal(nodes['#agent-connect-prompt'].hidden, true);

@@ -16,6 +16,8 @@ class PersonAssignmentIdentityTests(OfflineCase):
         super().setUp()
         self.store = Store(Path(self.temp.name) / "identity.db")
         self.graph = self.store.graph
+        # Exercise the supported opt-in conversational Slack workflow.
+        self.graph.set_setting("slack_interaction_mode", "conversation")
         self.addCleanup(self.graph.close)
         self.referrer = self.graph.add_person("Morgan Chen", email="morgan@example.test", slack_id="UMORGAN")
         self.actor = Actor.person(self.graph.get_person(self.referrer))

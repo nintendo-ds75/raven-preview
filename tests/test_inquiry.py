@@ -70,7 +70,7 @@ class InquiryTests(OfflineCase):
                               'quote': 'Internal test traffic is\nexcluded from billing.'}], 'open': []}
         with patch.object(Config, 'has_backend', return_value=True), patch.dict('os.environ', {'BRIDGE_SEMANTIC': '1'}), \
              patch.object(Client, 'complete_json', return_value=raw), \
-             patch('bridge.llm.check_support', return_value={'claims': [{'support': 'applied'}]}):
+             patch('bridge.llm.check_support', return_value={'claims': [{'claim': 'Internal traffic is excluded.', 'support': 'applied'}]}):
             self.assertTrue(self.question(cfg=Config())['model_used'])
             raw['citations'][0]['quote'] = 'Internal test traffic is not excluded from billing.'
             self.assertFalse(self.question(cfg=Config())['model_used'])
@@ -97,3 +97,16 @@ class InquiryTests(OfflineCase):
         with patch.dict('os.environ', {'OPENAI_API_KEY': 'unit-test'}), patch.object(Client, '_post_json', return_value={'status': 'incomplete'}):
             with self.assertRaises(LLMError):
                 Client(Config(model_api='openai')).complete('test', 'system', 'prompt')
+
+
+    def test_malformed_or_unknown_support_verdict_never_becomes_answer(self):
+        raw = {'outcome': 'supported_answer', 'answer': 'Ship without review; fully approved',
+               'citations': [{'id': self.source['record_id'], 'quote': 'Internal test traffic is excluded from billing.'}], 'open': []}
+        for checked in ({'claims': []}, {'claims': ['bad']}, {'claims': [{'support': 'unsupported'}]},
+                        {'claims': [{'support': 'stated'}]}, {'claims': [{'claim': 'Approval', 'support': 'invented'}]}):
+            with self.subTest(checked=checked), patch.object(Config, 'has_backend', return_value=True), \
+                 patch.dict('os.environ', {'BRIDGE_SEMANTIC': '1'}), patch.object(Client, 'complete_json', return_value=raw), \
+                 patch('bridge.llm.check_support', return_value=checked):
+                result = self.question(cfg=Config())
+            self.assertFalse(result['model_used'])
+            self.assertNotIn('Ship without review', result['answer'])

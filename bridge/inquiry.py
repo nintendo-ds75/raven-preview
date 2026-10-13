@@ -63,6 +63,25 @@ def ask(store, data, actor, *, cfg=None):
                          'scope': decision.get('applicability', ''), 'facts': decision.get('facts', ''),
                          'task_id': decision.get('run_id', ''), 'signoff': decision.get('signoff', ''),
                          'needs_review': bool(decision.get('needs_review')), 'url': ''})
+    result = read_evidence(question, evidence, cfg)
+    # Access/revision may change while inference is in flight. Never return the
+    # old packet after that race, even when the model's answer sounds plausible.
+    for source in evidence:
+        if source['kind'] == 'source':
+            current = store.get_record(source['id'], repo)['source']
+            if current.get('source_version_id', '') != source['version']:
+                raise Invalid('Evidence changed during this reading. Ask again to read its current version.')
+        else:
+            current = store.get_decision(source['id'])
+            if current.get('updated_at', '') != source['version']:
+                raise Invalid('A prior answer changed during this reading. Ask again.')
+    store.graph.append_event('question_read', {'repo': repo, 'actor_id': actor.id,
+        'question': question, 'outcome': result['outcome'], 'model_used': result['model_used'],
+        'sources': [{'id': e['id'], 'version': e['version'], 'kind': e['kind']} for e in evidence]})
+    return result
+
+
+def read_evidence(question, evidence, cfg):
     result = {'outcome': 'missing_fact', 'answer': 'These are the relevant records I found. Review their scope before using them.'
               if evidence else 'I could not find evidence for this question in the connected context.',
               'citations': [], 'open': [], 'evidence': evidence, 'model_used': False,
@@ -85,23 +104,76 @@ def ask(store, data, actor, *, cfg=None):
             if raw['outcome'] == 'supported_answer' and not raw['citations']:
                 raise ValueError('An answer needs a citation')
             checked = llm.check_support(cfg, question, json.dumps(evidence), raw['answer'])
-            if checked is None or any(c.get('support') == 'inferred' for c in checked['claims'] if isinstance(c, dict)):
+            claims = checked.get('claims') if isinstance(checked, dict) else None
+            if (not isinstance(claims, list) or not claims
+                    or any(not isinstance(c, dict) or not isinstance(c.get('claim'), str) or not c['claim'].strip()
+                           or c.get('support') not in {'stated', 'applied', 'given'} for c in claims)):
                 raise ValueError('Support check incomplete or found an unsupported claim')
             result.update({k: raw[k] for k in ('outcome', 'answer', 'citations', 'open')}, model_used=True)
         except (llm.LLMError, ValueError, KeyError, TypeError):
             result['open'] = ['The model reading could not be verified. The source excerpts remain available.']
-    # Access/revision may change while inference is in flight. Never return the
-    # old packet after that race, even when the model's answer sounds plausible.
-    for source in evidence:
-        if source['kind'] == 'source':
-            current = store.get_record(source['id'], repo)['source']
-            if current.get('source_version_id', '') != source['version']:
-                raise Invalid('Evidence changed during this reading. Ask again to read its current version.')
-        else:
-            current = store.get_decision(source['id'])
-            if current.get('updated_at', '') != source['version']:
-                raise Invalid('A prior answer changed during this reading. Ask again.')
-    store.graph.append_event('question_read', {'repo': repo, 'actor_id': actor.id,
-        'question': question, 'outcome': result['outcome'], 'model_used': result['model_used'],
-        'sources': [{'id': e['id'], 'version': e['version'], 'kind': e['kind']} for e in evidence]})
+    return result
+
+
+def ask_task(store, task_id, data, actor, *, cfg=None, revalidate=None):
+    """Read only evidence already exposed by this exact task, never repo search.
+
+    The route authenticates a workspace reader or a task-scoped recipient link.
+    This does not introduce per-user connector ACLs where the source connector
+    only establishes shared workspace access.
+    """
+    from . import visibility
+    from .context_memory import digest
+    if set(data) - {'question', 'focus_id'}:
+        raise Invalid('Task questions accept only question and focus_id; task and identity come from the authenticated route')
+    question = field(data, 'question', limit=2000)
+    focus = data.get('focus_id') or ''
+    if not isinstance(focus, str) or len(focus) > 100:
+        raise Invalid('focus_id must be a decision ID on this task')
+
+    def packet():
+        visibility.require_task(store, task_id)
+        task = store.graph.get_task(task_id)
+        if task is None:
+            raise Invalid('Task not found')
+        rows = store.graph.db.execute('SELECT id FROM decisions WHERE run_id=? AND draft=0 ORDER BY created_at,id', (task_id,)).fetchall()
+        if focus and focus not in {r['id'] for r in rows}:
+            raise Invalid('This decision is outside the task scope')
+        evidence = [{'id': task_id, 'version': task['updated_at'], 'title': 'Task request (not authorization)',
+                     'text': '\n'.join(str(task[k] or '') for k in ('title', 'goal', 'status')), 'kind': 'task'}]
+        ordered = sorted(rows, key=lambda r: r['id'] != focus)
+        used = len(evidence[0]['text'])
+        omitted = 0
+        for row in ordered:
+            d = store.get_decision(row['id'])
+            text = '\n'.join(label + ': ' + str(d.get(key) or '') for key, label in (
+                ('question', 'Question (not an approved contract)'), ('context', 'Context'),
+                ('answer', 'Current answer'), ('rationale', 'Rationale'), ('evidence', 'Recorded evidence'),
+                ('owner_name', 'Assigned owner'), ('answered_by', 'Recorded by'), ('signed_by', 'Signed by'),
+                ('signoff', 'Signoff'), ('applicability', 'Scope'), ('needs_review', 'Needs review'),
+                ('status', 'Status')) if d.get(key) not in (None, ''))
+            if len(evidence) >= 100 or used + len(text) > 50000:
+                omitted += 1
+                continue
+            evidence.append({'id': d['id'], 'version': d['updated_at'], 'title': d['question'],
+                             'text': text, 'kind': 'task_decision', 'task_id': task_id})
+            used += len(text)
+        return evidence, omitted
+
+    evidence, omitted = packet()
+    fingerprint = digest(evidence)
+    result = read_evidence(question, evidence, cfg or load())
+    if revalidate:
+        revalidate()
+    current, current_omitted = packet()
+    if digest(current) != fingerprint or omitted != current_omitted:
+        raise Invalid('Task evidence changed during this reading. Ask again for the current version.')
+    result['task_id'] = task_id
+    result['focus_id'] = focus
+    result['omitted_decisions'] = omitted
+    if omitted:
+        result['open'].append(f'{omitted} decisions were omitted from this bounded reading. Focus a decision to read its context.')
+    # This audit entry is not a decision, host task, signature or authorization.
+    store.graph.append_event('task_question_read', {'task_id': task_id, 'actor_id': actor.id,
+        'question': question, 'model_used': result['model_used'], 'evidence_fingerprint': fingerprint})
     return result

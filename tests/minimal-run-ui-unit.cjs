@@ -357,7 +357,7 @@ function harness() {
     h.selectTask(fixture.tree('prioritize-blockers',{nodes:[...older,
       fixture.node('late-blocker'),fixture.node('late-review',{blocking:false,needs_review:true})]}));
     const html=h.run('taskOverview()');const ids=[...html.matchAll(/data-node-id="([^"]+)"/g)].map(match=>match[1]);
-    assert.deepEqual(ids.slice(0,4),['late-blocker','late-review','older-0','older-1']);assert.equal(ids.length,12);
+    assert.deepEqual(ids.slice(0,4),['late-blocker','late-review','older-0','older-1']);assert.equal(ids.length,14); // Open and resolved sections each have their own pagination.
   });
   await test('selected contact uses recorded owner evidence and referral trace without reranking',()=>{
     const h=harness();h.selectTask(fixture.tree('routing-run',{nodes:[fixture.node('routed',{owner:'Selected Reviewer',

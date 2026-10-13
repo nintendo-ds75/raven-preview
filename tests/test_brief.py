@@ -59,6 +59,8 @@ class BriefCase(OfflineCase):
         super().setUp()
         self.store = Store(Path(self.temp.name) / "brief.db")
         self.graph = self.store.graph
+        # Personal brief links in the legacy conversational transport remain supported.
+        self.graph.set_setting("slack_interaction_mode", "conversation")
         self.slack = FakeSlack()
         self.delivery = self.store.connect_delivery(self.slack, base_url=BASE)
         with self.graph.transaction():

@@ -118,6 +118,8 @@ class RetainedPremiseCorrectionTests(FactCorrectionBoundaryCase):
 class AcceptedInteractionCorrectionTests(FactCorrectionBoundaryCase):
     def setUp(self):
         super().setUp()
+        # Accepted conversational replies are the provenance under test.
+        self.graph.set_setting("slack_interaction_mode", "conversation")
         self.transport = FakeSlack()
         self.delivery = self.store.connect_delivery(self.transport, base_url='https://example.invalid')
         self.addCleanup(self.delivery.close)

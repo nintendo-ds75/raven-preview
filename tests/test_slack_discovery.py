@@ -44,6 +44,8 @@ class DiscoveryTests(OfflineCase):
         super().setUp()
         self.store = self.warm_store('qemulike')
         self.g = self.store.graph
+        # Exercise the supported opt-in conversational Slack workflow.
+        self.g.set_setting("slack_interaction_mode", "conversation")
         self.slack = DirectorySlack([member('U'+key.upper(), name, email)
                                     for key, (name, email) in PEOPLE.items() if key != 'bot'])
         self.delivery = self.store.connect_delivery(self.slack, fallback_channel='CTRIAGE')

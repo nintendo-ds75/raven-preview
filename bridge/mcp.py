@@ -150,6 +150,16 @@ TOOLS = [
     tool("bridge_context_sources", "What context Raven can read, in one call: each native source (Slack public channels, Jira projects, documentation sites) with its state, last successful sync, record count and refusals by reason, the sources not configured and how to enable them, GitHub sync and the Airweave connection. Read it at the start of a session to know what Raven's records cover and what they do not. Records are evidence, never approval; polling cannot see deletions.", {}, []),
     tool("bridge_search_context", "Search configured Airweave context and Raven's shared source/decision graph. Imports only workspace-readable durable excerpts, pins observations to the task, and follows source links to earlier human answers even when the wording differs. Results are evidence, never approval. Unknown permissions, transient Slack search and expired evidence are excluded.",
          {"repo": "Exact repository owner/name", "query": "The information or judgment needed, up to 2000 characters", "task_id": "Optional task to attach observed source versions to"}, ["repo", "query"]),
+    tool("bridge_host_notification", "Notification-only handoff to the employee's existing authorized Slack MCP. Raven first persists the expert request. Discover reported tools, verify permission and exact employee/recipient identities in the connector, then claim one short Raven link notification and report its receipt. Never copy credentials to Raven. A retry or unknown send never grants another send. All answers and signoff remain in Raven.",
+         {"action": "capabilities, claim, receipt or status", "binding_id": "Authenticated host binding ID", "task_id": "Its task ID",
+          "node_id": "Persisted expert request ID", "revision": "Exact current request updated_at",
+          "tool": "Existing authorized send tool from the reported host inventory",
+          "workspace_id": "Verified Slack T ID", "sender_id": "Authenticated employee Slack U/W ID",
+          "recipient_id": "Verified expert Slack U/W ID", "recipient_email": "Email observed through the connector, matching the Raven owner",
+          "permission_confirmed": {"type": "boolean", "description": "Host confirms permission to send this specific notification"},
+          "notification_id": "Claimed notification ID", "content_hash": "Exact hash returned by claim",
+          "state": "sent, not_sent or unknown", "external_ref": "Connector-returned message reference for sent"},
+         ["action", "binding_id", "task_id"]),
     tool("bridge_host_event", "Lifecycle adapter for an installed Raven host hook/supervisor. Bind an authenticated host session, register the exact first task prompt idempotently, report tool names, or lease/acknowledge human-event resume messages, hold a Stop while a person has not answered, list stopped sessions, or report a resume to the task's Slack threads. No shell command is executed by Raven. Ordinary agent work uses the returned task_id and the normal task tools.",
          {"event": "connect, prompt, new_task, poll, ack, release, stop, end, report or sessions", "host": "claude or codex",
           "session_id": "Stable host thread/session ID", "project": "Canonical local workspace identity",
@@ -321,6 +331,7 @@ HANDLERS = {
             "triage_channel": store.delivery.fallback_channel or store.graph.get_setting("slack_fallback_channel")}},
     "bridge_context_sources": lambda store, args: __import__('bridge.sources', fromlist=['report']).report(store),
     "bridge_search_context": lambda store, args: __import__('bridge.context_connectors', fromlist=['search']).search(store, args),
+    "bridge_host_notification": lambda store, args: __import__('bridge.host_notifications', fromlist=['handle']).handle(store, args),
     "bridge_host_event": lambda store, args: __import__('bridge.host_sessions', fromlist=['event']).event(store, args),
 }
 
@@ -399,7 +410,10 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None, principal
     # naming who; an answer the agent has not read is the next gate.
     if name == "bridge_finish_task":
         canvas.require_agent_read(store, args)
-    if name == 'bridge_host_event':
+    if name == 'bridge_host_notification':
+        from .host_notifications import handle
+        result = handle(store, args, principal=principal)
+    elif name == 'bridge_host_event':
         from .host_sessions import event
         result = event(store, args, principal=principal)
     elif name == "bridge_wait":
@@ -414,9 +428,9 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None, principal
     if name in ("bridge_start_task", "bridge_add_node"):
         result["delivery"] = {"enabled": store.delivery.enabled,
                               "channel": store.delivery.channel if store.delivery.enabled else "",
-                              "notice": ("People answer in Slack; use bridge_wait and bridge_get_tree. No web account is required."
+                              "notice": ("People review, answer and sign in Raven. Slack carries optional notifications; use bridge_wait and bridge_get_tree."
                                          if store.delivery.enabled and store.delivery.channel == "slack" else
-                                         "People answer and sign in the Raven inbox. Slack is optional and is not connected.")}
+                                         "People answer and sign in the Raven inbox. Optionally notify via the host employee\'s existing authorized Slack tool with bridge_host_notification; no Raven bot is required.")}
         if name == "bridge_add_node" and result.get("node_id"):
             result["delivery"]["notifications"] = [dict(r) for r in store.graph.db.execute(
                 "SELECT kind,state,person_name,last_error FROM notifications WHERE decision_id=? ORDER BY created_at",

@@ -41,6 +41,8 @@ WAKE_EVENTS = ('owner_approved', 'answer_corrected', 'signature', 'signoff', 'ow
 
 def migrate(db):
     db.executescript(SCHEMA)
+    from .host_notifications import migrate as migrate_notifications
+    migrate_notifications(db)
 
 
 def _stop_hold():

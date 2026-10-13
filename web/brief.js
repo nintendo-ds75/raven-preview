@@ -42,7 +42,7 @@ const QUOTE_SHOWN = 360;
 // is on screen: on a phone the decision and the place to add context come
 // before the record; on a desktop the context box sits beside it.
 const narrow = matchMedia('(max-width: 900px)');
-const DRAFTS = ['answer-text', 'answer-why', 'note-text', 'handon-note', 'handon-other'];
+const DRAFTS = ['answer-text', 'answer-why', 'note-text', 'handon-note', 'handon-other', 'inquiry-text'];
 // One answer for a link that does not open, whatever the cause: a cut-off
 // paste was told the link "expired or was revoked".
 const NOT_VALID = 'This link isn’t valid: it may be incomplete, expired or revoked.';
@@ -60,6 +60,8 @@ let lastRead = '';
 let renderedSourceReviewKey = '';
 // A decision opened from the list; '' is the one the link names.
 let focusId = '';
+const inquiryViews = new Map();
+const inquiryView = () => { const id = data?.focus?.node_id || ''; if (!inquiryViews.has(id)) inquiryViews.set(id, {question:'', answer:null, error:'', pending:false}); return inquiryViews.get(id); };
 
 async function call(path, body) {
   const response = await fetch(path, {method: body ? 'POST' : 'GET', headers: {'X-Raven-Link': token, ...(body ? {'Content-Type': 'application/json'} : {})},
@@ -258,6 +260,7 @@ function focusCard(f) {
     ${paths.length ? `<p class="brief-where">Touches ${paths.map(p => `<code>${esc(p)}</code>`).join(', ')}</p>` : ''}
     ${reasonBlock(f.why, f.node_id)}
     ${f.replacement_ends_rule ? '<p class="context">Recording a new or corrected answer retires the existing standing rule. An unchanged-answer sign-off keeps it. Future automatic reuse needs a fresh explicit make-rule action.</p>' : ''}
+    ${f.consequences ? `<div class="brief-block"><span class="label">Consequences of this decision</span><p>${prose(typeof f.consequences === 'string' ? f.consequences : JSON.stringify(f.consequences))}</p></div>` : ''}
     ${form}
     ${!['read','handed'].includes(standing) && f.owner && (!data.viewer.interview_decision_id || data.viewer.interview_decision_id === f.node_id) ? `<div class="context-box"><strong>Prefer to talk it through?</strong><p class="context">An interview can use browser dictation and spoken readback. You review and confirm the exact decision. It stays on this personal task link.</p><button class="button small" data-action="interview-start" data-task="${esc(data.task.id)}" data-id="${esc(f.node_id)}">Start or resume interview</button></div>` : ''}
   </section>`;
@@ -393,6 +396,14 @@ function notesList(notes) {
 // it. The app shows notes to every member of the workspace.
 const audience = () => `Visible to people on this task and members of ${data.workspace ? 'the ' + data.workspace + ' workspace' : 'this Raven workspace'}.`;
 
+function inquiryCard() {
+  const inquiry = inquiryView();
+  return `<section class="task-panel brief-inquiry" aria-labelledby="inquiry-title"><h2 id="inquiry-title">Ask Raven</h2><p class="brief-intro">Ask about the context, alternatives or consequences before deciding.</p>
+    <form id="inquiry-form" data-focus="${esc(data.focus?.node_id || '')}"><label class="sr-only" for="inquiry-text">Your question about this decision</label><textarea id="inquiry-text" maxlength="2000" required placeholder="Why is this decision needed?" ${inquiry.pending ? 'readonly' : ''}>${esc(inquiry.question)}</textarea><div class="brief-chat-foot"><span class="brief-audience">Read-only clarification. This does not answer or sign off.</span><button class="button" type="submit" ${inquiry.pending ? 'disabled' : ''}>${inquiry.pending ? 'Reading…' : 'Ask'}</button></div></form>
+    ${inquiry.error ? `<p role="alert" class="error">${esc(inquiry.error)}</p>` : ''}
+    ${inquiry.answer ? `<div class="brief-inquiry-result" role="status"><p>${prose(inquiry.answer.answer)}</p><small>${esc(inquiry.answer.notice || 'Clarification is not approval. Use the decision form to record your answer.')}</small>${(inquiry.answer.evidence || []).length ? `<details data-keep="inquiry-evidence"><summary>Evidence used · ${inquiry.answer.evidence.length}</summary>${inquiry.answer.evidence.map(e => `<h3>${esc(e.title || e.id || 'Recorded evidence')}</h3><p>${prose(e.text)}</p>`).join('')}</details>` : ''}</div>` : ''}</section>`;
+}
+
 function noteCard() {
   // The record and one place to add to it. The coding agent reads notes
   // on its tree; nothing here calls a model.
@@ -439,7 +450,7 @@ function joinNote() {
 // quiet refresh redrew every 30 seconds. Each carries a key (`data-keep`)
 // made from what it is about, not where it is.
 function keepDrafts() {
-  return {answerFor: $('#answer-form')?.dataset.id || '', values: DRAFTS.map(id => [id, document.getElementById(id)?.value || '']),
+  return {inquiryFor: $('#inquiry-form')?.dataset.focus || '', answerFor: $('#answer-form')?.dataset.id || '', values: DRAFTS.map(id => [id, document.getElementById(id)?.value || '']),
     picked: document.querySelector('input[name="answer-option"]:checked')?.value || '',
     handonPerson: $('#handon-person')?.value || '', menu: $('.brief-viewer-menu')?.open || false,
     disclosures: [...document.querySelectorAll('details[data-keep]')].map(el => [el.dataset.keep, el.open]),
@@ -450,6 +461,7 @@ function keepDrafts() {
 function restoreDrafts(kept) {
   const sameForm = $('#answer-form')?.dataset.id === kept.answerFor;
   for (const [id, value] of kept.values) {
+    if (id === 'inquiry-text' && kept.inquiryFor !== (data.focus?.node_id || '')) continue;
     if (!value || (id.startsWith('answer') || id.startsWith('handon')) && !sameForm) continue;
     const el = document.getElementById(id);
     if (el && !el.value) el.value = value;
@@ -566,27 +578,34 @@ function render() {
   if (!data) return;
   const root = $('#brief');
   const kept = keepDrafts();
+  const active = document.activeElement;
+  const focusedId = active?.id, selection = [active?.selectionStart, active?.selectionEnd];
   const t = data.task, f = data.focus, p = data.progress;
   document.title = `Raven · ${f ? f.question : t.title}`;
   $('#brief-workspace').textContent = data.workspace || '';
   $('#brief-account').innerHTML = `${viewerMenu(kept.menu)}${accountCta()}`;
   const standing = f ? focusStanding(f) : 'read';
-  const box = noteCard();
+  const box = inquiryCard() + `<details class="brief-extra" data-keep="notes"><summary>Add context for the agent</summary>${noteCard()}</details>`;
   const body = narrow.matches
-    ? `<div class="brief-stack">${focusCard(f)}${box}${requesterCard(t, data.requester)}${decisionsCard(data.nodes)}${peopleCard(data.contacts)}${historyCard(data.history)}</div>`
-    : `<div class="brief-columns"><div class="brief-main">${focusCard(f)}${requesterCard(t, data.requester)}${decisionsCard(data.nodes)}${historyCard(data.history)}</div>
-       <aside class="brief-side" aria-label="Context and people">${box}${peopleCard(data.contacts)}${joinNote()}</aside></div>`;
+    ? `<div class="brief-stack">${box}${focusCard(f)}${decisionsCard(data.nodes)}<details class="brief-extra" data-keep="task-background"><summary>Task background & history</summary>${requesterCard(t, data.requester)}${peopleCard(data.contacts)}${historyCard(data.history)}</details></div>`
+    : `<div class="brief-columns"><div class="brief-main">${focusCard(f)}${decisionsCard(data.nodes)}<details class="brief-extra" data-keep="task-background"><summary>Task background & history</summary>${requesterCard(t, data.requester)}${historyCard(data.history)}</details></div>
+       <aside class="brief-side" aria-label="Context and people">${box}<details class="brief-extra" data-keep="people"><summary>People involved</summary>${peopleCard(data.contacts)}${joinNote()}</details></aside></div>`;
   // One task-wide count beside the personal line: a pill and a meta count
   // beside "needs one decision from you" read as two more owed by them.
   root.innerHTML = `
     ${error ? `<p class="task-warning" role="alert">Refresh failed: ${esc(error)}. Showing the last successful read.</p>` : ''}
     <section class="brief-hero">
       <h1>${esc(taskDisplayLabel(t, f, f ? 'Decision review' : 'Task overview'))}</h1>
-      <p class="brief-ask">${heroLine(standing)}</p>
+      <p class="brief-ask" role="status">${heroLine(standing)}</p><p class="brief-next"><strong>Next:</strong> ${standing === 'answer' ? 'Review the context, ask any questions, then record your decision.' : ['sign','cosign'].includes(standing) ? 'Review the answer and exact evidence, then explicitly sign off.' : 'Inspect the decisions below for the latest task state.'}</p>
       <div class="metadata"><span>Requested by ${esc(data.requester.name || 'unknown')}</span><span>${esc(t.repo)}</span><span>${p.signed} of ${p.total} signed</span>${t.status === 'completed' ? '<span>Agent reported complete</span>' : ''}</div>
     </section>
     ${body}`;
   restoreDrafts(kept);
+  const focus = focusedId && document.getElementById(focusedId);
+  if (focus && (!focusedId.startsWith('answer') || kept.answerFor === (data.focus?.node_id || ''))) {
+    focus.focus({preventScroll:true});
+    if (typeof focus.setSelectionRange === 'function' && selection[0] != null) focus.setSelectionRange(...selection);
+  }
   renderedSourceReviewKey = sourceAcknowledgmentKey(f);
   fitQuotes();
   const side = $('.brief-side');
@@ -715,7 +734,7 @@ document.addEventListener('submit', async event => {
     try {
       const result = await call('/api/brief/refer', {decision_id: form.dataset.id, expected_updated_at: form.dataset.rev,
         person: picked === 'other' ? $('#handon-other').value.trim() : picked, note: $('#handon-note').value.trim()});
-      clearDrafts('handon-note', 'handon-other', 'answer-text', 'answer-why'); toast(result.notice); await load();
+      clearDrafts('handon-note', 'handon-other', 'inquiry-text', 'answer-text', 'answer-why'); toast(result.notice); await load();
     } catch (e) { await refused(e, '#handon-error'); }
   }
   if (form.id === 'note-form') {
@@ -757,3 +776,18 @@ window.ravenInterviewBridge = {
     return call('/api/brief/interview', {...(body || {}), action, ...(interviewId ? {interview_id: interviewId} : {})});
   },
 };
+
+// Clarification has its own read-only endpoint; it never submits an answer.
+document.addEventListener('submit', async event => {
+  if (event.target.id !== 'inquiry-form') return;
+  event.preventDefault();
+  const inquiry = inquiryView(), form = event.target, input = form.querySelector('textarea');
+  if (inquiry.pending || !form.reportValidity()) return;
+  inquiry.question = input.value.trim();
+  if (!inquiry.question) return;
+  const focus = data.focus?.node_id || '';
+  inquiry.pending = true; inquiry.error = ''; render();
+  try { inquiry.answer = await call('/api/brief/inquiry', {question:inquiry.question, focus_id:focus}); }
+  catch (error) { inquiry.error = error.message; }
+  finally { inquiry.pending = false; render(); }
+});

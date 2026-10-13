@@ -143,6 +143,8 @@ class SlackWorkspaceIsolationTests(OfflineCase):
     def setUp(self):
         super().setUp()
         self.store = Store(Path(self.temp.name) / "slack-isolation.db")
+        # Isolation checks here exercise conversational webhook ingestion.
+        self.store.graph.set_setting("slack_interaction_mode", "conversation")
         self.graph = self.store.graph
         self.slack = DirectorySlack([member("UALICE", "Alice Billing", "alice@example.test")])
         self.delivery = self.store.connect_delivery(self.slack)
@@ -191,6 +193,7 @@ class SlackWorkspaceIsolationTests(OfflineCase):
 
     def test_an_unknown_workspace_cannot_be_pinned_from_an_event(self):
         fresh = Store(Path(self.temp.name) / "not-connected.db")
+        fresh.graph.set_setting("slack_interaction_mode", "conversation")
         self.addCleanup(fresh.graph.close)
         self.assertEqual(fresh.delivery.inbox.enqueue(self.event()), {"ok": True, "ignored": "workspace_mismatch"})
         self.assertEqual(fresh.graph.get_setting("slack_team_id"), "")

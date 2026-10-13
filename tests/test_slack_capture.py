@@ -34,6 +34,8 @@ class CaptureCase(OfflineCase):
         super().setUp()
         self.store = Store(Path(self.temp.name) / 'captures.db')
         self.g = self.store.graph
+        # This suite exercises the explicitly enabled legacy Slack capture flow.
+        self.g.set_setting("slack_interaction_mode", "conversation")
         self.addCleanup(self.g.close)
         self.slack = SyntheticSlack()
         self.delivery = self.store.connect_delivery(self.slack)

@@ -31,6 +31,8 @@ class RuleCase(OfflineCase):
         super().setUp()
         self.store = Store(Path(self.temp.name) / "rules.db")
         self.graph = self.store.graph
+        # Exercise the supported opt-in conversational Slack workflow.
+        self.graph.set_setting("slack_interaction_mode", "conversation")
         self.slack = FakeSlack()
         self.delivery = self.store.connect_delivery(self.slack, base_url="https://bridge.acme.test")
         self.store.add_owner({"name": "Priya Natarajan", "team": "Billing", "patterns": "billing/*"})

@@ -101,6 +101,8 @@ class E2ECase(OfflineCase):
         self.repo = build_ledger()
         self.store = Store(Path(self.temp.name) / "e2e.db")
         self.graph = self.store.graph
+        # Exercise the supported opt-in conversational Slack workflow.
+        self.graph.set_setting("slack_interaction_mode", "conversation")
         index_repo(self.graph, self.repo, repo_name=REPO)
         self.slack = FakeSlack()
         self.delivery = self.store.connect_delivery(self.slack, base_url="https://bridge.acme.test")

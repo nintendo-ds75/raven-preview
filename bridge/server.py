@@ -542,6 +542,10 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                 return self.send(200, {"notice": "If this link was yours, a new one is on its way to your Slack "
                                                  "direct messages."})
             link = self.brief_link()
+            if path == "/api/brief/inquiry":
+                from .inquiry import ask_task
+                return self.send(200, ask_task(store, link.run_id, data, link.actor,
+                                              revalidate=self.brief_link))
             if path == "/api/brief/interview":
                 from . import interview
                 actor = interview.actor_for_link(link)
@@ -720,6 +724,18 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         return self.send(401, {"error": "MCP requires an agent bearer token"},
                                          extra_headers={"WWW-Authenticate": "Bearer"})
                     return self.mcp_http(data)
+                inquiry_parts = path.strip('/').split('/')
+                if len(inquiry_parts) == 4 and inquiry_parts[:2] == ['api', 'tasks'] and inquiry_parts[3] == 'inquiry':
+                    self.require('viewer')
+                    from .inquiry import ask_task
+                    original_reader = self.me.id
+                    def revalidate_reader():
+                        self.identify()
+                        self.require('viewer')
+                        if self.me.id != original_reader:
+                            raise Forbidden(403, 'The task reader changed during this inquiry')
+                    return self.send(200, ask_task(store, inquiry_parts[2], data, self.me,
+                                                  revalidate=revalidate_reader))
                 if self.me is not None and self.me.is_agent:
                     if not self.me.can_write_as_agent:
                         raise Forbidden(403, "A viewer's agent credential is read-only")
