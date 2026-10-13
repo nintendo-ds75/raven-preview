@@ -26,7 +26,8 @@ from .store import Invalid
 MISSING_CREDENTIALS = 'Set JIRA_BASE_URL, JIRA_EMAIL and JIRA_API_TOKEN where Raven runs'
 ENABLE = 'python -m bridge.sources add jira --repo owner/name --target PROJ --workspace-shared'
 LIMITS = ('Issues with a security level and restricted comments are not imported',
-          'Deleted issues are not visible to polling; their last version is kept')
+          'Exact refresh checks up to 50 older issues per pass; unverified access is withheld, not called a deletion',
+          'Historical versions containing comments no longer confirmed public are withheld; private audit history is retained')
 FIELDS = 'summary,description,status,resolution,reporter,created,updated,security,comment,issuetype'
 OVERLAP_MS = 5 * 60 * 1000
 PAGE_SIZE = 50
@@ -60,9 +61,9 @@ class JiraClient:
                 raise SourceError('Jira rate limit reached', retry_after=float(retry) if retry.isdigit() else 60) from error
             if error.code in (401, 403):
                 raise SourceError(f'Jira refused the credentials (HTTP {error.code}); check JIRA_EMAIL and '
-                                  'JIRA_API_TOKEN and the account\'s project access') from error
+                                  'JIRA_API_TOKEN and the account\'s project access', status=error.code) from error
             if error.code == 404:
-                raise SourceError(f'Jira has no {path} (HTTP 404), or this account cannot see it') from error
+                raise SourceError(f'Jira has no {path} (HTTP 404), or this account cannot see it', status=404) from error
             raise SourceError(f'Jira {path} failed: HTTP {error.code}') from error
         except (urllib.error.URLError, OSError) as error:
             raise SourceError(f'Jira is unreachable: {getattr(error, "reason", error)}') from error
@@ -185,7 +186,6 @@ def _body(fields, batch):
 
 def collect(connection, client, items):
     key, options = connection['target'], connection['options']
-    host = options.get('host') or client.host
     batch = Batch(label=connection['label'])
     if connection['cursor']:
         since = int(connection['cursor']) - OVERLAP_MS
@@ -207,20 +207,7 @@ def collect(connection, client, items):
             updated = fields.get('updated') or ''
             if updated:
                 newest = max(newest, _ms(updated))
-            if fields.get('security'):
-                batch.refuse('issue_security_level')
-                continue
-            body, status, resolution = _body(fields, batch)
-            summary = fields.get('summary') or ''
-            batch.records.append({
-                'kind': 'ticket', 'provider': 'jira', 'namespace': host, 'external_id': str(issue['id']),
-                'ref': issue['key'], 'title': f"{issue['key']}: {summary}"[:300], 'body': body,
-                'url': f"{client.base}/browse/{issue['key']}",
-                'author': ((fields.get('reporter') or {}).get('displayName') or '')[:100],
-                'created_at': _iso(fields.get('created') or ''), 'updated_at': _iso(updated),
-                'status': status[:40], 'source_version': _iso(updated) or summary,
-                'availability': 'available', 'paths': [],
-                'access_scope': json.dumps({'jira_project': key, 'audience': 'workspace-shared'}, sort_keys=True)})
+            _append_issue(connection, client, issue, batch)
         token = page.get('nextPageToken') or ''
         if page.get('isLast', not token) or not token:
             break
@@ -230,3 +217,45 @@ def collect(connection, client, items):
     # Ordered by updated: a pass that stops at MAX_PAGES resumes from here.
     batch.cursor = str(newest) if newest else connection['cursor']
     return batch
+
+def _append_issue(connection, client, issue, batch):
+    fields = issue.get('fields') or {}
+    key, options = connection['target'], connection['options']
+    host = options.get('host') or client.host
+    updated = fields.get('updated') or ''
+    if fields.get('security'):
+        batch.refuse('issue_security_level')
+        batch.inaccessible.append(str(issue['id']))
+        return
+    body, status, resolution = _body(fields, batch)
+    summary = fields.get('summary') or ''
+    comments = [c for c in (fields.get('comment') or {}).get('comments', []) if isinstance(c, dict)]
+    batch.records.append({
+        'kind': 'ticket', 'provider': 'jira', 'namespace': host, 'external_id': str(issue['id']),
+        'ref': issue['key'], 'title': f"{issue['key']}: {summary}"[:300], 'body': body,
+        'url': f"{client.base}/browse/{issue['key']}",
+        'author': ((fields.get('reporter') or {}).get('displayName') or '')[:100],
+        'created_at': _iso(fields.get('created') or ''), 'updated_at': _iso(updated),
+        'status': status[:40], 'source_version': _iso(updated) or summary,
+        'availability': 'available', 'paths': [],
+        'access_scope': json.dumps({'jira_project': key, 'audience': 'workspace-shared',
+            'jira_comment_ids': sorted(str(c['id']) for c in comments if c.get('id') and not c.get('visibility')),
+            'jira_restricted_comments': any(c.get('visibility') for c in comments)}, sort_keys=True)})
+
+
+def revalidate(connection, client, rows, batch):
+    observed = {r['external_id'] for r in batch.records} | set(batch.inaccessible)
+    for row in rows:
+        external_id = row['external_id']
+        if external_id in observed:
+            continue
+        try:
+            issue = client.get('/rest/api/3/issue/' + urllib.parse.quote(external_id, safe=''), {'fields': FIELDS})
+        except SourceError as error:
+            if error.status in (403, 404):
+                batch.inaccessible.append(external_id)
+                continue
+            raise
+        if str(issue.get('id')) != external_id:
+            raise SourceError('Jira exact read returned another issue')
+        _append_issue(connection, client, issue, batch)

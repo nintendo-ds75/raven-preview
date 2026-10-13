@@ -1219,8 +1219,8 @@ class Store:
         fallback = self.delivery.fallback_channel or graph.get_setting("slack_fallback_channel")
         directory = json.loads(graph.get_setting("slack_directory") or "{}")
         if not self.delivery.enabled:
-            out.append({"key": "no_slack", "level": "blocker", "what": "Slack is not connected; people receive no Slack notifications.",
-                        "do": "Connect the Slack app with ./setup --configure. See docs/slack.md. No ownership map is required."})
+            out.append({"key": "no_slack", "level": "info", "what": "Slack is optional. People can answer and sign in the Raven inbox.",
+                        "do": "Use the inbox for this workspace, or connect Slack for direct-message notifications. See docs/slack.md."})
         if directory.get("error") and self.delivery.channel == 'slack':
             out.append({"key": "slack_directory", "level": "blocker", "what": directory["error"],
                         "do": "Check the bot's users:read and users:read.email scopes, then refresh Slack contacts in Connections & setup."})
@@ -1551,6 +1551,11 @@ class Store:
             versions = [dict(v) for v in db.execute('SELECT * FROM source_versions WHERE record_id=? ORDER BY sequence', (record_id,))]
             for version in versions:
                 version['snapshot'] = json.loads(version['snapshot'])
+            withheld = {r['source_version_id'] for r in db.execute('SELECT w.source_version_id FROM withheld_source_versions w '
+                'JOIN source_versions v ON v.id=w.source_version_id WHERE v.record_id=?', (record_id,))}
+            versions = [{'id': v['id'], 'withheld': True, 'source_sequence': v['source_sequence'],
+                         'source_updated_at': v['source_updated_at'],
+                         'notice': 'Historical comment access is no longer confirmed.'} if v['id'] in withheld else v for v in versions]
             return {'source': cm.citation(db, record_id, row['head_id']), 'versions': versions,
                     'latest_observation': cm.latest_observation(row),
                     'identities': [dict(identity) for identity in db.execute('SELECT provider,namespace,object_kind,external_id FROM source_identities WHERE record_id=? ORDER BY provider,namespace,external_id', (record_id,))],

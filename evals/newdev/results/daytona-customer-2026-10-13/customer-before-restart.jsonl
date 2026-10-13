@@ -1,0 +1,2 @@
+{"task_id": "00b992a0728e", "status": "waiting", "summary": "Waiting for recorded decisions. Replies in the inbox or Slack will resume this task.", "error": "", "steps": 0}
+{"provider": "claude", "model": "claude-sonnet-4-6", "session_id": "c51416ab-a46c-4b8d-acd4-6d1ea3f25f48", "state": "success", "turns": 1, "cost_usd": 0.2524866}

@@ -2,3 +2,5 @@ setup text eol=lf
 dev text eol=lf
 *.sh text eol=lf
 *.ps1 text eol=crlf
+# Unified patch evidence contains context-marker spaces that must be preserved.
+*.patch -whitespace

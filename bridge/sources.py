@@ -39,6 +39,8 @@ ERROR_LIMIT = 500
 
 def migrate(db):
     db.executescript(SCHEMA)
+    from .source_access import migrate as migrate_access
+    migrate_access(db)
 
 
 @dataclass
@@ -51,6 +53,8 @@ class Batch:
     cursor: str = ''
     refused: dict = dc_field(default_factory=dict)
     label: str = ''
+    inaccessible: list = dc_field(default_factory=list)
+    verified: list = dc_field(default_factory=list)
 
     def refuse(self, reason, count=1):
         self.refused[reason] = self.refused.get(reason, 0) + count
@@ -60,9 +64,10 @@ class SourceError(Exception):
     """A source could not be read. retry_after, when set, is the seconds
     the provider asked Raven to wait."""
 
-    def __init__(self, message, retry_after=None):
+    def __init__(self, message, retry_after=None, *, status=None, code=''):
         super().__init__(message)
         self.retry_after = retry_after
+        self.status, self.code = status, code
 
 
 def _module(kind):
@@ -143,9 +148,11 @@ def register(store, kind, repo, target, *, shared, options=None, by='', client=N
 
 def disable(store, connection_id, by=''):
     """Stop synchronizing. Records already imported stay as history."""
-    _row(store, connection_id)
+    connection = _row(store, connection_id)
     with store.graph.transaction():
         store.graph.db.execute('UPDATE source_connections SET enabled=0 WHERE id=?', (connection_id,))
+        from .source_access import suspend
+        suspend(store, connection, 'disabled', 'Connection disabled by an operator')
         store.graph.append_event('context_source_disabled', {'connection_id': connection_id, 'by': by})
     return _row(store, connection_id)
 
@@ -160,6 +167,8 @@ def sync(store, connection_id, client=None):
     the records, item state and cursor are written in one transaction;
     a failure records the error and leaves the cursor where it was."""
     connection = _row(store, connection_id)
+    from . import source_access
+    source_access.known(store, connection)
     if not connection['enabled']:
         raise Invalid('This context source is disabled')
     module = _module(connection['kind'])
@@ -170,6 +179,8 @@ def sync(store, connection_id, client=None):
         raise SourceError(module.MISSING_CREDENTIALS)
     try:
         batch = module.collect(connection, client, _items(store, connection_id))
+        if hasattr(module, 'revalidate'):
+            module.revalidate(connection, client, source_access.due(store.graph.db, connection_id), batch)
     except (SourceError, Invalid, OSError, ValueError) as error:
         _failed(store, connection_id, at, str(error))
         raise
@@ -181,9 +192,22 @@ def sync(store, connection_id, client=None):
             if not current or not current['enabled']:
                 raise Invalid('This context source was disabled during the pass; nothing was written')
             for record in batch.records:
+                source_access.check_comment_access(store, {**record, 'repo': connection['repo']})
                 result = store.add_record({**record, 'repo': connection['repo']})
+                source_access.observe(store, connection_id, result['source']['record_id'],
+                                      state='fresh' if record.get('availability', 'available') == 'available' else 'unavailable')
                 imported += 1
                 changed += bool(result.get('changed'))
+            for external_id in batch.verified:
+                provider, namespace = module.identity(connection)
+                for row in store.graph.db.execute('SELECT id FROM source_records WHERE repo=? AND provider=? AND namespace=? AND external_id=?',
+                        (connection['repo'], provider, namespace, external_id)).fetchall():
+                    source_access.observe(store, connection_id, row['id'])
+            for external_id in batch.inaccessible:
+                provider, namespace = module.identity(connection)
+                for row in store.graph.db.execute('SELECT id FROM source_records WHERE repo=? AND provider=? AND namespace=? AND external_id=?',
+                        (connection['repo'], provider, namespace, external_id)).fetchall():
+                    source_access.observe(store, connection_id, row['id'], state='revoked', reason='Provider reports restricted access')
             for item, detail in batch.items.items():
                 if detail is None:
                     store.graph.db.execute('DELETE FROM source_items WHERE connection_id=? AND item=?',
@@ -218,6 +242,8 @@ def _failed(store, connection_id, at, message):
     with store.graph.transaction():
         store.graph.db.execute('UPDATE source_connections SET last_attempt_at=?, last_error=? WHERE id=?',
                                (at, message[:ERROR_LIMIT], connection_id))
+        from .source_access import suspend
+        suspend(store, _row(store, connection_id), 'unverified', 'The latest connector read failed; deletion is not established')
 
 
 def record_count(store, connection):
@@ -290,7 +316,8 @@ def report(store):
     return {'sources': sources, 'not_configured': available, 'github': repos, 'airweave': airweave,
             'sync_minutes': interval,
             'note': ('Records are evidence, never approval. Only sources an administrator attested as shared with '
-                     'every reader are imported; polling cannot see deletions.')}
+                     'every reader are imported. Unavailable or expired source access is withheld; refreshes '
+                     'are bounded and are not an instantaneous deletion feed.')}
 
 
 def readiness(store):
@@ -321,6 +348,7 @@ class SourceSyncer:
         for connection in connections(self.store, enabled_only=True):
             client = self.clients.get(connection['kind']) or client_for(connection['kind'])
             if client is None:
+                _failed(self.store, connection['id'], cm.stamp(), _module(connection['kind']).MISSING_CREDENTIALS)
                 continue
             try:
                 out.append(sync(self.store, connection['id'], client))
@@ -339,7 +367,11 @@ class SourceSyncer:
         def loop():
             while not self._stop.is_set():
                 self.tick()
-                self._wake.wait(self.minutes * 60)
+                # Native access leases last twenty minutes. Large backlogs need
+                # another bounded pass before the normal polling interval.
+                from .source_access import due
+                backlog = any(due(self.store.graph.db, c['id']) for c in connections(self.store, enabled_only=True))
+                self._wake.wait(min(self.minutes * 60, 30) if backlog else self.minutes * 60)
                 self._wake.clear()
         self._thread = threading.Thread(target=loop, name='raven-source-sync', daemon=True)
         self._thread.start()

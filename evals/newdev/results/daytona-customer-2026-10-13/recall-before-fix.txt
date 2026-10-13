@@ -1,0 +1,73 @@
+- link "Skip to content":
+  - /url: "#main"
+- complementary:
+  - link "Raven PREVIEW":
+    - /url: "#work"
+    - generic: Raven
+    - generic: PREVIEW
+  - strong: Raven customer trial
+  - navigation "Workspace navigation":
+    - link "New task":
+      - /url: "#work"
+      - text: New task
+    - link "Judgment inbox":
+      - /url: "#inbox"
+      - text: Inbox
+      - generic: "0"
+    - link "Tasks":
+      - /url: "#runs"
+      - text: Tasks
+    - link "Decision memory":
+      - /url: "#memory"
+      - text: Memory
+    - link "People and ownership":
+      - /url: "#owners"
+      - text: People & ownership
+  - navigation "Recent browser tasks":
+    - generic: Recent
+    - link "Make it possible to configure a default token age limit on a timed serializer so callers do not have to remember max_age on every loads call. Keep existing applications working and cover the public timed serializer APIs with tests and documentation. Use the connected rollout policy, and ask for any security or compatibility judgment that policy leaves open before implementing it.":
+      - /url: "#work/00b992a0728e"
+  - link "Connections & setup":
+    - /url: "#connect"
+    - text: Connections & setup
+  - generic: MS
+  - strong: Mira Security
+  - text: admin ·
+  - link "Sign out":
+    - /url: /auth/logout
+- banner:
+  - text: Workspace
+  - generic: /
+  - strong: Raven
+  - generic: Shared workspace
+  - button "Setup and help":
+- main:
+  - heading "What would you like to know?" [level=1]
+  - paragraph: Read connected evidence and earlier decisions. No coding host is started.
+  - group "Choose how to work":
+    - button "Ask a question" [pressed]
+    - button "Start a task"
+  - generic: Your question
+  - textbox "Your question":
+    - /placeholder: What would you like to know?
+  - generic: Repository
+  - combobox "Repository":
+    - option "pallets/itsdangerous" [selected]
+  - button "Ask question":
+  - generic: Reads connected context. It does not edit code or grant approval.
+  - article:
+    - paragraph: "Mira decided that passing max_age=None explicitly to loads() or unsign() means 'use the instance default' (i.e., fall through to default_max_age), not 'override the default and apply no age limit.' Both an omitted max_age and an explicit max_age=None are treated identically — they use whatever default_max_age is configured on the serializer. Only a numeric per-call max_age overrides the instance default. The rationale is the 'None-falls-through' design: no sentinel value is introduced, and the logic is kept simple by resolving the effective age limit once in TimedSerializer.loads. This same rule applies uniformly to the primary signer and all fallback_signers."
+    - text: This is an evidence reading. It creates no decision, signature or authorization.
+    - paragraph: The evidence does not record Mira's name or any attribution of this decision to a specific person named Mira — the decisions are recorded without named authors, so the assumption that 'Mira' made them cannot be confirmed from the supplied evidence.
+    - paragraph: The numeric bound and per-call override behavior are noted in the rollout policy as 'new security judgments' that 'have not been decided' in the synthetic trial context, which may indicate some aspects are still open in that environment.
+    - paragraph: What happens when default_max_age is None and max_age is also None at call time (i.e., whether the result is truly 'no limit') is implied but not explicitly spelled out in edge-case terms.
+    - heading "Evidence" [level=2]
+    - generic "Synthetic rollout policy · Source"
+    - generic "Should default_max_age apply uniformly to all signers tried during loads(), including fallback_signers, or only to the primary signer? · Prior answer"
+    - generic "When a caller passes max_age=None explicitly to loads() or unsign(), should that mean \"use the instance default\" or \"override the default and apply no age limit\"? · Prior answer"
+    - generic "Does this change ship behind a feature flag, or is it always-available once merged? Who decides when it is turned on for existing callers? · Prior answer"
+    - generic "Does adding a configurable default_max_age widen any security exposure, and does security sign off on shipping it without a feature flag? · Prior answer"
+    - generic "What should the built-in value of default_max_age be, and does setting it to None (no limit) preserve existing behavior correctly? · Prior answer"
+  - link "View all workspace tasks":
+    - /url: "#runs"
+    - text: View all workspace tasks

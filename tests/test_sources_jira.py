@@ -62,6 +62,9 @@ class JiraDouble:
                     return self.reply(*jira.fail)
                 if url.path == '/rest/api/3/project/BILL':
                     return self.reply(200, {'key': 'BILL', 'name': 'Billing'})
+                if url.path.startswith('/rest/api/3/issue/'):
+                    row = next((i for i in jira.issues if i['id'] == url.path.rsplit('/', 1)[-1]), None)
+                    return self.reply(200, row) if row else self.reply(404, {})
                 if url.path == '/rest/api/3/search/jql':
                     q = {k: v[0] for k, v in parse_qs(url.query).items()}
                     jira.searches.append(q)

@@ -91,6 +91,9 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
         me: Identity | None = None
 
         def send(self, code, value, content_type="application/json", extra_headers=None):
+            if content_type == 'application/json' and code < 400:
+                from .visibility import public
+                value = public(store, value)
             body = json.dumps(value).encode() if content_type == "application/json" else value
             self.send_response(code)
             self.send_header("Content-Type", content_type)
@@ -218,6 +221,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     if not workbench:
                         return self.send(503, {'error': 'Browser execution is not configured'})
                     if len(parts) == 4 and parts[3] == 'patch':
+                        from .visibility import require_task
+                        require_task(store, parts[2])
                         from .workbench_fs import diff
                         workbench.row(parts[2])
                         return self.send(200, diff(workbench.root / parts[2]).encode(), 'text/plain; charset=utf-8',
@@ -243,7 +248,9 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     return self.send(200, store.get_record(query.get('record_id', [''])[0], query.get('repo', [''])[0]))
                 if url.path == "/api/state":
                     from .sources import report as source_report
+                    from .inquiry import repositories as question_repositories
                     return self.send(200, {**store.state(), 'workbench': workbench.config() if workbench else {'enabled': False, 'repositories': []},
+                        'question_repositories': question_repositories(store),
                         'browser_tasks': workbench.list() if workbench else [], "context_sources": source_report(store), "execution_config": {
                         "enabled": executions is not None,
                         "repositories": [{"id": r["id"], "name": r["name"]} for r in executions.repositories]
@@ -357,6 +364,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     if not executions:
                         return self.send(503, {"error": "Execution provider is disabled"})
                     run = executions.get(parts[2])
+                    from .visibility import require_task
+                    require_task(store, parts[2])
                     snapshot = json.loads(run["snapshot"])
                     if not any(a["id"] == parts[4] for a in snapshot.get("artifacts", [])):
                         return self.send(404, {"error": "Artifact not found in this run"})
@@ -364,6 +373,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         content = executions.api.artifact_content(run["session_id"], parts[4])
                     except Exception:
                         return self.send(502, {"error": "Unable to retrieve this resource; check provider status and retry"})
+                    require_task(store, parts[2])
                     return self.send(200, content, "application/octet-stream")
                 return self.send(404, {"error": "Not found"})
             except Forbidden as error:
@@ -718,7 +728,10 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                              "signs, hands on and administers. Sign in as yourself for this")
                 else:
                     self.require("member")
-                if path == '/api/workbench':
+                if path == '/api/ask':
+                    from .inquiry import ask
+                    result = ask(store, data, self.me)
+                elif path == '/api/workbench':
                     if not workbench:
                         return self.send(503, {'error': 'Browser execution is not configured'})
                     result = workbench.submit(data, self.me)
@@ -728,8 +741,13 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     parts = path.strip('/').split('/')
                     if len(parts) != 4:
                         return self.send(404, {'error': 'Unknown task action'})
-                    result = (workbench.message(parts[2], data, self.me) if parts[3] == 'messages'
-                              else workbench.control(parts[2], parts[3], self.me))
+                    if parts[3] == 'reconcile':
+                        self.require('admin')
+                        from .workbench_hosts import reconcile
+                        result = reconcile(workbench, parts[2], data, self.me)
+                    else:
+                        result = (workbench.message(parts[2], data, self.me) if parts[3] == 'messages'
+                                  else workbench.control(parts[2], parts[3], self.me))
                 elif path == "/api/owners":
                     self.require("admin")
                     result = store.add_owner(data)

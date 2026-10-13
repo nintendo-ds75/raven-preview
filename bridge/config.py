@@ -23,7 +23,7 @@ from dataclasses import dataclass
 
 @dataclass
 class Config:
-    model_api: str = "anthropic"  # anthropic | claude-cli | none
+    model_api: str = "anthropic"  # anthropic | openai | claude-cli | none
     model: str = "claude-sonnet-5"
     fast_model: str = "claude-haiku-4-5-20251001"
     user_name: str = ""
@@ -41,7 +41,7 @@ class Config:
 
     @property
     def api_key(self) -> str:
-        return os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        return os.environ.get("OPENAI_API_KEY" if self.model_api == 'openai' else "ANTHROPIC_API_KEY", "").strip()
 
     @property
     def anthropic_workspace_id(self) -> str:
@@ -49,17 +49,17 @@ class Config:
         return os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
 
     def has_backend(self) -> bool:
-        """A model backend exists: an API key, or the claude CLI when the
-        API is set to it or as the automatic fallback."""
+        """Only the explicitly selected backend; never borrow another login."""
         if self.model_api == "none":
             return False
+        if self.model_api == 'openai':
+            return bool(self.api_key)
         if self.model_api == "claude-cli":
             from .llm import find_claude
             return find_claude() is not None
         if self.api_key:
             return True
-        from .llm import find_claude
-        return find_claude() is not None
+        return False
 
     @property
     def semantic_retrieval(self) -> bool:
@@ -95,7 +95,7 @@ class Config:
 def load() -> Config:
     cfg = Config()
     api = os.environ.get("BRIDGE_MODEL_API", "").strip().lower()
-    if api in ("anthropic", "claude-cli", "none"):
+    if api in ("anthropic", "openai", "claude-cli", "none"):
         cfg.model_api = api
     model = os.environ.get("BRIDGE_MODEL", "").strip()
     if model:
@@ -113,8 +113,9 @@ def backend_status(cfg=None) -> dict:
     from .llm import find_claude
     cli = bool(find_claude())
     configured = cfg.has_backend()
-    backend = ('none' if cfg.model_api == 'none' else 'anthropic' if cfg.api_key and cfg.model_api != 'claude-cli'
-               else 'claude-cli' if cli else 'unconfigured')
+    backend = ('none' if cfg.model_api == 'none' else 'openai' if cfg.model_api == 'openai' and cfg.api_key
+               else 'unconfigured' if cfg.model_api == 'openai' else 'anthropic' if cfg.api_key and cfg.model_api != 'claude-cli'
+               else 'claude-cli' if cfg.model_api == 'claude-cli' and cli else 'unconfigured')
     semantic = configured and cfg.semantic_retrieval
     return {'backend': backend, 'configured': configured, 'semantic_enabled': semantic,
             'live_verified': False, 'model': cfg.model, 'fast_model': cfg.fast_model,

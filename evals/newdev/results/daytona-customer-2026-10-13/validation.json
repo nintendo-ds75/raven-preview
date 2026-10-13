@@ -1,0 +1,15 @@
+{
+  "full_suite": [
+    "Ran 2451 tests in 464.493s",
+    "OK (skipped=4)"
+  ],
+  "full_suite_timing": "Before the final three focused regressions; not rerun after those small fixes.",
+  "postgres_focused": [
+    "Ran 135 tests in 44.550s",
+    "OK"
+  ],
+  "latest_inquiry_and_hosts": "21 tests passed locally; final image inquiry 8 tests passed.",
+  "browser_unit_suites": "8 DOM/UI logic suites passed; live browser separately exercised.",
+  "customer_image": "sha256:eaa0e5905a07544420c6091973e0fdac393ff4ab4a9bb2f92b888548ce5d245b",
+  "source_manifest_sha256": "32f5533cf546320e4a4690f7ef2aeade576f77954a232cc901851663294ea97f"
+}

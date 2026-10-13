@@ -1,0 +1,172 @@
+{
+  "counts": {
+    "browser_tasks": 1,
+    "browser_hosts": 1,
+    "decisions": 5
+  },
+  "question_reads": [
+    {
+      "actor_id": "41b5e6a9761b",
+      "model_used": true,
+      "outcome": "supported_answer",
+      "question": "What did Mira decide about passing max_age=None when a serializer has a default_max_age, and why?",
+      "repo": "pallets/itsdangerous",
+      "sources": [
+        {
+          "id": "8f3ff68423af4467bc8fb23caaadddcc",
+          "kind": "source",
+          "version": "f15a0db7b91e4defb3531d11782d2e8f"
+        },
+        {
+          "id": "c9ad99629d8c",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:42:16.682247+00:00"
+        },
+        {
+          "id": "08ab8013adda",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:40:19.573721+00:00"
+        },
+        {
+          "id": "9bdcf2c340be",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:40:56.365135+00:00"
+        },
+        {
+          "id": "574dd5ffe5f9",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:40:35.363007+00:00"
+        },
+        {
+          "id": "b18325f255d0",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:39:30.706439+00:00"
+        }
+      ]
+    },
+    {
+      "actor_id": "41b5e6a9761b",
+      "model_used": false,
+      "outcome": "missing_fact",
+      "question": "What did Mira decide about passing max_age=None when a serializer has a default_max_age, and why?",
+      "repo": "pallets/itsdangerous",
+      "sources": [
+        {
+          "id": "8f3ff68423af4467bc8fb23caaadddcc",
+          "kind": "source",
+          "version": "f15a0db7b91e4defb3531d11782d2e8f"
+        },
+        {
+          "id": "c9ad99629d8c",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:42:16.682247+00:00"
+        },
+        {
+          "id": "08ab8013adda",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:40:19.573721+00:00"
+        },
+        {
+          "id": "9bdcf2c340be",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:40:56.365135+00:00"
+        },
+        {
+          "id": "574dd5ffe5f9",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:40:35.363007+00:00"
+        },
+        {
+          "id": "b18325f255d0",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:39:30.706439+00:00"
+        }
+      ]
+    },
+    {
+      "actor_id": "trial-read",
+      "model_used": false,
+      "outcome": "missing_fact",
+      "question": "What did Mira decide about passing max_age=None when a serializer has a default_max_age, and why?",
+      "repo": "pallets/itsdangerous",
+      "sources": [
+        {
+          "id": "8f3ff68423af4467bc8fb23caaadddcc",
+          "kind": "source",
+          "version": "f15a0db7b91e4defb3531d11782d2e8f"
+        },
+        {
+          "id": "c9ad99629d8c",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:42:16.682247+00:00"
+        },
+        {
+          "id": "08ab8013adda",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:40:19.573721+00:00"
+        },
+        {
+          "id": "9bdcf2c340be",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:40:56.365135+00:00"
+        },
+        {
+          "id": "574dd5ffe5f9",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:40:35.363007+00:00"
+        },
+        {
+          "id": "b18325f255d0",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:39:30.706439+00:00"
+        }
+      ]
+    },
+    {
+      "actor_id": "41b5e6a9761b",
+      "model_used": true,
+      "outcome": "supported_answer",
+      "question": "What did Mira decide about passing max_age=None when a serializer has a default_max_age, and why?",
+      "repo": "pallets/itsdangerous",
+      "sources": [
+        {
+          "id": "8f3ff68423af4467bc8fb23caaadddcc",
+          "kind": "source",
+          "version": "f15a0db7b91e4defb3531d11782d2e8f"
+        },
+        {
+          "id": "c9ad99629d8c",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:42:16.682247+00:00"
+        },
+        {
+          "id": "08ab8013adda",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:40:19.573721+00:00"
+        },
+        {
+          "id": "9bdcf2c340be",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:40:56.365135+00:00"
+        },
+        {
+          "id": "574dd5ffe5f9",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:40:35.363007+00:00"
+        },
+        {
+          "id": "b18325f255d0",
+          "kind": "prior_decision",
+          "version": "2026-10-13T20:39:30.706439+00:00"
+        }
+      ]
+    }
+  ],
+  "host": {
+    "provider": "claude",
+    "model": "claude-sonnet-4-6",
+    "turns": 7,
+    "cost_usd": 3.0750052500000007,
+    "session_id": "c51416ab-a46c-4b8d-acd4-6d1ea3f25f48"
+  }
+}

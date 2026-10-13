@@ -1,0 +1,2 @@
+# Optional browser coding host. Includes its own pinned Claude Code runtime.
+claude-agent-sdk==0.2.165

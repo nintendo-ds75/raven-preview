@@ -3,7 +3,7 @@
 Every completion is real inference: the Anthropic Messages API on the
 user's own key (read from ANTHROPIC_API_KEY at call time, never written
 anywhere), or the claude CLI (claude -p, on the user's plan) when
-BRIDGE_MODEL_API=claude-cli or as the automatic fallback when no key is
+BRIDGE_MODEL_API=claude-cli. There is no automatic fallback when no key is
 set. With neither, completion raises NoAPIKey and the ladder runs its
 deterministic rungs only; nothing is faked.
 
@@ -180,16 +180,28 @@ class Client:
                  max_tokens: int = 2000, *, bounded: bool = False) -> str:
         if self.cfg.model_api == "none":
             raise NoAPIKey("model backend disabled (BRIDGE_MODEL_API=none)")
+        if self.cfg.model_api == 'openai':
+            if not self.cfg.api_key:
+                raise NoAPIKey('Set OPENAI_API_KEY for Raven internal inference; no alternate provider was used')
+            payload = self._post_json('https://api.openai.com/v1/responses',
+                {'Authorization': 'Bearer ' + self.cfg.api_key},
+                {'model': self.cfg.model, 'instructions': system, 'input': prompt,
+                 'max_output_tokens': max_tokens, 'store': False, 'tools': []})
+            USAGE.add(payload)
+            if payload.get('status') != 'completed':
+                raise LLMError('The OpenAI reading is incomplete; no partial answer was used')
+            text = ''.join(b.get('text', '') for item in payload.get('output', [])
+                           if item.get('type') == 'message' for b in item.get('content', [])
+                           if b.get('type') == 'output_text')
+            if not text.strip():
+                raise LLMError('The OpenAI reading returned no usable text')
+            return text
         if self.cfg.model_api == "claude-cli":
             USAGE.calls += 1
             return _claude_cli(system, prompt, self.cfg.model)
         if not self.cfg.api_key:
-            if find_claude():
-                USAGE.calls += 1
-                return _claude_cli(system, prompt, self.cfg.model)
             raise NoAPIKey(
-                "no ANTHROPIC_API_KEY in the environment and no claude CLI "
-                "found; the ladder runs its deterministic rungs only")
+                "no ANTHROPIC_API_KEY configured; no alternate backend was used")
         thinks = self.cfg.model in _THINKS
         payload = self._messages(system, prompt, max_tokens + (THINKING_ROOM if thinks else 0))
         if not thinks and _cut_short_by_thinking(payload):

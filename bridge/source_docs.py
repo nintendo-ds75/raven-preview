@@ -270,6 +270,8 @@ def collect(connection, client, items):
     found, how = discover(client, target)
     robots = _robots(client, origin)
     pages = []
+    denied = set()
+    listed = {urllib.parse.urldefrag(url)[0] for url in found}
     for url in found:
         url = urllib.parse.urldefrag(url)[0]
         if _origin(url) != origin:
@@ -278,6 +280,8 @@ def collect(connection, client, items):
             batch.refuse('url_too_long')
         elif not robots.can_fetch(USER_AGENT, url):
             batch.refuse('robots_disallowed')
+            denied.add(url)
+            batch.inaccessible.extend((items.get(url) or {}).get('sections', []))
         elif url not in pages:
             pages.append(url)
     if len(pages) > limit:
@@ -292,6 +296,7 @@ def collect(connection, client, items):
             headers['If-Modified-Since'] = state['last_modified']
         response = client.get(url, headers)
         if response.status == 304:
+            batch.verified.extend(state.get('sections', []))
             continue
         if response.status in (404, 410):
             _gone(batch, url, state, 'page removed')
@@ -309,6 +314,7 @@ def collect(connection, client, items):
                   'hash': digest, 'sections': state.get('sections', []), 'title': title or url}
         if digest == state.get('hash'):
             batch.items[url] = detail
+            batch.verified.extend(state.get('sections', []))
             continue
         parts = sections(text, title or url)
         ids = []
@@ -326,7 +332,8 @@ def collect(connection, client, items):
             _section_gone(batch, ref, state.get('title') or url, url)
         detail['sections'] = ids
         batch.items[url] = detail
-    for url in set(items) - set(pages):
+    # A denied or budget-omitted page is not proof that it was deleted.
+    for url in set(items) - listed:
         if not url.startswith(('http://', 'https://')):
             continue
         _gone(batch, url, items[url], 'no longer listed by the site')

@@ -76,6 +76,18 @@ class EventTests(OfflineCase):
             events.subscription(self.store, self.params, self.person, self.token['id'], sender=lambda *a: (200, b'{"challenge":"wrong"}'))
         self.assertFalse(self.g.db.execute('SELECT 1 FROM mcp_event_subscriptions').fetchone())
 
+    def test_expired_claim_cannot_overwrite_new_delivery_or_disable_subscription(self):
+        sub = self.subscribe()
+        self.g.append_event('signature', {'task_id': self.task})
+        def delayed(url, body, headers):
+            self.g.db.execute('UPDATE mcp_event_deliveries SET lease_until=0')
+            self.assertEqual(events.deliver(self.store, self.sender), 1)
+            return 410, b'{}'
+        self.assertEqual(events.deliver(self.store, delayed), 0)
+        row = self.g.db.execute("SELECT state,attempts FROM mcp_event_deliveries WHERE state<>'baseline'").fetchone()
+        self.assertEqual((row['state'], row['attempts']), ('sent', 2))
+        self.assertEqual(self.g.db.execute('SELECT active FROM mcp_event_subscriptions WHERE id=?', (sub['id'],)).fetchone()[0], 1)
+
     def test_expiry_unsubscribe_and_rotation(self):
         sub = self.subscribe()
         self.params['delivery']['secret'] = 'whsec_' + base64.b64encode(b'n' * 32).decode()

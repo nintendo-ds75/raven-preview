@@ -1,0 +1,329 @@
+{
+  "table_count": 80,
+  "counts_equal": true,
+  "task_and_host_and_decisions_equal": true,
+  "files_restored": true,
+  "patch_sha256": "9fff8d739d652d741f8d9638f5728a01b5673216e18d9ddf151bb14e45aaf4ee",
+  "table_counts": {
+    "account_invites": [
+      0,
+      0
+    ],
+    "account_passwords": [
+      1,
+      1
+    ],
+    "api_tokens": [
+      2,
+      2
+    ],
+    "artifacts": [
+      50,
+      50
+    ],
+    "authority": [
+      1,
+      1
+    ],
+    "blame_lines": [
+      4,
+      4
+    ],
+    "brief_links": [
+      0,
+      0
+    ],
+    "browser_actions": [
+      115,
+      115
+    ],
+    "browser_hosts": [
+      1,
+      1
+    ],
+    "browser_inputs": [
+      2,
+      2
+    ],
+    "browser_intent_context": [
+      87,
+      87
+    ],
+    "browser_intents": [
+      87,
+      87
+    ],
+    "browser_tasks": [
+      1,
+      1
+    ],
+    "change_paths": [
+      50,
+      50
+    ],
+    "change_people": [
+      1,
+      1
+    ],
+    "changes": [
+      1,
+      1
+    ],
+    "connector_sources": [
+      4,
+      4
+    ],
+    "contact_observations": [
+      5,
+      5
+    ],
+    "context_connections": [
+      0,
+      0
+    ],
+    "context_entities": [
+      0,
+      0
+    ],
+    "decision_links": [
+      2,
+      2
+    ],
+    "decision_revisions": [
+      5,
+      5
+    ],
+    "decision_source_edges": [
+      0,
+      0
+    ],
+    "decision_versions": [
+      21,
+      21
+    ],
+    "decisions": [
+      5,
+      5
+    ],
+    "deliveries": [
+      0,
+      0
+    ],
+    "engineers": [
+      1,
+      1
+    ],
+    "events": [
+      104,
+      104
+    ],
+    "executions": [
+      0,
+      0
+    ],
+    "fetched": [
+      4,
+      4
+    ],
+    "gh_pulls": [
+      0,
+      0
+    ],
+    "gh_users": [
+      0,
+      0
+    ],
+    "host_activity": [
+      0,
+      0
+    ],
+    "host_receipts": [
+      0,
+      0
+    ],
+    "host_reports": [
+      0,
+      0
+    ],
+    "host_resumes": [
+      0,
+      0
+    ],
+    "host_sessions": [
+      0,
+      0
+    ],
+    "intent_paths": [
+      0,
+      0
+    ],
+    "intents": [
+      1,
+      1
+    ],
+    "interviews": [
+      0,
+      0
+    ],
+    "investigation_reviews": [
+      5,
+      5
+    ],
+    "listings": [
+      0,
+      0
+    ],
+    "mcp_event_deliveries": [
+      0,
+      0
+    ],
+    "mcp_event_subscriptions": [
+      0,
+      0
+    ],
+    "model_cache": [
+      0,
+      0
+    ],
+    "native_source_access": [
+      0,
+      0
+    ],
+    "node_claims": [
+      5,
+      5
+    ],
+    "notifications": [
+      0,
+      0
+    ],
+    "owners": [
+      1,
+      1
+    ],
+    "ownership": [
+      18,
+      18
+    ],
+    "people": [
+      1,
+      1
+    ],
+    "provider_calls": [
+      0,
+      0
+    ],
+    "provider_events": [
+      0,
+      0
+    ],
+    "reply_readings": [
+      0,
+      0
+    ],
+    "reply_turns": [
+      0,
+      0
+    ],
+    "routing_feedback": [
+      5,
+      5
+    ],
+    "runs": [
+      1,
+      1
+    ],
+    "schema_migrations": [
+      1,
+      1
+    ],
+    "scope_clarifications": [
+      0,
+      0
+    ],
+    "semantic_vectors": [
+      5,
+      5
+    ],
+    "settings": [
+      12,
+      12
+    ],
+    "slack_capture_mutations": [
+      0,
+      0
+    ],
+    "slack_captures": [
+      0,
+      0
+    ],
+    "slack_conversation": [
+      0,
+      0
+    ],
+    "slack_ingress": [
+      0,
+      0
+    ],
+    "slack_replies": [
+      0,
+      0
+    ],
+    "source_connections": [
+      0,
+      0
+    ],
+    "source_identities": [
+      1,
+      1
+    ],
+    "source_items": [
+      0,
+      0
+    ],
+    "source_records": [
+      1,
+      1
+    ],
+    "source_review_requests": [
+      0,
+      0
+    ],
+    "source_versions": [
+      1,
+      1
+    ],
+    "sync_state": [
+      0,
+      0
+    ],
+    "task_context_reads": [
+      16,
+      16
+    ],
+    "task_source_anchors": [
+      0,
+      0
+    ],
+    "task_source_reads": [
+      0,
+      0
+    ],
+    "team_members": [
+      0,
+      0
+    ],
+    "teams": [
+      0,
+      0
+    ],
+    "webhook_receipts": [
+      0,
+      0
+    ],
+    "withheld_source_versions": [
+      0,
+      0
+    ]
+  }
+}

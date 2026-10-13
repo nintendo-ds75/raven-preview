@@ -1,8 +1,9 @@
 # Work directly in Raven
 
 Open **New task**, choose a repository, and describe what you want done. Raven
-runs its own agent using the Anthropic Messages API. You do not need Claude Code,
-Codex, a terminal session, or an MCP client open.
+runs the selected coding harness on the Raven server: Claude Agent SDK or a pinned
+Codex app-server. You do not need a separate agent window or terminal open.
+**Ask a question** reads connected evidence without starting a coding harness.
 
 The conversation shows progress and accepts follow-up messages. The overview
 shows recorded decisions, answers, approval status and people involved. Open
@@ -21,18 +22,44 @@ you would for an external coding agent. Server credentials are never passed to
 the command container. The current
 snapshot limit is 16 MiB, 4,000 files and 1 MiB per file; symlinks are refused.
 
-People still answer through Slack or the inbox. Remembered answers and proposals
+People answer through the Raven inbox; Slack is optional. Remembered answers and proposals
 still need the same authorization as tasks started through MCP. The worker stops
 spending inference while waiting, then resumes when decisions, notes or reviews
-change. The web page can be closed. Pause stops after the current model call or
-isolated command; an interrupted server leaves a saved task that can be resumed.
+change. The web page can be closed. Pause requests host interruption; an already
+running isolated command may finish. A server restart leaves saved work paused.
+Uncertain tool outcomes block automatic replay until reconciled. A disconnected
+host is never reported as completed just because its process stopped.
+If a host ends its turn with unanswered decisions without calling the wait tool,
+Raven still saves a waiting state and watches for a decision update. Waiting does
+not require repeated inference calls. Uncertain operations appear on a paused
+task with the exact tool and arguments. An admin must inspect the actual effects,
+record an observed outcome and evidence, then explicitly continue. That inspection
+is an attributed operator statement, not a replacement test receipt or approval.
 
 ## Run locally
 
-Configure `ANTHROPIC_API_KEY` and `BRIDGE_MODEL_API=anthropic` in the server
-environment. `BRIDGE_MODEL` selects the agent model; the live browser trial used
-`claude-sonnet-4-6`. `ANTHROPIC_WORKSPACE_ID` selects a workspace when required. Never paste
-keys into the task prompt. Use the existing Slack configuration for notifications.
+Install `requirements-hosts.txt` for Claude Agent SDK 0.2.165. Configure
+`RAVEN_HOST_CLAUDE_API_KEY` and `RAVEN_HOST_CLAUDE_MODEL` on the server. The live
+SDK smoke test used `claude-sonnet-4-6`. Set `RAVEN_HOST_CLAUDE_WORKSPACE_ID` if
+required by the test account. Never paste keys into a task prompt.
+
+For Codex, configure `RAVEN_CODEX_BIN` pointing to codex-cli
+`0.162.0-alpha.17.2`, `RAVEN_HOST_CODEX_API_KEY` and `RAVEN_HOST_CODEX_MODEL`.
+This adapter uses the experimental dynamic-tool interface, checks the exact CLI
+version, and refuses implicit model/provider fallback. It is not yet a verified
+guarded execution mode: the interface reports its read-only sandbox as advisory.
+Do not substitute a user's desktop session credentials for a deployment key.
+
+Host credentials and model choice are separate from Raven's internal evidence
+reading. Internal inference uses `BRIDGE_MODEL_API=anthropic` with
+`ANTHROPIC_API_KEY`, or `BRIDGE_MODEL_API=openai` with `OPENAI_API_KEY`. Set
+`BRIDGE_MODEL` and `BRIDGE_FAST_MODEL` to models available on that provider.
+Missing credentials no longer silently select a local Claude login. Explicit
+`BRIDGE_MODEL_API=claude-cli` remains a local operator choice.
+
+The browser reports setup blockers for each host without making a provider call.
+A ready configuration is not proof of provider authentication. Selecting an
+unavailable host gives its actual blocker and never runs another host instead.
 
 ```sh
 python -m bridge serve --workbench \
@@ -62,15 +89,19 @@ could not be run. It must not label those changes tested.
 
 ## Run in Docker
 
-Set `BRIDGE_WORKBENCH=1`, `BRIDGE_MODEL_API=anthropic`, `ANTHROPIC_API_KEY`,
-`BRIDGE_REPOS_DIR` to the checkout, and
+Set `BRIDGE_WORKBENCH=1`, the host variables above,
+`BRIDGE_REPOS_DIR` to the directory containing your checkouts,
+`BRIDGE_INGEST_REPO_DIR` to the checkout's directory name, and
 `BRIDGE_INGEST_REPO=your-org/your-project` in the existing deployment environment.
+For example, a checkout at `/srv/repos/project` uses
+`BRIDGE_REPOS_DIR=/srv/repos` and `BRIDGE_INGEST_REPO_DIR=project`.
+Ingestion and the browser task runner use that same checkout.
 The regular Compose stack supports repository reading and drafting.
 
 For isolated test commands, use the opt-in overlay:
 
 ```sh
-docker build -t raven-workbench-base .
+docker build --build-arg INSTALL_HOSTS=true -t raven-workbench-base .
 docker pull python:3.13-slim-bookworm
 docker compose -f compose.yaml -f compose.workbench.yaml up --build -d
 ```
@@ -86,13 +117,20 @@ Task conversations and tool receipts are stored in the existing database;
 private copies live under `/data/workbench` in Compose or `.bridge/workbench`
 locally. Back up both when you need to resume browser tasks after moving hosts.
 `BRIDGE_WORKBENCH_DIR` can select another persistent directory. The server runs
-one model turn at a time and pauses a task after 60 calls until someone resumes
-it. This first version is intended for a supervised team, not a high-throughput
+one host turn at a time. Claude has a per-task dollar budget (default $5), and
+both adapters have a tool-call limit and a 15-minute turn timeout. Codex reports
+token usage but does not yet enforce a priced dollar budget; this is a release
+gap, not a cost guarantee. This version is intended for a supervised team, not a high-throughput
 multi-tenant execution service.
 
-The built-in agent uses [Anthropic's documented client tool protocol](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls).
-Its file operations and isolated commands are Raven tools; decisions run through
-the existing MCP implementation. Model review remains advisory, and the saved
-test claims remain distinct from approval.
+Claude uses the [official Agent SDK](https://code.claude.com/docs/en/agent-sdk/python)
+with built-in tools disabled and only Raven's in-process MCP tools enabled.
+Codex uses the [app-server protocol](https://learn.chatgpt.com/docs/app-server)
+over private stdio. Harnesses receive a dedicated home, one provider credential,
+no database or connector credentials, and an empty working directory. File and
+command access goes through task-scoped Raven tools. Provider reasoning is not
+exported. Session IDs, tool IDs, versions and reported usage are saved in Raven.
 
-The provider request enables [automatic prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) for the growing conversation. Token and cache usage returned by the provider are saved with each inference step. This is separate from Raven’s decision memory and grants no authority.
+Local harness sessions and repository execution still send selected source text,
+prompts and tool results to the selected provider's inference API. This is local
+execution with remote inference, not an air-gapped installation.

@@ -1,0 +1,25 @@
+What would you like to know?
+
+Read connected evidence and earlier decisions. No coding host is started.
+
+Ask a question
+Start a task
+Your question
+Repository
+pallets/itsdangerous
+Reads connected context. It does not edit code or grant approval.
+
+Mira Security decided to use 'None-falls-through' semantics: when a caller passes max_age=None explicitly (or omits max_age entirely) to loads() or loads_unsafe(), the serializer's configured default_max_age is used instead. Only a numeric per-call max_age overrides the default. No sentinel value is introduced, and TimestampSigner is left unchanged. The rationale was: 'Callers that opt into a serializer age policy should not disable it accidentally by forwarding None.'
+
+This is an evidence reading. It creates no decision, signature or authorization.
+
+No open questions remain on this specific decision; it is signed and marked as not needing review.
+
+Evidence
+Synthetic rollout policy · Source
+Should default_max_age apply uniformly to all signers tried during loads(), including fallback_signers, or only to the primary signer? · Prior answer
+When a caller passes max_age=None explicitly to loads() or unsign(), should that mean "use the instance default" or "override the default and apply no age limit"? · Prior answer
+Does this change ship behind a feature flag, or is it always-available once merged? Who decides when it is turned on for existing callers? · Prior answer
+Does adding a configurable default_max_age widen any security exposure, and does security sign off on shipping it without a feature flag? · Prior answer
+What should the built-in value of default_max_age be, and does setting it to None (no limit) preserve existing behavior correctly? · Prior answer
+View all workspace tasks

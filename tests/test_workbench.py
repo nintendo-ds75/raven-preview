@@ -193,7 +193,7 @@ class WorkbenchTests(OfflineCase):
         task = self.submit()
         self.service.step(task)
         self.service.record(task, 'tool', 'finish_task', {'input': {'checks': 'Tests passed'}, 'result': {'status': 'completed'}})
-        node = canvas.add_node(self.store, self.service.cfg, {'task_id': task, 'question': 'Which policy?', 'paths': 'policy.py'})
+        canvas.add_node(self.store, self.service.cfg, {'task_id': task, 'question': 'Which policy?', 'paths': 'policy.py'})
         with patch('bridge.workbench.mcp.call_tool', return_value={'status': 'completed'}):
             with self.assertRaisesRegex(Invalid, 'changed during completion'):
                 self.service.execute(self.service.row(task), call('present_result', {'summary': 'Done'}))

@@ -1,0 +1,246 @@
+diff --git a/CHANGES.rst b/CHANGES.rst
+index 17c1a19..65d6ef7 100644
+--- a/CHANGES.rst
++++ b/CHANGES.rst
+@@ -5,6 +5,10 @@ Unreleased
+ 
+ -   Drop support for Python 3.8 and 3.9.
+ -   Remove previously deprecated code.
++-   :class:`.TimedSerializer` and :class:`.URLSafeTimedSerializer` accept a
++    ``default_max_age`` constructor argument. When set, ``loads`` enforces the
++    age limit without requiring callers to pass ``max_age`` on every call.
++    Passing ``None`` (the default) preserves existing behavior.
+ 
+ 
+ Version 2.2.0
+diff --git a/docs/timed.rst b/docs/timed.rst
+index 9890f6b..0a47c3c 100644
+--- a/docs/timed.rst
++++ b/docs/timed.rst
+@@ -11,8 +11,8 @@ than a given age.
+ .. code-block:: python
+ 
+     from itsdangerous import TimestampSigner
+-    s = TimestampSigner('secret-key')
+-    string = s.sign('foo')
++    s = TimestampSigner("secret-key")
++    string = s.sign("foo")
+ 
+ .. code-block:: python
+ 
+@@ -21,6 +21,29 @@ than a given age.
+       ...
+     itsdangerous.exc.SignatureExpired: Signature age 15 > 5 seconds
+ 
++For the higher-level :class:`TimedSerializer` (and
++:class:`.URLSafeTimedSerializer`) you can set a ``default_max_age``
++once at construction time so that every :meth:`~TimedSerializer.loads`
++call enforces the limit without having to repeat it:
++
++.. code-block:: python
++
++    from itsdangerous import TimedSerializer
++    s = TimedSerializer("secret-key", default_max_age=3600)
++    token = s.dumps({"user_id": 42})
++
++    # Works within one hour; raises SignatureExpired if older.
++    data = s.loads(token)
++
++    # Callers can still override the limit per call with an integer.
++    data = s.loads(token, max_age=7200)
++
++``default_max_age`` uses **None-falls-through** semantics: both an omitted
++``max_age`` and an explicit ``max_age=None`` resolve to
++:attr:`~TimedSerializer.default_max_age`. If ``default_max_age`` is ``None``
++(the default), no age limit is applied at all, preserving full backward
++compatibility with existing applications.
++
+ .. autoclass:: TimestampSigner
+     :members:
+ 
+diff --git a/src/itsdangerous/timed.py b/src/itsdangerous/timed.py
+index 52deeea..86aef9b 100644
+--- a/src/itsdangerous/timed.py
++++ b/src/itsdangerous/timed.py
+@@ -170,10 +170,32 @@ class TimestampSigner(Signer):
+ class TimedSerializer(Serializer[_TSerialized]):
+     """Uses :class:`TimestampSigner` instead of the default
+     :class:`.Signer`.
++
++    :param default_max_age: The default maximum age in seconds for tokens
++        verified by :meth:`loads`. If ``None`` (the default), no age
++        limit is applied unless the caller passes ``max_age`` explicitly.
++        Callers can still override this per call by passing ``max_age``
++        to :meth:`loads` or :meth:`loads_unsafe`. Must be ``None`` or a
++        non-negative integer.
++
++    .. versionchanged:: 2.3
++        Added the ``default_max_age`` parameter.
+     """
+ 
+     default_signer: type[TimestampSigner] = TimestampSigner  # pyright: ignore
+ 
++    def __init__(self, *args: t.Any, default_max_age: int | None = None, **kwargs: t.Any) -> None:
++        if default_max_age is not None and default_max_age < 0:
++            raise ValueError(
++                "default_max_age must be None or a non-negative integer,"
++                f" got {default_max_age!r}."
++            )
++        super().__init__(*args, **kwargs)
++        #: The default maximum age applied when :meth:`loads` is called
++        #: without an explicit ``max_age`` argument.  ``None`` means no
++        #: limit.
++        self.default_max_age: int | None = default_max_age
++
+     def iter_unsigners(
+         self, salt: str | bytes | None = None
+     ) -> cabc.Iterator[TimestampSigner]:
+@@ -195,14 +217,23 @@ class TimedSerializer(Serializer[_TSerialized]):
+         case the signature is outdated, :exc:`.SignatureExpired` is
+         raised. All arguments are forwarded to the signer's
+         :meth:`~TimestampSigner.unsign` method.
++
++        If ``max_age`` is ``None`` (the default), :attr:`default_max_age`
++        is used. Pass an explicit integer to override the instance default
++        for this call.
+         """
++        # None-falls-through: None means "use the instance default".
++        # An explicit integer overrides it for this call only.
++        effective_max_age: int | None = (
++            self.default_max_age if max_age is None else max_age
++        )
+         s = want_bytes(s)
+         last_exception = None
+ 
+         for signer in self.iter_unsigners(salt):
+             try:
+                 base64d, timestamp = signer.unsign(
+-                    s, max_age=max_age, return_timestamp=True
++                    s, max_age=effective_max_age, return_timestamp=True
+                 )
+                 payload = self.load_payload(base64d)
+ 
+@@ -225,4 +256,8 @@ class TimedSerializer(Serializer[_TSerialized]):
+         max_age: int | None = None,
+         salt: str | bytes | None = None,
+     ) -> tuple[bool, t.Any]:
++        """Like :meth:`loads` but without raising on an invalid signature.
++        Accepts the same ``max_age`` argument as :meth:`loads`; when
++        ``None`` (the default), :attr:`default_max_age` is used.
++        """
+         return self._loads_unsafe_impl(s, salt, load_kwargs={"max_age": max_age})
+diff --git a/tests/test_itsdangerous/test_timed.py b/tests/test_itsdangerous/test_timed.py
+index a4c1741..7db13ea 100644
+--- a/tests/test_itsdangerous/test_timed.py
++++ b/tests/test_itsdangerous/test_timed.py
+@@ -113,3 +113,110 @@ class TestTimedSerializer(FreezeMixin, TestSerializer):
+     def test_return_payload(self, serializer, value, ts):
+         signed = serializer.dumps(value)
+         assert serializer.loads(signed, return_timestamp=True) == (value, ts)
++
++    # ---- default_max_age tests ----------------------------------------
++
++    def test_default_max_age_none_is_default(self, serializer_factory, value, ts, freeze):
++        """default_max_age defaults to None, so no age check by default."""
++        s = serializer_factory()
++        assert s.default_max_age is None
++        signed = s.dumps(value)
++        freeze.tick(timedelta(seconds=3600))
++        # No age limit set: loads without error
++        assert s.loads(signed) == value
++
++    def test_default_max_age_enforced(self, serializer_factory, value, ts, freeze):
++        """Tokens older than default_max_age are rejected."""
++        s = serializer_factory(default_max_age=10)
++        signed = s.dumps(value)
++        freeze.tick()
++        assert s.loads(signed) == value  # 1 second old, still valid
++        freeze.tick(timedelta(seconds=10))
++
++        with pytest.raises(SignatureExpired) as exc_info:
++            s.loads(signed)
++
++        assert exc_info.value.date_signed == ts
++
++    def test_default_max_age_overridden_per_call(self, serializer_factory, value, ts, freeze):
++        """Per-call max_age overrides the instance default."""
++        s = serializer_factory(default_max_age=5)
++        signed = s.dumps(value)
++        freeze.tick(timedelta(seconds=3))
++        # Per-call override of 60 accepts a 3-second-old token.
++        assert s.loads(signed, max_age=60) == value
++
++    def test_default_max_age_none_falls_through(self, serializer_factory, value, freeze):
++        """Passing max_age=None explicitly still uses the instance default
++        (None-falls-through semantics: None means 'use default_max_age')."""
++        s = serializer_factory(default_max_age=5)
++        signed = s.dumps(value)
++        freeze.tick(timedelta(seconds=100))
++        # max_age=None still falls through to default_max_age=5, so the token
++        # is expired and SignatureExpired is raised.
++        with pytest.raises(SignatureExpired):
++            s.loads(signed, max_age=None)
++
++    def test_default_max_age_zero(self, serializer_factory, value, freeze):
++        """default_max_age=0 rejects all tokens immediately after signing."""
++        s = serializer_factory(default_max_age=0)
++        signed = s.dumps(value)
++        freeze.tick()
++
++        with pytest.raises(SignatureExpired):
++            s.loads(signed)
++
++    def test_default_max_age_negative_raises(self, serializer_factory):
++        """Negative default_max_age raises ValueError at construction."""
++        with pytest.raises(ValueError, match="non-negative"):
++            serializer_factory(default_max_age=-1)
++
++    def test_default_max_age_loads_unsafe(self, serializer_factory, value, freeze):
++        """loads_unsafe also respects default_max_age."""
++        s = serializer_factory(default_max_age=5)
++        signed = s.dumps(value)
++        freeze.tick(timedelta(seconds=100))
++        # The token is expired; loads_unsafe returns (False, payload).
++        ok, payload = s.loads_unsafe(signed)
++        assert not ok
++
++    def test_default_max_age_loads_unsafe_none_falls_through(self, serializer_factory, value, freeze):
++        """Passing max_age=None to loads_unsafe still uses default_max_age
++        (None-falls-through: None means 'use instance default')."""
++        s = serializer_factory(default_max_age=5)
++        signed = s.dumps(value)
++        freeze.tick(timedelta(seconds=100))
++        # max_age=None still applies the default limit; token is expired.
++        ok, payload = s.loads_unsafe(signed, max_age=None)
++        assert not ok
++
++    def test_default_max_age_fallback_signers(self, serializer_factory, value, freeze):
++        """default_max_age applies uniformly including the fallback-signer path.
++
++        Sign with sha256 so the sha1 primary signer cannot verify it.
++        Load via a serializer that has sha1 as primary and sha256 as fallback.
++        The age limit must be enforced even when the token is only accepted by
++        a fallback signer, not silently bypassed because the primary failed.
++        """
++        import hashlib
++
++        # Produce a token signed with sha256.
++        signer_sha256 = serializer_factory(
++            signer_kwargs={"digest_method": hashlib.sha256},
++        )
++        signed = signer_sha256.dumps(value)
++
++        # Verifier: sha1 primary (fails for sha256 tokens) + sha256 fallback.
++        s = serializer_factory(
++            default_max_age=10,
++            fallback_signers=[{"digest_method": hashlib.sha256}],
++        )
++
++        # 5 seconds in: within the limit; accepted via the fallback signer.
++        freeze.tick(timedelta(seconds=5))
++        assert s.loads(signed) == value
++
++        # 11 seconds in: past the limit; fallback signer must also reject it.
++        freeze.tick(timedelta(seconds=6))
++        with pytest.raises(SignatureExpired):
++            s.loads(signed)

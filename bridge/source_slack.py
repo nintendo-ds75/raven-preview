@@ -28,7 +28,7 @@ MISSING_CREDENTIALS = 'Set SLACK_BOT_TOKEN (scopes channels:read and channels:hi
 ENABLE = ('python -m bridge.sources add slack --repo owner/name --target C0123456789 --workspace-shared '
           '(public channels only)')
 LIMITS = ('Public channels only; private channels, DMs and Slack Connect channels are never read',
-          'Deleted messages are not visible to polling; their last version is kept')
+          'Known messages receive bounded exact-access refreshes; unavailable or expired records are withheld, while private history is retained')
 OVERLAP_SECONDS = 300
 PAGE_SIZE = 200
 MAX_PAGES = 25
@@ -63,7 +63,7 @@ class SlackHistoryClient:
             hint = {'missing_scope': ' (add channels:read and channels:history to the app)',
                     'not_in_channel': ' (invite the Raven app to the channel)',
                     'channel_not_found': ' (check the channel ID)'}.get(body.get('error'), '')
-            raise SourceError(f"Slack {method} failed: {body.get('error', 'unknown error')}{hint}")
+            raise SourceError(f"Slack {method} failed: {body.get('error', 'unknown error')}{hint}", code=body.get('error', ''))
         return body
 
 
@@ -226,3 +226,32 @@ def collect(connection, client, items):
             batch.items['thread:' + ts] = None
     batch.cursor = f'{newest:.6f}' if newest else connection['cursor']
     return batch
+
+
+def revalidate(connection, client, rows, batch):
+    """Renew old content only after reading that exact message again."""
+    observed = {r['external_id'] for r in batch.records}
+    for row in rows:
+        if row['external_id'] in observed:
+            continue
+        ts = row['external_id'].rsplit(':', 1)[-1]
+        snapshot = json.loads(row['snapshot'])
+        parent = re.match(r'^Reply in thread ([0-9.]+)\.', snapshot.get('body', ''))
+        params = {'channel': connection['target'], 'oldest': ts, 'latest': ts, 'inclusive': 'true', 'limit': 1}
+        method = 'conversations.history'
+        if parent:
+            method = 'conversations.replies'
+            params['ts'] = parent.group(1)
+        try:
+            page = client.call(method, params)
+        except SourceError as error:
+            if error.code == 'thread_not_found':
+                batch.inaccessible.append(row['external_id'])
+                continue
+            raise
+        found = next((m for m in page.get('messages', []) if m.get('ts') == ts and _keep(m)), None)
+        if found is None:
+            # Absence is not proof of deletion, but is not permission to reuse.
+            batch.inaccessible.append(row['external_id'])
+        else:
+            batch.records.append(_record(connection, batch.label, found, parent.group(1) if parent else ''))

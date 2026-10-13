@@ -241,8 +241,8 @@ def deliver(store, sender=None, stopped=None):
             if stopped and stopped.is_set():
                 break
             with g.transaction():
-                claimed = g.db.execute("UPDATE mcp_event_deliveries SET state='leased',lease_until=? WHERE id=? "
-                                       "AND state IN ('pending','leased') AND lease_until<=?", (time.time() + 60, item['id'], time.time()))
+                claimed = g.db.execute("UPDATE mcp_event_deliveries SET state='leased',lease_until=?,attempts=attempts+1 WHERE id=? "
+                                       "AND attempts=? AND state IN ('pending','leased') AND lease_until<=?", (time.time() + 60, item['id'], item['attempts'], time.time()))
                 if claimed.rowcount != 1:
                     continue
             # Recheck immediately before every attempt, including retries.
@@ -259,9 +259,11 @@ def deliver(store, sender=None, stopped=None):
             accepted = 200 <= status < 300
             terminal = status in (410, 413) or (400 <= status < 500 and status not in (408, 429)) or attempts >= 8
             with g.transaction():
-                g.db.execute('UPDATE mcp_event_deliveries SET state=?,attempts=?,next_attempt=?,lease_until=0,last_error=? WHERE id=?',
+                saved = g.db.execute("UPDATE mcp_event_deliveries SET state=?,attempts=?,next_attempt=?,lease_until=0,last_error=? WHERE id=? AND state='leased' AND attempts=?",
                     ('sent' if accepted else 'failed' if terminal else 'pending', attempts,
-                     time.time() + min(3600, 2 ** attempts * 5), '' if accepted else error or f'HTTP {status}', item['id']))
+                     time.time() + min(3600, 2 ** attempts * 5), '' if accepted else error or f'HTTP {status}', item['id'], attempts))
+                if saved.rowcount != 1:
+                    continue  # A newer lease or baseline owns this delivery.
                 if status == 410:
                     g.db.execute('UPDATE mcp_event_subscriptions SET active=0 WHERE id=?', (sub['id'],))
                 g.append_event('event_webhook_delivered' if accepted else 'event_webhook_failed', {

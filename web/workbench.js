@@ -1,14 +1,16 @@
 'use strict';
 
 const workViews = new Map();
+let workMode = 'task', workAnswer = null;
 let workRequest = 0, workData = null, workError = '', workOverview = !window.matchMedia?.('(max-width:900px)').matches;
 const workId = () => view === 'work' ? location.hash.slice(1).split('/')[1] || '' : '';
+const workRepositories = () => workMode === 'ask' ? (state.question_repositories || state.workbench?.repositories || []) : (state.workbench?.repositories || []);
 const workDraft = (id = workId()) => {
-  if (!workViews.has(id)) workViews.set(id, {text:'', repository:'', key:crypto.randomUUID(), pending:false, payload:null, error:''});
+  if (!workViews.has(id)) workViews.set(id, {text:'', repository:'', host:'', key:crypto.randomUUID(), pending:false, payload:null, error:''});
   return workViews.get(id);
 };
 const WORK_STATUS = {queued:'Getting ready', running:'Working', waiting:'Waiting for an update', input:'Your turn',
-  paused:'Paused', pausing:'Pausing after the current step', completed:'Ready for review'};
+  paused:'Paused', pausing:'Stopping the host', cancelled:'Cancelled', completed:'Ready for review'};
 
 // A small, escaped formatting subset. Model output never becomes arbitrary HTML.
 function workInline(text) {
@@ -61,14 +63,18 @@ async function loadWorkbench() {
 }
 
 function workComposer(id, enabled) {
-  const draft = workDraft(id), repos = state.workbench?.repositories || [];
+  const draft = workDraft(id), repos = workRepositories();
   const selected = draft.repository || repos[0]?.id || '';
+  const hosts = state.workbench?.hosts || [];
+  const selectedHost = draft.host || hosts.find(h => h.ready)?.id || hosts[0]?.id || 'claude';
   return `<form id="work-compose" class="work-compose" data-task="${esc(id)}">
-    <label class="sr-only" for="work-prompt">${id ? 'Message Raven' : 'Describe your task'}</label>
-    <textarea id="work-prompt" name="prompt" rows="${id ? '2' : '3'}" maxlength="12000" required placeholder="${id ? 'Add context or ask Raven to continue…' : 'What would you like to get done?'}" ${draft.pending || draft.payload ? 'readonly' : ''}>${esc(draft.text)}</textarea>
+    <label class="sr-only" for="work-prompt">${id ? 'Message Raven' : workMode === 'ask' ? 'Your question' : 'Describe your task'}</label>
+    <textarea id="work-prompt" name="prompt" rows="${id ? '2' : '3'}" maxlength="12000" required placeholder="${id ? 'Add context or ask Raven to continue…' : workMode === 'ask' ? 'What would you like to know?' : 'What would you like to get done?'}" ${draft.pending || draft.payload ? 'readonly' : ''}>${esc(draft.text)}</textarea>
     <div class="work-compose-bottom">${id ? '<span>Enter to send · Shift + Enter for a new line</span>' : `<label class="work-repository"><span class="sr-only">Repository</span><select id="work-repository" aria-label="Repository" ${draft.pending || draft.payload ? 'disabled' : ''}>${repos.map(r => `<option value="${esc(r.id)}" ${r.id === selected ? 'selected' : ''}>${esc(r.name)}</option>`).join('') || '<option>No repository connected</option>'}</select></label>`}
-    <button class="work-send" type="submit" aria-label="${id ? 'Send message' : 'Start task'}" ${!enabled || draft.pending ? 'disabled' : ''}>${draft.pending ? '<span class="loading-dot"></span>' : icon('arrow')}</button></div>
-    ${draft.error ? `<p class="work-error" role="alert">${esc(draft.error)} Your message is saved. Retry sends the same request.</p>` : ''}
+    ${!id && workMode === 'task' && hosts.length ? `<label class="work-repository"><span class="sr-only">Coding host</span><select id="work-host" aria-label="Coding host" ${draft.pending || draft.payload ? 'disabled' : ''}>${hosts.map(h => `<option value="${esc(h.id)}" ${h.id === selectedHost ? 'selected' : ''}>${esc(h.name)}${h.ready ? '' : ' · setup needed'}</option>`).join('')}</select></label>` : ''}
+    <button class="work-send" type="submit" aria-label="${id ? 'Send message' : workMode === 'ask' ? 'Ask question' : 'Start task'}" ${!enabled || draft.pending ? 'disabled' : ''}>${draft.pending ? '<span class="loading-dot"></span>' : icon('arrow')}</button></div>
+    ${!id && workMode === 'task' && hosts.length ? `<p class="work-footnote">${esc(hosts.find(h => h.id === selectedHost)?.ready ? 'Code runs through Raven task tools. Selected context and tool results are sent to ' + hosts.find(h => h.id === selectedHost).inference_destination + '.' : (hosts.find(h => h.id === selectedHost)?.blockers || []).join('. '))}</p>` : ''}
+    ${draft.error ? `<p class="work-error" role="alert">${esc(draft.error)} Your text is still in this browser. You can retry.</p>` : ''}
   </form>`;
 }
 
@@ -103,22 +109,28 @@ function renderWorkbench() {
   const existingInput = $('#work-prompt');
   if (existingInput && app.dataset.workId === id) workDraft(id).text = existingInput.value;
   const disclosures = new Set([...app.querySelectorAll('details[data-work-detail]')].filter(el => el.open).map(el => el.dataset.workDetail));
+  const inspections = workDraft(id).inspections ||= {};
+  app.querySelectorAll('form[data-work-reconcile]').forEach(form => {
+    inspections[form.dataset.workReconcile] = {outcome:form.querySelector('[name=outcome]').value,note:form.querySelector('[name=note]').value};
+  });
   const scroll = window.scrollY;
   const followLatest = !app.querySelector('.work-thread') ||
     (document.documentElement?.scrollHeight || 0) - scroll - (window.innerHeight || 0) < 140;
   app.dataset.workId = id;
   const allowed = !state.auth.enabled || ['admin','member'].includes(state.me?.role);
   if (!id) {
-    const ready = state.workbench?.enabled && state.workbench?.ready && state.workbench?.repositories?.length;
-    app.innerHTML = `<section class="work-home"><img src="/favicon.svg" alt="" width="38" height="38"><h1>What should we work on?</h1><p>Give Raven a task. It brings the context together, does the work, and asks people when judgment is needed.</p>${workComposer('', ready && allowed)}
-      <div class="work-home-note">${!allowed ? 'Your account can view tasks. A workspace member can start one.' : ready ? 'Runs in a separate copy of your repository. You review the result.' : '<strong>Browser execution is not set up yet.</strong> An operator needs to connect a repository and configure inference. <a href="#connect">Connections & setup ↗</a>'}</div>
-      <a class="work-alternative" href="#runs">View all workspace tasks ${icon('arrow')}</a></section>`;
+    const ready = (workMode === 'ask' || state.workbench?.enabled && state.workbench?.ready) && workRepositories().length;
+    app.innerHTML = `<section class="work-home"><img src="/favicon.svg" alt="" width="38" height="38"><h1>${workMode === 'ask' ? 'What would you like to know?' : 'What should we work on?'}</h1><p>${workMode === 'ask' ? 'Read connected evidence and earlier decisions. No coding host is started.' : 'Give Raven a task. It brings the context together, does the work, and asks people when judgment is needed.'}</p><div class="work-modes" role="group" aria-label="Choose how to work"><button class="button small" data-work-mode="ask" aria-pressed="${workMode === 'ask'}">Ask a question</button><button class="button small" data-work-mode="task" aria-pressed="${workMode === 'task'}">Start a task</button></div>${workComposer('', ready && allowed)}
+      <div class="work-home-note">${!allowed ? 'Your account can view tasks. A workspace member can start one.' : ready ? (workMode === 'ask' ? 'Reads connected context. It does not edit code or grant approval.' : 'Runs in a separate copy of your repository. You review the result.') : '<strong>Context or execution is not set up yet.</strong> Connect a repository and configure inference. <a href="#connect">Connections & setup ↗</a>'}</div>
+      ${workMode === 'ask' && workAnswer ? `<article class="work-question-result" aria-live="polite"><p>${workText(workAnswer.answer)}</p><small>${esc(workAnswer.notice)}</small>${(workAnswer.open || []).map(s => `<p>${esc(s)}</p>`).join('')}<h2>Evidence</h2>${workAnswer.evidence.map(s => `<details><summary>${esc(s.title || s.id)} · ${esc(s.kind === 'prior_decision' ? 'Prior answer' : 'Source')}</summary><p>${workText(s.text)}</p><small>${esc(s.id)} · revision ${esc(s.version)}</small></details>`).join('') || '<p>No matching records. Connect context in setup, or start a task to investigate.</p>'}</article>` : ''}<a class="work-alternative" href="#runs">View all workspace tasks ${icon('arrow')}</a></section>`;
   } else if (!workData || workData.task.task_id !== id) {
     app.innerHTML = `<div class="work-empty"><h1>${workError ? 'Could not open this task' : 'Opening your task…'}</h1>${workError ? `<p role="alert">${esc(workError)}</p><button class="button" data-work-action="refresh">Try again</button>` : '<span class="loading-dot"></span>'}</div>`;
+  } else if (workData.task.withheld || workData.tree.withheld) {
+    app.innerHTML = `<section class="work-empty"><h1>Access needs attention</h1><p>${esc(workData.task.notice || workData.tree.notice)}</p><a class="button" href="#connect">Connections</a><a href="#work">Back to tasks</a></section>`;
   } else {
     const {task, tree, trace} = workData, running = ['queued','running','pausing'].includes(task.status);
     const incompleteReview = tree.review?.status === 'failed';
-    const activities = task.activity.filter(a => ['tool', 'context', 'control'].includes(a.kind));
+    const activities = task.activity.filter(a => ['tool', 'context', 'control', 'host'].includes(a.kind));
     const latest = activities.at(-1);
     const messages = task.conversation.filter(m => !m.text.startsWith('Raven task ID:') && !m.text.startsWith('Raven has new task information.'));
     if (!messages.length) messages.push({role:'user',text:task.prompt});
@@ -127,12 +139,17 @@ function renderWorkbench() {
     <div class="work-layout ${workOverview ? '' : 'overview-closed'}"><section class="work-thread" aria-label="Task conversation"><div class="work-messages">${messages.map(m => `<article class="work-message ${m.role}"><span class="work-speaker">${m.role === 'user' ? esc(m.actor || task.requester || 'Requester') : 'Raven'}</span><div>${workText(m.text)}</div></article>`).join('')}
     ${task.pending_messages.map(m => `<article class="work-message user"><span class="work-speaker">${esc(m.actor)} · queued</span><div>${esc(m.body)}</div></article>`).join('')}
     ${task.status === 'waiting' ? `<div class="work-waiting"><span class="status-dot"></span><p>${esc(task.summary || 'Waiting for a reply.')}<small>You can close this page. Raven continues when the task has an update.</small></p></div>` : ''}
+    ${task.host?.provider && task.host.provider !== 'scripted' ? `<p class="work-footnote">${esc(task.host.provider === 'claude' ? 'Claude Agent SDK' : 'Codex app-server')} · ${esc(task.host.model)}${task.host.session_id ? ' · session saved' : ''}</p>` : ''}
     ${task.error ? `<p class="work-error" role="alert">${esc(task.error)}</p>` : ''}
+    ${['paused','cancelled'].includes(task.status) ? (task.unresolved_operations || []).map(op => `<details class="work-activity" data-work-detail="intent-${esc(op.call_id)}"><summary>Check an uncertain operation: ${esc(op.operation || 'Saved operation')}</summary><p>Inspect the saved files and execution records before continuing. Raven will not repeat this operation automatically.</p><pre>${esc(JSON.stringify(op.arguments,null,2))}</pre>${state.me?.role === 'admin' ? `<form data-work-reconcile="${esc(op.call_id)}"><label>Observed outcome<select name="outcome" required><option value="">Choose after inspecting</option><option value="completed">The operation completed</option><option value="not_run">The operation did not run</option></select></label><label>What evidence did you check?<textarea name="note" maxlength="2000" required>${esc(inspections[op.call_id]?.note || '')}</textarea></label><button class="button" type="submit">Record inspection</button></form>` : '<p>A workspace admin must inspect and reconcile this operation.</p>'}</details>`).join('') : ''}
     ${task.status === 'completed' ? `<article class="work-result"><h2>${incompleteReview ? 'Patch ready for manual review' : 'Ready for your review'}</h2>${incompleteReview ? '<p class="work-error">The automatic code review is incomplete. Owner approvals and test results do not replace reviewing the patch.</p>' : ''}<div class="work-result-text">${workText(task.summary)}</div><div class="work-result-actions"><a class="button" href="/api/workbench/${encodeURIComponent(id)}/patch">Download patch</a><a class="button" href="#runs/${encodeURIComponent(id)}">Decisions & review</a></div><small>The original repository is unchanged. No commit, push or deployment was made.</small></article>` : ''}
     ${activities.length ? `<details class="work-activity" data-work-detail="activity"><summary>${running ? 'Working · ' : ''}${esc(latest ? workActivityLabel(latest) : 'Activity')}<span>${activities.length} steps</span></summary><ol>${activities.map(a => `<li><details data-work-detail="action-${esc(a.id)}"><summary>${esc(workActivityLabel(a))}</summary><pre>${esc(JSON.stringify(a.detail,null,2))}</pre></details></li>`).join('')}</ol></details>` : '<p class="work-muted" role="status">Preparing a private repository copy…</p>'}
     </div><div class="work-reply">${allowed ? workComposer(id, task.status !== 'pausing') : '<p class="work-muted">You have view access to this conversation.</p>'}</div></section>${workBirdseye(tree,trace)}</div>`;
   }
   app.querySelectorAll('details[data-work-detail]').forEach(el => { el.open = disclosures.has(el.dataset.workDetail); });
+  app.querySelectorAll('form[data-work-reconcile]').forEach(form => {
+    form.querySelector('[name=outcome]').value = inspections[form.dataset.workReconcile]?.outcome || '';
+  });
   if (focus && app.querySelector('#' + CSS.escape(focus))) {
     const replacement = document.getElementById(focus); replacement.focus({preventScroll:true});
     if (replacement.setSelectionRange && selection[0] !== null) replacement.setSelectionRange(...selection);
@@ -146,6 +163,7 @@ document.addEventListener('input', event => {
 });
 document.addEventListener('change', event => {
   if (event.target.id === 'work-repository') workDraft().repository = event.target.value;
+  if (event.target.id === 'work-host') { workDraft().host = event.target.value; renderWorkbench(); }
 });
 document.addEventListener('keydown', event => {
   if (event.target.id === 'work-prompt' && event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
@@ -153,25 +171,40 @@ document.addEventListener('keydown', event => {
   }
 });
 document.addEventListener('submit', async event => {
+  if (event.target.dataset.workReconcile) {
+    event.preventDefault();
+    const form = event.target, fields = new FormData(form), button = form.querySelector('button');
+    if (!form.reportValidity() || button.disabled) return;
+    button.disabled = true;
+    try {
+      await api(`/api/workbench/${encodeURIComponent(workId())}/reconcile`, {call_id:form.dataset.workReconcile,outcome:fields.get('outcome'),note:fields.get('note')});
+      await loadWorkbench();
+    } catch (error) { workError = error.message; button.disabled = false; }
+    return;
+  }
   if (event.target.id !== 'work-compose') return;
   event.preventDefault();
   const form = event.target, id = form.dataset.task, draft = workDraft(id), startedOn = navigationVersion;
   if (draft.pending || !form.reportValidity() || (state.auth.enabled && !['admin','member'].includes(state.me?.role))) return;
   const text = draft.text.trim();
   if (!text) return;
-  if (!draft.payload) draft.payload = id ? {text,request_key:draft.key} : {prompt:text,request_key:draft.key,repository:$('#work-repository').value};
+  if (!draft.payload) draft.payload = id ? {text,request_key:draft.key} : workMode === 'ask' ? {question:text,repository:$('#work-repository').value} : {prompt:text,request_key:draft.key,repository:$('#work-repository').value,host:$('#work-host')?.value || 'claude'};
   draft.pending = true; draft.error = ''; renderWorkbench();
   try {
-    const result = await api(id ? `/api/workbench/${encodeURIComponent(id)}/messages` : '/api/workbench', draft.payload);
+    const asking = !id && 'question' in draft.payload;
+    const result = await api(id ? `/api/workbench/${encodeURIComponent(id)}/messages` : asking ? '/api/ask' : '/api/workbench', draft.payload);
+    if (asking && startedOn === navigationVersion) workAnswer = result;
     workViews.delete(id);
     if (id === workId() && $('#work-prompt')) $('#work-prompt').value = '';
-    if (!id && view === 'work' && !workId() && startedOn === navigationVersion) location.hash = 'work/' + encodeURIComponent(result.task_id);
+    if (!id && !asking && view === 'work' && !workId() && startedOn === navigationVersion) location.hash = 'work/' + encodeURIComponent(result.task_id);
     else if (id === workId() && startedOn === navigationVersion) await loadWorkbench();
     await refresh({quiet:true});
   } catch (error) { draft.error = error.message; }
   finally { draft.pending = false; if (view === 'work') renderWorkbench(); }
 });
 document.addEventListener('click', async event => {
+  const mode = event.target.closest('[data-work-mode]');
+  if (mode) { if (!workDraft('').pending && !workDraft('').payload) {workMode = mode.dataset.workMode; renderWorkbench();} return; }
   const button = event.target.closest('[data-work-action]');
   if (!button) return;
   const action = button.dataset.workAction, id = workId();

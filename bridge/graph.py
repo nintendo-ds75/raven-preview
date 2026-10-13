@@ -341,6 +341,8 @@ def migrate(db: sqlite3.Connection) -> None:
     migrate_connectors(db)
     from .host_sessions import migrate as migrate_hosts
     migrate_hosts(db)
+    from .workbench_hosts import migrate as migrate_workbench_hosts
+    migrate_workbench_hosts(db)
     from .sources import migrate as migrate_sources
     migrate_sources(db)
     from .semantic_index import migrate as migrate_semantic
@@ -359,6 +361,8 @@ def backfill(db: sqlite3.Connection) -> None:
     and an MCP server) migrate serially."""
     from .context_memory import backfill as backfill_context
     backfill_context(db)
+    from .source_access import backfill as backfill_access
+    backfill_access(db)
     cols = {r["name"] for r in db.execute("PRAGMA table_info(decisions)")}
     for name, decl in _DECISION_COLUMNS:
         if name not in cols:

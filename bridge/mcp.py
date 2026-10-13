@@ -367,6 +367,9 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None, principal
     call kept alive with progress notifications, the server's request
     bound on a plain HTTP call. `sleep` is the wait's sleep, the one that
     sends those notifications."""
+    from . import visibility
+    if isinstance(args, dict) and args.get('task_id'):
+        visibility.require_task(store, args['task_id'])
     schema = next((item["inputSchema"] for item in TOOLS if item["name"] == name), None)
     if schema is None:
         raise Invalid(f"Unknown tool: {name}")
@@ -413,17 +416,20 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None, principal
                               "channel": store.delivery.channel if store.delivery.enabled else "",
                               "notice": ("People answer in Slack; use bridge_wait and bridge_get_tree. No web account is required."
                                          if store.delivery.enabled and store.delivery.channel == "slack" else
-                                         "Slack is not connected. Nobody will be notified in Slack; the operator must connect it.")}
+                                         "People answer and sign in the Raven inbox. Slack is optional and is not connected.")}
         if name == "bridge_add_node" and result.get("node_id"):
             result["delivery"]["notifications"] = [dict(r) for r in store.graph.db.execute(
                 "SELECT kind,state,person_name,last_error FROM notifications WHERE decision_id=? ORDER BY created_at",
                 (result["node_id"],))]
+    if args.get('task_id'):
+        visibility.remember_reads(store, args['task_id'], result)
+    result = visibility.public(store, result)
     # A read of the whole tree: a wait on one node shows only that node.
     if name == "bridge_get_tree" or (name == "bridge_wait" and not args.get("node_id")):
         shown = canvas._flatten(result.get('nodes') or []) if name == 'bridge_get_tree' else result.get('changed') or []
         result['read_acknowledged'] = canvas.note_agent_read(
             store, args.get('task_id', ''), result.get('observed_at', ''), result.get('observed_revision'),
-            {n['node_id'] for n in shown if n.get('node_id') and 'answer' in n})
+            {n['node_id'] for n in shown if n.get('node_id') and 'answer' in n and not n.get('withheld')})
         if not result['read_acknowledged']:
             result['next'] += ' This response omitted unread decisions; read bridge_get_tree before finishing.'
     return result

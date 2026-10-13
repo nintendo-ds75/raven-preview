@@ -59,7 +59,7 @@ Someone investigating a past change can also ask who decided it and why, with th
 
 ## Follow the whole task
 
-The developer works in Raven’s conversation or stays in Claude Code, Codex, Cursor, or another MCP client. People receive questions and signoff requests in Slack DMs and answer in the same thread. They do not need a Raven account. The web inbox and task overview are optional. Teammates open the task overview to see:
+The developer works in Raven’s conversation or stays in Claude Code, Codex, Cursor, or another MCP client. People can answer and sign in Raven’s authenticated inbox. With Slack connected, they receive the same questions in DMs and answer in the thread without a Raven account. Slack is optional for a browser-only team. Teammates open the task overview to see:
 
 * What was requested and who requested it.
 * What the agent has learned, with answers and reasoning.
@@ -75,12 +75,18 @@ and the chronological record expand when you need them. Findings can be useful
 before they are approved; the page keeps those states separate. Work outside
 Raven is not automatically captured.
 
-Workspace members can also choose **Ask Raven** in Tasks: enter one question and
-its repository, with optional context. It uses the same source and prior-decision
-resolution path as the coding-agent tools, and may ask an owner for an answer or
-sign-off. Missing scope must be supplied explicitly. The result appears as a real
-run; this action does not launch a coding agent. Separately enabled hosted
-execution keeps its own explicit start action.
+On **New task**, choose **Ask a question** to read connected evidence and earlier
+decisions. This mode does not start a coding host, create a task, contact people,
+or grant approval. It shows citations and what the sources leave open. Choose
+**Start a task** when you want implementation and the human decision loop.
+
+Browser tasks use a real Claude Agent SDK host with a saved session and Raven's
+task tools. The Codex app-server adapter is version-pinned and experimental;
+its live acceptance test is still pending. Host credentials and model settings
+are separate from Raven's own inference. See [browser setup](docs/browser-tasks.md)
+for dependencies, execution limits, data flow, and the optional command sandbox.
+The older **Ask Raven** action in Tasks creates a decision run and may contact an
+owner. Its confirmation screen distinguishes that action from a read-only question.
 
 At completion, `bridge_export_proof` returns a portable review bundle containing
 the exact submitted diff hash, decision revisions, recorded signers, scope,
@@ -136,10 +142,10 @@ cd raven-preview
 
 Setup builds the app, starts PostgreSQL, and prints the local URL. It normally opens the browser for you. If port 7333 is in use, run `./setup --port 7444` instead.
 
-1. **Connect Slack.** Install your workspace’s Raven app and run `./setup --configure --project /path/to/your/code` to save its bot token, signing secret, and triage channel. Follow [Slack setup](docs/slack.md), including its required scopes and Events API URL. Raven imports the member directory automatically. Nobody needs to enter Slack IDs or set up owners.
+1. **Choose where people answer.** Create a Raven account to use the inbox. If you are the decision maker, explicitly configure your authority for the repository or topic; an admin account alone is not universal approval. For Slack delivery, install your workspace’s Raven app and run `./setup --configure --project /path/to/your/code` to save its bot token, signing secret, and triage channel. Follow [Slack setup](docs/slack.md), including its required scopes and Events API URL. Raven imports the member directory automatically.
 2. **Give Raven context.** Connect GitHub, ingest a local clone, use the optional [Airweave connection](docs/context-connectors.md) with a compatible shared-context connector, or have your host agent import records from its connected tools. Airweave results need explicit source access metadata; its upstream GitHub/Jira connectors currently do not supply it, so use native GitHub ingestion or caller-refreshed imports for those sources. Slack search provides live context during a Slack conversation. Raven uses CODEOWNERS, commits, reviews, record authors, and earlier answers to infer who to ask. No hand-built ownership map is required.
-3. **Connect your coding agent over MCP.** `./setup --configure --project /path/to/your/code` can configure Claude Code, Codex, or Cursor. For Claude Code and Codex, setup also installs [task hooks](docs/host-adapters.md): the first ordinary prompt registers a task once, and follow-ups stay on it. Restart the host and verify it loads the hooks. Cursor uses the supplied project instruction. The agent discovers paths and decisions itself.
-4. **Run one real task.** Raven DMs the inferred contact with the question and evidence. They answer, sign off, or refer it in Slack. The agent waits, reads the answer, and continues. An explicitly enabled [local supervisor](docs/host-adapters.md#resume-an-idle-coding-session-after-a-person-replies) can resume an idle Claude or Codex session after replies. You can watch in the browser, but you do not need to.
+3. **Choose a coding host.** Use [browser tasks](docs/browser-tasks.md) to work entirely in Raven, or connect your existing coding agent over MCP. `./setup --configure --project /path/to/your/code` can configure Claude Code, Codex, or Cursor. For Claude Code and Codex, setup also installs [task hooks](docs/host-adapters.md): the first ordinary prompt registers a task once, and follow-ups stay on it. Restart the host and verify it loads the hooks. Cursor uses the supplied project instruction. The agent discovers paths and decisions itself.
+4. **Run one real task.** Answer, sign off, or refer questions in the inbox or Slack. Browser tasks save their host session while waiting and resume after decision updates. An explicitly enabled [local supervisor](docs/host-adapters.md#resume-an-idle-coding-session-after-a-person-replies) can resume an external Claude or Codex session after replies. Review the patch and its actual test results before shipping it.
 
 For setup without creating a personal account or opening the browser:
 

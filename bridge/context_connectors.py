@@ -67,10 +67,12 @@ def now():
 
 def freshness_sql(alias='s'):
     from .slack_capture import pending_sql
+    from .source_access import freshness_sql as native_freshness
+    native, native_args = native_freshness(alias)
     return (f"(NOT EXISTS (SELECT 1 FROM context_entities ce LEFT JOIN context_connections cc ON cc.repo=ce.repo "
             f"WHERE ce.record_id={alias}.id AND (ce.state<>'fresh' OR ce.verified_until<=? "
             "OR cc.repo IS NULL OR cc.enabled=0 OR cc.generation<>ce.generation)) "
-            "AND NOT " + pending_sql(alias) + ")", [now()])
+            "AND NOT " + pending_sql(alias) + " AND " + native + ")", [now(), *native_args])
 
 
 def fresh(db, record_id):
@@ -81,14 +83,15 @@ def fresh(db, record_id):
 
 def blocked_decisions(db, repo):
     if not db.execute('SELECT 1 FROM context_entities WHERE repo=? UNION ALL '
+            'SELECT 1 FROM native_source_access na JOIN source_records sr ON sr.id=na.record_id WHERE sr.repo=? UNION ALL '
             'SELECT 1 FROM slack_captures sc JOIN slack_capture_mutations sm '
             'ON sm.workspace=sc.workspace AND sm.channel=sc.channel AND sm.message_ts=sc.message_ts '
-            "WHERE sc.repo=? AND sc.record_id<>'' AND sm.clock>sc.latest_clock LIMIT 1", (repo, repo)).fetchone():
+            "WHERE sc.repo=? AND sc.record_id<>'' AND sm.clock>sc.latest_clock LIMIT 1", (repo, repo, repo)).fetchone():
         return set()
     predicate, args = freshness_sql()
     rows = db.execute("WITH RECURSIVE blocked(id) AS (SELECT e.decision_id FROM decision_source_edges e "
         "JOIN source_records s ON s.id=e.record_id WHERE s.repo=? AND e.active=1 AND e.role IN ('support','contradiction') "
-        "AND NOT " + predicate + " UNION SELECT links.decision_id FROM ("
+        "AND (NOT " + predicate + " OR EXISTS (SELECT 1 FROM withheld_source_versions w WHERE w.source_version_id=e.source_version_id)) UNION SELECT links.decision_id FROM ("
         "SELECT id AS decision_id,source_id AS related_id FROM decisions WHERE coalesce(source_id,'')<>'' "
         "UNION SELECT id,parent_id FROM decisions WHERE parent_id<>'' AND independent_source_replacement=0 AND historical_parent_revalidated=0 "
         "UNION SELECT decision_id,related_id FROM decision_links WHERE kind IN ('derived','depends')"
@@ -368,6 +371,9 @@ def search(store, args, *, client=None):
     diagnostics = [{'reason': reason, 'count': count, 'message': REJECTION_MESSAGES[reason]}
                    for reason, count in sorted(reasons.items())]
     with store.graph.transaction():
+        if task_id:
+            from .visibility import remember_reads
+            remember_reads(store, task_id, sources)
         store.graph.append_event('context_searched', {'task_id': task_id or None, 'repo': repo, 'query': query,
             'imported': len(imported), 'rejected': rejected, 'rejections': diagnostics, 'error': error,
             'sources': [{'record_id': r.get('record_id'), 'source_version_id': r.get('source_version_id')} for r in sources],
