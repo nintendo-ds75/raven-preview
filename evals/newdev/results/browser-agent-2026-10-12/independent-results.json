@@ -1,0 +1,6 @@
+{
+  "patch_sha256": "84ce670995aa69f04dcbad74026981c89c7c2037c265b007d414949dc2f41bf9",
+  "exit_code": 0,
+  "timed_out": false,
+  "output": "test_default_still_strict (__main__.Acceptance.test_default_still_strict) ... ok\ntest_expiry_boundary_is_inclusive (__main__.Acceptance.test_expiry_boundary_is_inclusive) ... ok\ntest_future_boundary_is_inclusive (__main__.Acceptance.test_future_boundary_is_inclusive) ... ok\ntest_no_expiry_is_only_allowed_with_zero (__main__.Acceptance.test_no_expiry_is_only_allowed_with_zero) ... ok\ntest_serializer_and_unsafe_forward_leeway (__main__.Acceptance.test_serializer_and_unsafe_forward_leeway) ... ok\ntest_types_and_negative (__main__.Acceptance.test_types_and_negative) ... ok\ntest_validate_preserves_argument_errors (__main__.Acceptance.test_validate_preserves_argument_errors) ... ok\n\n----------------------------------------------------------------------\nRan 7 tests in 0.001s\n\nOK\n........................................................................ [ 21%]\n........................................................................ [ 43%]\n........................................................................ [ 65%]\n........................................................................ [ 87%]\n..........................................                               [100%]\n330 passed in 0.72s\n"
+}

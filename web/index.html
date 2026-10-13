@@ -4,26 +4,30 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#f7f8f5">
-  <title>Raven · Judgment inbox</title>
+  <title>Raven</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/workbench.css">
   <script defer src="/presentation.js"></script>
   <script defer src="/task.js"></script>
+  <script defer src="/workbench.js"></script>
   <script defer src="/app.js"></script>
   <script defer src="/interview.js"></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
   <aside class="sidebar">
-    <a class="brand" href="#inbox"><img src="/favicon.svg" width="32" height="32" alt=""><span>Raven</span><span class="beta">PREVIEW</span></a>
+    <a class="brand" href="#work"><img src="/favicon.svg" width="32" height="32" alt=""><span>Raven</span><span class="beta">PREVIEW</span></a>
     <div class="workspace"><span class="workspace-icon">R</span><div><strong id="workspace-name">Loading workspace…</strong></div></div>
 
     <nav aria-label="Workspace navigation">
+      <a href="#work" data-view="work" class="work-new"><span data-icon="plus"></span>New task</a>
       <a href="#inbox" data-view="inbox" aria-label="Judgment inbox"><span data-icon="inbox"></span>Inbox<span class="nav-count" id="inbox-count">0</span></a>
       <a href="#runs" data-view="runs" aria-label="Tasks"><span data-icon="activity"></span>Tasks<span class="small-dot"></span></a>
       <a href="#memory" data-view="memory" aria-label="Decision memory"><span data-icon="layers"></span>Memory</a>
       <a href="#owners" data-view="owners" aria-label="People and ownership"><span data-icon="users"></span>People & ownership</a>
     </nav>
+    <nav id="work-recents" class="work-recents" aria-label="Recent browser tasks"></nav>
     <div class="sidebar-bottom">
       <div class="connect-card" id="agent-connect-prompt"><span data-icon="terminal"></span><strong>Start in your coding agent.</strong><p>Connect Raven over MCP.</p><a href="#connect">Connect an agent <span aria-hidden="true">↓</span></a></div>
       <a class="settings-link" href="#connect"><span data-icon="settings"></span>Connections & setup</a>

@@ -2,6 +2,14 @@
 
 **Your agents do the work. They come to you for judgment.**
 
+You can also start the work directly in Raven. **New task** opens a conversation
+with a built-in agent, beside an overview of decisions, people and progress. It
+investigates a private repository copy, makes changes, asks for judgment, and
+returns a patch. No separate coding harness is needed. The operator configures
+inference and repositories once; [browser task setup](docs/browser-tasks.md)
+includes the optional isolated test runner. Your existing MCP workflow remains
+available.
+
 **Fully self-hosted. Bring your own infrastructure and inference accounts.**
 Raven's application, database and decision memory run on your machines or in your
 cloud account. No Raven-operated application backend or database is required.
@@ -15,7 +23,7 @@ Raven helps discover those decisions as the task unfolds. It brings together wha
 
 ## The decisions inside a task
 
-Connect Raven to your coding agent over MCP once, then give the agent a task such as “add usage-based pricing.” You do not need to supply file paths, owner names, or a list of decisions. The agent discovers those as it reads the repository. If Raven cannot place the task yet, the agent returns with the files it found. As it explores the work, Raven and the agent build a tree of decisions: which usage counts, what allowance to give, how to handle overages, and whether a particular customer needs different terms. An answer can reveal another question. The tree grows with the task.
+Start in Raven’s browser conversation, or connect your coding agent over MCP once. Give the agent a task such as “add usage-based pricing.” You do not need to supply file paths, owner names, or a list of decisions. The agent discovers those as it reads the repository. If Raven cannot place the task yet, the agent returns with the files it found. As it explores the work, Raven and the agent build a tree of decisions: which usage counts, what allowance to give, how to handle overages, and whether a particular customer needs different terms. An answer can reveal another question. The tree grows with the task.
 
 Raven reviews the agent's investigation for missing judgment, searches records
 and previous answers with a local learned embedding model, and compares evidence
@@ -51,7 +59,7 @@ Someone investigating a past change can also ask who decided it and why, with th
 
 ## Follow the whole task
 
-The developer stays in Claude Code, Codex, Cursor, or another MCP client. People receive questions and signoff requests in Slack DMs and answer in the same thread. They do not need a Raven account. The web inbox and task overview are optional. Teammates open the task overview to see:
+The developer works in Raven’s conversation or stays in Claude Code, Codex, Cursor, or another MCP client. People receive questions and signoff requests in Slack DMs and answer in the same thread. They do not need a Raven account. The web inbox and task overview are optional. Teammates open the task overview to see:
 
 * What was requested and who requested it.
 * What the agent has learned, with answers and reasoning.

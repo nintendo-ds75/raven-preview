@@ -56,7 +56,7 @@ class Forbidden(Exception):
 
 def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, public_url="",
                 slack_signing_secret=None, wait_cap=50.0, github_webhook_secret=None, github_api=None,
-                github_app=None, github_syncer=None, teams_adapter=None):
+                github_app=None, github_syncer=None, teams_adapter=None, workbench=None):
     """The HTTP server. `auth` is an Auth (from bridge.auth); None means
     the local operator mode, which is refused off loopback. Slack's
     Events API posts to /webhooks/slack, verified with the signing
@@ -196,7 +196,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                                        and self.me.id == link.person["id"])
                     view["viewer"]["interview_decision_id"] = link.decision_id
                     return self.send(200, view)
-                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js", "/presentation.js"):
+                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js", "/presentation.js", "/workbench.js", "/workbench.css"):
                     if url.path == "/" and auth.enabled and self.me is None:
                         if parse_qs(url.query).get("github_connect") == ["1"]:
                             cookie = "bridge_github_connect=1; Max-Age=600; Path=/; HttpOnly; SameSite=Lax"
@@ -209,9 +209,22 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     files['/task.js'] = 'task.js'
                     files['/interview.js'] = 'interview.js'
                     files['/presentation.js'] = 'presentation.js'
+                    files['/workbench.js'] = 'workbench.js'
+                    files['/workbench.css'] = 'workbench.css'
                     file = WEB / files[url.path]
                     return self.send(200, file.read_bytes(), (mimetypes.guess_type(str(file))[0] or "text/plain") + "; charset=utf-8")
                 self.require("viewer")
+                if len(parts) in (3, 4) and parts[:2] == ['api', 'workbench']:
+                    if not workbench:
+                        return self.send(503, {'error': 'Browser execution is not configured'})
+                    if len(parts) == 4 and parts[3] == 'patch':
+                        from .workbench_fs import diff
+                        workbench.row(parts[2])
+                        return self.send(200, diff(workbench.root / parts[2]).encode(), 'text/plain; charset=utf-8',
+                                         extra_headers={'Content-Disposition': 'attachment; filename="raven-changes.patch"'})
+                    if len(parts) == 3:
+                        return self.send(200, workbench.get(parts[2]))
+                    return self.send(404, {'error': 'Unknown task resource'})
                 if url.path == '/api/records/lookup':
                     query = parse_qs(url.query, keep_blank_values=True)
                     allowed = {'repo', 'external_id', 'ref', 'provider', 'namespace', 'object_kind', 'limit', 'linked_cursor'}
@@ -230,7 +243,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     return self.send(200, store.get_record(query.get('record_id', [''])[0], query.get('repo', [''])[0]))
                 if url.path == "/api/state":
                     from .sources import report as source_report
-                    return self.send(200, {**store.state(), "context_sources": source_report(store), "execution_config": {
+                    return self.send(200, {**store.state(), 'workbench': workbench.config() if workbench else {'enabled': False, 'repositories': []},
+                        'browser_tasks': workbench.list() if workbench else [], "context_sources": source_report(store), "execution_config": {
                         "enabled": executions is not None,
                         "repositories": [{"id": r["id"], "name": r["name"]} for r in executions.repositories]
                         if executions else []},
@@ -704,7 +718,19 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                              "signs, hands on and administers. Sign in as yourself for this")
                 else:
                     self.require("member")
-                if path == "/api/owners":
+                if path == '/api/workbench':
+                    if not workbench:
+                        return self.send(503, {'error': 'Browser execution is not configured'})
+                    result = workbench.submit(data, self.me)
+                elif path.startswith('/api/workbench/'):
+                    if not workbench:
+                        return self.send(503, {'error': 'Browser execution is not configured'})
+                    parts = path.strip('/').split('/')
+                    if len(parts) != 4:
+                        return self.send(404, {'error': 'Unknown task action'})
+                    result = (workbench.message(parts[2], data, self.me) if parts[3] == 'messages'
+                              else workbench.control(parts[2], parts[3], self.me))
+                elif path == "/api/owners":
                     self.require("admin")
                     result = store.add_owner(data)
                 elif path == "/api/people":

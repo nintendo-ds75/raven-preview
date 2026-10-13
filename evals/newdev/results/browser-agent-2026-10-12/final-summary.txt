@@ -1,0 +1,75 @@
+Automatic review is incomplete. This patch needs manual code review.
+
+## Clock-skew leeway for timed signatures — pallets/itsdangerous
+
+The patch is ready for manual code review. The automatic advisory review has **not passed** — it timed out on counterexample searches in every attempt and its verdict must be treated as incomplete. The concerns it flagged are listed separately below.
+
+---
+
+### What the patch does
+
+Adds an opt-in `leeway: int = 0` parameter to four methods:
+
+- `TimestampSigner.unsign()`
+- `TimestampSigner.validate()`
+- `TimedSerializer.loads()`
+- `TimedSerializer.loads_unsafe()`
+
+When non-zero, `leeway` widens the acceptance window symmetrically: tokens up to `leeway` seconds past expiry, or up to `leeway` seconds ahead of the verifier's clock, are accepted. Default is `0` — existing behavior is unchanged.
+
+**Files changed:** `src/itsdangerous/timed.py`, `tests/test_itsdangerous/test_timed.py`, `docs/timed.rst`, `CHANGES.rst`
+
+---
+
+### Tests actually run (isolated container, no network access)
+
+```
+python -m pytest tests/test_itsdangerous/test_timed.py -v  →  119 passed
+python -m pytest --tb=short -q                             →  330 passed
+```
+
+19 new tests cover: normal window, old-direction extension, insufficient extension, future skew within/beyond leeway, zero-default strictness, `ValueError` for `leeway > 0` without `max_age`, `leeway=0` with `max_age=None` accepted, negative/bool/float rejections, `validate()` forwarding, `validate()` `ValueError` propagation, `loads()`/`loads_unsafe()` leeway, `loads_unsafe()` `ValueError` propagation.
+
+---
+
+### Policy decisions — all signed by Mira Security
+
+| Decision | Answer |
+|---|---|
+| Per-call vs constructor | Per-call only (`leeway=0` default on each method, no `__init__` change) |
+| Symmetric vs split | Single symmetric value — same seconds both directions |
+| Type | `int` only; `bool`/non-int → `TypeError`, negative → `ValueError` |
+| Large values | No warning or cap — documented in docstring and docs |
+| `leeway > 0` with `max_age=None` | `ValueError` — explicit misuse must not be silent |
+| Error message wording | Keep `"< 0 seconds"` — consistent with too-old format |
+| `loads_unsafe()` `ValueError` | Propagates — programming error, not bad data |
+
+---
+
+### Incomplete advisory review — concerns to verify manually
+
+The automatic diff-reading checker ran four times and timed out each time before completing counterexample searches. **It is not a passed review.** Its incomplete readings raised these points:
+
+1. **`fbcf677e9cca` (repeatedly flagged "departs"):** The checker flags that `leeway=0` with `max_age=None` passes silently while `leeway > 0` raises `ValueError`. This is exactly what Mira authorized ("zero default preserves existing callers"). The guard `if leeway and max_age is None` is a direct implementation of that two-part decision. Test `test_leeway_zero_no_max_age_ok` confirms the silent pass; `test_leeway_requires_max_age` confirms the error. **Manual check:** confirm `if leeway and max_age is None:` is the correct truthiness guard.
+
+2. **`13bc4e9f366a` ("unclear" — `validate()` counterexample):** Checker noted that `validate()` raises `ValueError` (not `BadSignature`) when `leeway > 0` and `max_age is None`. This is authorized behavior (node `7d3714419a97`, signed by Mira). Test `test_leeway_validate_missing_max_age_raises` confirms it. **Manual check:** confirm `validate()`'s docstring correctly documents that `ValueError` propagates.
+
+3. **`7d3714419a97` ("unclear" — `_loads_unsafe_impl` not in diff):** Checker could not confirm that `_loads_unsafe_impl` only catches `BadSignature`, because that function's body is not in the diff. It is in `src/itsdangerous/serializer.py` lines 367–395, which catch only `BadSignature` and `BadPayload`. Test `test_leeway_loads_unsafe_missing_max_age_raises` directly verifies the propagation. **Manual check:** read `serializer.py:380–395` to confirm.
+
+4. **`8c5b71108151` ("unclear" — search timed out):** No finding, just timeout. No counterexample was identified.
+
+5. **`df0dcbeb203b` ("unclear" — search timed out):** No finding, just timeout. Symmetry is implemented at lines 191 and 198 of `timed.py`.
+
+6. **`06bc3ff0d665` ("unclear" — search timed out):** No finding, just timeout. Type guard is `_make_leeway()` at lines 22–40 of `timed.py`.
+
+---
+
+### Remaining limitations (not blocking, for maintainer awareness)
+
+- **mypy not run:** `leeway: int = 0` appears in both `@t.overload` stubs (lines 83, 92) and the implementation (line 100), verified by inspection only. The `return_timestamp: t.Literal[True] = True` pattern on the second overload is pre-existing and unchanged.
+- **Version label:** `versionchanged:: 2.3` and CHANGES.rst entry match the current `Version 2.3.0 / Unreleased` header. Whether the final release ships as 2.3.0 is the maintainer's call.
+- **No `timedelta` support:** By Mira's decision. `_make_leeway()` in `timed.py` is the single change point if this is added later.
+
+---
+
+**No push or deployment has been performed. This patch requires human code review before merging. The automatic advisory review did not complete and cannot be treated as verification.**

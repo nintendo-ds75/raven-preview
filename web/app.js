@@ -38,6 +38,7 @@ const ago = value => {
 };
 const pill = (text, color = '') => `<span class="pill ${color}"><span class="status-dot"></span>${esc(text)}</span>`;
 const titles = {
+  work: ['Raven', '', 'What should we work on?', ''],
   inbox: ['Judgment inbox', '', 'Inbox', 'Questions from your coding agents. Confirm an answer or make the decision.'],
   runs: ['Tasks', '', 'Tasks', 'Ask Raven or follow a task from your coding agent. See what is known and what still needs a decision.'],
   memory: ['Decision memory', '', 'Memory', 'Past answers and source evidence, with their owner, scope, and approval status.'],
@@ -78,7 +79,7 @@ function agentCards() {
 function updateAgentConnectPrompt() {
   const prompt = $('#agent-connect-prompt');
   if (!prompt) return;
-  prompt.hidden = (state.agent_connections || []).length > 0 || (state.runs || []).length > 0;
+  prompt.hidden = state.workbench?.ready || (state.agent_connections || []).length > 0 || (state.runs || []).length > 0;
 }
 
 function markAgentConnected() {
@@ -195,6 +196,8 @@ async function refresh({quiet = false} = {}) {
     $('#inbox-count').textContent = personalInbox() ? state.decisions.filter(assignedToMe).length
       : state.counts ? state.counts.needs_you : state.decisions.filter(needsYou).length;
     if (taskId()) await loadTask({quiet});
+    if (view === 'work' && typeof loadWorkbench === 'function') await loadWorkbench();
+    if (typeof renderWorkRecents === 'function') renderWorkRecents();
     if (!taskId() && (!quiet || (!$('#modal').open && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)))) render();
   } catch (error) {
     $('#connection').classList.add('offline');
@@ -226,14 +229,14 @@ function loadDirectory() {
 function navigate() {
   navigationVersion += 1;
   const next = location.hash.slice(1).split('/')[0];
-  view = titles[next] ? next : 'inbox';
+  view = titles[next] ? next : 'work';
   query = ''; ownerFilter = ''; ownership = null; directory = null;
   const [breadcrumb, eyebrow, title, description] = titles[view];
   $('#breadcrumb').textContent = breadcrumb;
   $('#eyebrow').textContent = eyebrow;
   $('#page-title').textContent = title;
   $('#page-description').textContent = description;
-  document.title = `Raven · ${breadcrumb}`;
+  document.title = view === 'work' ? 'Raven' : `Raven · ${breadcrumb}`;
   $('#new-request').hidden = view === 'connect';
   $('#new-request').innerHTML = `${icon('plus')}${view === 'owners' ? 'Add owner' : 'Ask Raven'}`;
   document.querySelectorAll('nav a').forEach(link => {
@@ -245,6 +248,7 @@ function navigate() {
   if (typeof taskRequest !== 'undefined') taskRequest += 1;
   taskDetail = null; taskError = '';
   if (taskId()) loadTask();
+  if (view === 'work' && typeof loadWorkbench === 'function') loadWorkbench();
   render();
 }
 
@@ -463,9 +467,9 @@ function connections() {
   const shared = !!state.auth?.enabled;
   if (!shared) {
     const {remote, notice, ...config} = state.mcp_config || {};
-    return `<div class="setup-grid"><section class="setup-card"><h2>Local agent connection</h2><p>This server has authentication disabled. Use the MCP configuration below; <code>./agents</code> is not required to connect. The optional helper only lets this page open local terminal sessions.</p><pre id="mcp-config">${esc(JSON.stringify(config, null, 2))}</pre><button class="button" data-action="copy">Copy configuration</button></section><section>${deliveriesCard()}${contextSourcesCard()}</section></div>`;
+    return `<div class="setup-grid"><section>${workbenchSetupCard()}<section class="setup-card"><h2>Local agent connection</h2><p>This server has authentication disabled. Use the MCP configuration below; <code>./agents</code> is not required to connect. The optional helper only lets this page open local terminal sessions.</p><pre id="mcp-config">${esc(JSON.stringify(config, null, 2))}</pre><button class="button" data-action="copy">Copy configuration</button></section></section><section>${deliveriesCard()}${contextSourcesCard()}</section></div>`;
   }
-  return `<div class="setup-grid mcp-setup"><section><div class="setup-card"><h2>Connect an agent</h2><p>Give it a task in your own words. It finds the files and brings decisions here.</p>${agentCards()}<h3>Your agent connections</h3><div id="agent-status" aria-live="polite">${agentStatus()}</div><p>Activity refreshes automatically every five seconds while this tab is visible. Last seen confirms credential use, not a continuously running session.</p><button class="button" data-action="agent-status">Refresh status</button><details class="history" id="manual-agent-setup"><summary>Advanced manual configuration</summary><p>Choose your client, create a limited credential, and add the connection in that client’s MCP settings.</p><label for="agent-client">Agent client</label><select id="agent-client"><option>Claude Code</option><option>Cursor</option><option>Codex</option><option>Other MCP client</option></select><button class="button primary" data-action="agent-setup">Set up agent</button><p>Creating a credential does not connect the agent automatically. Your client must support HTTP MCP and authorization headers.</p></details>${shared ? '' : '<p>Authenticated HTTP agent connections require authentication to be enabled on this server.</p>'}</div><a class="button" href="#runs">View tasks</a></section><section>${workspaceAccountCard()}<details class="history" id="source-connections"><summary>Repository sources and Slack</summary><p>Connect GitHub or index a local clone for repository history. Slack discovers contacts automatically; Raven uses the evidence to choose who to ask.</p>${deliveriesCard()}</details>${contextSourcesCard()}</section></div>`;
+  return `<div class="setup-grid mcp-setup"><section>${workbenchSetupCard()}<div class="setup-card"><h2>Connect an agent</h2><p>Give it a task in your own words. It finds the files and brings decisions here.</p>${agentCards()}<h3>Your agent connections</h3><div id="agent-status" aria-live="polite">${agentStatus()}</div><p>Activity refreshes automatically every five seconds while this tab is visible. Last seen confirms credential use, not a continuously running session.</p><button class="button" data-action="agent-status">Refresh status</button><details class="history" id="manual-agent-setup"><summary>Advanced manual configuration</summary><p>Choose your client, create a limited credential, and add the connection in that client’s MCP settings.</p><label for="agent-client">Agent client</label><select id="agent-client"><option>Claude Code</option><option>Cursor</option><option>Codex</option><option>Other MCP client</option></select><button class="button primary" data-action="agent-setup">Set up agent</button><p>Creating a credential does not connect the agent automatically. Your client must support HTTP MCP and authorization headers.</p></details>${shared ? '' : '<p>Authenticated HTTP agent connections require authentication to be enabled on this server.</p>'}</div><a class="button" href="#runs">View tasks</a></section><section>${workspaceAccountCard()}<details class="history" id="source-connections"><summary>Repository sources and Slack</summary><p>Connect GitHub or index a local clone for repository history. Slack discovers contacts automatically; Raven uses the evidence to choose who to ask.</p>${deliveriesCard()}</details>${contextSourcesCard()}</section></div>`;
 }
 
 function contextSourcesCard() {
@@ -515,7 +519,9 @@ function render() {
   const focusId = active.id;
   const selection = active.tagName === 'INPUT' ? active.selectionStart : null;
   const disclosures = [...document.querySelectorAll('#app details[id]')].map(el => ({id: el.id, open: el.open, scroll: el.querySelector('ul')?.scrollTop || 0}));
-  $('.page-head').hidden = !!taskId();
+  $('.page-head').hidden = !!taskId() || view === 'work';
+  document.body.classList.toggle('work-view', view === 'work');
+  if (view === 'work' && typeof renderWorkbench === 'function') { $('#app').dataset.taskId = ''; renderWorkbench(); return; }
   $('#app').innerHTML = taskId() ? taskOverview() : ({inbox, runs, memory, owners, connect: connections})[view]();
   $('#app').dataset.taskId = taskId();
   if (taskId() && typeof restoreTaskView === 'function') { restoreTaskView(); return; }
@@ -903,7 +909,7 @@ document.addEventListener('click', async event => {
     if (action === 'retry') await refresh();
     if (action === 'tab') { tab = target.dataset.tab; tabChosen = true; render(); }
     if (action === 'review' || action === 'source') await review(target.dataset.id);
-    if (action === 'run') location.hash = 'runs/' + encodeURIComponent(target.dataset.id);
+    if (action === 'run') location.hash = ((state.browser_tasks || []).some(t => t.task_id === target.dataset.id) ? 'work/' : 'runs/') + encodeURIComponent(target.dataset.id);
     if (action === 'task-tab') { taskTab = target.dataset.tab; taskView().tab = taskTab; render(); }
     if (action === 'task-more') taskMore(target.dataset.key, Number(target.dataset.step) || 12);
     if (action === 'task-refresh') await loadTask();
@@ -1109,3 +1115,8 @@ refresh().then(() => {
   }
 });
 setInterval(() => { if (!document.hidden) refresh({quiet:true}); }, 5000);
+
+function workbenchSetupCard() {
+  const config = state.workbench || {};
+  return `<section class="setup-card"><h2>Work in this browser</h2><p>${config.ready ? 'Raven runs tasks here. No separate coding agent is needed.' : 'An operator connects a repository and configures the server’s inference key once. Then anyone with member access can start here.'}</p>${config.ready ? `<a class="button" href="#work">New task</a><p>${config.tests_enabled ? 'Isolated test commands are enabled.' : 'Test execution is not configured. Raven can read and draft changes; testing requires a sandbox.'}</p>` : '<pre>python -m bridge serve --workbench \\n  --managed-repo your-org/project=/path/to/checkout</pre><p>Set ANTHROPIC_API_KEY and BRIDGE_MODEL_API=anthropic in the server environment. Keep credentials out of task messages.</p>'}<a href="https://github.com/nintendo-ds75/raven-preview/blob/main/docs/browser-tasks.md" target="_blank" rel="noopener">Browser setup and isolated tests ↗</a></section>`;
+}

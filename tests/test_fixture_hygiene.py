@@ -5,6 +5,7 @@ before anything is routed or recorded."""
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -18,6 +19,27 @@ from evals import pseudonyms  # noqa: E402
 
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![A-Za-z0-9])")
 _BINARY = (".jpg", ".jpeg", ".png", ".gif", ".svg", ".ico", ".woff", ".woff2", ".pdf")
+
+
+def _scan_text(path):
+    text = path.read_text(errors='replace')
+    if path.suffix not in ('.json', '.jsonl'):
+        return text
+    def strings(value):
+        if isinstance(value, str):
+            yield value
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                yield key
+                yield from strings(item)
+        elif isinstance(value, list):
+            for item in value:
+                yield from strings(item)
+    try:
+        values = [json.loads(line) for line in text.splitlines() if line.strip()] if path.suffix == '.jsonl' else [json.loads(text)]
+        return '\n'.join(strings(values))
+    except ValueError:
+        return text
 
 
 def _reserved(address: str, domain: str) -> bool:
@@ -40,7 +62,9 @@ class TrackedFilesTests(unittest.TestCase):
             path = ROOT / rel
             if not path.is_file():
                 continue
-            text = path.read_text(errors="replace")
+            # Decode transcript strings first: JSON's literal \\n before a
+            # Python @decorator otherwise looks like an email local part.
+            text = _scan_text(path)
             for m in _EMAIL.finditer(text):
                 if not _reserved(m.group(0), m.group(1)):
                     offenders.setdefault(rel, set()).add(m.group(0))
@@ -54,6 +78,13 @@ class TrackedFilesTests(unittest.TestCase):
             self.assertTrue(_reserved(address, domain), (name, address))
         for address in _EMAIL.findall(MAINTAINERS):
             self.assertTrue(address.endswith(".example"), address)
+
+
+class SerializedEvidenceTests(OfflineCase):
+    def test_json_newline_before_decorator_is_not_an_email(self):
+        path = Path(self.temp.name) / 'transcript.jsonl'
+        path.write_text(json.dumps({'code': '@pytest.fixture\ndef case():\n    @pytest.mark.parametrize', 'author': 'someone@example.invalid'}) + '\n')
+        self.assertEqual([m.group(0) for m in _EMAIL.finditer(_scan_text(path))], ['someone@example.invalid'])
 
 
 class PseudonymTests(OfflineCase):

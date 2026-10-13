@@ -1,0 +1,6 @@
+# Opt-in Docker command executor. Generated code runs in separate containers,
+# without this socket, server environment, credentials or database mounts.
+FROM docker:27-cli AS docker_cli
+FROM raven-workbench-base
+USER root
+COPY --from=docker_cli /usr/local/bin/docker /usr/local/bin/docker

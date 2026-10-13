@@ -1,0 +1,56 @@
+{
+  "base_raven_commit": "d932c4a9c8ed8f35c8a7cde5975bc14e1a44b842",
+  "task": {
+    "task_id": "c71ba8b610ce",
+    "prompt": "Allow a small, opt-in clock-skew leeway when checking timed signatures. Keep the current behavior by default. Work out the API and edge cases, ask the security owner to settle the policy, implement it, document it, and run the tests.",
+    "revision": "672971d66a2ef9f85151e53283113f33d642dabd"
+  },
+  "source_repo": "https://github.com/pallets/itsdangerous",
+  "runtime": "Native Anthropic Messages API, not Claude Code",
+  "model": "claude-sonnet-4-6",
+  "people": "Fictional owner simulated through the real browser inbox; no public maintainers contacted",
+  "transport": "Actual Raven HTTP server and browser UI; no Slack workspace connected",
+  "sandbox": "Docker, nonroot, no network, no host mounts; project dependencies installed in image",
+  "source_checkout_unchanged": true,
+  "tool_counts": {
+    "bridge_add_node": 7,
+    "bridge_get_tree": 10,
+    "bridge_list_owners": 1,
+    "bridge_review_discovery": 8,
+    "bridge_settle_node": 7,
+    "edit_file": 18,
+    "finish_task": 5,
+    "list_files": 1,
+    "present_result": 1,
+    "read_changes": 3,
+    "read_file": 23,
+    "run_command": 18,
+    "wait_for_people": 5,
+    "write_file": 2
+  },
+  "patch_sha256": "84ce670995aa69f04dcbad74026981c89c7c2037c265b007d414949dc2f41bf9",
+  "final_status": "completed",
+  "final_review": "incomplete; presented for manual review with explicit acknowledgment and fixed UI warning",
+  "download_matches_independently_tested_patch": true,
+  "native_model_calls": 95,
+  "cache_read_tokens": 2983003,
+  "cache_creation_tokens": 854397,
+  "validation": {
+    "full_offline_suite": {
+      "tests": 2387,
+      "skipped": 118,
+      "result": "pass",
+      "scope": "before final completion and attribution additions; those verified in focused suite"
+    },
+    "final_native_sqlite": 27,
+    "final_native_postgres": 27,
+    "dom_suites": 8,
+    "workbench_dom_scenarios": 9,
+    "baseline_project_tests": 297,
+    "patched_project_tests": 330,
+    "independent_acceptance_checks": 7,
+    "desktop_width": 1280,
+    "phone_width": 390,
+    "phone_horizontal_overflow": false
+  }
+}

@@ -39,8 +39,9 @@ def main():
     parser.add_argument("--path", default="unknown", help="ask: repository-relative file path for routing")
     parser.add_argument("--commits", type=int, default=None, help="ingest: history depth (0 = all)")
     parser.add_argument("--agents", action="store_true", help="Enable managed Agents API execution for the disposable billing fixture")
+    parser.add_argument('--workbench', action='store_true', help='Enable the built-in browser agent using ANTHROPIC_API_KEY')
     parser.add_argument("--managed-repo", action="append", default=[], metavar="NAME=PATH",
-                        help="A local git checkout the inbox may launch a managed task on (repeatable; needs --agents)")
+                        help="A local git checkout for browser or managed tasks (repeatable; use --workbench or --agents)")
     parser.add_argument("--agents-model", default="gpt-6-astra")
     parser.add_argument("--api-key-file", help="Optional local key file; otherwise read OPENAI_API_KEY")
     parser.add_argument("--webhook-port", type=int, help="Separate signed webhook ingress on loopback; requires OPENAI_WEBHOOK_SECRET")
@@ -93,7 +94,22 @@ def main():
         if not cfg.semantic_retrieval:
             print("(deterministic rungs only: no ANTHROPIC_API_KEY or claude CLI, or BRIDGE_SEMANTIC=0)")
         return
-    executions, client, webhook = None, None, None
+    executions, client, webhook, workbench = None, None, None, None
+    if args.workbench or os.environ.get('BRIDGE_WORKBENCH') == '1':
+        from .execution import parse_repositories
+        from .workbench import Workbench
+        from .workbench_fs import DockerSandbox
+        repositories = [r for r in parse_repositories(args.managed_repo) if r.get('path')]
+        mounted = Path(os.environ.get('BRIDGE_WORKBENCH_REPO_DIR') or '/repos')
+        if not repositories and (mounted / '.git').exists():
+            name = os.environ.get('BRIDGE_INGEST_REPO') or mounted.name
+            repositories = [{'id': name, 'name': name, 'path': str(mounted)}]
+        if not repositories:
+            parser.error('Browser execution needs --managed-repo owner/name=/path/to/checkout, or a git checkout mounted at /repos')
+        sandbox = DockerSandbox(os.environ.get('BRIDGE_WORKBENCH_IMAGE', 'python:3.13-slim-bookworm')) if os.environ.get('BRIDGE_WORKBENCH_SANDBOX') == 'docker' else None
+        workbench = Workbench(store, repositories, os.environ.get('BRIDGE_WORKBENCH_DIR') or
+                              ('/data/workbench' if Path('/data').is_dir() else '.bridge/workbench'), sandbox=sandbox)
+        workbench.start()
     if args.agents:
         from .agents_api import AgentsAPI, ConfigurationError, create_client
         from .execution import ExecutionService, parse_repositories
@@ -167,7 +183,7 @@ def main():
     event_worker.start()
     try:
         server = make_server(store, args.port, executions, host=args.host, auth=auth, public_url=args.public_url,
-                             github_app=github_app, github_syncer=syncer, teams_adapter=teams_adapter)
+                             github_app=github_app, github_syncer=syncer, teams_adapter=teams_adapter, workbench=workbench)
     except Exception as error:
         parser.error(str(error))
     shown = auth.public_url or f"http://{args.host}:{server.server_port}"
@@ -210,6 +226,8 @@ def main():
             webhook.server_close()
         if executions:
             executions.close()
+        if workbench:
+            workbench.close()
         if client:
             client.close()
 

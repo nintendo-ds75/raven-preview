@@ -38,6 +38,20 @@ MATERIAL_WEIGHT_DELTA = 0.15
 MEMO_ENTRIES = 64
 
 _SCHEMA = """
+            CREATE TABLE IF NOT EXISTS browser_tasks (
+                task_id TEXT PRIMARY KEY REFERENCES runs(id), request_key TEXT NOT NULL UNIQUE,
+                requester_id TEXT NOT NULL, requester TEXT NOT NULL, repository TEXT NOT NULL,
+                prompt TEXT NOT NULL, status TEXT NOT NULL, messages TEXT NOT NULL DEFAULT '[]',
+                steps INTEGER NOT NULL DEFAULT 0, wait_revision TEXT NOT NULL DEFAULT '',
+                summary TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '',
+                revision TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS browser_inputs (
+                id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES browser_tasks(task_id),
+                actor TEXT NOT NULL, body TEXT NOT NULL, consumed INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS browser_actions (
+                id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES browser_tasks(task_id),
+                kind TEXT NOT NULL, label TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS engineers (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL DEFAULT '',
     github_username TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1,

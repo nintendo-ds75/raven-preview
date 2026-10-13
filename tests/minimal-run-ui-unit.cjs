@@ -29,7 +29,7 @@ function harness() {
     return elements.get(selector);
   };
   const document = {...target(),querySelector:get,querySelectorAll:()=>[],getElementById:id=>get('#'+id),
-    body:{append(){}},documentElement:{lang:'en'},activeElement:{tagName:'BODY'},createElement:element};
+    body:{append(){},classList:{toggle(){}}},documentElement:{lang:'en'},activeElement:{tagName:'BODY'},createElement:element};
   class FormDataDouble { constructor(form) {this.form=form;} *[Symbol.iterator]() {
     for(const [name,input] of Object.entries(this.form.fields)) if(!input.disabled) yield [name,input.value];
   } get(name){return this.form.fields[name]?.value ?? null;} }

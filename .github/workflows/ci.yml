@@ -100,7 +100,7 @@ jobs:
           set -e
           for f in tests/interview-ui-unit.cjs tests/minimal-run-ui-unit.cjs \
                    tests/modal-lifecycle-ui-unit.cjs tests/web-agent-source-review.cjs \
-                   tests/web-setup.cjs tests/web-work-item-context.cjs tests/audit-viewer.cjs; do
+                   tests/web-setup.cjs tests/web-work-item-context.cjs tests/audit-viewer.cjs tests/workbench-ui-unit.cjs; do
             echo "::group::$f"
             node "$f"
             echo "::endgroup::"

@@ -1,0 +1,14 @@
+# Build the normal Raven image first as raven-workbench-base.
+# This profile gives the trusted Raven server Docker control. Never mount the
+# socket into a task image; workbench_fs passes repository bytes through stdin.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.workbench
+    user: root
+    environment:
+      BRIDGE_WORKBENCH: '1'
+      BRIDGE_WORKBENCH_SANDBOX: docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

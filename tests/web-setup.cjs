@@ -16,6 +16,7 @@ const context = {
   api: async (path, data) => { request = {path, data}; return {token: 'test-only-credential'}; },
 };
 vm.createContext(context);
+vm.runInContext(source.slice(source.indexOf('function workbenchSetupCard()')), context);
 vm.runInContext(source.slice(source.indexOf('function sourceReplacementField('), source.indexOf('function applicabilityFields(')), context);
 vm.runInContext(source.slice(source.indexOf('function showHelp()'), source.indexOf('function openModal(')), context);
 vm.runInContext(source.slice(source.indexOf('function updateAgentConnectPrompt()'), source.indexOf('async function quickAgent(')), context);
@@ -99,7 +100,7 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   const inviteField = {value: ''};
   vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname, '../web/onboarding.js'), 'utf8'), {
     URLSearchParams, location: {hash: '#invite=test-invitation'},
-    document: {getElementById: () => inviteField},
+    document: {body:{classList:{toggle(){}}},getElementById: () => inviteField},
   });
   assert.equal(inviteField.value, 'test-invitation');
   assert.match(context.connections(), /GitHub/);
@@ -139,7 +140,7 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   const oldSections = existing.map(item => makeDisclosure(item, 90));
   const newSections = existing.map(item => makeDisclosure({...item, open: false}, 0));
   const app = {innerHTML: '', dataset:{}};
-  const renderContext = {workspaceError:'', state: {auth: {enabled: false}}, document: {activeElement: {tagName: 'BODY'}, querySelectorAll: () => oldSections, getElementById: id => newSections.find(el => el.id === id)},
+  const renderContext = {workspaceError:'', state: {auth: {enabled: false}}, document: {body:{classList:{toggle(){}}},activeElement: {tagName: 'BODY'}, querySelectorAll: () => oldSections, getElementById: id => newSections.find(el => el.id === id)},
     $: () => app, taskId: () => '', view: 'connect', inbox() {}, runs() {}, memory() {}, owners() {}, connections: () => 'updated'};
   vm.createContext(renderContext);
   vm.runInContext(source.slice(source.indexOf('function render() {'), source.indexOf('function openModal(')), renderContext);
