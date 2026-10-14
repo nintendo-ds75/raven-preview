@@ -17,10 +17,10 @@ const escape = v => String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;
   c.form = {dataset:{id:'task-a'},isConnected:true,reportValidity:()=>true,
     querySelector:s=>s==='[name="question"]'?input:button};
   const pending = run('submitTaskInquiry(form)'); await run('submitTaskInquiry(form)');
-  assert.equal(requests.length,1); assert.equal(button.disabled,true);
+  assert.equal(requests.length,1); assert.equal(button.disabled,false); assert.equal(button.ariaDisabled,'true');
   assert.equal(requests[0].url,'/api/tasks/task-a/inquiry');
   assert.deepEqual(JSON.parse(JSON.stringify(requests[0].body)),{question:'What is blocked?'});
-  html=run("taskInquiry('task-a')"); assert.match(html,/Reading…/); assert.match(html,/disabled/);
+  html=run("taskInquiry('task-a')"); assert.match(html,/Reading…/); assert.match(html,/id="task-inquiry-submit"/); assert.match(html,/aria-disabled="true"/); assert.doesNotMatch(html,/type="submit" disabled/);
   requests[0].resolve({answer:'<script>alert(1)</script>',notice:'<b>read-only</b>',evidence:[{title:'<img>',text:'<svg>'}]}); await pending;
   html=run("taskInquiry('task-a')"); assert.match(html,/&lt;script&gt;/); assert.doesNotMatch(html,/<script>|<svg>|<img>/);
   assert.equal(run("taskView('task-a').inquiryPending"),false);
