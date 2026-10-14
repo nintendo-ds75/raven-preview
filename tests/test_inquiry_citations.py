@@ -41,6 +41,37 @@ class InquiryCitationTests(OfflineCase):
         self.assertNotIn('citation_anchors', json.loads(complete.call_args.args[2]))
         self.assertIn('one contiguous', complete.call_args.args[1])
 
+    def test_original_and_correction_prompts_keep_answers_focused_on_requested_facts(self):
+        with patch.object(Client, 'complete_json', side_effect=[self.bad, self.good]) as complete, \
+                patch('bridge.llm.check_support', return_value=self.support):
+            self.assertTrue(self.read()['model_used'])
+        self.assertEqual(complete.call_count, 2)
+        for call in complete.call_args_list:
+            system = ' '.join(call.args[1].split())
+            self.assertIn('focused on facts needed to answer the current question', system)
+            self.assertIn('evidence IDs and source references only in citations, not in the answer prose', system)
+            self.assertIn('Do not add sentences explaining which evidence item contains the answer', system)
+            self.assertIn('Include implementation details or decision history only when the question asks for them', system)
+            self.assertIn('Do not infer implementation from a recorded policy', system)
+            self.assertIn('Use the recorded author, signer and rationale when asked who decided and why', system)
+
+    def test_supported_policy_and_exact_citations_do_not_excuse_unsupported_extra_claims(self):
+        for extra in ('The production answer is provided in evidence id policy.',
+                      'The production implementation has been verified.',
+                      'The owner previously approved this policy for all environments.'):
+            raw = {**self.good, 'answer': self.good['answer'] + ' ' + extra}
+            checked = {'claims': [*self.support['claims'], {'claim': extra, 'support': 'inferred'}]}
+            with self.subTest(extra=extra), patch.object(Client, 'complete_json', return_value=raw) as complete, \
+                    patch('bridge.llm.check_support', return_value=checked) as support:
+                result = self.read()
+            complete.assert_called_once()
+            support.assert_called_once_with(self.cfg, 'Who signed the exclusion, and for which scope?',
+                                            json.dumps(self.evidence), raw['answer'])
+            self.assertFalse(result['model_used'])
+            self.assertEqual(result['outcome'], 'missing_fact')
+            self.assertEqual(result['citations'], [])
+            self.assertNotIn(extra, result['answer'])
+
     def test_joined_passages_get_one_bounded_copy_only_correction(self):
         self.bad['answer'] = 'Rejected draft must not become evidence.'
         with patch.object(Client, 'complete_json', side_effect=[self.bad, self.good]) as complete, \
