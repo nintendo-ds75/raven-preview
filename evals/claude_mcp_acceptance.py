@@ -747,7 +747,7 @@ def inquiry_response_diagnostic(result):
 
 
 def inquiry_model_diagnostic(purpose, raw, prompt):
-    """Content-free observations of returned model JSON; never repair the output."""
+    """Bounded synthetic-test observations; never repair or trust rejected output."""
     from bridge.inquiry import OUTCOMES
     result = {'purpose': purpose, 'returned_type': type(raw).__name__}
     if not isinstance(raw, dict):
@@ -759,6 +759,7 @@ def inquiry_model_diagnostic(purpose, raw, prompt):
                  and isinstance(raw.get('open'), list) and all(isinstance(x, str) for x in raw['open']))
         result.update(schema_valid=shape, category='schema_valid' if shape else 'malformed_reading')
         if shape:
+            result['synthetic_answer'] = raw['answer'][:4000]
             packet = json.loads(prompt)
             by_id = {e['id']: e for e in packet['evidence']}
             checks = []
@@ -781,6 +782,11 @@ def inquiry_model_diagnostic(purpose, raw, prompt):
             and c.get('support') in {'stated', 'applied', 'given'} for c in claims)
         result.update(claims_count=len(claims) if isinstance(claims, list) else None,
                       category='support_valid' if valid else 'unsupported_or_malformed_claims')
+        if isinstance(claims, list):
+            result['synthetic_claims'] = [{'claim': c.get('claim', '')[:1000],
+                'support': c.get('support', '')[:100]} for c in claims[:30]
+                if isinstance(c, dict) and isinstance(c.get('claim'), str)
+                and isinstance(c.get('support'), str)]
     return result
 
 

@@ -172,6 +172,16 @@ class EvidenceReadTests(unittest.TestCase):
 
 
 class DriverTests(unittest.TestCase):
+    def test_private_synthetic_support_diagnostic_is_bounded_and_drops_unknown_fields(self):
+        raw = {'claims': [{'claim': 'x' * 1200, 'support': 'not_in_source', 'unknown': 'omit'}] * 35,
+               'unknown': 'omit'}
+        result = a.inquiry_model_diagnostic('support', raw, '')
+        self.assertEqual(result['category'], 'unsupported_or_malformed_claims')
+        self.assertEqual(len(result['synthetic_claims']), 30)
+        self.assertEqual(len(result['synthetic_claims'][0]['claim']), 1000)
+        self.assertEqual(result['synthetic_claims'][0]['support'], 'not_in_source')
+        self.assertNotIn('omit', json.dumps(result))
+
     def test_human_inquiry_uses_configured_timeout_and_remaining_deadline(self):
         fixture = SimpleNamespace(url='http://127.0.0.1:1', human_token='synthetic', request_timeout=120)
         with patch.object(a, 'http_json', return_value=(200, {'ok': True}, {})) as request:
@@ -456,9 +466,10 @@ class DriverTests(unittest.TestCase):
             self.assertTrue(diagnostic['counts_unchanged'])
             self.assertEqual(diagnostic['provider_before'], diagnostic['provider_after'])
             self.assertEqual(diagnostic['status'], 'unverified')
-            self.assertNotIn(raw['answer'], json.dumps(diagnostic))
+            self.assertNotIn(raw['answer'], json.dumps(diagnostic['response']))
+            self.assertEqual(diagnostic['model_calls'][0]['synthetic_answer'], raw['answer'])
 
-    def test_inquiry_model_diagnostics_classify_without_storing_model_text(self):
+    def test_inquiry_model_diagnostics_classify_bounded_private_synthetic_text(self):
         prompt = json.dumps({'evidence': [{'id': 'known', 'text': 'Actual source.'}]})
         malformed = a.inquiry_model_diagnostic('inquiry', {'answer': 'PRIVATE'}, prompt)
         self.assertEqual(malformed['category'], 'malformed_reading')
@@ -467,7 +478,7 @@ class DriverTests(unittest.TestCase):
         raw['citations'] = [{'id': 'known', 'quote': 'Actual source.'}]
         good = a.inquiry_model_diagnostic('inquiry', raw, prompt)
         self.assertEqual(good['category'], 'schema_valid')
-        self.assertNotIn('PRIVATE', json.dumps(good))
+        self.assertEqual(good['synthetic_answer'], 'PRIVATE')
         response = a.inquiry_response_diagnostic({'answer': 'Synthetic answer', 'model_used': False,
             'headers': {'key': 'PRIVATE'}, 'citations': [{'id': 'known', 'quote': 'Actual source.', 'token': 'PRIVATE'}]})
         self.assertNotIn('PRIVATE', json.dumps(response))
