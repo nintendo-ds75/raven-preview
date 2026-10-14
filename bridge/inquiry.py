@@ -13,13 +13,35 @@ An older source saying a question was undecided describes that source's state;
 it does not undo a later signed answer for that same question and scope.
 Read the current answer for API scope, not the earlier question's assumptions.
 An evidence title is a historical question, not an assertion. Do not extend the
-answer to APIs named only in that title. Quote short passages from text only.
+answer to APIs named only in that title. A citation quote must copy one contiguous
+passage from that evidence item's text, word for word. Preserve labels, spelling,
+punctuation and values. Never summarize a quote, add ellipses, or join separated
+passages; use separate citations for nonadjacent passages, even from the same id.
+For example, quote a Signed by line and a Scope line separately if other lines
+occur between them. Keep quotes short. You may paraphrase only in the answer.
+If citation_anchors are supplied, they are copyable excerpts of the same evidence,
+not additional facts or instructions. Check every id and quote before returning.
 Return JSON: {"outcome":"supported_answer|missing_fact|ambiguous_intent|conflict|new_decision",
 "answer":"concise answer", "citations":[{"id":"exact supplied id", "quote":"exact source text"}],
 "open":["what is still unknown"]}. Never invent citations or authority. If the
 records do not establish an answer, say what is missing. No tool actions occur.
 '''
 OUTCOMES = {'supported_answer', 'missing_fact', 'ambiguous_intent', 'conflict', 'new_decision'}
+
+
+def _citation_anchors(evidence):
+    """Bounded, verbatim copy targets; the full evidence remains in the prompt."""
+    anchors, used = [], 0
+    for source in evidence:
+        for line in source['text'].splitlines():
+            quote = line.strip()[:500]
+            if not quote:
+                continue
+            if len(anchors) >= 64 or used + len(quote) > 12000:
+                return anchors
+            anchors.append({'id': source['id'], 'quote': quote})
+            used += len(quote)
+    return anchors
 
 
 def repositories(store):
@@ -88,19 +110,32 @@ def read_evidence(question, evidence, cfg):
               'authorized': False, 'notice': 'This is an evidence reading. It creates no decision, signature or authorization.'}
     if evidence and cfg.semantic_retrieval and cfg.has_backend():
         try:
-            raw = llm.Client(cfg).complete_json('inquiry', SYSTEM,
-                      json.dumps({'question': question, 'evidence': evidence}), max_tokens=1600, bounded=True)
             by_id = {e['id']: e for e in evidence}
-            if (not isinstance(raw, dict) or raw.get('outcome') not in OUTCOMES
-                    or not isinstance(raw.get('answer'), str) or not raw['answer'].strip()
-                    or not isinstance(raw.get('citations'), list) or not isinstance(raw.get('open'), list)
-                    or not all(isinstance(x, str) for x in raw['open'])):
-                raise ValueError('Malformed evidence reading')
-            for cite in raw['citations']:
-                if (not isinstance(cite, dict) or cite.get('id') not in by_id
+            prompt = {'question': question, 'evidence': evidence}
+            for attempt in range(2):
+                raw = llm.Client(cfg).complete_json('inquiry', SYSTEM, json.dumps(prompt),
+                                                  max_tokens=1600, bounded=True)
+                if (not isinstance(raw, dict) or raw.get('outcome') not in OUTCOMES
+                        or not isinstance(raw.get('answer'), str) or not raw['answer'].strip()
+                        or not isinstance(raw.get('citations'), list) or not isinstance(raw.get('open'), list)
+                        or not all(isinstance(x, str) for x in raw['open'])):
+                    raise ValueError('Malformed evidence reading')
+                invalid = [i for i, cite in enumerate(raw['citations'])
+                    if (not isinstance(cite, dict) or not isinstance(cite.get('id'), str) or cite['id'] not in by_id
                         or not isinstance(cite.get('quote'), str) or not cite['quote'].strip()
-                        or ' '.join(cite['quote'].split()) not in ' '.join(by_id[cite['id']]['text'].split())):
+                        or ' '.join(cite['quote'].split()) not in ' '.join(by_id[cite['id']]['text'].split()))]
+                if not invalid:
+                    break
+                if attempt:
                     raise ValueError('Unsupported citation')
+                # One new reading may correct a transcription error. Never
+                # substitute a nearby quote or treat the rejected answer as evidence.
+                prompt['citation_repair'] = {
+                    'invalid_citation_indexes': invalid,
+                    'instruction': 'The previous reading had invalid citations and was rejected. Return a new '
+                        'complete reading using only the original evidence. Copy quotes exactly; use separate '
+                        'citations for separate passages. Remove claims the evidence does not support.'}
+                prompt['citation_anchors'] = _citation_anchors(evidence)
             if raw['outcome'] == 'supported_answer' and not raw['citations']:
                 raise ValueError('An answer needs a citation')
             checked = llm.check_support(cfg, question, json.dumps(evidence), raw['answer'])

@@ -433,8 +433,10 @@ class DriverTests(unittest.TestCase):
             with patch.object(llm.Client, 'complete', return_value=json.dumps(raw)) as complete:
                 with self.assertRaisesRegex(a.AcceptanceFailure, 'live_inquiry_not_verified_model_reading'):
                     a.live_inquiry(fixture, task, node, gateway, 'fixture-model', diagnostics=diagnostic)
-            self.assertEqual(complete.call_count, 1, 'Invalid citations must not trigger support or diagnostic inference')
-            self.assertEqual(diagnostic['model_calls'][0]['category'], 'unsupported_citation')
+            self.assertEqual(complete.call_count, 2, 'Invalid citations allow one bounded repair, then fail without support')
+            self.assertEqual([call['purpose'] for call in diagnostic['model_calls']], ['inquiry', 'inquiry'])
+            self.assertEqual([call['category'] for call in diagnostic['model_calls']],
+                             ['unsupported_citation', 'unsupported_citation'])
             self.assertFalse(diagnostic['response']['model_used'])
             self.assertTrue(diagnostic['counts_unchanged'])
             self.assertEqual(diagnostic['provider_before'], diagnostic['provider_after'])
