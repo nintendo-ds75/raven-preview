@@ -2303,7 +2303,7 @@ def finish_task(store, data, sleep=None, stop=None) -> dict:
                        "Authorized is not verified; code review is still the gate on shipping.")}
 
 
-def _conformance(store, task_id: str, signed: list[dict], diff: str) -> list[dict]:
+def _conformance(store, task_id: str, signed: list[dict], diff: str, cfg=None) -> list[dict]:
     """For each authorized decision, whether the diff does what it says.
 
     A report and never a gate: the finish is not refused on a departure,
@@ -2313,7 +2313,7 @@ def _conformance(store, task_id: str, signed: list[dict], diff: str) -> list[dic
     the agent said its change matched, and the diff had one of them."""
     from .config import load as load_config
     from .llm import check_conformance
-    cfg = load_config()
+    cfg = cfg or load_config()
     if not diff.strip() or not signed:
         return []
     from concurrent.futures import ThreadPoolExecutor
@@ -2446,12 +2446,28 @@ def _review_inputs(signed: list[dict]) -> dict:
         separators=(",", ":")).encode()).hexdigest() for position, n in enumerate(signed)}
 
 
-def _review_key(task_id: str, diff: str, signed: list[dict]) -> tuple[str, str]:
-    """One reading per task, diff and ordered signed question/answer inputs."""
+def _review_config(cfg=None) -> dict:
+    """Only non-secret settings that select the advisory reader.
+
+    In particular, enabling inference after a deterministic finish must not
+    reuse its successful empty result. Credentials are never cache inputs;
+    rotating a key does not change the model reading's identity.
+    """
+    from .config import load as load_config
+    cfg = cfg or load_config()
+    return {"backend": cfg.model_api,
+            "model": cfg.fast_model if os.environ.get("BRIDGE_CONFORMANCE_MODEL", "main") == "fast" else cfg.model,
+            "enabled": cfg.semantic_retrieval}
+
+
+def _review_key(task_id: str, diff: str, signed: list[dict], review_config=None) -> tuple[str, str]:
+    """One reading per task, diff, ordered signed inputs and reader config."""
     import hashlib
     diff_hash = hashlib.sha256(diff.encode()).hexdigest()[:16]
     inputs = json.dumps(_review_inputs(signed), sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256("\n".join([task_id, diff_hash, inputs]).encode()).hexdigest()[:12], diff_hash
+    config = json.dumps(_review_config() if review_config is None else review_config,
+                        sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256("\n".join([task_id, diff_hash, inputs, config]).encode()).hexdigest()[:12], diff_hash
 
 
 def _stored_review(graph, task_id: str, review_id: str | None = None) -> dict | None:
@@ -2465,7 +2481,7 @@ def _stored_review(graph, task_id: str, review_id: str | None = None) -> dict | 
             continue
         if not d.get("review_id") or (review_id is not None and d["review_id"] != review_id):
             continue
-        read = {k: d[k] for k in ("revisions", "review_inputs") if isinstance(d.get(k), dict)}
+        read = {k: d[k] for k in ("revisions", "review_inputs", "review_config") if isinstance(d.get(k), dict)}
         if r["kind"] == "conformance_read":
             return {"id": d["review_id"], "status": d.get("status") or "done", "follows": d.get("follows") or [],
                     "diff_hash": d.get("diff_hash") or "", "seconds": d.get("seconds"), "finished_at": r["created_at"],
@@ -2539,7 +2555,7 @@ def _current_review(graph, task_id: str, nodes: list[dict]) -> dict | None:
 
 def _review(store, task_id: str, signed: list[dict], diff: str, sleep=None, stop=None) -> dict:
     """The reading of the diff against what was signed: run once per task,
-    diff and ordered signed question/answer inputs, and kept. A retried finish,
+    diff, ordered signed inputs and reader configuration, and kept. A retried finish,
     or a host that timed out before the answer came, reads the kept one
     instead of starting it again. Measured live on 5e967e4: three finish
     calls timed out at 60 seconds while the reading ran, the hosts never
@@ -2548,8 +2564,18 @@ def _review(store, task_id: str, signed: list[dict], diff: str, sleep=None, stop
     import time as _time
     if not diff.strip() or not signed:
         return {"status": "none", "follows": []}
+    from dataclasses import replace
+    from .config import load as load_config
+    cfg = load_config()
+    review_config = _review_config(cfg)
+    # Pin the selected backend/model before starting the worker. Both model
+    # slots name the effective reader so a later main/fast setting change
+    # cannot make a cached result describe a different model. A disabled
+    # reading stays disabled even if the environment changes mid-flight.
+    cfg = replace(cfg, model=review_config['model'], fast_model=review_config['model'],
+                  deterministic=not review_config['enabled'])
     graph = store.graph
-    rid, diff_hash = _review_key(task_id, diff, signed)
+    rid, diff_hash = _review_key(task_id, diff, signed, review_config)
     with _REVIEWS_LOCK:
         stored = _stored_review(graph, task_id, rid)
         if stored is not None and stored["status"] == "done":
@@ -2564,8 +2590,10 @@ def _review(store, task_id: str, signed: list[dict], diff: str, sleep=None, stop
             graph.append_event("conformance_started", {"task_id": task_id, "review_id": rid, "diff_hash": diff_hash,
                                                        "decisions": [n["node_id"] for n in signed],
                                                        "revisions": _revisions(signed),
-                                                       "review_inputs": _review_inputs(signed)})
-            thread = threading.Thread(target=_run_review, args=(store, task_id, rid, diff_hash, signed, diff),
+                                                       "review_inputs": _review_inputs(signed),
+                                                       "review_config": review_config})
+            thread = threading.Thread(target=_run_review, args=(store, task_id, rid, diff_hash, signed, diff,
+                                                               cfg, review_config),
                                       daemon=True, name=f"bridge-review-{rid}")
             _REVIEWS[rid] = thread
             thread.start()
@@ -2588,21 +2616,24 @@ def _review(store, task_id: str, signed: list[dict], diff: str, sleep=None, stop
     return {"id": rid, "status": "running", "follows": [], "diff_hash": diff_hash}
 
 
-def _run_review(store, task_id: str, rid: str, diff_hash: str, signed: list[dict], diff: str) -> None:
+def _run_review(store, task_id: str, rid: str, diff_hash: str, signed: list[dict], diff: str,
+                cfg=None, review_config=None) -> None:
     import sys
     import time as _time
+    from .config import load as load_config
+    cfg = cfg or load_config()
+    review_config = _review_config(cfg) if review_config is None else review_config
     started = _time.monotonic()
     status, follows = "done", []
     try:
-        follows = _conformance(store, task_id, signed, diff)
+        follows = _conformance(store, task_id, signed, diff, cfg)
         # The provider adapter returns no reading on an unavailable or
         # malformed response. With inference enabled that is an incomplete
         # attempt, not a successful empty result to cache forever. Preserve
         # any completed findings; an explicit finish retry can recover.
-        from .config import load as load_config
         expected = {n["node_id"] for n in signed[:8] if (n.get("answer") or "").strip()}
-        if load_config().semantic_retrieval and (expected - {r["node_id"] for r in follows}
-                                                 or any(r.get('incomplete') for r in follows)):
+        if review_config['enabled'] and (expected - {r["node_id"] for r in follows}
+                                         or any(r.get('incomplete') for r in follows)):
             status = "failed"
             print(f"Raven: reading the diff for task {task_id} returned incomplete model results", file=sys.stderr)
     except Exception as error:
@@ -2612,6 +2643,7 @@ def _run_review(store, task_id: str, rid: str, diff_hash: str, signed: list[dict
         store.graph.append_event("conformance_read", {
             "task_id": task_id, "review_id": rid, "diff_hash": diff_hash, "status": status,
             "revisions": _revisions(signed), "review_inputs": _review_inputs(signed),
+            "review_config": review_config,
             "seconds": round(_time.monotonic() - started, 1), "follows": follows,
             "read": [{"node": r["node_id"], "verdict": r["verdict"],
                       "counterexamples": sum(1 for q in r["requirements"]
