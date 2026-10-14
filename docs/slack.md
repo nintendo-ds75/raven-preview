@@ -1,8 +1,16 @@
-# Use Raven through your agent and Slack
+# Slack notifications and optional conversational bot
 
-The coding agent uses MCP. People receive DMs and answer in Slack. The web overview is optional, and recipients do not create Raven accounts or fill in an ownership map.
+The default Slack path sends a short notification linking to Raven. People review context, ask read-only questions, and explicitly answer or sign in Raven. Normal notification links require Raven authentication; Slack replies do not change decisions in this mode.
 
-One workspace operator still needs to install the Slack app and connect the sources Raven may read. Slack must be connected for notifications to leave Raven. Running Docker alone does not connect Slack.
+An external coding host can instead use its already authorized employee Slack MCP connector to send the notification, without provisioning a new Raven bot. Follow [the host notification handoff](host-notifications.md). Raven does not inherit those tools or their credentials automatically. Existing connector permissions and workspace policy still apply.
+
+## Optional server bot
+
+The installation instructions below configure a separate Raven-operated Slack bot. A bot is not required for host-delegated notification delivery. Fresh bot installations also default to notification-only messages and require a public HTTPS Raven URL. Their recipients use Raven accounts rather than replying in Slack.
+
+## Legacy conversational mode
+
+The remaining reply, referral, capture, and personal-link examples in this guide describe the explicitly enabled legacy transport. Set the workspace's `slack_interaction_mode` to `conversation` only when you want Slack conversations to affect decisions. This restores a different trust model: optional recipient links are bearer credentials, and possession lets someone act as the recipient within the task's permissions. Do not forward them. Existing captured-source edit/deletion invalidation remains active even in notification-only mode.
 
 ## One-time setup
 
