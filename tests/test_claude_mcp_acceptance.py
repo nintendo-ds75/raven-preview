@@ -172,6 +172,21 @@ class EvidenceReadTests(unittest.TestCase):
 
 
 class DriverTests(unittest.TestCase):
+    def test_human_inquiry_uses_configured_timeout_and_remaining_deadline(self):
+        fixture = SimpleNamespace(url='http://127.0.0.1:1', human_token='synthetic', request_timeout=120)
+        with patch.object(a, 'http_json', return_value=(200, {'ok': True}, {})) as request:
+            self.assertEqual(a.Fixture.human(fixture, '/api/tasks/t/inquiry', {}), {'ok': True})
+            self.assertEqual(request.call_args.kwargs['timeout'], 120)
+            fixture.request_deadline = 125
+            with patch.object(a.time, 'monotonic', return_value=100):
+                a.Fixture.human(fixture, '/api/tasks/t/inquiry', {})
+            self.assertEqual(request.call_args.kwargs['timeout'], 25)
+            request.reset_mock()
+            with patch.object(a.time, 'monotonic', return_value=126):
+                with self.assertRaisesRegex(a.AcceptanceFailure, 'timeout_human_request'):
+                    a.Fixture.human(fixture, '/api/tasks/t/inquiry', {})
+            request.assert_not_called()
+
     def test_inquiry_only_cli_uses_saved_key_and_fixed_budget_without_sdk_or_smoke(self):
         with tempfile.TemporaryDirectory() as tmp:
             source, output = Path(tmp) / 'existing', Path(tmp) / 'new'

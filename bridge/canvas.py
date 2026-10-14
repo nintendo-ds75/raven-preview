@@ -3394,7 +3394,9 @@ def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, or
                 source_pins = [cm.pin(e, e['role']) for e in cm.edges(graph.db, scratch)]
                 cm.validate(graph.db, did, source_pins)
                 cm.validate_derivations(graph.db, scratch)
-                fields = ['status','answer','rationale','source','source_id','evidence','kind','prediction','owner_id',
+                # The memory target and its observed revision are one piece
+                # of provenance; never infer a new revision at publication.
+                fields = ['status','answer','rationale','source','source_id','source_revision','evidence','kind','prediction','owner_id',
                           'owner_evidence','answered_by','signoff','signed_by','signed_hash','signed_revision','signatures','brief','superseded_by','source_reuse_state']
                 fields = [f for f in fields if f in outcome]
                 graph.db.execute('UPDATE decisions SET ' + ','.join(f+'=?' for f in fields) + ', updated_at=? WHERE id=?',

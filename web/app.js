@@ -502,7 +502,7 @@ function contextSourcesCard() {
 
 function workspaceAccountCard() {
   if (!state.auth?.enabled || state.me?.role !== 'admin') return '';
-  return `<section class="setup-card"><h2>${esc(state.workspace?.name || 'Set up your workspace')}</h2>${state.workspace?.needs_setup ? '<p>Create your owner login and name this workspace.</p><a class="button primary" href="/auth/setup">Create workspace</a>' : ''}<p>Optional browser access. Recipients can answer through their private Raven task link without a Raven account. Invite links are private and valid for 48 hours.</p><button class="button" data-action="invite-person">Invite teammate</button></section>`;
+  return `<section class="setup-card"><h2>${esc(state.workspace?.name || 'Set up your workspace')}</h2>${state.workspace?.needs_setup ? '<p>Create your owner login and name this workspace.</p><a class="button primary" href="/auth/setup">Create workspace</a>' : ''}<p>Invite teammates to review context, ask questions and sign off on decisions in Raven. Default notification links require a Raven account. Invite links are private and expire after 48 hours.</p><button class="button" data-action="invite-person">Invite teammate</button></section>`;
 }
 
 async function setupAgent() {

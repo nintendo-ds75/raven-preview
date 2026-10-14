@@ -685,7 +685,12 @@ class Fixture(RavenContractHarness):
         self.slack.messages.clear()
 
     def human(self, path, data):
-        status, value, _ = http_json(self.url + path, data, {'Authorization': 'Bearer ' + self.human_token})
+        timeout = self.request_timeout
+        if getattr(self, 'request_deadline', None) is not None:
+            timeout = min(timeout, self.request_deadline - time.monotonic())
+            require(timeout > 0, 'timeout_human_request')
+        status, value, _ = http_json(self.url + path, data,
+                                    {'Authorization': 'Bearer ' + self.human_token}, timeout=timeout)
         require(status == 200, 'synthetic_human_http_refused')
         return value
 
@@ -918,6 +923,7 @@ def exercise(fixture, host, gateway, report, *, timeout=180, idle_seconds=2):
     report['scenario'] = scenario
     trace_path = host.root / 'mcp-trace.jsonl'
     deadline = time.monotonic() + timeout
+    fixture.request_deadline = deadline
     report['stage'] = 'initial_host'
     host.start(fixture, 'initial')
     def blocked():
