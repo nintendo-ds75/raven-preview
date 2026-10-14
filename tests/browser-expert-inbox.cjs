@@ -40,11 +40,13 @@ const check=async(name,fn)=>{try{await fn();checks.push(name);console.log('PASS 
       assert.equal(await disclosure.getAttribute('open'),null,'quotes initially collapsed');
       await disclosure.locator('summary').click();
       assert.equal(await disclosure.locator('blockquote').count(),citations.length);
-      for(let i=0;i<citations.length;i++){
-        const citation=citations[i],source=inquiry.evidence.find(e=>e.id===citation.id);
+      const sourceIds=[...new Set(citations.map(citation=>citation.id))];
+      assert.equal(await disclosure.locator('figure').count(),sourceIds.length);
+      for(let i=0;i<sourceIds.length;i++){
+        const id=sourceIds[i],source=inquiry.evidence.find(e=>e.id===id);
         assert(source,'actual response must identify the quoted source');
         const figure=disclosure.locator('figure').nth(i);
-        assert.equal(await figure.locator('blockquote').textContent(),citation.quote);
+        assert.deepEqual(await figure.locator('blockquote').allTextContents(),citations.filter(citation=>citation.id===id).map(citation=>citation.quote));
         const identity=await figure.locator('figcaption').textContent();
         assert(identity.includes(source.title||source.id));assert(identity.includes('Source: '+source.id));
       }

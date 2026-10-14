@@ -63,5 +63,10 @@ function inquiryCitations(result, key = 'inquiry-citations') {
     return [{source, quote:citation.quote}];
   });
   if (!citations.length) return '';
-  return `<details class="inquiry-citations" id="${esc(key)}" data-keep="${esc(key)}"><summary>Exact quotes · ${citations.length}</summary>${citations.map(({source, quote}) => `<figure><figcaption>${esc(source.title || source.id)}<small>Source: ${esc(source.id)}${source.version ? ` · Version: ${esc(source.version)}` : ''}</small></figcaption><blockquote>${esc(quote)}</blockquote></figure>`).join('')}</details>`;
+  const groups = new Map();
+  for (const {source, quote} of citations) {
+    if (!groups.has(source.id)) groups.set(source.id, {source, quotes:[]});
+    groups.get(source.id).quotes.push(quote);
+  }
+  return `<details class="inquiry-citations" id="${esc(key)}" data-keep="${esc(key)}"><summary>Exact quotes · ${citations.length}</summary>${Array.from(groups.values(), ({source, quotes}) => `<figure><figcaption>${esc(source.title || source.id)}<small>Source: ${esc(source.id)}${source.version ? ` · Version: ${esc(source.version)}` : ''}</small></figcaption>${quotes.map(quote => `<blockquote>${esc(quote)}</blockquote>`).join('')}</figure>`).join('')}</details>`;
 }

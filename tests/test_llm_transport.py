@@ -93,7 +93,7 @@ class ModelTransportTests(unittest.TestCase):
                 "https://api.anthropic.com./v1/messages",
                 "https://api.anthropic.com.evil.invalid/v1/messages",
                 "https://api.anthropic.com@evil.invalid/v1/messages",
-                "https://private-canary@api.anthropic.com/v1/messages",
+                "https://private-canary=@api.anthropic.com/v1/messages",
                 "https://api.openai.com/v1/chat/completions",
                 "http://127.0.0.1:8765/v1/messages",
                 "file:///private-canary", " " + ANTHROPIC_URL, "\n" + OPENAI_URL):
