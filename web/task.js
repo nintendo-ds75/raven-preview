@@ -245,7 +245,7 @@ function taskNotes(t, canWrite) {
 
 function taskInquiry(id) {
   const saved = taskView(id), result = saved.inquiryResult;
-  return `<section class="task-panel task-inquiry" aria-label="Ask about this task"><form id="task-inquiry-form" data-id="${esc(id)}"><label for="task-inquiry-text">Ask about this task</label><textarea id="task-inquiry-text" name="question" rows="2" maxlength="2000" required placeholder="What is still waiting on a decision?">${esc(saved.inquiry)}</textarea><p class="context">Read-only. Answers do not change decisions or grant signoff.</p><button class="button" type="submit" ${saved.inquiryPending ? 'disabled' : ''}>${saved.inquiryPending ? 'Reading…' : 'Ask'}</button><p class="error" role="alert" ${saved.inquiryError ? '' : 'hidden'}>${esc(saved.inquiryError)}</p></form><div class="task-inquiry-result" role="status" aria-live="polite">${saved.inquiryPending ? '<p>Reading task context…</p>' : ''}${result ? `<p class="task-verbatim">${esc(result.answer)}</p><small>${esc(result.notice || 'Clarification does not authorize work.')}</small>${taskList(result.evidence).length ? `<details id="task-inquiry-evidence"><summary>Evidence used</summary>${taskList(result.evidence).map(e => `<h4>${esc(e.title || e.id)}</h4><p class="task-verbatim">${esc(e.text)}</p>`).join('')}</details>` : ''}` : ''}</div></section>`;
+  return `<section class="task-panel task-inquiry" aria-label="Ask about this task"><form id="task-inquiry-form" data-id="${esc(id)}"><label for="task-inquiry-text">Ask about this task</label><textarea id="task-inquiry-text" name="question" rows="2" maxlength="2000" required placeholder="What is still waiting on a decision?">${esc(saved.inquiry)}</textarea><p class="context">Read-only. Answers do not change decisions or grant signoff.</p><button id="task-inquiry-submit" class="button" type="submit" aria-disabled="${saved.inquiryPending ? 'true' : 'false'}">${saved.inquiryPending ? 'Reading…' : 'Ask'}</button><p class="error" role="alert" ${saved.inquiryError ? '' : 'hidden'}>${esc(saved.inquiryError)}</p></form><div class="task-inquiry-result" role="status" aria-live="polite">${saved.inquiryPending ? '<p>Reading task context…</p>' : ''}${result ? `<p class="task-verbatim">${esc(result.answer)}</p><small>${esc(result.notice || 'Clarification does not authorize work.')}</small>${taskList(result.evidence).length ? `<details id="task-inquiry-evidence"><summary>Evidence used</summary>${taskList(result.evidence).map(e => `<h4>${esc(e.title || e.id)}</h4><p class="task-verbatim">${esc(e.text)}</p>`).join('')}</details>` : ''}` : ''}</div></section>`;
 }
 
 async function submitTaskInquiry(form) {
@@ -256,7 +256,7 @@ async function submitTaskInquiry(form) {
   const question = form.querySelector('[name="question"]').value.trim();
   if (!question) return;
   saved.inquiry = question; saved.inquiryPending = true; saved.inquiryError = ''; saved.inquiryResult = null;
-  form.querySelector('[type="submit"]').disabled = true;
+  form.querySelector('[type="submit"]').ariaDisabled = 'true';
   render();
   try {
     saved.inquiryResult = await api(`/api/tasks/${encodeURIComponent(id)}/inquiry`, {question});
