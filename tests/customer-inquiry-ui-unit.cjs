@@ -8,7 +8,7 @@ const escape = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('
   let submit, finish;
   const calls=[], c={esc:escape,modalVersion:1,document:{addEventListener:(kind,fn)=>submit=fn},
     api:(url,body)=>{calls.push({url,body});return new Promise(resolve=>finish=resolve)}};
-  vm.createContext(c);vm.runInContext(render+handler,c);
+  vm.createContext(c); vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../web/presentation.js'),'utf8'),c);vm.runInContext(render+handler,c);
   const html=vm.runInContext("decisionInquiry({id:'decision',run_id:'task'})",c);
   assert.match(html,/data-task="task"/);assert.match(html,/maxlength="2000"/);assert.match(html,/Read-only clarification/);assert.doesNotMatch(html,/data-action="signoff"/);
   const output={textContent:'',innerHTML:''},button={disabled:false};

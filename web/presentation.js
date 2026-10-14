@@ -49,3 +49,19 @@ function approvalScope(d) {
     <details class="scope-exact" data-keep="scope-${esc(scope.id)}"><summary>Exact recorded scope</summary><p>All recorded fields, including identifiers and empty values.</p><pre class="approval-scope scope-json">${esc(JSON.stringify(scope, null, 2))}</pre><details data-keep="scope-text-${esc(scope.id)}"><summary>Original scope text</summary><pre class="approval-scope scope-text">${esc(d.approval_scope_text || '')}</pre></details></details>
   </section>`;
 }
+
+// Quotes are attributed only to evidence supplied with this response. Never
+// turn model-supplied IDs or source URLs into navigable links.
+function inquiryCitations(result, key = 'inquiry-citations') {
+  const evidence = Array.isArray(result?.evidence) ? result.evidence : [];
+  const citations = (Array.isArray(result?.citations) ? result.citations : []).flatMap(citation => {
+    if (!citation || typeof citation.id !== 'string' || !citation.id ||
+        typeof citation.quote !== 'string' || !citation.quote.trim()) return [];
+    const matches = evidence.filter(item => item && item.id === citation.id);
+    if (matches.length !== 1) return [];
+    const source = matches[0];
+    return [{source, quote:citation.quote}];
+  });
+  if (!citations.length) return '';
+  return `<details class="inquiry-citations" id="${esc(key)}" data-keep="${esc(key)}"><summary>Exact quotes · ${citations.length}</summary>${citations.map(({source, quote}) => `<figure><figcaption>${esc(source.title || source.id)}<small>Source: ${esc(source.id)}${source.version ? ` · Version: ${esc(source.version)}` : ''}</small></figcaption><blockquote>${esc(quote)}</blockquote></figure>`).join('')}</details>`;
+}

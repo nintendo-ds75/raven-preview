@@ -2089,3 +2089,11 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .decision-current-scope>h3{font-size:13px;margin:0 0 10px}
 .decision-current-scope>.scope-fields{font-size:12px;line-height:1.6}
 .decision-original-scope>summary,.decision-background>summary{min-height:40px;padding:10px 0;cursor:pointer}
+
+/* Read-only inquiry quotes remain compact until explicitly expanded. */
+.inquiry-citations { margin-top:12px; overflow-wrap:anywhere; }
+.inquiry-citations summary { cursor:pointer; }
+.inquiry-citations figure { margin:12px 0; }
+.inquiry-citations figcaption { font-weight:600; }
+.inquiry-citations figcaption small { display:block; font-weight:400; }
+.inquiry-citations blockquote { margin:8px 0; padding:0 0 0 12px; border-left:2px solid var(--line); white-space:pre-wrap; }

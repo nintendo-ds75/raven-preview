@@ -25,7 +25,40 @@ const check=async(name,fn)=>{try{await fn();checks.push(name);console.log('PASS 
   const expert=await page();
   await check('Invite maps preprovisioned expert to the existing identity and inbox',async()=>{await expert.goto(A.base+'/auth/join#invite='+A.invite);await expert.locator('[name=name]').fill('A different display name cannot replace identity');await expert.locator('[name=password]').fill(A.password);await expert.locator('button[type=submit]').click();await expert.waitForURL(u=>u.pathname==='/');await expert.waitForFunction(()=>state?.me);const me=await expert.evaluate(()=>state.me);assert.equal(me.id,A.expert.id);assert.equal(me.name,A.expert.name);assert.equal(me.role,'member');assert.equal(new URL(expert.url()).hash,'#inbox');assert((await expert.locator('body').innerText()).includes('Keep synthetic export copies'));await expert.screenshot({path:path.join(artifacts,'expert-inbox.png'),fullPage:true});});
   await check('Returning password login restores the exact task and decision deep link',async()=>{await visitor.locator('input[name=email]').fill(A.expert.email);await visitor.locator('input[name=password]').fill(A.password);await visitor.locator('form[action="/auth/password"] button').click();await visitor.waitForURL(deep);await visitor.locator('#modal[open]').waitFor();assert((await visitor.locator('#modal').innerText()).includes('SYNTHETIC_TASK_CONTEXT'));assert(await visitor.getByRole('button',{name:/Sign off as Synthetic Expert/}).isVisible());await visitor.screenshot({path:path.join(artifacts,'expert-deep-link.png'),fullPage:true});});
-  await check('Decision inquiry reads only current task evidence without changing authority',async()=>{const before=await ctl('decision');const counts=await ctl('counts');await visitor.locator('#decision-inquiry-text').fill('What context and production constraints apply?');await visitor.getByRole('button',{name:'Ask Raven',exact:true}).click();await visitor.locator('.decision-inquiry-result details > summary').click();await visitor.locator('.decision-inquiry-result').filter({hasText:/SYNTHETIC_TASK_CONTEXT/}).waitFor();const text=await visitor.locator('.decision-inquiry-result').innerText();assert(!text.includes('UNRELATED_DECISION_CANARY'));assert(!text.includes('UNRELATED_TASK_CANARY'));const after=await ctl('decision');assert.equal(after.authorized,false);assert.equal(after.updated_at,before.updated_at);assert.deepEqual(await ctl('counts'),counts);await visitor.screenshot({path:path.join(artifacts,'expert-inquiry.png'),fullPage:true});});
+  await check('Decision inquiry reads only current task evidence without changing authority',async()=>{
+    const before=await ctl('decision'),counts=await ctl('counts');
+    await visitor.locator('#decision-inquiry-text').fill('What context and production constraints apply?');
+    const response=visitor.waitForResponse(r=>r.url().endsWith('/api/tasks/'+A.task+'/inquiry')&&r.request().method()==='POST');
+    await visitor.getByRole('button',{name:'Ask Raven',exact:true}).click();
+    const inquiryResponse=await response;assert.equal(inquiryResponse.status(),200);
+    const inquiry=await inquiryResponse.json();
+    await visitor.locator('.decision-inquiry-result summary').filter({hasText:/^Evidence used$/}).click();
+    await visitor.locator('.decision-inquiry-result').filter({hasText:/SYNTHETIC_TASK_CONTEXT/}).waitFor();
+    const citations=Array.isArray(inquiry.citations)?inquiry.citations:[];
+    if(citations.length){
+      const disclosure=visitor.locator('#decision-inquiry-citations');
+      assert.equal(await disclosure.getAttribute('open'),null,'quotes initially collapsed');
+      await disclosure.locator('summary').click();
+      assert.equal(await disclosure.locator('blockquote').count(),citations.length);
+      for(let i=0;i<citations.length;i++){
+        const citation=citations[i],source=inquiry.evidence.find(e=>e.id===citation.id);
+        assert(source,'actual response must identify the quoted source');
+        const figure=disclosure.locator('figure').nth(i);
+        assert.equal(await figure.locator('blockquote').textContent(),citation.quote);
+        const identity=await figure.locator('figcaption').textContent();
+        assert(identity.includes(source.title||source.id));assert(identity.includes('Source: '+source.id));
+      }
+      assert.equal(await disclosure.locator('a').count(),0);
+    }else{
+      assert.equal(await visitor.locator('#decision-inquiry-citations').count(),0);
+      console.log('INFO Real inquiry response has no citations; exact-quote browser branch not exercised.');
+    }
+    const text=await visitor.locator('.decision-inquiry-result').innerText();
+    assert(!text.includes('UNRELATED_DECISION_CANARY'));assert(!text.includes('UNRELATED_TASK_CANARY'));
+    const after=await ctl('decision');assert.equal(after.authorized,false);assert.equal(after.updated_at,before.updated_at);
+    assert.deepEqual(await ctl('counts'),counts);
+    await visitor.screenshot({path:path.join(artifacts,'expert-inquiry.png'),fullPage:true});
+  });
   const peer=await page();await login(peer,'peer');
   await check('Another workspace member may read shared context but cannot impersonate expert signoff',async()=>{await peer.goto(deep);await peer.locator('#modal[open]').waitFor();assert.equal(await peer.locator('[data-action=signoff]').count(),0);const d=(await api(peer,'/api/decisions/'+A.node)).body;assert(!d.allowed_actions.includes('sign'));const r=await api(peer,'/api/decisions/'+A.node+'/signoff',{expected_updated_at:d.updated_at,signed_by:A.expert.name,by:A.expert.name});assert.equal(r.status,403);assert.equal((await ctl('decision')).authorized,false);});
   await check('Forged inquiry scope and signoff fields fail without widening retrieval',async()=>{for(const data of [{question:'Read other task',focus_id:A.other_node},{question:'Approve',signed_by:A.expert.name},{question:'Approve',signoff:true},{question:'Read tenant B',task_id:B.task}]){const r=await api(visitor,'/api/tasks/'+A.task+'/inquiry',data);assert.equal(r.status,400);assert(!JSON.stringify(r).includes('UNRELATED_DECISION_CANARY'));}});
