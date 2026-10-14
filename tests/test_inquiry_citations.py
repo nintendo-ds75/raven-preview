@@ -64,9 +64,10 @@ class InquiryCitationTests(OfflineCase):
             with self.subTest(extra=extra), patch.object(Client, 'complete_json', return_value=raw) as complete, \
                     patch('bridge.llm.check_support', return_value=checked) as support:
                 result = self.read()
-            complete.assert_called_once()
-            support.assert_called_once_with(self.cfg, 'Who signed the exclusion, and for which scope?',
-                                            json.dumps(self.evidence), raw['answer'])
+            self.assertEqual(complete.call_count, 2)
+            self.assertEqual(support.call_count, 2)
+            support.assert_called_with(self.cfg, 'Who signed the exclusion, and for which scope?',
+                                       json.dumps(self.evidence), raw['answer'], bounded=True)
             self.assertFalse(result['model_used'])
             self.assertEqual(result['outcome'], 'missing_fact')
             self.assertEqual(result['citations'], [])
@@ -90,7 +91,57 @@ class InquiryCitationTests(OfflineCase):
         self.assertIn({'id': 'policy', 'quote': 'Scope: production'}, retry['citation_anchors'])
         self.assertNotIn(self.bad['answer'], json.dumps(retry))
         support.assert_called_once_with(self.cfg, 'Who signed the exclusion, and for which scope?',
-                                        json.dumps(self.evidence), self.good['answer'])
+                                        json.dumps(self.evidence), self.good['answer'], bounded=True)
+
+    def test_supported_repair_requires_a_new_strict_check_of_its_own_claims(self):
+        bad = {**self.good, 'answer': self.good['answer'] + ' All real customers receive free service.'}
+        rejected = {'claims': [*self.support['claims'], {'claim': 'All real customers receive free service.', 'support': 'inferred'}]}
+        with patch.object(Client, 'complete_json', side_effect=[bad, self.good]) as complete, \
+                patch('bridge.llm.check_support', side_effect=[rejected, self.support]) as support:
+            result = self.read()
+        self.assertTrue(result['model_used'])
+        self.assertFalse(result['authorized'])
+        self.assertEqual(result['answer'], self.good['answer'])
+        self.assertEqual(complete.call_count, 2)
+        self.assertEqual(support.call_count, 2)
+        self.assertEqual([call.args[3] for call in support.call_args_list], [bad['answer'], self.good['answer']])
+        retry = json.loads(complete.call_args.args[2])
+        self.assertEqual(retry['evidence'], self.evidence)
+        self.assertIn('Omit unsupported claims', retry['support_repair']['instruction'])
+        self.assertNotIn(bad['answer'], json.dumps(retry))
+        self.assertNotIn('All real customers receive free service.', json.dumps(retry))
+
+    def test_support_and_citation_repairs_share_one_regeneration_budget(self):
+        rejected = {'claims': [{'claim': 'False claim', 'support': 'inferred'}]}
+        for candidates, verdicts, expected_checks in (
+                ([self.bad, self.good], [rejected], 1),
+                ([self.good, self.bad], [rejected], 1),
+                ([self.good, self.good], [rejected, rejected], 2)):
+            with self.subTest(candidates=candidates), \
+                    patch.object(Client, 'complete_json', side_effect=candidates) as complete, \
+                    patch('bridge.llm.check_support', side_effect=verdicts) as support:
+                result = self.read()
+            self.assertEqual(complete.call_count, 2)
+            self.assertEqual(support.call_count, expected_checks)
+            self.assertFalse(result['model_used'])
+            self.assertEqual(result['citations'], [])
+
+    def test_bounded_generation_and_support_make_at_most_four_completion_calls(self):
+        rejected = {'claims': [{'claim': 'False claim', 'support': 'inferred'}]}
+        with patch.object(Client, 'complete_json', side_effect=[self.good, rejected, self.good, self.support]) as complete:
+            result = self.read()
+        self.assertTrue(result['model_used'])
+        self.assertEqual([call.args[0] for call in complete.call_args_list], ['inquiry', 'support', 'inquiry', 'support'])
+        self.assertTrue(all(call.kwargs['bounded'] for call in complete.call_args_list))
+        self.assertEqual(sum(call.kwargs['max_tokens'] for call in complete.call_args_list), 5000)
+
+    def test_malformed_support_json_cannot_hide_extra_completion_retries(self):
+        with patch.object(Client, 'complete', side_effect=[json.dumps(self.good), 'not JSON',
+                                                         json.dumps(self.good), 'still not JSON']) as complete:
+            result = self.read()
+        self.assertFalse(result['model_used'])
+        self.assertEqual([call.args[0] for call in complete.call_args_list], ['inquiry', 'support', 'inquiry', 'support'])
+        self.assertTrue(all(call.kwargs['bounded'] for call in complete.call_args_list))
 
     def test_paraphrases_hallucinated_sources_and_fabrication_still_fail_closed(self):
         for citation in ({'id': 'policy', 'quote': 'Internal testing traffic is excluded.'},
@@ -195,6 +246,55 @@ class InquiryCitationRaceTests(OfflineCase):
             with self.assertRaisesRegex(Invalid, 'evidence changed'):
                 self.read()
         self.assertEqual(complete.call_count, 2)
+
+    def test_evidence_change_during_first_generation_stops_before_retry_or_support(self):
+        def change(*args, **kwargs):
+            self.store.graph.db.execute("UPDATE decisions SET answer='Changed concurrently' WHERE id=?", (self.node,))
+            return self.bad
+        with patch.object(Client, 'complete_json', side_effect=change) as complete, \
+                patch('bridge.llm.check_support') as support:
+            with self.assertRaisesRegex(Invalid, 'evidence changed'):
+                self.read()
+        complete.assert_called_once()
+        support.assert_not_called()
+
+    def test_source_change_during_first_support_check_stops_before_regeneration(self):
+        def change(*args, **kwargs):
+            self.store.graph.db.execute("UPDATE decisions SET answer='Changed concurrently' WHERE id=?", (self.node,))
+            return {'claims': [{'claim': 'False claim', 'support': 'inferred'}]}
+        with patch.object(Client, 'complete_json', return_value=self.good) as complete, \
+                patch('bridge.llm.check_support', side_effect=change) as support:
+            with self.assertRaisesRegex(Invalid, 'evidence changed'):
+                self.read()
+        complete.assert_called_once()
+        support.assert_called_once()
+
+    def test_reader_revocation_during_support_check_stops_before_regeneration(self):
+        revoked = []
+        def revalidate():
+            if revoked:
+                raise Invalid('Reader access revoked')
+        def check(*args, **kwargs):
+            revoked.append(True)
+            return {'claims': [{'claim': 'False claim', 'support': 'inferred'}]}
+        with patch.object(Client, 'complete_json', return_value=self.good) as complete, \
+                patch('bridge.llm.check_support', side_effect=check) as support:
+            with self.assertRaisesRegex(Invalid, 'revoked'):
+                self.read(revalidate=revalidate)
+        complete.assert_called_once()
+        support.assert_called_once()
+
+    def test_changed_evidence_during_second_support_check_is_never_returned(self):
+        def checks():
+            yield {'claims': [{'claim': 'False claim', 'support': 'inferred'}]}
+            self.store.graph.db.execute("UPDATE decisions SET answer='Changed concurrently' WHERE id=?", (self.node,))
+            yield {'claims': [{'claim': self.good['answer'], 'support': 'stated'}]}
+        with patch.object(Client, 'complete_json', return_value=self.good) as complete, \
+                patch('bridge.llm.check_support', side_effect=checks()) as support:
+            with self.assertRaisesRegex(Invalid, 'evidence changed'):
+                self.read()
+        self.assertEqual(complete.call_count, 2)
+        self.assertEqual(support.call_count, 2)
 
     def test_reader_acl_is_revalidated_after_correction(self):
         revoked = []

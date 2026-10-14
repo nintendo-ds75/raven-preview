@@ -45,6 +45,7 @@ BASELINE = 'def is_billable(is_internal, cohort, calls):\n    return True\n'
 SOURCE_BODY = 'Real customer traffic must remain billable. Internal-load exceptions need current owner judgment.'
 PRIOR_ANSWER = 'All sandbox internal-load traffic is excluded. Production is not decided here.'
 PRIOR_APPLICABILITY = {'requires': {'environment': 'sandbox'}}
+DEFAULT_INQUIRY_QUESTION = 'What is the signed production invoice policy, including the exact cohort and call-count boundary?'
 READABLE = {POLICY, 'README.md', 'CODEOWNERS'}
 RAVEN_TOOLS = {'bridge_start_task', 'bridge_add_node', 'bridge_get_tree', 'bridge_get_decision',
                'bridge_wait', 'bridge_settle_node', 'bridge_finish_task', 'bridge_export_proof',
@@ -790,10 +791,17 @@ def inquiry_model_diagnostic(purpose, raw, prompt):
     return result
 
 
-def live_inquiry(fixture, task, node, gateway, model, *, diagnostics=None):
+def validated_inquiry_question(question):
+    require(isinstance(question, str) and bool(question.strip()) and len(question) <= 1000,
+            'inquiry_question_invalid')
+    return question.strip()
+
+
+def live_inquiry(fixture, task, node, gateway, model, *, diagnostics=None, question=DEFAULT_INQUIRY_QUESTION):
     from bridge import llm
+    question = validated_inquiry_question(question)
     diagnostics = diagnostics if diagnostics is not None else {}
-    diagnostics.update(status='started', mode='real_production_inference_authenticated_http', model_calls=[])
+    diagnostics.update(status='started', mode='real_production_inference_authenticated_http', model_calls=[], question=question)
     diagnostics['provider_before'] = provider_snapshot(gateway)
     original = llm.Client.complete_json
     def observe(client, purpose, system, prompt, *args, **kwargs):
@@ -823,7 +831,7 @@ def live_inquiry(fixture, task, node, gateway, model, *, diagnostics=None):
         with patch.dict(os.environ, env), patch('bridge.llm._open_model_request', new=gateway.urllib_open), \
                 patch.object(llm.Client, 'complete_json', new=observe):
             result = fixture.human('/api/tasks/' + task + '/inquiry', {
-                'question': 'What is the signed production invoice policy, including the exact cohort and call-count boundary?',
+                'question': question,
                 'focus_id': node})
         diagnostics['response'] = inquiry_response_diagnostic(result)
     finally:
@@ -1162,19 +1170,23 @@ def copied_inquiry_fixture(run_dir, output_dir):
             store.graph.close()
 
 
-def run_inquiry_only(*, run_dir, output_dir, gateway, model):
+def run_inquiry_only(*, run_dir, output_dir, gateway, model, question=DEFAULT_INQUIRY_QUESTION):
     """Separate diagnostic result, never retroactively pass the integrated run."""
+    try:
+        question = validated_inquiry_question(question)
+    except AcceptanceFailure:
+        return {'status': 'blocked', 'failure_code': 'inquiry_question_invalid'}
     root = Path(output_dir)
     if root.exists() and any(root.iterdir()):
         return {'status': 'blocked', 'failure_code': 'inquiry_output_not_empty'}
     root.mkdir(parents=True, exist_ok=True)
     report = {'status': 'failed', 'stage': 'live_scoped_inquiry', 'mode': 'inquiry_only',
               'integrated_acceptance': False, 'source_database_unchanged': True,
-              'model': model, 'live_inquiry': {}}
+              'model': model, 'question': question, 'live_inquiry': {}}
     try:
         with copied_inquiry_fixture(run_dir, root) as (fixture, task, node):
             report.update(task_id=task, node_id=node)
-            result = live_inquiry(fixture, task, node, gateway, model, diagnostics=report['live_inquiry'])
+            result = live_inquiry(fixture, task, node, gateway, model, diagnostics=report['live_inquiry'], question=question)
             report['live_inquiry'].update(result)
             report['status'] = 'passed'
     except Exception as error:
@@ -1194,6 +1206,7 @@ def main(argv=None):
     parser.add_argument('--offline-sdk-preflight', action='store_true', help='Run real SDK/MCP against synthetic provider SSE; never asks for a key')
     parser.add_argument('--run-live', action='store_true')
     parser.add_argument('--inquiry-only', type=Path, help='Diagnose a completed run on an isolated DB copy; fixed 4-call/100k-byte/6k-output budget')
+    parser.add_argument('--inquiry-question', help='Override the inquiry-only question; nonblank, at most 1000 characters')
     parser.add_argument('--model', default='')
     parser.add_argument('--output-dir', type=Path)
     parser.add_argument('--max-calls', type=int, default=24)
@@ -1203,6 +1216,13 @@ def main(argv=None):
     parser.add_argument('--credential-file', type=Path, help='Use an explicitly installed private test credential; invalid files never trigger a prompt')
     parser.add_argument('--timeout', type=int, default=300)
     args = parser.parse_args(argv)
+    if args.inquiry_question is not None:
+        if args.inquiry_only is None:
+            parser.error('--inquiry-question requires --inquiry-only.')
+        try:
+            args.inquiry_question = validated_inquiry_question(args.inquiry_question)
+        except AcceptanceFailure:
+            parser.error('--inquiry-question must be nonblank and at most 1000 characters.')
     if args.inquiry_only:
         if not args.run_live or not args.model or not args.output_dir or not args.credential_file:
             parser.error('Inquiry-only requires --run-live, --model, --output-dir, and --credential-file.')
@@ -1223,7 +1243,8 @@ def main(argv=None):
                          max_calls=4, max_input_bytes=100000, max_output_tokens=6000) as gateway:
                 key = ''
                 result = run_inquiry_only(run_dir=args.inquiry_only, output_dir=args.output_dir,
-                                          gateway=gateway, model=args.model)
+                                          gateway=gateway, model=args.model,
+                                          question=args.inquiry_question if args.inquiry_question is not None else DEFAULT_INQUIRY_QUESTION)
         args.output_dir.mkdir(parents=True, exist_ok=True)
         (args.output_dir / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
         print(json.dumps(result, indent=2))

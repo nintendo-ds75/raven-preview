@@ -205,18 +205,50 @@ class DriverTests(unittest.TestCase):
             (source / 'fixture/raven.db').write_bytes(b'synthetic-placeholder')
             with patch('evals.customer_test_credentials.read_saved_key', return_value='synthetic-key'), \
                     patch('evals.customer_provider_gateway.Gateway') as gateway, \
-                    patch.object(a, 'run_inquiry_only', return_value={'status': 'passed', 'integrated_acceptance': False}), \
+                    patch.object(a, 'run_inquiry_only', return_value={'status': 'passed', 'integrated_acceptance': False}) as inquiry, \
                     patch.object(a, 'sdk_child_preflight', side_effect=AssertionError('no SDK')), \
                     patch.object(a, 'direct_inference_smoke', side_effect=AssertionError('no smoke')), \
                     patch.object(a.getpass, 'getpass', side_effect=AssertionError('no prompt')):
                 status = a.main(['--run-live', '--inquiry-only', str(source), '--output-dir', str(output),
                                  '--credential-file', '/synthetic/private/key', '--model', 'fixture-model',
+                                 '--inquiry-question', 'Who signed the policy, and what scope applies?',
                                  '--max-calls', '999', '--max-input-bytes', '99999999', '--max-output-tokens', '999999'])
             self.assertEqual(status, 0)
             self.assertEqual(gateway.call_args.kwargs['max_calls'], 4)
             self.assertEqual(gateway.call_args.kwargs['max_input_bytes'], 100000)
             self.assertEqual(gateway.call_args.kwargs['max_output_tokens'], 6000)
+            self.assertEqual(inquiry.call_args.kwargs['question'], 'Who signed the policy, and what scope applies?')
             self.assertNotIn('synthetic-key', (output / 'result.json').read_text())
+
+    def test_inquiry_question_rejects_wrong_mode_blank_and_oversize_before_credentials(self):
+        variants = (['--inquiry-question', 'Who signed?'],
+                    ['--run-live', '--inquiry-question', 'Who signed?'],
+                    ['--inquiry-only', '/synthetic/run', '--inquiry-question', ''],
+                    ['--inquiry-only', '/synthetic/run', '--inquiry-question', ' \n\t '],
+                    ['--inquiry-only', '/synthetic/run', '--inquiry-question', 'q' * 1001])
+        with patch('evals.customer_test_credentials.read_saved_key', side_effect=AssertionError('No credential read')) as reader, \
+                patch('evals.customer_provider_gateway.Gateway', side_effect=AssertionError('No provider')) as gateway, \
+                patch.object(a.getpass, 'getpass', side_effect=AssertionError('No prompt')), \
+                patch.object(a, 'run_inquiry_only', side_effect=AssertionError('No fixture')):
+            for argv in variants:
+                with self.subTest(argv=argv), patch('sys.stderr', new_callable=io.StringIO), self.assertRaises(SystemExit) as exited:
+                    a.main(argv)
+                self.assertEqual(exited.exception.code, 2)
+            reader.assert_not_called()
+            gateway.assert_not_called()
+        self.assertEqual(a.validated_inquiry_question('q' * 1000), 'q' * 1000)
+        self.assertEqual(a.validated_inquiry_question('  Who signed?  '), 'Who signed?')
+
+    def test_direct_inquiry_question_validation_precedes_effects(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(a, 'copied_inquiry_fixture', side_effect=AssertionError('No database copy')):
+            output = Path(tmp) / 'new'
+            result = a.run_inquiry_only(run_dir='/unused', output_dir=output, gateway=None,
+                                        model='fixture-model', question=' ')
+            self.assertEqual(result['failure_code'], 'inquiry_question_invalid')
+            self.assertFalse(output.exists())
+            with self.assertRaisesRegex(a.AcceptanceFailure, 'inquiry_question_invalid'):
+                a.live_inquiry(None, 'task', 'node', None, 'fixture-model', question='q' * 1001)
 
     def test_invalid_credential_file_never_prompts_or_calls_provider(self):
         reader = SimpleNamespace(read_saved_key=lambda _: (_ for _ in ()).throw(ValueError('SECRET private path')))
@@ -438,11 +470,14 @@ class DriverTests(unittest.TestCase):
             readings = [{'outcome': 'supported_answer', 'answer': 'Real customer traffic is billable.',
                          'citations': [{'id': node, 'quote': 'Real customer traffic is billable.'}], 'open': []},
                         {'claims': [{'claim': 'Real customer traffic is billable.', 'support': 'stated'}]}]
+            diagnostic = {}
             with patch.object(llm.Client, 'complete_json', side_effect=readings) as mocked:
-                result = a.live_inquiry(fixture, task, node, gateway, 'fixture-model')
+                result = a.live_inquiry(fixture, task, node, gateway, 'fixture-model', diagnostics=diagnostic)
             self.assertEqual(mocked.call_count, 2)
             self.assertTrue(result['model_used'])
             self.assertTrue(result['counts_unchanged'])
+            self.assertEqual(diagnostic['question'], a.DEFAULT_INQUIRY_QUESTION)
+            self.assertEqual(json.loads(mocked.call_args_list[0].args[3])['question'], a.DEFAULT_INQUIRY_QUESTION)
 
     def test_inquiry_fallback_preserves_response_and_exact_citation_failure(self):
         from bridge import llm
@@ -518,8 +553,10 @@ class DriverTests(unittest.TestCase):
             self.assertEqual(run['status'], 'scripted_passed')
             before_db = (source / 'fixture/raven.db').read_bytes()
             before_code = (source / 'fixture/checkout' / a.POLICY).read_bytes()
+            question = 'Who signed this policy, and what boundary and scope did they approve?'
             def complete(purpose, system, prompt, **kwargs):
                 if purpose == 'inquiry':
+                    self.assertEqual(json.loads(prompt)['question'], question)
                     evidence = json.loads(prompt)['evidence']
                     decision = next(e for e in evidence if e['kind'] == 'task_decision')
                     return json.dumps({'outcome': 'supported_answer', 'answer': decision['text'],
@@ -528,13 +565,16 @@ class DriverTests(unittest.TestCase):
             gateway = SimpleNamespace(placeholder='placeholder', urllib_open=urllib.request.urlopen,
                                       snapshot=lambda: {'physical_requests': 0, 'fixture_only': True})
             with patch.object(llm.Client, 'complete', side_effect=complete) as mocked:
-                result = a.run_inquiry_only(run_dir=source, output_dir=output, gateway=gateway, model='fixture-model')
+                result = a.run_inquiry_only(run_dir=source, output_dir=output, gateway=gateway,
+                                            model='fixture-model', question=question)
             self.assertEqual(result['status'], 'passed', result)
             self.assertFalse(result['integrated_acceptance'])
             self.assertEqual(mocked.call_count, 2)
             self.assertEqual((source / 'fixture/raven.db').read_bytes(), before_db)
             self.assertEqual((source / 'fixture/checkout' / a.POLICY).read_bytes(), before_code)
             self.assertEqual(result['task_id'], run['task_id'])
+            self.assertEqual(result['question'], question)
+            self.assertEqual(result['live_inquiry']['question'], question)
             self.assertEqual(result['live_inquiry']['model_calls'][1]['category'], 'support_valid')
             self.assertTrue((output / 'result.json').is_file())
 

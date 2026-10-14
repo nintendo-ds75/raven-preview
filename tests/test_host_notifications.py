@@ -182,8 +182,8 @@ class TaskInquiryHTTPTests(SharedServer):
     def test_workspace_access_revocation_during_read_withholds_result(self):
         from unittest.mock import patch
         from bridge.inquiry import read_evidence
-        def revoke(question, evidence, cfg):
-            result = read_evidence(question, evidence, cfg)
+        def revoke(question, evidence, cfg, **kwargs):
+            result = read_evidence(question, evidence, cfg, **kwargs)
             self.store.graph.db.execute('UPDATE people SET active=0 WHERE id=?', (self.person['id'],))
             return result
         with patch('bridge.inquiry.read_evidence', side_effect=revoke):
@@ -193,8 +193,8 @@ class TaskInquiryHTTPTests(SharedServer):
     def test_decision_change_during_read_withholds_result(self):
         from unittest.mock import patch
         from bridge.inquiry import read_evidence
-        def change(question, evidence, cfg):
-            result = read_evidence(question, evidence, cfg)
+        def change(question, evidence, cfg, **kwargs):
+            result = read_evidence(question, evidence, cfg, **kwargs)
             self.store.graph.db.execute("UPDATE decisions SET answer='Changed concurrently' WHERE id=?", (self.node,))
             return result
         with patch('bridge.inquiry.read_evidence', side_effect=change):

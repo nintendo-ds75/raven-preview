@@ -9,6 +9,8 @@ import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+import urllib.request
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -49,12 +51,28 @@ class ModelTransport:
             'usage': {'input_tokens': 10, 'output_tokens': 20}})
 
 
+class _LoopbackFixtureOnly(urllib.request.BaseHandler):
+    handler_order = 0
+
+    def default_open(self, request):
+        target = urlsplit(request.full_url)
+        if target.scheme != 'http' or target.hostname != '127.0.0.1' or not target.port:
+            raise AssertionError('Offline source fixture attempted a non-loopback destination')
+
+
+def fixture_opener():
+    # Clearing the environment does not clear urllib's previously built opener.
+    # Keep actual local Slack/MCP HTTP while forbidding proxies and redirects.
+    return urllib.request.build_opener(_LoopbackFixtureOnly(), urllib.request.ProxyHandler({}), a._NoRedirect())
+
+
 def source_fixture(root):
     """Use the existing authenticated synthetic harness; never provider inference."""
     scenario = novel_scenario(threshold=162, cohort='pilot_9d4c18d4', staging='staging_20758a99')
     clean = {k: os.environ[k] for k in ('PATH', 'LANG') if k in os.environ}
     clean.update(BRIDGE_MODEL_API='none', BRIDGE_SEMANTIC='0', BRIDGE_EMBEDDINGS='disabled')
-    with patch.dict(os.environ, clean, clear=True), host.Fixture(root / 'fixture') as fixture:
+    with patch.dict(os.environ, clean, clear=True), \
+            patch.object(urllib.request, '_opener', fixture_opener()), host.Fixture(root / 'fixture') as fixture:
         fixture.prepare()
         task = fixture.call('bridge_start_task', title='Production invoice policy', goal=host.PROMPT,
             repo=host.REPO, client_key='review-source', paths=host.POLICY)['task_id']
@@ -79,6 +97,26 @@ def source_fixture(root):
 
 
 class AcceptanceTests(unittest.TestCase):
+    def test_source_fixture_isolates_cached_proxy_opener(self):
+        cached = urllib.request.build_opener(urllib.request.ProxyHandler({'http': 'http://proxy.invalid:8080'}))
+        with tempfile.TemporaryDirectory() as tmp, patch.object(urllib.request, '_opener', cached), \
+                patch.object(cached, 'open', side_effect=AssertionError('Cached proxy opener was used')) as opened:
+            source = source_fixture(Path(tmp) / 'source')
+            saved = json.loads((source / 'result.json').read_text())
+            self.assertTrue(saved['proof_integrity_valid'])
+            self.assertTrue((source / 'fixture/raven.db').is_file())
+            self.assertIs(urllib.request._opener, cached)
+            opened.assert_not_called()
+
+    def test_source_fixture_opener_rejects_non_loopback_before_connection(self):
+        opener = fixture_opener()
+        for url in ('https://api.anthropic.com/v1/messages', 'http://proxy.invalid:8080/',
+                    'http://127.0.0.1.evil.invalid:7331/', 'file:///tmp/private-fixture'):
+            with self.subTest(url=url), self.assertRaisesRegex(AssertionError, 'non-loopback'), \
+                    patch('socket.create_connection', side_effect=AssertionError('Socket must not open')) as connected:
+                opener.open(url)
+            connected.assert_not_called()
+
     def test_default_does_not_read_credentials_or_source(self):
         with patch.object(a, 'load_source', side_effect=AssertionError('Must not read')), \
                 patch('evals.customer_test_credentials.read_saved_key', side_effect=AssertionError('Must not read')), \

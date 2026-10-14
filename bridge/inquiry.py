@@ -90,25 +90,27 @@ def ask(store, data, actor, *, cfg=None):
                          'scope': decision.get('applicability', ''), 'facts': decision.get('facts', ''),
                          'task_id': decision.get('run_id', ''), 'signoff': decision.get('signoff', ''),
                          'needs_review': bool(decision.get('needs_review')), 'url': ''})
-    result = read_evidence(question, evidence, cfg)
     # Access/revision may change while inference is in flight. Never return the
     # old packet after that race, even when the model's answer sounds plausible.
-    for source in evidence:
-        if source['kind'] == 'source':
-            current = store.get_record(source['id'], repo)['source']
-            if current.get('source_version_id', '') != source['version']:
-                raise Invalid('Evidence changed during this reading. Ask again to read its current version.')
-        else:
-            current = store.get_decision(source['id'])
-            if current.get('updated_at', '') != source['version']:
-                raise Invalid('A prior answer changed during this reading. Ask again.')
+    def revalidate_evidence():
+        for source in evidence:
+            if source['kind'] == 'source':
+                current = store.get_record(source['id'], repo)['source']
+                if current.get('source_version_id', '') != source['version']:
+                    raise Invalid('Evidence changed during this reading. Ask again to read its current version.')
+            else:
+                current = store.get_decision(source['id'])
+                if current.get('updated_at', '') != source['version']:
+                    raise Invalid('A prior answer changed during this reading. Ask again.')
+    result = read_evidence(question, evidence, cfg, revalidate=revalidate_evidence)
+    revalidate_evidence()
     store.graph.append_event('question_read', {'repo': repo, 'actor_id': actor.id,
         'question': question, 'outcome': result['outcome'], 'model_used': result['model_used'],
         'sources': [{'id': e['id'], 'version': e['version'], 'kind': e['kind']} for e in evidence]})
     return result
 
 
-def read_evidence(question, evidence, cfg):
+def read_evidence(question, evidence, cfg, *, revalidate=None):
     result = {'outcome': 'missing_fact', 'answer': 'These are the relevant records I found. Review their scope before using them.'
               if evidence else 'I could not find evidence for this question in the connected context.',
               'citations': [], 'open': [], 'evidence': evidence, 'model_used': False,
@@ -117,9 +119,15 @@ def read_evidence(question, evidence, cfg):
         try:
             by_id = {e['id']: e for e in evidence}
             prompt = {'question': question, 'evidence': evidence}
+            # Citation and claim repairs share one regeneration budget. Each
+            # candidate must pass both checks independently; neither can waive the other.
             for attempt in range(2):
+                if revalidate:
+                    revalidate()
                 raw = llm.Client(cfg).complete_json('inquiry', SYSTEM, json.dumps(prompt),
                                                   max_tokens=1600, bounded=True)
+                if revalidate:
+                    revalidate()
                 if (not isinstance(raw, dict) or raw.get('outcome') not in OUTCOMES
                         or not isinstance(raw.get('answer'), str) or not raw['answer'].strip()
                         or not isinstance(raw.get('citations'), list) or not isinstance(raw.get('open'), list)
@@ -129,27 +137,41 @@ def read_evidence(question, evidence, cfg):
                     if (not isinstance(cite, dict) or not isinstance(cite.get('id'), str) or cite['id'] not in by_id
                         or not isinstance(cite.get('quote'), str) or not cite['quote'].strip()
                         or ' '.join(cite['quote'].split()) not in ' '.join(by_id[cite['id']]['text'].split()))]
-                if not invalid:
-                    break
-                if attempt:
-                    raise ValueError('Unsupported citation')
-                # One new reading may correct a transcription error. Never
-                # substitute a nearby quote or treat the rejected answer as evidence.
-                prompt['citation_repair'] = {
-                    'invalid_citation_indexes': invalid,
-                    'instruction': 'The previous reading had invalid citations and was rejected. Return a new '
-                        'complete reading using only the original evidence. Copy quotes exactly; use separate '
-                        'citations for separate passages. Remove claims the evidence does not support.'}
-                prompt['citation_anchors'] = _citation_anchors(evidence)
-            if raw['outcome'] == 'supported_answer' and not raw['citations']:
-                raise ValueError('An answer needs a citation')
-            checked = llm.check_support(cfg, question, json.dumps(evidence), raw['answer'])
-            claims = checked.get('claims') if isinstance(checked, dict) else None
-            if (not isinstance(claims, list) or not claims
-                    or any(not isinstance(c, dict) or not isinstance(c.get('claim'), str) or not c['claim'].strip()
-                           or c.get('support') not in {'stated', 'applied', 'given'} for c in claims)):
-                raise ValueError('Support check incomplete or found an unsupported claim')
-            result.update({k: raw[k] for k in ('outcome', 'answer', 'citations', 'open')}, model_used=True)
+                if invalid:
+                    if attempt:
+                        raise ValueError('Unsupported citation')
+                    # Never substitute a nearby quote or use rejected prose as evidence.
+                    prompt['citation_repair'] = {
+                        'invalid_citation_indexes': invalid,
+                        'instruction': 'The previous reading had invalid citations and was rejected. Return a new '
+                            'complete reading using only the original evidence. Copy quotes exactly; use separate '
+                            'citations for separate passages. Remove claims the evidence does not support.'}
+                    prompt['citation_anchors'] = _citation_anchors(evidence)
+                    continue
+                if raw['outcome'] == 'supported_answer' and not raw['citations']:
+                    raise ValueError('An answer needs a citation')
+                checked = llm.check_support(cfg, question, json.dumps(evidence), raw['answer'], bounded=True)
+                if revalidate:
+                    revalidate()
+                claims = checked.get('claims') if isinstance(checked, dict) else None
+                if (not isinstance(claims, list) or not claims
+                        or any(not isinstance(c, dict) or not isinstance(c.get('claim'), str) or not c['claim'].strip()
+                               or c.get('support') not in {'stated', 'applied', 'given'} for c in claims)):
+                    if attempt:
+                        raise ValueError('Support check incomplete or found an unsupported claim')
+                    prompt['support_repair'] = {
+                        'instruction': 'The previous reading failed strict claim verification and was rejected. '
+                            'Return a smaller complete answer using only facts the original evidence establishes '
+                            'for the question. Omit unsupported claims. Use plain language; omit code, formulas, '
+                            'implementation sketches, provenance commentary and history unless explicitly asked. '
+                            'Keep material scope and exceptions. Put missing facts in open. Exact citations and '
+                            'an independent check of every claim are still required.'}
+                    continue
+                result.update({k: raw[k] for k in ('outcome', 'answer', 'citations', 'open')}, model_used=True)
+                break
+        except Invalid:
+            # Access or evidence changes must not expose even fallback excerpts.
+            raise
         except (llm.LLMError, ValueError, KeyError, TypeError):
             result['open'] = ['The model reading could not be verified. The source excerpts remain available.']
     return result
@@ -202,12 +224,14 @@ def ask_task(store, task_id, data, actor, *, cfg=None, revalidate=None):
 
     evidence, omitted = packet()
     fingerprint = digest(evidence)
-    result = read_evidence(question, evidence, cfg or load())
-    if revalidate:
-        revalidate()
-    current, current_omitted = packet()
-    if digest(current) != fingerprint or omitted != current_omitted:
-        raise Invalid('Task evidence changed during this reading. Ask again for the current version.')
+    def revalidate_evidence():
+        if revalidate:
+            revalidate()
+        current, current_omitted = packet()
+        if digest(current) != fingerprint or omitted != current_omitted:
+            raise Invalid('Task evidence changed during this reading. Ask again for the current version.')
+    result = read_evidence(question, evidence, cfg or load(), revalidate=revalidate_evidence)
+    revalidate_evidence()
     result['task_id'] = task_id
     result['focus_id'] = focus
     result['omitted_decisions'] = omitted

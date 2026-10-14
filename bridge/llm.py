@@ -846,7 +846,7 @@ PREDICTION_SUPPORT_SYSTEM = (
 
 
 def check_support(cfg, question: str, source: str, answer: str, given: str = "",
-                  prediction: bool = False) -> dict | None:
+                  prediction: bool = False, *, bounded: bool = False) -> dict | None:
     """{claims, answer, open} for a composed answer, or None when the
     check could not be made. `given` is what the question's context and
     stated facts establish, which the answer may rely on."""
@@ -854,7 +854,8 @@ def check_support(cfg, question: str, source: str, answer: str, given: str = "",
         raw = Client(cfg.fast()).complete_json(
             "support", PREDICTION_SUPPORT_SYSTEM if prediction else SUPPORT_SYSTEM,
             f"QUESTION: {question}\n\nGIVEN:\n{(given or '').strip()[:2000] or 'nothing beyond the question'}"
-            f"\n\nSOURCE:\n{(source or '')[:6000]}\n\nANSWER: {answer}", max_tokens=900)
+            f"\n\nSOURCE:\n{(source or '')[:6000]}\n\nANSWER: {answer}", max_tokens=900,
+            **({'bounded': True} if bounded else {}))
     except LLMError:
         return None
     return raw if isinstance(raw, dict) and isinstance(raw.get("claims"), list) else None
