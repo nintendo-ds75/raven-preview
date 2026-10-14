@@ -312,6 +312,24 @@ class OfflineSDKTranscript:
         self.calls = 0
         self.task_id = ''
         self.errors = []
+        self.inquiry_calls = 0
+        self.current_answer = ''
+        self.actual_diff = ''
+
+    @staticmethod
+    def objects(value, depth=0):
+        if depth > 24:
+            return []
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except (ValueError, TypeError):
+                return []
+        if isinstance(value, dict):
+            return [value] + [item for child in value.values() for item in OfflineSDKTranscript.objects(child, depth + 1)]
+        if isinstance(value, list):
+            return [item for child in value for item in OfflineSDKTranscript.objects(child, depth + 1)]
+        return []
 
     @staticmethod
     def task_ids(value, depth=0):
@@ -337,6 +355,34 @@ class OfflineSDKTranscript:
         if request.url.path.endswith('/count_tokens'):
             return httpx.Response(200, json={'input_tokens': 1})
         payload = json.loads(request.content)
+        if not payload.get('tools') and not payload.get('stream'):
+            # Raven's question-only production client has no tools. The exact
+            # reader and support-check outputs are synthetic, clearly reported.
+            prompts = [m.get('content', '') for m in payload.get('messages', []) if m.get('role') == 'user']
+            packets = self.objects(prompts)
+            evidence = next((p['evidence'] for p in packets if isinstance(p.get('evidence'), list)), None)
+            if evidence is not None:
+                node = next((e for e in evidence if e.get('kind') == 'task_decision' and 'Current answer:' in e.get('text', '')), None)
+                require(node is not None, 'offline_inquiry_missing_decision_evidence')
+                raw = {'outcome': 'supported_answer', 'answer': node['text'],
+                       'citations': [{'id': node['id'], 'quote': node['text']}], 'open': []}
+            else:
+                prompt = next((p for p in prompts if isinstance(p, str) and '\n\nANSWER: ' in p), '')
+                require(bool(prompt), 'offline_inquiry_unexpected_prompt')
+                raw = {'claims': [{'claim': prompt.split('\n\nANSWER: ', 1)[1], 'support': 'stated'}]}
+            self.inquiry_calls += 1
+            return httpx.Response(200, json={'id': 'msg_offline_inquiry_' + str(self.inquiry_calls),
+                'type': 'message', 'role': 'assistant', 'model': payload['model'],
+                'content': [{'type': 'text', 'text': json.dumps(raw)}], 'stop_reason': 'end_turn',
+                'usage': {'input_tokens': 1, 'output_tokens': 1}})
+        packets = self.objects(payload.get('messages', []))
+        for packet in packets:
+            if packet.get('authorized') is True and packet.get('signed_by') and isinstance(packet.get('answer'), str):
+                answer = packet['answer']
+                if re.search(r'\bpilot_[0-9a-f]{8}\b', answer) and re.search(r'more than \d+', answer):
+                    self.current_answer = answer
+            if isinstance(packet.get('diff'), str) and packet['diff'].startswith('diff --git a/' + POLICY):
+                self.actual_diff = packet['diff']
         if not self.task_id:
             ids = self.task_ids(payload.get('messages', []))
             if ids:
@@ -350,27 +396,52 @@ class OfflineSDKTranscript:
                                  'paths': POLICY, 'category': 'policy', 'facts': 'environment=production', 'client_ref': 'production-policy'}),
             ('bridge_get_tree', {'task_id': self.task_id}),
             ('bridge_wait', {'task_id': self.task_id, 'timeout': '60'}),
+            ('bridge_get_tree', {'task_id': self.task_id}),
+            ('fixture:write_file', {}),
+            ('fixture:run_checks', {}),
+            ('fixture:read_changes', {}),
+            ('bridge_get_tree', {'task_id': self.task_id}),
+            ('bridge_finish_task', {'task_id': self.task_id, 'diff': self.actual_diff,
+                                    'checks': 'Actual fixture run_checks passed 2 public smoke checks. Hidden boundary checks are evaluator-owned.'}),
+            ('final', {}),
         ]
         if self.calls >= len(steps) or (self.calls > 0 and not self.task_id):
             self.errors.append('unexpected_model_turn' if self.task_id else 'missing_task_tool_result')
             return httpx.Response(400, json={'error': {'type': 'invalid_request_error', 'message': 'Offline transcript exhausted'}})
         name, args = steps[self.calls]
+        if name == 'fixture:write_file':
+            require(bool(self.current_answer), 'offline_resume_missing_signed_tool_answer')
+            cohort = re.search(r'\bpilot_[0-9a-f]{8}\b', self.current_answer)[0]
+            threshold = int(re.search(r'more than (\d+)', self.current_answer)[1])
+            args = {'path': POLICY, 'content': 'def is_billable(is_internal, cohort, calls):\n'
+                    f'    return not is_internal or (cohort == {cohort!r} and calls > {threshold})\n'}
+        if name == 'bridge_finish_task':
+            require(bool(self.actual_diff), 'offline_finish_missing_actual_tool_diff')
         self.calls += 1
-        block = {'type': 'tool_use', 'id': 'toolu_offline_' + str(self.calls),
-                 'name': 'mcp__raven__' + name, 'input': args}
+        if name == 'final':
+            block = {'type': 'text', 'text': 'The synthetic fixture policy is implemented and recorded with the human decision. Public smoke checks passed; independent boundary verification belongs to the evaluator.'}
+            stop_reason = 'end_turn'
+            delta = {'type': 'text_delta', 'text': block['text']}
+            start_block = {'type': 'text', 'text': ''}
+        else:
+            tool_name = ('mcp__fixture__' + name.split(':', 1)[1]) if name.startswith('fixture:') else 'mcp__raven__' + name
+            block = {'type': 'tool_use', 'id': 'toolu_offline_' + str(self.calls), 'name': tool_name, 'input': args}
+            stop_reason = 'tool_use'
+            delta = {'type': 'input_json_delta', 'partial_json': json.dumps(args)}
+            start_block = {**block, 'input': {}}
         message = {'id': 'msg_offline_' + str(self.calls), 'type': 'message', 'role': 'assistant',
-                   'model': payload['model'], 'content': [block], 'stop_reason': 'tool_use',
+                   'model': payload['model'], 'content': [block], 'stop_reason': stop_reason,
                    'stop_sequence': None, 'usage': {'input_tokens': 1, 'output_tokens': 1}}
         if not payload.get('stream'):
             return httpx.Response(200, json=message)
         events = [
             ('message_start', {'type': 'message_start', 'message': {**message, 'content': [], 'stop_reason': None,
                                                                    'usage': {'input_tokens': 1, 'output_tokens': 0}}}),
-            ('content_block_start', {'type': 'content_block_start', 'index': 0, 'content_block': {**block, 'input': {}}}),
+            ('content_block_start', {'type': 'content_block_start', 'index': 0, 'content_block': start_block}),
             ('content_block_delta', {'type': 'content_block_delta', 'index': 0,
-                                     'delta': {'type': 'input_json_delta', 'partial_json': json.dumps(args)}}),
+                                     'delta': delta}),
             ('content_block_stop', {'type': 'content_block_stop', 'index': 0}),
-            ('message_delta', {'type': 'message_delta', 'delta': {'stop_reason': 'tool_use', 'stop_sequence': None},
+            ('message_delta', {'type': 'message_delta', 'delta': {'stop_reason': stop_reason, 'stop_sequence': None},
                                'usage': {'output_tokens': 1}}),
             ('message_stop', {'type': 'message_stop'}),
         ]
@@ -884,6 +955,7 @@ def main(argv=None):
     parser.add_argument('--max-input-bytes', type=int, default=1500000)
     parser.add_argument('--max-output-tokens', type=int, default=24000)
     parser.add_argument('--workspace-id', default='')
+    parser.add_argument('--credential-file', type=Path, help='Use an explicitly installed private test credential; invalid files never trigger a prompt')
     parser.add_argument('--timeout', type=int, default=300)
     args = parser.parse_args(argv)
     if args.offline_sdk_preflight:
@@ -937,7 +1009,20 @@ def main(argv=None):
             print(json.dumps(child_preflight))
             return 1
         from evals.customer_provider_gateway import Gateway
-        key = getpass.getpass('Approved Anthropic API key (not stored): ').strip()
+        if args.credential_file is not None:
+            try:
+                from evals.customer_test_credentials import read_saved_key
+                key = read_saved_key(args.credential_file)
+            except Exception:
+                result = {'status': 'blocked', 'stage': 'credential_setup',
+                          'failure_code': 'saved_credential_unavailable',
+                          'reason': 'The saved test credential could not be read safely. No prompt or provider call was made.'}
+                args.output_dir.mkdir(parents=True, exist_ok=True)
+                (args.output_dir / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
+                print(json.dumps(result, indent=2))
+                return 1
+        else:
+            key = getpass.getpass('Approved Anthropic API key (not stored): ').strip()
         if not key:
             result = {'status': 'blocked', 'reason': 'No provider key supplied.'}
         else:

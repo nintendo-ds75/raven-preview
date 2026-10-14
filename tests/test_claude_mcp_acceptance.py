@@ -94,6 +94,38 @@ class ScriptedHost:
 
 
 class DriverTests(unittest.TestCase):
+    def test_invalid_credential_file_never_prompts_or_calls_provider(self):
+        reader = SimpleNamespace(read_saved_key=lambda _: (_ for _ in ()).throw(ValueError('SECRET private path')))
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(a.importlib.metadata, 'version', return_value=a.SDK_VERSION), \
+                patch.object(a, 'sdk_child_preflight', return_value={'status': 'passed'}), \
+                patch.dict(sys.modules, {'evals.customer_test_credentials': reader}), \
+                patch.object(a.getpass, 'getpass', side_effect=AssertionError('must not prompt')), \
+                patch.object(a, 'direct_inference_smoke', side_effect=AssertionError('must not call')):
+            output = Path(tmp) / 'output'
+            result = a.main(['--run-live', '--model', 'fixture-model', '--output-dir', str(output),
+                             '--credential-file', str(Path(tmp) / 'missing')])
+            saved = (output / 'result.json').read_text()
+        self.assertEqual(result, 1)
+        self.assertEqual(json.loads(saved)['failure_code'], 'saved_credential_unavailable')
+        self.assertNotIn('SECRET', saved)
+
+    def test_saved_credential_uses_reader_and_never_prompts(self):
+        reader = SimpleNamespace(read_saved_key=lambda _: 'synthetic-saved-key')
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(a.importlib.metadata, 'version', return_value=a.SDK_VERSION), \
+                patch.object(a, 'sdk_child_preflight', return_value={'status': 'passed'}), \
+                patch.dict(sys.modules, {'evals.customer_test_credentials': reader}), \
+                patch.object(a.getpass, 'getpass', side_effect=AssertionError('must not prompt')), \
+                patch.object(a, 'direct_inference_smoke', side_effect=RuntimeError('synthetic-saved-key')) as smoke:
+            output = Path(tmp) / 'output'
+            result = a.main(['--run-live', '--model', 'fixture-model', '--output-dir', str(output),
+                             '--credential-file', str(Path(tmp) / 'installed')])
+            saved = (output / 'result.json').read_text()
+        self.assertEqual(result, 1)
+        self.assertEqual(smoke.call_args.args[0], 'synthetic-saved-key')
+        self.assertNotIn('synthetic-saved-key', saved)
+
     def test_exception_diagnostic_keeps_structure_without_secret_text_or_paths(self):
         secret = 'PRIVATE_API_KEY_AND_PROMPT'
         try:
@@ -182,7 +214,7 @@ class DriverTests(unittest.TestCase):
         result = {'role': 'user', 'content': [{'type': 'tool_result', 'content': [
             {'type': 'text', 'text': json.dumps({'task_id': 'actual-task-from-mcp'})}]}]}
         second = transcript(httpx.Request('POST', 'https://api.anthropic.com/v1/messages',
-            json={'model': 'fixture-model', 'stream': False, 'messages': [result]}))
+            json={'model': 'fixture-model', 'stream': False, 'messages': [result], 'tools': [{}]}))
         block = second.json()['content'][0]
         self.assertEqual(block['name'], 'mcp__raven__bridge_search_context')
         self.assertEqual(block['input']['task_id'], 'actual-task-from-mcp')
