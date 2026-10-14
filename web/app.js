@@ -1153,13 +1153,13 @@ document.addEventListener('submit', async event => {
   if (!form.dataset.decisionInquiry) return;
   event.preventDefault();
   const button = form.querySelector('button'), output = form.querySelector('.decision-inquiry-result');
-  if (button.disabled || !form.reportValidity()) return;
-  button.disabled = true; output.textContent = 'Reading task context…';
+  if (button.ariaDisabled === 'true' || !form.reportValidity()) return;
+  button.ariaDisabled = 'true'; output.textContent = 'Reading task context…';
   const requestVersion = modalVersion;
   try {
     const result = await api(`/api/tasks/${encodeURIComponent(form.dataset.task)}/inquiry`, {question:form.querySelector('textarea').value.trim(),focus_id:form.dataset.decisionInquiry});
     if (requestVersion !== modalVersion || !form.isConnected) return;
     output.innerHTML = `<p>${esc(result.answer)}</p><small>${esc(result.notice || 'Clarification does not authorize work.')}</small>${(result.evidence || []).length ? `<details><summary>Evidence used</summary>${result.evidence.map(e => `<h4>${esc(e.title || e.id)}</h4><p>${esc(e.text)}</p>`).join('')}</details>` : ''}`;
   } catch (error) { if (requestVersion === modalVersion && form.isConnected) output.textContent = error.message; }
-  finally { button.disabled = false; }
+  finally { button.ariaDisabled = 'false'; }
 });
