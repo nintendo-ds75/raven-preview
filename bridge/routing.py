@@ -35,7 +35,8 @@ def route_ranked(store: Graph, repo: str, question: str,
                  requester: str = "", hints: list[str] | None = None,
                  hits: list | None = None, category: str = "",
                  also_paths: list[str] | None = None, facts: dict | None = None, *, task_id: str = "",
-                 decision_id: str = "", contact_context: dict | None = None) -> list[tuple[str, list[str], float]]:
+                 decision_id: str = "", contact_context: dict | None = None,
+                 contact_details: dict | None = None) -> list[tuple[str, list[str], float]]:
     """The routing candidates best first, each as (owner, evidence_lines,
     score). Empty when no signal clears the floor. route() is the head.
     A store with no changes rows for the repo, and no git source Raven
@@ -57,7 +58,7 @@ def route_ranked(store: Graph, repo: str, question: str,
     for named_path in named_paths:
         ranked.extend(_record_authors(store, repo, named_path, requester, taken))
     from .routing_memory import CONTACT_RESPONSES, candidates, contact_evidence
-    learned_details = {}
+    learned_details = {} if contact_details is None else contact_details
     learned = candidates(store, repo, question, path, context, category, facts, task_id=task_id,
                          decision_id=decision_id, contact_context=contact_context, details=learned_details, notes=notes)
     declined = {p['name'] for p, outcome, *_ in learned if outcome == 'declined'}
@@ -209,8 +210,9 @@ def _real_changes(store, repo, path):
 
 
 def rank_for_decision(store, repo, question, paths=(), context='', requester='', category='', hints=None,
-                      facts=None, hits=None, notes=None, *, task_id='', decision_id='', contact_context=None):
+                      facts=None, hits=None, notes=None, *, task_id='', decision_id='', contact_context=None,
+                      contact_details=None):
     return route_ranked(store, repo, question, path=paths[0] if paths else '', also_paths=list(paths[1:]),
                         context=context, requester=requester, category=category, hints=hints,
                         facts=facts, hits=hits, notes=notes, task_id=task_id, decision_id=decision_id,
-                        contact_context=contact_context)
+                        contact_context=contact_context, contact_details=contact_details)

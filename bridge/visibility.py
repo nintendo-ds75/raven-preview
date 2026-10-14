@@ -15,6 +15,7 @@ NOTICE = 'Content withheld because connected source access is not current. Reval
 
 def affected(db):
     predicate, args = context_connectors.freshness_sql()
+    predicate = "(s.availability='available' AND " + predicate + ')'
     records = {r['id'] for r in db.execute('SELECT s.id FROM source_records s WHERE NOT ' + predicate, args)}
     withheld = {r['source_version_id'] for r in db.execute('SELECT source_version_id FROM withheld_source_versions')}
     if not records and not withheld:
@@ -37,8 +38,17 @@ def affected(db):
     tasks.update(r['task_id'] for r in db.execute('SELECT a.task_id FROM task_source_anchors a '
         'JOIN withheld_source_versions w ON w.source_version_id=a.source_version_id'))
     # Avoid large IN statements and keep the traversal compatible with both DBs.
-    tasks.update(r['run_id'] for r in db.execute('SELECT id,run_id FROM decisions') if r['id'] in nodes)
-    tasks.update(r['task_id'] for r in db.execute('SELECT task_id,decision_id FROM task_context_reads') if r['decision_id'] in nodes)
+    decision_tasks = list(db.execute('SELECT id,run_id FROM decisions'))
+    reads = list(db.execute('SELECT task_id,decision_id FROM task_context_reads'))
+    while True:
+        # Reading any decision also copies its task's disclosure boundary,
+        # including work-item anchors and prior reads, not just support edges.
+        nodes.update(r['id'] for r in decision_tasks if r['run_id'] in tasks)
+        inherited = {r['run_id'] for r in decision_tasks if r['id'] in nodes}
+        inherited.update(r['task_id'] for r in reads if r['decision_id'] in nodes)
+        if inherited <= tasks:
+            break
+        tasks.update(inherited)
     versions = {r['id'] for r in db.execute('SELECT id,record_id FROM source_versions') if r['record_id'] in records}
     return records | versions | withheld | nodes | tasks, tasks
 

@@ -314,7 +314,7 @@ def contact_diagnostics(row):
     categories = {'selected', 'explicit_abstention', 'invalid_result_type', 'missing_candidate',
                   'invalid_candidate_type', 'unknown_candidate', 'missing_evidence', 'invalid_evidence_type',
                   'empty_evidence', 'invalid_evidence_id_type', 'unknown_evidence', 'cross_candidate_evidence',
-                  'abstention_with_evidence', 'model_error'}
+                  'abstention_with_evidence', 'model_error', 'invalid_json', 'source_access_changed'}
     result = []
     for event in row.get('events', []):
         if event.get('kind') != 'contact_reasoned':

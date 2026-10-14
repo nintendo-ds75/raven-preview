@@ -165,6 +165,20 @@ class AcceptanceTests(unittest.TestCase):
         row['events'][0]['detail'].update(validation='PRIVATE_CATEGORY', selected='PRIVATE_SELECTED')
         self.assertNotIn('PRIVATE', json.dumps(a.contact_diagnostics(row)))
 
+    def test_contact_diagnostics_preserve_json_and_access_race_categories(self):
+        for category in ('invalid_json', 'source_access_changed'):
+            with self.subTest(category=category):
+                row = {'events': [{'kind': 'contact_reasoned', 'detail': {
+                    'validation': category, 'candidates': [], 'selected': '', 'evidence': [], 'why': '',
+                }}]}
+                receipt = a.contact_diagnostics(row)[0]
+                self.assertEqual(receipt['validation'], category)
+                self.assertEqual(receipt['candidate_count'], 0)
+                self.assertEqual(receipt['candidate_ids'], [])
+                self.assertEqual(receipt['selected'], '')
+                self.assertEqual(receipt['cited_evidence_count'], 0)
+                self.assertFalse(receipt['why_present'])
+
     def test_contact_failure_preserves_structural_diagnostics_before_assertion(self):
         model = ModelDouble()
         def abstain(purpose, *args, **kwargs):
