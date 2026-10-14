@@ -5,6 +5,7 @@ not erase that audit record or make it safe to send to a reader or model. A task
 which already read a blocked source is withheld as a whole: we cannot reliably
 separate quotes from paraphrases in its transcript, patch or saved host context.
 """
+import json
 import re
 
 from . import context_connectors
@@ -109,7 +110,12 @@ def public(store, value, *, denied=None):
         if isinstance(obj, dict):
             if any(isinstance(obj.get(k), str) and obj[k] in denied for k in keys):
                 identifiers = {k: obj[k] for k in keys if isinstance(obj.get(k), str)}
-                return {**identifiers, 'withheld': True, 'notice': NOTICE, 'title': 'Access needs attention',
+                # Availability is a bounded lifecycle flag, never copied source
+                # content. Keep inaccessible duplicates distinguishable during
+                # exact lookup without retaining their titles or identities.
+                availability = ({'availability': obj['availability']}
+                                if obj.get('availability') in ('available', 'deleted', 'inaccessible') else {})
+                return {**identifiers, **availability, 'withheld': True, 'notice': NOTICE, 'title': 'Access needs attention',
                         'prompt': 'Access needs attention', 'summary': NOTICE,
                         'question': 'Content unavailable', 'status': 'unavailable', 'kind': 'withheld',
                         'authorized': False, 'blocking': True, 'needs_review': True, 'nodes': [], 'next': NOTICE}
@@ -119,3 +125,43 @@ def public(store, value, *, denied=None):
             return NOTICE
         return obj
     return visit(value)
+
+
+def mcp_response(store, value):
+    """Apply the final access check without destroying the MCP wire envelope.
+
+    Only Raven's known tool-result text blocks encode structured JSON. Other
+    strings, including opaque saved receipts, keep public()'s whole-string
+    withholding. Recheck decoded payloads here in case access changed after
+    call_tool() produced them; never exempt previously redacted results.
+    """
+    result = value.get('result') if isinstance(value, dict) else None
+    if not (isinstance(result, dict) and 'isError' in result and 'content' in result):
+        return public(store, value)
+    denied = affected(store.graph.db)[0]
+    # JSON-RPC ids are supplied by the client and are not source-object ids.
+    envelope = public(store, {k: v for k, v in value.items() if k not in ('id', 'result')}, denied=denied)
+    if 'id' in value:
+        envelope['id'] = value['id']
+    safe = public(store, {k: v for k, v in result.items() if k != 'content'}, denied=denied)
+    safe['content'] = []
+    blocks = result['content']
+    malformed = not isinstance(blocks, list) or not blocks
+    for block in blocks if isinstance(blocks, list) else []:
+        if not isinstance(block, dict) or block.get('type') != 'text' or not isinstance(block.get('text'), str):
+            malformed = True
+            break
+        clean = public(store, {k: v for k, v in block.items() if k != 'text'}, denied=denied)
+        if result.get('isError'):
+            clean['text'] = public(store, block['text'], denied=denied)
+        else:
+            try:
+                payload = json.loads(block['text'])
+            except (ValueError, RecursionError):
+                malformed = True
+                break
+            clean['text'] = json.dumps(public(store, payload, denied=denied))
+        safe['content'].append(clean)
+    if malformed:
+        safe.update(content=[{'type': 'text', 'text': NOTICE}], isError=True)
+    return {**envelope, 'result': safe}

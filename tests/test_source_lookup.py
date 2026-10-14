@@ -7,7 +7,7 @@ import json
 from urllib.parse import urlencode
 from unittest.mock import patch
 
-from bridge import canvas, context_memory as cm, github, proof
+from bridge import canvas, context_memory as cm, github, mcp, proof
 from bridge.store import Store
 from test_auth import SharedServer
 
@@ -290,6 +290,52 @@ class SourceLookupTests(SharedServer):
         self.assertEqual(self.status_of('GET', '/api/records?' + urlencode({'repo': REPO, 'record_id': a['record_id']}), token=self.agent), 404)
         self.source(availability='deleted')
         self.assertEqual(self.lookup(namespace='site-a', external_id='opaque-123')['status'], 'unavailable')
+
+    def test_http_and_streamed_mcp_recheck_task_access_after_tool_result(self):
+        source = self.source(task_id=self.task)
+        self.node(source)
+        # This node has no direct source edge. It inherits the task's copied
+        # content boundary, and can be read before the source loses access.
+        canary = 'FINAL_SEND_RESTRICTED_CANARY'
+        other = self.store.graph.add_decision(self.task, canary, 'policy', 'pending',
+                                              repo=REPO, context=canary, owner='Handover Owner')
+        original = mcp.call_tool
+        for version in ('2025-06-18', '2026-07-28'):
+            for streamed in (False, True):
+                with self.subTest(version=version, streamed=streamed):
+                    self.source(availability='available')
+                    captured = []
+                    def revoke_after_read(*args, **kwargs):
+                        result = original(*args, **kwargs)
+                        captured.append(json.dumps(result))
+                        self.source(availability='inaccessible')
+                        return result
+                    params = ({'name': 'bridge_wait', 'arguments': {'task_id': self.task, 'timeout': '0'},
+                               '_meta': {'progressToken': 'visibility-test'}} if streamed else
+                              {'name': 'bridge_get_decision', 'arguments': {'decision_id': other}})
+                    request = {'jsonrpc': '2.0', 'id': source['record_id'], 'method': 'tools/call', 'params': params}
+                    headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + self.agent,
+                               'MCP-Protocol-Version': version,
+                               'Accept': 'text/event-stream' if streamed else 'application/json'}
+                    with patch('bridge.mcp.call_tool', side_effect=revoke_after_read):
+                        status, response_headers, raw = self.raw('POST', '/mcp', headers, json.dumps(request).encode())
+                    self.assertEqual(status, 200)
+                    self.assertIn(canary, captured[0])
+                    self.assertNotIn(canary.encode(), raw)
+                    if streamed:
+                        self.assertEqual(response_headers['Content-Type'], 'text/event-stream')
+                        events = [json.loads(line[6:]) for line in raw.decode().splitlines() if line.startswith('data: ')]
+                        response = next(event for event in events if 'result' in event)
+                    else:
+                        response = json.loads(raw)
+                    self.assertEqual(response['jsonrpc'], '2.0')
+                    self.assertEqual(response['id'], source['record_id'])
+                    self.assertFalse(response['result']['isError'])
+                    payload = json.loads(response['result']['content'][0]['text'])
+                    self.assertTrue(payload['withheld'])
+                    self.assertFalse(payload['authorized'])
+                    if version == '2026-07-28':
+                        self.assertEqual(response['result']['resultType'], 'complete')
 
     def test_repository_isolation_never_resolves_by_basename_or_foreign_relation(self):
         a = self.source(task_id=self.task)

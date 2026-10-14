@@ -90,10 +90,10 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
     class Handler(BaseHTTPRequestHandler):
         me: Identity | None = None
 
-        def send(self, code, value, content_type="application/json", extra_headers=None):
+        def send(self, code, value, content_type="application/json", extra_headers=None, *, mcp=False):
             if content_type == 'application/json' and code < 400:
-                from .visibility import public
-                value = public(store, value)
+                from .visibility import public, mcp_response
+                value = mcp_response(store, value) if mcp else public(store, value)
             body = json.dumps(value).encode() if content_type == "application/json" else value
             self.send_response(code)
             self.send_header("Content-Type", content_type)
@@ -1104,7 +1104,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                      else str(call["result"])}], "isError": call["isError"]}, params, version)}
             else:
                 result = dispatch(store, message, version=version)
-            return self.send(200, result)
+            return self.send(200, result, mcp=True)
 
         def stream_wait(self, rpc_id, params, version=None):
             """A wait kept alive: the answer is an event stream carrying a
@@ -1124,6 +1124,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
             self.close_connection = True
 
             def emit(payload):
+                from .visibility import mcp_response
+                payload = mcp_response(store, payload)
                 self.wfile.write(b"event: message\ndata: " + json.dumps(payload).encode() + b"\n\n")
                 self.wfile.flush()
             try:
