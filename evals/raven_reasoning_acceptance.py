@@ -309,6 +309,35 @@ def contact_receipt(row, acceptable_ids):
     return receipt
 
 
+def contact_diagnostics(row):
+    """Retain production validation categories, never free-form model content."""
+    categories = {'selected', 'explicit_abstention', 'invalid_result_type', 'missing_candidate',
+                  'invalid_candidate_type', 'unknown_candidate', 'missing_evidence', 'invalid_evidence_type',
+                  'empty_evidence', 'invalid_evidence_id_type', 'unknown_evidence', 'cross_candidate_evidence',
+                  'abstention_with_evidence', 'model_error'}
+    result = []
+    for event in row.get('events', []):
+        if event.get('kind') != 'contact_reasoned':
+            continue
+        detail = event.get('detail', {})
+        detail = json.loads(detail) if isinstance(detail, str) else detail
+        if not isinstance(detail, dict):
+            continue
+        candidates = detail.get('candidates', [])
+        candidate_ids = [c['id'] for c in candidates if isinstance(c, dict)
+                         and isinstance(c.get('id'), str) and re.fullmatch(r'c[1-9][0-9]?', c['id'])]
+        selected, cited = detail.get('selected'), detail.get('evidence')
+        result.append({'validation': detail['validation'] if detail.get('validation') in categories else 'unavailable',
+                       'candidate_count': len(candidates), 'candidate_ids': candidate_ids,
+                       'selected': selected if isinstance(selected, str) and selected in candidate_ids else '',
+                       'cited_evidence_count': len(cited) if isinstance(cited, list) else 0,
+                       'why_present': bool(detail.get('why')),
+                       'attempt': detail.get('attempt') if type(detail.get('attempt')) is int else None,
+                       'selection_attempt': detail.get('selection_attempt') if type(detail.get('selection_attempt')) is int else None,
+                       'repair': detail.get('repair') is True})
+    return result
+
+
 def retention_receipt(answer, duration):
     """Conservative independent text oracle, not a general language classifier.
 
@@ -353,6 +382,7 @@ def owners_case(f, report):
         task = f.task(OWNER_QUESTION, 'WORK-OWNER-1', work_item=True)
         node = f.node(task, OWNER_QUESTION)
     report['cold_node'] = {k: node.get(k) for k in ('id', 'owner_name', 'owner_evidence', 'authorized', 'signoff', 'model_pending')}
+    report['contact_diagnostics'] = {'cold': contact_diagnostics(node)}
     report['cold_contact'] = contact_receipt(node, acceptable)
     require(report['cold_contact']['candidate_count'] >= 3, 'insufficient_plausible_candidates')
     require(not f.authority(), 'contact_reasoning_added_authority')
@@ -379,6 +409,7 @@ def owners_case(f, report):
         heldout = f.task(OWNER_HELDOUT, 'WORK-OWNER-2', work_item=True)
         later = f.node(heldout, OWNER_HELDOUT)
     report['heldout_node'] = {k: later.get(k) for k in ('id', 'owner_name', 'owner_evidence', 'authorized', 'signoff', 'model_pending')}
+    report['contact_diagnostics']['heldout'] = contact_diagnostics(later)
     report['learned_contact'] = contact_receipt(later, {f.people[RESPONDENT]})
     require(any('learned first contact' in text for text in report['learned_contact']['cited_evidence'].values()),
             'selected_respondent_did_not_cite_scoped_learned_evidence')

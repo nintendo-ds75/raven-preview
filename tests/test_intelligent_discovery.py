@@ -133,7 +133,7 @@ class ReasoningTests(OfflineCase):
             selected = choose(self.g, Config(model_api='none'), 'example/service', 'Who should decide rollover?', task_id=self.task)
             self.assertEqual(selected[0][0], 'Bo Example')
             model.return_value = {'candidate': 'invented-person', 'evidence': ['c2:e1']}
-            self.assertEqual(choose(self.g, Config(model_api='none'), 'example/service', 'Who decides?', task_id=self.task), ranked)
+            self.assertEqual(choose(self.g, Config(model_api='none'), 'example/service', 'Who decides?', task_id=self.task), [])
         self.assertFalse(self.g.authority_rows('example/service'))
         self.assertTrue(json.loads(self.g.db.execute("SELECT detail FROM events WHERE kind='contact_reasoned' LIMIT 1").fetchone()['detail'])['candidates'])
 

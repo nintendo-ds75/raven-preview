@@ -149,6 +149,63 @@ class AcceptanceTests(unittest.TestCase):
         with self.assertRaises(a.AcceptanceFailure):
             a.contact_receipt(row, {'right'})
 
+    def test_contact_diagnostics_retain_only_known_structural_audit_fields(self):
+        row = {'events': [{'kind': 'contact_reasoned', 'detail': {
+            'validation': 'cross_candidate_evidence', 'selected': '', 'evidence': [],
+            'why': 'PRIVATE_MODEL_TEXT', 'raw_response': 'PRIVATE_RESPONSE',
+            'candidates': [{'id': 'c1', 'name': 'PRIVATE_NAME', 'evidence': {'c1:e1': 'PRIVATE_SOURCE'}}],
+            'attempt': 1, 'selection_attempt': 2, 'repair': True,
+        }}]}
+        receipt = a.contact_diagnostics(row)
+        self.assertNotIn('PRIVATE', json.dumps(receipt))
+        self.assertEqual(receipt[0]['validation'], 'cross_candidate_evidence')
+        self.assertEqual(receipt[0]['candidate_ids'], ['c1'])
+        self.assertEqual(receipt[0]['selection_attempt'], 2)
+        self.assertTrue(receipt[0]['why_present'])
+        row['events'][0]['detail'].update(validation='PRIVATE_CATEGORY', selected='PRIVATE_SELECTED')
+        self.assertNotIn('PRIVATE', json.dumps(a.contact_diagnostics(row)))
+
+    def test_contact_failure_preserves_structural_diagnostics_before_assertion(self):
+        model = ModelDouble()
+        def abstain(purpose, *args, **kwargs):
+            if purpose == 'contact_selection':
+                return json.dumps({'candidate': '', 'evidence': [], 'why': 'PRIVATE_ABSTENTION_TEXT'})
+            return model(purpose, *args, **kwargs)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'run'
+            report = a.run(case='owners', output_dir=root, model_double=abstain, timeout=25)
+            self.assertEqual(report['status'], 'failed')
+            self.assertEqual(report['failure_code'], 'missing_acceptable_model_contact_receipt')
+            self.assertTrue(report['contact_diagnostics']['cold'])
+            self.assertTrue(report['contact_diagnostics']['cold'][0]['why_present'])
+            self.assertNotIn('PRIVATE', (root / 'result.json').read_text())
+
+    def test_one_bounded_contact_repair_per_phase_fits_existing_owner_budget(self):
+        model, malformed_phases, contact_bounds = ModelDouble(), set(), []
+        def repairable(purpose, system, prompt, *args, **kwargs):
+            result = model(purpose, system, prompt, *args, **kwargs)
+            if purpose == 'contact_selection':
+                contact_bounds.append((kwargs.get('max_tokens'), kwargs.get('bounded')))
+                phase = 'learned' if 'learned first contact' in prompt else 'cold'
+                if phase not in malformed_phases:
+                    malformed_phases.add(phase)
+                    value = json.loads(result)
+                    value['candidate'] = 'not-a-supplied-candidate-id'
+                    return json.dumps(value)
+            return result
+        with tempfile.TemporaryDirectory() as tmp:
+            report = a.run(case='owners', output_dir=Path(tmp) / 'run', model_double=repairable, timeout=25)
+            self.assertEqual(report['status'], 'fixture_passed', report)
+            self.assertEqual(malformed_phases, {'cold', 'learned'})
+            self.assertTrue(all(limit == (700, True) for limit in contact_bounds))
+            self.assertEqual(len(contact_bounds), 4)
+            self.assertLessEqual(len(report['model_calls']), a.LIMITS['owners']['max_calls'])
+            self.assertLessEqual(sum(c['requested_max_tokens'] for c in report['model_calls']), a.LIMITS['owners']['max_output_tokens'])
+            for phase in ('cold', 'heldout'):
+                audit = report['contact_diagnostics'][phase]
+                self.assertEqual(audit[0]['validation'], 'unknown_candidate')
+                self.assertTrue(any(event['repair'] and event['validation'] == 'selected' for event in audit))
+
     def test_owners_flow_real_public_apis_with_explicit_model_double(self):
         with tempfile.TemporaryDirectory() as tmp:
             model = ModelDouble()

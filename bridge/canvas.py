@@ -3362,18 +3362,26 @@ def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, or
         scratch_ids = result.get('drafts') or []
         scratch = result.get('duplicate_stub') or result['id']
         outcome = dict(graph.db.execute('SELECT * FROM decisions WHERE id=?', (scratch,)).fetchone())
+        contact_details = {}
         if not owner_id and outcome.get('signoff') != 'rule':
             from .contact_reasoning import choose
             with graph.source_scope(run['id']):
                 contacts = choose(graph, cfg, run['repo'], live['question'], paths=paths, context=ctx,
                                   category=live.get('category') or '', facts=_json_dict(live.get('facts')),
-                                  requester=requester, task_id=run['id'], decision_id=did)
+                                  requester=requester, task_id=run['id'], decision_id=did, details=contact_details)
             if contacts:
                 outcome['owner_id'] = graph.owner_id_for(contacts[0][0])
                 outcome['owner_evidence'] = '; '.join(contacts[0][1])
+            elif contact_details.get('status') == 'abstained':
+                # A rejected/unbound model selection cannot retain the earlier
+                # inferred owner or silently route back to that same ranking.
+                # Explicit assignments bypass this block; required signers and
+                # all approval checks remain unchanged.
+                outcome['owner_id'] = None
+                outcome['owner_evidence'] = 'No evidence-bound first contact selected; request a referral or select a contact.'
         if outcome['status'] in ('resolved','partial','assumed','proposed') and not outcome.get('signoff'):
             outcome['signoff'] = 'required'
-        if not outcome.get('owner_id'):
+        if not outcome.get('owner_id') and contact_details.get('status') != 'abstained':
             ranked = _route_signer(graph, run, live['question'], ctx, paths, requester, hints,
                                     live.get('category') or '', _json_dict(live.get('facts')), outcome.get('source_id'))
             if ranked:
