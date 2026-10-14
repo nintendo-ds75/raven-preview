@@ -2058,3 +2058,24 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .error,.work-error{background:#2a1917;color:#f0a18e}
 .brand img,.work-home>img{filter:none}
 ::selection{background:#36552e;color:var(--ink)}
+
+/* Keep the task's blocker, question entry and first decision in one scan. */
+#app .task-heading{margin-bottom:.75rem}
+#app .task-heading h1{margin:.35rem 0 .4rem}
+#app .task-heading .task-brief{margin:.2rem 0 .35rem}
+#app .task-brief summary{padding:.3rem 0}
+#app .task-summary{margin-bottom:.8rem;padding:.65rem 0}
+#app .task-summary h2{margin:0 0 .25rem}
+#app .task-summary p{margin:.3rem 0}
+#app .task-summary details{font-size:.8rem;color:var(--muted)}
+#app .task-inquiry{margin:.7rem 0 1rem}
+#task-inquiry-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.4rem .75rem;align-items:center}
+#task-inquiry-form label,#task-inquiry-text,#task-inquiry-form .error{grid-column:1/-1}
+#task-inquiry-form label{font-weight:600}
+#task-inquiry-text{display:block;width:100%;box-sizing:border-box;min-height:4rem;padding:.7rem .8rem;resize:vertical;line-height:1.45;background:var(--card);border:1px solid var(--line);border-radius:10px}
+#task-inquiry-form .context{margin:0;font-size:.78rem}
+#task-inquiry-form .button{min-height:36px}
+.task-inquiry-result:not(:empty){margin-top:.65rem;padding:.8rem;border-left:2px solid var(--green);background:var(--card)}
+.task-inquiry-result h4{font-size:.9rem;margin:.75rem 0 .3rem}
+.task-inquiry-result p{margin:.35rem 0}
+@media(max-width:640px){#task-inquiry-form .button{min-height:44px}#task-inquiry-text{font-size:16px}}
