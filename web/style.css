@@ -2056,5 +2056,5 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .pill.gray{background:var(--line);color:var(--text)}
 .notice,.brief-notice{background:#1b261a;color:var(--text);border-color:var(--line)}
 .error,.work-error{background:#2a1917;color:#f0a18e}
-.brand img,.work-home>img{filter:brightness(0) invert(1)}
+.brand img,.work-home>img{filter:none}
 ::selection{background:#36552e;color:var(--ink)}

@@ -15,7 +15,7 @@ const taskSourceLabel = source => Object.hasOwn(taskSourceLabels,source) ? taskS
 const taskAuthorized = n => !!n.authorized && !n.needs_review && !n.source_refresh_required;
 const taskWaiting = n => taskList(n.required_signers).filter(name => !taskList(n.signatures).some(s => taskSame(s,name)));
 const taskView = (id = taskId()) => {
-  if (!taskViews.has(id)) taskViews.set(id, {tab:'overview', limits:{}, disclosures:{}, note:'', notePending:false, noteError:'', focus:null});
+  if (!taskViews.has(id)) taskViews.set(id, {tab:'overview', limits:{}, disclosures:{}, note:'', notePending:false, noteError:'', inquiry:'', inquiryPending:false, inquiryError:'', inquiryResult:null, focus:null});
   return taskViews.get(id);
 };
 
@@ -27,6 +27,8 @@ function rememberTaskView() {
   app.querySelectorAll('details[id]').forEach(el => { saved.disclosures[el.id] = el.open; });
   const note = app.querySelector('#note-text');
   if (note) saved.note = note.value;
+  const inquiry = app.querySelector('#task-inquiry-text');
+  if (inquiry) saved.inquiry = inquiry.value;
   const active = document.activeElement;
   saved.restoreFocus = app.contains(active) && !!active.id;
   if (saved.restoreFocus) saved.focus = {id:active.id, start:active.selectionStart, end:active.selectionEnd};
@@ -40,6 +42,8 @@ function restoreTaskView() {
   }
   const note = app.querySelector('#note-text');
   if (note) note.value = saved.note;
+  const inquiry = app.querySelector('#task-inquiry-text');
+  if (inquiry) inquiry.value = saved.inquiry;
   const focus = saved.restoreFocus && saved.focus && document.getElementById(saved.focus.id);
   if (focus && app.contains(focus) && !$('#modal').open) {
     focus.focus({preventScroll:true});
@@ -239,6 +243,30 @@ function taskNotes(t, canWrite) {
   return `<section class="task-panel"><h2>Context & discussion</h2><p class="context">Notes are visible when the agent reads this task. Use a decision’s follow-up action for a question that must block completion.</p>${shown.map(n => `<article class="task-note"><div><strong>${esc(n.by || 'Unattributed note')}</strong><time>${esc(taskTime(n.at))}</time></div><p>${esc(n.text)}</p></article>`).join('') || '<p class="context">No notes yet.</p>'}${notes.length > shown.length ? '<button id="task-more-notes" class="button small" data-action="task-more" data-key="notes" data-step="12">Show earlier notes</button>' : ''}${canWrite ? `<details id="task-note-compose"><summary id="task-note-compose-summary">Add context for the agent</summary><form id="note-form" data-id="${esc(t.task_id)}"><label for="note-text">A note the agent reads on its tree</label><textarea id="note-text" name="text" maxlength="4000" required></textarea><p class="error" id="form-error" role="alert" ${saved.noteError ? '' : 'hidden'}>${esc(saved.noteError)}</p><button id="task-note-submit" class="button primary" type="submit" ${saved.notePending ? 'disabled' : ''}>${saved.notePending ? 'Adding note…' : 'Add note'}</button></form></details>` : '<p class="context">You have read-only access to this workspace.</p>'}</section>`;
 }
 
+function taskInquiry(id) {
+  const saved = taskView(id), result = saved.inquiryResult;
+  return `<section class="task-panel task-inquiry" aria-label="Ask about this task"><form id="task-inquiry-form" data-id="${esc(id)}"><label for="task-inquiry-text">Ask about this task</label><textarea id="task-inquiry-text" name="question" maxlength="2000" required placeholder="What is still waiting on a decision?">${esc(saved.inquiry)}</textarea><p class="context">Read-only. Answers do not change decisions or grant signoff.</p><button class="button" type="submit" ${saved.inquiryPending ? 'disabled' : ''}>${saved.inquiryPending ? 'Reading…' : 'Ask'}</button><p class="error" role="alert" ${saved.inquiryError ? '' : 'hidden'}>${esc(saved.inquiryError)}</p></form><div class="task-inquiry-result" role="status" aria-live="polite">${saved.inquiryPending ? '<p>Reading task context…</p>' : ''}${result ? `<p class="task-verbatim">${esc(result.answer)}</p><small>${esc(result.notice || 'Clarification does not authorize work.')}</small>${taskList(result.evidence).length ? `<details id="task-inquiry-evidence"><summary>Evidence used</summary>${taskList(result.evidence).map(e => `<h4>${esc(e.title || e.id)}</h4><p class="task-verbatim">${esc(e.text)}</p>`).join('')}</details>` : ''}` : ''}</div></section>`;
+}
+
+async function submitTaskInquiry(form) {
+  const id = form.dataset.id;
+  if (!id || taskId() !== id || !form.isConnected || !form.reportValidity()) return;
+  const saved = taskView(id);
+  if (saved.inquiryPending) return;
+  const question = form.querySelector('[name="question"]').value.trim();
+  if (!question) return;
+  saved.inquiry = question; saved.inquiryPending = true; saved.inquiryError = ''; saved.inquiryResult = null;
+  form.querySelector('[type="submit"]').disabled = true;
+  render();
+  try {
+    saved.inquiryResult = await api(`/api/tasks/${encodeURIComponent(id)}/inquiry`, {question});
+  } catch (error) { saved.inquiryError = error.message; saved.inquiryResult = null; }
+  finally {
+    saved.inquiryPending = false;
+    if (taskId() === id) render();
+  }
+}
+
 function taskOverview() {
   if (!state.auth) return '<div class="empty" role="status">Loading workspace access…</div>';
   if (!taskDetail || taskDetail.tree.task_id !== taskId()) return `<a class="task-back" href="#runs">← All tasks</a>${taskError ? `<div class="empty" role="alert"><h2>Could not open this task</h2><p>${esc(taskError)}</p><button class="button" data-action="task-refresh">Try again</button></div>` : '<div class="empty" role="status">Loading task history…</div>'}`;
@@ -259,7 +287,7 @@ function taskOverview() {
   const findings = [...nodes].sort((a,b) => Number(!!(b.blocking || b.needs_review || b.source_refresh_required)) - Number(!!(a.blocking || a.needs_review || a.source_refresh_required)));
   const overview = `<div class="task-overview">${scopes.length ? `<section class="task-panel"><h2>Scope needed · ${scopes.length}</h2>${taskScopes(scopes)}</section>` : ''}<section class="task-panel"><h2>Questions & findings</h2><p class="context">Unresolved questions appear first. Findings can be unapproved. Each row keeps its current approval status separate from its recorded answer or evidence.</p><h3>Remaining questions</h3>${taskQuestions(findings.filter(n => !taskAuthorized(n)),'finding',reading ? 'No findings recorded yet; context reading is still pending.' : 'No open questions recorded.')}<h3>Resolved decisions</h3>${taskQuestions(findings.filter(taskAuthorized),'resolved','No authorized answers recorded yet.')}</section>${context}${taskNotes(t,canWrite)}</div>`;
   return `<div class="task-heading"><a class="task-back" href="#runs">← All tasks</a><div class="task-heading-actions"><button id="task-refresh" class="button small" data-action="task-refresh">Refresh</button><button id="task-share" class="button small" data-action="task-share">Copy app link</button>${state.auth.enabled && state.me?.id && state.me.role !== 'viewer' && state.settings?.brief_mode !== 'off' ? '<button class="button small" data-action="task-brief">Open task page</button>' : ''}</div><h1>${esc(taskDisplayLabel(t))}</h1><details class="task-brief" id="task-brief"><summary id="task-brief-summary">Read the task brief</summary><p class="task-goal">${esc(t.goal || t.title)}</p></details><div class="metadata"><span>Requested by ${esc(t.requester || 'unknown')}</span><span>${esc(t.repo)}</span></div></div>
-    ${taskError ? `<p class="task-warning" role="alert">Refresh failed: ${esc(taskError)}. Showing the last successful read.</p>` : ''}${progress}
+    ${taskError ? `<p class="task-warning" role="alert">Refresh failed: ${esc(taskError)}. Showing the last successful read.</p>` : ''}${progress}${taskInquiry(t.task_id)}
     <nav class="task-tabs" aria-label="Task sections">${[['overview','Overview'],['decisions',`Decisions (${nodes.length})`],['history','History'],['review',`Code review${uncertain ? ' ('+uncertain+' to inspect)' : ''}`]].map(([key,label]) => `<button id="task-tab-${key}" class="tab ${taskTab === key ? 'active' : ''}" data-action="task-tab" data-tab="${key}" aria-pressed="${taskTab === key}">${label}</button>`).join('')}<span>Observed ${esc(taskTime(t.observed_at))}</span></nav>
     ${taskTab === 'overview' ? overview : taskTab === 'decisions' ? `<section class="task-panel task-decisions"><h2>Questions & answers</h2>${taskScopes(scopes)}${taskQuestions(nodes,'question','No decisions recorded yet.')}</section>` : taskTab === 'review' ? taskReview(t.review,nodes) : `<section class="task-panel"><h2>What happened, in order</h2><p class="context">Recorded assignments, messages, answers, corrections, and notes. Work outside Raven is not captured here.</p>${taskTimeline(trace,all)}</section>`}
     ${taskList(state.executions).some(e => e.run_id === t.task_id) ? `<button class="button" data-action="execution-details" data-id="${esc(t.task_id)}">Execution output & files</button>` : ''}<p class="task-access">${icon('shield')}${state.auth.enabled ? 'Visible to signed-in workspace members and viewers. A link does not grant access.' : 'Local workspace. Enable shared authentication before exposing this instance to a network.'} Task status records workflow state; it does not prove an external coding agent is running.</p>`;

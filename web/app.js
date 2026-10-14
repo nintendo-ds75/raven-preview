@@ -68,6 +68,7 @@ let directory = null, directoryLoading = false;
 let view = 'inbox', tab = 'pending', tabChosen = false, query = '', ownerFilter = '', fetching = false;
 let toastTimer;
 let modalVersion = 0, navigationVersion = 0;
+let resetScrollOnNavigation = false;
 let launcherPair = null;
 const pairing = new URLSearchParams(location.hash.split('?')[1] || '');
 if (/^\d{1,5}$/.test(pairing.get('launcher_port') || '') && pairing.get('launcher_key')) {
@@ -264,6 +265,8 @@ function navigate() {
   if (taskId()) loadTask();
   if (view === 'work' && typeof loadWorkbench === 'function') loadWorkbench();
   render();
+  if (resetScrollOnNavigation && typeof window.scrollTo === 'function') window.scrollTo(0, 0);
+  resetScrollOnNavigation = false;
 }
 
 function metrics() {
@@ -886,6 +889,11 @@ async function exportWorkspace() {
 }
 
 document.addEventListener('click', async event => {
+  const link = event.target.closest('a[href^="#"]');
+  if (link && !event.defaultPrevented && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && (!event.button || event.button === 0)) {
+    const hash = link.getAttribute('href');
+    if (hash && hash !== location.hash) resetScrollOnNavigation = true;
+  }
   const target = event.target.closest('[data-action]');
   if (!target || target.disabled) return;
   const action = target.dataset.action;
@@ -1058,10 +1066,11 @@ document.addEventListener('change', async event => {
 });
 document.addEventListener('submit', async event => {
   const form = event.target;
-  if (!['invite-form','request-form','owner-form','answer-form','correct-form','task-form','ingest-form','person-form','team-form','authority-form','rule-form','note-form'].includes(form.id)) return;
+  if (!['invite-form','request-form','owner-form','answer-form','correct-form','task-form','ingest-form','person-form','team-form','authority-form','rule-form','note-form','task-inquiry-form'].includes(form.id)) return;
   event.preventDefault();
   if (form.id === 'request-form') { await submitRequest(form); return; }
   if (form.id === 'note-form') { await submitTaskNote(form); return; }
+  if (form.id === 'task-inquiry-form') { await submitTaskInquiry(form); return; }
   const button = form.querySelector('[type="submit"]');
   if (button.disabled || !form.reportValidity()) return;
   button.disabled = true;

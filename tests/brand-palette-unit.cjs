@@ -10,4 +10,5 @@ function contrast(a,b){const x=luminance(a),y=luminance(b);return (Math.max(x,y)
 for(const foreground of [expected.ink,expected.text,expected.muted,expected.green,expected.amber]) for(const background of [expected.bg,expected.card]) assert.ok(contrast(foreground,background)>=4.5,`${foreground} on ${background}`);
 assert.ok(contrast('#10110f',expected.green)>=4.5,'Primary action text');
 assert.match(css,/summary:focus-visible/);
+assert.match(css,/\.brand img,\.work-home>img\{filter:none\}/, 'Preserve multicolor SVG artwork rather than flattening it into a white square');
 console.log('Verified brand tokens and 11 text contrast pairs pass (static CSS, not browser screenshots).');
