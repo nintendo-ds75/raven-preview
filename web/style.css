@@ -2079,3 +2079,13 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .task-inquiry-result h4{font-size:.9rem;margin:.75rem 0 .3rem}
 .task-inquiry-result p{margin:.35rem 0}
 @media(max-width:640px){#task-inquiry-form .button{min-height:44px}#task-inquiry-text{font-size:16px}}
+
+/* Current decision first; original request text remains inspectable below it. */
+.decision-current{margin:0 0 20px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.decision-current h3{font-size:15px;margin:14px 0 8px}
+.decision-current-answer{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;font-size:14px;margin:0 0 12px}
+.decision-current-reason{font-size:12px;line-height:1.6;margin:10px 0 0}
+.decision-current-scope{margin:0 0 22px}
+.decision-current-scope>h3{font-size:13px;margin:0 0 10px}
+.decision-current-scope>.scope-fields{font-size:12px;line-height:1.6}
+.decision-original-scope>summary,.decision-background>summary{min-height:40px;padding:10px 0;cursor:pointer}

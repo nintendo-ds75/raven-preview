@@ -177,6 +177,53 @@ function harness() {
     h.finish(h.requests[0], 'Obsolete review'); await pending;
     assert.equal(h.modal.open, false);
   });
+  function decisionFixture(extra = {}) {
+    return {id:'decision-current',run_id:'task-current',question:'Which billing policy applies?',agent:'Agent',run_title:'Task',
+      owner_name:'Policy Owner',owner_id:'owner',status:'approved',signoff:'signed',signed_by:'Policy Owner',answered_by:'Policy Owner',
+      answer:'Only pilot traffic at or below 608 calls is excluded. Customer traffic remains billable.',
+      rationale:'Keep the production exception bounded.',context:'HISTORICAL: production is unresolved. '.repeat(80),
+      approval_scope:{id:'decision-current',repo:'example/billing',context:'HISTORICAL: production is unresolved. '.repeat(80),
+        facts:{environment:'production',zero:0,disabled:false},applicability:{requires:{environment:'production'}},path:'billing.py',options:['Historical option A','Historical option B']},
+      approval_scope_labels:{repo:'Repository',facts:'Facts',applicability:'Applicability',path:'Path'},
+      consequences:'Real customer traffic must remain billable.',events:[],sources:[],allowed_actions:[],...extra};
+  }
+  await test('settled read-only decision shows current answer and signer before original request', async () => {
+    const h=harness(), d=decisionFixture(), pending=h.click('review',d.id);h.requests[0].resolve(d);await pending;
+    const html=h.get('#modal-content').innerHTML;
+    assert(html.indexOf(d.answer)<html.indexOf('HISTORICAL:'));
+    assert(html.indexOf('Recorded signer: Policy Owner')<html.indexOf('HISTORICAL:'));
+    assert(html.indexOf('Current recorded scope')<html.indexOf('Original request & complete'));
+    assert.match(html,/<details class="history decision-original-scope"><summary>Original request & complete recorded scope/);
+    assert.match(html,/data-scope-field="facts"[\s\S]*?production/);
+    assert.match(html,/data-scope-field="applicability"/);
+    assert.match(html,/HISTORICAL: production is unresolved/,'full original context remains available');
+    assert(html.indexOf('decision-current')<html.indexOf('decision-inquiry'));
+    assert.match(html,/Read-only clarification/);
+  });
+  await test('approved editable decision has current answer above correction form', async () => {
+    const h=harness(),d=decisionFixture({allowed_actions:['answer']});h.run("state.auth={enabled:false}");
+    const pending=h.click('review',d.id);h.requests[0].resolve(d);await pending;
+    const html=h.get('#modal-content').innerHTML;
+    assert(html.indexOf('decision-current-answer')<html.indexOf('id="answer-form"'));
+    assert.match(html,/Save correction/);
+    assert.match(html,/<details class="history decision-background" ><summary>Recorded background & evidence/);
+  });
+  await test('required signoff keeps complete scope and consequences before its explicit button', async () => {
+    const h=harness(),d=decisionFixture({status:'resolved',signoff:'required',signed_by:'',allowed_actions:['answer']});h.run("state.auth={enabled:false}");
+    const pending=h.click('review',d.id);h.requests[0].resolve(d);await pending;
+    const html=h.get('#modal-content').innerHTML;
+    assert.match(html,/data-action="signoff"/);
+    assert(html.indexOf('data-scope-field="context"')<html.indexOf('data-action="signoff"'));
+    assert(html.indexOf(d.consequences)<html.indexOf('data-action="signoff"'));
+    assert.doesNotMatch(html,/decision-original-scope/);
+  });
+  await test('stale recorded signature cannot present the answer as currently signed', async () => {
+    const h=harness(),d=decisionFixture({source_refresh_required:true,source_notice:'Evidence access needs refresh.'});
+    const pending=h.click('review',d.id);h.requests[0].resolve(d);await pending;
+    const html=h.get('#modal-content').innerHTML;
+    assert.match(html,/Recorded answer · review required/);assert.match(html,/Evidence access needs refresh/);
+    assert.doesNotMatch(html,/Current signed answer/);assert.doesNotMatch(html,/decision-original-scope/);
+  });
   await test('all ordinary dialog close callers use the synchronous helper', async () => {
     assert.equal((source.match(/\$\('#modal'\)\.close\(\)/g) || []).length, 1);
     assert.match(source, /function closeModal\(\) \{[\s\S]*?modalVersion \+= 1;\s*\$\('#modal'\)\.close\(\);/);
