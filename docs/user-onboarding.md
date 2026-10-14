@@ -19,8 +19,7 @@ enabled for this browser account-creation flow.
 Operators can instead initialize an accountless workspace with
 `./setup --workspace "Your team" --configure`. This headless path keeps the
 operator credential separate from the limited MCP credential and does not
-require a personal password. A recipient can answer in Slack without completing
-either browser step. A direct Python server with authentication off is a trusted
+require a personal password. Only the explicitly enabled legacy conversational Slack transport permits a recipient to answer in Slack without completing either browser step. Default notification-only links require Raven authentication. A direct Python server with authentication off is a trusted
 loopback-only operator installation, not shared workspace authentication.
 
 ## Model
@@ -35,9 +34,11 @@ No workspace switching or multi-tenant isolation is introduced. Deploy a separat
 instance and database for each organization; viewer and member accounts can read
 workspace data rather than only the tasks assigned to them.
 
-## Accountless task links
+## Optional legacy accountless task links
 
-Raven can include a personal task link in a Slack DM. It opens one task without
+These links belong to the opt-in legacy conversational transport, not the default notification-only path. Default Slack notifications use ordinary authenticated task links.
+
+The legacy transport can include a personal task link in a Slack DM. It opens one task without
 a browser account and permits actions on the recipient's existing standing.
 It is a bearer credential: anyone holding it can act as that person on that task.
 Do not forward it. The link expires after 14 days by default, can be revoked,
