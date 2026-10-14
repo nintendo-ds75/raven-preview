@@ -172,6 +172,27 @@ class EvidenceReadTests(unittest.TestCase):
 
 
 class DriverTests(unittest.TestCase):
+    def test_inquiry_only_cli_uses_saved_key_and_fixed_budget_without_sdk_or_smoke(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, output = Path(tmp) / 'existing', Path(tmp) / 'new'
+            (source / 'fixture').mkdir(parents=True)
+            (source / 'result.json').write_text('{}')
+            (source / 'fixture/raven.db').write_bytes(b'synthetic-placeholder')
+            with patch('evals.customer_test_credentials.read_saved_key', return_value='synthetic-key'), \
+                    patch('evals.customer_provider_gateway.Gateway') as gateway, \
+                    patch.object(a, 'run_inquiry_only', return_value={'status': 'passed', 'integrated_acceptance': False}), \
+                    patch.object(a, 'sdk_child_preflight', side_effect=AssertionError('no SDK')), \
+                    patch.object(a, 'direct_inference_smoke', side_effect=AssertionError('no smoke')), \
+                    patch.object(a.getpass, 'getpass', side_effect=AssertionError('no prompt')):
+                status = a.main(['--run-live', '--inquiry-only', str(source), '--output-dir', str(output),
+                                 '--credential-file', '/synthetic/private/key', '--model', 'fixture-model',
+                                 '--max-calls', '999', '--max-input-bytes', '99999999', '--max-output-tokens', '999999'])
+            self.assertEqual(status, 0)
+            self.assertEqual(gateway.call_args.kwargs['max_calls'], 4)
+            self.assertEqual(gateway.call_args.kwargs['max_input_bytes'], 100000)
+            self.assertEqual(gateway.call_args.kwargs['max_output_tokens'], 6000)
+            self.assertNotIn('synthetic-key', (output / 'result.json').read_text())
+
     def test_invalid_credential_file_never_prompts_or_calls_provider(self):
         reader = SimpleNamespace(read_saved_key=lambda _: (_ for _ in ()).throw(ValueError('SECRET private path')))
         with tempfile.TemporaryDirectory() as tmp, \
@@ -387,7 +408,8 @@ class DriverTests(unittest.TestCase):
             fixture.human('/api/decisions/' + node + '/signoff', {
                 'answer': 'Real customer traffic is billable.',
                 'expected_updated_at': fixture.store.get_decision(node)['updated_at']})
-            gateway = SimpleNamespace(placeholder='public-placeholder', urllib_open=urllib.request.urlopen)
+            gateway = SimpleNamespace(placeholder='public-placeholder', urllib_open=urllib.request.urlopen,
+                                      snapshot=lambda: {'physical_requests': 0, 'fixture_only': True})
             readings = [{'outcome': 'supported_answer', 'answer': 'Real customer traffic is billable.',
                          'citations': [{'id': node, 'quote': 'Real customer traffic is billable.'}], 'open': []},
                         {'claims': [{'claim': 'Real customer traffic is billable.', 'support': 'stated'}]}]
@@ -396,6 +418,97 @@ class DriverTests(unittest.TestCase):
             self.assertEqual(mocked.call_count, 2)
             self.assertTrue(result['model_used'])
             self.assertTrue(result['counts_unchanged'])
+
+    def test_inquiry_fallback_preserves_response_and_exact_citation_failure(self):
+        from bridge import llm
+        with a.Fixture() as fixture:
+            fixture.prepare()
+            task = fixture.call('bridge_start_task', title='Production billing policy', repo=a.REPO)['task_id']
+            node = fixture.call('bridge_add_node', task_id=task, question='Is traffic billable?', paths=a.POLICY)['node_id']
+            raw = {'outcome': 'supported_answer', 'answer': 'Unverified answer',
+                   'citations': [{'id': node, 'quote': 'This quote is not in the source.'}], 'open': []}
+            gateway = SimpleNamespace(placeholder='placeholder', urllib_open=urllib.request.urlopen,
+                                      snapshot=lambda: {'physical_requests': 1, 'fixture_only': True})
+            diagnostic = {}
+            with patch.object(llm.Client, 'complete', return_value=json.dumps(raw)) as complete:
+                with self.assertRaisesRegex(a.AcceptanceFailure, 'live_inquiry_not_verified_model_reading'):
+                    a.live_inquiry(fixture, task, node, gateway, 'fixture-model', diagnostics=diagnostic)
+            self.assertEqual(complete.call_count, 1, 'Invalid citations must not trigger support or diagnostic inference')
+            self.assertEqual(diagnostic['model_calls'][0]['category'], 'unsupported_citation')
+            self.assertFalse(diagnostic['response']['model_used'])
+            self.assertTrue(diagnostic['counts_unchanged'])
+            self.assertEqual(diagnostic['provider_before'], diagnostic['provider_after'])
+            self.assertEqual(diagnostic['status'], 'unverified')
+            self.assertNotIn(raw['answer'], json.dumps(diagnostic))
+
+    def test_inquiry_model_diagnostics_classify_without_storing_model_text(self):
+        prompt = json.dumps({'evidence': [{'id': 'known', 'text': 'Actual source.'}]})
+        malformed = a.inquiry_model_diagnostic('inquiry', {'answer': 'PRIVATE'}, prompt)
+        self.assertEqual(malformed['category'], 'malformed_reading')
+        raw = {'outcome': 'supported_answer', 'answer': 'PRIVATE', 'citations': [], 'open': []}
+        self.assertEqual(a.inquiry_model_diagnostic('inquiry', raw, prompt)['category'], 'missing_required_citation')
+        raw['citations'] = [{'id': 'known', 'quote': 'Actual source.'}]
+        good = a.inquiry_model_diagnostic('inquiry', raw, prompt)
+        self.assertEqual(good['category'], 'schema_valid')
+        self.assertNotIn('PRIVATE', json.dumps(good))
+        response = a.inquiry_response_diagnostic({'answer': 'Synthetic answer', 'model_used': False,
+            'headers': {'key': 'PRIVATE'}, 'citations': [{'id': 'known', 'quote': 'Actual source.', 'token': 'PRIVATE'}]})
+        self.assertNotIn('PRIVATE', json.dumps(response))
+        self.assertEqual(response['answer'], 'Synthetic answer')
+
+    def test_late_inquiry_failure_retains_verified_host_patch_and_proof_stages(self):
+        class ReceiptHost(ScriptedHost):
+            live = True
+            def __init__(self, root):
+                super().__init__(root)
+                self.events = [{'kind': 'result', 'session_id': self.session_id, 'is_error': False}]
+        def failed_inquiry(*args, diagnostics, **kwargs):
+            diagnostics.update(status='unverified', response={'model_used': False, 'authorized': False})
+            raise a.AcceptanceFailure('live_inquiry_not_verified_model_reading')
+        gateway = SimpleNamespace(snapshot=lambda: {'physical_requests': 1})
+        with patch.object(a.importlib.metadata, 'version', return_value=a.SDK_VERSION), \
+                patch.object(a, 'live_inquiry', side_effect=failed_inquiry):
+            report = a.run(run_live=True, gateway=gateway, model='fixture-model', host_factory=ReceiptHost,
+                           idle_seconds=.01, timeout=20, freshness_runner=lambda: {'mode': 'test-double'})
+        self.assertEqual(report['failure_code'], 'live_inquiry_not_verified_model_reading')
+        self.assertEqual(report['status'], 'failed')
+        self.assertEqual(report['behavioral_cases'], 16)
+        self.assertTrue(report['same_session_resumed'])
+        self.assertTrue(report['durable_task_recovered'])
+        self.assertTrue(report['proof_integrity_valid'])
+        self.assertTrue(report['actual_patch'])
+        self.assertIn('proof_matches_actual_patch', report['passed_stages'])
+        self.assertNotIn('live_scoped_inquiry', report['passed_stages'])
+        self.assertFalse(report['live_inquiry']['response']['model_used'])
+
+    def test_inquiry_only_uses_authenticated_copy_without_reseeding_original(self):
+        from bridge import llm
+        with tempfile.TemporaryDirectory() as tmp:
+            source, output = Path(tmp) / 'source', Path(tmp) / 'diagnostic'
+            run = a.run(output_dir=source, host_factory=ScriptedHost, idle_seconds=.01, timeout=20,
+                        freshness_runner=lambda: {'mode': 'test-double'})
+            self.assertEqual(run['status'], 'scripted_passed')
+            before_db = (source / 'fixture/raven.db').read_bytes()
+            before_code = (source / 'fixture/checkout' / a.POLICY).read_bytes()
+            def complete(purpose, system, prompt, **kwargs):
+                if purpose == 'inquiry':
+                    evidence = json.loads(prompt)['evidence']
+                    decision = next(e for e in evidence if e['kind'] == 'task_decision')
+                    return json.dumps({'outcome': 'supported_answer', 'answer': decision['text'],
+                                       'citations': [{'id': decision['id'], 'quote': decision['text']}], 'open': []})
+                return json.dumps({'claims': [{'claim': 'Synthetic recorded policy', 'support': 'stated'}]})
+            gateway = SimpleNamespace(placeholder='placeholder', urllib_open=urllib.request.urlopen,
+                                      snapshot=lambda: {'physical_requests': 0, 'fixture_only': True})
+            with patch.object(llm.Client, 'complete', side_effect=complete) as mocked:
+                result = a.run_inquiry_only(run_dir=source, output_dir=output, gateway=gateway, model='fixture-model')
+            self.assertEqual(result['status'], 'passed', result)
+            self.assertFalse(result['integrated_acceptance'])
+            self.assertEqual(mocked.call_count, 2)
+            self.assertEqual((source / 'fixture/raven.db').read_bytes(), before_db)
+            self.assertEqual((source / 'fixture/checkout' / a.POLICY).read_bytes(), before_code)
+            self.assertEqual(result['task_id'], run['task_id'])
+            self.assertEqual(result['live_inquiry']['model_calls'][1]['category'], 'support_valid')
+            self.assertTrue((output / 'result.json').is_file())
 
     def test_host_environment_never_inherits_external_credentials_or_settings(self):
         gateway = SimpleNamespace(url='http://127.0.0.1:1234', placeholder='public-placeholder')

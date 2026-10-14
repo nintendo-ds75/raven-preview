@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 import ast
 import asyncio
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 import difflib
 import getpass
 import hashlib
@@ -22,6 +22,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -713,7 +714,91 @@ def direct_inference_smoke(api_key, workspace_id='', model='claude-sonnet-4-6'):
             for k in ('input_tokens', 'output_tokens')}, 'marker_verified': True}
 
 
-def live_inquiry(fixture, task, node, gateway, model):
+def inquiry_response_diagnostic(result):
+    """Keep the actual synthetic inquiry response, dropping unknown transport fields."""
+    fields = {'outcome', 'answer', 'citations', 'open', 'evidence', 'model_used', 'authorized',
+              'notice', 'task_id', 'focus_id', 'omitted_decisions'}
+    nested = {'citations': {'id', 'quote'}, 'evidence': {'id', 'version', 'title', 'text', 'kind', 'task_id'}}
+    def bounded(value, depth=0):
+        if depth > 5:
+            return None
+        if isinstance(value, str):
+            return value[:50000]
+        if value is None or type(value) in (bool, int, float):
+            return value
+        if isinstance(value, list):
+            return [bounded(v, depth + 1) for v in value[:100]]
+        return None
+    if not isinstance(result, dict):
+        return {'response_type': type(result).__name__}
+    saved = {}
+    for key in fields & result.keys():
+        if key in nested and isinstance(result[key], list):
+            saved[key] = [{k: bounded(v) for k, v in item.items() if k in nested[key]}
+                          for item in result[key][:100] if isinstance(item, dict)]
+        else:
+            saved[key] = bounded(result[key])
+    return saved
+
+
+def inquiry_model_diagnostic(purpose, raw, prompt):
+    """Content-free observations of returned model JSON; never repair the output."""
+    from bridge.inquiry import OUTCOMES
+    result = {'purpose': purpose, 'returned_type': type(raw).__name__}
+    if not isinstance(raw, dict):
+        result['category'] = 'non_object_json'
+        return result
+    if purpose == 'inquiry':
+        shape = (raw.get('outcome') in OUTCOMES and isinstance(raw.get('answer'), str)
+                 and bool(raw['answer'].strip()) and isinstance(raw.get('citations'), list)
+                 and isinstance(raw.get('open'), list) and all(isinstance(x, str) for x in raw['open']))
+        result.update(schema_valid=shape, category='schema_valid' if shape else 'malformed_reading')
+        if shape:
+            packet = json.loads(prompt)
+            by_id = {e['id']: e for e in packet['evidence']}
+            checks = []
+            for cite in raw['citations']:
+                known = isinstance(cite, dict) and cite.get('id') in by_id
+                quote = cite.get('quote') if isinstance(cite, dict) else None
+                exact = known and isinstance(quote, str) and bool(quote.strip()) and (
+                    ' '.join(quote.split()) in ' '.join(by_id[cite['id']]['text'].split()))
+                checks.append({'known_id': known, 'exact_quote': bool(exact),
+                               'quote_characters': len(quote) if isinstance(quote, str) else None})
+            result['citation_checks'] = checks
+            if not all(c['exact_quote'] for c in checks):
+                result['category'] = 'unsupported_citation'
+            elif raw['outcome'] == 'supported_answer' and not checks:
+                result['category'] = 'missing_required_citation'
+    elif purpose == 'support':
+        claims = raw.get('claims')
+        valid = isinstance(claims, list) and bool(claims) and all(
+            isinstance(c, dict) and isinstance(c.get('claim'), str) and c['claim'].strip()
+            and c.get('support') in {'stated', 'applied', 'given'} for c in claims)
+        result.update(claims_count=len(claims) if isinstance(claims, list) else None,
+                      category='support_valid' if valid else 'unsupported_or_malformed_claims')
+    return result
+
+
+def live_inquiry(fixture, task, node, gateway, model, *, diagnostics=None):
+    from bridge import llm
+    diagnostics = diagnostics if diagnostics is not None else {}
+    diagnostics.update(status='started', mode='real_production_inference_authenticated_http', model_calls=[])
+    diagnostics['provider_before'] = provider_snapshot(gateway)
+    original = llm.Client.complete_json
+    def observe(client, purpose, system, prompt, *args, **kwargs):
+        try:
+            raw = original(client, purpose, system, prompt, *args, **kwargs)
+        except Exception as error:
+            diagnostics['model_calls'].append({'purpose': purpose if purpose in ('inquiry', 'support') else 'other',
+                'category': 'model_call_failed', 'diagnostic': exception_diagnostic(error)})
+            raise
+        if purpose in ('inquiry', 'support'):
+            try:
+                observed = inquiry_model_diagnostic(purpose, raw, prompt)
+            except Exception:
+                observed = {'purpose': purpose, 'category': 'diagnostic_unavailable'}
+            diagnostics['model_calls'].append(observed)
+        return raw
     tables = ('runs', 'decisions', 'host_sessions')
     def counts():
         result = {t: fixture.store.graph.db.execute('SELECT count(*) FROM ' + t).fetchone()[0] for t in tables}
@@ -723,16 +808,24 @@ def live_inquiry(fixture, task, node, gateway, model):
     before = counts()
     env = {'BRIDGE_MODEL_API': 'anthropic', 'BRIDGE_MODEL': model, 'BRIDGE_FAST_MODEL': model,
            'BRIDGE_SEMANTIC': '1', 'ANTHROPIC_API_KEY': gateway.placeholder}
-    with patch.dict(os.environ, env), patch('bridge.llm._open_model_request', new=gateway.urllib_open):
-        result = fixture.human('/api/tasks/' + task + '/inquiry', {
-            'question': 'What is the signed production invoice policy, including the exact cohort and call-count boundary?',
-            'focus_id': node})
-    require(counts() == before, 'live_inquiry_mutated_authority')
+    try:
+        with patch.dict(os.environ, env), patch('bridge.llm._open_model_request', new=gateway.urllib_open), \
+                patch.object(llm.Client, 'complete_json', new=observe):
+            result = fixture.human('/api/tasks/' + task + '/inquiry', {
+                'question': 'What is the signed production invoice policy, including the exact cohort and call-count boundary?',
+                'focus_id': node})
+        diagnostics['response'] = inquiry_response_diagnostic(result)
+    finally:
+        diagnostics['provider_after'] = provider_snapshot(gateway)
+        diagnostics['counts_unchanged'] = counts() == before
+        diagnostics['status'] = 'unverified'
+    require(diagnostics['counts_unchanged'], 'live_inquiry_mutated_authority')
     require(result.get('model_used') is True and result.get('authorized') is False,
             'live_inquiry_not_verified_model_reading')
     require(bool(result.get('citations')) and all(c['id'] in (task, node) for c in result['citations']),
             'live_inquiry_missing_task_citations')
     require(fixture.prior_id not in {e['id'] for e in result['evidence']}, 'live_inquiry_neighbor_leak')
+    diagnostics.update(status='passed', model_used=True, authorized=False)
     return {'status': 'passed', 'mode': 'real_production_inference_authenticated_http',
             'model_used': True, 'authorized': False, 'counts_unchanged': True,
             'answer': result['answer'], 'citations': result['citations']}
@@ -820,6 +913,7 @@ def observed_evidence_reads(fixture, completed):
 
 
 def exercise(fixture, host, gateway, report, *, timeout=180, idle_seconds=2):
+    passed = report.setdefault('passed_stages', [])
     scenario = novel_scenario()
     report['scenario'] = scenario
     trace_path = host.root / 'mcp-trace.jsonl'
@@ -838,10 +932,12 @@ def exercise(fixture, host, gateway, report, *, timeout=180, idle_seconds=2):
     report.update(task_id=task, node_id=node, first_owner=first.get('owner'))
     require(first.get('owner') == fixture.owner_name, 'first_route_wrong_owner')
     require(not fixture.store.get_decision(node)['authorized'], 'authority_before_human')
+    passed.append('first_route_and_pending_authority')
     completed = trace_state(read_trace(trace_path))[0]
     report['evidence_reads'] = observed_evidence_reads(fixture, completed)
     require(report['evidence_reads']['prior_content_read'], 'host_missing_actual_prior_evidence')
     require(report['evidence_reads']['context_content_read'], 'host_missing_actual_context_evidence')
+    passed.append('prior_and_static_evidence_read')
     fixture.store.delivery.deliver_now()
     notices = [m for m in fixture.slack.messages if '/#runs/' + task + '/' + node in m['text']]
     require(bool(notices), 'notification_missing')
@@ -860,6 +956,7 @@ def exercise(fixture, host, gateway, report, *, timeout=180, idle_seconds=2):
         pass
     else:
         raise AcceptanceFailure('finish_allowed_before_human')
+    passed.append('notification_only_and_finish_refused_before_human')
     while gateway is not None and provider_snapshot(gateway).get('active_requests'):
         require(time.monotonic() < deadline, 'provider_not_quiescent_during_wait')
         time.sleep(.05)
@@ -884,8 +981,11 @@ def exercise(fixture, host, gateway, report, *, timeout=180, idle_seconds=2):
     report['zero_inference_wait'] = {'seconds': idle_seconds, 'host_process_stopped': True,
                                     'pending_tool_window_also_checked': True,
                                     'provider_snapshot_unchanged': True, 'raven_inference': 'disabled'}
+    passed.append('zero_inference_pending_and_stopped_wait')
     fixture.restart(workers=False)
     require(fixture.store.get_decision(node)['run_id'] == task, 'restart_lost_node')
+    report['durable_task_recovered'] = True
+    passed.append('durable_task_recovery')
     report['stage'] = 'explicit_human_signoff'
     answer = scenario['base_answer'] + '\n' + scenario['caveat_message']
     payload = {'answer': answer, 'rationale': 'Synthetic production-only policy chosen by the test-controlled owner.',
@@ -896,43 +996,54 @@ def exercise(fixture, host, gateway, report, *, timeout=180, idle_seconds=2):
     require(status == 403, 'agent_can_sign_as_human')
     signed = fixture.human('/api/decisions/' + node + '/signoff', payload)
     require(signed.get('authorized') and signed.get('signed_by') == fixture.owner_name, 'human_signature_missing')
+    passed.append('explicit_human_signoff_and_agent_signoff_refused')
     inquiry = fixture.human('/api/tasks/' + task + '/inquiry', {'question': 'Who signed the current policy and what scope applies?', 'focus_id': node})
     require(inquiry.get('authorized') is False and fixture.prior_id not in {e['id'] for e in inquiry['evidence']},
             'inquiry_scope_or_authority')
     report['scoped_inquiry'] = {'authorized': False, 'neighboring_decision_excluded': True, 'model_used': inquiry['model_used']}
+    passed.append('deterministic_scoped_inquiry')
     report['stage'] = 'resume_host'
     offset = len(read_trace(trace_path))
     host.start(fixture, 'resume')
     wait_until(lambda: fixture.store.graph.get_task(task)['status'] == 'completed', host, deadline, 'completed_task')
+    passed.append('task_completed')
     if host.live:
         receipt = wait_until(lambda: next((e for e in reversed(host.events) if e.get('kind') == 'result'), None),
                              host, deadline, 'host_final_receipt')
         require(not receipt.get('is_error') and receipt.get('session_id') == old_session, 'host_final_receipt_invalid')
         report['host_final_receipt'] = receipt
+        passed.append('same_session_successful_host_receipt')
     report['stage'] = 'independent_patch_checks'
     calls = trace_state(read_trace(trace_path)[offset:])[0]
     require(any(r['message']['params']['name'] == 'bridge_get_tree' for r, _, _ in calls), 'resume_missing_tree_read')
     require(host.session_id == old_session, 'host_session_changed')
     require(len(fixture.store.graph.decisions_for_task(task)) == 1, 'resume_duplicated_nodes')
+    report['same_session_resumed'] = True
+    passed.append('same_session_resumed_without_duplicate_nodes')
     expression = policy_expression((fixture.root / 'checkout' / POLICY).read_text())
     checks = check_expression(expression, scenario)
+    report['behavioral_cases'] = len(checks)
+    passed.append('independent_patch_boundary_checks')
     actual = fixture_call(fixture.root / 'checkout', 'read_changes', {})['diff']
+    report['actual_patch'] = actual
     proof = fixture.call('bridge_export_proof', task_id=task)
     require(bool(actual) and proof['integrity']['valid'] and proof['bundle']['payload']['change']['diff'] == actual,
             'proof_diff_not_actual_patch')
+    report['proof_integrity_valid'] = True
+    passed.append('proof_matches_actual_patch')
     report['advisory_review'] = {'status': proof.get('review', {}).get('status', 'not_reported'),
                                   'notice': 'Not independent correctness verification; Raven model review disabled for this host phase.'}
     host.stop()
     if host.live:
         report['stage'] = 'live_scoped_inquiry'
-        report['live_inquiry'] = live_inquiry(fixture, task, node, gateway, report['model'])
+        diagnostics = report['live_inquiry'] = {}
+        diagnostics.update(live_inquiry(fixture, task, node, gateway, report['model'], diagnostics=diagnostics))
         report['raven_inference'] = 'live_task_inquiry_only; host_ladder_deterministic'
         require(gateway.snapshot().get('physical_requests', 0) > 0, 'no_physical_provider_requests')
+        passed.append('live_scoped_inquiry')
     else:
         report['live_inquiry'] = {'mode': 'fixture_only', 'status': 'not_executed'}
-    report.update(stage='complete', status='passed' if host.live else 'scripted_passed',
-                  behavioral_cases=len(checks), same_session_resumed=True, durable_task_recovered=True,
-                  actual_patch=actual, proof_integrity_valid=True)
+    report.update(stage='complete', status='passed' if host.live else 'scripted_passed')
     return report
 
 
@@ -992,6 +1103,77 @@ def run(*, run_live=False, gateway=None, model='', output_dir=None, host_factory
     return report
 
 
+@contextmanager
+def copied_inquiry_fixture(run_dir, output_dir):
+    """Open a SQLite backup of a completed run; never reseed its checkout or DB."""
+    from types import SimpleNamespace
+    from bridge.auth import Auth
+    from bridge.server import make_server
+    from bridge.store import Store
+    run_dir, output_dir = Path(run_dir), Path(output_dir)
+    saved = json.loads((run_dir / 'result.json').read_text())
+    task, node = saved['task_id'], saved['node_id']
+    prior = saved['evidence_reads']['prior_decision_id']
+    source = run_dir / 'fixture/raven.db'
+    require(source.is_file(), 'inquiry_source_database_missing')
+    with sqlite3.connect(source.resolve().as_uri() + '?mode=ro', uri=True) as original, \
+            sqlite3.connect(output_dir / 'raven-inquiry.db') as copied:
+        original.backup(copied)
+    clean = {k: v for k, v in os.environ.items() if not any(x in k for x in ('TOKEN', 'SECRET', 'API_KEY'))
+             and not k.startswith(('BRIDGE_', 'SLACK_', 'TEAMS_', 'GITHUB_', 'RAVEN_'))}
+    clean.update(BRIDGE_MODEL_API='none', BRIDGE_SEMANTIC='0', BRIDGE_LIVE='0', BRIDGE_DEEP='0')
+    with patch.dict(os.environ, clean, clear=True):
+        store = Store(output_dir / 'raven-inquiry.db')
+        server = thread = None
+        try:
+            require(store.graph.get_task(task)['status'] == 'completed', 'inquiry_source_task_not_completed')
+            require(store.get_decision(node)['run_id'] == task, 'inquiry_source_node_outside_task')
+            person = store.graph.find_person(OWNER)
+            require(bool(person), 'inquiry_synthetic_owner_missing')
+            auth = Auth(store, enabled=True, public_url='')
+            token = auth.create_token(person['id'], 'Isolated inquiry diagnostic', kind='human')['token']
+            server = make_server(store, port=0, auth=auth, github_api=None)
+            url = f'http://127.0.0.1:{server.server_port}'
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            def human(path, data):
+                status, value, _ = http_json(url + path, data, {'Authorization': 'Bearer ' + token}, timeout=120)
+                require(status == 200, 'synthetic_human_http_refused')
+                return value
+            yield SimpleNamespace(store=store, prior_id=prior, human=human), task, node
+        finally:
+            if server is not None:
+                server.stop_waits()
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=3)
+            store.graph.close()
+
+
+def run_inquiry_only(*, run_dir, output_dir, gateway, model):
+    """Separate diagnostic result, never retroactively pass the integrated run."""
+    root = Path(output_dir)
+    if root.exists() and any(root.iterdir()):
+        return {'status': 'blocked', 'failure_code': 'inquiry_output_not_empty'}
+    root.mkdir(parents=True, exist_ok=True)
+    report = {'status': 'failed', 'stage': 'live_scoped_inquiry', 'mode': 'inquiry_only',
+              'integrated_acceptance': False, 'source_database_unchanged': True,
+              'model': model, 'live_inquiry': {}}
+    try:
+        with copied_inquiry_fixture(run_dir, root) as (fixture, task, node):
+            report.update(task_id=task, node_id=node)
+            result = live_inquiry(fixture, task, node, gateway, model, diagnostics=report['live_inquiry'])
+            report['live_inquiry'].update(result)
+            report['status'] = 'passed'
+    except Exception as error:
+        report.update(failure_code=error.code if isinstance(error, AcceptanceFailure) else 'inquiry_diagnostic_failed',
+                      runner_diagnostic=exception_diagnostic(error))
+    finally:
+        report['provider_usage'] = provider_snapshot(gateway)
+        (root / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
+    return report
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--fixture-mcp', action='store_true', help=argparse.SUPPRESS)
@@ -999,6 +1181,7 @@ def main(argv=None):
     parser.add_argument('--sdk-preflight', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--offline-sdk-preflight', action='store_true', help='Run real SDK/MCP against synthetic provider SSE; never asks for a key')
     parser.add_argument('--run-live', action='store_true')
+    parser.add_argument('--inquiry-only', type=Path, help='Diagnose a completed run on an isolated DB copy; fixed 4-call/100k-byte/6k-output budget')
     parser.add_argument('--model', default='')
     parser.add_argument('--output-dir', type=Path)
     parser.add_argument('--max-calls', type=int, default=24)
@@ -1008,6 +1191,31 @@ def main(argv=None):
     parser.add_argument('--credential-file', type=Path, help='Use an explicitly installed private test credential; invalid files never trigger a prompt')
     parser.add_argument('--timeout', type=int, default=300)
     args = parser.parse_args(argv)
+    if args.inquiry_only:
+        if not args.run_live or not args.model or not args.output_dir or not args.credential_file:
+            parser.error('Inquiry-only requires --run-live, --model, --output-dir, and --credential-file.')
+        if args.output_dir.exists() and any(args.output_dir.iterdir()):
+            print(json.dumps({'status': 'blocked', 'failure_code': 'inquiry_output_not_empty'}))
+            return 1
+        if not (args.inquiry_only / 'result.json').is_file() or not (args.inquiry_only / 'fixture/raven.db').is_file():
+            print(json.dumps({'status': 'blocked', 'failure_code': 'inquiry_source_missing'}))
+            return 1
+        from evals.customer_provider_gateway import Gateway
+        from evals.customer_test_credentials import read_saved_key
+        try:
+            key = read_saved_key(args.credential_file)
+        except Exception:
+            result = {'status': 'blocked', 'stage': 'credential_setup', 'failure_code': 'saved_credential_unavailable'}
+        else:
+            with Gateway(api_key=key, workspace_id=args.workspace_id, model=args.model,
+                         max_calls=4, max_input_bytes=100000, max_output_tokens=6000) as gateway:
+                key = ''
+                result = run_inquiry_only(run_dir=args.inquiry_only, output_dir=args.output_dir,
+                                          gateway=gateway, model=args.model)
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        (args.output_dir / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
+        print(json.dumps(result, indent=2))
+        return 0 if result['status'] == 'passed' else 1
     if args.offline_sdk_preflight:
         result = offline_sdk_preflight(output_dir=args.output_dir, model=args.model or 'claude-sonnet-4-6',
                                        timeout=min(args.timeout, 90))
