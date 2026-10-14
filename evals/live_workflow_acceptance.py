@@ -21,7 +21,6 @@ import sys
 import threading
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 from unittest.mock import patch
 
@@ -45,12 +44,12 @@ class AcceptanceFailure(AssertionError):
 
 
 class RequestBudget:
-    """Transparent network observer/gate. Does not replace any model output."""
+    """Transparent inference observer/gate. Does not replace any model output."""
     def __init__(self, maximum=30, opener=None):
         if not isinstance(maximum, int) or not 1 <= maximum <= 100:
             raise ValueError('max_calls must be between 1 and 100')
         self.maximum = maximum
-        self.opener = opener or urllib.request.urlopen
+        self.opener = opener or llm._open_model_request
         self.lock = threading.Lock()
         self.requests = []
         self.cancelled = False
@@ -58,9 +57,7 @@ class RequestBudget:
     def open(self, request, *args, **kwargs):
         url = request.full_url if isinstance(request, urllib.request.Request) else str(request)
         if url != PROVIDER_URL:
-            if urllib.parse.urlsplit(url).hostname not in ('127.0.0.1', 'localhost', '::1'):
-                raise llm.LLMError('Acceptance run refused an unexpected external destination')
-            return self.opener(request, *args, **kwargs)
+            raise llm.LLMError('Acceptance run refused an unexpected external destination')
         with self.lock:
             if self.cancelled:
                 raise llm.LLMError('Live workflow provider requests have stopped')
@@ -493,7 +490,7 @@ def run(*, run_live=False, max_calls=None, timeout=180, interview_only=False, pr
             scenario = novel_scenario()
         report['scenario'] = scenario
         with redirect_stdout(diagnostics), redirect_stderr(diagnostics), \
-             patch('urllib.request.urlopen', side_effect=budget.open), observe_interview_model(report):
+             patch('bridge.llm._open_model_request', side_effect=budget.open), observe_interview_model(report):
             with harness_factory(model_mode='live', request_timeout=timeout, event_timeout=timeout) as h:
                 try:
                     workflow(h, llm.Client(load().fast()), scenario, report, timeout=timeout)

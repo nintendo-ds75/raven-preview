@@ -24,7 +24,7 @@ class AnthropicWorkspaceTests(unittest.TestCase):
             calls.append((request, timeout))
             return io.BytesIO(json.dumps({"content": [{"type": "text", "text": "ok"}]}).encode())
 
-        with patch("urllib.request.urlopen", open_request):
+        with patch("bridge.llm._open_model_request", open_request):
             (client or self.client)._messages("system", "prompt", 12)
         request, timeout = calls[0]
         return {key.lower(): value for key, value in request.header_items()}, json.loads(request.data), timeout

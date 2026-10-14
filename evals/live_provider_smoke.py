@@ -22,7 +22,7 @@ def run():
         return {'status': 'blocked', 'reason': 'Configure Anthropic securely on the server and enable inference first.'}
     before = (llm.USAGE.calls, llm.USAGE.input_tokens, llm.USAGE.output_tokens)
     calls = []
-    actual_open = urllib.request.urlopen
+    actual_open = llm._open_model_request
 
     def budgeted_open(request, *args, **kwargs):
         url = request.full_url if isinstance(request, urllib.request.Request) else str(request)
@@ -36,7 +36,7 @@ def run():
     result = {'status': 'failed', 'provider': 'anthropic', 'model': cfg.fast_model,
               'synthetic_data': True, 'live_slack': False, 'human_approval': False}
     try:
-        with patch('urllib.request.urlopen', side_effect=budgeted_open):
+        with patch('bridge.llm._open_model_request', side_effect=budgeted_open):
             read = slack_chat.reading(cfg, {'question': 'Which usage is billable?',
                 'message': 'Exclude the 600000 internal load-test calls. Keep real customer traffic billable.',
                 'history': [], 'sources': [], 'pending_readback': None,

@@ -7,6 +7,10 @@ BRIDGE_MODEL_API=claude-cli. There is no automatic fallback when no key is
 set. With neither, completion raises NoAPIKey and the ladder runs its
 deterministic rungs only; nothing is faked.
 
+API credentials are sent only to the exact official Anthropic Messages or
+OpenAI Responses endpoint. Inference ignores inherited HTTP proxies and
+global urllib openers, and never follows redirects.
+
 Embeddings are ALWAYS local and deterministic (hashed bag of stemmed
 words). No embedding API is ever called.
 """
@@ -17,6 +21,7 @@ import hashlib
 import json
 import os
 import re
+import urllib.request
 from dataclasses import dataclass
 
 from .config import Config
@@ -76,6 +81,41 @@ class LLMError(RuntimeError):
 
 class NoAPIKey(LLMError):
     pass
+
+
+_MODEL_API_URLS = frozenset({
+    "https://api.anthropic.com/v1/messages",
+    "https://api.openai.com/v1/responses",
+})
+
+
+def _validate_model_url(url: str) -> None:
+    # Exact matching rejects credentials, alternate ports, query strings and
+    # URL normalization tricks before a credential-bearing request is built.
+    if url not in _MODEL_API_URLS:
+        raise LLMError("model API destination refused; use an official inference endpoint")
+
+
+class _RejectModelRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Never replay authentication headers, even to another allowed endpoint.
+        fp.close()
+        raise LLMError("model API redirect refused; inference credentials cannot be redirected")
+
+
+def _open_model_request(request, timeout=120):
+    """The inference transport seam: official endpoints, no proxies or redirects.
+
+    A private opener avoids both environment/OS proxy discovery and an opener
+    installed elsewhere in this process. TLS certificate verification retains
+    the standard library default. Observers may wrap this function to count
+    physical attempts without replacing provider responses.
+    """
+    url = request.full_url if isinstance(request, urllib.request.Request) else request
+    _validate_model_url(url)
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), _RejectModelRedirects())
+    return opener.open(request, timeout=timeout)
 
 
 def _anthropic_text(payload: dict) -> str:
@@ -147,7 +187,7 @@ class Client:
         surfaces as LLMError. Standard library only."""
         import time as _time
         import urllib.error
-        import urllib.request
+        _validate_model_url(url)
         data = json.dumps(body).encode()
         last = None
         for attempt in range(4):
@@ -155,7 +195,7 @@ class Client:
                 url, data=data,
                 headers={**headers, "content-type": "application/json"})
             try:
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                with _open_model_request(req, timeout=timeout) as resp:
                     return json.loads(resp.read().decode())
             except urllib.error.HTTPError as e:
                 detail = ""
