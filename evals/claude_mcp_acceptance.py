@@ -41,6 +41,9 @@ SDK_VERSION = '0.2.165'
 REPO = 'contract/billing'
 POLICY = 'billing/usage.py'
 BASELINE = 'def is_billable(is_internal, cohort, calls):\n    return True\n'
+SOURCE_BODY = 'Real customer traffic must remain billable. Internal-load exceptions need current owner judgment.'
+PRIOR_ANSWER = 'All sandbox internal-load traffic is excluded. Production is not decided here.'
+PRIOR_APPLICABILITY = {'requires': {'environment': 'sandbox'}}
 READABLE = {POLICY, 'README.md', 'CODEOWNERS'}
 RAVEN_TOOLS = {'bridge_start_task', 'bridge_add_node', 'bridge_get_tree', 'bridge_get_decision',
                'bridge_wait', 'bridge_settle_node', 'bridge_finish_task', 'bridge_export_proof',
@@ -667,14 +670,14 @@ class Fixture(RavenContractHarness):
         self.store.graph.add_authority('path', 'billing/*', 'decides', person_id=person['id'],
                                       repo=REPO, source='config', asserted_by='acceptance fixture', accepted=True)
         self.source = self.store.add_record({'repo': REPO, 'kind': 'doc', 'ref': 'BILLING-CONTEXT',
-            'title': 'Production billing context', 'body': 'Real customer traffic must remain billable. Internal-load exceptions need current owner judgment.',
+            'title': 'Production billing context', 'body': SOURCE_BODY,
             'author': self.owner_name, 'status': 'Open', 'resolved': False, 'paths': [POLICY]})['source']
         old = self.store.add_run({'title': 'Historical sandbox-only billing decision', 'repo': REPO})['id']
         node = self.store.graph.add_decision(old, 'Should internal load-test traffic be billable in sandbox?',
             'policy', 'pending', repo=REPO, owner=self.owner_name, path=POLICY)
         self.human('/api/decisions/' + node + '/answer', {
-            'answer': 'All sandbox internal-load traffic is excluded. Production is not decided here.',
-            'applicability': {'requires': {'environment': 'sandbox'}},
+            'answer': PRIOR_ANSWER,
+            'applicability': PRIOR_APPLICABILITY,
             'expected_updated_at': self.store.get_decision(node)['updated_at']})
         self.prior_id = node
         self.store.delivery.deliver_now()
@@ -761,6 +764,61 @@ def wait_until(predicate, host, deadline, code):
     raise AcceptanceFailure('timeout_' + code)
 
 
+def observed_evidence_reads(fixture, completed):
+    """Recognize delivered evidence content, independently of the retrieval tool.
+
+    A bundled start/tree response is equivalent to a dedicated read. A pointer,
+    title, request argument, or another record's content is not a completed read.
+    Match identity, current version/scope, and complete content on the same
+    evidence object; never combine unrelated objects or separate responses.
+    """
+    def decoded(value):
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except (ValueError, RecursionError):
+                pass
+        return value
+
+    def objects(value, depth=0):
+        if depth > 32:
+            return
+        value = decoded(value)
+        if isinstance(value, dict):
+            yield value
+            for child in value.values():
+                yield from objects(child, depth + 1)
+        elif isinstance(value, list):
+            for child in value:
+                yield from objects(child, depth + 1)
+
+    prior_tools, context_tools = set(), set()
+    for request, _, response in completed:
+        name = request.get('message', {}).get('params', {}).get('name', '')
+        if not name.startswith('bridge_'):
+            continue  # The trace can also contain fixture-tool output.
+        for value in objects(response):
+            scope = decoded(value.get('applicability'))
+            approval_scope = decoded(value.get('approval_scope'))
+            if scope is None and isinstance(approval_scope, dict):
+                scope = decoded(approval_scope.get('applicability'))
+            if (fixture.prior_id in (value.get('id'), value.get('decision_id'))
+                    and value.get('answer') == PRIOR_ANSWER and scope == PRIOR_APPLICABILITY):
+                prior_tools.add(name)
+            snapshot = decoded(value.get('snapshot'))
+            body = value.get('body')
+            if body is None and isinstance(snapshot, dict):
+                body = snapshot.get('body')
+            if (value.get('record_id') == fixture.source['record_id']
+                    and value.get('source_version_id', value.get('id')) == fixture.source['source_version_id']
+                    and body == SOURCE_BODY):
+                context_tools.add(name)
+    return {'prior_decision_id': fixture.prior_id, 'record_id': fixture.source['record_id'],
+            'source_version_id': fixture.source['source_version_id'],
+            'prior_content_read': bool(prior_tools), 'context_content_read': bool(context_tools),
+            'prior_response_tools': sorted(prior_tools), 'context_response_tools': sorted(context_tools)}
+
+
 def exercise(fixture, host, gateway, report, *, timeout=180, idle_seconds=2):
     scenario = novel_scenario()
     report['scenario'] = scenario
@@ -780,18 +838,10 @@ def exercise(fixture, host, gateway, report, *, timeout=180, idle_seconds=2):
     report.update(task_id=task, node_id=node, first_owner=first.get('owner'))
     require(first.get('owner') == fixture.owner_name, 'first_route_wrong_owner')
     require(not fixture.store.get_decision(node)['authorized'], 'authority_before_human')
-    names = {r['message']['params']['name'] for r, _, _ in trace_state(read_trace(trace_path))[0]}
-    require('bridge_search_decisions' in names and ('bridge_search_context' in names or 'bridge_get_record' in names),
-            'host_did_not_read_prior_and_context')
     completed = trace_state(read_trace(trace_path))[0]
-    prior_reads = [value for req, _, value in completed
-                   if req['message']['params']['name'] in ('bridge_search_decisions', 'bridge_get_decision')]
-    context_reads = [value for req, _, value in completed
-                     if req['message']['params']['name'] in ('bridge_search_context', 'bridge_get_record')]
-    require(any(fixture.prior_id in json.dumps(value) for value in prior_reads), 'host_missing_actual_prior_evidence')
-    require(any(fixture.source['record_id'] in json.dumps(value) for value in context_reads), 'host_missing_actual_context_evidence')
-    report['evidence_reads'] = {'prior_decision_id': fixture.prior_id, 'record_id': fixture.source['record_id'],
-                               'source_version_id': fixture.source['source_version_id']}
+    report['evidence_reads'] = observed_evidence_reads(fixture, completed)
+    require(report['evidence_reads']['prior_content_read'], 'host_missing_actual_prior_evidence')
+    require(report['evidence_reads']['context_content_read'], 'host_missing_actual_context_evidence')
     fixture.store.delivery.deliver_now()
     notices = [m for m in fixture.slack.messages if '/#runs/' + task + '/' + node in m['text']]
     require(bool(notices), 'notification_missing')

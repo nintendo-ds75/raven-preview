@@ -29,6 +29,7 @@ import re
 from collections import defaultdict
 
 from .graph import _DECISION_SELECT, _row_to_decision
+from .host_client import CONTEXT_GUIDANCE
 from .store import Invalid, answer_hash, field, now, repo_key
 
 MAX_PATHS = 20
@@ -918,7 +919,7 @@ def _next_for_verdict(verdict: str, discovery: dict, proposed: list[dict] | None
                 "lifetime, what happens to existing data or users), write it as a node with bridge_add_node"
                 + (f" for {who}, who own{'s' if ', ' not in who else ''} this area" if who else "")
                 + ", and call bridge_finish_task when done" + ask)
-    return ("write each decision you discover as a node with bridge_add_node (parent_id links it to the "
+    return (CONTEXT_GUIDANCE + "Write each decision you discover as a node with bridge_add_node (parent_id links it to the "
             "decision it grew from); Raven resolves what it can and routes the rest"
             + (f", most likely to {who}" if who else "") + ask
             + "; read bridge_get_tree before an irreversible step; a file you change in an area someone else "
@@ -3193,7 +3194,7 @@ def _task_as_started(store, row):
                      'kickoff candidates with the questions and answers already on this task; they may overlap '
                      'or already be covered. Add only genuinely new or uncovered decisions in their actual '
                      'scope. Existing answers and referrals do not authorize a new node or transfer ownership. '
-                     'Read bridge_get_tree before an irreversible step.')
+                     'Read bridge_get_tree before an irreversible step. ' + CONTEXT_GUIDANCE)
     if row['status'] in ('abandoned', 'completed'):
         next_step = 'This task is closed; start a new task for new work.'
         if row['status'] == 'completed':

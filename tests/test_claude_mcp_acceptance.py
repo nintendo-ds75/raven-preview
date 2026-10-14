@@ -93,6 +93,84 @@ class ScriptedHost:
             self.thread.join(timeout=3)
 
 
+class EvidenceReadTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = SimpleNamespace(prior_id='seeded-prior', source={
+            'record_id': 'seeded-record', 'source_version_id': 'seeded-current-version'})
+        self.prior = {'id': self.fixture.prior_id, 'answer': a.PRIOR_ANSWER,
+                      'applicability': a.PRIOR_APPLICABILITY}
+        self.context = {**self.fixture.source, 'body': a.SOURCE_BODY}
+
+    def observed(self, *responses, name='bridge_start_task', arguments=None):
+        request = {'message': {'params': {'name': name, 'arguments': arguments or {}}}}
+        return a.observed_evidence_reads(self.fixture, [(request, {}, response) for response in responses])
+
+    def test_bundled_start_response_counts_complete_prior_scope_and_source_content(self):
+        result = self.observed({'discovery': {'prior_decisions': [self.prior], 'context': [self.context]}})
+        self.assertTrue(result['prior_content_read'])
+        self.assertTrue(result['context_content_read'])
+        self.assertEqual(result['prior_response_tools'], ['bridge_start_task'])
+        self.assertEqual(result['context_response_tools'], ['bridge_start_task'])
+
+    def test_any_raven_response_can_deliver_equivalent_nested_json_evidence(self):
+        result = self.observed({'content': json.dumps({'prior': self.prior, 'source': self.context})},
+                               name='bridge_get_tree')
+        self.assertTrue(result['prior_content_read'])
+        self.assertTrue(result['context_content_read'])
+
+    def test_pointer_title_and_request_arguments_are_not_evidence_reads(self):
+        result = self.observed({'prior': {'id': self.fixture.prior_id},
+                                'source': {**self.fixture.source, 'title': 'Production billing context'}},
+                               arguments={'prior': self.prior, 'context': self.context})
+        self.assertFalse(result['prior_content_read'])
+        self.assertFalse(result['context_content_read'])
+
+    def test_prior_requires_complete_answer_and_matching_recorded_scope(self):
+        for prior in ({'id': self.fixture.prior_id, 'answer': a.PRIOR_ANSWER},
+                      {**self.prior, 'answer': a.PRIOR_ANSWER[:30]},
+                      {**self.prior, 'applicability': {'requires': {'environment': 'production'}}}):
+            with self.subTest(prior=prior):
+                self.assertFalse(self.observed(prior)['prior_content_read'])
+        encoded = {**self.prior, 'applicability': json.dumps(a.PRIOR_APPLICABILITY)}
+        self.assertTrue(self.observed(encoded)['prior_content_read'])
+
+    def test_source_requires_exact_current_version_and_complete_body(self):
+        for context in ({**self.context, 'source_version_id': 'old-version'},
+                        {**self.context, 'body': a.SOURCE_BODY[:40]},
+                        {**self.context, 'record_id': 'other-record'},
+                        {**self.context, 'source_version_id': 'old-version', 'id': 'seeded-current-version'}):
+            with self.subTest(context=context):
+                self.assertFalse(self.observed(context)['context_content_read'])
+
+    def test_contents_cannot_be_stitched_across_unrelated_objects_or_responses(self):
+        pointer = {'id': self.fixture.prior_id}
+        other_prior = {**self.prior, 'id': 'other-prior'}
+        context_pointer = dict(self.fixture.source)
+        other_context = {**self.context, 'record_id': 'other-record'}
+        for result in (self.observed({'items': [pointer, other_prior, context_pointer, other_context]}),
+                       self.observed(pointer, other_prior, context_pointer, other_context)):
+            self.assertFalse(result['prior_content_read'])
+            self.assertFalse(result['context_content_read'])
+
+    def test_fixture_file_response_is_not_a_raven_evidence_read(self):
+        result = self.observed({'prior': self.prior, 'context': self.context}, name='read_file')
+        self.assertFalse(result['prior_content_read'])
+        self.assertFalse(result['context_content_read'])
+
+    def test_real_dedicated_responses_and_bundled_equivalent_both_count(self):
+        with a.Fixture() as fixture:
+            fixture.prepare()
+            prior = fixture.call('bridge_get_decision', decision_id=fixture.prior_id)
+            source = fixture.call('bridge_get_record', record_id=fixture.source['record_id'], repo=a.REPO)
+            search = fixture.call('bridge_search_context', repo=a.REPO, query='Production billing context')
+            for name, value in [('bridge_start_task', {'discovery': [prior, source]}),
+                                ('bridge_get_tree', {'context': search, 'prior': prior})]:
+                request = {'message': {'params': {'name': name}}}
+                result = a.observed_evidence_reads(fixture, [(request, {}, value)])
+                self.assertTrue(result['prior_content_read'])
+                self.assertTrue(result['context_content_read'])
+
+
 class DriverTests(unittest.TestCase):
     def test_invalid_credential_file_never_prompts_or_calls_provider(self):
         reader = SimpleNamespace(read_saved_key=lambda _: (_ for _ in ()).throw(ValueError('SECRET private path')))
@@ -380,6 +458,20 @@ class DriverTests(unittest.TestCase):
         self.assertIn('host_exited', report['failure_code'])
         self.assertNotIn('same_session_resumed', report)
         self.assertFalse(hosts[0].alive())
+
+    def test_missing_static_content_still_fails_after_actual_prior_read(self):
+        class MissingStaticHost(ScriptedHost):
+            def call(self, fixture, name, **arguments):
+                if name == 'bridge_search_context':
+                    return {}  # No response delivered; the prior still uses real Raven.
+                return super().call(fixture, name, **arguments)
+        report = a.run(host_factory=MissingStaticHost, idle_seconds=.01, timeout=5,
+                       freshness_runner=lambda: {'mode': 'test-double-not-executed'})
+        self.assertEqual(report['status'], 'failed')
+        self.assertEqual(report['failure_code'], 'host_missing_actual_context_evidence')
+        self.assertTrue(report['evidence_reads']['prior_content_read'])
+        self.assertFalse(report['evidence_reads']['context_content_read'])
+        self.assertNotIn('same_session_resumed', report)
 
 
 if __name__ == '__main__':
