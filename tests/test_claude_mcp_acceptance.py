@@ -1,5 +1,6 @@
 """Offline driver/containment tests. These never count as live host acceptance."""
 import json
+import io
 import os
 from pathlib import Path
 import re
@@ -93,6 +94,101 @@ class ScriptedHost:
 
 
 class DriverTests(unittest.TestCase):
+    def test_exception_diagnostic_keeps_structure_without_secret_text_or_paths(self):
+        secret = 'PRIVATE_API_KEY_AND_PROMPT'
+        try:
+            try:
+                raise FileNotFoundError(2, secret, '/private/' + secret)
+            except FileNotFoundError as cause:
+                raise RuntimeError(secret) from cause
+        except RuntimeError as error:
+            diagnostic = a.exception_diagnostic(error)
+        serialized = json.dumps(diagnostic)
+        self.assertNotIn(secret, serialized)
+        self.assertNotIn('/private/', serialized)
+        self.assertEqual(diagnostic['class'], 'RuntimeError')
+        self.assertEqual(diagnostic['cause']['class'], 'FileNotFoundError')
+        self.assertEqual(diagnostic['cause']['errno'], 2)
+        self.assertTrue(diagnostic['frames'])
+        self.assertEqual(set(diagnostic['frames'][0]), {'module', 'line'})
+
+    def test_host_event_projection_discards_unknown_fields_and_raw_diagnostics(self):
+        event = {'kind': 'error', 'code': 'SECRET', 'stderr': 'SECRET', 'diagnostic': {
+            'module': 'builtins', 'class': 'RuntimeError', 'message': 'SECRET',
+            'frames': [{'module': 'claude_agent_sdk._internal.transport', 'line': 42,
+                        'filename': '/private/SECRET.py', 'locals': {'key': 'SECRET'}}],
+            'cause': {'module': 'builtins', 'class': 'ModuleNotFoundError', 'message': 'SECRET'},
+            'exit_code': 1}}
+        result = a.sanitized_host_event(event)
+        self.assertNotIn('SECRET', json.dumps(result))
+        self.assertEqual(result['diagnostic']['frames'][0]['line'], 42)
+        self.assertEqual(result['diagnostic']['cause']['class'], 'ModuleNotFoundError')
+        self.assertEqual(result['diagnostic']['exit_code'], 1)
+
+    def test_sdk_host_persists_sanitized_returncode_and_events(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            host = a.SDKHost(SimpleNamespace(), Path(tmp), 'fixture-model')
+            host.process = SimpleNamespace(poll=lambda: 7, stdin=io.StringIO(), stdout=io.StringIO())
+            host.phases = [{'phase': 'initial', 'event_start': 0, 'returncode': None}]
+            host.events = [a.sanitized_host_event({'kind': 'error', 'code': 'SECRET'})]
+            host.stop()
+            saved = (Path(tmp) / 'host-diagnostics.json').read_text()
+        self.assertNotIn('SECRET', saved)
+        self.assertEqual(json.loads(saved)['phases'][0]['returncode'], 7)
+        self.assertFalse(json.loads(saved)['raw_stderr_retained'])
+
+    def test_empty_home_does_not_expand_inherited_pythonpath(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / 'empty-home'
+            home.mkdir()
+            gateway = SimpleNamespace(url='http://127.0.0.1:1', placeholder='public-placeholder')
+            with patch.dict(os.environ, {'PYTHONPATH': '/private/untrusted-python-path'}):
+                env = a.host_environment(gateway, home)
+            self.assertNotIn('/private/untrusted', env['PYTHONPATH'])
+            self.assertEqual(env['PYTHONPATH'].split(os.pathsep)[0], str(a.ROOT))
+
+    def test_isolated_child_uses_exact_distribution_and_constructs_options(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sdk_root = Path(tmp) / 'pinned-site'
+            package = sdk_root / 'claude_agent_sdk'
+            package.mkdir(parents=True)
+            (package / '__init__.py').write_text(
+                'class ClaudeAgentOptions:\n    def __init__(self, **kw): self.__dict__.update(kw)\n'
+                'class HookMatcher:\n    def __init__(self, **kw): self.__dict__.update(kw)\n'
+                'class PermissionResultDeny:\n    def __init__(self, **kw): self.__dict__.update(kw)\n')
+            info = sdk_root / 'claude_agent_sdk-0.2.165.dist-info'
+            info.mkdir()
+            (info / 'METADATA').write_text('Metadata-Version: 2.1\nName: claude-agent-sdk\nVersion: 0.2.165\n')
+            distribution = SimpleNamespace(locate_file=lambda _: sdk_root)
+            with patch.object(a.importlib.metadata, 'distribution', return_value=distribution):
+                result = a.sdk_child_preflight('fixture-model')
+            self.assertEqual(result, {'status': 'passed', 'version': a.SDK_VERSION, 'options_constructed': True})
+
+    def test_wrong_isolated_sdk_version_blocks_before_key_prompt(self):
+        with patch.object(a.importlib.metadata, 'version', return_value=a.SDK_VERSION), \
+                patch.object(a, 'sdk_child_preflight', return_value={'status': 'blocked', 'code': 'wrong_version'}), \
+                patch.object(a.getpass, 'getpass', side_effect=AssertionError('must not ask')):
+            self.assertEqual(a.main(['--run-live', '--model', 'fixture-model', '--output-dir', '/tmp/uncreated-child-check']), 1)
+
+    def test_offline_sdk_transcript_emits_sse_tool_calls_and_uses_real_result_identity(self):
+        import httpx
+        transcript = a.OfflineSDKTranscript()
+        first = transcript(httpx.Request('POST', 'https://api.anthropic.com/v1/messages',
+            json={'model': 'fixture-model', 'stream': True, 'messages': []}))
+        self.assertEqual(first.status_code, 200)
+        self.assertIn('mcp__raven__bridge_start_task', first.text)
+        self.assertIn('event: content_block_delta', first.text)
+        result = {'role': 'user', 'content': [{'type': 'tool_result', 'content': [
+            {'type': 'text', 'text': json.dumps({'task_id': 'actual-task-from-mcp'})}]}]}
+        second = transcript(httpx.Request('POST', 'https://api.anthropic.com/v1/messages',
+            json={'model': 'fixture-model', 'stream': False, 'messages': [result]}))
+        block = second.json()['content'][0]
+        self.assertEqual(block['name'], 'mcp__raven__bridge_search_context')
+        self.assertEqual(block['input']['task_id'], 'actual-task-from-mcp')
+        denied = transcript(httpx.Request('POST', 'https://other.invalid/v1/messages', json={}))
+        self.assertEqual(denied.status_code, 403)
+
     def test_default_has_no_harness_provider_or_filesystem_effect(self):
         with patch.object(a, 'Fixture', side_effect=AssertionError('must not construct')), \
                 patch.object(a, 'freshness_checks', side_effect=AssertionError('must not run')):
@@ -146,6 +242,7 @@ class DriverTests(unittest.TestCase):
     def test_direct_failure_is_saved_without_raw_exception_or_credential(self):
         with tempfile.TemporaryDirectory() as tmp, \
                 patch.object(a.importlib.metadata, 'version', return_value=a.SDK_VERSION), \
+                patch.object(a, 'sdk_child_preflight', return_value={'status': 'passed'}), \
                 patch.object(a.getpass, 'getpass', return_value='synthetic-credential'), \
                 patch.object(a, 'direct_inference_smoke', side_effect=RuntimeError('synthetic-credential PRIVATE_BODY')):
             output = Path(tmp) / 'result'

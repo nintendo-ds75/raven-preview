@@ -20,6 +20,7 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -68,6 +69,101 @@ diff returned by read_changes and honest checks. Do not invent hidden test resul
 def require(condition, code):
     if not condition:
         raise AcceptanceFailure(code)
+
+
+DIAGNOSTIC_MODULES = ('claude_agent_sdk', 'anyio', 'asyncio', 'httpx', 'httpcore', 'mcp',
+                      'pydantic', 'typing', 'typing_extensions', 'sniffio', 'exceptiongroup',
+                      'contextlib', 'subprocess', 'json', 'collections', 'enum', 'pathlib',
+                      'os', 'importlib', 'sys', 'builtins', 'evals.claude_mcp_acceptance',
+                      'evals.live_workflow_acceptance', 'evals.customer_provider_gateway')
+
+
+def diagnostic_module(name):
+    if name == '__main__':
+        return 'evals.claude_mcp_acceptance'
+    if isinstance(name, str) and len(name) <= 160 and any(name == p or name.startswith(p + '.') for p in DIAGNOSTIC_MODULES):
+        return name
+    return 'other'
+
+
+def exception_diagnostic(error, *, depth=0, seen=None):
+    """Never stringify exceptions, source lines, filenames, arguments or locals."""
+    seen = set() if seen is None else seen
+    if id(error) in seen or depth >= 4:
+        return {'truncated': True}
+    seen.add(id(error))
+    module = diagnostic_module(type(error).__module__)
+    name = type(error).__name__
+    result = {'class': name if module != 'other' and name.isidentifier() and len(name) <= 100 else 'ExternalException',
+              'module': module, 'frames': []}
+    trace = error.__traceback__
+    while trace is not None:
+        result['frames'].append({'module': diagnostic_module(trace.tb_frame.f_globals.get('__name__')),
+                                 'line': trace.tb_lineno})
+        trace = trace.tb_next
+    result['frames'] = result['frames'][-12:]
+    for attr in ('exit_code', 'returncode', 'errno'):
+        value = getattr(error, attr, None)
+        if type(value) is int and -1000000 <= value <= 1000000:
+            result[attr] = value
+    cause = error.__cause__ if error.__cause__ is not None else error.__context__
+    if cause is not None:
+        result['cause'] = exception_diagnostic(cause, depth=depth + 1, seen=seen)
+    if isinstance(error, BaseExceptionGroup):
+        result['children'] = [exception_diagnostic(child, depth=depth + 1, seen=seen) for child in error.exceptions[:4]]
+        result['omitted_children'] = max(0, len(error.exceptions) - 4)
+    return result
+
+
+def sanitized_host_event(event):
+    """Persist only known structural fields, never arbitrary subprocess output."""
+    if not isinstance(event, dict):
+        return {'kind': 'protocol_error', 'code': 'non_object_event'}
+    kind = event.get('kind')
+    if kind == 'error':
+        result = {'kind': 'error', 'code': 'sdk_worker_failed'}
+        # Diagnostics originate in our worker; still project every field again.
+        def project(value, depth=0):
+            if not isinstance(value, dict) or depth >= 4:
+                return {'truncated': True}
+            module = diagnostic_module(value.get('module'))
+            name = value.get('class', '')
+            output = {'module': module, 'class': name if module != 'other' and isinstance(name, str)
+                      and name.isidentifier() and len(name) <= 100 else 'ExternalException'}
+            output['frames'] = [{'module': diagnostic_module(f.get('module')), 'line': f['line']}
+                                for f in value.get('frames', [])[-12:] if isinstance(f, dict)
+                                and type(f.get('line')) is int and f['line'] >= 0]
+            for key in ('exit_code', 'returncode', 'errno', 'omitted_children'):
+                if type(value.get(key)) is int:
+                    output[key] = value[key]
+            if 'cause' in value:
+                output['cause'] = project(value['cause'], depth + 1)
+            if isinstance(value.get('children'), list):
+                output['children'] = [project(c, depth + 1) for c in value['children'][:4]]
+            return output
+        if 'diagnostic' in event:
+            result['diagnostic'] = project(event['diagnostic'])
+        return result
+    if kind in ('session', 'result'):
+        result = {'kind': kind}
+        for key in ('id', 'session_id'):
+            value = event.get(key)
+            if isinstance(value, str) and re.fullmatch(r'[0-9a-fA-F-]{32,36}', value):
+                result[key] = value
+        if kind == 'result':
+            statuses = {'success', 'error_during_execution', 'error_max_turns', 'error_max_budget_usd',
+                        'error_max_structured_output_retries'}
+            result['status'] = event.get('status') if event.get('status') in statuses else 'other'
+            result['is_error'] = event.get('is_error') is True
+            for key in ('cost_usd', 'turns'):
+                if type(event.get(key)) in (float, int) and 0 <= event[key] < 1e9:
+                    result[key] = event[key]
+            usage = event.get('usage') or {}
+            result['usage'] = {key: usage[key] for key in ('input_tokens', 'output_tokens',
+                'cache_creation_input_tokens', 'cache_read_input_tokens') if isinstance(usage, dict)
+                and type(usage.get(key)) is int and usage[key] >= 0}
+        return result
+    return {'kind': 'protocol_error', 'code': 'unknown_event_kind'}
 
 
 def policy_expression(source):
@@ -168,11 +264,177 @@ def fixture_mcp():
 
 def host_environment(gateway, home):
     env = {k: os.environ[k] for k in ('PATH', 'LANG') if k in os.environ}
-    env.update(HOME=str(home), CLAUDE_CONFIG_DIR=str(home / 'claude'), PYTHONPATH=str(ROOT),
+    python_paths = [str(ROOT)]
+    try:
+        distribution = importlib.metadata.distribution('claude-agent-sdk')
+        sdk_root = Path(distribution.locate_file('')).resolve()
+        if (sdk_root / 'claude_agent_sdk').is_dir() and str(sdk_root) not in python_paths:
+            # Preserve precisely the installed SDK's site directory ahead of
+            # global packages. Empty HOME can otherwise select an older SDK.
+            python_paths.append(str(sdk_root))
+    except importlib.metadata.PackageNotFoundError:
+        pass
+    env.update(HOME=str(home), CLAUDE_CONFIG_DIR=str(home / 'claude'), PYTHONPATH=os.pathsep.join(python_paths),
                PYTHONUNBUFFERED='1', ANTHROPIC_BASE_URL=gateway.url,
                ANTHROPIC_API_KEY=gateway.placeholder, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='1',
                CLAUDE_CODE_MAX_OUTPUT_TOKENS='1024')
     return env
+
+
+def sdk_child_preflight(model):
+    """Check the actual isolated child's package/version/options without inference."""
+    from types import SimpleNamespace
+    with tempfile.TemporaryDirectory(prefix='raven-sdk-preflight-') as tmp:
+        home = Path(tmp)
+        config = {'raven_env': {}, 'checkout': str(home), 'home': str(home), 'model': model,
+                  'max_turns': 1, 'budget_usd': .01, 'session_id': ''}
+        dummy = SimpleNamespace(url='http://127.0.0.1:1', placeholder='offline-preflight-placeholder')
+        process = subprocess.run([sys.executable, str(Path(__file__).resolve()), '--sdk-preflight'],
+            input=json.dumps(config) + '\n', text=True, capture_output=True, timeout=20,
+            cwd=home, env=host_environment(dummy, home))
+        try:
+            result = json.loads(process.stdout)
+        except ValueError:
+            return {'status': 'blocked', 'code': 'sdk_child_preflight_no_receipt', 'returncode': process.returncode}
+        if (process.returncode == 0 and result.get('version') == SDK_VERSION
+                and result.get('options_constructed') is True):
+            return {'status': 'passed', 'version': SDK_VERSION, 'options_constructed': True}
+        observed = result.get('version')
+        observed = observed if isinstance(observed, str) and re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', observed) else 'unavailable'
+        return {'status': 'blocked', 'code': 'sdk_child_preflight_failed', 'returncode': process.returncode,
+                'observed_version': observed, 'required_version': SDK_VERSION,
+                'event': sanitized_host_event(result)}
+
+
+class OfflineSDKTranscript:
+    """Synthetic Anthropic wire replies for the real SDK, never live acceptance."""
+    def __init__(self):
+        self.calls = 0
+        self.task_id = ''
+        self.errors = []
+
+    @staticmethod
+    def task_ids(value, depth=0):
+        if depth > 24:
+            return []
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except (ValueError, TypeError):
+                return []
+        if isinstance(value, dict):
+            own = [value['task_id']] if isinstance(value.get('task_id'), str) else []
+            return own + [item for child in value.values() for item in OfflineSDKTranscript.task_ids(child, depth + 1)]
+        if isinstance(value, list):
+            return [item for child in value for item in OfflineSDKTranscript.task_ids(child, depth + 1)]
+        return []
+
+    def __call__(self, request):
+        import httpx
+        if request.url.host != 'api.anthropic.com' or request.url.path not in ('/v1/messages', '/v1/messages/count_tokens'):
+            self.errors.append('unexpected_destination')
+            return httpx.Response(403, json={'error': {'type': 'invalid_request_error', 'message': 'Offline destination refused'}})
+        if request.url.path.endswith('/count_tokens'):
+            return httpx.Response(200, json={'input_tokens': 1})
+        payload = json.loads(request.content)
+        if not self.task_id:
+            ids = self.task_ids(payload.get('messages', []))
+            if ids:
+                self.task_id = ids[0]
+        steps = [
+            ('bridge_start_task', {'title': 'Production internal load-test invoice policy', 'goal': PROMPT,
+                                  'repo': REPO, 'paths': POLICY, 'client_key': 'claude-mcp-acceptance'}),
+            ('bridge_search_context', {'repo': REPO, 'task_id': self.task_id, 'query': 'Production billing context'}),
+            ('bridge_search_decisions', {'repo': REPO, 'query': 'internal load-test traffic billable'}),
+            ('bridge_add_node', {'task_id': self.task_id, 'question': 'Should internal load-test traffic count on production customer invoices?',
+                                 'paths': POLICY, 'category': 'policy', 'facts': 'environment=production', 'client_ref': 'production-policy'}),
+            ('bridge_get_tree', {'task_id': self.task_id}),
+            ('bridge_wait', {'task_id': self.task_id, 'timeout': '60'}),
+        ]
+        if self.calls >= len(steps) or (self.calls > 0 and not self.task_id):
+            self.errors.append('unexpected_model_turn' if self.task_id else 'missing_task_tool_result')
+            return httpx.Response(400, json={'error': {'type': 'invalid_request_error', 'message': 'Offline transcript exhausted'}})
+        name, args = steps[self.calls]
+        self.calls += 1
+        block = {'type': 'tool_use', 'id': 'toolu_offline_' + str(self.calls),
+                 'name': 'mcp__raven__' + name, 'input': args}
+        message = {'id': 'msg_offline_' + str(self.calls), 'type': 'message', 'role': 'assistant',
+                   'model': payload['model'], 'content': [block], 'stop_reason': 'tool_use',
+                   'stop_sequence': None, 'usage': {'input_tokens': 1, 'output_tokens': 1}}
+        if not payload.get('stream'):
+            return httpx.Response(200, json=message)
+        events = [
+            ('message_start', {'type': 'message_start', 'message': {**message, 'content': [], 'stop_reason': None,
+                                                                   'usage': {'input_tokens': 1, 'output_tokens': 0}}}),
+            ('content_block_start', {'type': 'content_block_start', 'index': 0, 'content_block': {**block, 'input': {}}}),
+            ('content_block_delta', {'type': 'content_block_delta', 'index': 0,
+                                     'delta': {'type': 'input_json_delta', 'partial_json': json.dumps(args)}}),
+            ('content_block_stop', {'type': 'content_block_stop', 'index': 0}),
+            ('message_delta', {'type': 'message_delta', 'delta': {'stop_reason': 'tool_use', 'stop_sequence': None},
+                               'usage': {'output_tokens': 1}}),
+            ('message_stop', {'type': 'message_stop'}),
+        ]
+        content = ''.join('event: ' + name + '\ndata: ' + json.dumps(value) + '\n\n' for name, value in events)
+        return httpx.Response(200, content=content.encode(), headers={'Content-Type': 'text/event-stream'})
+
+
+def offline_sdk_preflight(*, output_dir=None, model='claude-sonnet-4-6', timeout=60):
+    """Real SDK process and real MCP; all provider responses are MockTransport."""
+    import httpx
+    from evals.customer_provider_gateway import Gateway
+    checked = sdk_child_preflight(model)
+    if checked['status'] != 'passed':
+        return {**checked, 'mode': 'offline_sdk_fixture', 'live_provider': False}
+    report = {'status': 'failed', 'mode': 'offline_sdk_fixture', 'live_provider': False,
+              'provider_responses': 'httpx.MockTransport synthetic SSE', 'sdk_child_preflight': checked}
+    with ExitStack() as stack:
+        root = Path(output_dir) if output_dir else Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='raven-offline-sdk-')))
+        if root.exists() and any(root.iterdir()):
+            return {**report, 'status': 'blocked', 'code': 'output_directory_not_empty'}
+        root.mkdir(parents=True, exist_ok=True)
+        transcript = OfflineSDKTranscript()
+        host = None
+        gateway = None
+        try:
+            with Gateway('synthetic-offline-key', model=model, max_calls=12, max_input_bytes=4000000,
+                         max_output_tokens=20000, transport=httpx.MockTransport(transcript)) as gateway:
+                clean = {k: v for k, v in os.environ.items() if not any(x in k for x in ('TOKEN', 'SECRET', 'API_KEY'))
+                         and not k.startswith(('BRIDGE_', 'SLACK_', 'TEAMS_', 'GITHUB_', 'RAVEN_'))}
+                with patch.dict(os.environ, clean, clear=True), Fixture(directory=root / 'fixture') as fixture:
+                    fixture.prepare()
+                    host = SDKHost(gateway, root, model, max_turns=12)
+                    try:
+                        host.start(fixture, 'initial')
+                        deadline = time.monotonic() + timeout
+                        completed, waits = wait_until(lambda: (
+                            state if (state := trace_state(read_trace(root / 'mcp-trace.jsonl')))[1] else None),
+                            host, deadline, 'offline_sdk_pending_wait')
+                        calls = [r['message']['params']['name'] for r, _, _ in completed]
+                        require(all(name in calls for name in ('bridge_start_task', 'bridge_search_context',
+                            'bridge_search_decisions', 'bridge_add_node', 'bridge_get_tree')), 'offline_sdk_missing_mcp_stage')
+                        require(bool(host.session_id), 'offline_sdk_missing_session')
+                        time.sleep(1.2)
+                        require(any(w in trace_state(read_trace(root / 'mcp-trace.jsonl'))[1] for w in waits),
+                                'offline_sdk_wait_not_pending')
+                        require(not transcript.errors, 'offline_sdk_transcript_error')
+                        report.update(status='offline_passed', sdk_process_executed=True,
+                                      authenticated_mcp_pending_wait=True, pending_seconds=1.2,
+                                      completed_mcp_tools=calls, synthetic_model_turns=transcript.calls)
+                    finally:
+                        host.stop()
+                    report['gateway'] = gateway.snapshot()
+        except Exception as error:
+            report.update(status='blocked', failure_code=error.code if isinstance(error, AcceptanceFailure) else 'offline_sdk_error',
+                          diagnostic=exception_diagnostic(error), synthetic_transcript_errors=transcript.errors)
+        finally:
+            if host:
+                host.stop()
+                report['host_diagnostics'] = host.diagnostics()
+            if gateway is not None:
+                report['gateway'] = gateway.snapshot()
+        if output_dir:
+            (root / 'offline-sdk-result.json').write_text(json.dumps(report, indent=2) + '\n')
+    return report
 
 
 def sdk_options(config):
@@ -198,6 +460,7 @@ def sdk_options(config):
 
 
 async def sdk_worker(config):
+    require(importlib.metadata.version('claude-agent-sdk') == SDK_VERSION, 'sdk_worker_version_changed')
     from claude_agent_sdk import ClaudeSDKClient, SystemMessage, ResultMessage
     options = sdk_options(config)
     async with ClaudeSDKClient(options=options) as client:
@@ -221,8 +484,11 @@ class SDKHost:
         self.process = None
         self.events = []
         self.thread = None
+        self.phases = []
 
     def start(self, fixture, phase):
+        self.phases.append({'phase': phase if phase in ('initial', 'resume') else 'other',
+                            'event_start': len(self.events), 'returncode': None})
         home = self.root / 'host-home'
         home.mkdir(mode=0o700, exist_ok=True)
         config = {'checkout': str(fixture.root / 'checkout'), 'home': str(home), 'model': self.model,
@@ -241,8 +507,9 @@ class SDKHost:
                     event = json.loads(line)
                 except ValueError:
                     continue
+                event = sanitized_host_event(event)
                 self.events.append(event)
-                if event.get('kind') == 'session':
+                if event.get('kind') == 'session' and event.get('id'):
                     self.session_id = event['id']
         self.thread = threading.Thread(target=read, daemon=True)
         self.thread.start()
@@ -261,8 +528,22 @@ class SDKHost:
         if self.thread:
             self.thread.join(timeout=3)
         if self.process:
-            self.process.stdin.close()
-            self.process.stdout.close()
+            for stream in (self.process.stdin, self.process.stdout):
+                try:
+                    stream.close()
+                except OSError:
+                    pass
+        if self.phases:
+            self.phases[-1]['returncode'] = self.process.poll() if self.process is not None else None
+            self.phases[-1]['event_end'] = len(self.events)
+        self.persist_diagnostics()
+
+    def diagnostics(self):
+        return {'phases': self.phases, 'events': self.events[-200:],
+                'omitted_events': max(0, len(self.events) - 200), 'raw_stderr_retained': False}
+
+    def persist_diagnostics(self):
+        (self.root / 'host-diagnostics.json').write_text(json.dumps(self.diagnostics(), indent=2) + '\n')
 
 
 class Fixture(RavenContractHarness):
@@ -577,10 +858,13 @@ def run(*, run_live=False, gateway=None, model='', output_dir=None, host_factory
                         host.stop()
         except Exception as error:
             report.update(status='blocked' if isinstance(error, AcceptanceFailure) and error.code.startswith(('host_exited', 'timeout_')) else 'failed',
-                          failure_code=error.code if isinstance(error, AcceptanceFailure) else 'runner_' + type(error).__name__)
+                          failure_code=error.code if isinstance(error, AcceptanceFailure) else 'runner_' + type(error).__name__,
+                          runner_diagnostic=exception_diagnostic(error))
         finally:
             if host:
                 host.stop()
+                if hasattr(host, 'diagnostics'):
+                    report['host_diagnostics'] = host.diagnostics()
             report['provider_usage'] = provider_snapshot(gateway)
         if output_dir:
             (root / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
@@ -591,6 +875,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--fixture-mcp', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--sdk-worker', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--sdk-preflight', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--offline-sdk-preflight', action='store_true', help='Run real SDK/MCP against synthetic provider SSE; never asks for a key')
     parser.add_argument('--run-live', action='store_true')
     parser.add_argument('--model', default='')
     parser.add_argument('--output-dir', type=Path)
@@ -600,16 +886,35 @@ def main(argv=None):
     parser.add_argument('--workspace-id', default='')
     parser.add_argument('--timeout', type=int, default=300)
     args = parser.parse_args(argv)
+    if args.offline_sdk_preflight:
+        result = offline_sdk_preflight(output_dir=args.output_dir, model=args.model or 'claude-sonnet-4-6',
+                                       timeout=min(args.timeout, 90))
+        print(json.dumps(result, indent=2))
+        return 0 if result['status'] == 'offline_passed' else 1
     if args.fixture_mcp:
         fixture_mcp()
         return 0
+    if args.sdk_preflight:
+        try:
+            version = importlib.metadata.version('claude-agent-sdk')
+            if version != SDK_VERSION:
+                shown = version if re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version) else 'unavailable'
+                print(json.dumps({'kind': 'error', 'version': shown, 'code': 'isolated_sdk_version_mismatch'}), flush=True)
+                return 1
+            sdk_options(json.loads(sys.stdin.readline()))
+            print(json.dumps({'version': version, 'options_constructed': True}), flush=True)
+            return 0
+        except Exception as error:
+            print(json.dumps({'kind': 'error', 'diagnostic': exception_diagnostic(error)}), flush=True)
+            return 1
     if args.sdk_worker:
         try:
             asyncio.run(sdk_worker(json.loads(sys.stdin.readline())))
             sys.stdout.flush()
             os._exit(0)
-        except Exception:
-            print(json.dumps({'kind': 'error', 'code': 'sdk_worker_failed'}), flush=True)
+        except Exception as error:
+            print(json.dumps({'kind': 'error', 'code': 'sdk_worker_failed',
+                              'diagnostic': exception_diagnostic(error)}), flush=True)
             sys.stdout.flush()
             os._exit(1)
     if not args.run_live:
@@ -626,6 +931,10 @@ def main(argv=None):
             return 1
         if args.output_dir.exists() and any(args.output_dir.iterdir()):
             print(json.dumps({'status': 'blocked', 'reason': 'Use a new empty output directory before supplying a key.'}))
+            return 1
+        child_preflight = sdk_child_preflight(args.model)
+        if child_preflight['status'] != 'passed':
+            print(json.dumps(child_preflight))
             return 1
         from evals.customer_provider_gateway import Gateway
         key = getpass.getpass('Approved Anthropic API key (not stored): ').strip()
@@ -646,6 +955,7 @@ def main(argv=None):
                     result = run(run_live=True, gateway=gateway, model=args.model,
                                  output_dir=args.output_dir, timeout=args.timeout)
                     result['direct_production_inference'] = smoke
+                    result['sdk_child_preflight'] = child_preflight
                     (args.output_dir / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
     if args.run_live and args.output_dir:
         args.output_dir.mkdir(parents=True, exist_ok=True)
