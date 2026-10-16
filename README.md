@@ -11,6 +11,7 @@
   <a href="docs/getting-started.md#3-connect-your-coding-agent">Connect your agent</a> ·
   <a href="docs/overview.md">How it works</a> ·
   <a href="docs/reference.md">Reference</a> ·
+  <a href="docs/README.md">All docs</a> ·
   <a href="docs/verification.md">What we have tested</a>
 </p>
 
