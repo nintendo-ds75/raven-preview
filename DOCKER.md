@@ -1,5 +1,8 @@
 # Docker and PostgreSQL
 
+The short version is [getting started](docs/getting-started.md). This page covers
+hosting, the data flow of each integration, and backups.
+
 Start Docker Desktop (or Docker Engine with Compose v2). From this checkout:
 
 ```sh

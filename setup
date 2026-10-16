@@ -13,11 +13,21 @@ setup_headless=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --help|-h)
-      printf '%s\n' 'Usage: ./setup [--yes] [--configure] [--project PATH] [--workspace NAME] [--demo] [--port PORT] [--repo PATH] [--repo-name OWNER/NAME] [--import-sqlite FILE]' \
-        'No flags: start Raven and open browser-based setup.' \
-        '--repo PATH: optionally ingest a local Git checkout.' \
-        '--demo: add sample tasks and ownership data. --configure: configure agent MCP clients and other connections.' \
-        '--yes: use saved settings without prompts. Import requires an empty destination.'
+      printf '%s\n' 'Usage: ./setup [options]' \
+        '' \
+        'No options: build and start Raven with Docker, then open the browser setup.' \
+        '' \
+        '  --configure                 Ask about agent clients, Slack and model settings (saved privately in .env)' \
+        '  --project PATH              Your coding checkout; with --configure, installs the MCP config and hooks there' \
+        '  --repo PATH                 Ingest a local Git checkout for ownership signals' \
+        '  --repo-name OWNER/NAME      The repository identity agents will use (with --repo)' \
+        '  --workspace NAME            Create the workspace without a browser or personal account' \
+        '  --demo                      Add sample tasks and people to an empty workspace' \
+        '  --port PORT                 Publish on another port (default 7333)' \
+        '  --import-sqlite FILE        Import a SQLite database into an empty PostgreSQL' \
+        '  --yes                       Use saved settings without prompts' \
+        '' \
+        'Afterwards: ./dev status | logs | down | up | login | backup'
       exit 0 ;;
     --project)
       [ "$#" -ge 2 ] || { echo '--project needs your coding checkout path' >&2; exit 1; }
@@ -78,11 +88,22 @@ if grep -Eq "^BRIDGE_MCP_CLIENTS='[^']+" .env; then
     -e "BRIDGE_AGENT_PROJECT_HOST=$setup_agent_project" -v "$setup_root:/workspace" -v "$setup_agent_project:/agent-project" \
     -w /workspace --entrypoint python app -m bridge.setup --connect-mcp
 fi
-echo 'Setup complete. Use your coding agent and Slack. The web overview and account setup are optional with --workspace.'
+setup_url=$(docker compose exec -T app printenv BRIDGE_PUBLIC_URL 2>/dev/null | tr -d '\r\n')
+setup_url="${setup_url%/}"
+echo
+echo 'Raven is running.'
+echo "  Open:              $setup_url"
+if [ "$setup_headless" -eq 0 ]; then
+  echo '  First sign-in:     ./dev login   (prints the one-time setup credential the browser asks for)'
+fi
+if ! grep -Eq "^BRIDGE_MCP_CLIENTS='[^']+" .env; then
+  echo '  Connect an agent:  ./setup --configure --project /path/to/your/code'
+fi
+echo '  Later:             ./dev status · ./dev logs · ./dev down · ./dev up'
+echo '  Guide:             docs/getting-started.md'
 if [ "$setup_yes" -eq 0 ] && [ "$setup_headless" -eq 0 ]; then
-  setup_url=$(docker compose exec -T app printenv BRIDGE_PUBLIC_URL 2>/dev/null | tr -d '\r\n')
-  setup_url="${setup_url%/}/#connect"
-  echo "Opening Raven setup: $setup_url"
+  setup_url="$setup_url/#connect"
+  echo "Opening $setup_url"
   if command -v open >/dev/null 2>&1; then
     open "$setup_url" || echo "Open $setup_url in your browser to continue."
   elif command -v wslview >/dev/null 2>&1; then

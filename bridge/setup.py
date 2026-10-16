@@ -216,8 +216,8 @@ def configure(args, path: Path, interactive: bool) -> None:
         updates["BRIDGE_WORKSPACE_NAME"] = args.workspace.strip()[:100]
     guided = interactive
     if guided:
-        print("Raven starts empty. Use --demo if you want sample tasks and owners.")
-        print("Press Enter to skip a source or keep its saved settings. Secrets are hidden.")
+        print("Raven starts empty; --demo adds sample tasks and people.")
+        print("Press Enter to skip a question or keep its saved value. Secrets are not echoed.")
         if args.repo and not args.repo_name:
             args.repo_name = input("Repository identity (owner/name; Enter for directory name): ").strip() or None
     if args.port is not None:
@@ -251,14 +251,14 @@ def configure(args, path: Path, interactive: bool) -> None:
                     updates[key] = value
             return True
 
-        print("To connect GitHub, open Connections & setup after startup and choose repositories on GitHub.")
+        print("GitHub: connect it in the browser after startup (Connections & setup).")
         if ask("Anthropic model-assisted retrieval", [("ANTHROPIC_API_KEY", "Anthropic API key", True),
             ("ANTHROPIC_WORKSPACE_ID", "Anthropic workspace ID (optional, for multi-workspace keys; Enter to keep/skip)", False)]):
             if updates.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
                 updates["BRIDGE_MODEL_API"] = "anthropic"
             else:
                 print("No Anthropic key supplied; keeping the existing retrieval mode.")
-        print("Slack is the normal human interface: contacts are discovered automatically; personal accounts are optional.")
+        print("Slack is optional: people can answer in the Raven inbox without it.")
         ask("Slack delivery", [("SLACK_BOT_TOKEN", "Slack bot token", True),
             ("SLACK_SIGNING_SECRET", "Slack signing secret", True),
             ("SLACK_FALLBACK_CHANNEL", "Triage channel ID (invite the bot)", False)])
@@ -281,9 +281,8 @@ def configure(args, path: Path, interactive: bool) -> None:
         save_settings(path, updates)
     if clients:
         print("Selected MCP clients will be connected to the Raven URL after startup.")
-    print(f"Raven will be reachable at {aligned}; that is the address to open and the only host it accepts.")
-    print("Configuration ready. Existing settings are retained in .env.")
-    print("External connections become usable only with valid credentials and provider-side configuration.")
+    print(f"Address: {aligned} (the only host Raven accepts; change it with --port or BRIDGE_PUBLIC_URL)")
+    print("Settings saved to .env; unchanged settings were kept.")
 
 
 def main():
