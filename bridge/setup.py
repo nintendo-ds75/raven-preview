@@ -252,19 +252,19 @@ def configure(args, path: Path, interactive: bool) -> None:
             return True
 
         print("GitHub: connect it in the browser after startup (Connections & setup).")
-        if ask("Anthropic model-assisted retrieval", [("ANTHROPIC_API_KEY", "Anthropic API key", True),
+        if ask("an Anthropic API key (model-written briefs, proposals and diff review)", [("ANTHROPIC_API_KEY", "Anthropic API key", True),
             ("ANTHROPIC_WORKSPACE_ID", "Anthropic workspace ID (optional, for multi-workspace keys; Enter to keep/skip)", False)]):
             if updates.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
                 updates["BRIDGE_MODEL_API"] = "anthropic"
             else:
                 print("No Anthropic key supplied; keeping the existing retrieval mode.")
         print("Slack is optional: people can answer in the Raven inbox without it.")
-        ask("Slack delivery", [("SLACK_BOT_TOKEN", "Slack bot token", True),
+        ask("a Slack bot (notifications with a link to each decision; see docs/slack.md)", [("SLACK_BOT_TOKEN", "Slack bot token", True),
             ("SLACK_SIGNING_SECRET", "Slack signing secret", True),
             ("SLACK_FALLBACK_CHANNEL", "Triage channel ID (invite the bot)", False)])
-        ask("Teams delivery (outbound only, used when Slack is not configured; people answer in the inbox)", [
+        ask("a Teams webhook (outbound only, used when Slack is not configured)", [
             ("TEAMS_WEBHOOK_URL", "Teams webhook URL", True)])
-        if ask("managed coding-agent execution", [("OPENAI_API_KEY", "OpenAI API key", True)]):
+        if ask("an OpenAI API key (managed agent execution)", [("OPENAI_API_KEY", "OpenAI API key", True)]):
             if updates.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY"):
                 updates.update(BRIDGE_INSTALL_AGENTS="true", BRIDGE_AGENTS="1")
             else:
