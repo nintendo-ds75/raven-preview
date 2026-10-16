@@ -307,7 +307,7 @@ Without explicit authority, Raven infers a first contact from connected sources 
 
 If a relevant learned route depends on material facts missing from the current task, `bridge_add_node` can return `needs_scope_clarification` instead of sending a misleading DM. The tree retains `scope_clarifications`, and finish waits for them. Establish the current facts from the requester or current sources, then retry with the same `client_ref` and explicit facts. A previous decision's facts are context to inspect, never facts to silently copy into a new customer or release.
 
-**With inference configured**, a fast model (`BRIDGE_FAST_MODEL`) can map a question with no path to the tree's directories, write the brief the owner reads and advise the kickoff verdict from the same digest the rules saw. A prior decision or pending question on the paths still engages. Without inference the deterministic protocol remains available.
+**With inference configured**, a fast model (`BRIDGE_FAST_MODEL`) can map a question with no path to the tree's directories, write the brief the owner reads and advise the kickoff verdict from the same digest the rules saw. Everything a person reads from a model (the brief, a proposal of how they decided before, the answer to a question about a task) starts from one style, `SUMMARY_STYLE` in `bridge/llm.py`: the point first, then the reason, then what happens next; concrete values, no restated question, no padding about what was not provided. A prior decision or pending question on the paths still engages. Without inference the deterministic protocol remains available.
 
 The twenty-two tools exposed to agents (the running server's `tools/list` is the authoritative schema):
 
