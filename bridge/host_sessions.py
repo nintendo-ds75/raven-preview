@@ -298,6 +298,10 @@ def _clean(text, limit):
 
 
 def _report_text(store, binding, message, state, summary, changed, denied, base_url):
+    """The Slack line for one resume: the result first, then the answers
+    it used, what changed, what was blocked and how to unblock it, what
+    still waits, and last the agent's own words, quoted and bounded. The
+    agent's claim is never Raven's."""
     g = store.graph
     tree_task = g.db.execute('SELECT title, repo FROM runs WHERE id=?', (message['task_id'],)).fetchone()
     previous = g.db.execute("SELECT max(through_event) AS id FROM host_resumes WHERE binding_id=? AND task_id=? "
@@ -308,36 +312,39 @@ def _report_text(store, binding, message, state, summary, changed, denied, base_
         f'SELECT DISTINCT decision_id FROM events WHERE run_id=? AND id>? AND id<=? AND kind IN ({marks}) '
         'AND decision_id IS NOT NULL', [message['task_id'], previous['id'] or 0, message['through_event'],
                                         *ANSWER_EVENTS]).fetchall()]
-    woken = []
+    used = []
     for did in decided[:3]:
         d = g.db.execute('SELECT answer, answered_by, signed_by FROM decisions WHERE id=?', (did,)).fetchone()
         if d and (d['answer'] or '').strip():
-            woken.append(f"{_clean(d['signed_by'] or d['answered_by'] or 'A person', 80)} — "
-                         f"“{_clean(d['answer'], 200)}”")
+            used.append(f"{_clean(d['signed_by'] or d['answered_by'] or 'A person', 80)}: “{_clean(d['answer'], 160)}”")
     from . import canvas
     still = [n for n in canvas._flatten(canvas.get_tree(store, message['task_id'])['nodes']) if n.get('blocking')]
-    head = {'done': '🔁 The coding agent picked up the new answers and continued.',
-            'blocked': '⚠️ The coding agent continued, but some actions were blocked and need a person.',
-            'failed': '❌ The coding agent could not be resumed. The answers are saved on the task; it sees them '
-                      'the next time it runs.'}[state]
-    lines = [head, '', f"*Task:* {_clean(tree_task['title'], 120)} · {_clean(tree_task['repo'], 80)}"
-             if tree_task else f"*Task:* {message['task_id']}"]
-    if woken:
-        lines.append('*Woken by:* ' + '; '.join(woken))
-    lines.append(f"*Agent:* {binding['host']} session {binding['session_id'][:8]}…")
-    if summary:
-        lines += ['', '*What it reported*', '> ' + _clean(summary, 1200).replace('\n', '\n> ')]
+    task = (f"{_clean(tree_task['title'], 120)} ({_clean(tree_task['repo'], 80)})" if tree_task
+            else message['task_id'])
+    head = {'done': f'✅ *Agent continued* · {task}',
+            'blocked': f'⚠️ *Agent continued, some actions blocked* · {task}',
+            'failed': f'❌ *Agent could not be resumed* · {task}'}[state]
+    lines = [head]
+    if used:
+        lines.append('*Answers used:* ' + '; '.join(used))
     if changed:
         lines.append('*Changed:* ' + ', '.join(_clean(c, 120) for c in changed[:8])
                      + (f' and {len(changed) - 8} more' if len(changed) > 8 else ''))
     if denied:
-        lines += ['*Blocked:*'] + ['• ' + _clean(d, 160) for d in denied[:5]]
-        lines.append(f"Resume it yourself to approve them: `{binding['host']} --resume {binding['session_id']}`"
-                     if binding['host'] == 'claude' else f"Resume it yourself: `codex resume {binding['session_id']}`")
+        lines.append('*Blocked:* ' + '; '.join(_clean(d, 160) for d in denied[:5]))
+        lines.append('*To unblock:* resume it yourself and approve them: '
+                     + (f"`claude --resume {binding['session_id']}`" if binding['host'] == 'claude'
+                        else f"`codex resume {binding['session_id']}`"))
+    if state == 'failed':
+        lines.append('*Next:* the answers are saved on the task; the agent reads them the next time it runs.')
     if still:
         lines.append(f"*Still waiting on people:* {len(still)} decision(s)")
+    if summary:
+        lines += ['*Agent said (its own claim):*', '> ' + _clean(summary, 600).replace('\n', '\n> ')]
+    tail = f"_{binding['host']} session {binding['session_id'][:8]}…_"
     if base_url:
-        lines.append(f"<{base_url}/#runs/{message['task_id']}|Open task in Raven>")
+        tail += f" · <{base_url}/#runs/{message['task_id']}|Open task in Raven>"
+    lines.append(tail)
     return '\n'.join(lines)
 
 

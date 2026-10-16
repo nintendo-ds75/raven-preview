@@ -388,7 +388,26 @@ def _extract_json(text: str) -> object:
 
 # ---------------- system prompts (ported verbatim from the ladder) ----------------
 
+# What every piece of text a person reads has in common: the brief an
+# owner gets, the proposal of how they decided before, the answer to a
+# question about a task. The specific instructions of each come after it
+# and win where they are stricter (a brief, for example, never uses a
+# list). Measured live: summaries that opened by restating the question,
+# said what was not provided, or described a value instead of giving it
+# were the ones people skipped.
+SUMMARY_STYLE = (
+    "Style for anything a person reads. Lead with the point: the first sentence is the decision, the answer "
+    "or the result, in the question's own terms. Then the reason, then what happens next, nothing else. Plain "
+    "words, short sentences, active voice. No preamble, no restating the question, no hedging filler, no "
+    "praise, no apology. Give the concrete value (a number, a name, a date, a path) rather than describing "
+    "it, and keep identifiers exactly as written. Say what is unknown in one clause, never a paragraph, and "
+    "never pad with what was not provided. One idea per sentence; two or three sentences, or at most five "
+    "short items when the instructions below allow a list. Stay inside the material you are given. Do not "
+    "mention the model, the tools or how the text was produced. "
+)
+
 BRIEF_SYSTEM = (
+    SUMMARY_STYLE +
     "You write the short brief a busy owner reads before deciding. You are given the decision a coding agent "
     "needs, the context the agent gave, the task it is part of, and the options if any. Write two or three plain "
     "sentences: what is being decided and why it came up, and what the owner is asked to choose. Use only what "
@@ -601,6 +620,7 @@ def compose_brief(cfg, question: str, context: str, task_title: str, evidence: l
 
 
 PROPOSAL_SYSTEM = (
+    SUMMARY_STYLE +
     "You are Raven's proposal writer. You are given one open decision and a few answers ONE person "
     "gave before on related decisions, with their rationale. Write, in two sentences at most, how that "
     "person would most likely decide this one, grounded only in those answers: cite the pattern you see. "

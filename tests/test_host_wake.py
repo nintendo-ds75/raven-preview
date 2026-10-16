@@ -149,6 +149,13 @@ class HostWakeTests(SharedServer):
         self.assertIn('git push --force', text)
         self.assertIn(f'claude --resume {self.session}', text)
         self.assertIn(f'http://raven.example/#runs/{self.task}', text)
+        # Result first, the agent's own words last and marked as its claim.
+        lines = text.split('\n')
+        self.assertTrue(lines[0].startswith('⚠️ *Agent continued, some actions blocked* · '), lines[0])
+        self.assertLess(text.index('*Answers used:*'), text.index('*Changed:*'))
+        self.assertLess(text.index('*Blocked:*'), text.index('*To unblock:*'))
+        self.assertLess(text.index('*Agent said (its own claim):*'), text.index('Open task in Raven'))
+        self.assertTrue(lines[-1].endswith('|Open task in Raven>'), lines[-1])
         # Acknowledged and reported once: nothing more to resume or post.
         self.assertTrue(all(r['message'] is None for r in hc.watch_all(self.config, 'claude', 'worker-a', resumed)))
         self.assertEqual(len(calls), 1)
