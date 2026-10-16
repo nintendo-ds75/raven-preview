@@ -807,8 +807,11 @@ function reframeControls(d) {
     <button class="button small" data-action="reframe" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}">Replace question and clear old signatures</button></details>`;
 }
 
+// Closed by default: the person opened the decision to answer it, and the
+// answer form is what should be on screen; the question box is one line
+// away for the times the context is not enough.
 function decisionInquiry(d) {
-  return `<section class="decision-inquiry"><h3>Ask Raven before deciding</h3><form data-decision-inquiry="${esc(d.id)}" data-task="${esc(d.run_id)}"><label for="decision-inquiry-text">Question about the context, alternatives or consequences</label><textarea id="decision-inquiry-text" name="question" maxlength="2000" required placeholder="What would change if we choose the other option?"></textarea><p class="context">Read-only clarification. Record your answer or sign off separately below.</p><button class="button small" type="submit">Ask Raven</button><div class="decision-inquiry-result" role="status"></div></form></section>`;
+  return `<details class="decision-inquiry" id="decision-inquiry-${esc(d.id)}"><summary>Ask Raven before deciding</summary><form data-decision-inquiry="${esc(d.id)}" data-task="${esc(d.run_id)}"><label for="decision-inquiry-text">Question about the context, alternatives or consequences</label><textarea id="decision-inquiry-text" name="question" maxlength="2000" required placeholder="What would change if we choose the other option?"></textarea><p class="context">Read-only clarification. Record your answer or sign off separately below.</p><button class="button small" type="submit">Ask Raven</button><div class="decision-inquiry-result" role="status"></div></form></details>`;
 }
 
 // Show the current record before the request that originally raised it.

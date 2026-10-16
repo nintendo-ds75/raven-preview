@@ -2038,7 +2038,8 @@ h1,.task-heading h1 { font-size:1.6rem; line-height:1.3; letter-spacing:-.025em;
 @media(max-width:600px){.brief-inquiry textarea{font-size:16px}}
 
 .decision-inquiry{margin:0 0 24px;padding-bottom:20px;border-bottom:1px solid var(--line)}
-.decision-inquiry h3{font-size:14px;margin:0 0 12px}
+.decision-inquiry summary{font-size:14px;font-weight:600;cursor:pointer;min-height:40px;line-height:40px}
+.decision-inquiry form{margin-top:12px}
 .decision-inquiry textarea{min-height:72px}
 .decision-inquiry-result{white-space:pre-wrap;line-height:1.7;margin-top:16px;overflow-wrap:anywhere}
 .decision-inquiry-result details{white-space:normal;margin-top:12px}
