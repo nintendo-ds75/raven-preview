@@ -145,4 +145,11 @@ def dev_login(store):
     token = path.read_text().strip() if path.exists() else ''
     if not token or not Auth(store, enabled=True)._token_person(token)[0]:
         return "No valid development credential. Run ./dev up to initialize the workspace."
-    return token + "\nSign in at " + os.environ.get("BRIDGE_PUBLIC_URL", "http://localhost:7333").rstrip('/') + "/auth/login"
+    # The credential is what Create your workspace asks for; it is not a
+    # sign-in. Sent to the sign-in page, a new user met an email and
+    # password form and a token field that this credential does not fit.
+    url = os.environ.get("BRIDGE_PUBLIC_URL", "http://localhost:7333").rstrip('/')
+    pending = store.graph.get_setting('workspace_profile_pending', '') == '1'
+    page = ("/auth/profile (Create your profile, step 2 of 2)" if pending
+            else "/auth/setup (Create your workspace, step 1 of 2)")
+    return token + "\nEnter it as the setup credential at " + url + page

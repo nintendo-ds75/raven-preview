@@ -6,12 +6,19 @@ import contextlib
 import io
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from bridge.setup import configure, install_host_hooks, repository_name
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from fixtures import OfflineCase  # noqa: E402
+
+from bridge.auth import Auth  # noqa: E402
+from bridge.bootstrap import dev_login  # noqa: E402
+from bridge.setup import configure, install_host_hooks, repository_name  # noqa: E402
+from bridge.store import Store  # noqa: E402
 
 GIT_ENV = {**os.environ, "GIT_AUTHOR_NAME": "A Person", "GIT_AUTHOR_EMAIL": "a@example.test",
            "GIT_COMMITTER_NAME": "A Person", "GIT_COMMITTER_EMAIL": "a@example.test"}
@@ -29,6 +36,39 @@ def _checkout(root, remote=None):
     if remote:
         _git(project, "remote", "add", "origin", remote)
     return project
+
+
+class SetupCredentialTests(OfflineCase):
+    """Measured on a fresh install: `./dev login` printed the credential
+    with "Sign in at …/auth/login". That page is an email and password
+    form; the credential belongs on Create your workspace."""
+
+    def setUp(self):
+        super().setUp()
+        self.store = Store(Path(self.temp.name) / "first.db")
+        self.addCleanup(self.store.graph.close)
+        person = self.store.graph.add_person("Local developer", role="admin")
+        self.token = Auth(self.store, enabled=True).create_token(person, "development", kind="human")["token"]
+        path = Path(self.temp.name) / "token"
+        path.write_text(self.token)
+        self.env = patch.dict(os.environ, {"BRIDGE_LOGIN_FILE": str(path), "BRIDGE_PUBLIC_URL": "http://localhost:7444/"})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def test_the_credential_is_sent_to_create_your_workspace_not_to_sign_in(self):
+        said = dev_login(self.store)
+        self.assertIn(self.token, said)
+        self.assertIn("setup credential", said)
+        self.assertIn("http://localhost:7444/auth/setup", said)
+        self.assertIn("Create your workspace", said)
+        self.assertNotIn("/auth/login", said)
+
+    def test_after_step_one_it_points_at_the_profile_step(self):
+        self.store.graph.set_setting("workspace_name", "Acme")
+        self.store.graph.set_setting("workspace_profile_pending", "1")
+        said = dev_login(self.store)
+        self.assertIn("http://localhost:7444/auth/profile", said)
+        self.assertIn("Create your profile", said)
 
 
 class ConnectProjectTests(unittest.TestCase):
