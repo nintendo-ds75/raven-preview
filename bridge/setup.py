@@ -14,6 +14,21 @@ from urllib.parse import urlsplit
 DEFAULT_PORT = "7333"
 DEFAULT_PUBLIC_URL = f"http://localhost:{DEFAULT_PORT}"
 LOOPBACK = ("localhost", "127.0.0.1", "::1")
+# Git's scp-like remote: user@host:path, with no scheme.
+_SCP_REMOTE = re.compile(r"^[^/@:]+@[^/:]+:(?P<path>[^:]+)$")
+
+
+def repository_name(remote: str) -> str:
+    """The owner/name a Git remote points at, or '' when it names none.
+
+    Git accepts `user@host:owner/name` as well as URLs. Only the GitHub
+    spelling of that form was read before, so a GitLab or self-hosted
+    remote was recorded as the whole `git@host:owner/name` string and
+    every task the hooks registered carried that as its repository."""
+    value = remote.strip().removesuffix(".git")
+    match = _SCP_REMOTE.match(value)
+    path = match["path"] if match else urlsplit(value).path
+    return path.strip("/")
 
 
 def read_settings(path: Path) -> dict[str, str]:
@@ -161,15 +176,16 @@ def connect_mcp(settings, project, token, host_path=""):
 def install_host_hooks(project, host_path, url, token, clients, repo=''):
     """Preserve user hooks; keep adapter credentials out of tracked files."""
     import shlex
-    from urllib.parse import urlsplit
     project = Path(project)
     if not repo:
         remote = subprocess.run(['git', '-C', str(project), 'remote', 'get-url', 'origin'],
                                 capture_output=True, text=True)
-        value = remote.stdout.strip().removesuffix('.git')
-        repo = value.split(':', 1)[1] if value.startswith('git@github.com:') else urlsplit(value).path.strip('/')
+        repo = repository_name(remote.stdout.strip())
     if not repo or len(repo.split('/')) != 2 or any(x in repo for x in ('..', '\\', '\n')):
-        raise ValueError('Set BRIDGE_INGEST_REPO=owner/name to install task hooks for a checkout without a repository remote')
+        raise ValueError('This checkout has no origin remote that names a repository, so Raven cannot tell '
+                         'which repository its tasks belong to. Add BRIDGE_INGEST_REPO=\'owner/name\' to '
+                         'Raven\'s .env (next to this setup script), then rerun ./setup --configure --project '
+                         + str(host_path))
     destinations = [project / '.raven/host.py', project / '.raven/host-config.json']
     hooks = {}
     for client in clients:
@@ -215,6 +231,12 @@ def configure(args, path: Path, interactive: bool) -> None:
     if getattr(args, "workspace", None):
         updates["BRIDGE_WORKSPACE_NAME"] = args.workspace.strip()[:100]
     guided = interactive
+    if getattr(args, "configure", False) and not interactive and not getattr(args, "yes", False):
+        # Piped or scripted, the wizard has nobody to ask. It used to say
+        # only "Settings saved", and ./setup then told the user to run the
+        # very command they had just run.
+        print("No terminal is attached, so the wizard asked nothing and connected no agent client. "
+              "Run ./setup --configure from an interactive terminal, or ./setup --yes to keep the saved settings.")
     if guided:
         print("Raven starts empty; --demo adds sample tasks and people.")
         print("Press Enter to skip a question or keep its saved value. Secrets are not echoed.")
