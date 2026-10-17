@@ -32,7 +32,11 @@ Raven is running.
   First sign-in:     ./dev login   (prints the one-time setup credential the browser asks for)
   Connect an agent:  ./setup --configure --project /path/to/your/code
   Later:             ./dev status · ./dev logs · ./dev down · ./dev up
+  Guide:             docs/getting-started.md
 ```
+
+In an interactive terminal the setup credential (`brg_…`) is printed just above
+this banner; `./dev login` prints it again, with the page it belongs on.
 
 Windows: run `.\setup.ps1` from PowerShell with Docker Desktop's WSL integration on.
 Port taken: `./setup --port 7444`.
@@ -42,8 +46,10 @@ Port taken: `./setup --port 7444`.
 The browser opens **Create your workspace**.
 
 1. Enter a workspace name and the setup credential from `./dev login`. The credential
-   proves you operate this installation; nobody else can claim the workspace.
-2. Create your profile: name, email and a password. The first profile is the admin.
+   proves you operate this installation; nobody else can claim the workspace. It is
+   not a sign-in: the email and password form on **Sign in** is for step 2's account.
+2. Create your profile: name, email and a password of 12 characters or more. The
+   first profile is the admin.
 
 Raven stays locked until both steps are done. Returning users sign in with email and
 password; admins invite teammates from **Connections & setup**. Details and the
@@ -58,10 +64,14 @@ From the checkout your agent works in:
 ./setup --configure --project /path/to/your/code
 ```
 
-Choose `claude`, `codex` or `cursor` when asked. Setup writes the MCP configuration
-for that client into the project (Git-excluded, with a limited agent credential) and,
-for Claude Code and Codex, installs the task hooks that register each task with Raven
-before the model starts. Restart the agent and trust the project when it asks.
+Choose `claude`, `codex` or `cursor` when asked; the wizard then offers optional keys
+(Anthropic, Slack, Teams, OpenAI), and Enter skips each. Setup writes the MCP
+configuration for that client into the project (Git-excluded, with a limited agent
+credential) and, for Claude Code and Codex, installs the task hooks that register each
+task with Raven before the model starts. The hooks name the repository after the
+checkout's `origin` remote; a checkout without one needs
+`BRIDGE_INGEST_REPO='owner/name'` in Raven's `.env` first. Restart the agent and
+trust the project when it asks.
 
 Or do it from the browser: **Connections & setup → step 1 → Connect** shows the one
 command for your client:
@@ -147,8 +157,10 @@ Upgrade: `git pull && ./dev up`. Migrations are additive and run on start.
 
 ## Troubleshooting
 
-**`./setup` stops at "Install Docker Desktop…"** Docker is not running or Compose v2
-is missing. Start Docker Desktop, or on Linux install the `docker-compose-plugin`.
+**`./setup` stops before building.** "Install Docker Desktop…" means Docker is not
+installed; "Docker Compose v2 is required" means the plugin is missing (on Linux,
+install `docker-compose-plugin`); "Start Docker Desktop or the Docker daemon" means
+it is installed but not running.
 
 **The browser shows 403 or a blank page.** The address you opened is not the one
 Raven was configured with. Open the URL `./setup` printed, or run

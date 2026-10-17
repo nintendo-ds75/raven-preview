@@ -5,6 +5,7 @@ import argparse
 import contextlib
 import io
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -13,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fixtures import OfflineCase  # noqa: E402
+from fixtures import ROOT, OfflineCase  # noqa: E402
 
 from bridge.auth import Auth  # noqa: E402
 from bridge.bootstrap import dev_login  # noqa: E402
@@ -138,6 +139,47 @@ class ConfigureWithoutTerminalTests(unittest.TestCase):
         with patch("builtins.input", side_effect=["", "n", "n", "n", "n"]), patch("getpass.getpass", return_value=""):
             self.assertNotIn("asked nothing", self.run_config(True, configure=True, yes=False))
 
+
+@unittest.skipUnless((ROOT / "docs").is_dir() and (ROOT / "setup").exists(), "requires the source checkout")
+class GettingStartedAgreesWithTheTerminalTests(unittest.TestCase):
+    """What getting-started says the terminal prints, and the commands it
+    tells the reader to run, are the ones the scripts have."""
+
+    def test_the_banner_in_the_guide_is_the_one_setup_prints(self):
+        script = (ROOT / "setup").read_text()
+        banner = script[script.index("echo 'Raven is running.'"):script.index("Opening")]
+        lines = [m.group(1).replace("$setup_url", "http://localhost:7333")
+                 for m in re.finditer(r"""^\s*echo ['"](  [^'"]+)['"]""", banner, re.M)]
+        self.assertGreaterEqual(len(lines), 4)
+        guide = (ROOT / "docs" / "getting-started.md").read_text()
+        for line in lines:
+            self.assertIn(line, guide, line)
+
+    def test_every_setup_flag_and_dev_action_in_the_docs_exists(self):
+        setup_flags = set(re.findall(r"--[a-z][a-z-]*", (ROOT / "setup").read_text().split("Unknown option")[0]))
+        dev = (ROOT / "dev").read_text()
+        dev_actions = set(re.findall(r"^\s*([a-z][a-z-]*)\)", dev, re.M)) | set(
+            re.findall(r"^\s*([a-z-]+)\|", dev, re.M))
+        for rel in ("README.md", "docs/getting-started.md"):
+            text = (ROOT / rel).read_text()
+            for command in re.findall(r"\./setup((?:\s+--[a-z-]+(?:\s+[^\s`*-][^\s`*]*)?)+)", text):
+                for flag in re.findall(r"--[a-z-]+", command):
+                    self.assertIn(flag, setup_flags, f"{rel} uses ./setup {flag}")
+            for action in re.findall(r"\./dev ([a-z][a-z-]*)", text):
+                self.assertIn(action, dev_actions, f"{rel} uses ./dev {action}")
+
+    def test_the_connect_command_in_the_docs_is_the_one_the_browser_shows(self):
+        app = (ROOT / "web" / "app.js").read_text()
+        prefix = "claude mcp add --transport http bridge "
+        self.assertIn(prefix, app)
+        for rel in ("README.md", "docs/getting-started.md"):
+            text = (ROOT / rel).read_text()
+            self.assertIn(prefix + "http://localhost:7333/mcp --header 'Authorization: Bearer brg_", text, rel)
+        rule = re.search(r"const AGENT_RULE = '(.*?)'\n\s*\+ '(.*?)';", app, re.S)
+        self.assertIsNotNone(rule)
+        rule_text = (rule.group(1) + rule.group(2)).replace("\\n", "\n")
+        guide = re.sub(r"\s+", " ", (ROOT / "docs" / "getting-started.md").read_text())
+        self.assertIn(re.sub(r"\s+", " ", rule_text), guide)
 
 
 if __name__ == "__main__":
