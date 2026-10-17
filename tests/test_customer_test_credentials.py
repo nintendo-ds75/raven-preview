@@ -10,7 +10,11 @@ class SavedCredentialTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.path = Path(self.tmp.name) / 'private' / 'key'
+        # save_key refuses a symlink anywhere on the path, by design. macOS
+        # puts temporary directories under /var, itself a symlink to
+        # /private/var, so the test works from the resolved path.
+        self.root = Path(self.tmp.name).resolve()
+        self.path = self.root / 'private' / 'key'
 
     def test_roundtrip_permissions_and_no_overwrite(self):
         save_key(self.path, 'synthetic-only')
