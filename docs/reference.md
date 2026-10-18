@@ -377,6 +377,7 @@ Read `/api/state` to get the current state and `csrf_token`. Writes require `Con
 With sign-in on, each decision in `/api/state` carries `can_act`: whether the signed-in person may answer or sign it on their own standing (owner, required signer or verified for its scope, by person id). The inbox badge and **Assigned to me** count these; `GET /api/decisions/:id` carries the full `allowed_actions` list.
 
 - `GET /api/decisions/:id`, `/api/search?q=...&repo=...`, `/api/pending?run_id=...&path=...`, `/api/ownership?repo=...&limit=...` (the ownership graph's live rows; `limit=0` for all), `/api/export`
+- `GET /api/metrics?repo=...&days=...` ([what Raven saved](#what-raven-saved), member-readable; `days` defaults to 30, `0` is all time)
 - `POST /api/owners` with `name`, `team`, `patterns`
 - `POST /api/runs` with `title`, optional `agent`, `repo`
 - `POST /api/decisions` with `run_id`, `question`, `context`, optional `path`, `owner_id`, `category` (one question through the ladder on a registered run)
@@ -398,6 +399,22 @@ With sign-in on, each decision in `/api/state` carries `can_act`: whether the si
 - `POST /api/tasks/:id/notes` with `text` and `by` (context a person adds to a running task; the agent reads it in `bridge_get_tree` and `bridge_wait` returns it), `GET /api/tasks/:id/trace` (every event, notification and node standing of a task, in order)
 - `POST /api/records` with `repo`, `kind` (`ticket`, `doc`, `slack`, `note`), `ref`, `title`, `body`, optional `author`, `url` (the immutable locator), `created_at`, `paths`, `status`: a record from outside git, evidence the ladder cites, never sign-off; `GET /api/inbox?overdue=1` (open questions older than `overdue_hours`, a setting alongside `slack_capture_repo`)
 - `GET /api/context/sources` (what Raven can read); `POST /api/context/sources` with `kind`, `repo`, `target`, `workspace_shared: true` and `POST /api/context/sources/:id/sync|disable` (admin); `POST /api/context/scan` with `repo`, `GET /api/context/suggestions?repo=...` and `POST /api/context/suggestions/dismiss` with `repo`, `kind`, `target`, optional `undo` (admin; [suggested sources](context-sources.md#suggested-sources))
+
+## What Raven saved
+
+`GET /api/metrics?repo=&days=` and `bridge_connection_status` (under `metrics`) measure Raven's value from the ledger it already keeps, read-only, for the workspace and per repository (`by_repo`), over the last `days` days (default 30, `0` for all time). The Tasks page and People & ownership show the same numbers as a one-line strip; a task's overview shows its own.
+
+| Number | Definition | Read from |
+|---|---|---|
+| `proposals` | Decisions Raven or the agent resolved without a person: `signed_unchanged` (the first human action was a sign-off, or an answer with the same text), `corrected` (a different answer), `by_rule` (a standing rule authorized it), `open` (still waiting); rates are over the decided ones | `resolve`, `proposed`, `assume`, `node_settled` events; `signoff`, `signature`, `owner_approved`, `answer_corrected`, `previous_answer` |
+| `time_to_answer` | An open question's creation to the first human answer, median and p90 in seconds | `decisions.created_at`, `owner_approved`, `answer_corrected` |
+| `time_to_signature` | A proposal's creation to the first human action on it | as above, plus `signoff`, `signature` |
+| `reask` | Of the questions put to a person, how many had the same question text answered in the same repository within the previous 90 days | question text, repository, first human event |
+| `reuse` | Decisions answered from memory, covered by a rule, or closed as the duplicate of an open twin | `resolve`/`proposed` with source `memory`, `decisions.signoff='rule'`, `twin_closed`, `dedup_open` |
+| `handon` | Of the decisions routed to a person, how many the first contact referred on | `owner_changed` with `referral` |
+| `wait_saved` | For each reused decision, the time a person took on the decision it reused; `estimated` counts the ones that fell back to the window's median time to answer | the cited decision's first human event |
+
+Follow-ups nobody adopted, adopted suggestions and withdrawn nodes are left out. `bridge_wait` durations are not persisted, so the wait avoided is the human time the reused answer originally took, not a measured wait.
 
 ## What is enforced, and what is guidance
 

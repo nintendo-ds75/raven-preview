@@ -5,6 +5,7 @@
 - [Getting started](getting-started.md): install, create the workspace, connect your coding agent, run one task, troubleshoot.
 - [How Raven works](overview.md): what a task looks like inside Raven, how answers are reused, who gets asked, where your data goes, what this preview promises.
 - [Technical reference](reference.md): every MCP tool, HTTP endpoint, setting and page.
+- [What Raven saved](reference.md#what-raven-saved): the proposal outcome, time-to-answer, reuse, hand-on and re-ask numbers, and where each is read from.
 - [Identity](identity.md): one table per way a person reaches Raven, how they link, and which field each authorization check trusts.
 
 **Connect an agent**
