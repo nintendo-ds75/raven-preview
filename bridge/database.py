@@ -134,6 +134,9 @@ def postgres_sql(statement):
         part = re.sub(r"INTEGER PRIMARY KEY AUTOINCREMENT", "BIGSERIAL PRIMARY KEY", part, flags=re.I)
         part = re.sub(r"\bBLOB\b", "BYTEA", part)
         part = re.sub(r"\bREAL\b", "DOUBLE PRECISION", part)
+        # SQLite's instr(string, needle) is PostgreSQL's strpos, same
+        # argument order and 1-based result (0 when absent).
+        part = re.sub(r"\binstr\(", "strpos(", part, flags=re.I)
         chunks[i] = part
     return "".join(chunks)
 
