@@ -44,5 +44,7 @@ def start_webhooks(executions, client, port):
     if not client.webhook_secret:
         raise Invalid("Set OPENAI_WEBHOOK_SECRET before enabling webhook ingress")
     server = make_webhook_server(executions, client.webhooks.verify_signature, port)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    # Polled often enough that a stop (SIGTERM, a test's cleanup) returns
+    # inside a second rather than waiting out the default half-second.
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True).start()
     return server

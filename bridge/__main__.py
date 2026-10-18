@@ -205,7 +205,7 @@ def main():
     except ValueError:
         pass  # not the main thread
     try:
-        server.serve_forever()
+        server.serve_forever(poll_interval=0.1)
     except KeyboardInterrupt:
         pass
     finally:

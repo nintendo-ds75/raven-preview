@@ -110,7 +110,7 @@ def main():
     print(f'Raven launcher allows Claude Code and Codex terminals in {project}. Ctrl-C stops it.')
     webbrowser.open(link)
     try:
-        server.serve_forever()
+        server.serve_forever(poll_interval=0.1)
     except KeyboardInterrupt:
         pass
     finally:

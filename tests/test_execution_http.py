@@ -152,6 +152,30 @@ class ExecutionHTTPTests(unittest.TestCase):
             self.assertEqual(response.status, 204)
         self.assertEqual(seen, ["bad", "valid"])
 
+    def test_webhook_ingress_stops_within_a_second(self):
+        """A container stop waits on this thread: it polls often enough
+        that shutdown returns well inside a second."""
+        import time
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from http.server import ThreadingHTTPServer
+        from bridge.webhooks import start_webhooks
+        polls = []
+        original = ThreadingHTTPServer.serve_forever
+
+        def recorded(server, poll_interval=0.5):
+            polls.append(poll_interval)
+            return original(server, poll_interval=poll_interval)
+        client = SimpleNamespace(webhook_secret="whsec_test", webhooks=SimpleNamespace(verify_signature=lambda **_: None))
+        with patch.object(ThreadingHTTPServer, "serve_forever", recorded):
+            server = start_webhooks(self.service, client, 0)
+            self.addCleanup(server.server_close)
+            time.sleep(0.2)  # inside a poll, the worst case for shutdown
+            began = time.monotonic()
+            server.shutdown()
+            self.assertLess(time.monotonic() - began, 1.0)
+        self.assertEqual(polls, [0.1])
+
     def test_artifact_ids_cannot_cross_run_boundaries(self):
         run = self.submit()
         with self.assertRaises(HTTPError) as failure:
