@@ -389,7 +389,8 @@ def report(store, binding, args):
         # when it does not, and once per thread whatever is replayed.
         threads = g.db.execute(
             "SELECT external_ref, decision_id FROM notifications WHERE run_id=? AND external_ref<>'' "
-            "AND state='sent' AND kind<>'report' ORDER BY sent_at, created_at", (message['task_id'],)).fetchall()
+            "AND state='sent' AND kind NOT IN ('report','brief_link') ORDER BY sent_at, created_at",
+            (message['task_id'],)).fetchall()
         refs = {}
         for row in threads:
             refs.setdefault(row['external_ref'], row['decision_id'])

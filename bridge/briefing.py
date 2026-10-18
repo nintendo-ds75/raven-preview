@@ -158,23 +158,27 @@ def resend(store, token: str) -> None:
     run = graph.db.execute("SELECT title, repo FROM runs WHERE id=?", (row["run_id"],)).fetchone()
     if run is None:
         return
+    # The link and its message are one write: the message goes through
+    # the outbox (sent now when Slack answers, retried by the worker with
+    # its backoff when it does not, listed under Deliveries meanwhile),
+    # keyed to the link it carries, so a link is minted once per resend
+    # and its message posted once. Measured: a resend during a Slack
+    # outage was logged as failed and the person never got the link.
     with graph.transaction():
         fresh = mint(graph, person["id"], row["run_id"], row["decision_id"], row["notification_id"])
         graph.append_event("brief_link_resent", {"task_id": row["run_id"], "person_id": person["id"],
                                                  "link_id": row["id"], "by": person["name"]})
-    text = "\n".join([f"*A new link to your task, {person['name']}.*",
-                      f"Task: {run['title']}" + (f" ({run['repo']})" if run["repo"] else ""),
-                      f"<{url_for(delivery.base_url, fresh)}|Open the task> (your own link, no account needed)",
-                      "You asked for this from a task link that had expired. If you did not, you can ignore it."])
-    try:
-        channel = destination
-        if channel.startswith(("U", "W")):
-            channel = delivery.transport.open_dm(channel)
-        delivery.transport.post_message(channel, text, [{"type": "section", "text": {"type": "mrkdwn", "text": text}}])
-    except Exception as error:
-        with graph.transaction():
-            graph.append_event("notification_failed", {"task_id": row["run_id"], "kind": "brief_link",
-                                                       "to": person["name"], "error": str(error)[:300]})
+        text = "\n".join([f"*A new link to your task, {person['name']}.*",
+                          f"Task: {run['title']}" + (f" ({run['repo']})" if run["repo"] else ""),
+                          f"<{url_for(delivery.base_url, fresh)}|Open the task> (your own link, no account needed)",
+                          "You asked for this from a task link that had expired. If you did not, you can ignore it."])
+        queued = delivery.enqueue_thread_message(
+            run_id=row["run_id"], decision_id=row["decision_id"] or "", destination=destination, thread_ts="",
+            text=text, dedupe_key=f"brief_link:{_hash(fresh)}", kind="brief_link",
+            blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": text}}],
+            person_id=person["id"], person_name=person["name"])
+    if queued is not None:
+        delivery.deliver_now(only=[queued["id"]])
 
 
 class Link:

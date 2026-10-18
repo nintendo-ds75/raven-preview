@@ -35,11 +35,15 @@ class FakeSlack:
 
     def __init__(self):
         self.messages = []
+        self.fail_times = 0  # the next N posts fail, then Slack is back
 
     def open_dm(self, user_id):
         return "D" + user_id
 
     def post_message(self, channel, text, blocks=None, thread_ts=""):
+        if self.fail_times:
+            self.fail_times -= 1
+            raise RuntimeError("Slack chat.postMessage failed: ratelimited")
         self.messages.append({"channel": channel, "text": text, "thread_ts": thread_ts})
         return f"1700000000.{len(self.messages):06d}"
 
@@ -982,6 +986,41 @@ class ResendTests(BriefCase, Http):
         # Once an hour per link.
         self.assertEqual(self.resend(self.token), body)
         self.assertEqual(len(self.new_links()), 1)
+
+    def test_a_new_link_waits_out_a_slack_outage_and_arrives_once(self):
+        """Slack is down when the person asks: the link is minted and its
+        message waits in the outbox, visible under Deliveries, until the
+        worker gets it through; asking again meanwhile mints nothing."""
+        self.expire(self.token)
+        self.slack.fail_times = 2
+        body = self.resend(self.token)
+        self.assertIn("If this link was yours", body["notice"])
+        self.assertEqual(self.new_links(), [])
+        rows = self.request("GET", "/api/deliveries")[1]["notifications"]
+        (row,) = [r for r in rows if r["kind"] == "brief_link"]
+        self.assertEqual((row["state"], row["attempts"], row["person_name"], row["destination"]),
+                         ("queued", 1, "Wes Chen", "UWES"))
+        self.assertIn("ratelimited", row["last_error"])
+        minted = self.graph.db.execute("SELECT count(*) FROM brief_links").fetchone()[0]
+        self.assertEqual(self.resend(self.token), body)  # still once an hour per link
+        self.assertEqual(self.graph.db.execute("SELECT count(*) FROM brief_links").fetchone()[0], minted)
+        self.assertEqual(len([r for r in self.delivery.list() if r["kind"] == "brief_link"]), 1)
+        # The worker retries with the outbox's backoff: once more down, then through.
+        self.graph.db.execute("UPDATE notifications SET next_attempt=0")
+        self.assertEqual(self.delivery.deliver_now(), 0)
+        self.assertEqual(self.delivery.get(row["id"])["attempts"], 2)
+        self.graph.db.execute("UPDATE notifications SET next_attempt=0")
+        self.assertEqual(self.delivery.deliver_now(), 1)
+        self.assertEqual(self.delivery.deliver_now(), 0)
+        sent = self.new_links()
+        self.assertEqual([m["channel"] for m in sent], ["DUWES"])
+        fresh = self.link(LINK.findall(sent[0]["text"])[0])
+        self.assertEqual((fresh.person["id"], fresh.run_id, fresh.asked), (self.wes, self.t, self.a["node_id"]))
+        row = self.delivery.get(row["id"])
+        self.assertEqual((row["state"], row["attempts"]), ("sent", 3))
+        self.assertTrue(row["external_ref"].startswith("DUWES:"))
+        # A line in the DM, not a question: a reply there still finds the decision message.
+        self.assertIsNone(self.delivery.notification_for_thread("DUWES", row["external_ref"].split(":", 1)[1]))
 
     def test_nothing_is_sent_for_a_link_that_is_not_an_expired_one(self):
         expected = self.resend("rvn_" + "x" * 32)

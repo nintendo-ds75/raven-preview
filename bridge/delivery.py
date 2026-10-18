@@ -35,6 +35,10 @@ from .llm import drop_absence
 from .store import Invalid, answer_hash
 
 KINDS = ("ask", "signoff", "review", "reassigned", "answered", "overdue", "escalation")
+# Lines Raven says, not questions it asks: a reply in their thread binds
+# to the decision message, and they never open a thread of their own.
+LINE_KINDS = ("report", "brief_link")
+NOT_A_LINE = "kind NOT IN ('report','brief_link')"
 BACKOFF = (30, 120, 600, 3600, 21600)
 MAX_ATTEMPTS = 20
 
@@ -385,12 +389,15 @@ class Delivery:
         return self.get(nid)
 
     def enqueue_thread_message(self, *, run_id: str, decision_id: str, destination: str, thread_ts: str,
-                               text: str, dedupe_key: str, kind: str = "report") -> dict | None:
-        """One message Raven says in a thread it already opened, through
-        the same outbox as a decision notification: queued, sent by the
-        worker with the same backoff, visible when it fails, and never
-        twice for one dedupe key. A report is not a question to anyone,
-        so a reply in the thread still binds to the decision message.
+                               text: str, dedupe_key: str, kind: str = "report", blocks=None,
+                               person_id: str = "", person_name: str = "") -> dict | None:
+        """One message Raven says on its own account, through the same
+        outbox as a decision notification: queued, sent by the worker
+        with the same backoff, visible when it fails, and never twice for
+        one dedupe key. Kinds in LINE_KINDS are lines, not questions to
+        anyone: a report in a thread Raven opened, or a fresh task link
+        in a person's DM (destination a member id, thread_ts empty), so
+        a reply there still binds to the decision message.
         Measured live (customer loop 2026-10-11, H6): a resume report
         posted straight to Slack while Slack was down was recorded as
         reported and lost; the replay said duplicate and posted nothing."""
@@ -398,15 +405,16 @@ class Delivery:
         if graph.db.execute("SELECT 1 FROM notifications WHERE dedupe_key=?", (dedupe_key,)).fetchone():
             return None
         nid = uuid.uuid4().hex[:12]
-        payload = {"text": text, "blocks": None, "thread_ts": thread_ts, "interaction_mode": "report"}
+        payload = {"text": text, "blocks": blocks, "thread_ts": thread_ts, "interaction_mode": "report"}
         graph.db.execute(
             "INSERT INTO notifications(id, decision_id, run_id, kind, channel, destination, person_id, person_name, "
             "revision, dedupe_key, payload, state, attempts, next_attempt, last_error, created_at, content_hash) "
             "VALUES(?,?,?,?,?,?,?,?,?,?,?,'queued',0,0,'',?,'')",
-            (nid, decision_id, run_id, kind, self.channel, destination, "", "", "", dedupe_key,
+            (nid, decision_id, run_id, kind, self.channel, destination, person_id, person_name, "", dedupe_key,
              json.dumps(payload), now_iso()))
         graph.append_event("notification_queued", {"task_id": run_id, "decision_id": decision_id, "kind": kind,
-                                                   "to": "", "destination": "thread", "error": ""})
+                                                   "to": person_name, "destination": "thread" if thread_ts else "dm",
+                                                   "error": ""})
         return self.get(nid)
 
     def get(self, nid: str) -> dict | None:
@@ -558,11 +566,14 @@ class Delivery:
             attempts = row["attempts"] + 1
             payload = json.loads(row["payload"])
             try:
-                if row["kind"] == "report":
-                    # A line Raven adds to a thread it opened: the text is
-                    # final and the thread is the one it was queued for.
+                if row["kind"] in LINE_KINDS:
+                    # A line Raven says: the text is final, the thread (if
+                    # any) is the one it was queued for, and a member id
+                    # means that person's DM.
                     channel = row["destination"]
-                    ts = self.transport.post_message(channel, payload["text"], None,
+                    if channel.startswith(("U", "W")):
+                        channel = self.transport.open_dm(channel)
+                    ts = self.transport.post_message(channel, payload["text"], payload.get("blocks"),
                                                      thread_ts=payload.get("thread_ts") or "")
                     ts = payload.get("thread_ts") or ts
                     with graph.transaction():
@@ -655,7 +666,7 @@ class Delivery:
         state where they were already looking."""
         earlier = self.store.graph.db.execute(
             "SELECT external_ref,payload FROM notifications WHERE decision_id=? AND person_name=? AND state='sent' "
-            "AND external_ref != '' AND kind<>'report' ORDER BY sent_at DESC,created_at DESC LIMIT 1",
+            "AND external_ref != '' AND " + NOT_A_LINE + " ORDER BY sent_at DESC,created_at DESC LIMIT 1",
             (row["decision_id"], row["person_name"])).fetchone()
         if not earlier:
             return ''
@@ -670,10 +681,10 @@ class Delivery:
         return ts if where == channel else ''
 
     def notification_for_thread(self, channel: str, thread_ts: str) -> dict | None:
-        # A report Raven added to the thread asked nobody anything; a
-        # reply there answers the decision message the thread is about.
+        # A line Raven added (a report, a fresh link) asked nobody
+        # anything; a reply there answers the decision message.
         row = self.store.graph.db.execute(
-            "SELECT * FROM notifications WHERE external_ref=? AND kind<>'report' "
+            "SELECT * FROM notifications WHERE external_ref=? AND " + NOT_A_LINE + " "
             "ORDER BY sent_at DESC, created_at DESC LIMIT 1", (f"{channel}:{thread_ts}",)).fetchone()
         return dict(row) if row else None
 
@@ -1857,7 +1868,8 @@ def handle_slack_event(delivery: Delivery, event: dict) -> dict:
         # A person replies in the DM composer rather than the thread.
         # Select only when exactly one actionable question exists in this DM.
         rows = delivery.store.graph.db.execute("SELECT n.* FROM notifications n JOIN decisions d ON d.id=n.decision_id "
-            "WHERE n.external_ref LIKE ? AND (d.status='pending' OR d.signoff='required') ORDER BY n.sent_at DESC",
+            "WHERE n.external_ref LIKE ? AND n." + NOT_A_LINE + " AND (d.status='pending' OR d.signoff='required') "
+            "ORDER BY n.sent_at DESC",
             (channel + ':%',)).fetchall()
         choices = {r['decision_id']: dict(r) for r in rows}
         if len(choices) == 1:
