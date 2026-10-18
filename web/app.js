@@ -895,6 +895,18 @@ function decisionBackground(d) {
   return `<details class="history decision-background" ${!d.answer && !d.prediction ? 'open' : ''}><summary>Recorded background & evidence</summary><p class="context">Context captured when this question was raised may describe an earlier unresolved state. Read it alongside the current answer and scope above.</p>${d.brief ? `<p><strong>Original brief:</strong> ${esc(d.brief)}</p>` : ''}<p class="modal-context">${esc(d.context || '')}</p>${d.evidence ? `<p class="context"><strong>Recorded evidence:</strong> ${esc(d.evidence)}</p>` : ''}${workItemContext(d)}${sourceEvidence(d.sources, d.needs_review ? null : d.source_revalidation)}</details>`;
 }
 
+// Why the signed-in person may only read this decision, and what would let
+// them act: the authority map (a person it names for the decision's scope
+// may answer and sign). Measured in a shared workspace: a member whose
+// name matched the owner's read "Alex Morgan owns this decision" under
+// their own name, with no way on.
+function readOnlyReason(d) {
+  const owner = d.owner_name ? `${esc(d.owner_name)} owns this decision` : 'This decision has no owner yet';
+  if (state.me?.role === 'viewer') return `Read-only access. ${owner}.`;
+  const how = state.me?.role === 'admin' ? 'record your authority' : 'ask an administrator to record your authority';
+  return `${owner}; you can add follow-up questions here and context on the task. To answer or sign it yourself, ${how} for its scope under People &amp; ownership.`;
+}
+
 async function review(id) {
   const requestVersion = ++modalVersion;
   try {
@@ -903,7 +915,7 @@ async function review(id) {
     const canDecide = (d.allowed_actions || []).includes('answer');
     const canRoute = (d.allowed_actions || []).includes('assign');
     if (!canDecide && !canRoute) {
-      openModal(d.question, `${d.agent} · ${d.run_title}`, `${decisionCurrentSummary(d)}${decisionReviewScope(d)}${d.consequences ? `<p class="context"><strong>Consequences:</strong> ${esc(typeof d.consequences === 'string' ? d.consequences : JSON.stringify(d.consequences))}</p>` : ''}${decisionInquiry(d)}${d.reusable ? '<p class="context">Recording a new or corrected answer retires the existing standing rule. A sign-off with unchanged answer and sources keeps it. Future automatic reuse needs a fresh explicit make-rule action.</p>' : ''}<p class="context">${state.me?.role === 'viewer' ? 'Read-only access.' : 'This decision belongs to another owner. You can add context on the task overview.'} ${esc(d.owner_name || 'No owner assigned')} owns this decision.</p>${decisionBackground(d)}${d.routing_reason ? `<p class="context"><strong>Routing:</strong> ${esc(d.routing_reason)}</p>` : ''}${d.source_id ? `<button class="button small" data-action="source" data-id="${esc(d.source_id)}">Inspect source decision</button>` : ''}${followupControls(d)}<details class="history"><summary>Decision history · ${plural(d.events.length, 'event')}</summary>${d.events.map(e => `<div class="history-item"><strong>${esc(eventLabels[e.kind] || e.kind)}</strong>${esc(e.detail)}<br><small>${esc(new Date(e.created_at).toLocaleString())}</small></div>`).join('')}</details>`);
+      openModal(d.question, `${d.agent} · ${d.run_title}`, `${decisionCurrentSummary(d)}${decisionReviewScope(d)}${d.consequences ? `<p class="context"><strong>Consequences:</strong> ${esc(typeof d.consequences === 'string' ? d.consequences : JSON.stringify(d.consequences))}</p>` : ''}${decisionInquiry(d)}${d.reusable ? '<p class="context">Recording a new or corrected answer retires the existing standing rule. A sign-off with unchanged answer and sources keeps it. Future automatic reuse needs a fresh explicit make-rule action.</p>' : ''}<p class="context">${readOnlyReason(d)}</p>${decisionBackground(d)}${d.routing_reason ? `<p class="context"><strong>Routing:</strong> ${esc(d.routing_reason)}</p>` : ''}${d.source_id ? `<button class="button small" data-action="source" data-id="${esc(d.source_id)}">Inspect source decision</button>` : ''}${followupControls(d)}<details class="history"><summary>Decision history · ${plural(d.events.length, 'event')}</summary>${d.events.map(e => `<div class="history-item"><strong>${esc(eventLabels[e.kind] || e.kind)}</strong>${esc(e.detail)}<br><small>${esc(new Date(e.created_at).toLocaleString())}</small></div>`).join('')}</details>`);
       return;
     }
     const approved = d.status === 'approved';
