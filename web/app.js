@@ -357,6 +357,20 @@ function empty(title, description, action = '', button = '') {
   return `<div class="empty">${icon('inbox')}<h3>${esc(title)}</h3><p>${esc(description)}</p>${action ? `<button class="button soft" data-action="${action}">${esc(button)}</button>` : ''}</div>`;
 }
 
+// An empty tab says what it would hold and where the open work is. Measured
+// in Chromium: an empty Overdue tab and an empty Assigned-to-me tab both
+// read "You’re all caught up" above a workspace with four open decisions.
+function emptyInbox(query, tab, open) {
+  if (query) return empty('No matching decisions.', 'Try a different search.');
+  if (!state.decisions.length) return empty('You’re all caught up.', 'When an agent needs a person, the decision appears here.', 'help-connect', 'Connect an agent');
+  const elsewhere = open ? `${plural(open, 'decision')} elsewhere in the workspace ${open === 1 ? 'needs' : 'need'} a person: see Needs review.` : 'Nothing in the workspace waits on a person.';
+  if (tab === 'overdue') return empty('Nothing is overdue.', `Decisions open longer than ${Math.round(((state.settings && state.settings.overdue_hours) || 72) / 24)} days appear here. ${elsewhere}`);
+  if (tab === 'mine') return empty('Nothing waits on you.', elsewhere);
+  if (tab === 'predicted') return empty('No suggestions awaiting review.', 'An answer Raven suggests from an earlier decision appears here until a person confirms it.');
+  if (tab === 'evidence') return empty('Nothing resolved from evidence.', 'An answer Raven finds in connected records appears here for its owner to sign.');
+  return empty('You’re all caught up.', 'When an agent needs a person, the decision appears here.');
+}
+
 function inbox() {
   const pending = state.decisions.filter(needsYou);
   const isPredicted = d => (d.status === 'pending' && d.prediction) || (['assumed','proposed'].includes(d.status) && !signedNow(d));
@@ -541,7 +555,7 @@ function render() {
   if (typeof rememberTaskView === 'function') rememberTaskView();
   const noteDraft = $('#note-text')?.value;
   const active = document.activeElement;
-  const focusId = active.id;
+  const focusWas = $('#app').contains(active) ? focusKey(active) : '';
   const selection = active.tagName === 'INPUT' ? active.selectionStart : null;
   const disclosures = [...document.querySelectorAll('#app details[id]')].map(el => ({id: el.id, open: el.open, scroll: el.querySelector('ul')?.scrollTop || 0}));
   $('.page-head').hidden = !!taskId() || view === 'work';
@@ -558,11 +572,37 @@ function render() {
       if (el.querySelector('ul')) el.querySelector('ul').scrollTop = saved.scroll;
     }
   }
-  if (focusId && document.getElementById(focusId) && ['INPUT','SELECT','BUTTON','SUMMARY'].includes(active.tagName)) {
-    const replacement = document.getElementById(focusId);
-    replacement.focus();
-    if (selection !== null && ['search','text'].includes(replacement.type)) replacement.setSelectionRange(selection, selection);
-  }
+  // The list is redrawn every five seconds and after every action. A
+  // person moving through it by keyboard keeps their place; when the
+  // control they were on is gone (the decision they answered left the
+  // tab), focus goes to the tab above the list, not to the top of the page.
+  const replacement = keepFocus($('#app'), focusWas, () => $('#app .toolbar .tab.active') || $('#main'));
+  if (replacement && selection !== null && ['search','text'].includes(replacement.type)) replacement.setSelectionRange(selection, selection);
+}
+
+// Where focus is, as a selector that survives a redraw: an id, or the
+// action a control performs on the thing it names. Measured in Chromium:
+// a Review button a keyboard user had reached was dropped to <body> by
+// the next poll, every five seconds, on every list in the app.
+function focusKey(el) {
+  if (!el || el === document.body) return '';
+  const quote = value => `"${String(value).replace(/["\\]/g, '\\$&')}"`;
+  if (el.id) return `[id=${quote(el.id)}]`;
+  const data = el.dataset || {};
+  if (!data.action) return '';
+  return `${el.tagName.toLowerCase()}[data-action=${quote(data.action)}]`
+    + ['id', 'tab', 'client', 'mode', 'key'].filter(k => data[k] !== undefined).map(k => `[data-${k}=${quote(data[k])}]`).join('');
+}
+
+// Put focus back on the control `key` names inside `root`, or on the
+// fallback when the redraw removed it. Returns the control focused from
+// the key, so a text field can get its caret back.
+function keepFocus(root, key, fallback) {
+  if (!key) return null;
+  const next = root.querySelector(key);
+  const target = next || (typeof fallback === 'function' ? fallback() : fallback);
+  if (target && typeof target.focus === 'function') target.focus({preventScroll: true});
+  return next;
 }
 
 function showHelp() {
@@ -573,8 +613,24 @@ function openModal(title, subtitle, body) {
   saveRequestDraft();
   modalVersion += 1;
   delete $('#modal').dataset.runId;
-  $('#modal-content').innerHTML = `<div class="modal-head"><div><h2 id="modal-title">${esc(title)}</h2><p>${esc(subtitle)}</p></div><button class="icon-button" data-action="close" aria-label="Close dialog">${icon('close')}</button></div><div class="modal-body">${body}</div>`;
-  if (!$('#modal').open) $('#modal').showModal();
+  // An open dialog redrawn in place (after a sign-off, a hand-on, a
+  // follow-up) keeps focus on the control the person was using, or
+  // starts them at its title when that control is gone: a focus dropped
+  // to <body> inside a modal dialog leaves a keyboard user nowhere.
+  const wasOpen = $('#modal').open;
+  const focusWas = wasOpen && $('#modal').contains(document.activeElement) ? focusKey(document.activeElement) : '';
+  $('#modal-content').innerHTML = `<div class="modal-head"><div><h2 id="modal-title" tabindex="-1">${esc(title)}</h2><p>${esc(subtitle)}</p></div><button class="icon-button" data-action="close" aria-label="Close dialog">${icon('close')}</button></div><div class="modal-body">${body}</div>`;
+  if (!wasOpen) $('#modal').showModal();
+  else keepFocus($('#modal'), focusWas || '#modal-title', () => $('#modal-title'));
+}
+
+// After an action on an open decision, show it as it is now; unless the
+// person closed the dialog while the request was in flight, in which
+// case a late response must not reopen it. Measured in Chromium: Escape
+// during a slow hand-on, and the dialog came back by itself.
+async function rereview(id, version) {
+  await refresh();
+  if (modalVersion === version && $('#modal').open) await review(id);
 }
 
 function closeModal() {
@@ -932,6 +988,9 @@ document.addEventListener('click', async event => {
   const target = event.target.closest('[data-action]');
   if (!target || target.disabled) return;
   const action = target.dataset.action;
+  // The dialog as it was when the action began: a response that lands
+  // after the person closed it redraws nothing.
+  const version = modalVersion;
   try {
     if (action === 'close') closeModal();
     if (action === 'new' || action === 'request-status') newRequest();
@@ -980,7 +1039,7 @@ document.addEventListener('click', async event => {
     if (action === 'assign') {
       target.disabled = true;
       await api(`/api/decisions/${target.dataset.id}/assign`, {owner_id: $('#assign-owner').value});
-      await refresh(); await review(target.dataset.id); notify('Decision reassigned.');
+      await rereview(target.dataset.id, version); notify('Decision reassigned.');
     }
     if (action === 'refer') {
       const owner = state.owners.find(o => o.id === $('#assign-owner').value);
@@ -988,12 +1047,12 @@ document.addEventListener('click', async event => {
       target.disabled = true;
       const [scopeKind, ...scopeRest] = ($('#refer-scope')?.value || '').split(':');
       const result = await api(`/api/decisions/${target.dataset.id}/refer`, {person: owner.name, by: state.me?.name || 'Local operator', expected_updated_at: target.dataset.updated, ...(scopeKind ? {scope_kind: scopeKind, scope: scopeRest.join(':')} : {})});
-      await refresh(); await review(target.dataset.id); notify(result.notice);
+      await rereview(target.dataset.id, version); notify(result.notice);
     }
     if (action === 'end-rule') {
       target.disabled = true;
       const result = await api(`/api/decisions/${target.dataset.id}/rule`, {end: true, by: state.me?.name || 'Local operator', expected_updated_at: target.dataset.updated});
-      await refresh(); await review(target.dataset.id); notify(result.notice);
+      await rereview(target.dataset.id, version); notify(result.notice);
     }
     if (action === 'signoff') {
       target.disabled = true;
@@ -1003,7 +1062,7 @@ document.addEventListener('click', async event => {
         source_decision_pins: JSON.parse($('#source-decisions-signoff').value),
       } : {};
       const signed = await api(`/api/decisions/${target.dataset.id}/signoff`, {by: (d && halfSigned(d) && stillToSign(d)[0]) || d?.owner_name || 'Local operator', expected_updated_at: target.dataset.updated || d?.updated_at || '', ...revalidation});
-      await refresh(); await review(target.dataset.id); notify(signed?.notice || 'Signed off. The agent sees it on the tree.');
+      await rereview(target.dataset.id, version); notify(signed?.notice || 'Signed off. The agent sees it on the tree.');
     }
     if (action === 'reframe') {
       const question = ($('#reframe-question')?.value || '').trim();
@@ -1011,7 +1070,7 @@ document.addEventListener('click', async event => {
       if (!question || !rationale) { notify('Write the corrected question and why it should change.'); return; }
       target.disabled = true;
       const result = await api(`/api/decisions/${target.dataset.id}/reframe`, {question, rationale, expected_updated_at: target.dataset.updated});
-      await refresh(); await review(target.dataset.id); notify(result.notice);
+      await rereview(target.dataset.id, version); notify(result.notice);
     }
     if (action === 'followups') {
       const text = ($('#followups')?.value || '').trim();
@@ -1019,7 +1078,7 @@ document.addEventListener('click', async event => {
       target.disabled = true;
       const d = state.decisions.find(x => x.id === target.dataset.id);
       const result = await api(`/api/decisions/${target.dataset.id}/followups`, {questions: text, required: !!$('#followups-required')?.checked, by: d?.owner_name || 'Local operator'});
-      await refresh(); await review(target.dataset.id); notify(`${result.nodes.length} follow-up ${result.nodes.length === 1 ? 'question' : 'questions'} added to the agent's tree.`);
+      await rereview(target.dataset.id, version); notify(`${result.nodes.length} follow-up ${result.nodes.length === 1 ? 'question' : 'questions'} added to the agent's tree.`);
     }
     if (action === 'slack-sync') {
       target.disabled = true; await api('/api/slack/sync', {}); directory = null; await refresh(); notify('Slack contacts refreshed.');

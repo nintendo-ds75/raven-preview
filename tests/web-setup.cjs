@@ -140,7 +140,7 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   const makeDisclosure = (item, scroll) => ({...item, list: {scrollTop: scroll}, querySelector() { return this.list; }});
   const oldSections = existing.map(item => makeDisclosure(item, 90));
   const newSections = existing.map(item => makeDisclosure({...item, open: false}, 0));
-  const app = {innerHTML: '', dataset:{}};
+  const app = {innerHTML: '', dataset:{}, contains: () => false, querySelector: () => null};
   const renderContext = {workspaceError:'', state: {auth: {enabled: false}}, document: {body:{classList:{toggle(){}}},activeElement: {tagName: 'BODY'}, querySelectorAll: () => oldSections, getElementById: id => newSections.find(el => el.id === id)},
     $: () => app, taskId: () => '', view: 'connect', inbox() {}, runs() {}, memory() {}, owners() {}, connections: () => 'updated'};
   vm.createContext(renderContext);
