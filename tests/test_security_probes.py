@@ -485,7 +485,8 @@ class SecretProbes(Workspace):
             link = briefing.mint(self.store.graph, self.owner["id"], self.task, self.node["node_id"], "n1")
         invite = self.post("/api/invitations", {"email": "new@example.test", "role": "member"}, token=BOOTSTRAP)["url"].split("#invite=")[1]
         secrets = {"bootstrap": BOOTSTRAP, "agent": self.agent, "human": self.owner_token, "link": link,
-                   "webhook": secret, "invite": invite, "password": "correct-horse-battery-staple"}
+                   "webhook": secret, "invite": invite, "password": "correct-horse-battery-staple",
+                   "oauth_code": "gho_SECRETCODE123"}
         err, out = io.StringIO(), io.StringIO()
         project = Path(self.temp.name) / "project"
         project.mkdir()
@@ -494,6 +495,17 @@ class SecretProbes(Workspace):
             self.status_of("GET", "/api/state", token="brg_bogus_" + self.agent)
             self.status_of("POST", "/api/runs", {"title": "x"}, token=self.agent)   # refused: not the protocol? no, allowed
             self.raw("GET", "/api/brief", {"X-Raven-Link": "rvn_" + "x" * 32})
+            self.raw("GET", "/auth/github/callback?code=gho_SECRETCODE123&state=unknown")
+            self.raw("GET", "/api/search?q=gho_SECRETCODE123", {"Authorization": "Bearer " + self.owner_token})
+            # A request line that does not parse is logged without a traceback.
+            import socket
+            with socket.create_connection(("127.0.0.1", self.port), timeout=5) as raw_socket:
+                raw_socket.sendall(b"GARBAGE\r\n\r\n")
+                self.assertIn(b"400", raw_socket.recv(4096))
+            self.raw("POST", "/auth/password", {"Content-Type": "application/x-www-form-urlencoded"},
+                     urlencode({"email": "owner@example.test", "password": secrets["password"], "csrf": "bad"}).encode())
+            self.raw("POST", "/auth/token", {"Content-Type": "application/x-www-form-urlencoded"},
+                     f"token={self.owner_token}".encode())
             with patch("bridge.mcp_events.post", lambda u, b, h: (200, json.dumps({"challenge": json.loads(b)["challenge"]}).encode())):
                 self.post("/mcp", {"jsonrpc": "2.0", "id": 1, "method": "events/subscribe", "params": {
                     "name": mcp_events.NAME, "arguments": {"task_id": self.task},
@@ -510,6 +522,7 @@ class SecretProbes(Workspace):
                 except Exception as error:
                     print(str(error), file=err)
         printed = err.getvalue() + out.getvalue()
+        self.assertIn('"GET /auth/github/callback HTTP/1.1" 302', printed)
         self.assertNotIn("Traceback", printed)
         ledger = "\n".join(r["detail"] for r in self.store.graph.db.execute("SELECT detail FROM events"))
         shown = json.dumps([self.get("/api/export", token=BOOTSTRAP), self.get("/api/state", token=BOOTSTRAP),

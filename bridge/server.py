@@ -90,6 +90,14 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
     class Handler(BaseHTTPRequestHandler):
         me: Identity | None = None
 
+        def log_request(self, code="-", size="-"):
+            # The access log keeps the path and drops the query: a sign-in
+            # callback carries its one-time code there, and a search its text.
+            # A request line that did not parse has no command or path yet.
+            path = urlsplit(getattr(self, "path", "") or "").path
+            self.log_message('"%s %s %s" %s %s', getattr(self, "command", None) or "-", path or "-",
+                             getattr(self, "request_version", "") or "-", str(code), str(size))
+
         def send(self, code, value, content_type="application/json", extra_headers=None, *, mcp=False):
             if content_type == 'application/json' and code < 400:
                 from .visibility import public, mcp_response
