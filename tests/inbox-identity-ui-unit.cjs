@@ -40,4 +40,9 @@ assert.match(form, /<option value="p1">Alex Morgan · billing — already on the
 assert.doesNotMatch(form, /Dana Lee|Gone Person|Git Hub/);
 assert.match(form, /a matching name is not enough/);
 assert.doesNotMatch(context.inviteForm([people[1]]), /person_id/);
+// A signed-in person records on their own standing; only the local operator
+// records on behalf of the named owner. The copy says so.
+assert.doesNotMatch(source, /, on behalf of \$\{esc\(d\.owner_name\)\}/);
+assert.match(source, /on your own standing; \$\{esc\(d\.owner_name\)\} is its assigned owner/);
+assert.equal((source.match(/\$\{me \? `recorded as \$\{esc\(me\)\}` : `recorded on behalf of \$\{esc\(signer\)\}`\}/g) || []).length, 2);
 console.log('inbox-identity-ui-unit: ok');

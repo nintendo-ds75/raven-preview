@@ -565,6 +565,13 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                 return self.send(200, {"notice": "If this link was yours, a new one is on its way to your Slack "
                                                  "direct messages."})
             link = self.brief_link()
+            # A link acts as the person it was sent to. When the browser is
+            # signed in as somebody else, the server knows the holder is not
+            # that person, and a forwarded link records nothing as them.
+            self.identify()
+            if auth.enabled and self.me is not None and self.me.id and self.me.id != link.person["id"]:
+                raise Forbidden(403, f"This task link was sent to {link.person['name']}, and you are signed in as "
+                                     f"{self.me.name}. Open the task in Raven to act as yourself")
             if path == "/api/brief/inquiry":
                 from .inquiry import ask_task
                 return self.send(200, ask_task(store, link.run_id, data, link.actor,

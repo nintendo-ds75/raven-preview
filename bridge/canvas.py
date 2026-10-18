@@ -3068,7 +3068,11 @@ def sign_off(store, decision_id: str, data, actor=None, transaction_db=None) -> 
             current = db.execute("SELECT * FROM decisions WHERE id=?", (d.id,)).fetchone()
             check_not_abandoned(db, current["run_id"], current)
             check_revision(data, current, db=db)
-            owner_id = graph.owner_id_for(by)
+            # The corrected decision is the signer's: by their id when a
+            # person is signed in, so a namesake on the map never makes the
+            # row an unbound name nobody has standing on.
+            owner_id = (graph.owner_id_for_person(actor.id) if actor is not None and actor.id else None) \
+                or graph.owner_id_for(by)
             db.execute("UPDATE decisions SET owner_id=? WHERE id=?", (owner_id, d.id))
             store.answer(d.id, {"answer": answer, "rationale": _text(data, "rationale") or "corrected at sign-off",
                                 "applicability": data.get("applicability") or {},
