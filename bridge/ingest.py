@@ -57,6 +57,7 @@ class _ReadSession:
         self.resolved: dict[tuple[Path, str], str] = {}
         self.listed: dict[tuple[Path, str], set[str]] = {}
         self.inspected: set[Path] = set()
+        self.partial: dict[str, bool] = {}
 
 
 _READS = threading.local()
@@ -831,8 +832,14 @@ def definitions_of(store: Graph, repo: str, names: list[str]) -> dict[str, list[
 def _partial_clone(path: str) -> bool:
     """A blobless or treeless clone fetches every blob blame needs one at
     a time; blame there costs seconds per file, so it is skipped."""
+    session = _session()
+    if session is not None and path in session.partial:
+        return session.partial[path]
     out = _git_quiet(path, "config", "--get", "remote.origin.promisor")
-    return out.strip().lower() == "true"
+    partial = out.strip().lower() == "true"
+    if session is not None:
+        session.partial[path] = partial
+    return partial
 
 
 def blame_counts(path: str, rev: str, file: str) -> dict[tuple[str, str], int]:

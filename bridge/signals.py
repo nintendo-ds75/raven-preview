@@ -761,8 +761,12 @@ def signal_route(store: Graph, repo: str, question: str, context: str = "", path
     this question; otherwise they are resolved here. When what GitHub
     told Raven about the repository is stale or missing, the route says
     so: on the winner's evidence and in the notes."""
-    ranked = _signal_route(store, repo, question, context=context, path=path, notes=notes, requester=requester,
-                           hints=hints, hits=hits, category=category, also_paths=also_paths)
+    from .ingest import _read_session
+    # One route reads the checkout at one revision: the git reads behind
+    # it share a session, so the revision is resolved once for all of them.
+    with _read_session():
+        ranked = _signal_route(store, repo, question, context=context, path=path, notes=notes, requester=requester,
+                               hints=hints, hits=hits, category=category, also_paths=also_paths)
     from .github import sync_note
     note = sync_note(store, repo)
     if note:

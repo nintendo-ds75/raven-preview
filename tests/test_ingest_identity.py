@@ -154,5 +154,44 @@ class IngestIdentityTests(OfflineCase):
         self.assertEqual(len(probes), 1, probes)
 
 
+class RouteReadIdentityTests(OfflineCase):
+    """A route shares one read session across the git lookups behind it;
+    what it answers is what the per-read lookups answered."""
+
+    def routes(self, name: str):
+        from bridge.signals import signal_route
+        store = self.warm_store("qemulike", name)
+        self.addCleanup(store.graph.close)
+        paths = [r["path"] for r in store.graph.db.execute(
+            "SELECT path FROM artifacts WHERE repo='qemulike' ORDER BY path LIMIT 4")]
+        out = []
+        for path in paths:
+            notes: list[str] = []
+            ranked = signal_route(store.graph, "qemulike", f"Should {path} keep its current default?",
+                                  path=path, notes=notes)
+            out.append((path, ranked, notes))
+        return out
+
+    def test_a_route_answers_the_same_with_one_read_session(self):
+        self.warm_store("qemulike", "warm.db").graph.close()  # the fixture is built before counting
+        real_run = subprocess.run
+        spawned = []
+
+        def counting(command, *args, **kwargs):
+            spawned.append(command)
+            return real_run(command, *args, **kwargs)
+
+        with patch("bridge.ingest.subprocess.run", side_effect=counting):
+            shared = self.routes("shared.db")
+            reads_shared = len([c for c in spawned if _is_read(c)])
+            spawned.clear()
+            with patch("bridge.ingest._session", return_value=None):
+                per_read = self.routes("per-read.db")
+            reads_per_read = len([c for c in spawned if _is_read(c)])
+        self.assertEqual(shared, per_read)
+        self.assertTrue(any(ranked for _, ranked, _ in shared), shared)
+        self.assertLess(reads_shared, reads_per_read)
+
+
 if __name__ == "__main__":
     unittest.main()
