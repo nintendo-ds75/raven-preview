@@ -384,6 +384,31 @@ class Delivery:
                             "destination": dest_kind, "error": error})
         return self.get(nid)
 
+    def enqueue_thread_message(self, *, run_id: str, decision_id: str, destination: str, thread_ts: str,
+                               text: str, dedupe_key: str, kind: str = "report") -> dict | None:
+        """One message Raven says in a thread it already opened, through
+        the same outbox as a decision notification: queued, sent by the
+        worker with the same backoff, visible when it fails, and never
+        twice for one dedupe key. A report is not a question to anyone,
+        so a reply in the thread still binds to the decision message.
+        Measured live (customer loop 2026-10-11, H6): a resume report
+        posted straight to Slack while Slack was down was recorded as
+        reported and lost; the replay said duplicate and posted nothing."""
+        graph = self.store.graph
+        if graph.db.execute("SELECT 1 FROM notifications WHERE dedupe_key=?", (dedupe_key,)).fetchone():
+            return None
+        nid = uuid.uuid4().hex[:12]
+        payload = {"text": text, "blocks": None, "thread_ts": thread_ts, "interaction_mode": "report"}
+        graph.db.execute(
+            "INSERT INTO notifications(id, decision_id, run_id, kind, channel, destination, person_id, person_name, "
+            "revision, dedupe_key, payload, state, attempts, next_attempt, last_error, created_at, content_hash) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,'queued',0,0,'',?,'')",
+            (nid, decision_id, run_id, kind, self.channel, destination, "", "", "", dedupe_key,
+             json.dumps(payload), now_iso()))
+        graph.append_event("notification_queued", {"task_id": run_id, "decision_id": decision_id, "kind": kind,
+                                                   "to": "", "destination": "thread", "error": ""})
+        return self.get(nid)
+
     def get(self, nid: str) -> dict | None:
         row = self.store.graph.db.execute("SELECT * FROM notifications WHERE id=?", (nid,)).fetchone()
         return dict(row) if row else None
@@ -490,25 +515,49 @@ class Delivery:
 
     # ---------------- send ----------------
 
-    def deliver_now(self, limit: int = 50) -> int:
-        """Send what is due. Returns how many went out."""
+    def deliver_now(self, limit: int = 50, only=None) -> int:
+        """Send what is due. Returns how many went out. With `only`, a
+        list of notification ids, just those rows are attempted (a caller
+        that queued them and wants them out now); the worker's own pass
+        is the one without it."""
         if self.transport is None:
             return 0
         graph = self.store.graph
-        # Ingestion records durable requests in the source transaction. Queue
-        # human review here after commit, and send only after releasing the lock.
-        with graph.transaction():
-            requests = graph.db.execute("SELECT r.decision_id,d.needs_review FROM source_review_requests r JOIN decisions d ON d.id=r.decision_id WHERE r.state='pending' ORDER BY r.updated_at LIMIT ?", (limit,)).fetchall()
-            for request in requests:
-                if request['needs_review']:
-                    self.enqueue(request['decision_id'], 'review', note='Source evidence changed. Review the current sources before confirming this answer.')
-                graph.db.execute("UPDATE source_review_requests SET state=? WHERE decision_id=?", ('queued' if request['needs_review'] else 'obsolete', request['decision_id']))
-        due = graph.db.execute("SELECT * FROM notifications WHERE state='queued' AND next_attempt<=? "
-                               "ORDER BY created_at LIMIT ?", (time.time(), limit)).fetchall()
+        if only is not None:
+            if not only:
+                return 0
+            marks = ",".join("?" for _ in only)
+            due = graph.db.execute(f"SELECT * FROM notifications WHERE state='queued' AND next_attempt<=? "
+                                   f"AND id IN ({marks}) ORDER BY created_at", (time.time(), *only)).fetchall()
+        else:
+            # Ingestion records durable requests in the source transaction. Queue
+            # human review here after commit, and send only after releasing the lock.
+            with graph.transaction():
+                requests = graph.db.execute("SELECT r.decision_id,d.needs_review FROM source_review_requests r JOIN decisions d ON d.id=r.decision_id WHERE r.state='pending' ORDER BY r.updated_at LIMIT ?", (limit,)).fetchall()
+                for request in requests:
+                    if request['needs_review']:
+                        self.enqueue(request['decision_id'], 'review', note='Source evidence changed. Review the current sources before confirming this answer.')
+                    graph.db.execute("UPDATE source_review_requests SET state=? WHERE decision_id=?", ('queued' if request['needs_review'] else 'obsolete', request['decision_id']))
+            due = graph.db.execute("SELECT * FROM notifications WHERE state='queued' AND next_attempt<=? "
+                                   "ORDER BY created_at LIMIT ?", (time.time(), limit)).fetchall()
         sent = 0
         for row in due:
             payload = json.loads(row["payload"])
             try:
+                if row["kind"] == "report":
+                    # A line Raven adds to a thread it opened: the text is
+                    # final and the thread is the one it was queued for.
+                    channel = row["destination"]
+                    ts = self.transport.post_message(channel, payload["text"], None,
+                                                     thread_ts=payload.get("thread_ts") or "")
+                    ts = payload.get("thread_ts") or ts
+                    with graph.transaction():
+                        graph.db.execute("UPDATE notifications SET state='sent', attempts=attempts+1, external_ref=?, "
+                                         "sent_at=?, last_error='' WHERE id=?", (f"{channel}:{ts}", now_iso(), row["id"]))
+                        graph.append_event("notification_sent", {"task_id": row["run_id"], "decision_id": row["decision_id"],
+                                                                 "kind": row["kind"], "to": ""})
+                    sent += 1
+                    continue
                 if not self.conversational:
                     current = graph.db.execute('SELECT * FROM decisions WHERE id=?', (row['decision_id'],)).fetchone()
                     if current is None:
@@ -593,7 +642,7 @@ class Delivery:
         state where they were already looking."""
         earlier = self.store.graph.db.execute(
             "SELECT external_ref,payload FROM notifications WHERE decision_id=? AND person_name=? AND state='sent' "
-            "AND external_ref != '' ORDER BY sent_at DESC,created_at DESC LIMIT 1",
+            "AND external_ref != '' AND kind<>'report' ORDER BY sent_at DESC,created_at DESC LIMIT 1",
             (row["decision_id"], row["person_name"])).fetchone()
         if not earlier:
             return ''
@@ -608,9 +657,11 @@ class Delivery:
         return ts if where == channel else ''
 
     def notification_for_thread(self, channel: str, thread_ts: str) -> dict | None:
+        # A report Raven added to the thread asked nobody anything; a
+        # reply there answers the decision message the thread is about.
         row = self.store.graph.db.execute(
-            "SELECT * FROM notifications WHERE external_ref=? ORDER BY sent_at DESC, created_at DESC LIMIT 1",
-            (f"{channel}:{thread_ts}",)).fetchone()
+            "SELECT * FROM notifications WHERE external_ref=? AND kind<>'report' "
+            "ORDER BY sent_at DESC, created_at DESC LIMIT 1", (f"{channel}:{thread_ts}",)).fetchone()
         return dict(row) if row else None
 
     IN_FLIGHT_SECONDS = 120

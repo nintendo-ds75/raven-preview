@@ -19,8 +19,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas, source_docs, sources
-from bridge.auth import Auth
+from bridge import canvas, host_sessions as hs, source_docs, sources
+from bridge.auth import Auth, Identity
 from bridge.canvas import wait_for_background
 from bridge.github import GitHubAPI, GitHubError, sync_repo, sync_state
 from bridge.llm import Client, LLMError
@@ -375,6 +375,93 @@ class RestartTests(FlowCase):
         self.assertIsNotNone(self.host('poll', worker='w')['message'])
         self.tree(task)
         self.assertEqual(self.ok('bridge_finish_task', {'task_id': task})['status'], 'completed')
+
+
+class HostReportTests(OfflineCase):
+    """The supervisor's resume report goes through the outbox."""
+
+    def setUp(self):
+        super().setUp()
+        self.store = Store(Path(self.temp.name) / 'report.db')
+        self.addCleanup(self.store.graph.close)
+        self.slack = FakeSlack()
+        self.delivery = self.store.connect_delivery(self.slack, base_url='https://raven.example')
+        self.actor = Identity('person-a', 'Ada Example', 'member', 'agent')
+        self.args = {'host': 'claude', 'session_id': 'session-a', 'project': '/example/checkout', 'repo': REPO,
+                     'prompt': PROMPT}
+        self.task = self.event('prompt')['task_id']
+        with self.store.graph.transaction():
+            self.did = self.store.graph.add_decision(self.task, QUESTION, '', 'pending', repo=REPO,
+                                                     owner='Wes Chen', path='billing/usage.py')
+            self.store.graph.db.execute(
+                "INSERT INTO notifications(id, decision_id, run_id, kind, channel, dedupe_key, external_ref, state, "
+                "person_name, payload, created_at) VALUES('n1', ?, ?, 'ask', 'slack', 'k1', 'D123:1700.5', 'sent', "
+                "'Wes Chen', '{}', '')", (self.did, self.task))
+            self.store.graph.append_event('signature', {'task_id': self.task, 'decision_id': self.did, 'by': 'Wes Chen'})
+        self.message = self.event('poll', worker='w')['message']
+        self.assertIsNotNone(self.message)
+
+    def event(self, event, **extra):
+        return hs.event(self.store, {**self.args, 'event': event, **extra}, principal=self.actor)
+
+    def report(self, **extra):
+        return self.event('report', message_id=self.message['id'], exit_code=0, summary='Applied the cap.',
+                          changed=['usage.py (+2 -1)'], **extra)
+
+    def rows(self):
+        return [dict(r) for r in self.store.graph.db.execute("SELECT * FROM notifications WHERE kind='report'")]
+
+    def test_a_resume_report_survives_a_slack_outage_and_is_posted_once(self):
+        self.slack.fail = True
+        first = self.report()
+        self.assertEqual((first['reported'], first['state'], first['posted'], first['queued']), (True, 'done', 0, 1))
+        (row,) = self.rows()
+        self.assertEqual((row['state'], row['attempts'], row['destination'], row['run_id']),
+                         ('queued', 1, 'D123', self.task))
+        self.assertIn('ratelimited', row['last_error'])
+        self.assertEqual(self.slack.messages, [])
+        # Replayed while Slack is still down: recorded once, still waiting.
+        replay = self.report()
+        self.assertEqual((replay['duplicate'], replay['posted'], replay['queued']), (True, 0, 1))
+        self.assertEqual(len(self.rows()), 1)
+        self.assertEqual(self.store.graph.db.execute(
+            "SELECT count(*) FROM events WHERE kind='host_resume_report'").fetchone()[0], 1)
+        # Slack is back: the replay posts the line, once, in the thread.
+        self.slack.fail = False
+        recovered = self.report()
+        self.assertEqual((recovered['duplicate'], recovered['posted'], recovered['queued']), (True, 1, 0))
+        self.assertEqual(len(self.slack.messages), 1)
+        message = self.slack.messages[0]
+        self.assertEqual((message['channel'], message['thread_ts']), ('D123', '1700.5'))
+        self.assertTrue(message['text'].startswith('✅ *Agent continued*'), message['text'])
+        self.assertIn('Applied the cap.', message['text'])
+        self.assertEqual(self.delivery.deliver_now(), 0)
+        self.assertEqual(self.report()['posted'], 1)
+        self.assertEqual(len(self.slack.messages), 1)
+        self.assertEqual(self.store.graph.db.execute('SELECT posted FROM host_reports').fetchone()[0], 1)
+        # A reply in that thread still finds the question, not the report.
+        self.assertEqual(self.delivery.notification_for_thread('D123', '1700.5')['kind'], 'ask')
+
+    def test_the_delivery_worker_posts_a_queued_report_after_its_backoff(self):
+        self.slack.fail = True
+        self.assertEqual(self.report()['queued'], 1)
+        self.slack.fail = False
+        self.assertEqual(self.delivery.deliver_now(), 0)  # still inside the backoff
+        with patch('bridge.delivery.time.time', return_value=time.time() + 3600):
+            self.assertEqual(self.delivery.deliver_now(), 1)
+        self.assertEqual(len(self.slack.messages), 1)
+        self.assertEqual(self.rows()[0]['state'], 'sent')
+        self.assertEqual(self.report()['posted'], 1)
+        self.assertEqual(len(self.slack.messages), 1)
+
+    def test_a_report_with_no_transport_waits_in_the_outbox_for_the_server(self):
+        # A stdio Raven knows Slack is connected but holds no token: the
+        # report is queued for the server's worker rather than dropped.
+        self.store._delivery = None
+        self.store.graph.set_setting('slack_connected', '1')
+        self.assertEqual(self.report()['queued'], 1)
+        self.assertEqual(self.rows()[0]['state'], 'queued')
+        self.assertEqual(self.store.connect_delivery(FakeSlack(), base_url='https://raven.example').deliver_now(), 1)
 
 
 class ModelOutageTests(FlowCase):

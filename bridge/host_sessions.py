@@ -368,29 +368,60 @@ def report(store, binding, args):
         if not isinstance(value, list) or len(value) > 200 or any(not isinstance(v, str) or len(v) > 500 for v in value):
             raise Invalid(f'{name} must be at most 200 short strings')
     state = 'failed' if exit_code != 0 else 'blocked' if denied else 'done'
+    delivery = store.delivery
     with g.transaction():
-        if g.db.execute('SELECT 1 FROM host_reports WHERE message_id=?', (mid,)).fetchone():
-            return {'reported': True, 'duplicate': True}
-        g.db.execute('INSERT INTO host_reports(message_id,task_id,state,created_at) VALUES(?,?,?,?)',
-                     (mid, message['task_id'], state, at))
+        duplicate = g.db.execute('SELECT 1 FROM host_reports WHERE message_id=?', (mid,)).fetchone() is not None
+        if not duplicate:
+            g.db.execute('INSERT INTO host_reports(message_id,task_id,state,created_at) VALUES(?,?,?,?)',
+                         (mid, message['task_id'], state, at))
+    if duplicate:
+        # The same report again: nothing is recorded twice, and what is
+        # still waiting to be posted is tried again now.
+        return {'reported': True, 'duplicate': True, **_post_report(store, delivery, mid, retry=True)}
+    with g.transaction():
         g.append_event('host_resume_report', {'task_id': message['task_id'], 'binding_id': binding['id'],
                                               'message_id': mid, 'state': state, 'exit_code': exit_code,
                                               'summary': summary[-3000:], 'changed': changed[:50],
                                               'denied': denied[:20]})
-    posted = 0
-    delivery = store.delivery
-    if delivery.transport is not None and hasattr(delivery.transport, 'post_message'):
-        text = _report_text(store, binding, message, state, summary, changed, denied, delivery.base_url)
-        refs = sorted({r['external_ref'] for r in g.db.execute(
-            "SELECT external_ref FROM notifications WHERE run_id=? AND external_ref<>'' AND state='sent'",
-            (message['task_id'],)).fetchall()})
-        for ref in refs:
-            channel, _, thread = ref.partition(':')
-            try:
-                delivery.transport.post_message(channel, text, None, thread_ts=thread)
-                posted += 1
-            except Exception as error:
-                print(f'Raven: could not post the resume report to Slack: {type(error).__name__}')
+    if delivery.enabled:
+        # One line in each Slack thread Raven opened for this task, through
+        # the outbox: posted now when Slack answers, retried by the worker
+        # when it does not, and once per thread whatever is replayed.
+        threads = g.db.execute(
+            "SELECT external_ref, decision_id FROM notifications WHERE run_id=? AND external_ref<>'' "
+            "AND state='sent' AND kind<>'report' ORDER BY sent_at, created_at", (message['task_id'],)).fetchall()
+        refs = {}
+        for row in threads:
+            refs.setdefault(row['external_ref'], row['decision_id'])
+        if refs:
+            text = _report_text(store, binding, message, state, summary, changed, denied, delivery.base_url)
+            with g.transaction():
+                for ref, decision_id in sorted(refs.items()):
+                    channel, _, thread = ref.partition(':')
+                    delivery.enqueue_thread_message(run_id=message['task_id'], decision_id=decision_id,
+                                                    destination=channel, thread_ts=thread, text=text,
+                                                    dedupe_key=f'report:{mid}:{ref}')
+    return {'reported': True, 'state': state, **_post_report(store, delivery, mid)}
+
+
+def _post_report(store, delivery, mid, retry=False):
+    """Send what this report has queued and say where it stands: posted
+    is how many threads have the line, queued how many still wait on the
+    worker. A replay (`retry`) asks for the waiting ones now, failed ones
+    included; a transport's own rate-limit cooldown still holds."""
+    g = store.graph
+    rows = g.db.execute("SELECT id, state FROM notifications WHERE kind='report' AND dedupe_key LIKE ?",
+                        (f'report:{mid}:%',)).fetchall()
+    waiting = [r['id'] for r in rows if r['state'] in ('queued', 'failed')]
+    if waiting and retry:
+        marks = ','.join('?' for _ in waiting)
         with g.transaction():
-            g.db.execute('UPDATE host_reports SET posted=? WHERE message_id=?', (posted, mid))
-    return {'reported': True, 'state': state, 'posted': posted}
+            g.db.execute(f"UPDATE notifications SET state='queued', next_attempt=0 WHERE id IN ({marks})", waiting)
+    if waiting:
+        delivery.deliver_now(only=waiting)
+    states = [r['state'] for r in g.db.execute(
+        "SELECT state FROM notifications WHERE kind='report' AND dedupe_key LIKE ?", (f'report:{mid}:%',)).fetchall()]
+    posted = states.count('sent')
+    with g.transaction():
+        g.db.execute('UPDATE host_reports SET posted=? WHERE message_id=?', (posted, mid))
+    return {'posted': posted, 'queued': sum(1 for s in states if s in ('queued', 'failed'))}

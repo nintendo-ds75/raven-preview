@@ -177,6 +177,16 @@ A failed resume is reported too, and its message is released for a later
 attempt. Claude Code reports denied actions in its JSON output; Codex reports
 only its exit status and final message.
 
+The report line goes through the same outbox as every other message Raven
+sends (`notifications`, kind `report`, one row per thread, keyed on the
+resume message and the thread). When Slack answers it is posted in the same
+call and the result says `posted`; when Slack is down the row stays queued
+with its error, the delivery worker retries it with backoff, and the result
+says `queued`. Replaying the same report records nothing twice: it returns
+`duplicate: true`, tries any row still waiting, and reports what has been
+posted so far. A reply in the thread still binds to the decision message,
+never to the report.
+
 Delivery is **at least once**. A failed process releases the message; an abandoned
 lease can be claimed after 30 minutes. One invocation is bounded to 20 minutes.
 A crash after host success but before acknowledgement can replay the notification,
