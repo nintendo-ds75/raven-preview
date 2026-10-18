@@ -131,8 +131,15 @@ class GitHubCase(OfflineCase):
         super().setUp()
         self.repo, self.sha = build_platform()
         db = Path(self.temp.name) / "gh.db"
-        shutil.copyfile(platform_template(), db)
-        self.store = Store(db)
+        template = platform_template()
+        if template.exists():
+            shutil.copyfile(template, db)
+            self.store = Store(db)
+        else:
+            # Under the PostgreSQL contracts a Store path is a schema, not
+            # a file: nothing to copy, so ingest into this test's own.
+            self.store = Store(db)
+            index_repo(self.store.graph, self.repo, repo_name=REPO)
         self.graph = self.store.graph
         with self.graph.transaction():
             self.priya = self.graph.add_person(*PRIYA, github_login="pnatarajan")
