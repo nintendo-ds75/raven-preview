@@ -121,6 +121,8 @@ class Candidate:
     topic: str = ""             # the category this decision is about that they verifiably decide
     primary: bool = False       # verified decider of the agent's primary decision path
     merge_led: bool = False     # their approval here comes mostly from merging
+    at: dict[str, float] = field(default_factory=dict)   # their weighted signal under each hit path
+    listed_at: set[str] = field(default_factory=set)     # the hit paths a listing names them for
 
 
 def _now(store: Graph, repo: str) -> float:
@@ -996,6 +998,9 @@ def _signal_route(store: Graph, repo: str, question: str, context: str = "", pat
                 lines.append(f"area matched from words alone ({hit.why}); confirm the path before relying on it")
             cand = scored.setdefault(key, Candidate(name=who))
             cand.per_hit.append(hit.weight * s)
+            cand.at[hit.path] = max(cand.at.get(hit.path, 0.0), hit.weight * s)
+            if key in listed_by:
+                cand.listed_at.add(hit.path)
             cand.approval = max(cand.approval, app_share * thin)
             cand.author = max(cand.author, auth_share * thin)
             if s >= cand.best:
@@ -1125,6 +1130,26 @@ def _signal_route(store: Graph, repo: str, question: str, context: str = "", pat
             ranked.remove(topical)
             ranked.insert(0, topical)
             winner = topical
+    # The same for a listing: CODEOWNERS names one owner per file, the
+    # last matching rule, so the person it names for the path the agent
+    # is working in is not displaced by the owner of another path the
+    # change also touches. Measured on a two-file node (retry.py, whose
+    # rule named its owner, and client.py under the directory rule): the
+    # directory owner's full-weight second path outscored the file's
+    # own owner, whom the file alone had ranked first.
+    primary_hit = next((h for h in hits if path and path != "unknown"
+                        and h.path in (path.lstrip("/"), path.lstrip("/").rstrip("/") + "/")), None)
+    if not override and not winner.verified and primary_hit is not None \
+            and primary_hit.path not in winner.listed_at:
+        pick = next((c for c in ranked[1:] if primary_hit.path in c.listed_at
+                     and c.at.get(primary_hit.path, 0.0) > winner.at.get(primary_hit.path, 0.0)), None)
+        if pick is not None:
+            label = "CODEOWNERS" if any("CODEOWNERS" in ln for ln in pick.lines) else "MAINTAINERS"
+            override = (f"note: {label} names {pick.name} for {primary_hit.path}, the path this change is about; "
+                        f"{winner.name} leads on the other paths it touches, so Raven asks {pick.name}")
+            ranked.remove(pick)
+            ranked.insert(0, pick)
+            winner = pick
     if not winner.verified and any(ln.startswith(("MAINTAINERS lists", "CODEOWNERS lists")) for ln in winner.lines):
         if live_share[winner.name] < 0.25:
             challenger = next((c for c in ranked[1:] if live_share[c.name] >= LIVE_MAJORITY), None)
