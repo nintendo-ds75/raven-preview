@@ -951,7 +951,7 @@ HISTORY_LABELS = {
     "signoff": "Signed off", "owner_changed": "Handed on", "task_note": "Context added",
     "followup_added": "Follow-up question added", "node_added": "Coding agent raised a decision",
     "node_settled": "Settled by the coding agent",
-    "run_updated": "Status changed", "task_finished": "Task finished",
+    "run_updated": "Status changed", "task_finished": "Task finished", "task_reopened": "Task reopened",
 }
 
 

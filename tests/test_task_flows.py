@@ -245,6 +245,51 @@ class CorrectionTests(FlowCase):
         self.assertIn('dependent_flagged', kinds)
 
 
+class LateFollowUpTests(FlowCase):
+    def test_a_required_follow_up_added_after_completion_can_be_adopted_and_answered(self):
+        task = self.host('prompt', prompt=PROMPT)['task_id']
+        a = self.node(task, client_ref='a')
+        self.answer(a['node_id'])
+        self.tree(task)
+        self.assertEqual(self.ok('bridge_finish_task', {'task_id': task})['status'], 'completed')
+        self.assertFalse(self.host('stop')['hold'])
+        # Wes adds a required follow-up after the task finished.
+        added = self.post(f'/api/decisions/{a["node_id"]}/followups',
+                          {'questions': ['Which release note must mention the cap?'], 'required': True}, token=self.wes)
+        follow = added['nodes'][0]
+        self.assertEqual((follow['status'], follow['followup_required']), ('suggested', True))
+        tree = self.tree(task)
+        self.assertEqual((tree['status'], tree['counts']['blocking']), ('completed', 1))
+        self.assertIn('adopt', tree['next'])
+        self.assertIsNotNone(self.host('poll', worker='w')['message'])
+        self.assertIn('required follow-up', self.refused('bridge_finish_task', {'task_id': task}))
+        # A new decision still has no place on a finished task; the
+        # follow-up a person added does, and taking it up reopens the task.
+        self.assertIn('finished', self.refused('bridge_add_node', {'task_id': task, 'question': 'Something new?',
+                                                                   'paths': 'billing/usage.py'}))
+        adoption = {'task_id': task, 'adopt': follow['node_id'], 'question': follow['question'],
+                    'paths': 'billing/usage.py', 'client_ref': 'f1'}
+        adopted = self.ok('bridge_add_node', adoption)
+        self.assertEqual((adopted['status'], adopted['owner'], adopted['parent_id'], adopted['origin']),
+                         ('pending', 'Wes Chen', a['node_id'], 'human'))
+        self.assertEqual(self.ok('bridge_add_node', adoption)['node_id'], adopted['node_id'])
+        tree = self.tree(task)
+        # Open again, with the adopted question waiting on Wes.
+        self.assertEqual((tree['status'], tree['followups'], tree['counts']['blocking']), ('needs_judgment', [], 1))
+        self.assertIn('task_reopened', self.events(task))
+        # The same session, binding and Stop hold carry on: the agent is
+        # held while Wes answers, and the finish gate applies afresh.
+        self.assertTrue(self.host('stop')['hold'])
+        self.assertIn('waiting on Wes Chen', self.refused('bridge_finish_task', {'task_id': task}))
+        self.answer(adopted['node_id'], 'The 1.26 release note.')
+        self.tree(task)
+        self.assertEqual(self.ok('bridge_finish_task', {'task_id': task})['status'], 'completed')
+        self.assertEqual(self.tree(task)['counts']['blocking'], 0)
+        self.assertFalse(self.host('stop')['hold'])
+        self.assertEqual(self.count('SELECT count(*) FROM runs'), 1)
+        self.assertEqual(self.count("SELECT count(*) FROM decisions WHERE run_id=? AND status='suggested'", task), 0)
+
+
 class RetryTests(FlowCase):
     def test_retries_with_the_same_keys_never_duplicate_tasks_nodes_or_notifications(self):
         self.store.connect_delivery(FakeSlack(), base_url='https://raven.example')

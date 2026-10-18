@@ -979,7 +979,10 @@ def add_node(store, cfg, data, *, _cached_rule_attempt=False) -> dict:
     options = [_unescaped(o) for o in _options(data.get("options"))]
     graph = store.graph
     run = _task(store, task_id)
-    if run["status"] in ("completed", "abandoned"):
+    # A finished task takes no new decision; the one exception is a
+    # follow-up a person added after it finished, which the agent may
+    # still take up (the task reopens below, once the adoption is checked).
+    if run["status"] == "abandoned" or (run["status"] == "completed" and not adopt):
         raise Invalid("This task is finished; start a new one with bridge_start_task")
     # The task's facts hold here unless this node states its own value.
     facts = {**_json_dict(run["facts"] if "facts" in run.keys() else ""), **facts}
@@ -1004,6 +1007,8 @@ def add_node(store, cfg, data, *, _cached_rule_attempt=False) -> dict:
         candidate = _node(store, adopt, task_id, "adopt")
         if candidate.status != "suggested":
             raise Invalid("adopt must name a follow-up question a person added to this task")
+        if run["status"] == "completed":
+            run = _reopen_for_followup(store, run, candidate)
         if candidate.context:
             context = candidate.context + ('\nAgent investigation:\n' + context if context else '')
     # A retry of a node already on this tree must not become a new scope
@@ -1149,6 +1154,28 @@ def add_node(store, cfg, data, *, _cached_rule_attempt=False) -> dict:
                           owner_id, context, view['updated_at'])
     resolve_scope(graph, task_id, scope_request_key)
     return view
+
+
+def _reopen_for_followup(store, run, followup):
+    """A follow-up a person added after the task finished reopens the
+    task when the agent takes it up: the task is working again, its host
+    binding, nodes, proof and history stay, and the finish gate applies
+    afresh until the follow-up is answered. Measured live (customer loop
+    2026-10-11, H2): the adoption was refused as "finished", the agent
+    started a second task beside the tree, and the required follow-up
+    stayed a blocker nobody could clear."""
+    graph = store.graph
+    with graph.transaction():
+        current = graph.db.execute("SELECT status FROM runs WHERE id=?", (run["id"],)).fetchone()
+        if current is not None and current["status"] == "completed":
+            required = graph.db.execute("SELECT followup_required FROM decisions WHERE id=?",
+                                        (followup.id,)).fetchone()
+            graph.db.execute("UPDATE runs SET status='working', updated_at=? WHERE id=?", (now(), run["id"]))
+            graph.append_event("task_reopened", {
+                "task_id": run["id"], "decision_id": followup.id,
+                "required": bool(required and required["followup_required"]),
+                "reason": "the agent adopted a follow-up a person added after the task finished"})
+    return _task(store, run["id"])
 
 
 class _NoCachedRule(Exception):
