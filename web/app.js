@@ -902,6 +902,15 @@ function decisionBackground(d) {
 // may answer and sign). Measured in a shared workspace: a member whose
 // name matched the owner's read "Alex Morgan owns this decision" under
 // their own name, with no way on.
+// An invitation links to a person on the map by exact email on its own. A
+// person seeded without an email (an owner from CODEOWNERS or git history)
+// is linked only when the admin names them here, never by a matching name.
+function inviteForm(people) {
+  const unlinked = people.filter(p => p.active && !p.email && !p.github_id);
+  const picker = unlinked.length ? `<label>Who this is for<select name="person_id"><option value="">A new teammate</option>${unlinked.map(p => `<option value="${esc(p.id)}">${esc(p.name)}${p.team ? ` · ${esc(p.team)}` : ''} — already on the map, no email</option>`).join('')}</select></label><p class="field-help">A person already on the map with this email is linked on their own. Someone on the map without an email is linked only when you name them here; a matching name is not enough.</p>` : '';
+  return `<form id="invite-form"><label>Email<input name="email" type="email" required maxlength="254"></label>${picker}<label>Access<select name="role"><option value="member">Member — contribute and answer assigned decisions</option><option value="viewer">Viewer — read only</option></select></label><p class="error" id="form-error" hidden></p><button class="button primary" type="submit">Create invitation</button></form>`;
+}
+
 function readOnlyReason(d) {
   const owner = d.owner_name ? `${esc(d.owner_name)} owns this decision` : 'This decision has no owner yet';
   if (state.me?.role === 'viewer') return `Read-only access. ${owner}.`;
@@ -1111,7 +1120,7 @@ document.addEventListener('click', async event => {
       notify('Queued again.'); await refresh();
     }
     if (action === 'export') await exportWorkspace();
-    if (action === 'invite-person') openModal('Invite teammate', 'Invite-only access. No email is sent automatically.', '<form id="invite-form"><label>Email<input name="email" type="email" required maxlength="254"></label><label>Access<select name="role"><option value="member">Member — contribute and answer assigned decisions</option><option value="viewer">Viewer — read only</option></select></label><p class="error" id="form-error" hidden></p><button class="button primary" type="submit">Create invitation</button></form>');
+    if (action === 'invite-person') openModal('Invite teammate', 'Invite-only access. No email is sent automatically.', inviteForm((await api('/api/people')).people || []));
     if (action === 'agent-setup') await setupAgent();
     if (action === 'quick-agent') { target.disabled = true; await quickAgent(target.dataset.client); target.disabled = false; }
     if (action === 'launch-agent') await launchAgent(target.dataset.client, target.dataset.mode);
@@ -1188,7 +1197,7 @@ document.addEventListener('submit', async event => {
   try {
     if (form.id === 'invite-form') {
       const invitation = await api('/api/invitations', data);
-      openModal('Invitation ready', 'Share privately with ' + data.email + '. Expires in 48 hours.', `<pre id="mcp-config">${esc(invitation.url)}</pre><button class="button" data-action="copy">Copy invitation link</button><p>The recipient sets their own password. This link grants access; creating another invitation for this email invalidates the previous one.</p>`);
+      openModal('Invitation ready', 'Share privately with ' + data.email + '. Expires in 48 hours.', `<pre id="mcp-config">${esc(invitation.url)}</pre><button class="button" data-action="copy">Copy invitation link</button><p>${invitation.person ? `Whoever accepts it signs in as ${esc(invitation.person.name)}, with the authority recorded for them. ` : ''}The recipient sets their own password. This link grants access; creating another invitation for this email invalidates the previous one.</p>`);
       return;
     }
     if (form.id === 'task-form') {

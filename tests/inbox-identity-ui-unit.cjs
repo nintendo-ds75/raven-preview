@@ -27,4 +27,17 @@ assert.equal(personalInbox(), true);
 assert.equal([seeded, theirs, settled, legacy].filter(assignedToMe).length, 1);
 // The source no longer compares display names for the inbox.
 assert.doesNotMatch(source, /d\.owner_name === state\.me\?\.name/);
+// The invitation names a person seeded without an email; people with an
+// email link on their own and are not offered, and nothing links by name.
+vm.runInContext(source.slice(source.indexOf('function inviteForm('), source.indexOf('function readOnlyReason(')), context);
+const people = [{id: 'p1', name: 'Alex Morgan', active: 1, email: '', github_id: '', team: 'billing'},
+  {id: 'p2', name: 'Dana Lee', active: 1, email: 'dana@example.test', github_id: ''},
+  {id: 'p3', name: 'Gone Person', active: 0, email: '', github_id: ''},
+  {id: 'p4', name: 'Git Hub', active: 1, email: '', github_id: '42'}];
+const form = context.inviteForm(people);
+assert.match(form, /name="person_id"/);
+assert.match(form, /<option value="p1">Alex Morgan · billing — already on the map, no email<\/option>/);
+assert.doesNotMatch(form, /Dana Lee|Gone Person|Git Hub/);
+assert.match(form, /a matching name is not enough/);
+assert.doesNotMatch(context.inviteForm([people[1]]), /person_id/);
 console.log('inbox-identity-ui-unit: ok');

@@ -891,7 +891,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         raise Invalid(str(error))
                 elif path == "/api/invitations":
                     self.require('admin')
-                    result = accounts.invite(data.get('email'), data.get('role', 'member'), self.me)
+                    result = accounts.invite(data.get('email'), data.get('role', 'member'), self.me,
+                                             person_id=str(data.get('person_id') or ''))
                     result['url'] = self.base_url() + '/auth/join#invite=' + result.pop('token')
                 elif path == "/api/tokens":
                     person_id = str(data.get("person_id") or self.me.id)

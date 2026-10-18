@@ -109,7 +109,11 @@ class Accounts:
         return self.graph.db.execute('SELECT 1 FROM account_passwords WHERE person_id=?',
                                      (person_id,)).fetchone() is not None
 
-    def invite(self, email, role, actor):
+    def invite(self, email, role, actor, person_id=''):
+        """An invitation for an email address. It links to a person on the
+        map by exact email, or by the person the admin names (one seeded
+        without an email); never by name. The accepted account is that
+        person, with the authority already recorded for them."""
         if not self.ready():
             raise Invalid('Complete workspace setup first')
         if not self.auth.enabled or not actor or not actor.allows('admin'):
@@ -117,18 +121,32 @@ class Accounts:
         if role not in ('viewer', 'member'):
             raise Invalid('Invitations may grant viewer or member access')
         email = email_address(email)
+        person_id = str(person_id or '').strip()
         token, identifier = secrets.token_urlsafe(32), secrets.token_hex(12)
         with self.graph.transaction():
             # A person the admin put on the map has authority but no login
             # yet; the invite is how they get one, as that same person.
             person = self.graph.person_by_email(email)
-            if person and self.has_password(person['id']):
+            if person_id:
+                chosen = self.graph.get_person(person_id)
+                if chosen is None or not chosen['active']:
+                    raise Invalid('Choose an active person on the map, or leave the person blank')
+                if chosen['email'] and chosen['email'] != email:
+                    raise Invalid(f"{chosen['name']} is on the map with the email {chosen['email']}; invite that address")
+                if person and person['id'] != chosen['id']:
+                    raise Invalid(f"That email belongs to {person['name']} on the map")
+                person = chosen
+            if person and (self.has_password(person['id']) or person.get('github_id')):
                 raise Invalid('This person already has a login; they sign in with it')
             self.graph.db.execute('UPDATE account_invites SET consumed=1 WHERE email=?', (email,))
-            self.graph.db.execute('INSERT INTO account_invites(id,email,role,token_hash,expires_at,created_by) VALUES(?,?,?,?,?,?)',
-                (identifier, email, role, self.auth._hash(token), int(time.time()) + 172800, actor.id))
-            self.graph.append_event('teammate_invited', {'email': email, 'role': role, 'by': actor.id})
-        return {'id': identifier, 'token': token, 'expires_in': 172800}
+            self.graph.db.execute('INSERT INTO account_invites(id,email,role,token_hash,expires_at,created_by,person_id) '
+                                  'VALUES(?,?,?,?,?,?,?)',
+                (identifier, email, role, self.auth._hash(token), int(time.time()) + 172800, actor.id,
+                 person['id'] if person else ''))
+            self.graph.append_event('teammate_invited', {'email': email, 'role': role, 'by': actor.id,
+                                                         'person_id': person['id'] if person else ''})
+        return {'id': identifier, 'token': token, 'expires_in': 172800,
+                'person': {'id': person['id'], 'name': person['name']} if person else None}
 
     def accept(self, data):
         if not self.ready():
@@ -143,12 +161,23 @@ class Accounts:
             if not invite or invite['consumed'] or invite['expires_at'] <= time.time():
                 raise Invalid('This invitation is invalid or expired; ask for a new one')
             person = self.graph.person_by_email(invite['email'])
-            if person and self.has_password(person['id']):
+            named = self.graph.get_person(invite['person_id']) if invite['person_id'] else None
+            if named is not None:
+                # The person the admin named when inviting. Their email,
+                # if any, matched at invitation time; a different person
+                # given this email since means the map changed under the
+                # invitation, and it is not honoured.
+                if not named['active'] or (person and person['id'] != named['id']):
+                    raise Invalid('This invitation no longer matches the person it was for; ask for a new one')
+                person = named
+            if person and (self.has_password(person['id']) or person.get('github_id')):
                 raise Invalid('This account already exists; sign in instead')
             if person:
                 # Keep the person the map names, so the authority the admin
                 # recorded is theirs from the first sign-in.
                 pid = person['id']
+                if not person.get('email'):
+                    self.graph.db.execute('UPDATE people SET email=? WHERE id=?', (invite['email'], pid))
                 if person.get('role') != 'admin':
                     self.graph.db.execute('UPDATE people SET role=? WHERE id=?', (invite['role'], pid))
             else:

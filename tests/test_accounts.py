@@ -167,6 +167,79 @@ class AccountFlowTests(SharedServer):
         with self.assertRaisesRegex(Invalid, 'already has a login'):
             self.accounts.invite('owner@example.test', 'member', actor)
 
+    def test_invite_names_a_person_seeded_without_an_email(self):
+        # A seeded owner has authority and no email, so no address links
+        # the invitation to them on its own; the admin names them. A
+        # namesake on the map is never what links the two.
+        self.setup_owner()
+        actor = self.auth.identify({'Authorization': 'Bearer ' + BOOTSTRAP})
+        graph = self.store.graph
+        with graph.transaction():
+            alex = graph.add_person('Alex Morgan', role='viewer')
+            namesake = graph.add_person('Alex Morgan', merge=False)
+            graph.add_authority('path', 'billing/*', 'decides', person_id=alex, repo='acme/bridge')
+        # Without naming anyone, an invitation makes a new person; the name is not a link.
+        plain = self.accounts.invite('alex@example.test', 'member', actor)
+        self.assertIsNone(plain['person'])
+        pid = self.accounts.accept(dict(name='Alex Morgan', password='alex-long-password', invite=plain['token']))
+        self.assertNotIn(pid, (alex, namesake))
+        self.assertEqual([r['person_id'] for r in graph.deciders('acme/bridge')], [alex])
+        # Naming the person links the invitation to them, and only to them.
+        with self.assertRaisesRegex(Invalid, 'belongs to Alex Morgan'):
+            self.accounts.invite('alex@example.test', 'member', actor, person_id=alex)
+        invite = self.post('/api/invitations', {'email': 'a.morgan@example.test', 'role': 'member', 'person_id': alex},
+                           token=BOOTSTRAP)
+        self.assertEqual(invite['person'], {'id': alex, 'name': 'Alex Morgan'})
+        pid = self.accounts.accept(dict(name='Whoever Holds The Link', password='alex-long-password',
+                                        invite=invite['url'].split('#invite=')[1]))
+        self.assertEqual(pid, alex)
+        linked = graph.get_person(alex)
+        self.assertEqual((linked['name'], linked['email'], linked['role']), ('Alex Morgan', 'a.morgan@example.test', 'member'))
+        self.assertEqual([r['person_id'] for r in graph.deciders('acme/bridge')], [alex])
+        self.assertEqual(self.accounts.login('a.morgan@example.test', 'alex-long-password'), alex)
+        self.assertEqual(graph.get_person(namesake)['email'], '')
+        # A person with a login, an inactive person, or one on the map with
+        # another email cannot be named.
+        with self.assertRaisesRegex(Invalid, 'already has a login'):
+            self.accounts.invite('a.morgan@example.test', 'member', actor, person_id=alex)
+        with graph.transaction():
+            dana = graph.add_person('Dana Lee', email='dana@example.test')
+            graph.db.execute("UPDATE people SET active=0 WHERE id=?", (namesake,))
+            graph._bump('')
+        with self.assertRaisesRegex(Invalid, 'invite that address'):
+            self.accounts.invite('other@example.test', 'member', actor, person_id=dana)
+        with self.assertRaisesRegex(Invalid, 'active person'):
+            self.accounts.invite('other@example.test', 'member', actor, person_id=namesake)
+        with self.assertRaisesRegex(Invalid, 'active person'):
+            self.accounts.invite('other@example.test', 'member', actor, person_id='nobody')
+        # The map changing under a pending invitation voids it.
+        with graph.transaction():
+            rae = graph.add_person('Rae Kim')
+        pending = self.accounts.invite('rae@example.test', 'member', actor, person_id=rae)
+        with graph.transaction():
+            graph.add_person('Rae Other', email='rae@example.test', merge=False)
+        with self.assertRaisesRegex(Invalid, 'no longer matches'):
+            self.accounts.accept(dict(name='Rae', password='rae-long-password-123', invite=pending['token']))
+
+    def test_invite_links_a_slack_directory_person_by_email(self):
+        # A contact Slack's directory imported is linked by exact email,
+        # keeping their Slack id, so their account is the person Raven
+        # already messages.
+        self.setup_owner()
+        actor = self.auth.identify({'Authorization': 'Bearer ' + BOOTSTRAP})
+        graph = self.store.graph
+        with graph.transaction():
+            dana = graph.add_person('Dana Lee', email='dana@example.test', slack_id='UDANA',
+                                    source='slack-directory', merge=False)
+        invite = self.accounts.invite('Dana@Example.test', 'member', actor)
+        self.assertEqual(invite['person'], {'id': dana, 'name': 'Dana Lee'})
+        pid = self.accounts.accept(dict(name='D. Lee', password='dana-long-password', invite=invite['token']))
+        self.assertEqual(pid, dana)
+        linked = graph.get_person(dana)
+        self.assertEqual((linked['name'], linked['slack_id'], linked['role'], linked['source']),
+                         ('Dana Lee', 'UDANA', 'member', 'slack-directory'))
+        self.assertEqual(len([p for p in graph.people() if p['name'] == 'Dana Lee']), 1)
+
     def test_login_throttling_inactive_and_csrf(self):
         self.setup_owner()
         for _ in range(10):

@@ -71,7 +71,11 @@ not implemented yet.
 Admins select **Invite teammate** from Connections or People & ownership. Choose
 viewer or member access, then copy and privately share the link. Links expire in
 48 hours, can be redeemed once, and are replaced by creating another invitation
-for the same email. There is no automatic email delivery. Possession of the link
+for the same email. An invitation links to a person already on the map by exact
+email; for a person seeded without one (an owner from CODEOWNERS or git
+history), the admin names them in the invitation form, and whoever accepts it
+signs in as that person with the authority recorded for them. A matching name
+never links an account. There is no automatic email delivery. Possession of the link
 is the invitation proof; this is not independent email verification. Existing
 accounts cannot be overwritten through invitations. Invitations do not grant
 admin access. Owners and invitees land on Connections to configure repositories

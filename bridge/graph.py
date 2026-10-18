@@ -129,7 +129,8 @@ CREATE TABLE IF NOT EXISTS account_passwords (
 CREATE TABLE IF NOT EXISTS account_invites (
     id TEXT PRIMARY KEY, email TEXT NOT NULL, role TEXT NOT NULL,
     token_hash TEXT NOT NULL UNIQUE, expires_at INTEGER NOT NULL,
-    consumed INTEGER NOT NULL DEFAULT 0, created_by TEXT NOT NULL);
+    consumed INTEGER NOT NULL DEFAULT 0, created_by TEXT NOT NULL,
+    person_id TEXT NOT NULL DEFAULT '');
 CREATE UNIQUE INDEX IF NOT EXISTS teams_handle ON teams(handle) WHERE handle != '';
 CREATE TABLE IF NOT EXISTS team_members (
     team_id TEXT NOT NULL, person_id TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'config',
@@ -388,6 +389,10 @@ def backfill(db: sqlite3.Connection) -> None:
     # own scripts; agents write nodes, they never decide.
     if "kind" not in {r["name"] for r in db.execute("PRAGMA table_info(api_tokens)")}:
         db.execute("ALTER TABLE api_tokens ADD COLUMN kind TEXT NOT NULL DEFAULT 'agent'")
+    # An invitation can name the person on the map it is for, so someone
+    # seeded without an email signs in as themselves, authority and all.
+    if "person_id" not in {r["name"] for r in db.execute("PRAGMA table_info(account_invites)")}:
+        db.execute("ALTER TABLE account_invites ADD COLUMN person_id TEXT NOT NULL DEFAULT ''")
     db.execute("CREATE INDEX IF NOT EXISTS decisions_parent ON decisions(run_id, parent_id)")
     db.execute("CREATE INDEX IF NOT EXISTS decisions_parent_lookup ON decisions(parent_id)")
     db.execute("CREATE INDEX IF NOT EXISTS decisions_source ON decisions(source_id)")
