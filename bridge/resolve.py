@@ -293,9 +293,16 @@ def _question_tokens(text: str) -> list[tuple[str, bool]]:
     identifier (digits, inner capitals, underscores, hyphens, dots), so
     a plain English word that happens to be a filename does not count
     on its own."""
+    return [(tok, namey) for tok, namey, _word in _question_token_words(text)]
+
+
+def _question_token_words(text: str) -> list[tuple[str, bool, int]]:
+    """(token, name_like, word): the word index says which word of the
+    text a token came from, so the pieces of one identifier are known to
+    be pieces of the same thing."""
     words = re.findall(r"[A-Za-z0-9_+.-]+", text)
-    out: list[tuple[str, bool]] = []
-    for w in words:
+    out: list[tuple[str, bool, int]] = []
+    for i, w in enumerate(words):
         w = w.strip(".")
         if not w:
             continue
@@ -303,12 +310,13 @@ def _question_tokens(text: str) -> list[tuple[str, bool]]:
         namey = bool(re.search(r"\d|_|-|\.|[a-z][A-Z]", w)) or w.isupper() and len(w) > 2
         low = w.lower()
         if len(parts) > 1:
-            out.append((_norm(low), True))
+            out.append((_norm(low), True, i))
             # A piece of an identifier (open from qemu_open_old) is a plain
             # word unless the piece itself looks like a name.
-            out.extend((p.lower(), bool(re.search(r"\d|[a-z][A-Z]", p)) or p.isupper() and len(p) > 2) for p in parts)
+            out.extend((p.lower(), bool(re.search(r"\d|[a-z][A-Z]", p)) or p.isupper() and len(p) > 2, i)
+                       for p in parts)
         else:
-            out.append((low, namey))
+            out.append((low, namey, i))
     return out
 
 
@@ -324,10 +332,20 @@ def term_hits(tree: Tree, text: str, common: set[str] | None = None) -> dict[str
     to be a filename (memory, rings, commit) never names an area on its
     own: a lone match must be name-like, or a rare word that the
     repository's own records do not use as ordinary language."""
-    toks = _question_tokens(text)
+    toks = _question_token_words(text)
     common = common or set()
     cands: dict[str, tuple[float, bool]] = {}
-    for i, (t, namey) in enumerate(toks):
+    # The words of the text each token came from, and the tokens of each
+    # word: the pieces of one identifier all come from one word.
+    words_of: dict[str, set[int]] = {}
+    tokens_of_word: dict[int, set[str]] = {}
+    for t, _namey, word in toks:
+        tokens_of_word.setdefault(word, set()).add(_norm(t))
+    # Tokens that are a word or an identifier of the text in their own
+    # right (the first token of each word), as against a piece of a longer
+    # word (class in CPU_GET_CLASS).
+    whole = {_norm(t) for i, (t, _namey, word) in enumerate(toks) if i == 0 or toks[i - 1][2] != word}
+    for i, (t, namey, word) in enumerate(toks):
         variants = {(t, namey)}
         if i + 1 < len(toks):
             variants.add((t + toks[i + 1][0], True))
@@ -344,16 +362,18 @@ def term_hits(tree: Tree, text: str, common: set[str] | None = None) -> dict[str
                 continue
             if v not in cands or idf > cands[v][0]:
                 cands[v] = (idf, vn or cands.get(v, (0, False))[1])
+            words_of.setdefault(v, set()).add(word)
     if not cands:
         return {}
     strong = tree.strong
     # Tests and docs mention every subsystem's names, and vendored trees
     # carry a whole other project's names; they are the area only when
     # the question says so.
-    about_tests = any(t in ("test", "tests", "testing", "qtest", "iotests", "avocado", "fixtures") for t, _ in toks)
-    about_docs = any(t in ("doc", "docs", "documentation", "manual") for t, _ in toks)
+    plain = [t for t, _namey, _word in toks]
+    about_tests = any(t in ("test", "tests", "testing", "qtest", "iotests", "avocado", "fixtures") for t in plain)
+    about_docs = any(t in ("doc", "docs", "documentation", "manual") for t in plain)
     about_deps = any(t in ("deps", "dep", "vendor", "vendored", "third_party", "thirdparty", "upgrade", "bump",
-                           "update", "node_modules") for t, _ in toks)
+                           "update", "node_modules") for t in plain)
     scored: dict[str, tuple[float, list[str]]] = {}
     for tok, (idf, _) in cands.items():
         for p in sorted(tree.by_token[tok]):
@@ -376,7 +396,20 @@ def term_hits(tree: Tree, text: str, common: set[str] | None = None) -> dict[str
     for p, (sc, used) in scored.items():
         if len(used) == 1:
             t = used[0]
-            if (t, p) in tree.piece and not cands[t][1]:
+            # A piece of a file's name is named by a word or an identifier,
+            # never by a lone piece of another identifier.
+            if (t, p) in tree.piece and (not cands[t][1] or t not in whole):
+                continue
+        # The pieces of one identifier that are each only a piece of the
+        # file's name name it when they make up that name (xen-mapcache.c
+        # for xen_ram_addr_from_mapcache_single) and nothing when the name
+        # has pieces of its own: memory_region_init_rom_nomigrate() is not
+        # memory-region-housekeeping.cocci. The identifier itself, or a
+        # piece that is a whole name, still counts.
+        sources = set.union(*(words_of[t] for t in used)) if len(used) > 1 else set()
+        if len(sources) == 1 and all((t, p) in tree.piece for t in used):
+            stem_pieces = {_norm(x) for x in _PIECE_RE.split(_stem_of(p.rsplit("/", 1)[-1])) if len(x) >= 3}
+            if not stem_pieces <= tokens_of_word[next(iter(sources))]:
                 continue
         named_file = any((t, p) not in tree.dir_of_token for t in used)
         if named_file:
@@ -431,6 +464,9 @@ def root_file_hits(tree: Tree, text: str, common: set[str] | None = None) -> dic
 
 
 _AREA_RE = re.compile(r"^(?:[^:?]{0,60}:\s*)?Should\s+(?:the\s+)?([A-Za-z0-9_.+/-]+)", re.IGNORECASE)
+# A token shaped like code: a call, an identifier with an underscore or a
+# digit, CamelCase, or an UPPER_CASE macro.
+_CODE_NAME_RE = re.compile(r"\(\)|_|\d|[a-z][A-Z]|^[A-Z][A-Z0-9]{2,}$")
 
 
 def area_word_hits(tree: Tree, text: str) -> dict[str, PathHit]:
@@ -470,11 +506,28 @@ def area_word_hits(tree: Tree, text: str) -> dict[str, PathHit]:
         pieces = [_norm(x) for x in re.split(r"[_\-.]", stem)]
         if _norm(stem) == key or (len(key) >= 5 and word not in _STOP and key in pieces):
             files.append(f)
-    files = [f for f in files if not re.match(r"^(tests?|docs?|Documentation)/", f)] or files
+    source_files = [f for f in files if not re.match(r"^(tests?|docs?|Documentation)/", f)]
+    # Tests and documentation named after the word are its area only when
+    # nothing else is, and then weakly: a function the question names can
+    # still place it.
+    aux_only = bool(files) and not source_files
+    files = source_files or files
+    # The word before a code name is what the question does to it, not
+    # where it lives: "Should extract x86_isa_bios_init() ..." is not about
+    # load-extract-al16-al8.h.inc, "Should rename InvoiceService ..." not
+    # about batch_rename.py. A file named after the word outright still
+    # counts; a label with a colon after it (mapcache: ...) is an area.
+    following = re.match(r"[A-Za-z0-9_().+-]+", text.strip()[m.end():].lstrip(" ,"))
+    if following and _CODE_NAME_RE.search(following.group(0)):
+        files = [f for f in files if _norm(_stem_of(f.rsplit("/", 1)[-1])) == key]
     if 0 < len(files) <= 6:
         for f in sorted(files):
-            _add(hits, f, 0.6 if hits else 0.7, f"the question is about {word}, which is {f}")
+            _add(hits, f, (0.6 if hits else 0.7) * (AUX_AREA_WEIGHT if aux_only else 1.0),
+                 f"the question is about {word}, which is {f}")
     return hits
+
+
+AUX_AREA_WEIGHT = 0.7
 
 
 def dir_name_hits(tree: Tree, text: str) -> dict[str, PathHit]:
