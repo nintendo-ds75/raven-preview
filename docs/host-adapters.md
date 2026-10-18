@@ -32,10 +32,13 @@ or reconnect the client so it reads current server instructions.
 
 ## Connect a local host
 
-`./setup --configure --project /absolute/path/to/code` installs the MCP
-configuration and hooks for the selected Claude Code or Codex client. Cursor
-gets MCP configuration only. The checkout must have a repository remote, or the
-operator must set `BRIDGE_INGEST_REPO=owner/name` in Raven's private `.env`.
+`./setup --configure --project /absolute/path/to/code --client claude` (or
+`codex`, `cursor`; repeatable) installs the MCP configuration and hooks for that
+client without asking anything, so it runs from scripts as well as terminals;
+without `--client` the wizard asks. Cursor gets MCP configuration only. The
+checkout must have a repository remote, or the operator must set
+`BRIDGE_INGEST_REPO=owner/name` in Raven's private `.env`; until one of those
+holds, setup writes nothing into the checkout and says so.
 
 Hooks require Python 3 on the **coding host**. Raven's Docker server does not
 otherwise require a host Python installation. To use instruction-based MCP

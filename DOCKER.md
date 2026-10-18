@@ -102,7 +102,8 @@ disable configured integrations or package downloads.
 ./setup                                      # Configure sources and agents; start empty
 ./setup --demo                               # Add sample tasks, decisions, and Git evidence
 ./setup --yes                                # No prompts, offline defaults
-./setup --configure --project /path/to/your/code                          # Revisit optional connections
+./setup --configure --project /path/to/your/code --client claude          # Connect one client, no questions
+./setup --configure --project /path/to/your/code                          # Wizard: clients and optional connections
 ./setup --repo /path/to/platform --repo-name acme/platform
 ./setup --port 7444                          # Change port and local public URL together
 ./setup --import-sqlite /path/to/bridge.db    # Explicit migration into an empty destination

@@ -42,13 +42,16 @@ cd raven-preview
 ```
 
 `./setup` builds the app, starts PostgreSQL and prints `http://localhost:7333`. The
-first build takes 5–10 minutes. The browser opens **Create your workspace**; the
-setup credential it asks for comes from `./dev login`.
+first build took 45 seconds and the first start 11 seconds on an M1 Pro laptop
+(16 GB, Docker 29, fast connection, 2026-10-18); it downloads about 1 GB of base
+images, wheels and a small embedding model, so a slow link is what makes it longer.
+The browser opens **Create your workspace**; the setup credential it asks for comes
+from `./dev login`.
 
 Then connect the agent you already use, from the checkout it works in:
 
 ```sh
-./setup --configure --project /path/to/your/code    # claude, codex or cursor
+./setup --configure --project /path/to/your/code --client claude    # or codex, cursor
 ```
 
 That writes the MCP configuration and, for Claude Code and Codex, the hooks that
