@@ -402,7 +402,9 @@ class OfflineCase(unittest.TestCase):
         that restarts does."""
         target = Path(self.temp.name) / name
         if not target.exists():
-            shutil.copyfile(empty_db(), target)
+            template = empty_db()
+            if template.exists():  # under PostgreSQL a Store path is a schema, not a file
+                shutil.copyfile(template, target)
         return Store(target)
 
     def warm_store(self, fixture: str, name: str = "") -> Store:

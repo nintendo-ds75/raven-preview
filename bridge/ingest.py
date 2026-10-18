@@ -296,6 +296,18 @@ class Commit:
 _LOG_FMT = "--pretty=format:%x01%H%x02%an%x02%ae%x02%cn%x02%ce%x02%cI%x02%s%x02%b%x03"
 
 
+def git_iso(raw: str) -> str:
+    """A git strict-ISO date in one spelling. Git 2.46 started writing a
+    UTC offset as Z where older versions write +00:00; the index stores
+    the latter, so a row, and the content hash of a source version, do
+    not change with the git that read the checkout."""
+    raw = raw.strip()
+    try:
+        return datetime.datetime.fromisoformat(raw).isoformat()
+    except ValueError:
+        return raw
+
+
 def read_log(repo: Path | str, head: str, count_args: list[str], scope_args: list[str],
              merges: bool = False, strict: bool = False) -> list[Commit]:
     """Commits newest first with the paths they touched. Merges list
@@ -319,7 +331,7 @@ def read_log(repo: Path | str, head: str, count_args: list[str], scope_args: lis
         if len(f) < 8:
             continue
         files = [ln.strip() for ln in tail.splitlines() if ln.strip() and "\x02" not in ln]
-        out.append(Commit(f[0], f[1], f[2], f[3], f[4], f[5], f[6].strip(), f[7], files))
+        out.append(Commit(f[0], f[1], f[2], f[3], f[4], git_iso(f[5]), f[6].strip(), f[7], files))
     return out
 
 
@@ -697,7 +709,7 @@ def probe_git(store: Graph, repo: str, terms: list[str], hint: str) -> int:
             if ref in seen:
                 continue
             seen.add(ref)
-            store.upsert_intent(repo, "commit", ref, subject.strip(), body.strip()[:3000], author, date)
+            store.upsert_intent(repo, "commit", ref, subject.strip(), body.strip()[:3000], author, git_iso(date))
             n += 1
 
     fmt = "--pretty=format:%x01%H%x02%an%x02%aI%x02%s%x02%b"

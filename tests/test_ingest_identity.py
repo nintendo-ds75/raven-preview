@@ -30,7 +30,9 @@ TABLES = ("artifacts", "change_paths", "change_people", "changes", "connector_so
 _RANDOM_ID = re.compile(r"\b[0-9a-f]{32}\b")
 
 # Recorded with the per-read implementation, for each fixture unpinned
-# (the working tree) and pinned to HEAD (the object store).
+# (the working tree) and pinned to HEAD (the object store). The commit
+# dates in the rows are spelled by git_iso, so the digests hold across
+# git versions (2.46+ prints a UTC offset as Z, older ones as +00:00).
 GOLDEN = {
     "nodelike": {"": "9f3242f3f4aa0620", "HEAD": "0ab748586f9906a1"},
     "qemulike": {"": "cacbaddb2c57ef0e", "HEAD": "a461deb80eead3ec"},
@@ -195,3 +197,17 @@ class RouteReadIdentityTests(OfflineCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GitDateSpellingTests(unittest.TestCase):
+    """Git 2.46 writes a UTC offset as Z where older versions write
+    +00:00. The index spells every commit date one way, so the same
+    checkout indexes to the same rows whichever git read it."""
+
+    def test_z_and_offset_spell_the_same_instant_the_same_way(self):
+        self.assertEqual(ingest.git_iso("2026-07-17T10:46:00Z"), "2026-07-17T10:46:00+00:00")
+        self.assertEqual(ingest.git_iso("2026-07-17T10:46:00+00:00"), "2026-07-17T10:46:00+00:00")
+        self.assertEqual(ingest.git_iso("2026-07-17T12:46:00+02:00\n"), "2026-07-17T12:46:00+02:00")
+
+    def test_an_unparseable_date_is_kept_as_read(self):
+        self.assertEqual(ingest.git_iso("not a date"), "not a date")
