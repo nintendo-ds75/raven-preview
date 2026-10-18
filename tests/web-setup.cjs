@@ -165,6 +165,21 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   assert.match(nodes['#agent-details'].innerHTML, /http:\/\/localhost:7333\/mcp/);
   assert.equal(button.disabled, true);
   assert.equal(context.state.mcp_config.mcpServers.bridge.headers, undefined);
+  // Connect shows the exact command the CLI accepts and, for Codex, the entry
+  // the wizard writes: `claude mcp add --transport http bridge <url> --header
+  // 'Authorization: Bearer …'` was run as printed against a live server and
+  // connected; the Codex snippet had lost the `required = true` the wizard
+  // writes, so the two paths disagreed.
+  context.clientName = id => ({claude: 'Claude Code', codex: 'Codex', cursor: 'Cursor'})[id];
+  vm.runInContext(source.slice(source.indexOf('async function quickAgent('), source.indexOf('async function launchAgent(')), context);
+  await context.quickAgent('claude');
+  assert.equal(request.data.label, 'Claude Code · quick connect');
+  assert.match(context.modal[2], /<pre id="mcp-config">claude mcp add --transport http bridge 'http:\/\/localhost:7333\/mcp' --header 'Authorization: Bearer test-only-credential'<\/pre>/);
+  assert.match(context.modal[2], /CLAUDE\.md/);
+  await context.quickAgent('codex');
+  assert.match(context.modal[2], /<pre id="mcp-config">\[mcp_servers\.bridge\]\nurl = "http:\/\/localhost:7333\/mcp"\nrequired = true\nhttp_headers = \{ Authorization = "Bearer test-only-credential" \}<\/pre>/);
+  assert.match(context.modal[2], /AGENTS\.md/);
+  assert.equal(context.state.mcp_config.mcpServers.bridge.headers, undefined);
   context.state.auth.enabled = false;
   assert.match(context.connections(), /Local agent connection/);
   await assert.rejects(context.setupAgent(), /Enable server authentication/);

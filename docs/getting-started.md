@@ -21,8 +21,11 @@ No host Node, Python package, API key or ownership spreadsheet is required to st
 
 `./setup` builds the application image, starts PostgreSQL 17, waits for both to be
 healthy, applies the schema and opens the browser. The first build downloads the
-base images and a small local embedding model; allow 5–10 minutes. Later starts take
-seconds.
+base images, the Python wheels and a small local embedding model (about 1 GB in
+all). Measured cold on an M1 Pro laptop (16 GB, Docker 29, fast connection,
+2026-10-18): 45 seconds to build and 11 seconds to start, of which the image pull
+took 4 seconds, `apt` 6, the embedding stack with its model 14 and writing the
+image 13. Allow a few minutes on a slow connection. Later starts take seconds.
 
 When it finishes you will see:
 
@@ -61,17 +64,20 @@ headless alternative (`./setup --workspace "Your team"`) are in
 From the checkout your agent works in:
 
 ```sh
-./setup --configure --project /path/to/your/code
+./setup --configure --project /path/to/your/code --client claude    # or codex, cursor
 ```
 
-Choose `claude`, `codex` or `cursor` when asked; the wizard then offers optional keys
-(Anthropic, Slack, Teams, OpenAI), and Enter skips each. Setup writes the MCP
-configuration for that client into the project (Git-excluded, with a limited agent
-credential) and, for Claude Code and Codex, installs the task hooks that register each
-task with Raven before the model starts. The hooks name the repository after the
-checkout's `origin` remote; a checkout without one needs
-`BRIDGE_INGEST_REPO='owner/name'` in Raven's `.env` first. Restart the agent and
-trust the project when it asks.
+`--client` names the client and asks nothing else, so the command also works from a
+script or a terminal with no TTY; repeat it, or write `--client claude,codex`, for
+more than one. Without `--client`, `./setup --configure` is a wizard: it asks which
+clients to connect and then offers the optional keys (Anthropic, Slack, Teams,
+OpenAI), and Enter skips each. Either way setup writes the MCP configuration for that
+client into the project (Git-excluded, with a limited agent credential) and, for
+Claude Code and Codex, installs the task hooks that register each task with Raven
+before the model starts. The hooks name the repository after the checkout's `origin`
+remote; a checkout without one needs `BRIDGE_INGEST_REPO='owner/name'` in Raven's
+`.env` first, and until then setup writes nothing into the project and says so.
+Restart the agent and trust the project when it asks.
 
 Or do it from the browser: **Connections & setup → step 1 → Connect** shows the one
 command for your client:
@@ -89,6 +95,7 @@ claude mcp add --transport http bridge http://localhost:7333/mcp --header 'Autho
 # ~/.codex/config.toml or .codex/config.toml
 [mcp_servers.bridge]
 url = "http://localhost:7333/mcp"
+required = true
 http_headers = { Authorization = "Bearer brg_…" }
 ```
 </details>

@@ -125,7 +125,7 @@ async function quickAgent(client) {
   } else {
     const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
     const command = client === 'claude' ? 'claude mcp add --transport http bridge ' + quote(entry.url) + ' --header ' + quote(entry.headers.Authorization.replace('Bearer ', 'Authorization: Bearer ')) : null;
-    content = command ? `<p>Run once in your project terminal, then restart or reconnect MCP in Claude Code.</p><pre id="mcp-config">${esc(command)}</pre>` : `<p>Add this entry in your Codex MCP configuration. Preserve other existing settings.</p><pre id="mcp-config">${esc('[mcp_servers.bridge]\nurl = ' + JSON.stringify(entry.url) + '\nhttp_headers = { Authorization = ' + JSON.stringify(entry.headers.Authorization) + ' }')}</pre>`;
+    content = command ? `<p>Run once in your project terminal, then restart or reconnect MCP in Claude Code.</p><pre id="mcp-config">${esc(command)}</pre>` : `<p>Add this entry in your Codex MCP configuration. Preserve other existing settings.</p><pre id="mcp-config">${esc('[mcp_servers.bridge]\nurl = ' + JSON.stringify(entry.url) + '\nrequired = true\nhttp_headers = { Authorization = ' + JSON.stringify(entry.headers.Authorization) + ' }')}</pre>`;
     content += '<button class="button" data-action="copy">Copy setup</button>';
   }
   // Connected is not the same as used. Measured on a real task, Claude
