@@ -19,6 +19,7 @@ while [ "$#" -gt 0 ]; do
         '' \
         '  --configure                 Ask about agent clients, Slack and model settings (saved privately in .env)' \
         '  --project PATH              Your coding checkout; with --configure, installs the MCP config and hooks there' \
+        '  --client NAME               claude, codex or cursor: connect it with no questions asked (repeatable; needs no terminal)' \
         '  --repo PATH                 Ingest a local Git checkout for ownership signals' \
         '  --repo-name OWNER/NAME      The repository identity agents will use (with --repo)' \
         '  --workspace NAME            Create the workspace without a browser or personal account' \
@@ -45,7 +46,7 @@ while [ "$#" -gt 0 ]; do
     --workspace)
       [ "$#" -ge 2 ] || { echo "--workspace needs a name" >&2; exit 1; }
       setup_headless=1; setup_args+=("$1" "$2"); shift 2 ;;
-    --repo-name|--port)
+    --repo-name|--port|--client)
       [ "$#" -ge 2 ] || { echo "$1 needs a value" >&2; exit 1; }
       setup_args+=("$1" "$2"); shift 2 ;;
     --yes) setup_yes=1; setup_args+=("$1"); shift ;;

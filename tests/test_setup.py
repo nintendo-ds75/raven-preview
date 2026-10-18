@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from bridge.setup import _mcp_clients, configure, read_settings, save_settings
+from bridge.setup import _mcp_clients, configure, connect_mcp, read_settings, save_settings
 
 
 class SetupTests(unittest.TestCase):
@@ -17,7 +17,7 @@ class SetupTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.path = Path(self.directory.name) / ".env"
         self.args = argparse.Namespace(demo=False, repo=None, repo_name=None,
-                                       port=None, configure=False)
+                                       port=None, configure=False, client=[])
 
     def run_config(self, interactive=False):
         with contextlib.redirect_stdout(io.StringIO()):
@@ -253,6 +253,79 @@ class SetupTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "tracked file"):
             _mcp_clients(project, "http://localhost:7333/mcp", "test-agent-secret", ["claude"])
         self.assertNotIn("test-agent-secret", path.read_text())
+
+    def test_a_named_client_connects_with_no_terminal_and_no_questions(self):
+        """The documented one-liner, `./setup --configure --project PATH
+        --client claude`, is run from scripts and CI as often as from a
+        terminal. Before, the wizard needed a TTY to record a client at
+        all, and in one it asked about every optional key first."""
+        self.args.configure = True
+        self.args.client = ["claude"]
+        for interactive in (False, True):
+            with self.subTest(interactive=interactive), \
+                    patch("builtins.input", side_effect=AssertionError("asked")) as prompt, \
+                    patch("getpass.getpass", side_effect=AssertionError("asked")) as secret, \
+                    contextlib.redirect_stdout(io.StringIO()) as output:
+                configure(self.args, self.path, interactive)
+            prompt.assert_not_called()
+            secret.assert_not_called()
+            self.assertEqual(read_settings(self.path)["BRIDGE_MCP_CLIENTS"], "claude")
+            self.assertNotIn("No terminal is attached", output.getvalue())
+            self.assertIn("connected to the Raven URL after startup", output.getvalue())
+
+    def test_client_is_repeatable_and_comma_separated_and_checked(self):
+        self.args.client = ["Claude", "codex,cursor", "claude"]
+        self.run_config()
+        self.assertEqual(read_settings(self.path)["BRIDGE_MCP_CLIENTS"], "claude,codex,cursor")
+        self.args.client = ["copilot"]
+        with self.assertRaisesRegex(ValueError, "Unknown agent client: copilot"):
+            self.run_config()
+
+    def test_setup_help_names_the_client_option(self):
+        """./setup --help answers before it looks for Docker, so the option
+        list it prints is checkable here; the wrapper must forward --client
+        or the Python side never sees it."""
+        root = Path(__file__).resolve().parent.parent
+        out = subprocess.run(["bash", str(root / "setup"), "--help"], capture_output=True, text=True, check=True)
+        self.assertRegex(out.stdout, r"--client NAME\s+claude, codex or cursor")
+        self.assertIn("--client)", (root / "setup").read_text())
+
+    def test_no_terminal_message_points_at_the_client_option(self):
+        self.args.configure = True
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            configure(self.args, self.path, interactive=False)
+        self.assertIn("--client", output.getvalue())
+
+    def _git_project(self, remote=""):
+        project = Path(self.directory.name) / "project"
+        project.mkdir()
+        subprocess.run(["git", "init", "-q", str(project)], check=True)
+        if remote:
+            subprocess.run(["git", "-C", str(project), "remote", "add", "origin", remote], check=True)
+        return project
+
+    def test_a_checkout_without_a_remote_is_left_untouched_and_told_so(self):
+        """Measured: the MCP config was written, the hooks were not, and the
+        message named neither. Now nothing is written, and the message says
+        so and names the project."""
+        project = self._git_project()
+        settings = {"BRIDGE_MCP_CLIENTS": "claude,cursor", "BRIDGE_PUBLIC_URL": "http://localhost:7333"}
+        with self.assertRaisesRegex(ValueError, "no origin remote") as caught:
+            connect_mcp(settings, project, "test-agent-secret", "/home/dev/project")
+        message = str(caught.exception)
+        self.assertIn("Nothing was written to /home/dev/project.", message)
+        self.assertIn("rerun ./setup --configure --project /home/dev/project.", message)
+        self.assertEqual(sorted(p.name for p in project.iterdir()), [".git"])
+        self.assertNotIn("test-agent-secret", (project / ".git/info/exclude").read_text())
+
+    def test_a_checkout_with_a_remote_gets_the_config_and_the_hooks_in_one_go(self):
+        project = self._git_project("git@gitlab.example.test:acme/platform.git")
+        settings = {"BRIDGE_MCP_CLIENTS": "claude", "BRIDGE_PUBLIC_URL": "http://localhost:7333"}
+        written = connect_mcp(settings, project, "test-agent-secret")
+        self.assertEqual([Path(p).relative_to(project).as_posix() for p in written],
+                         [".mcp.json", ".raven/host.py", ".raven/host-config.json", ".claude/settings.local.json"])
+        import json
+        self.assertEqual(json.loads((project / ".raven/host-config.json").read_text())["repo"], "acme/platform")
 
     def test_github_connection_no_longer_asks_for_a_token_or_repository(self):
         with patch.dict(os.environ, {}, clear=True), patch("builtins.input", side_effect=["", "n", "n", "n", "n"]), patch("getpass.getpass", return_value="") as secret:

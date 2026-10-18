@@ -164,19 +164,28 @@ def _mcp_clients(project: Path, url: str, token: str, clients: list[str]) -> lis
 def connect_mcp(settings, project, token, host_path=""):
     clients = [n for n in settings.get("BRIDGE_MCP_CLIENTS", "").split(",") if n]
     url = align_public_url(settings).rstrip('/') + '/mcp'
+    host_path_shown = host_path or str(project.resolve())
+    hooks = settings.get('BRIDGE_HOST_HOOKS', '1') != '0' and any(c in ('claude', 'codex') for c in clients)
+    repo = ''
+    if hooks:
+        # Measured on a checkout with no origin remote: the MCP config was
+        # written, the hooks were not, and the message said nothing about
+        # the half-connected state. The repository is settled before the
+        # first file is touched, so a refusal leaves the project untouched.
+        try:
+            repo = hook_repository(project, settings.get('BRIDGE_INGEST_REPO', ''), host_path_shown)
+        except ValueError as error:
+            raise ValueError(f'{error} Nothing was written to {host_path_shown}.') from None
     written = _mcp_clients(project, url, token, clients)
-    if settings.get('BRIDGE_HOST_HOOKS', '1') != '0' and any(c in ('claude', 'codex') for c in clients):
-        written.extend(install_host_hooks(project, host_path or str(project.resolve()), url, token,
-                                         clients, settings.get('BRIDGE_INGEST_REPO', '')))
+    if hooks:
+        written.extend(install_host_hooks(project, host_path_shown, url, token, clients, repo))
     if host_path:
         save_settings(Path('.env'), {'BRIDGE_AGENT_PROJECT': host_path})
     return [str(Path(host_path) / Path(p).relative_to(project)) if host_path else p for p in written]
 
 
-def install_host_hooks(project, host_path, url, token, clients, repo=''):
-    """Preserve user hooks; keep adapter credentials out of tracked files."""
-    import shlex
-    project = Path(project)
+def hook_repository(project, repo, host_path):
+    """The owner/name the hooks will file tasks under, or a refusal that says how to supply one."""
     if not repo:
         remote = subprocess.run(['git', '-C', str(project), 'remote', 'get-url', 'origin'],
                                 capture_output=True, text=True)
@@ -185,7 +194,15 @@ def install_host_hooks(project, host_path, url, token, clients, repo=''):
         raise ValueError('This checkout has no origin remote that names a repository, so Raven cannot tell '
                          'which repository its tasks belong to. Add BRIDGE_INGEST_REPO=\'owner/name\' to '
                          'Raven\'s .env (next to this setup script), then rerun ./setup --configure --project '
-                         + str(host_path))
+                         + str(host_path) + '.')
+    return repo
+
+
+def install_host_hooks(project, host_path, url, token, clients, repo=''):
+    """Preserve user hooks; keep adapter credentials out of tracked files."""
+    import shlex
+    project = Path(project)
+    repo = hook_repository(project, repo, host_path)
     destinations = [project / '.raven/host.py', project / '.raven/host-config.json']
     hooks = {}
     for client in clients:
@@ -226,17 +243,34 @@ def install_host_hooks(project, host_path, url, token, clients, repo=''):
     return [str(p) for p in destinations]
 
 
+CLIENTS = ("claude", "codex", "cursor")
+
+
+def client_names(values) -> list[str]:
+    """The agent clients named on the command line or at the prompt, in order, each once."""
+    names = [part.strip().lower() for value in values for part in value.split(",") if part.strip()]
+    unknown = set(names) - set(CLIENTS)
+    if unknown:
+        raise ValueError("Unknown agent client: " + ", ".join(sorted(unknown)) + " (choose from claude, codex, cursor)")
+    return list(dict.fromkeys(names))
+
+
 def configure(args, path: Path, interactive: bool) -> None:
     updates = {}
     if getattr(args, "workspace", None):
         updates["BRIDGE_WORKSPACE_NAME"] = args.workspace.strip()[:100]
-    guided = interactive
-    if getattr(args, "configure", False) and not interactive and not getattr(args, "yes", False):
+    # `--client claude` is the whole answer the documented one-liner needs,
+    # so it asks nothing: not the client, and not the optional keys that
+    # the wizard without it still offers.
+    clients = client_names(getattr(args, "client", None) or [])
+    guided = interactive and not clients
+    if getattr(args, "configure", False) and not interactive and not getattr(args, "yes", False) and not clients:
         # Piped or scripted, the wizard has nobody to ask. It used to say
         # only "Settings saved", and ./setup then told the user to run the
         # very command they had just run.
         print("No terminal is attached, so the wizard asked nothing and connected no agent client. "
-              "Run ./setup --configure from an interactive terminal, or ./setup --yes to keep the saved settings.")
+              "Run ./setup --configure from an interactive terminal, ./setup --configure --project PATH --client "
+              "claude (or codex, cursor) to connect without one, or ./setup --yes to keep the saved settings.")
     if guided:
         print("Raven starts empty; --demo adds sample tasks and people.")
         print("Press Enter to skip a question or keep its saved value. Secrets are not echoed.")
@@ -255,14 +289,8 @@ def configure(args, path: Path, interactive: bool) -> None:
                        BRIDGE_INGEST_REPO=args.repo_name or repo.name)
     elif args.repo_name:
         raise ValueError("--repo-name requires --repo")
-    clients = []
     if guided:
-        raw_clients = input("Connect agent MCP clients (claude,cursor,codex; Enter to skip): ").lower()
-        clients = [value.strip() for value in raw_clients.split(",") if value.strip()]
-        unknown = set(clients) - {"claude", "cursor", "codex"}
-        if unknown:
-            raise ValueError("Unknown agent client: " + ", ".join(sorted(unknown)))
-        clients = list(dict.fromkeys(clients))
+        clients = client_names([input("Connect agent MCP clients (claude,cursor,codex; Enter to skip): ")])
 
         def ask(label, fields):
             if input(f"Configure {label}? [y/N] ").strip().lower() not in ("y", "yes"):
@@ -317,6 +345,8 @@ def main():
     parser.add_argument("--repo-name")
     parser.add_argument("--workspace", help="Create the workspace without a browser or personal account")
     parser.add_argument("--port", type=int)
+    parser.add_argument("--client", action="append", default=[], metavar="NAME",
+                        help="Agent client to connect without the wizard's questions: claude, codex or cursor (repeatable)")
     args = parser.parse_args()
     try:
         if args.connect_mcp:
