@@ -85,13 +85,29 @@ def eventually(predicate, description, timeout=12):
     raise AssertionError('Timed out: ' + description)
 
 
+class FastClock:
+    """A clock that starts at the wall and runs `speed` times faster. Given
+    to a harness, Raven's outbound queues and the Slack double measure a
+    Retry-After by it, so a three-second delay is honoured in three of
+    its seconds; the contract is the same, the wait is not."""
+    def __init__(self, speed=10.0):
+        self.speed = speed
+        self.wall = time.time()
+        self.started = time.monotonic()
+
+    def __call__(self):
+        return self.wall + (time.monotonic() - self.started) * self.speed
+
+
 class SlackContractServer:
     """Subset of the official Web API surface Raven currently consumes.
 
     Requests go through HTTP JSON/form decoding, auth-header checks, cursor
     checks and shape validation. It intentionally is not a full Slack emulator.
+    `clock` stamps each request and message (`at`); monotonic by default.
     """
-    def __init__(self):
+    def __init__(self, clock=None):
+        self.clock = clock or time.monotonic
         self.lock = threading.RLock()
         self.requests = []
         self.messages = []
@@ -162,7 +178,7 @@ class SlackContractServer:
             # Never retain Authorization or action_token, even the fake ones.
             self.requests.append({'method': method,
                 'payload': {k: ('[redacted]' if k in ('token', 'action_token') else v)
-                            for k, v in payload.items()}, 'at': time.monotonic()})
+                            for k, v in payload.items()}, 'at': self.clock()})
             if self.failures.get(method):
                 status, response, headers = self.failures[method].pop(0)
                 self.requests[-1]['response_status'] = status
@@ -215,7 +231,7 @@ class SlackContractServer:
             message = {'type': 'message', 'user': BOT, 'bot_id': 'B012RAVEN', 'text': payload['text'],
                        'ts': ts, **({'blocks': payload['blocks']} if payload.get('blocks') else {}),
                        **({'thread_ts': payload['thread_ts']} if payload.get('thread_ts') else {})}
-            self.messages.append({**payload, 'ts': ts, 'at': time.monotonic()})
+            self.messages.append({**payload, 'ts': ts, 'at': self.clock()})
             return {'ok': True, 'channel': payload['channel'], 'ts': ts, 'message': message}
         if method == 'assistant.search.context':
             if not payload.get('query'):
@@ -264,7 +280,9 @@ class FixtureProvider:
 
 class RavenContractHarness:
     """Isolated instance; task/decision writes enter exclusively through HTTP."""
-    def __init__(self, directory=None, *, model_mode='fixture', request_timeout=15, event_timeout=12):
+    def __init__(self, directory=None, *, model_mode='fixture', request_timeout=15, event_timeout=12, clock=None):
+        """`clock`, when given, is the time Raven's queues, the transport's
+        cooldowns and the Slack double's stamps are measured by."""
         if model_mode not in ('fixture', 'live'):
             raise ValueError('model_mode must be fixture or live')
         if model_mode == 'live' and not os.environ.get('ANTHROPIC_API_KEY', '').strip():
@@ -276,7 +294,8 @@ class RavenContractHarness:
         self.root = Path(directory or self.temp)
         self.root.mkdir(parents=True, exist_ok=True)
         self.database = self.root / 'raven.db'
-        self.slack = SlackContractServer()
+        self.clock = clock
+        self.slack = SlackContractServer(clock=clock)
         self.stack.callback(self.slack.close)
         self.provider = FixtureProvider() if model_mode == 'fixture' else None
         self.stack.enter_context(patch.dict(os.environ, {
@@ -311,8 +330,13 @@ class RavenContractHarness:
         self.store.graph.set_setting('workspace_name', 'Synthetic Slack contract workspace')
         # This harness validates the optional conversational Slack contract.
         self.store.graph.set_setting('slack_interaction_mode', 'conversation')
-        self.transport = SlackTransport(BOT_TOKEN, api_base=self.slack.url)
+        # A subclass that builds itself without this harness's __init__
+        # (the MCP acceptance fixture) runs on the wall clock.
+        clock = getattr(self, 'clock', None)
+        self.transport = SlackTransport(BOT_TOKEN, api_base=self.slack.url, clock=clock)
         delivery = self.store.connect_delivery(self.transport)
+        if clock is not None:
+            delivery.clock = clock
         # Installation/bootstrap calls only; no decisions are seeded or signed.
         delivery.sync_directory()
         self.auth = Auth(self.store, enabled=True, public_url='')

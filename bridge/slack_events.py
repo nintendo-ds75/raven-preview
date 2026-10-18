@@ -3,7 +3,6 @@ import copy
 import hashlib
 import json
 import threading
-import time
 from contextlib import contextmanager
 
 from .graph import now_iso
@@ -97,9 +96,9 @@ class Inbox:
             if inserted.rowcount == 1 and capture_key and not self.graph.db.execute("SELECT 1 FROM webhook_receipts WHERE id=? AND state='applied'", (event_id,)).fetchone():
                 slack_capture.enroll(self.graph, capture_key)
         with self.lock:
-            self.tokens = {k: v for k, v in self.tokens.items() if v[1] > time.time()}
+            self.tokens = {k: v for k, v in self.tokens.items() if v[1] > self.delivery.now()}
             if token:
-                self.tokens[event_id] = (token, time.time() + 180)
+                self.tokens[event_id] = (token, self.delivery.now() + 180)
         self.start()
         return {'ok': True, 'queued': True}
 
@@ -126,7 +125,7 @@ class Inbox:
         with self.graph.transaction():
             claim = self.graph.db.execute('''UPDATE slack_replies SET state='sending', next_attempt=?
                 WHERE id=? AND next_attempt<=? AND state IN ('queued','sending')''',
-                (time.time() + LEASE_SECONDS, row['id'], time.time()))
+                (self.delivery.now() + LEASE_SECONDS, row['id'], self.delivery.now()))
         if claim.rowcount != 1:
             return
         try:
@@ -146,12 +145,12 @@ class Inbox:
             with self.graph.transaction():
                 self.graph.db.execute('''UPDATE slack_replies SET state='queued',attempts=attempts+1,
                     next_attempt=?,error=? WHERE id=?''',
-                    (time.time() + retry_delay(error, min(300, 2 ** min(row['attempts'] + 1, 8))),
+                    (self.delivery.now() + retry_delay(error, min(300, 2 ** min(row['attempts'] + 1, 8))),
                      type(error).__name__, row['id']))
 
     def flush(self):
         rows = self.graph.db.execute('''SELECT * FROM slack_replies
-            WHERE state IN ('queued','sending') AND next_attempt<=? ORDER BY id LIMIT 20''', (time.time(),)).fetchall()
+            WHERE state IN ('queued','sending') AND next_attempt<=? ORDER BY id LIMIT 20''', (self.delivery.now(),)).fetchall()
         for row in rows:
             self._send(row)
 
@@ -164,7 +163,7 @@ class Inbox:
                 while not finished.wait(LEASE_SECONDS / 3):
                     with self.graph.transaction():
                         self.graph.db.execute("UPDATE slack_ingress SET lease_until=? WHERE id=? AND state='processing'",
-                                              (time.time() + LEASE_SECONDS, event_id))
+                                              (self.delivery.now() + LEASE_SECONDS, event_id))
                         self.graph.db.execute("UPDATE webhook_receipts SET updated_at=? WHERE id=? AND state='received'",
                                               (now_iso(), event_id))
             finally:
@@ -183,7 +182,7 @@ class Inbox:
         done = 0
         rows = self.graph.db.execute('''SELECT * FROM slack_ingress
             WHERE (state='queued' OR (state='processing' AND lease_until<?)) AND next_attempt<=?
-            ORDER BY created_at,id LIMIT ?''', (time.time(), time.time(), limit)).fetchall()
+            ORDER BY created_at,id LIMIT ?''', (self.delivery.now(), self.delivery.now(), limit)).fetchall()
         for row in rows:
             with self.graph.transaction():
                 earlier = self.graph.db.execute('''SELECT 1 FROM slack_ingress WHERE conversation_key=?
@@ -193,7 +192,7 @@ class Inbox:
                     continue
                 claimed = self.graph.db.execute('''UPDATE slack_ingress SET state='processing',lease_until=?,attempts=attempts+1
                     WHERE id=? AND (state='queued' OR (state='processing' AND lease_until<?))''',
-                    (time.time() + LEASE_SECONDS, row['id'], time.time()))
+                    (self.delivery.now() + LEASE_SECONDS, row['id'], self.delivery.now()))
                 if claimed.rowcount != 1:
                     continue
                 # This queue owns retries. A previous process may have died
@@ -203,7 +202,7 @@ class Inbox:
                 event = json.loads(row['payload'])
                 with self.lock:
                     token, until = self.tokens.pop(row['id'], ('', 0))
-                if token and until > time.time():
+                if token and until > self.delivery.now():
                     event['event']['action_token'] = token
                 with self._keep_lease(row['id']):
                     result = handle_slack_event(self.delivery, event)
@@ -218,7 +217,7 @@ class Inbox:
                 with self.graph.transaction():
                     state = 'failed' if row['attempts'] >= 4 else 'queued'
                     self.graph.db.execute('''UPDATE slack_ingress SET state=?,lease_until=0,next_attempt=?,error=? WHERE id=?''',
-                        (state, time.time() + retry_delay(error, min(300, 2 ** (row['attempts'] + 1))),
+                        (state, self.delivery.now() + retry_delay(error, min(300, 2 ** (row['attempts'] + 1))),
                          type(error).__name__, row['id']))
         from . import slack_capture
         slack_capture.process(self.delivery, limit)

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from evals.slack_contract_harness import (
     ACTION_TOKEN, BOT_TOKEN, OWNER, REFERRED, SOURCE_TEXT, SOURCE_URL,
-    RavenContractHarness, SlackContractServer, eventually, http_json, run_contract,
+    FastClock, RavenContractHarness, SlackContractServer, eventually, http_json, run_contract,
 )
 from bridge.delivery import SlackTransport
 from bridge.llm import LLMError
@@ -109,8 +109,11 @@ class SlackCustomerPathTests(unittest.TestCase):
             self.assertTrue(decision['authorized'])
             self.assertEqual(decision['signed_by'], 'Wes Contract')
 
+    # A Retry-After is honoured in the seconds of the clock Raven is
+    # given; these three run that clock ahead so the delay is measured, not
+    # slept through, and assert it on the same clock's stamps.
     def test_retry_after_delays_real_callback_reply_and_recovers(self):
-        with RavenContractHarness() as h:
+        with RavenContractHarness(clock=FastClock()) as h:
             _, node, message = h.begin()
             start = len(h.slack.requests)
             h.slack.fail_once('chat.postMessage', status=429, error='ratelimited', retry_after=3)
@@ -127,7 +130,7 @@ class SlackCustomerPathTests(unittest.TestCase):
             self.assertFalse(h.call('bridge_get_decision', decision_id=node)['authorized'])
 
     def test_retry_after_applies_to_other_replies_on_the_same_method(self):
-        with RavenContractHarness() as h:
+        with RavenContractHarness(clock=FastClock()) as h:
             _, _, message = h.begin()
             start = len(h.slack.requests)
             h.slack.fail_once('chat.postMessage', status=429, error='ratelimited', retry_after=3)
@@ -142,7 +145,7 @@ class SlackCustomerPathTests(unittest.TestCase):
             self.assertGreaterEqual(min(r['at'] for r in calls[1:]) - calls[0]['at'], 3)
 
     def test_identity_lookup_429_retries_after_slack_delay(self):
-        with RavenContractHarness() as h:
+        with RavenContractHarness(clock=FastClock()) as h:
             _, _, message = h.begin()
             start = len(h.slack.requests)
             h.slack.fail_once('users.info', status=429, error='ratelimited', retry_after=3)

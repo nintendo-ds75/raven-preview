@@ -117,8 +117,15 @@ class Delivery:
         self.base_url = base_url.rstrip("/")
         self._thread = None
         self._stop = threading.Event()
+        # The clock the outbound queues schedule by (a retry's next attempt,
+        # a claim's in-flight window): the wall clock unless a test hands
+        # in one that runs ahead of it.
+        self.clock = None
         from .slack_events import Inbox
         self.inbox = Inbox(self)
+
+    def now(self) -> float:
+        return (self.clock or time.time)()
 
     def sync_directory(self):
         if not hasattr(self.transport, "list_users"):
@@ -536,7 +543,7 @@ class Delivery:
                 return 0
             marks = ",".join("?" for _ in only)
             due = graph.db.execute(f"SELECT * FROM notifications WHERE state='queued' AND next_attempt<=? "
-                                   f"AND id IN ({marks}) ORDER BY created_at", (time.time(), *only)).fetchall()
+                                   f"AND id IN ({marks}) ORDER BY created_at", (self.now(), *only)).fetchall()
         else:
             # Ingestion records durable requests in the source transaction. Queue
             # human review here after commit, and send only after releasing the lock.
@@ -547,7 +554,7 @@ class Delivery:
                         self.enqueue(request['decision_id'], 'review', note='Source evidence changed. Review the current sources before confirming this answer.')
                     graph.db.execute("UPDATE source_review_requests SET state=? WHERE decision_id=?", ('queued' if request['needs_review'] else 'obsolete', request['decision_id']))
             due = graph.db.execute("SELECT * FROM notifications WHERE state='queued' AND next_attempt<=? "
-                                   "ORDER BY created_at LIMIT ?", (time.time(), limit)).fetchall()
+                                   "ORDER BY created_at LIMIT ?", (self.now(), limit)).fetchall()
         sent = 0
         for row in due:
             # One worker at a time holds a row: the claim moves its next
@@ -560,7 +567,7 @@ class Delivery:
             with graph.transaction():
                 claimed = graph.db.execute(
                     "UPDATE notifications SET next_attempt=?, attempts=attempts+1 WHERE id=? AND state='queued' "
-                    "AND next_attempt<=?", (time.time() + self.IN_FLIGHT_SECONDS, row["id"], time.time()))
+                    "AND next_attempt<=?", (self.now() + self.IN_FLIGHT_SECONDS, row["id"], self.now()))
             if claimed.rowcount != 1:
                 continue
             attempts = row["attempts"] + 1
@@ -615,7 +622,7 @@ class Delivery:
                 state = "failed" if attempts >= MAX_ATTEMPTS else "queued"
                 with graph.transaction():
                     graph.db.execute("UPDATE notifications SET next_attempt=?, last_error=?, state=? WHERE id=?",
-                                     (time.time() + delay, str(error)[:300], state, row["id"]))
+                                     (self.now() + delay, str(error)[:300], state, row["id"]))
                     if state == "failed":
                         graph.append_event("notification_failed", {"task_id": row["run_id"], "decision_id": row["decision_id"],
                                                                    "kind": row["kind"], "to": row["person_name"],
@@ -1624,8 +1631,11 @@ class SlackTransport:
 
     name = "slack"
 
-    def __init__(self, bot_token: str, api_base: str = ""):
+    def __init__(self, bot_token: str, api_base: str = "", clock=None):
         self.token = bot_token
+        # The clock a server-directed cooldown is measured by; the wall
+        # clock unless given one.
+        self.clock = clock
         # A Slack-compatible Web API elsewhere: an egress proxy, or a test
         # double standing in for Slack in an end-to-end run.
         self.api_base = (api_base or os.environ.get("SLACK_API_BASE", "") or "https://slack.com/api").rstrip("/")
@@ -1637,6 +1647,9 @@ class SlackTransport:
     def bind_rate_store(self, graph):
         self._rate_graph = graph
 
+    def now(self) -> float:
+        return (self.clock or time.time)()
+
     def _check_cooldown(self, method):
         with self._rate_lock:
             until = self._cooldowns.get(method, 0)
@@ -1645,13 +1658,13 @@ class SlackTransport:
                     until = max(until, float(self._rate_graph.get_setting('slack_rate_limit:' + method) or 0))
                 except ValueError:
                     pass
-            remaining = until - time.time()
+            remaining = until - self.now()
         if remaining > 0:
             raise SlackRateLimited(method, remaining)
 
     def _set_cooldown(self, method, delay):
         with self._rate_lock:
-            until = max(self._cooldowns.get(method, 0), time.time() + delay)
+            until = max(self._cooldowns.get(method, 0), self.now() + delay)
             self._cooldowns[method] = until
             if self._rate_graph is not None:
                 with self._rate_graph.transaction():

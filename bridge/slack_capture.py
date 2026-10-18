@@ -6,7 +6,6 @@ results, old imports, or channel history can enroll a message here.
 import hashlib
 import json
 import re
-import time
 
 from .graph import now_iso
 
@@ -208,7 +207,7 @@ def process(delivery, limit=10):
         ON c.workspace=m.workspace AND c.channel=m.channel AND c.message_ts=m.message_ts
         WHERE m.workspace=? AND c.record_id<>'' AND m.next_attempt<=?
         ORDER BY m.accepted_at,m.channel,m.message_ts LIMIT ?''',
-        (graph.get_setting('slack_team_id'), time.time(), max(0, min(limit, 100)))).fetchall()
+        (graph.get_setting('slack_team_id'), delivery.now(), max(0, min(limit, 100)))).fetchall()
     applied = 0
     for candidate in candidates:
         key = tuple(candidate[k] for k in ('workspace', 'channel', 'message_ts'))
@@ -217,7 +216,7 @@ def process(delivery, limit=10):
             with graph.transaction():
                 row = graph.db.execute('SELECT * FROM slack_capture_mutations WHERE ' + KEY_SQL, key).fetchone()
                 capture = graph.db.execute('SELECT * FROM slack_captures WHERE ' + KEY_SQL, key).fetchone()
-                if row is None or row['next_attempt'] > time.time():
+                if row is None or row['next_attempt'] > delivery.now():
                     continue
                 # Recheck the installation during replay; do not reassign identity
                 # when settings change while a callback is being accepted.
@@ -244,6 +243,6 @@ def process(delivery, limit=10):
                 # A newer accepted mutation must not inherit an older retry delay.
                 graph.db.execute('''UPDATE slack_capture_mutations SET attempts=attempts+1,next_attempt=?,error=?
                     WHERE ''' + KEY_SQL + ' AND clock=?',
-                    (time.time() + retry_delay(error, min(300, 2 ** min(attempted['attempts'] + 1, 8))),
+                    (delivery.now() + retry_delay(error, min(300, 2 ** min(attempted['attempts'] + 1, 8))),
                      type(error).__name__, *key, attempted['clock']))
     return applied

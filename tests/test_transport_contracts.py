@@ -125,3 +125,38 @@ class MCPVersionTests(DeliveryCase):
                 self.assertEqual(json.load(response)['result'], {})
         finally:
             server.shutdown(); server.server_close(); thread.join(3)
+
+
+class ClockTests(DeliveryCase):
+    """The delays the outbound queues schedule by (a retry's next attempt,
+    a server-directed cooldown) are measured on an injectable clock:
+    Delivery.clock and SlackTransport.clock, the wall clock by default."""
+
+    def test_the_wall_clock_is_the_default(self):
+        with patch('time.time', return_value=1_700_000_000.5):
+            self.assertEqual(self.delivery.now(), 1_700_000_000.5)
+            self.assertEqual(SlackTransport('fixture-token').now(), 1_700_000_000.5)
+
+    def test_a_cooldown_is_measured_by_the_transport_clock(self):
+        now = [1_000_000.0]
+        transport = SlackTransport('fixture-token', clock=lambda: now[0])
+        transport._set_cooldown('chat.postMessage', 180)
+        now[0] += 179
+        with self.assertRaises(SlackRateLimited) as caught:
+            transport._check_cooldown('chat.postMessage')
+        self.assertAlmostEqual(caught.exception.retry_after, 1.0)
+        now[0] += 1
+        transport._check_cooldown('chat.postMessage')
+
+    def test_a_retry_is_due_by_the_delivery_clock(self):
+        now = [time.time()]
+        self.delivery.clock = lambda: now[0]
+        self.node(self.task())
+        with patch.object(self.slack, 'post_message', side_effect=SlackRateLimited('chat.postMessage', 360)):
+            self.assertEqual(self.delivery.deliver_now(), 0)
+        row = self.delivery.list()[0]
+        self.assertEqual(row['next_attempt'], now[0] + 360)
+        now[0] += 359
+        self.assertEqual(self.delivery.deliver_now(), 0)
+        now[0] += 1
+        self.assertEqual(self.delivery.deliver_now(), 1)
