@@ -127,6 +127,11 @@ class World:
 
     def seed(self):
         g = self.graph
+        # The DMs the page's links come from are conversational messages;
+        # a fresh workspace notifies only, and this world's address is
+        # plain http, so without the opt-in every DM failed and Priya's
+        # and Rafael's links were empty.
+        g.set_setting("slack_interaction_mode", "conversation")
         with g.transaction():
             for key, (name, email, login, slack, role) in PEOPLE.items():
                 self.ids[key] = g.add_person(name, email=email, github_login=login, slack_id=slack, role=role)
