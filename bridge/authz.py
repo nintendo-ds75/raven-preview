@@ -198,6 +198,27 @@ def basis_for(graph, actor: Actor, decision: dict, action: str) -> tuple[str, st
     return "", f"this decision is {who}'s to {action}; you are not its owner, a required signer, or verified for its scope"
 
 
+def waits_on_a_person(decision: dict) -> bool:
+    """A decision the inbox counts as needing somebody: an open question,
+    one put in doubt by a correction, or an unsigned resolution."""
+    return (decision.get("status") == "pending" or bool(decision.get("needs_review"))
+            or (decision.get("status") in ("resolved", "partial", "assumed", "proposed")
+                and decision.get("signoff") not in ("signed", "rule")))
+
+
+def can_act(graph, actor: Actor, decision: dict) -> bool:
+    """Whether this actor has standing of their own to answer or sign
+    this decision, by person id: owner, required signer, verified for
+    its scope. The inbox badge and "Assigned to me" use this, never the
+    display name, so a namesake sees nothing that is not theirs."""
+    if not waits_on_a_person(decision):
+        return False
+    for action in ("answer", "sign"):
+        if basis_for(graph, actor, decision, action)[0]:
+            return True
+    return False
+
+
 def check(graph, actor: Actor | None, decision: dict, action: str) -> str:
     """The basis, or a Refused error naming who may act. A missing actor
     is an internal caller that already checked (tests, the evaluation,

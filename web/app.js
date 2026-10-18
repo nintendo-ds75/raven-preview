@@ -337,7 +337,9 @@ const settledNow = d => !needsYou(d) && (settledStatuses.includes(d.status) || s
 // A person is needed for an open question, for a node Raven or the agent resolved without one, and for a
 // node put in doubt by a correction upstream. Evidence is not authorization.
 const needsYou = d => d.status === 'pending' || !!d.needs_review || (['resolved','partial','assumed','proposed'].includes(d.status) && !['signed','rule'].includes(d.signoff));
-const assignedToMe = d => needsYou(d) && (d.owner_name === state.me?.name || stillToSign(d).includes(state.me?.name));
+// What is assigned to the signed-in person is what the server says they may act on, by person id.
+// Measured: an invited member who shared a seeded owner's name saw "Assigned to me 2" and could act on neither.
+const assignedToMe = d => needsYou(d) && d.can_act === true;
 // A signed-in member's inbox is theirs: the badge counts what waits on
 // them and the inbox opens on it. Measured: a person who had just made an
 // account from a task link, with nothing waiting on him, saw "Inbox 1" and

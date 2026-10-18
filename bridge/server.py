@@ -257,7 +257,17 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                 if url.path == "/api/state":
                     from .sources import report as source_report
                     from .inquiry import repositories as question_repositories
-                    return self.send(200, {**store.state(), 'workbench': workbench.config() if workbench else {'enabled': False, 'repositories': []},
+                    current = store.state()
+                    if auth.enabled and self.me is not None and self.me.id:
+                        # Which decisions the signed-in person may act on,
+                        # by the same check every write runs: the inbox
+                        # badge and "Assigned to me" count these, not
+                        # decisions whose owner merely shares their name.
+                        from .authz import can_act
+                        actor = self.actor()
+                        for decision in current["decisions"]:
+                            decision["can_act"] = can_act(store.graph, actor, decision)
+                    return self.send(200, {**current, 'workbench': workbench.config() if workbench else {'enabled': False, 'repositories': []},
                         'question_repositories': question_repositories(store),
                         'browser_tasks': workbench.list() if workbench else [], "context_sources": source_report(store), "execution_config": {
                         "enabled": executions is not None,

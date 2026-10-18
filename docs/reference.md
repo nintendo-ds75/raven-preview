@@ -372,6 +372,7 @@ Alternatively pass `--api-key-file .bridge/openai-api-key` to read a locally sav
 ## REST interface
 
 Read `/api/state` to get the current state and `csrf_token`. Writes require `Content-Type: application/json` and `X-Bridge-CSRF: <token>`.
+With sign-in on, each decision in `/api/state` carries `can_act`: whether the signed-in person may answer or sign it on their own standing (owner, required signer or verified for its scope, by person id). The inbox badge and **Assigned to me** count these; `GET /api/decisions/:id` carries the full `allowed_actions` list.
 
 - `GET /api/decisions/:id`, `/api/search?q=...&repo=...`, `/api/pending?run_id=...&path=...`, `/api/ownership?repo=...&limit=...` (the ownership graph's live rows; `limit=0` for all), `/api/export`
 - `POST /api/owners` with `name`, `team`, `patterns`
