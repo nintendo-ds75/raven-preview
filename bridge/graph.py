@@ -1511,12 +1511,32 @@ class Graph:
                         (owner_id, person["name"], person["team"], "", now_iso(), person_id))
         return owner_id
 
+    def candidate_person(self, name) -> dict | None:
+        """The person a ranked candidate is: the one whose id the name
+        carries (identity.BoundName), else the one the bare name resolves
+        to, else None. Never guesses between namesakes."""
+        from .identity import person_id_of
+        pid = person_id_of(name)
+        if pid:
+            person = self.get_person(pid)
+            if person is not None:
+                return person
+        return self.find_person(name)
+
     def owner_id_for(self, name: str) -> str | None:
         """Resolve an identity before reducing it to an engineer name.
 
-        Unresolved legacy names can still create unbound owner rows, but
-        cannot select somebody's bound row through an ambiguous name.
+        A name that carries the person id it was ranked under binds that
+        person's row, whatever else the name could mean. Unresolved
+        legacy names can still create unbound owner rows, but cannot
+        select somebody's bound row through an ambiguous name.
         """
+        from .identity import person_id_of
+        pid = person_id_of(name)
+        if pid:
+            owner_id = self.owner_id_for_person(pid)
+            if owner_id:
+                return owner_id
         person = self.find_person(name)
         if person is not None:
             return self.owner_id_for_person(person["id"])

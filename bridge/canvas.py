@@ -3548,7 +3548,9 @@ def _route_signer(graph, run, question, ctx, paths, requester, hints, category, 
     if (person and person['active'] and person['role'] != 'viewer' and complete_scope and not scope_difference
             and applicability_status(source, paths[0] if paths else '', facts, repo=repo)[0] and current_contact):
         if not ranked or not any(e.startswith('verified:') for e in ranked[0][1]):
-            ranked.insert(0, (source_signer, [f'signs off; {source_signer} signed the reused answer in decision {source.id}'], 2.0))
+            from .identity import BoundName
+            ranked.insert(0, (BoundName(source_signer, person['id']),
+                              [f'signs off; {source_signer} signed the reused answer in decision {source.id}'], 2.0))
     if not ranked:
         fallback = coordinator_route(graph, repo, ['nobody is clearly placed to sign this'])
         ranked = [fallback] if fallback else []

@@ -8,6 +8,7 @@ module is the entry point the ladder, the canvas and the tests call.
 from __future__ import annotations
 
 from .graph import Graph
+from .identity import BoundName, person_id_of
 
 
 def route(store: Graph, repo: str, question: str,
@@ -70,7 +71,7 @@ def route_ranked(store: Graph, repo: str, question: str,
         explicit_ids = {a['id'] for a in store.authority_rows(repo) if a['source'] not in ('referral', 'answer')}
         fixed = {a['name'] for a in matches if a['strong'] and a['role'] == 'decides' and a['id'] in explicit_ids}
         verified = [r for r in ranked if r[0] in fixed]
-        prior = [(p['name'], [contact_evidence(store, p, outcome, did, learned_details.get((p['id'], outcome, did)))], (2 if outcome in CONTACT_RESPONSES else 1) + score)
+        prior = [(BoundName(p['name'], p['id']), [contact_evidence(store, p, outcome, did, learned_details.get((p['id'], outcome, did)))], (2 if outcome in CONTACT_RESPONSES else 1) + score)
                  for p, outcome, score, did, _ in learned
                  if outcome in (*CONTACT_RESPONSES, 'connector') and p['name'] not in fixed]
         seen = {r[0] for r in verified + prior}
@@ -82,12 +83,13 @@ def route_ranked(store: Graph, repo: str, question: str,
     contacts = []
     for name, evidence, score in ranked:
         person = contact_for(store, name)
+        bound = person["name"] if person else name
         verified = any(line.startswith("verified:") for line in evidence)
         if verified:
             # Do not replace a known decider with a reachable bystander.
-            contacts.append((person["name"] if person else name, evidence, score))
+            contacts.append((bound, evidence, score))
         elif person and person["slack_id"] and person["slack_id"] not in unavailable:
-            contacts.append((person["name"], ["inferred first contact; confirm or refer in Slack", *evidence], score))
+            contacts.append((bound, ["inferred first contact; confirm or refer in Slack", *evidence], score))
     if contacts:
         return contacts
     # A cited Jira/Slack/document author is a reasonable first contact,
@@ -99,7 +101,7 @@ def route_ranked(store: Graph, repo: str, question: str,
             person = contact_for(store, row["author"])
             if (person and person['name'] not in declined
                     and person["slack_id"] and person["slack_id"] not in unavailable):
-                return [(person["name"], [f"inferred first contact: authored {record['ref']}; "
+                return [(BoundName(person["name"], person["id"]), [f"inferred first contact: authored {record['ref']}; "
                                           "ask them to confirm who decides, not presumed authority"], 0.3)]
     from .ladder import _meaningful_terms, _void
     terms = set(_meaningful_terms(question))
@@ -115,7 +117,7 @@ def route_ranked(store: Graph, repo: str, question: str,
         person = contact_for(store, row["author"])
         if (person and person['name'] not in declined and person["slack_id"] and person["slack_id"] not in unavailable
                 and person != store.find_person(requester)):
-            return [(person["name"], [f"inferred first contact: authored {row['kind']} {row['ref']} "
+            return [(BoundName(person["name"], person["id"]), [f"inferred first contact: authored {row['kind']} {row['ref']} "
                                       f"({row['title']}); confirm or refer in Slack"], 0.3)]
     if notes is not None:
         notes.append("no reachable Slack contact matched the evidence; ask the triage channel")
@@ -126,7 +128,13 @@ def contact_for(store: Graph, name: str) -> dict | None:
     """Join history to Slack by exact email, otherwise an unambiguous name.
 
     This chooses a contact, never modifies a login identity or authority.
+    A name that already carries its person id is that person. The row
+    comes back with its name bound to its id (identity.BoundName), so a
+    ranking built from it binds the same person again.
     """
+    if person_id_of(name):
+        person = store.candidate_person(name)
+        return {**person, "name": BoundName(person["name"], person["id"])} if person else None
     emails = {r["email"].lower() for r in store.db.execute(
         "SELECT email FROM engineers WHERE name=?", (name,)) if r["email"]}
     handle = name.lstrip("@").lower()
@@ -134,11 +142,10 @@ def contact_for(store: Graph, name: str) -> dict | None:
         "SELECT email FROM gh_users WHERE lower(login)=? OR name=?", (handle, name)) if r["email"])
     people = store.people()
     matches = [p for p in people if p["email"] and p["email"].lower() in emails]
-    if len(matches) == 1:
-        return matches[0]
     if len(matches) > 1:
         return None
-    return store.find_person(name)
+    person = matches[0] if matches else store.find_person(name)
+    return {**person, "name": BoundName(person["name"], person["id"])} if person else None
 
 
 def coordinator_route(store: Graph, repo: str, notes: list[str] | None = None,
@@ -153,7 +160,7 @@ def coordinator_route(store: Graph, repo: str, notes: list[str] | None = None,
              + (f" ({'; '.join(notes)})" if notes else "")]
     for name, ev, _score in (candidates or [])[:3]:
         lines.append(f"candidate from git history: {name}" + (f" ({ev[0]})" if ev else ""))
-    return (person["name"], lines, 0.0)
+    return (BoundName(person["name"], person["id"]), lines, 0.0)
 
 
 RECORD_AUTHOR_SCORE = 0.25

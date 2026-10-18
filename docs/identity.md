@@ -28,16 +28,38 @@ authority holders, team members, the coordinator setting. Two legacy
 fallbacks still compare **exact names**: an unbound owner row and
 `decisions.required_signers` (a JSON list of names), each resolved only
 when exactly one person carries the name. Signatures (`decisions.signatures[].by`)
-are names; `actor_id`/`actor_basis` carry the id and standing.
+are names; each entry written since the signer id was kept also carries
+`person_id`, and `actor_id`/`actor_basis` carry the last actor's id and standing.
 
 `/api/state` marks each decision with `can_act` from the same check; the
 inbox counts those. `GET /api/decisions/:id` lists `allowed_actions`.
 
+## How routing binds the owner
+
+A ranked candidate is a display name that carries the person id of the
+signal that ranked them (`identity.BoundName`): the authority row's
+person, the one person a git address belongs to, the one person a
+listing handle is the login of, a contact or coordinator record.
+`Graph.owner_id_for` binds that id first and resolves the name only for
+a candidate no signal could tie to a person (a git identity with no
+person record), where the legacy unique-name rule still applies. A git
+author who shares a map person's name but not their address carries no
+id, lands on an unbound row, and nobody holds that row by the shared
+name (`tests/test_identity_paths.py`).
+
+The task page's "yours" marks (`signed_by_me`, `owed_by_me` on each
+brief node) are computed server-side from ids; the viewer's name is
+only used for display.
+
 ## Known gaps
 
-- Routing carries candidates by display name (`bridge/signals.py`,
-  `bridge/routing.py`), so an authority holder with a namesake can be
-  routed to an unbound owner row (`tests/test_identity_paths.py`, expected failure).
-- Required signers are stored as names; a `required_signer_ids` column
+- Required signers are stored as names (`canvas._approvers` has the
+  ids but no column to keep them); a `required_signer_ids` column
   would close the second name fallback.
+- Signals merge git history by normalized name (`signals._signal_route`
+  keys candidates by `_norm_person`), so two namesakes' history scores
+  as one candidate; the id attached is the authority row's when one
+  applies, else only an address or login shared by no other person.
+- `task.js` picks the default node to open by the signed-in name
+  (`taskBriefDecision`); a wrong pick opens another node, never acts.
 - A task link with no session acts as its person wherever it is opened.

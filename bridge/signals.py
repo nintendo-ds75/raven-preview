@@ -123,6 +123,9 @@ class Candidate:
     merge_led: bool = False     # their approval here comes mostly from merging
     at: dict[str, float] = field(default_factory=dict)   # their weighted signal under each hit path
     listed_at: set[str] = field(default_factory=set)     # the hit paths a listing names them for
+    person_id: str = ""         # the person the authority map names, when a verified row ranked them
+    emails: set[str] = field(default_factory=set)        # the addresses git history carries for them
+    handles: set[str] = field(default_factory=set)       # the handles listings name them by
 
 
 def _now(store: Graph, repo: str) -> float:
@@ -609,7 +612,27 @@ def _repo_wide(store: Graph, repo: str, now: float,
     n = sig["auth_n"].get(best, 0) if kind == "authored" else sig["app_n"].get(best, 0)
     line = (f"{kind} {n} of the last {sig['n_changes']} changes repo-wide ({_pct(best_share)} recency weighted); "
             f"the question names no specific area, so this is a repo-wide call")
-    return (store.resolve_engineer(name), [line], round(_W["author"] * best_share, 3))
+    bound = _bound_name(store, store.resolve_engineer(name), emails={sig["emails"].get(best, "")})
+    return (bound, [line], round(_W["author"] * best_share, 3))
+
+
+def _bound_name(store: Graph, name: str, person_id: str = "", emails=(), handles=()):
+    """The display name with the person it is known to be, when a key
+    other than the name says who: the authority row's person, else the
+    one person the git addresses belong to, else the one person a
+    listing handle is the login of. A name alone binds nobody; the owner
+    binding falls back to the legacy name resolution for those."""
+    from .identity import BoundName, norm_handle
+    if not person_id:
+        people = store.people()
+        wanted = {a.lower() for a in emails if a}
+        hits = {p["id"] for p in people if p["email"] and p["email"].lower() in wanted}
+        if not hits:
+            logins = {norm_handle(h) for h in handles if h and "/" not in h}
+            hits = {p["id"] for p in people if p["github_login"] and norm_handle(p["github_login"]) in logins}
+        if len(hits) == 1:
+            person_id = next(iter(hits))
+    return BoundName(name, person_id)
 
 
 def _specificity(scope: str) -> tuple[int, int]:
@@ -726,6 +749,7 @@ def _authority_matches(store: Graph, repo: str, hits: list[PathHit], question: s
                 where = next((p for p in matched if _specificity(r["scope"]) >= narrowest[(p, r["role"])]),
                              matched[0] if matched else "")
             out.append({"key": _norm_person(person["name"]), "name": person["name"], "role": r["role"],
+                        "person_id": person.get("id", ""),
                         "weight": weight, "line": line, "strong": strong, "id": r["id"], "path": where,
                         "topic": r["scope_kind"] == "category" and r["scope"] in about and r["scope"],
                         "primary": r["scope_kind"] == "path" and any(
@@ -1001,6 +1025,10 @@ def _signal_route(store: Graph, repo: str, question: str, context: str = "", pat
                 # agent named: say so, so a wrong area is caught early.
                 lines.append(f"area matched from words alone ({hit.why}); confirm the path before relying on it")
             cand = scored.setdefault(key, Candidate(name=who))
+            cand.emails.update(sig["emails"][key].lower() for _l, sig, _w in levels if sig["emails"].get(key))
+            if key in blame_by and blame_by[key][1]:
+                cand.emails.add(blame_by[key][1].lower())
+            cand.handles.update(e["person"] for e in listed_by.get(key, []) if not e.get("team"))
             cand.per_hit.append(hit.weight * s)
             cand.at[hit.path] = max(cand.at.get(hit.path, 0.0), hit.weight * s)
             if key in listed_by:
@@ -1052,6 +1080,7 @@ def _signal_route(store: Graph, repo: str, question: str, context: str = "", pat
     for key, match in best_match.items():
         also = [m["line"] for m in verified if m["key"] == key and m is not match][:2]
         cand = scored.setdefault(key, Candidate(name=match["name"]))
+        cand.person_id = match.get("person_id") or cand.person_id
         cand.score += match["weight"]
         cand.verified = max(cand.verified, match["weight"])
         cand.lines = [match["line"], *also] + cand.lines
@@ -1246,7 +1275,10 @@ def _signal_route(store: Graph, repo: str, question: str, context: str = "", pat
         lines.append(f"area: the agent is working in {path.lstrip('/')}")
     else:
         lines.append("area: the question names no path; routed on the decision's category")
-    out = [(store.resolve_engineer(winner.name), lines, round(winner.score, 3))]
+
+    def named(c: Candidate):
+        return _bound_name(store, store.resolve_engineer(c.name), c.person_id, c.emails, c.handles)
+    out = [(named(winner), lines, round(winner.score, 3))]
     for c in ranked[1:6]:
-        out.append((store.resolve_engineer(c.name), c.lines[:3], round(c.score, 3)))
+        out.append((named(c), c.lines[:3], round(c.score, 3)))
     return out

@@ -69,6 +69,25 @@ class Person:
         return same_person(self, other)
 
 
+class BoundName(str):
+    """A candidate's display name carrying the person id the signal that
+    ranked them knew: an authority row, a people-table match by email or
+    login, a contact record. It is a plain string everywhere a name is
+    compared, shown or stored; the owner binding reads the id and never
+    resolves the name again, so a namesake on the map cannot take the
+    decision. A name no signal could tie to a person carries no id."""
+
+    def __new__(cls, name: str, person_id: str = ""):
+        self = super().__new__(cls, name)
+        self.person_id = person_id or ""
+        return self
+
+
+def person_id_of(name) -> str:
+    """The person id a ranked name carries, or empty for a bare name."""
+    return getattr(name, "person_id", "") or ""
+
+
 def parse_person(text: str) -> Person:
     """'Full Name <email>', 'email', '@handle', or a bare name."""
     text = (text or "").strip()

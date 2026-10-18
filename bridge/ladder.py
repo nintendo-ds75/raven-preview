@@ -2594,7 +2594,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                                          ranked)
             if fallback is not None:
                 owner_info = fallback
-        elif owner_info is not None and inferred_only and store.find_person(owner_info[0]) is None:
+        elif owner_info is not None and inferred_only and store.candidate_person(owner_info[0]) is None:
             # The strongest signal is someone in the history Raven cannot
             # reach: not one of its people, so no message gets to them and
             # nobody can sign in as them. Measured live on 5e967e4: the only
