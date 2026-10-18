@@ -12,7 +12,8 @@ from fixtures import OfflineCase, git_env, run_git, workdir
 
 from bridge import resolve
 from bridge.ingest import index_repo
-from bridge.resolve import (SYMBOL_DEFINED_WEIGHT, SYMBOL_MENTION_WEIGHT, SYMBOL_SHARED_WEIGHT, code_names,
+from bridge.resolve import (SYMBOL_DEFINED_WEIGHT, SYMBOL_MENTION_WEIGHT, SYMBOL_SHARED_WEIGHT, SYMBOL_USED_WEIGHT,
+                            code_names,
                             mentions_of, resolve_paths, symbol_hits)
 from bridge.routing import route
 from bridge.store import Store
@@ -103,9 +104,12 @@ class SymbolRoutingTests(OfflineCase):
         self.assertEqual(hits["hw/char/imx_serial.c"].weight, SYMBOL_MENTION_WEIGHT)
         self.assertIn("appears only in hw/char/imx_serial.c", hits["hw/char/imx_serial.c"].why)
 
-    def test_a_name_the_question_uses_rather_than_changes_does_not_name_its_definer(self):
-        hits = self.hits("Should we clarify the intent using buffer_empty()?")
-        self.assertFalse(any("defined in" in h.why for h in hits.values()), hits)
+    def test_a_name_the_question_uses_rather_than_changes_points_at_its_definer_as_a_guess(self):
+        hits = symbol_hits(self.graph, "symbols", "Should we clarify the intent using buffer_empty()?")
+        self.assertEqual(list(hits), ["util/buffer.c"])
+        self.assertEqual(hits["util/buffer.c"].weight, SYMBOL_USED_WEIGHT)
+        self.assertEqual(hits["util/buffer.c"].why,
+                         "the question uses buffer_empty, defined in util/buffer.c; the file that calls it is not named")
         changed = self.hits("Should buffer_empty() also reset the offset?")
         self.assertAlmostEqual(changed["util/buffer.c"].weight, SYMBOL_DEFINED_WEIGHT)
 

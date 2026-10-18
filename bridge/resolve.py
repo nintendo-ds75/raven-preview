@@ -619,11 +619,12 @@ _CAPS_SKIP = {"TODO", "FIXME", "NULL", "TRUE", "FALSE", "JSON", "YAML", "TOML", 
               "SPDX", "QEMU", "LINUX", "POSIX", "ARM64", "AMD64", "X86", "RISCV", "WIP", "RFC", "NOTE", "WARNING"}
 # The verb before a name that says the question uses it rather than
 # changes it: "use memmove() for ..." is about the caller, whose file
-# the name does not reveal, not about whoever defines memmove.
+# the name does not reveal; the definer is then a guess, not the area.
 _USES_RE = re.compile(r"\b(?:use|uses|using|call|calls|calling|via|through|prefer|prefers|invoke|invokes|with)"
                       r"\s+(?:the\s+|a\s+|an\s+)?[`'\"]?$")
 SYMBOL_DEFINED_WEIGHT = 0.85     # one source file defines the name: as firm as a filename
 SYMBOL_SHARED_WEIGHT = 0.75      # a few files define it (a stub and its real definition)
+SYMBOL_USED_WEIGHT = 0.7         # the question calls or uses it: its definer is a guess at the area
 SYMBOL_MENTION_WEIGHT = 0.8      # nothing defines it, a few files, or one directory, spell it
 SYMBOL_SPLIT_WEIGHT = 0.7        # its mentions split between two directories
 MENTION_DOMINANT_SHARE = 0.6
@@ -700,14 +701,21 @@ def symbol_hits(store: Graph, repo: str, text: str) -> dict[str, PathHit]:
         return {}
     from .ingest import definitions_of
     hits: dict[str, PathHit] = {}
-    changed = [n for n in names if not _used_not_changed(text, n)]
-    defined = definitions_of(store, repo, changed)
+    defined = definitions_of(store, repo, names)
     for name, files in defined.items():
         files = _sources_first(files)
+        if _used_not_changed(text, name):
+            # Measured: "call cpu_openrisc_clock_init() in cpu_realize()"
+            # is decided under hw/openrisc/, where the callee lives, though
+            # the caller is the file that changes.
+            for f in files:
+                _add(hits, f, SYMBOL_USED_WEIGHT,
+                     f"the question uses {name}, defined in {f}; the file that calls it is not named")
+            continue
         weight = SYMBOL_DEFINED_WEIGHT if len(files) == 1 else SYMBOL_SHARED_WEIGHT
         for f in files:
             _add(hits, f, weight, f"the question names {name}, defined in {f}")
-    for name, files in mentions_of(store, repo, [n for n in changed if n not in defined]).items():
+    for name, files in mentions_of(store, repo, [n for n in names if n not in defined]).items():
         if len(files) <= 3:
             for f in files:
                 _add(hits, f, SYMBOL_MENTION_WEIGHT,
