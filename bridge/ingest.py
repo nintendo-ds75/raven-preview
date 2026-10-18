@@ -14,11 +14,13 @@ stays auditable.
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import math
 import re
 import os
 import subprocess
+import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -40,6 +42,60 @@ _SQUASHED_PR = re.compile(r"\(#(\d+)\)\s*$")
 _TRAILER_RE = re.compile(
     r"^\s*(?:[A-Z][\w-]+-by|Signed-off-by|Co-authored-by|Refs?|Fixes|Closes"
     r"|Change-Id|Claude-Session|Reviewed-on|Tested-by|Cc)\s*:", re.IGNORECASE | re.MULTILINE)
+
+
+# ---------------- git reads ----------------
+
+class _ReadSession:
+    """What one ingest may remember between its git reads: the revisions
+    it resolved (HEAD does not move while one history is read), which
+    listing files the bound tree carries, and, on a Git without
+    --no-lazy-fetch, that a checkout's partial-clone configuration was
+    inspected. Nothing outlives the ingest that opened the session."""
+
+    def __init__(self):
+        self.resolved: dict[tuple[Path, str], str] = {}
+        self.listed: dict[tuple[Path, str], set[str]] = {}
+        self.inspected: set[Path] = set()
+
+
+_READS = threading.local()
+
+
+def _session() -> _ReadSession | None:
+    return getattr(_READS, "session", None)
+
+
+@contextlib.contextmanager
+def _read_session():
+    """The calling thread's read session, opened here if none is open."""
+    if _session() is not None:
+        yield _session()
+        return
+    _READS.session = _ReadSession()
+    try:
+        yield _READS.session
+    finally:
+        _READS.session = None
+
+
+# The runner that answered the --no-lazy-fetch probe and its answer.
+_PROBE: tuple[object, bool] | None = None
+
+
+def _no_lazy_fetch_supported(env: dict[str, str]) -> bool:
+    """Whether this Git accepts --no-lazy-fetch: probed without opening a
+    repository, once per process. The answer belongs to the runner that
+    gave it, so a substituted runner (a test emulating an older Git) is
+    probed again."""
+    global _PROBE
+    runner = subprocess.run
+    if _PROBE is not None and _PROBE[0] is runner:
+        return _PROBE[1]
+    capability = runner(["git", "--no-lazy-fetch", "--version"],
+                        capture_output=True, text=True, timeout=10, env=env)
+    _PROBE = (runner, capability.returncode == 0)
+    return _PROBE[1]
 
 
 def _git_read(repo: Path | str, *args: str, timeout: int = 120,
@@ -72,11 +128,10 @@ def _git_read(repo: Path | str, *args: str, timeout: int = 120,
     # Probe the option without opening a repository, then use the option on
     # every supported read. Blocking transport alone is insufficient: lazy
     # fetch can persist partialclonefilter before reaching its transport.
-    capability = subprocess.run(["git", "--no-lazy-fetch", "--version"],
-                                capture_output=True, text=True, timeout=10, env=env)
-    if capability.returncode == 0:
+    session = _session()
+    if _no_lazy_fetch_supported(env):
         command.insert(1, "--no-lazy-fetch")
-    else:
+    elif session is None or repo not in session.inspected:
         partial = subprocess.run(
             [*command, "config", "--name-only", "--get-regexp",
              r"^(extensions\.partialclone|remote\..*\.(promisor|partialclonefilter))$"],
@@ -86,6 +141,8 @@ def _git_read(repo: Path | str, *args: str, timeout: int = 120,
         if partial.returncode == 0:
             raise RuntimeError("This Git lacks --no-lazy-fetch; partial-clone/promisor checkouts require "
                                "Git 2.45 or newer, or a full clone without partial-clone configuration")
+        if session is not None:
+            session.inspected.add(repo)
     if args and args[0] in {"log", "show", "blame"}:
         args = (args[0], "--no-ext-diff", "--no-textconv", *args[1:])
     return subprocess.run([*command, *args], capture_output=True, text=True,
@@ -104,8 +161,18 @@ def _resolve_commit(repo: Path | str, rev: str) -> str:
 
     Git documents --verify --end-of-options with ^{commit} for untrusted
     revisions. Only the resulting commit object ID reaches read commands.
+    Inside a read session the answer is kept, under the revision asked
+    for and under the commit ID itself, which peels to itself.
     """
-    return _git(Path(repo), "rev-parse", "--verify", "--end-of-options", f"{rev}^{{commit}}").strip()
+    repo = Path(repo)
+    session = _session()
+    if session is not None and (repo, rev) in session.resolved:
+        return session.resolved[(repo, rev)]
+    sha = _git(repo, "rev-parse", "--verify", "--end-of-options", f"{rev}^{{commit}}").strip()
+    if session is not None:
+        session.resolved[(repo, rev)] = sha
+        session.resolved[(repo, sha)] = sha
+    return sha
 
 
 def _prefixes(path: str) -> list[str]:
@@ -119,6 +186,21 @@ def _prefixes(path: str) -> list[str]:
 
 
 CODEOWNERS_CANDIDATES = ("CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS")
+LISTING_PATHS = (*CODEOWNERS_CANDIDATES, "MAINTAINERS")
+
+
+def _remember_listings(repo: Path, rev: str, files: list[str] | None) -> None:
+    """Note, for the read session, which listing files the tree at `rev`
+    carries, from the full tree already read or from one ls-tree of the
+    candidate paths, so the absent ones are not asked for one by one."""
+    session = _session()
+    if session is None:
+        return
+    if files is None:
+        files = _git(repo, "ls-tree", "-r", "--name-only", rev, "--", *LISTING_PATHS).splitlines()
+    present = set(files)
+    session.listed[(repo, rev)] = {p for p in LISTING_PATHS
+                                   if p in present or any(f.startswith(p + "/") for f in files)}
 
 
 def _read_at(repo: Path, rel: str, rev: str = "") -> str:
@@ -126,6 +208,10 @@ def _read_at(repo: Path, rel: str, rev: str = "") -> str:
     (read from the object store, so no checkout is needed)."""
     if rev:
         rev = _resolve_commit(repo, rev)
+        session = _session()
+        listed = session.listed.get((repo, rev)) if session is not None else None
+        if listed is not None and rel not in listed:
+            return ""
         out = _git_read(repo, "show", f"{rev}:{rel}", timeout=60)
         if out.returncode == 0:
             return out.stdout
@@ -384,8 +470,9 @@ def index_repo(store: Graph, repo_path: str | Path, max_commits: int | None = No
     name = (repo_name or repo.name).lower()
     scope = [p.strip("/") for p in (paths or []) if p.strip("/")]
     depth = MAX_COMMITS if max_commits is None else max_commits
-    rev = _resolve_commit(repo, rev) if rev else ""
-    snap = _read_repo(repo, rev, scope, depth)
+    with _read_session():
+        rev = _resolve_commit(repo, rev) if rev else ""
+        snap = _read_repo(repo, rev, scope, depth)
     # Every git read is done before the write lock is taken, so the lock
     # is held for the write alone, not for the seconds git takes.
     with store.transaction():
@@ -423,6 +510,8 @@ def _read_repo(repo: Path, rev: str, scope: list[str], depth: int) -> _Snapshot:
     else:
         files = [f for f in _git(repo, "ls-files").splitlines() if f]
     merge_log = read_log(repo, head, count_args, scope_args, merges=True, strict=True)
+    if rev:
+        _remember_listings(repo, head, None if scope else files)
     return _Snapshot(commits, truncated, files, merge_log, parse_codeowners(repo, rev),
                      _read_at(repo, "MAINTAINERS", rev))
 
@@ -777,23 +866,24 @@ def fetch_blame(store: Graph, repo: str, files: list[str]) -> dict[str, dict[str
     path = _git_source(store, repo)
     if not path or not files or os.environ.get("BRIDGE_BLAME", "1") == "0":
         return {}
-    rev = _git_rev(store, repo)
     out: dict[str, dict[str, tuple[str, str, float]]] = {}
     partial: bool | None = None
-    for f in files[:BLAME_MAX_FILES]:
-        key = f"{rev}:{f}"
-        rows = store.blame_for(repo, rev, f)
-        if not rows and not store.was_fetched(repo, "blame", key):
-            if partial is None:
-                partial = _partial_clone(path)
-            if partial:
-                return {}
-            store.add_blame(repo, rev, f, blame_counts(path, rev, f))
-            store.mark_fetched(repo, "blame", key)
+    with _read_session():
+        rev = _git_rev(store, repo)
+        for f in files[:BLAME_MAX_FILES]:
+            key = f"{rev}:{f}"
             rows = store.blame_for(repo, rev, f)
-        total = sum(r["lines"] for r in rows)
-        if total:
-            out[f] = {r["engineer"]: (r["engineer"], r["email"], r["lines"] / total) for r in rows}
+            if not rows and not store.was_fetched(repo, "blame", key):
+                if partial is None:
+                    partial = _partial_clone(path)
+                if partial:
+                    return {}
+                store.add_blame(repo, rev, f, blame_counts(path, rev, f))
+                store.mark_fetched(repo, "blame", key)
+                rows = store.blame_for(repo, rev, f)
+            total = sum(r["lines"] for r in rows)
+            if total:
+                out[f] = {r["engineer"]: (r["engineer"], r["email"], r["lines"] / total) for r in rows}
     return out
 
 
