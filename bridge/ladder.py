@@ -53,6 +53,22 @@ def _excerpt(text, limit: int, rest: str) -> str:
     return llm_mod.clip_marked(" ".join(str(text or "").split()), limit, rest)
 
 
+def _route_summary(evidence: str, owner_name: str, limit: int = 160) -> str:
+    """The one line the inbox card shows for a routed owner: who and why,
+    from the strongest clause of the owner evidence, whole when it fits
+    and never cut inside a word. The dialog's "Why this owner" has the
+    rest. Measured on a demo run: the card quoted the evidence up to 300
+    characters and stopped inside the git-blame percentages."""
+    text = " ".join(str(evidence or "").split())
+    first = text.split("; ", 1)[0]
+    if owner_name and owner_name.lower() not in first.lower():
+        first = f"{owner_name}: {first}"
+    mark = "the owner evidence has the rest"
+    if len(first) <= limit:
+        return first
+    return llm_mod.clip_marked(first, limit - len(f" … [cut: {mark}]"), mark)
+
+
 OPEN = "pending"
 
 
@@ -2880,10 +2896,13 @@ def _inbox_route(store, graph: Graph, row: dict, owner_id: str | None, run, repo
                 raise Invalid("Owner not found")
             chosen, reason = owner_id, "Explicitly selected for this request"
         elif chosen:
-            # Whole, or cut at a word and marked. Measured live on eb9d22d: 26
-            # stored reasons ended inside a word ("where a more sp", "26 mon").
-            reason = "Routed from the ownership graph: " + _excerpt(row["owner_evidence"], 300,
-                                                                    "the owner evidence has the rest")
+            # One line, whole or cut at a word and marked. Measured live on
+            # eb9d22d: 26 stored reasons ended inside a word ("where a more
+            # sp", "26 mon"); on the demo run the card showed 300 characters
+            # of percentages before the mark.
+            named = db.execute("SELECT name FROM owners WHERE id=?", (chosen,)).fetchone()
+            reason = "Routed from the ownership graph: " + _route_summary(row["owner_evidence"],
+                                                                          named["name"] if named else "")
         else:
             for owner in db.execute("SELECT * FROM owners ORDER BY created_at,id"):
                 for pattern in (owner["patterns"] or "").split(","):

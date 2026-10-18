@@ -243,24 +243,43 @@ class AskTests(GraphCase):
         self.assertEqual(row2["owner_name"], "Dana Okafor")
         self.assertIn("ownership graph", row2["routing_reason"])
 
-    def test_a_routing_reason_is_whole_or_cut_at_a_word_and_marked(self):
-        """Measured live on eb9d22d: 26 stored routing reasons ended inside
-        a word ("where a more sp", "26 mon"), with no mark."""
+    def test_a_routing_reason_is_one_line_naming_who_and_why_and_the_evidence_has_the_rest(self):
+        """Measured on a demo run: the inbox card quoted the owner evidence
+        up to 300 characters and stopped inside the git-blame percentages,
+        after "wrote 5% of the …". The card gets one line, who and why,
+        from the strongest clause; the dialog's "Why this owner" keeps
+        the whole evidence. A clause too long for the line is cut at a
+        word and marked, never inside a word (eb9d22d: "where a more sp")."""
         priya = self.graph.find_person("Priya Natarajan")
-        note = ("Configured for the pricing review; the evaluation seeds this authority on purpose and it is not "
-                "the upstream project's maintainer authority, so read it as a stand-in for the owner of usage "
-                "pricing decisions across billing, metering and the invoice exports that depend on them")
+        prefix = "Routed from the ownership graph: "
         self.graph.add_authority("path", "billing/usage.py", "decides", person_id=priya["id"],
-                                 asserted_by="Evaluation Admin", note=note)
+                                 asserted_by="Evaluation Admin", note="Usage pricing is a product call")
         row = ask(self.store, Config(), self.run["id"], "Should we bill customer-run load tests?",
                   context="c", path="billing/usage.py")
         self.assertEqual(row["owner_name"], "Priya Natarajan")
-        prefix = "Routed from the ownership graph: "
-        reason, evidence = row["routing_reason"], " ".join((row["owner_evidence"] or "").split())
-        self.assertGreater(len(evidence), 300)
-        self.assertTrue(reason.startswith(prefix), reason)
-        self.assertTrue(reason.endswith(" … [cut: the owner evidence has the rest]"), reason[-80:])
-        kept = reason[len(prefix):].split(" … [cut:")[0]
+        evidence = " ".join((row["owner_evidence"] or "").split())
+        line = row["routing_reason"][len(prefix):]
+        self.assertTrue(row["routing_reason"].startswith(prefix), row["routing_reason"])
+        self.assertEqual(line, evidence.split("; ", 1)[0])
+        self.assertIn("Priya Natarajan decides for billing/usage.py", line)
+        self.assertIn("Usage pricing is a product call", line)
+        self.assertNotIn("[cut:", line)
+        self.assertLessEqual(len(line), 160)
+        self.assertGreater(len(evidence), len(line), "the dialog keeps the rest of the evidence")
+        # A first clause longer than the line: cut at a word and marked.
+        long_note = ("Configured for the pricing review as the stand-in for the owner of usage pricing decisions "
+                     "across billing, metering and the invoice exports that depend on them")
+        self.graph.add_authority("path", "billing/meter.py", "decides", person_id=priya["id"],
+                                 asserted_by="Evaluation Admin", note=long_note)
+        row = ask(self.store, Config(), self.run["id"], "Should metering round partial hours up?",
+                  context="c", path="billing/meter.py")
+        self.assertEqual(row["owner_name"], "Priya Natarajan")
+        evidence = " ".join((row["owner_evidence"] or "").split())
+        line = row["routing_reason"][len(prefix):]
+        self.assertLessEqual(len(line), 160, line)
+        self.assertTrue(line.endswith(" … [cut: the owner evidence has the rest]"), line[-80:])
+        kept = line.split(" … [cut:")[0]
+        self.assertIn("Priya Natarajan decides for billing/meter.py", kept)
         self.assertTrue(evidence.startswith(kept), kept[-60:])
         self.assertEqual(evidence[len(kept)], " ", f"cut inside a word: {kept[-30:]!r}")
 
