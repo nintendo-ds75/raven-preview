@@ -1474,7 +1474,12 @@ dialog::backdrop{
   .sidebar{padding:var(--space-4) var(--space-2) 0;overflow:visible}
   .brand{margin:0 var(--space-2) var(--space-6)}
   .brand img{width:32px;height:32px}
-  .brand span,.workspace,.nav-label,nav a>.nav-count,nav a>.small-dot,.connect-card,.settings-link,.profile{display:none}
+  .workspace,.nav-label,nav a>.nav-count,nav a>.small-dot,.connect-card,.settings-link,.profile{display:none}
+  /* The brand's words leave the screen, not the link's name: hidden with
+     display:none, the link had no name at all (axe link-name, serious,
+     on every page at 390px). */
+  .brand{position:relative}
+  .brand span{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
   nav{gap:var(--space-2)}
   nav a{font-size:0;padding:0;gap:0;justify-content:center;min-height:44px}
   nav a svg{width:20px;height:20px}
@@ -1566,6 +1571,9 @@ dialog::backdrop{
 .login label input{display:block;width:100%;min-height:44px;padding:10px 12px;margin-top:6px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box;font-size:16px}
 .login details{margin-top:20px;border-top:1px solid var(--line);padding-top:16px}
 .login summary{cursor:pointer;font-size:13px;color:#bebfb6}
+/* The sign-in page's help text, whole: the app's .context stops at two
+   lines, and the sentence that said whom to ask ended in an ellipsis. */
+.login .context{display:block;-webkit-line-clamp:unset;overflow:visible}
 .login-form label{display:block;margin:.5rem 0 .25rem}
 .login-form input{width:100%;box-sizing:border-box;margin-bottom:.5rem}
 
@@ -1651,6 +1659,9 @@ h1,h2,h3 { letter-spacing:-.025em; }
 .read-only-settings { border:0; padding:0; margin:0; min-width:0; }
 .read-only-settings legend { padding:0 0 .75rem; font-size:.85rem; color:var(--muted); }
 .owners-page table { min-width:52rem; }
+/* A table wider than a phone scrolls inside its wrapper; the wrapper takes
+   focus so the keyboard can scroll it, and shows that it has. */
+.table-wrap:focus-visible { outline:2px solid var(--green); outline-offset:2px; border-radius:6px; }
 th { color:#83d97a; font-size:.75rem; }
 td { color:#83d97a; font-size:.8rem; }
 td small { color:#bebfb6; font-size:.75rem; }
