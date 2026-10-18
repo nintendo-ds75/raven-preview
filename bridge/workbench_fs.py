@@ -22,7 +22,9 @@ IGNORED = {'.git', '__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache',
 
 
 def safe_path(root, name):
-    if not isinstance(name, str) or not name or '\\' in name:
+    # A NUL byte is refused here: the filesystem calls below raise ValueError
+    # on it, which the file-tool loop does not treat as a refusal.
+    if not isinstance(name, str) or not name or '\\' in name or '\x00' in name:
         raise Invalid('Use a relative repository path')
     parts = PurePosixPath(name)
     if parts.is_absolute() or '..' in parts.parts or any(p.casefold() == '.git' for p in parts.parts):

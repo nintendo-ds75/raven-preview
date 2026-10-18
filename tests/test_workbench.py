@@ -71,7 +71,7 @@ class WorkbenchTests(OfflineCase):
         self.assertEqual(self.service.get(task)['activity'][-1]['label'], 'read_file')
 
     def test_path_escape_symlink_and_git_access_are_refused(self):
-        for name in ('../outside', '/etc/passwd', '.git/config', '.GiT/config', 'a/../../b', 'a\\b'):
+        for name in ('../outside', '/etc/passwd', '.git/config', '.GiT/config', 'a/../../b', 'a\\b', 'a\x00b', 'ok\x00/../..'):
             with self.subTest(name=name), self.assertRaises(Invalid):
                 fs.safe_path(self.source, name)
         (self.source / 'link').symlink_to(self.root)
