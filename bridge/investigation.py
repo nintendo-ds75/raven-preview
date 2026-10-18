@@ -41,6 +41,18 @@ when no listed file fits. Put suggestions to investigate other files in why.
 No findings is a limited review of supplied context, never proof of completeness.'''
 
 
+# Said once, in the kickoff and in the tool result, so the host does not
+# call again for the same answer. Measured on a demo run without a key: the
+# agent read "Model review unavailable" after its investigation, then paid
+# for a second call before finishing and read it again.
+MODEL_REVIEW_OFF = ('Model review is off on this server: no model key is configured, so bridge_review_discovery '
+                    'returns no findings. Check decision coverage yourself and do not call it again on this task.')
+
+
+def model_review_off(cfg) -> bool:
+    return not (cfg is not None and cfg.semantic_retrieval)
+
+
 def _task(store, task_id):
     from .canvas import _task as get_task
     return dict(get_task(store, task_id))
@@ -105,6 +117,13 @@ def review(store, args, cfg=None, *, defer=False):
             return review(store, {'task_id': task['id'], 'observations': payload['evidence']['host'],
                 'paths': payload['paths'], 'diff': payload['evidence'].get('diff', ''), 'phase': payload['phase']}, cfg, defer=defer)
         return address(store, task['id'], args)
+    cfg = cfg or load()
+    if model_review_off(cfg):
+        # The same answer, without rebuilding the evidence payload.
+        for row in g.db.execute('SELECT * FROM investigation_reviews WHERE task_id=? ORDER BY created_at DESC LIMIT 5',
+                                (task['id'],)):
+            if json.loads(row['result']).get('summary') == MODEL_REVIEW_OFF:
+                return _view(row)
     observations = field(args, 'observations', limit=24000)
     paths = args.get('paths') or []
     if not isinstance(paths, list) or len(paths) > 100 or any(not isinstance(p, str) or len(p) > 1000 for p in paths):
@@ -124,7 +143,6 @@ def review(store, args, cfg=None, *, defer=False):
         status = json.loads(prior['result']).get('status')
         if status == 'complete' or (status == 'pending' and age < 600):
             return _view(prior)
-    cfg = cfg or load()
     with g.transaction():
         inserted = g.db.execute('INSERT OR IGNORE INTO investigation_reviews(id,task_id,phase,input_hash,input,result,created_at) '
                      'VALUES(?,?,?,?,?,?,?)', (uuid.uuid4().hex, task['id'], phase, key, json.dumps(payload),
@@ -150,7 +168,8 @@ def review(store, args, cfg=None, *, defer=False):
 def _complete(store, review_id, payload, cfg):
     g = store.graph
     paths = payload['paths']
-    result = {'status': 'unavailable', 'summary': 'Model review unavailable; the host must check decision coverage.', 'findings': []}
+    result = {'status': 'unavailable', 'summary': MODEL_REVIEW_OFF if model_review_off(cfg) else
+              'Model review unavailable; the host must check decision coverage.', 'findings': []}
     if cfg.semantic_retrieval:
         raw = None
         try:

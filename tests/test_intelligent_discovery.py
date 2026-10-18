@@ -168,6 +168,38 @@ class ReasoningTests(OfflineCase):
         from bridge.host_sessions import WAKE_EVENTS
         self.assertIn('discovery_reviewed', WAKE_EVENTS)
 
+    def test_without_a_model_key_the_review_says_once_that_it_is_off_and_repeats_cheaply(self):
+        """Measured on a demo run without a key: the agent read "Model review
+        unavailable" after investigating, called again before finishing and
+        read it again. The kickoff and the first result say it is off on
+        this server and not to call again; a second call returns the same
+        answer without a new review."""
+        from bridge.investigation import MODEL_REVIEW_OFF
+        # An engaged kickoff; this store has no repository for the rules to read.
+        with patch.object(canvas, 'triage', return_value=('engage', 'the task itself poses a question')):
+            kickoff = canvas.start_task(self.store, Config(model_api='none'), {
+                'title': 'Make the retry limit configurable',
+                'goal': 'Should the default change when the retry limit becomes configurable?',
+                'repo': 'example/service', 'paths': 'fetchkit/retry.py'})
+        self.assertEqual(kickoff['verdict'], 'engage')
+        self.assertEqual(kickoff['next'].count(MODEL_REVIEW_OFF), 1)
+        self.assertIn('do not call it again on this task', kickoff['next'])
+        again = canvas.start_task(self.store, Config(model_api='none'), {'task_id': kickoff['task_id']})
+        self.assertEqual(again['next'].count(MODEL_REVIEW_OFF), 1)
+        first = self.review()
+        self.assertEqual((first['status'], first['summary'], first['findings']), ('unavailable', MODEL_REVIEW_OFF, []))
+        with patch.object(investigation, '_input', side_effect=AssertionError('the repeat must not rebuild the evidence')):
+            second = self.review(phase='finish', diff='patch')
+        self.assertEqual((second['review_id'], second['summary']), (first['review_id'], MODEL_REVIEW_OFF))
+        self.assertEqual(self.g.db.execute('SELECT count(*) AS n FROM investigation_reviews WHERE task_id=?',
+                                           (self.task,)).fetchone()['n'], 1)
+        # With a key the kickoff and the result say nothing of the kind.
+        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
+                patch('bridge.investigation.Client.complete_json', return_value={'summary': 'covered', 'findings': []}):
+            keyed = self.review(observations='a different investigation of billing/credits.py')
+            self.assertEqual(keyed['status'], 'complete')
+            self.assertNotIn('model review is off', canvas._task_as_started(self.store, canvas._task(self.store, self.task), Config())['next'].lower())
+
     def test_failed_review_can_be_retried_without_changing_the_investigation(self):
         from bridge.llm import LLMError
         with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('bridge.investigation.Client.complete_json', side_effect=[LLMError('unavailable'), {'findings': []}]) as model:

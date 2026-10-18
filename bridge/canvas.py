@@ -288,7 +288,7 @@ def _start_task(store, cfg, data) -> dict:
                               "replace its scope. Close the mistaken task with bridge_finish_task "
                               "(status=abandoned, reason=...), then omit task_id and use a new client_key "
                               "when starting the correctly scoped task.")
-            return _task_as_started(store, existing)
+            return _task_as_started(store, existing, cfg)
     title = field(data, "title", limit=300)
     goal = _text(data, "goal")
     repo = field(data, "repo", "local", 300)
@@ -418,7 +418,16 @@ def kickoff(store, cfg, task_id: str, title: str, goal: str, repo: str, paths: l
     proposed = candidates(discovery, title, goal)
     return {"model_pending": bool(pending), "task_id": task_id, "title": title, "repo": repo, "verdict": verdict, "why": why,
             "discovery": discovery, "candidates": proposed,
-            "next": _next_for_verdict(verdict, discovery, proposed)}
+            "next": _review_notice(cfg, verdict, _next_for_verdict(verdict, discovery, proposed))}
+
+
+def _review_notice(cfg, verdict: str, next_step: str) -> str:
+    """An engaged kickoff says once when model review is off, so the host
+    does not call bridge_review_discovery to learn it."""
+    from .investigation import MODEL_REVIEW_OFF, model_review_off
+    if verdict == "engage" and model_review_off(cfg):
+        return f"{next_step.rstrip()} {MODEL_REVIEW_OFF}"
+    return next_step
 
 
 def _deciders_inside(graph, repo: str, areas: list[str]) -> list[dict]:
@@ -3229,7 +3238,7 @@ def _candidate_represented(graph, run, candidate, row):
     return row['scope_key'] in {scope_key('', list(paths)), scope_key(run['goal'], list(paths))}
 
 
-def _task_as_started(store, row):
+def _task_as_started(store, row, cfg=None):
     # Kickoff discovery is a historical reading of the goal, not a fresh work
     # list. In the deep=1 humanize campaign, wait returned its two candidates
     # after a broad parent already asked both, and the host copied them into
@@ -3258,6 +3267,7 @@ def _task_as_started(store, row):
                      'or already be covered. Add only genuinely new or uncovered decisions in their actual '
                      'scope. Existing answers and referrals do not authorize a new node or transfer ownership. '
                      'Read bridge_get_tree before an irreversible step. ' + CONTEXT_GUIDANCE)
+    next_step = _review_notice(cfg, row['verdict'], next_step) if cfg is not None else next_step
     if row['status'] in ('abandoned', 'completed'):
         next_step = 'This task is closed; start a new task for new work.'
         if row['status'] == 'completed':
