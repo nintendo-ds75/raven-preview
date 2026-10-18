@@ -569,24 +569,120 @@ _CALL_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]{3,})\(\)")
 _SNAKE_RE = re.compile(r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b")
 _CAMEL_RE = re.compile(r"\b([A-Z][a-z0-9]*[A-Z][A-Za-z0-9]*)\b")
 _MACRO_RE = re.compile(r"\b([A-Z][A-Z0-9]*_[A-Z0-9_]+)\b")
+# An instruction mnemonic, a register or a constant written in capitals
+# (UQADD, MOVNTI, UFCR): a name the code spells exactly that way.
+_CAPS_RE = re.compile(r"\b([A-Z][A-Z0-9]{3,})\b")
+_CAPS_SKIP = {"TODO", "FIXME", "NULL", "TRUE", "FALSE", "JSON", "YAML", "TOML", "HTTP", "HTTPS", "README",
+              "MAINTAINERS", "CODEOWNERS", "LICENSE", "COPYING", "ASCII", "UTF8", "UUID", "GPL", "GPLV2", "LGPL",
+              "SPDX", "QEMU", "LINUX", "POSIX", "ARM64", "AMD64", "X86", "RISCV", "WIP", "RFC", "NOTE", "WARNING"}
+# The verb before a name that says the question uses it rather than
+# changes it: "use memmove() for ..." is about the caller, whose file
+# the name does not reveal, not about whoever defines memmove.
+_USES_RE = re.compile(r"\b(?:use|uses|using|call|calls|calling|via|through|prefer|prefers|invoke|invokes|with)"
+                      r"\s+(?:the\s+|a\s+|an\s+)?[`'\"]?$")
+SYMBOL_DEFINED_WEIGHT = 0.85     # one source file defines the name: as firm as a filename
+SYMBOL_SHARED_WEIGHT = 0.75      # a few files define it (a stub and its real definition)
+SYMBOL_MENTION_WEIGHT = 0.8      # nothing defines it, a few files, or one directory, spell it
+SYMBOL_SPLIT_WEIGHT = 0.7        # its mentions split between two directories
+MENTION_DOMINANT_SHARE = 0.6
+MENTION_PAIR_SHARE = 0.8
+_HEADER_RE = re.compile(r"\.(?:h|hpp|hh|hxx)(?:\.inc)?$")
+
+
+def code_names(text: str) -> list[str]:
+    """The code-shaped names a question quotes, at most three: a call,
+    snake_case of six or more characters, CamelCase with an inner
+    capital, an UPPER_CASE macro, or a capitalised mnemonic."""
+    found = (_CALL_RE.findall(text) + [w for w in _SNAKE_RE.findall(text) if len(w) >= 6]
+             + [w for w in _CAMEL_RE.findall(text) if len(w) >= 5 and not w.isupper()] + _MACRO_RE.findall(text)
+             + _CAPS_RE.findall(text))
+    return [n for n in dict.fromkeys(found) if n not in _CAPS_SKIP][:3]
+
+
+def _used_not_changed(text: str, name: str) -> bool:
+    i = text.find(name)
+    return i > 0 and bool(_USES_RE.search(text[:i]))
+
+
+def _sources_first(files: list[str]) -> list[str]:
+    """A header that declares a function beside the source that defines
+    it is not where the function lives; a header alone (a struct, a
+    macro) is."""
+    sources = [f for f in files if not _HEADER_RE.search(f)]
+    return sources or files
+
+
+MENTION_MAX_FILES = 40
+
+
+def mentions_of(store: Graph, repo: str, names: list[str]) -> dict[str, list[str]]:
+    """The files that spell each name as a whole word at the pinned
+    revision, for a name nothing defines (an instruction mnemonic, a
+    register, a field). A name in more than MENTION_MAX_FILES files is
+    everywhere and left out; partial clones are skipped, as for blame."""
+    import subprocess
+    from .ingest import _git_read, _git_rev, _git_source, _partial_clone
+    path = _git_source(store, repo)
+    if not path or not names or _partial_clone(path):
+        return {}
+    try:
+        rev = _git_rev(store, repo)
+    except RuntimeError:
+        return {}
+    out: dict[str, list[str]] = {}
+    for name in names[:3]:
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{3,80}", name):
+            continue
+        try:
+            res = _git_read(path, "grep", "-l", "-w", "-F", "-e", name, rev, "--", timeout=20)
+        except (RuntimeError, subprocess.TimeoutExpired, OSError):
+            continue
+        if res.returncode != 0:
+            continue
+        files = sorted({line.split(":", 1)[1] for line in res.stdout.splitlines() if ":" in line})
+        if 0 < len(files) <= MENTION_MAX_FILES:
+            out[name] = files
+    return out
 
 
 def symbol_hits(store: Graph, repo: str, text: str) -> dict[str, PathHit]:
-    """A function the question names (sys_tags(), init_excp_4xx_softmmu)
-    is about the file that defines it, read from the pinned checkout."""
-    # Code-shaped names only: a call, snake_case of six or more characters,
-    # CamelCase with an inner capital, or an UPPER_CASE macro.
-    found = (_CALL_RE.findall(text) + [w for w in _SNAKE_RE.findall(text) if len(w) >= 6]
-             + [w for w in _CAMEL_RE.findall(text) if len(w) >= 5] + _MACRO_RE.findall(text))
-    names = list(dict.fromkeys(found))[:3]
+    """A name the question quotes is about the file that defines it
+    (sys_tags(), init_excp_4xx_softmmu), read from the pinned checkout;
+    a name nothing defines (an instruction mnemonic, a register, a
+    field) is about the few files, or the one directory, that spell it.
+    Measured on a pathless replay of qemu: the question kept the
+    identifiers after every path word was gone, and the word rungs
+    either found nothing or pre-empted this one with a weaker guess."""
+    names = code_names(text)
     if not names:
         return {}
     from .ingest import definitions_of
     hits: dict[str, PathHit] = {}
-    for name, files in definitions_of(store, repo, names).items():
-        weight = 0.7 if len(files) == 1 else 0.6
+    changed = [n for n in names if not _used_not_changed(text, n)]
+    defined = definitions_of(store, repo, changed)
+    for name, files in defined.items():
+        files = _sources_first(files)
+        weight = SYMBOL_DEFINED_WEIGHT if len(files) == 1 else SYMBOL_SHARED_WEIGHT
         for f in files:
             _add(hits, f, weight, f"the question names {name}, defined in {f}")
+    for name, files in mentions_of(store, repo, [n for n in changed if n not in defined]).items():
+        if len(files) <= 3:
+            for f in files:
+                _add(hits, f, SYMBOL_MENTION_WEIGHT,
+                     f"the question names {name}, which appears only in {', '.join(files)}")
+            continue
+        by_dir: dict[str, int] = {}
+        for f in files:
+            by_dir[_dir_of(f)] = by_dir.get(_dir_of(f), 0) + 1
+        ranked = sorted(by_dir.items(), key=lambda kv: (-kv[1], kv[0]))
+        top, n = ranked[0], len(files)
+        if top[0] and top[1] >= MENTION_DOMINANT_SHARE * n:
+            _add(hits, top[0], SYMBOL_MENTION_WEIGHT,
+                 f"the question names {name}; {top[1]} of the {n} files that spell it are under {top[0]}")
+        elif len(ranked) > 1 and all(d for d, _ in ranked[:2]) and ranked[0][1] + ranked[1][1] >= MENTION_PAIR_SHARE * n:
+            for d, k in ranked[:2]:
+                _add(hits, d, SYMBOL_SPLIT_WEIGHT,
+                     f"the question names {name}; {k} of the {n} files that spell it are under {d}")
     return hits
 
 
@@ -697,6 +793,12 @@ def resolve_paths(store: Graph, repo: str, question: str, context: str = "", pat
         if "MAINTAINERS" in hits or re.search(r"\bMAINTAINERS\b", question):
             for k, v in maintainers_section_hits(store, repo, tree, question).items():
                 _add(hits, k, v.weight, v.why)
+    # A quoted identifier names its file more surely than any plain word:
+    # it is read before the word rungs, which can only add to it.
+    if best() < 0.9:
+        for k, v in symbol_hits(store, repo, question).items():
+            _add(hits, k, v.weight, v.why)
+    if tree.files:
         if best() < 0.9:
             for k, v in area_word_hits(tree, question).items():
                 _add(hits, k, v.weight, v.why)
@@ -713,9 +815,6 @@ def resolve_paths(store: Graph, repo: str, question: str, context: str = "", pat
                         _add(hits, k, v.weight * 0.7, v.why + " (from the context)")
     if anchored:
         _drop_legal_word_hits(hits, question, path, also_paths)
-    if best() < 0.6:
-        for k, v in symbol_hits(store, repo, question).items():
-            _add(hits, k, v.weight, v.why)
     if best() < 0.6:
         for k, v in record_hits(store, repo, question).items():
             _add(hits, k, v.weight, v.why)
