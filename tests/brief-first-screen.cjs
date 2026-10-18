@@ -17,11 +17,12 @@ function page(narrowMatches) {
     document: {addEventListener() {}},
     matchMedia: () => ({matches: narrowMatches, addEventListener() {}}),
     approvalScope: () => '<section class="decision-scope"><h3>Scope of this decision</h3></section>',
-    workItemContext: () => '<details class="work-item-context"><summary>Work-item context</summary></details>',
     taskDisplayLabel: () => 'Synthetic task'};
   context.window = context;
   vm.createContext(context);
   vm.runInContext(source, context);
+  // workItemContext is brief.js's own; stand in for it after the source ran.
+  vm.runInContext(`workItemContext = () => '<details class="work-item-context"><summary>Work-item context</summary></details>'`, context);
   context.fixture = {task: {id: 't1', title: 'Synthetic task', repo: 'acme/platform', status: 'active'},
     viewer: {name: 'Lina', role: 'member'}, requester: {name: 'Requester'}, progress: {signed: 0, total: 1},
     nodes: [{node_id: 'd1', raw_status: 'pending', state: 'waiting', blocking: true, owner: 'Lina', signatures: [],

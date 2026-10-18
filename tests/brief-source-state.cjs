@@ -153,7 +153,7 @@ function fixture() {
   await test('all source and decision disclosures have distinct exact keys', () => {
     const h = harness(); h.render(fixture());
     const keys = h.details().map(el => el.dataset.keep);
-    assert.equal(keys.length, 9); // Includes persisted context, people and notes disclosures.
+    assert.equal(keys.length, 10); // Includes persisted context, people, notes and recorded-scope disclosures.
     assert(keys.every(Boolean), 'source, metadata, and dependent-decision disclosures need keys');
     assert.equal(new Set(keys).size, keys.length);
   });

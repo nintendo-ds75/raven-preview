@@ -267,7 +267,7 @@ function focusCard(f) {
     ${f.consequences ? `<div class="brief-block"><span class="label">Consequences of this decision</span><p>${prose(typeof f.consequences === 'string' ? f.consequences : JSON.stringify(f.consequences))}</p></div>` : ''}
     ${paths.length ? `<p class="brief-where">Touches ${paths.map(p => `<code>${esc(p)}</code>`).join(', ')}</p>` : ''}
     ${reasonBlock(f.why, f.node_id)}
-    <details class="brief-extra brief-scope" data-keep="scope-${esc(f.node_id)}"><summary>Recorded scope of this decision</summary>
+    <details class="brief-extra brief-scope" data-keep="recorded-scope-${esc(f.node_id)}"><summary>Recorded scope of this decision</summary>
     ${approvalScope(f)}
     ${workItemContext(f)}
     </details>
