@@ -6,9 +6,11 @@ failure is recorded and repeated, staleness shows in the evidence, the
 webhook verifies its signature and syncs one pull request."""
 
 import copy
+import functools
 import hashlib
 import hmac
 import json
+import shutil
 import subprocess
 import threading
 import unittest
@@ -110,13 +112,28 @@ def routes_for(sha: str, sha43: str = "") -> dict:
     }
 
 
+@functools.cache
+def platform_template() -> Path:
+    """The platform repository ingested once per process; each test
+    copies the file rather than ingesting again."""
+    repo, _sha = build_platform()
+    path = workdir() / "platform-template.db"
+    store = Store(path)
+    index_repo(store.graph, repo, repo_name=REPO)
+    # A copy of the file alone must be the whole database.
+    store.graph.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    store.graph.close()
+    return path
+
+
 class GitHubCase(OfflineCase):
     def setUp(self):
         super().setUp()
         self.repo, self.sha = build_platform()
-        self.store = Store(Path(self.temp.name) / "gh.db")
+        db = Path(self.temp.name) / "gh.db"
+        shutil.copyfile(platform_template(), db)
+        self.store = Store(db)
         self.graph = self.store.graph
-        index_repo(self.graph, self.repo, repo_name=REPO)
         with self.graph.transaction():
             self.priya = self.graph.add_person(*PRIYA, github_login="pnatarajan")
             self.wes = self.graph.add_person(*WES, github_login="wchen")
