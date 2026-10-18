@@ -561,7 +561,13 @@ function connections() {
     const {remote, notice, ...config} = state.mcp_config || {};
     agentStep = `<section class="setup-card">${step(1, 'Local agent connection')}<p>Authentication is off on this server, so no credential is needed. Add this to your client’s MCP settings, then give it a task in your own words.</p><pre id="mcp-config">${esc(JSON.stringify(config, null, 2))}</pre><button class="button" data-action="copy">Copy configuration</button><p class="context">Then add the Raven rule to the repository’s <code>CLAUDE.md</code> or <code>AGENTS.md</code>, so the agent starts every task in Raven:</p><pre id="agent-rule">${esc(AGENT_RULE)}</pre><button class="button" data-action="copy" data-target="#agent-rule">Copy instruction</button></section>`;
   }
-  const contextStep = `<section class="setup-card">${step(2, 'Give Raven context')}<p>Repository history tells Raven who owns what; connected sources give it evidence to cite. Connect GitHub below, or ingest a local clone with <code>./setup --repo /path/to/checkout</code>.</p></section>${deliveriesCard()}${contextSourcesCard()}`;
+  // A repository ingested at startup (./setup --repo) is step 2 already done.
+  // Measured on a fresh install: the card still read "ingest a local clone"
+  // under "No repositories connected yet", so the person could not tell.
+  const graph = state.graph || {};
+  const indexed = [...new Set((graph.repos || []).filter(r => typeof r === 'string' && r))];
+  const indexedLine = indexed.length ? `<p class="context"><strong>Already indexed:</strong> ${indexed.map(esc).join(', ')} · ${plural(graph.engineers || 0, 'person', 'people')} from its history${graph.intents ? `, ${plural(graph.intents, 'record')}` : ''}. Raven can name them now.</p>` : '';
+  const contextStep = `<section class="setup-card">${step(2, 'Give Raven context')}<p>Repository history tells Raven who owns what; connected sources give it evidence to cite.</p>${indexedLine}<p>Connect GitHub below${indexed.length ? ' to keep it current' : ''}, or ingest a local clone with <code>./setup --repo /path/to/checkout</code>.</p></section>${deliveriesCard()}${contextSourcesCard()}`;
   const peopleStep = shared
     ? `<section class="setup-card">${step(3, 'Invite the people who decide')}<p>Raven routes each decision to the person its evidence names. They answer and sign here; Slack is optional.</p></section>${workspaceAccountCard()}`
     : `<section class="setup-card">${step(3, 'Invite the people who decide')}<p>With authentication off this is a single-operator workspace. Enable authentication before exposing it to a team.</p></section>`;
