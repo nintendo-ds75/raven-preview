@@ -39,8 +39,10 @@ const plural = (count, word, words = word + 's') => `${count} ${count === 1 ? wo
 const CLIENT_NAMES = {claude: 'Claude Code', codex: 'Codex', cursor: 'Cursor'};
 const clientName = id => CLIENT_NAMES[id] || id;
 // A task's status as the page says it; the raw value ("working") stays in the API.
+// A finished task reads "Completed", the word a viewer looks for; the task
+// page keeps the caveat that the agent reported it and nobody verified it.
 const RUN_STATUS = {working: 'In progress', needs_judgment: 'Waiting for decisions', pending: 'Starting',
-  completed: 'Reported complete', abandoned: 'Closed', result_ready: 'Result ready for inspection',
+  completed: 'Completed', abandoned: 'Closed', result_ready: 'Result ready for inspection',
   failed: 'Failed', cancelled: 'Cancelled', review_required: 'Review needed', delivery_pending: 'Delivering answers',
   environment_pending: 'Preparing the environment', duplicate: 'Duplicate'};
 const runStatusLabel = status => RUN_STATUS[status] || String(status || '').replaceAll('_', ' ');

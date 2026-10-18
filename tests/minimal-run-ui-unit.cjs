@@ -295,11 +295,20 @@ function harness() {
     assert.match(html,/standing rule/i);assert.match(html,/Human Reviewer/);assert.match(html,/Needs (?:another look|review)|Review needed/i);
     const stale=h.run('taskDecision(syntheticDetail.tree.nodes[2])');assert.doesNotMatch(stale,/is-signed/);
   });
+  await test('a finished task reads Completed and keeps the reported-not-verified caveat',()=>{
+    const h=harness();h.selectTask(fixture.tree('finished-run',{status:'completed',counts:{blocking:0,total:1},
+      nodes:[fixture.node('settled',{blocking:false,authorized:true,answer:'Keep the default.',signoff:'signed',signatures:['Synthetic Reviewer']})]}));
+    const html=h.run('taskOverview()');
+    assert.match(html,/<h2>Completed<\/h2>/);assert.doesNotMatch(html,/Reported complete/);
+    assert.match(html,/Completed as reported by the agent, not verified: inspect the reported result and checks\./);
+    assert.match(h.run("runStatusLabel('completed')"),/^Completed$/,'the Tasks list pill says the same word');
+  });
   await test('terminal lifecycle remains visible alongside blocking or stale decision state',()=>{
-    for(const [status,label] of [['failed',/Failed/i],['cancelled',/Cancelled/i],['abandoned',/Closed/i],['completed',/Reported complete/i]]) {
+    for(const [status,label] of [['failed',/Failed/i],['cancelled',/Cancelled/i],['abandoned',/Closed/i],['completed',/Completed/]]) {
       for(const stale of [false,true]) {const h=harness();h.selectTask(fixture.tree('lifecycle-run',{status,
         nodes:[fixture.node('unfinished',{needs_review:stale,authorized:stale,signoff:stale?'signed':'required'})]}));
         const html=h.run('taskOverview()');assert.match(html,label,status+' lifecycle must remain visible');
+        if(status==='completed')assert.match(html,/<h2>Completed<\/h2>/,'a finished task reads Completed, the word a viewer looks for');
         assert.match(html,/1 blocker/);assert.match(html,stale?/Review needed/:/Waiting for decisions/);
         assert.match(html,/0 authorized answers/);
       }
