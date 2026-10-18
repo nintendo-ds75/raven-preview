@@ -892,6 +892,12 @@ def resolve_paths(store: Graph, repo: str, question: str, context: str = "", pat
     if best() < 0.8:
         for k, v in model_area_hits(store, repo, tree, question, context).items():
             _add(hits, k, v.weight, v.why)
+    # Nothing resolved, but the question names a MAINTAINERS section by
+    # its title: that section's people are asked, and the evidence says
+    # the area is a guess from the title, not a path.
+    if tree.files and best() < INHERITED_BELOW:
+        for k, v in maintainers_section_hits(store, repo, tree, question, guess=True).items():
+            _add(hits, k, v.weight, v.why)
     out = sorted(hits.values(), key=lambda h: (-h.weight, h.path))
     return out[:MAX_HITS]
 
@@ -906,14 +912,23 @@ _SECTION_GENERIC = {"and", "or", "the", "of", "for", "a", "an", "support", "devi
                     "misc", "other", "common", "core"}
 _AUX_PATH = re.compile(r"^(?:docs?|Documentation|tests?)/")
 SECTION_WEIGHT = 0.9
+SECTION_GUESS_WEIGHT = 0.8
 SECTION_MAX_FILES = 6
 
 
-def maintainers_section_hits(store: Graph, repo: str, tree: Tree, question: str) -> dict[str, PathHit]:
+def maintainers_section_hits(store: Graph, repo: str, tree: Tree, question: str, *,
+                             guess: bool = False) -> dict[str, PathHit]:
     """The files of the MAINTAINERS section a question names: every title
     word in the question, two shared words, or one word that only that
     section's title carries. Patterns expand against the tree, so the area
-    is real files, never a wildcard as wide as hw/."""
+    is real files, never a wildcard as wide as hw/.
+
+    As a `guess`, when no path resolved at all, the match must be the
+    whole title of two or more words, or two of its specific words: one
+    word a title happens to share with the question (page, command,
+    record, stub) names nothing. Measured on the pathless qemu replay,
+    where single shared words pointed at the wrong section in every
+    case but one."""
     import fnmatch
     rows = store.db.execute("SELECT DISTINCT section, pattern FROM listings WHERE repo=? AND kind='maintainers' "
                             "AND role != 'exclude' AND section != ''", (repo,)).fetchall()
@@ -933,26 +948,32 @@ def maintainers_section_hits(store: Graph, repo: str, tree: Tree, question: str)
         if not shared:
             continue
         distinctive = {w for w in shared if seen[w] == 1 and len(w) >= 4 and w not in _SECTION_GENERIC}
-        if ws <= q or len(shared - _SECTION_GENERIC) >= 2 or distinctive:
+        if guess:
+            if (ws <= q and len(ws) >= 2) or len(shared - _SECTION_GENERIC) >= 2:
+                scored.append((len(shared) / len(ws), len(shared), sec))
+        elif ws <= q or len(shared - _SECTION_GENERIC) >= 2 or distinctive:
             scored.append((len(shared) / len(ws), len(shared), sec))
     hits: dict[str, PathHit] = {}
     ranked = sorted(scored, reverse=True)
     # The best match only, unless two sections match equally well.
     chosen = [sec for ratio, n, sec in ranked if ranked and (ratio, n) == ranked[0][:2]][:2]
+    weight = SECTION_GUESS_WEIGHT if guess else SECTION_WEIGHT
     for sec in chosen:
+        why = (f"no path resolved; the question names the MAINTAINERS section {sec!r}, whose files stand in for the area"
+               if guess else f"the question changes the MAINTAINERS section {sec!r}")
         found = 0
         for pat in patterns[sec]:
             if found >= SECTION_MAX_FILES:
                 break
             pat = pat.lstrip("/")
             if pat.endswith("/") and pat in tree.dirs:
-                _add(hits, pat, SECTION_WEIGHT, f"the question changes the MAINTAINERS section {sec!r}")
+                _add(hits, pat, weight, why)
                 found += 1
                 continue
             # Source before documentation and tests: they show who owns the code.
             for f in sorted(tree.files, key=lambda f: (bool(_AUX_PATH.match(f)), f)):
                 if fnmatch.fnmatch(f, pat):
-                    _add(hits, f, SECTION_WEIGHT, f"the question changes the MAINTAINERS section {sec!r}")
+                    _add(hits, f, weight, why)
                     found += 1
                     if found >= SECTION_MAX_FILES:
                         break
