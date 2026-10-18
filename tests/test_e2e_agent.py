@@ -12,8 +12,10 @@ subprocess for the restart, and over HTTP for the shared Raven's
 bounded wait."""
 from test_delivery import confirmation as readback_confirmation
 
+import functools
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -66,6 +68,22 @@ def build_ledger() -> Path:
     return repo
 
 
+@functools.cache
+def ledger_template() -> Path:
+    """The ledger ingested once per process, in conversation mode; each
+    test copies the file rather than ingesting again."""
+    repo = build_ledger()
+    path = workdir() / "ledger-template.db"
+    store = Store(path)
+    # Exercise the supported opt-in conversational Slack workflow.
+    store.graph.set_setting("slack_interaction_mode", "conversation")
+    index_repo(store.graph, repo, repo_name=REPO)
+    # A copy of the file alone must be the whole database.
+    store.graph.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    store.graph.close()
+    return path
+
+
 class ToolError(Exception):
     pass
 
@@ -99,11 +117,10 @@ class E2ECase(OfflineCase):
     def setUp(self):
         super().setUp()
         self.repo = build_ledger()
-        self.store = Store(Path(self.temp.name) / "e2e.db")
+        db = Path(self.temp.name) / "e2e.db"
+        shutil.copyfile(ledger_template(), db)
+        self.store = Store(db)
         self.graph = self.store.graph
-        # Exercise the supported opt-in conversational Slack workflow.
-        self.graph.set_setting("slack_interaction_mode", "conversation")
-        index_repo(self.graph, self.repo, repo_name=REPO)
         self.slack = FakeSlack()
         self.delivery = self.store.connect_delivery(self.slack, base_url="https://bridge.acme.test")
         with self.graph.transaction():
@@ -497,7 +514,7 @@ class SharedWaitTests(E2ECase):
     def setUp(self):
         super().setUp()
         self.server = make_server(self.store, port=0, wait_cap=0.3)
-        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        thread = threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         thread.start()
 
         def close():
