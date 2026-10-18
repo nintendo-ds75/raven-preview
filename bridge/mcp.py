@@ -439,14 +439,25 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None, principal
     if args.get('task_id'):
         visibility.remember_reads(store, args['task_id'], result)
     result = visibility.public(store, result)
-    # A read of the whole tree: a wait on one node shows only that node.
-    if name == "bridge_get_tree" or (name == "bridge_wait" and not args.get("node_id")):
+    # A read of the whole tree acknowledges the unread decisions it returned
+    # in full. A wait on one node shows only that node and its follow-ups:
+    # what it returned in full is read too, and nothing else is. Measured on
+    # a demo run: the wait returned the owner's signed answer, the agent
+    # built on it, and the finish was still refused for not having seen it.
+    if name == "bridge_get_tree" or name == "bridge_wait":
         shown = canvas._flatten(result.get('nodes') or []) if name == 'bridge_get_tree' else result.get('changed') or []
-        result['read_acknowledged'] = canvas.note_agent_read(
-            store, args.get('task_id', ''), result.get('observed_at', ''), result.get('observed_revision'),
-            {n['node_id'] for n in shown if n.get('node_id') and 'answer' in n and not n.get('withheld')})
-        if not result['read_acknowledged']:
-            result['next'] += ' This response omitted unread decisions; read bridge_get_tree before finishing.'
+        full = {n['node_id'] for n in shown if n.get('node_id') and 'answer' in n and not n.get('withheld')}
+        revision = result.get('observed_revision')
+        one_node = name == "bridge_wait" and bool(args.get("node_id"))
+        if one_node:
+            revision = {did: rev for did, rev in revision.items() if did in full} if isinstance(revision, dict) else None
+        if not one_node or full:
+            result['read_acknowledged'] = canvas.note_agent_read(
+                store, args.get('task_id', ''), result.get('observed_at', ''), revision, full)
+            if not result['read_acknowledged']:
+                result['next'] += ' This response omitted unread decisions; read bridge_get_tree before finishing.'
+            elif one_node and canvas.unread_by_agent(store, args.get('task_id', '')):
+                result['next'] += ' Other decisions on this task changed since you last read it; read bridge_get_tree before finishing.'
     return result
 
 

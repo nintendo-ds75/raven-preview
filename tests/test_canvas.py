@@ -2374,6 +2374,38 @@ class ProtocolTests(CanvasCase):
         done = call("bridge_finish_task", {"task_id": t["task_id"]})
         self.assertEqual(done["status"], "completed")
 
+    def test_an_answer_a_wait_on_the_node_returned_in_full_counts_as_read(self):
+        """Measured on the demo run: bridge_wait on the node returned the
+        owner's signed answer in full, the agent built its change on it,
+        and bridge_finish_task was refused once for an answer it had not
+        seen, costing a re-read of the tree and twenty seconds. What a
+        wait returned in full is read; the guard stays for what it did
+        not return."""
+        def call(name, args):
+            r = dispatch(self.store, {"jsonrpc": "2.0", "id": 9, "method": "tools/call",
+                                      "params": {"name": name, "arguments": args}})
+            return r["result"]["isError"], r["result"]["content"][0]["text"]
+
+        _, text = call("bridge_start_task", {"title": "Drop the legacy header from hw/net/virtio-net.c, breaking compat",
+                                             "repo": "acme/qemulike", "paths": "hw/net/virtio-net.c"})
+        task = json.loads(text)["task_id"]
+        _, text = call("bridge_add_node", {"task_id": task, "question": "Should hw/net/virtio-net.c drop the legacy header?",
+                                           "paths": "hw/net/virtio-net.c", "client_ref": "a"})
+        node = json.loads(text)
+        _, text = call("bridge_get_tree", {"task_id": task})
+        since = json.loads(text)["observed_at"]
+        row = self.store.get_decision(node["node_id"])
+        self.store.answer(node["node_id"], {"answer": "Keep it one more release", "rationale": "old guests",
+                                            "signed_by": "Kwame Asante", "expected_updated_at": row["updated_at"]})
+        _, text = call("bridge_wait", {"task_id": task, "node_id": node["node_id"], "since": since, "timeout": "0"})
+        waited = json.loads(text)
+        self.assertEqual([c["answer"] for c in waited["changed"]], ["Keep it one more release"])
+        self.assertTrue(waited["read_acknowledged"])
+        self.assertNotIn("read bridge_get_tree before finishing", waited["next"])
+        refused, text = call("bridge_finish_task", {"task_id": task})
+        self.assertFalse(refused, text)
+        self.assertEqual(json.loads(text)["status"], "completed")
+
     def test_an_answer_the_agent_never_read_holds_the_finish(self):
         """Measured on a real task: the owner answered in 37 seconds and the
         agent built the opposite for fifteen edits before it read the tree.
@@ -2407,11 +2439,16 @@ class ProtocolTests(CanvasCase):
         self.assertTrue(refused)
         self.assertIn(node["node_id"], text)
         self.assertIn("Read bridge_get_tree", text)
-        # A wait on one node shows that node only: not a read of the tree.
-        call("bridge_wait", {"task_id": task, "node_id": node["node_id"], "timeout": "0"})
+        # A wait on one node shows that node only: its answer is read, the
+        # other node's is not, and the wait says so.
+        _, text = call("bridge_wait", {"task_id": task, "node_id": node["node_id"], "timeout": "0"})
+        waited = json.loads(text)
+        self.assertTrue(waited["read_acknowledged"])
+        self.assertIn("Other decisions on this task changed since you last read it", waited["next"])
         refused, text = call("bridge_finish_task", {"task_id": task})
         self.assertTrue(refused)
         self.assertIn(other["node_id"], text)
+        self.assertNotIn(node["node_id"], text)
         # An empty whole-task wait cannot acknowledge answers that arrived
         # before the call and were not returned. A full tree can.
         _, text = call("bridge_wait", {"task_id": task, "timeout": "0"})
