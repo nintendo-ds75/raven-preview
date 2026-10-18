@@ -11,7 +11,7 @@ against questions already pending.
 import json
 import sys
 
-from . import canvas
+from . import canvas, metrics
 from .config import load
 from .host_client import DECISION_GUIDANCE
 from .ingest import index_repo
@@ -319,7 +319,7 @@ HANDLERS = {
         "context": __import__('bridge.context_connectors', fromlist=['status']).status(store),
         "context_sources": __import__('bridge.sources', fromlist=['report']).report(store),
         "readiness": store.readiness(),
-        "metrics": __import__("bridge.metrics", fromlist=["summary"]).summary(store),
+        "metrics": metrics.summary(store),
         "github": _github_status(store),
         "sources": [dict(r) for r in store.graph.db.execute("SELECT repo,kind FROM connector_sources ORDER BY repo,kind")],
         "records": [dict(r) for r in store.graph.db.execute("SELECT repo,kind,count(*) AS count FROM intents GROUP BY repo,kind ORDER BY repo,kind")],
