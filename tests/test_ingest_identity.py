@@ -29,14 +29,15 @@ TABLES = ("artifacts", "change_paths", "change_people", "changes", "connector_so
           "source_versions")
 _RANDOM_ID = re.compile(r"\b[0-9a-f]{32}\b")
 
-# Recorded with the per-read implementation, for each fixture unpinned
-# (the working tree) and pinned to HEAD (the object store). The commit
-# dates in the rows are spelled by git_iso, so the digests hold across
-# git versions (2.46+ prints a UTC offset as Z, older ones as +00:00).
+# For each fixture unpinned (the working tree) and pinned to HEAD (the
+# object store). First recorded with the per-read implementation and
+# matched by the batched one; re-recorded once the rows were made
+# environment-independent (commit dates spelled by git_iso, ownership
+# weights rounded), identical on macOS and Linux, Python 3.11 and 3.13.
 GOLDEN = {
-    "nodelike": {"": "9f3242f3f4aa0620", "HEAD": "0ab748586f9906a1"},
-    "qemulike": {"": "cacbaddb2c57ef0e", "HEAD": "a461deb80eead3ec"},
-    "synthco": {"": "df76894de864564b", "HEAD": "f0322aa1c9185333"},
+    "nodelike": {"": "941db3236072f0cc", "HEAD": "e461dbbd827e3f70"},
+    "qemulike": {"": "ea505d31a718cb34", "HEAD": "dea8b214ad02dd91"},
+    "synthco": {"": "cc07ddf2c595d1a5", "HEAD": "1e3d5ae9aad4967c"},
 }
 GOLDEN_STATS = {
     "nodelike": {"bots_skipped": 0, "commits": 45, "files": 16, "integrators": [], "maintainers": 0,
@@ -53,7 +54,10 @@ def index_rows(graph) -> dict[str, list[str]]:
     for table in TABLES:
         cols = [r[1] for r in graph.db.execute(f"PRAGMA table_info({table})")]
         keep = [c for c in cols if not c.endswith("_at") and not c.startswith("valid_")]
-        rows = [tuple(r) for r in graph.db.execute(f"SELECT {', '.join(keep)} FROM {table}")]
+        # Ownership weights are sums of floats; Python 3.12 made sum()
+        # compensated, which moves their last digit, so they are rounded.
+        rows = [tuple(round(v, 9) if isinstance(v, float) else v for v in r)
+                for r in graph.db.execute(f"SELECT {', '.join(keep)} FROM {table}")]
         if table == "connector_sources":
             rows = [(repo, kind, "" if kind == "git" else locator) for repo, kind, locator in rows]
         out[table] = sorted(_RANDOM_ID.sub("<id>", json.dumps(list(r), default=str)) for r in rows)
