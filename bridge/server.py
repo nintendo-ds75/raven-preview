@@ -358,6 +358,16 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     except ValueError:
                         raise Invalid("limit must be an integer")
                     return self.send(200, {"ownership": store.ownership(query.get("repo", [""])[0], limit=limit)})
+                if url.path == "/api/metrics":
+                    # What Raven saved, from the ledger: member-readable,
+                    # no admin standing needed to see the value.
+                    from .metrics import summary as saved_summary
+                    query = parse_qs(url.query)
+                    try:
+                        value = saved_summary(store, repo=query.get("repo", [""])[0], days=query.get("days", [""])[0])
+                    except Invalid as error:
+                        return self.send(400, {"error": str(error)})
+                    return self.send(200, value)
                 if url.path == "/api/pending":
                     from .mcp import _list_pending
                     query = parse_qs(url.query)

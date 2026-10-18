@@ -205,6 +205,11 @@ def load_tests(loader, tests, pattern):
     for cls in (DecisionReadTests, DecisionReadHTTPTests):
         case = type('Postgres' + cls.__name__, (PostgresIsolation, cls), {'__module__': __name__})
         suite.addTests(loader.loadTestsFromTestCase(case))
+    # The value numbers are read from the ledger with one query per table;
+    # the percentile and re-ask folding is Python, the same on both backends.
+    from test_metrics import MetricsTests
+    suite.addTests(loader.loadTestsFromTestCase(
+        type('PostgresMetricsTests', (PostgresIsolation, MetricsTests), {'__module__': __name__})))
     # Condition projection units stay native; persisted facts/reuse contracts
     # run against the real backend through the same isolation wrapper.
     from test_repository_conditions import RepositoryRuleTests

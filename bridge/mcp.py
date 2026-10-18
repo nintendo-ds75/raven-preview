@@ -319,6 +319,7 @@ HANDLERS = {
         "context": __import__('bridge.context_connectors', fromlist=['status']).status(store),
         "context_sources": __import__('bridge.sources', fromlist=['report']).report(store),
         "readiness": store.readiness(),
+        "metrics": __import__("bridge.metrics", fromlist=["summary"]).summary(store),
         "github": _github_status(store),
         "sources": [dict(r) for r in store.graph.db.execute("SELECT repo,kind FROM connector_sources ORDER BY repo,kind")],
         "records": [dict(r) for r in store.graph.db.execute("SELECT repo,kind,count(*) AS count FROM intents GROUP BY repo,kind ORDER BY repo,kind")],
