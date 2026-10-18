@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fixtures import MAINTAINERS, NODE_PEOPLE, PEOPLE, ROOT, OfflineCase  # noqa: E402
+from fixtures import MAINTAINERS, NODE_PEOPLE, PEOPLE, ROOT, OfflineCase, run_git  # noqa: E402
 
 from evals import pseudonyms  # noqa: E402
 
@@ -173,6 +173,40 @@ class PseudonymTests(OfflineCase):
         self.assertIn(f"MAINTAINERS lists {pseudonyms.label(PEOPLE['oriel'][0])}", " | ".join(after[1]))
         net = route(g, "qemulike", "Should hw/net/virtio-net.c drop the legacy header?")
         self.assertEqual(net[0], pseudonyms.label(PEOPLE["kwame"][0]), net[1])
+
+    def test_codeowners_logins_keep_their_noreply_link_after_pseudonymizing(self):
+        """A CODEOWNERS entry is a bare login. Raven joins it to the person
+        whose commits carry that login in a GitHub noreply address; the
+        pseudonyms must move both sides of that join together."""
+        from bridge.ingest import index_repo
+        from bridge.routing import route
+        from bridge.store import Store
+        repo = Path(self.temp.name) / "ownedco"
+        (repo / "billing").mkdir(parents=True)
+        run_git(repo, "init", "-q", "-b", "main")
+        (repo / "CODEOWNERS").write_text("billing/ @codhiambo\n")
+        owner = ("Cyrus Odhiambo", "1234+codhiambo@users.noreply.github.com")
+        other = ("Wanjiru Kamau", "wanjiru@owned.example")
+        for day, (who, name) in enumerate([(owner, "meter.py"), (other, "meter.py"), (other, "invoice.py"), (owner, "pricing.py")]):
+            path = repo / "billing" / name
+            path.write_text((path.read_text() if path.exists() else "") + f"# change {day}\n")
+            stamp = f"2024-01-{day + 1:02d}T12:00:00+00:00"
+            run_git(repo, "add", "-A")
+            run_git(repo, "commit", "-q", "-m", f"billing: change {day}", env={
+                "GIT_AUTHOR_NAME": who[0], "GIT_AUTHOR_EMAIL": who[1], "GIT_AUTHOR_DATE": stamp,
+                "GIT_COMMITTER_NAME": who[0], "GIT_COMMITTER_EMAIL": who[1], "GIT_COMMITTER_DATE": stamp})
+        store = Store(Path(self.temp.name) / "ownedco.db")
+        index_repo(store.graph, repo)
+        question = "Should billing/meter.py round usage up to the next unit?"
+        before = route(store.graph, "ownedco", question, path="billing/meter.py")
+        self.assertEqual(before[0], owner[0], before)
+        self.assertIn(f"CODEOWNERS lists {owner[0]} for billing/", " | ".join(before[1]))
+        pseudonyms.pseudonymize(store.graph)
+        after = route(store.graph, "ownedco", question, path="billing/meter.py")
+        self.assertEqual(after[0], pseudonyms.label(owner[0]), after)
+        self.assertIn(f"CODEOWNERS lists {pseudonyms.label(owner[0])} for billing/", " | ".join(after[1]))
+        listed = {r[0] for r in store.graph.db.execute("SELECT person FROM listings WHERE kind='codeowners'")}
+        self.assertEqual(listed, {pseudonyms.handle("codhiambo")})
 
     def test_a_simulated_directory_lists_pseudonymous_members_only(self):
         store = self.warm_store("qemulike")

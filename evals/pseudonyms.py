@@ -118,12 +118,24 @@ def learn_graph(graph):
         ('gh_users', 'name', 'email', 'login')):
         for row in graph.db.execute(f'SELECT * FROM {table}'):
             scrub.learn(row[name], row[address], row[login] if login else '')
-    for row in graph.db.execute('SELECT person, email FROM listings'):
-        if not is_team_handle(row['person']):
-            scrub.learn('' if row['person'].startswith('@') else row['person'], row['email'],
-                        row['person'].lstrip('@') if row['person'].startswith('@') else '')
-    for row in graph.db.execute('SELECT engineer FROM ownership'):
-        scrub.learn(row['engineer'])
+    for row in graph.db.execute('SELECT kind, person, email FROM listings'):
+        person = row['person']
+        if is_team_handle(person):
+            continue
+        if person.startswith('@'):
+            scrub.learn('', row['email'], person.lstrip('@'))
+        elif row['kind'] == 'codeowners':
+            # CODEOWNERS names logins (ingest drops the @) or addresses, never
+            # display names. Routing joins the login to the person whose
+            # noreply address carries it, so both sides take the same handle.
+            scrub.learn('', person if '@' in person else row['email'], '' if '@' in person else person)
+        else:
+            scrub.learn(person, row['email'])
+    for row in graph.db.execute('SELECT engineer, source FROM ownership'):
+        if row['source'] == 'codeowners' and ' ' not in row['engineer'] and '@' not in row['engineer']:
+            scrub.learn(login=row['engineer'])
+        else:
+            scrub.learn(row['engineer'])
     return scrub
 
 
