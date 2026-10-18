@@ -747,6 +747,12 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     if not self.agent_may(path):
                         raise Forbidden(403, "An agent credential writes nodes and reads the tree; a person answers, "
                                              "signs, hands on and administers. Sign in as yourself for this")
+                    if "owner_id" in data or "owner" in data:
+                        # Naming the owner of a new node is assigning it. The
+                        # MCP tool has no such field; the inbox's New request
+                        # form, a signed-in person, is the one caller that does.
+                        raise Forbidden(403, "An agent credential does not choose who decides: Raven routes the node, "
+                                             "and a person assigns or hands it on")
                 else:
                     self.require("member")
                 if path == '/api/ask':
