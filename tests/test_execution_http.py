@@ -80,6 +80,78 @@ class ExecutionHTTPTests(unittest.TestCase):
             urlopen(webhook + "/api/state")
         self.assertEqual(failure.exception.code, 501)
 
+    def test_signed_ingress_refuses_what_is_not_a_signed_event(self):
+        """The dedicated ingress answers only its own path, reads only a
+        bounded body, and acknowledges nothing it did not persist."""
+        verified = []
+
+        def verify(*, payload, headers):
+            verified.append(payload)
+
+        class Unavailable:
+            def receive_event(self, event):
+                raise RuntimeError("database unavailable")
+
+        webhook = self.serve(make_webhook_server(self.service, verify, 0))
+        broken = self.serve(make_webhook_server(Unavailable(), verify, 0))
+
+        def post(url, body, headers=None):
+            try:
+                with urlopen(Request(url, data=body, headers=headers or {})) as response:
+                    return response.status
+            except HTTPError as error:
+                return error.code
+
+        # Another path is not an endpoint; nothing sent to it is read.
+        self.assertEqual(post(webhook + "/webhooks/github", b'{"data": {}}'), 404)
+        # An empty body, or one declared larger than 64 KiB, is refused
+        # before the signature is even checked.
+        self.assertEqual(post(webhook + "/webhooks/openai", b""), 413)
+        self.assertEqual(post(webhook + "/webhooks/openai", b"{}", {"Content-Length": "65537"}), 413)
+        self.assertEqual(verified, [])
+        # A verified body that is not JSON, or not an event object carrying
+        # a data object, is the sender's error.
+        self.assertEqual(post(webhook + "/webhooks/openai", b"not json"), 400)
+        self.assertEqual(post(webhook + "/webhooks/openai", b'["agent.session.idle"]'), 400)
+        self.assertEqual(post(webhook + "/webhooks/openai", b'{"type": "agent.session.idle", "data": "x"}'), 400)
+        self.assertEqual(len(verified), 3)
+        # An event type the service does not track is acknowledged and dropped.
+        unknown = b'{"id": "e1", "type": "agent.session.unknown", "data": {"id": "s"}}'
+        self.assertEqual(post(webhook + "/webhooks/openai", unknown), 204)
+        with self.store.connect() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM provider_events").fetchone()[0], 0)
+        # Persistence that fails is a 503, never an acknowledgement, so the
+        # provider sends the event again.
+        tracked = b'{"id": "e2", "type": "agent.session.idle", "data": {"id": "s"}}'
+        self.assertEqual(post(broken + "/webhooks/openai", tracked), 503)
+
+    def test_webhook_ingress_needs_the_secret_and_verifies_with_the_client(self):
+        from types import SimpleNamespace
+        from bridge.store import Invalid
+        from bridge.webhooks import start_webhooks
+        seen = []
+
+        def verify(*, payload, headers):
+            seen.append(headers.get("webhook-signature"))
+            if headers.get("webhook-signature") != "valid":
+                raise ValueError("Bad signature")
+
+        client = SimpleNamespace(webhook_secret="", webhooks=SimpleNamespace(verify_signature=verify))
+        with self.assertRaisesRegex(Invalid, "OPENAI_WEBHOOK_SECRET"):
+            start_webhooks(self.service, client, 0)
+        client.webhook_secret = "whsec_test"
+        server = start_webhooks(self.service, client, 0)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        url = f"http://127.0.0.1:{server.server_port}/webhooks/openai"
+        body = b'{"id": "e3", "type": "agent.session.idle", "data": {"id": "s"}}'
+        with self.assertRaises(HTTPError) as failure:
+            urlopen(Request(url, data=body, headers={"webhook-signature": "bad"}))
+        self.assertEqual(failure.exception.code, 400)
+        with urlopen(Request(url, data=body, headers={"webhook-signature": "valid"})) as response:
+            self.assertEqual(response.status, 204)
+        self.assertEqual(seen, ["bad", "valid"])
+
     def test_artifact_ids_cannot_cross_run_boundaries(self):
         run = self.submit()
         with self.assertRaises(HTTPError) as failure:
