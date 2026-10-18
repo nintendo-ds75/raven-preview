@@ -310,6 +310,8 @@ def _is_requester(name: str, email: str, req: tuple[set[str], set[str]] | None) 
 
 MERGE_BASE_WEIGHT = 0.25
 MERGE_CORROBORATION_SHARE = 0.25
+CORROBORATION_MIN_CHANGES = 2
+RECORDED_APPROVAL_SHARE = 0.5
 
 
 def _merge_distribution(rows: list, now: float) -> tuple[float, dict[str, float]]:
@@ -329,11 +331,44 @@ def _merge_distribution(rows: list, now: float) -> tuple[float, dict[str, float]
     return sum(weight for weight, _ in events.values()), dict(counts)
 
 
-def _merge_weights(rows: list, now: float, global_distribution: tuple) -> dict[str, float]:
+GATEKEEPER_BREADTH = 0.5
+
+
+def _merge_breadth(store: Graph, repo: str) -> dict[str, float]:
+    """Per merger, the share of the repository's merged-into top-level
+    areas their merges reach: a release manager reaches nearly all of
+    them, a subsystem maintainer who merges their own tree one."""
+    def load():
+        return store.db.execute(
+            "SELECT DISTINCT p.engineer AS engineer, CASE WHEN instr(cp.path, '/') > 0 "
+            "THEN substr(cp.path, 1, instr(cp.path, '/') - 1) ELSE '' END AS area "
+            "FROM change_people p JOIN change_paths cp ON cp.repo = p.repo AND cp.sha = p.sha "
+            "WHERE p.repo = ? AND p.role = 'merger'", (repo,)).fetchall()
+
+    def build(rows):
+        areas: dict[str, set[str]] = defaultdict(set)
+        every: set[str] = set()
+        for r in rows:
+            if _is_machine_author(r["engineer"]):
+                continue
+            areas[_norm_person(r["engineer"])].add(r["area"])
+            every.add(r["area"])
+        return {person: len(seen) / len(every) for person, seen in areas.items()} if every else {}
+    return store.memo(repo, "merge_breadth", (), load, build)
+
+
+def _merge_weights(rows: list, now: float, global_distribution: tuple,
+                   breadth: dict[str, float] | None = None) -> dict[str, float]:
     """General merging is weak evidence. Area concentration or independent
-    authorship/review restores its weight. Never discard the underlying rows."""
+    authorship/review restores its weight. Never discard the underlying rows.
+    Someone who merges a broad share of the repository into most of its
+    areas is its gatekeeper: concentration in one scope says nothing about
+    them (in a small scope their few merges are all of it), only their own
+    patches and reviews there do. Measured on qemu: the release manager's
+    three merges were 93% of a seven-change file's approval."""
     global_total, global_counts = global_distribution
     local_total, local_counts = _merge_distribution(rows, now)
+    breadth = breadth or {}
     # A merge is not independent corroboration of itself. Count each person
     # once per non-merge change even if they authored and reviewed it.
     merge_shas = {r["sha"] for r in rows if r["role"] == "merger"}
@@ -348,16 +383,36 @@ def _merge_weights(rows: list, now: float, global_distribution: tuple) -> dict[s
         independent[row["sha"]][1].add(_norm_person(row["engineer"]))
     independent_total = sum(w for w, _ in independent.values())
     participation: dict[str, float] = defaultdict(float)
+    participation_n: dict[str, int] = defaultdict(int)
     for weight, people in independent.values():
         for person in people:
             participation[person] += weight
+            participation_n[person] += 1
+    # Changes the area's own people accepted on the record (an accepting
+    # committer, a review trailer): where that is how changes land, a
+    # merge on top of them integrates, it does not approve. Where commits
+    # carry no approval (pull requests squashed or merged as they are),
+    # the merge is the approval.
+    approved_shas = {r["sha"] for r in rows if r["role"] in APPROVAL_ROLES and r["role"] != "merger"
+                     and not _is_machine_author(r["engineer"])}
+    recorded = sum(w for sha, (w, _) in independent.items() if sha in approved_shas)
+    recorded_share = recorded / independent_total if independent_total else 0.0
     factors = {}
     for person, count in local_counts.items():
         local_share = count / local_total if local_total else 0.0
         global_share = global_counts.get(person, 0.0) / global_total if global_total else 0.0
         specialization = max(0.0, local_share - global_share) / max(1e-9, 1.0 - global_share)
         corroboration = participation[person] / independent_total if independent_total else 0.0
-        support = min(1.0, max(specialization, corroboration / MERGE_CORROBORATION_SHARE))
+        # One patch is not a pattern, two begin one: a share of a handful
+        # of changes corroborates only as far as those changes go.
+        corroborated = min(corroboration / MERGE_CORROBORATION_SHARE, participation_n[person] / CORROBORATION_MIN_CHANGES)
+        gatekeeper = global_share >= BROAD_MERGER_SHARE and breadth.get(person, 0.0) > GATEKEEPER_BREADTH
+        if gatekeeper and recorded_share >= RECORDED_APPROVAL_SHARE:
+            support = 0.0
+        elif gatekeeper:
+            support = min(1.0, corroborated)
+        else:
+            support = min(1.0, max(specialization, corroborated))
         factors[person] = MERGE_BASE_WEIGHT + (1.0 - MERGE_BASE_WEIGHT) * support
     return factors
 
@@ -373,9 +428,10 @@ def _scope_aggregate(store: Graph, repo: str, scope: str, now: float) -> dict:
     # A write in another area changes specialization even if this scope's
     # rows do not change (including writes from another DB connection).
     merge_key = (global_distribution[0], tuple(sorted(global_distribution[1].items())))
+    breadth = _merge_breadth(store, repo)
 
     def build(rows):
-        merge_weights = _merge_weights(rows, now, global_distribution)
+        merge_weights = _merge_weights(rows, now, global_distribution, breadth)
         by_sha: dict[str, list] = defaultdict(list)
         for r in rows:
             by_sha[r["sha"]].append(r)
