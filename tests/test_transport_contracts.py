@@ -63,7 +63,7 @@ class RetryAfterTests(DeliveryCase):
 class MCPVersionTests(DeliveryCase):
     def test_http_rejects_unsupported_version_and_accepts_negotiated_version(self):
         server = make_server(self.store, 0)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         thread.start()
         try:
             url = 'http://127.0.0.1:' + str(server.server_port) + '/mcp'
@@ -108,7 +108,7 @@ class MCPVersionTests(DeliveryCase):
 
     def test_http_malformed_params_match_stdio_without_internal_errors(self):
         server = make_server(self.store, 0)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         thread.start()
         try:
             url = 'http://127.0.0.1:' + str(server.server_port) + '/mcp'

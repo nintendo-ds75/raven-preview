@@ -306,7 +306,7 @@ class AirweaveHTTPTests(OfflineCase):
                 self.send_response(200); self.end_headers()
             def log_message(self, *args): pass
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread = threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         self.thread.start()
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)

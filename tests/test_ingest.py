@@ -102,7 +102,7 @@ class IngestTests(OfflineCase):
 
     def test_ownership_is_served_on_its_own_route_not_in_the_polled_state(self):
         server = make_server(self.store, port=0)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         thread.start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)

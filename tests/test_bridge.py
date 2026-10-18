@@ -220,7 +220,7 @@ class HTTPTests(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory()
         cls.store = Store(Path(cls.temp.name) / "http.db")
         cls.server = make_server(cls.store, 0)
-        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
+        cls.thread = threading.Thread(target=cls.server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         cls.thread.start()
         cls.url = f"http://127.0.0.1:{cls.server.server_port}"
 

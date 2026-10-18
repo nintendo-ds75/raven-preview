@@ -114,7 +114,7 @@ class SlackProvenanceTests(ProvenanceAssertions, DeliveryCase):
         self.addCleanup(worker.stop)
         self.secret = 'synthetic-provenance-signing-secret'
         self.server = ready_server(self.store, port=0, slack_signing_secret=self.secret)
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread = threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         self.thread.start()
         self.addCleanup(self.stop_server)
 

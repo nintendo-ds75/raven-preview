@@ -136,7 +136,7 @@ class VisibilityTests(OfflineCase):
                                                   'session_id': 'provider-session'},
                                   api=SimpleNamespace(artifact_content=read))
         server = ready_server(self.store, port=0, executions=service)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         thread.start()
         self.addCleanup(lambda: (server.shutdown(), server.server_close(), thread.join()))
         url = f'http://127.0.0.1:{server.server_port}/api/executions/{self.task}/artifacts/patch'

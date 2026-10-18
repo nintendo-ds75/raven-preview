@@ -317,7 +317,7 @@ class TeamsTests(OfflineCase):
 
     def test_http_callback_needs_bot_jwt_not_admin_bearer(self):
         server = ready_server(self.store, port=0, teams_adapter=self.delivery)
-        runner = threading.Thread(target=server.serve_forever, daemon=True); runner.start()
+        runner = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True); runner.start()
         self.addCleanup(server.server_close); self.addCleanup(server.shutdown)
         endpoint = f"http://127.0.0.1:{server.server_address[1]}/webhooks/teams"
         for token, expected in (("Bearer admin-or-shared-secret", 403), (self.token(), 200)):

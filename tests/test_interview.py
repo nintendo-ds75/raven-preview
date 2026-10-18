@@ -369,7 +369,7 @@ class InterviewHTTPTests(InterviewTests):
         self.auth = Auth(self.store, enabled=True)
         self.token = self.auth.create_token(self.person, kind='human')['token']
         self.server = ready_server(self.store, port=0, auth=self.auth)
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True).start()
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
         self.base = f'http://127.0.0.1:{self.server.server_port}'

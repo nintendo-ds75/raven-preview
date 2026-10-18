@@ -360,7 +360,7 @@ class RecordsAndTeamsTests(PortalCase):
         self.assertIn("record: <what was decided>", self.slack.messages[-1]["text"])
         # Over HTTP too.
         server = make_server(self.store, port=0)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         thread.start()
         self.addCleanup(lambda: (server.shutdown(), server.server_close(), thread.join()))
         url = f"http://127.0.0.1:{server.server_port}"

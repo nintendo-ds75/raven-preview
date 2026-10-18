@@ -739,7 +739,7 @@ class CapturedSlackHTTPTests(CaptureCase):
         super().setUp()
         self.secret = 'synthetic-slack-signing-secret'
         self.server = ready_server(self.store, port=0, slack_signing_secret=self.secret)
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread = threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         self.thread.start()
         self.addCleanup(lambda: (self.server.shutdown(), self.server.server_close(), self.thread.join()))
 

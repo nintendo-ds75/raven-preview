@@ -64,7 +64,7 @@ class GitHubAppJourney(unittest.TestCase):
         self.auth = Auth(self.store, enabled=False)
         self.server = make_server(self.store, 0, auth=self.auth,
                                   github_app=self.connector, github_syncer=self.syncer)
-        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        thread = threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         thread.start()
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)

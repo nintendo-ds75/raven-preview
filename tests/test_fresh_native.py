@@ -15,7 +15,7 @@ class FreshNativeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "new.db")
             server = make_server(store, 0)
-            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
             thread.start()
             try:
                 base = "http://127.0.0.1:" + str(server.server_port)

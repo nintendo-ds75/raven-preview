@@ -58,7 +58,7 @@ class OwnerContextStorageTests(OwnerContextFixture, OfflineCase):
 
     def test_actual_decision_and_brief_wire_json_is_strict_for_unsafe_numbers(self):
         server = ready_server(self.store, port=0)
-        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         worker.start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)

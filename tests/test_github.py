@@ -331,7 +331,7 @@ class WebhookTests(GitHubCase):
     def setUp(self):
         super().setUp()
         self.server = make_server(self.store, port=0, github_webhook_secret=self.SECRET, github_api=self.api)
-        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        thread = threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         thread.start()
 
         def close():

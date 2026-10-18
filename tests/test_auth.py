@@ -378,7 +378,7 @@ class BindingTests(OfflineCase):
         store.graph.set_setting('workspace_name', 'Test workspace')
         with patch.dict(os.environ, {"BRIDGE_ADMIN_TOKEN": BOOTSTRAP}):
             server = make_server(store, port=0, auth=Auth(store, enabled=True, public_url=public_url))
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         thread.start()
         self.addCleanup(server.shutdown)
         return server.server_port

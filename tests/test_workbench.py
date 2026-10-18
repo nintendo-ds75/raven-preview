@@ -285,7 +285,7 @@ class WorkbenchTests(OfflineCase):
     def test_authenticated_viewers_and_agent_tokens_cannot_start_browser_agents(self):
         auth = Auth(self.store, enabled=True)
         server = ready_server(self.store, 0, auth=auth, workbench=self.service)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         thread.start()
         base = 'http://127.0.0.1:' + str(server.server_port)
         try:
@@ -340,7 +340,7 @@ class WorkbenchTests(OfflineCase):
     def test_http_auth_csrf_and_task_creation(self):
         auth = Auth(self.store, enabled=False)
         server = ready_server(self.store, 0, auth=auth, workbench=self.service)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         thread.start()
         base = 'http://127.0.0.1:' + str(server.server_port)
         try:

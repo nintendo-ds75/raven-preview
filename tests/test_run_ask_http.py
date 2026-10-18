@@ -21,7 +21,7 @@ class RunAskHTTPTests(OfflineCase):
         self.repo = 'synthetic/run-ask-http'
         self.store.add_owner({'name': 'Synthetic Reviewer', 'team': 'Policy', 'patterns': 'docs/*'})
         self.server = ready_server(self.store, host='127.0.0.1', port=0)
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True).start()
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
         self.csrf = self.request('GET', '/api/state').get('csrf_token', '')

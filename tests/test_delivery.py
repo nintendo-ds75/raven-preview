@@ -779,7 +779,7 @@ class WebhookTests(DeliveryCase):
     def test_slack_events_reach_the_decision_over_http(self):
         secret = "signing-secret"
         server = make_server(self.store, port=0, slack_signing_secret=secret)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         thread.start()
         self.addCleanup(server.shutdown)
         port = server.server_port

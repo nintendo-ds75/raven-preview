@@ -26,7 +26,7 @@ class ProxyTests(unittest.TestCase):
                 body=json.dumps({'jsonrpc':'2.0','id':msg['id'],'result':{'content':[{'type':'text','text':json.dumps({'node_id':'one','question':'Which format?', 'token':credential})}]}}).encode()
                 self.send_response(200);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
         server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
-        t=threading.Thread(target=server.serve_forever,daemon=True);t.start()
+        t=threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True);t.start()
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 root=Path(tmp);trace=root/'trace.jsonl';ledger=root/'audit.jsonl'

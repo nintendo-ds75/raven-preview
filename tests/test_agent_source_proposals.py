@@ -275,7 +275,7 @@ class AgentSourceProposalTests(OfflineCase):
         server = ready_server(self.store, port=0)
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True).start()
         source = self.source()
         with urlopen(f'http://127.0.0.1:{server.server_port}/api/state', timeout=5) as response:
             csrf = json.loads(response.read())['csrf_token']
@@ -406,7 +406,7 @@ class AgentSourceSlackReadbackTests(slack.DeliveryCase):
         self.server = ready_server(self.store, port=0, slack_signing_secret='local-synthetic-signing-secret')
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True).start()
         self.counter = 0
         for method in ('complete', 'complete_json'):
             guard = patch('bridge.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))

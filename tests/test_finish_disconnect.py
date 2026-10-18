@@ -149,7 +149,7 @@ class FinishDisconnectTests(ContractCase):
     def test_http_client_disconnect_keeps_proof_available_on_another_connection(self):
         task = self.signed_task()
         server = ready_server(self.store, port=0)
-        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         server_thread.start()
         client_closed, disconnected, finished = threading.Event(), threading.Event(), threading.Event()
         progress_sleep, finish_task = mcp.progress_sleep, canvas.finish_task

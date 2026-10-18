@@ -64,7 +64,7 @@ class RecordStateTests(OfflineCase):
         self.assertIn('boolean', schema['properties']['resolved']['type'])
         self.assertIn('array', schema['properties']['paths']['type'])
         server = ready_server(self.store, host='127.0.0.1', port=0)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         thread.start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)

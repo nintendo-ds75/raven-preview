@@ -522,7 +522,7 @@ class SurfaceTests(OfflineCase):
 
     def test_rest_round_trip(self):
         server = make_server(self.store, port=0)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         thread.start()
         self.addCleanup(server.shutdown)
         port = server.server_port
