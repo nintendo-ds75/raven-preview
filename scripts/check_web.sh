@@ -9,7 +9,7 @@
 set -e
 cd "$(dirname "$0")/.."
 for f in tests/*-unit.cjs tests/web-*.cjs tests/audit-viewer.cjs \
-         tests/brief-followup-state.cjs tests/brief-source-state.cjs; do
+         tests/brief-followup-state.cjs tests/brief-source-state.cjs tests/brief-first-screen.cjs; do
   if [ -n "$GITHUB_ACTIONS" ]; then echo "::group::$f"; else echo "== $f"; fi
   node "$f"
   if [ -n "$GITHUB_ACTIONS" ]; then echo "::endgroup::"; fi

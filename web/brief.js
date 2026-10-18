@@ -247,21 +247,30 @@ function focusCard(f) {
   const paths = (f.paths || []).filter(p => p && p !== 'unknown');
   const found = f.found || [];
   const back = !f.asked && data.asked_focus ? '<button type="button" class="button text brief-back" data-action="focus-asked">Back to the decision you were asked about</button>' : '';
+  // Reading order, measured at 390px: the question, the brief (or the
+  // agent's context), the answer on the table, then the form, all on the
+  // first screen; what Raven found and why it came to them follow the
+  // form, and the recorded scope table opens on request below. Before,
+  // the scope table and the work-item record sat between the question
+  // and the brief, and the form began a screen and a half down.
+  const sameAsBrief = f.brief && f.context && f.brief.trim().toLowerCase() === f.context.trim().toLowerCase();
   return `<section class="task-panel brief-focus is-${standing}" id="focus" aria-labelledby="focus-question">
     ${back}<p class="brief-kicker">${kicker}</p>
     <h2 id="focus-question" tabindex="-1">${esc(f.question)}</h2>
-    ${approvalScope(f)}
-    ${workItemContext(f)}
     ${f.brief ? `<p class="brief-lead">${prose(f.brief)}</p>` : ''}
-    ${!f.approval_scope && f.context ? `<div class="brief-block"><span class="label">Context from the coding agent</span><p>${prose(f.context)}</p></div>` : ''}
-    ${found.length ? `<div class="brief-block"><span class="label">What Raven found</span>${foundList(found)}</div>` : ''}
-    ${f.prediction ? `<div class="brief-block is-guess"><span class="label">How you decided before · a guess, not approved</span><p>${prose(f.prediction)}</p></div>` : ''}
+    ${f.context && !sameAsBrief ? `<div class="brief-block"><span class="label">Context from the coding agent</span><p>${prose(f.context)}</p></div>` : ''}
     ${f.answer ? `<div class="brief-block is-answer"><span class="label">${mine ? 'Your answer' : (['signed', 'rule'].includes(f.signoff) ? 'Signed answer' : 'Answer on the table') + (f.answered_by ? ' · ' + esc(f.answered_by) : '')}</span><p>${prose(f.answer)}</p>${f.rationale ? `<p class="brief-why-line">Why: ${prose(f.rationale)}</p>` : ''}</div>` : ''}
+    ${f.prediction ? `<div class="brief-block is-guess"><span class="label">How you decided before · a guess, not approved</span><p>${prose(f.prediction)}</p></div>` : ''}
+    ${f.replacement_ends_rule ? '<p class="context">Recording a new or corrected answer retires the existing standing rule. An unchanged-answer sign-off keeps it. Future automatic reuse needs a fresh explicit make-rule action.</p>' : ''}
+    ${form}
+    ${found.length ? `<div class="brief-block"><span class="label">What Raven found</span>${foundList(found)}</div>` : ''}
+    ${f.consequences ? `<div class="brief-block"><span class="label">Consequences of this decision</span><p>${prose(typeof f.consequences === 'string' ? f.consequences : JSON.stringify(f.consequences))}</p></div>` : ''}
     ${paths.length ? `<p class="brief-where">Touches ${paths.map(p => `<code>${esc(p)}</code>`).join(', ')}</p>` : ''}
     ${reasonBlock(f.why, f.node_id)}
-    ${f.replacement_ends_rule ? '<p class="context">Recording a new or corrected answer retires the existing standing rule. An unchanged-answer sign-off keeps it. Future automatic reuse needs a fresh explicit make-rule action.</p>' : ''}
-    ${f.consequences ? `<div class="brief-block"><span class="label">Consequences of this decision</span><p>${prose(typeof f.consequences === 'string' ? f.consequences : JSON.stringify(f.consequences))}</p></div>` : ''}
-    ${form}
+    <details class="brief-extra brief-scope" data-keep="scope-${esc(f.node_id)}"><summary>Recorded scope of this decision</summary>
+    ${approvalScope(f)}
+    ${workItemContext(f)}
+    </details>
     ${!['read','handed'].includes(standing) && f.owner && (!data.viewer.interview_decision_id || data.viewer.interview_decision_id === f.node_id) ? `<div class="context-box"><strong>Prefer to talk it through?</strong><p class="context">An interview can use browser dictation and spoken readback. You review and confirm the exact decision. It stays on this personal task link.</p><button class="button small" data-action="interview-start" data-task="${esc(data.task.id)}" data-id="${esc(f.node_id)}">Start or resume interview</button></div>` : ''}
   </section>`;
 }
@@ -586,8 +595,10 @@ function render() {
   $('#brief-account').innerHTML = `${viewerMenu(kept.menu)}${accountCta()}`;
   const standing = f ? focusStanding(f) : 'read';
   const box = inquiryCard() + `<details class="brief-extra" data-keep="notes"><summary>Add context for the agent</summary>${noteCard()}</details>`;
+  // On a phone the decision and its form come first: with the question
+  // box above them, the form began below the first screen.
   const body = narrow.matches
-    ? `<div class="brief-stack">${box}${focusCard(f)}${decisionsCard(data.nodes)}<details class="brief-extra" data-keep="task-background"><summary>Task background & history</summary>${requesterCard(t, data.requester)}${peopleCard(data.contacts)}${historyCard(data.history)}</details></div>`
+    ? `<div class="brief-stack">${focusCard(f)}${box}${decisionsCard(data.nodes)}<details class="brief-extra" data-keep="task-background"><summary>Task background & history</summary>${requesterCard(t, data.requester)}${peopleCard(data.contacts)}${historyCard(data.history)}</details></div>`
     : `<div class="brief-columns"><div class="brief-main">${focusCard(f)}${decisionsCard(data.nodes)}<details class="brief-extra" data-keep="task-background"><summary>Task background & history</summary>${requesterCard(t, data.requester)}${historyCard(data.history)}</details></div>
        <aside class="brief-side" aria-label="Context and people">${box}<details class="brief-extra" data-keep="people"><summary>People involved</summary>${peopleCard(data.contacts)}${joinNote()}</details></aside></div>`;
   // One task-wide count beside the personal line: a pill and a meta count
