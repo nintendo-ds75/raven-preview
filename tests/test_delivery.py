@@ -490,6 +490,68 @@ class OutboxTests(DeliveryCase):
         self.assertEqual(self.delivery.deliver_now(), 1)
         self.assertEqual(self.delivery.list("sent")[0]["attempts"], 2)
 
+    def test_a_queued_row_survives_a_restart_and_goes_out_once(self):
+        """The process goes away with a row waiting and comes back on the
+        same database: the row, its attempt count and its backoff are all
+        still there, and the message goes out exactly once."""
+        self.node(self.task())
+        self.slack.fail = True
+        self.assertEqual(self.delivery.deliver_now(), 0)
+        self.graph.close()
+        self.store = Store(Path(self.temp.name) / "delivery.db")
+        self.graph = self.store.graph
+        after = FakeSlack()
+        delivery = self.store.connect_delivery(after, base_url="https://bridge.acme.test")
+        (row,) = delivery.list()
+        self.assertEqual((row["kind"], row["state"], row["attempts"]), ("ask", "queued", 1))
+        self.assertIn("ratelimited", row["last_error"])
+        self.assertEqual(delivery.deliver_now(), 0)  # the backoff holds across the restart
+        self.graph.db.execute("UPDATE notifications SET next_attempt=0")
+        self.assertEqual(delivery.deliver_now(), 1)
+        self.assertEqual(delivery.deliver_now(), 0)
+        self.assertEqual((len(after.messages), self.slack.messages), (1, []))
+        (sent,) = delivery.list("sent")
+        self.assertEqual((sent["attempts"], sent["external_ref"]), (2, f"DUWES:{after.messages[0]['ts']}"))
+
+    def test_a_row_in_flight_is_not_posted_again_by_a_second_worker(self):
+        """A worker is inside the transport call when another process
+        starts on the same database (a restart beside a send that is
+        still finishing). The row is claimed for the in-flight window, so
+        the newcomer leaves it alone; when the transport confirms, the
+        first worker marks it sent, and nobody sends it again."""
+        self.node(self.task())
+        entered, release = threading.Event(), threading.Event()
+        slow = FakeSlack()
+        original = slow.post_message
+
+        def held(channel, text, blocks=None, thread_ts=""):
+            entered.set()
+            self.assertTrue(release.wait(10), "the test never released the send")
+            return original(channel, text, blocks, thread_ts)
+        slow.post_message = held
+        self.delivery.transport = slow
+        first = threading.Thread(target=self.delivery.deliver_now, daemon=True)
+        first.start()
+        self.addCleanup(release.set)
+        self.assertTrue(entered.wait(10))
+        other = Store(Path(self.temp.name) / "delivery.db")
+        self.addCleanup(other.graph.close)
+        newcomer = FakeSlack()
+        second = other.connect_delivery(newcomer, base_url="https://bridge.acme.test")
+        (row,) = second.list()
+        self.assertEqual((row["state"], row["attempts"]), ("queued", 1))
+        self.assertGreater(row["next_attempt"], time.time() + self.delivery.IN_FLIGHT_SECONDS - 10)
+        self.assertEqual(second.deliver_now(), 0)
+        self.assertEqual(newcomer.messages, [])
+        release.set()
+        first.join(10)
+        (row,) = second.list()
+        self.assertEqual((row["state"], row["attempts"], row["external_ref"]),
+                         ("sent", 1, f"DUWES:{slow.messages[0]['ts']}"))
+        other.graph.db.execute("UPDATE notifications SET next_attempt=0")
+        self.assertEqual(second.deliver_now(), 0)
+        self.assertEqual((len(slow.messages), newcomer.messages), (1, []))
+
     def test_a_newer_state_supersedes_what_has_not_gone_out(self):
         n = self.node(self.task())
         # Reassigned before the ask went out: the ask is superseded, one message goes.

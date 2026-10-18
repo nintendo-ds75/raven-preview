@@ -542,6 +542,20 @@ class Delivery:
                                    "ORDER BY created_at LIMIT ?", (time.time(), limit)).fetchall()
         sent = 0
         for row in due:
+            # One worker at a time holds a row: the claim moves its next
+            # attempt past the in-flight window, so a second process (a
+            # restart beside a send still finishing, two workers on one
+            # database) does not post it again while the transport may
+            # yet confirm the first. A send that confirms is marked sent
+            # under the same id; one the process died inside is retried
+            # after the window, which is the at-least-once edge.
+            with graph.transaction():
+                claimed = graph.db.execute(
+                    "UPDATE notifications SET next_attempt=?, attempts=attempts+1 WHERE id=? AND state='queued' "
+                    "AND next_attempt<=?", (time.time() + self.IN_FLIGHT_SECONDS, row["id"], time.time()))
+            if claimed.rowcount != 1:
+                continue
+            attempts = row["attempts"] + 1
             payload = json.loads(row["payload"])
             try:
                 if row["kind"] == "report":
@@ -552,7 +566,7 @@ class Delivery:
                                                      thread_ts=payload.get("thread_ts") or "")
                     ts = payload.get("thread_ts") or ts
                     with graph.transaction():
-                        graph.db.execute("UPDATE notifications SET state='sent', attempts=attempts+1, external_ref=?, "
+                        graph.db.execute("UPDATE notifications SET state='sent', external_ref=?, "
                                          "sent_at=?, last_error='' WHERE id=?", (f"{channel}:{ts}", now_iso(), row["id"]))
                         graph.append_event("notification_sent", {"task_id": row["run_id"], "decision_id": row["decision_id"],
                                                                  "kind": row["kind"], "to": ""})
@@ -580,18 +594,17 @@ class Delivery:
                 # find the newest thing Raven said there.
                 ts = thread or ts
                 with graph.transaction():
-                    graph.db.execute("UPDATE notifications SET state='sent', attempts=attempts+1, external_ref=?, "
+                    graph.db.execute("UPDATE notifications SET state='sent', external_ref=?, "
                                      "sent_at=?, last_error='' WHERE id=?", (f"{channel}:{ts}", now_iso(), row["id"]))
                     graph.append_event("notification_sent", {"task_id": row["run_id"], "decision_id": row["decision_id"],
                                                              "kind": row["kind"], "to": row["person_name"]})
                 sent += 1
             except Exception as error:
-                attempts = row["attempts"] + 1
                 delay = retry_delay(error, BACKOFF[min(attempts - 1, len(BACKOFF) - 1)])
                 state = "failed" if attempts >= MAX_ATTEMPTS else "queued"
                 with graph.transaction():
-                    graph.db.execute("UPDATE notifications SET attempts=?, next_attempt=?, last_error=?, state=? WHERE id=?",
-                                     (attempts, time.time() + delay, str(error)[:300], state, row["id"]))
+                    graph.db.execute("UPDATE notifications SET next_attempt=?, last_error=?, state=? WHERE id=?",
+                                     (time.time() + delay, str(error)[:300], state, row["id"]))
                     if state == "failed":
                         graph.append_event("notification_failed", {"task_id": row["run_id"], "decision_id": row["decision_id"],
                                                                    "kind": row["kind"], "to": row["person_name"],
@@ -664,6 +677,8 @@ class Delivery:
             "ORDER BY sent_at DESC, created_at DESC LIMIT 1", (f"{channel}:{thread_ts}",)).fetchone()
         return dict(row) if row else None
 
+    # How long one attempt may hold a row, outbound (a claimed send) or
+    # inbound (a receipt being applied), before another may take it.
     IN_FLIGHT_SECONDS = 120
 
     def receive(self, channel: str, thread_ts: str, user_id: str, text: str, event_id: str = "", action_token: str = "",
