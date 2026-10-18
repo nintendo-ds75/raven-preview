@@ -113,7 +113,7 @@ function focusStanding(f) {
   if (f.handed_to) return 'handed';
   if (!f.can_act) return 'read';
   if (f.status === 'pending') return 'answer';
-  if ((node.signatures || []).some(s => same(s, data.viewer.name))) return 'mine';
+  if (node.signed_by_me) return 'mine';
   return ['signed', 'rule'].includes(f.signoff) ? 'cosign' : 'sign';
 }
 
@@ -549,7 +549,7 @@ function showOther() {
 function heroLine(standing) {
   const me = data.viewer.name;
   const blocking = data.nodes.filter(n => n.blocking && counted(n));
-  const mineOwed = blocking.filter(n => owedBy(n).some(x => same(x, me)));
+  const mineOwed = blocking.filter(n => n.owed_by_me);
   const others = unique(blocking.flatMap(owedBy).filter(x => !same(x, me)));
   const required = blocking.filter(n => n.raw_status === 'suggested').length;
   const unassigned = blocking.filter(n => n.raw_status !== 'suggested' && !owedBy(n).length).length;

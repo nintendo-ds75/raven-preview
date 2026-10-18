@@ -1103,8 +1103,11 @@ class Store:
                     decision_id, decision['run_id'])
                 scope_after.update(reusable=0, rule_ended_at=stamp)
             signed_scope = approval_scope(scope_after)
+            # The signer's stable id beside the name, so a page can tell a
+            # viewer's own signature from a namesake's without a name join.
             signature = json.dumps([{"by": signer, "at": stamp, "revision": stamp, "hash": answer_hash(answer),
-                                     "scope": signed_scope}])
+                                     "scope": signed_scope,
+                                     "person_id": actor.id if actor is not None and actor.id else ""}])
             # What the ladder wrote while it looked for an answer (the memory
             # it scored, the records it rejected) is not where this answer
             # came from, and is cleared. Measured live on eb9d22d: signed

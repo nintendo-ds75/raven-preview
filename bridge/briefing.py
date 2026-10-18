@@ -294,6 +294,14 @@ def _node_summary(n: dict, actor, graph, store, asked: str = "") -> dict:
             out["why_not"] = why if not basis else ""
             out["action"] = action
             out["updated_at"] = decision["updated_at"]
+            # The viewer's own standing on this node, by id: whether they
+            # signed the live answer, and whether it still waits on them as
+            # its owner or a required signer. The page never decides this
+            # from the viewer's name, which a namesake shares.
+            out["signed_by_me"] = _signed_by(graph, decision, actor)
+            out["owed_by_me"] = (not out["signed_by_me"] and bool(actor.id)
+                                 and (authz._owner_person_id(graph, decision) == actor.id
+                                      or actor.id in authz._required_signer_ids(graph, decision)))
             # Who the viewer handed it on to: the list offered "Answer
             # this" on it, and the card it opened said it waits on them.
             out["handed_to"] = _handed_to(graph, decision, actor.name)
@@ -778,6 +786,28 @@ def _handon_keeps(store, d: dict, link: Link) -> str:
     if default["scope_kind"] == "category":
         return f"later {default['scope']} questions"
     return "later questions in this repository"
+
+
+def _signed_by(graph, decision: dict, actor) -> bool:
+    """Whether the viewer signed the answer as it stands: the person id the
+    signature records. One recorded before ids were kept counts only when
+    its name is the viewer's and nobody else on the map carries it."""
+    from .canvas import _json_list
+    from .store import answer_hash
+    if not actor.id:
+        return False
+    live = [x for x in _json_list(decision.get("signatures")) if isinstance(x, dict)
+            and x.get("hash") == answer_hash(decision.get("answer") or "")]
+    for x in live:
+        if x.get("person_id"):
+            if x["person_id"] == actor.id:
+                return True
+            continue
+        if _same(x.get("by") or "", actor.name):
+            namesakes = [p for p in graph.people() if _same(p["name"], actor.name)]
+            if len(namesakes) == 1 and namesakes[0]["id"] == actor.id:
+                return True
+    return False
 
 
 def _handed_to(graph, d: dict, viewer: str) -> str:

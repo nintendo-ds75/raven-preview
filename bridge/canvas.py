@@ -3147,8 +3147,11 @@ def sign_off(store, decision_id: str, data, actor=None, transaction_db=None) -> 
             current = db.execute('SELECT * FROM decisions WHERE id=?', (d.id,)).fetchone()
         if by.lower() not in {x.get("by", "").lower() for x in signatures}:
             from .approval_scope import snapshot as approval_scope
+            # The signer's stable id beside the name, so a page can tell a
+            # viewer's own signature from a namesake's without a name join.
             signatures.append({"by": by, "at": stamp, "revision": stamp, "hash": content,
-                               "scope": approval_scope(current)})
+                               "scope": approval_scope(current),
+                               "person_id": actor.id if actor is not None and actor.id else ""})
         remaining = [r for r in required if r.lower() not in {x.get("by", "").lower() for x in signatures}]
         if remaining:
             # One of several required approvers: recorded, not yet authorized.
