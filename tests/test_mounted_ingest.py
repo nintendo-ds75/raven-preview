@@ -7,7 +7,9 @@ exercise the real ownership check without changing filesystem ownership.
 import contextlib
 import io
 import os
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -19,6 +21,16 @@ from bridge.store import Store
 
 
 class MountedIngestTests(OfflineCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # Every test starts from the same one-commit checkouts and changes
+        # its own copies; the commit is made once and the copies are files.
+        cls.templates = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.templates.cleanup)
+        for name in ("selected checkout", "unrelated"):
+            cls.build_repo(Path(cls.templates.name) / name)
+
     def setUp(self):
         super().setUp()
         self.root = Path(self.temp.name)
@@ -42,6 +54,11 @@ class MountedIngestTests(OfflineCase):
 
     def make_repo(self, name):
         repo = self.root / name
+        shutil.copytree(Path(self.templates.name) / name, repo, symlinks=True)
+        return repo
+
+    @staticmethod
+    def build_repo(repo):
         repo.mkdir()
         run_git(repo, "init", "-q", "-b", "main")
         (repo / "payments").mkdir()
