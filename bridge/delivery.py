@@ -1336,11 +1336,34 @@ def _message_context(context: str) -> str:
     return context or ''
 
 
+# How much of the agent's context a person reads in the lead of a message
+# that has no brief; the rest is on the task page and in the message's
+# appendix. About two phone screens of a Slack DM.
+LEAD_CONTEXT = 400
+
+
+def _only_trailers(context: str) -> bool:
+    """Whether the context is nothing a person reads as context: only
+    the paths and options canvas.add_node appends to it, or its
+    placeholder for a node given none. Measured on the brief-page world:
+    a message led with "Context: Paths: config/config.go"."""
+    lines = [ln.strip() for ln in (context or "").split("\n") if ln.strip()]
+    return all(ln.startswith(("Paths: ", "Options: ")) or ln == "a node on the canvas" for ln in lines)
+
+
+def _same_words(a: str, b: str) -> bool:
+    """Whether two texts say the same thing, whitespace and case aside."""
+    norm = lambda s: " ".join((s or "").split()).strip().lower()  # noqa: E731
+    return bool(norm(a)) and norm(a) == norm(b)
+
+
 def render(row: dict, kind: str, person_name: str, base_url: str, note: str = "", task_link: str = "",
            has_account: bool = True, rule_hint: bool = True) -> dict:
-    """The message for one notification: what is being decided, the
-    brief when one was written, the context, what Raven found, the
-    options, and how to reply. Plain text with Slack mrkdwn.
+    """The message for one notification, in reading order: who needs
+    the person and for what, the question, the brief (or the agent's
+    context cut to LEAD_CONTEXT characters), the options, what Raven
+    found in a line each, how to reply; then the recorded scope and the
+    complete context as an appendix. Plain text with Slack mrkdwn.
 
     A `task_link` is the person's own link to the task page; it opens
     without an account. It comes right under the question: measured on
@@ -1371,12 +1394,18 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
         "overdue": f"*Still waiting on you, {person_name}: an agent's task is blocked on this decision.*",
         "escalation": f"*Can you help unblock this question, {person_name}?*",
     }
+    # The order a person reads on a phone: who needs them and for what,
+    # the question, the brief (or the agent's context, cut), the options,
+    # what Raven found in a line each, how to reply. The recorded scope
+    # the signature binds to, and the complete context when the lead
+    # cut it, follow as an appendix: measured on the demo decisions, the
+    # scope table sat between the link and the brief, the options were
+    # printed twice and the reply line was seventeen lines down.
     lines = [heads.get(kind, heads["ask"])]
     if not person_name:
         lines = ["*Who can help with this decision?*",
                  "Raven has not identified a reachable contact. Reply `I'll take this` or `ask @person` "
                  "using a Slack mention. This routes the question; it does not approve anything."]
-    lines.append("_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._")
     if note:
         lines.append(f"_{note}_")
     lines.append(f"*{question}*")
@@ -1394,7 +1423,6 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
         # the question. The page itself says not to forward the link.
         lines.append(f"<{task_link}|Open the task> (your own link, no account needed)")
     from .approval_scope import render as render_scope, transport_text
-    lines.append(transport_text(render_scope(raw_scope, exclude=("question", "context", "options"))))
     rest = "the task page has the rest" if task_link else "the inbox has the rest"
     conflicts = _conflicts(row.get("evidence") or "")
     if kind in ("ask", "reassigned", "overdue") and conflicts:
@@ -1403,23 +1431,6 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
         # no current policy was given, and the two policies were quoted
         # lower down, cut at 400 characters.
         lines.append("*Conflict:* " + _clip(" ".join(conflicts), 1500, rest))
-    brief = drop_absence(row.get("brief") or "")
-    if brief:
-        lines.append(brief)
-    from .ladder import records_line
-    named = records_line(row.get("named_records") or [])
-    if named:
-        lines.append("Records it names: " + transport_text(named) + ".")
-    options = []
-    try:
-        options = json.loads(row.get("options") or "[]")
-    except ValueError:
-        pass
-    context = _message_context(row.get("context") or "")
-    if context:
-        # The complete root context is part of the review. If it cannot
-        # fit, the final budget below sends a non-approvable online notice.
-        lines.append("Context: " + context)
     if kind in ("signoff", "review", "answered") and row.get("answer"):
         # A signature covers the whole answer. Split it across Slack blocks
         # rather than requiring an inbox account to read the rest.
@@ -1435,13 +1446,30 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
                              "correct, not something your team settled._")
     if kind == "review" and row.get("review_reason"):
         lines.append(f"Why: {_clip(row['review_reason'], 600, 'the inbox has the rest')}")
-    evidence = split_evidence(row.get("owner_evidence") or "")[:3]
-    if kind == "reassigned" or (kind == "ask" and not task_link):
-        # Who handed it on, and what answering teaches, belongs in the
-        # message itself; the routing evidence behind an ask is on the
-        # task page, said plainly, when there is one.
-        if evidence:
-            lines.append("Why you: " + transport_text("; ".join(evidence)))
+    brief = drop_absence(row.get("brief") or "")
+    context = _message_context(row.get("context") or "")
+    if brief and _same_words(brief, context):
+        # A brief that only repeats the context is the context, said once.
+        brief = ""
+    # The complete context stays in the message (a reply is checked
+    # against it, and a signature covers it), but a person reads the
+    # brief or, without one, the first LEAD_CONTEXT characters here.
+    context_shown_whole = False
+    if brief:
+        lines.append(brief)
+    elif context and not _only_trailers(context):
+        if len(context) <= LEAD_CONTEXT:
+            lines.append("Context: " + context)
+            context_shown_whole = True
+        else:
+            lines.append("Context: " + _clip(context, LEAD_CONTEXT, rest))
+    options = []
+    try:
+        options = json.loads(row.get("options") or "[]")
+    except ValueError:
+        pass
+    if options:
+        lines.append("Options: " + " | ".join(transport_text(str(o)) for o in options))
     if kind in ("ask", "reassigned", "overdue") and row.get("prediction"):
         lines.append(f"How you decided before: {_clip(row['prediction'], 800, 'the rest is in the inbox')} "
                      "(a prediction from your earlier answers; confirm or correct it)")
@@ -1451,27 +1479,47 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
         scope = prediction_scope(row.get("evidence") or "")
         if scope:
             lines.append(f"Scope: {scope}.")
+    from .ladder import records_line
+    named = records_line(row.get("named_records") or [])
+    if named:
+        lines.append("Records it names: " + transport_text(named) + ".")
     found = _found_for_owner(row.get("evidence") or "", rest)
     if kind == "ask" and found:
         lines.append(f"What Raven found: {found}")
-    if options:
-        lines.append("Options: " + " | ".join(transport_text(str(o)) for o in options))
+    evidence = split_evidence(row.get("owner_evidence") or "")[:3]
+    if kind == "reassigned" or (kind == "ask" and not task_link):
+        # Who handed it on, and what answering teaches, belongs in the
+        # message itself; the routing evidence behind an ask is on the
+        # task page, said plainly, when there is one.
+        if evidence:
+            lines.append("Why you: " + transport_text("; ".join(evidence)))
+    rule = (" After answering, `rule if <words> until <date>` makes the answer reusable for matching questions."
+            if rule_hint else "")
+    signing = kind in ("signoff", "review") or bool(row.get("answer"))
     if kind == 'escalation':
         lines.append('This is a coordination request, not an ownership transfer. Reply `context: <who is available or what helps>` '
                      'to inform the agent. Only someone with existing authority may approve or reassign this decision.')
     elif not _conversational() and kind in ('ask', 'reassigned', 'overdue', 'signoff', 'review') and person_name:
-        lines.append("Reply in this thread: `answer: <the decision> because <why>` to answer or correct it, or `not me @person` to hand it on. "
-                     "Reply `sign off` to confirm the complete answer. Natural-language conversation needs an inference backend."
-                     + (" After answering, `rule if <words> until <date>` makes the answer reusable for matching questions." if rule_hint else ""))
+        lines.append(("Reply `sign off` to confirm the complete answer, `answer: <the decision> because <why>` "
+                      "to correct it, or `not me @person` to hand it on." if signing else
+                      "Reply in this thread: `answer: <the decision> because <why>`, or `not me @person` to hand it on.") + rule)
     elif kind in ("ask", "reassigned", "overdue") and person_name:
-        lines.append("Reply in this thread in your own words: ask for context, give your answer, or mention someone better to ask. Raven reads decisions back for confirmation. Shortcuts: `answer: <the decision> because <why>` or `not me @person`."
-                     + (" After answering, `rule if <words> until <date>` makes the answer reusable for matching questions." if rule_hint else ""))
+        lines.append("Reply in this thread in your own words: your answer, a question, or who to ask instead; Raven reads it "
+                     "back before recording anything. Shortcuts: `answer: <the decision> because <why>`, `not me @person`." + rule)
     elif kind == "signoff" and person_name:
-        lines.append("Ask a question or explain what should change in your own words. Raven will read your decision back before signing. Reply `sign off` to confirm the complete answer.")
+        lines.append("Reply `sign off` to confirm the complete answer, or say what should change in your own words; "
+                     "Raven reads it back before signing.")
     elif kind == "review":
-        lines.append("Tell me what changed or ask for context. I will read corrections back for confirmation. Reply `sign off` if the complete answer still stands.")
+        lines.append("Reply `sign off` if the complete answer still stands, or say what changed in your own words; "
+                     "Raven reads it back first.")
     if link:
-        lines.append(f"Optional web inbox: {link} (decision {row.get('id')}). You can answer here without a Raven account.")
+        lines.append(f"Web inbox: {link} (decision {row.get('id')}).")
+    # The appendix: the recorded scope a reply is checked against, and
+    # the context whole where the lead did not carry it.
+    lines.append(transport_text(render_scope(raw_scope, exclude=("question", "context", "options"))))
+    if context and not context_shown_whole:
+        lines.append("Context: " + context)
+    lines.append("_Raven is an AI coordination assistant. One decision; a short answer or referral is enough._")
     text = "\n".join(lines)
     # Slack shows the blocks, not the text, and one section holds 3000
     # characters: a long message goes out as several sections rather than
