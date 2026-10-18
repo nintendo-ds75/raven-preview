@@ -250,7 +250,8 @@ def load_tests(loader, tests, pattern):
                  "test_lifecycle_security", "test_reframe", "test_routing_continuity", "test_billing_contract",
                  "test_transport_contracts", "test_slack_contract_transport", "test_teams", "test_person_assignment_identity",
                  "test_intelligent_discovery", "test_mcp_events", "test_workbench_hosts", "test_inquiry",
-                 "test_native_access", "test_context_visibility", "test_host_notifications", "test_notification_only"):
+                 "test_native_access", "test_context_visibility", "test_host_notifications", "test_notification_only",
+                 "test_task_flows"):
         module = importlib.import_module(name)
         for key, case in vars(module).items():
             if isinstance(case, type) and issubclass(case, unittest.TestCase) and case.__module__ == name:
