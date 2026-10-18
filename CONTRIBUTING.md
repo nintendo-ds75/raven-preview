@@ -5,7 +5,7 @@
 Run what CI runs:
 
 ```sh
-python -m pip install ruff==0.7.4      # once
+python -m pip install ruff==0.7.4 -r requirements-teams.txt   # once; PyJWT for the Teams tests
 ruff check .                            # pyflakes rules, see ruff.toml
 python -m unittest discover -s tests -p 'test_*.py'
 ./scripts/check_web.sh                  # the Node UI checks, no browser
