@@ -453,7 +453,8 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None, principal
             revision = {did: rev for did, rev in revision.items() if did in full} if isinstance(revision, dict) else None
         if not one_node or full:
             result['read_acknowledged'] = canvas.note_agent_read(
-                store, args.get('task_id', ''), result.get('observed_at', ''), revision, full)
+                store, args.get('task_id', ''), result.get('observed_at', ''), revision, full,
+                whole_task=not one_node)
             if not result['read_acknowledged']:
                 result['next'] += ' This response omitted unread decisions; read bridge_get_tree before finishing.'
             elif one_node and canvas.unread_by_agent(store, args.get('task_id', '')):

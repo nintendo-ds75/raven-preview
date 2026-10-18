@@ -2896,12 +2896,15 @@ def _receipt_covers(seen, revision) -> bool:
 
 
 def note_agent_read(store, task_id: str, observed_at: str, observed_revision: dict,
-                    full_node_ids: set[str]) -> bool:
+                    full_node_ids: set[str], whole_task: bool = True) -> bool:
     """Acknowledge only a complete set of unread, fully returned decisions.
 
     A whole-task wait may return no answers, or only the new changes while an
     older unread sibling is omitted. Neither its timestamp nor a client's
-    `since` cursor is evidence that those omitted answers were read.
+    `since` cursor is evidence that those omitted answers were read. A wait
+    on one node (`whole_task` false) records the receipt for that node only
+    and leaves the task's read watermark where it was: the node is read, the
+    tree is not.
     """
     if not task_id or not observed_at or not isinstance(observed_revision, dict):
         return False
@@ -2913,10 +2916,14 @@ def note_agent_read(store, task_id: str, observed_at: str, observed_revision: di
         if set(unread) - full_node_ids:
             return False
         receipts.update(unread)
-        store.graph.db.execute(
-            'UPDATE runs SET agent_read_events=?, agent_read_at=CASE WHEN agent_read_at < ? '
-            'THEN ? ELSE agent_read_at END WHERE id=?',
-            (json.dumps(receipts, sort_keys=True), observed_at, observed_at, task_id))
+        if whole_task:
+            store.graph.db.execute(
+                'UPDATE runs SET agent_read_events=?, agent_read_at=CASE WHEN agent_read_at < ? '
+                'THEN ? ELSE agent_read_at END WHERE id=?',
+                (json.dumps(receipts, sort_keys=True), observed_at, observed_at, task_id))
+        else:
+            store.graph.db.execute('UPDATE runs SET agent_read_events=? WHERE id=?',
+                                   (json.dumps(receipts, sort_keys=True), task_id))
     return True
 
 
