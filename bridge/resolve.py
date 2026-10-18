@@ -530,25 +530,67 @@ def area_word_hits(tree: Tree, text: str) -> dict[str, PathHit]:
 AUX_AREA_WEIGHT = 0.7
 
 
+_AREA_NOUNS = {"backend", "backends", "frontend", "subsystem", "driver", "drivers", "module", "modules", "layer",
+               "package", "directory", "folder", "component", "area", "code", "support", "tests", "test", "job",
+               "integration", "plugin", "plugins", "port", "target", "machine", "machines", "board", "boards",
+               "device", "devices", "emulation", "emulator", "accelerator", "library", "tree", "stack"}
+# A language or tool named with a capital is usually the language, not
+# the directory that holds the project's own code in it.
+_LANGUAGE_WORDS = {"python", "rust", "java", "perl", "ruby", "javascript", "typescript", "shell", "bash", "make"}
+DIR_NAMED_WEIGHT = 0.85     # "the Emscripten backend": a unique directory named the way people say it
+DIR_WORD_WEIGHT = 0.7       # a plain word that is a unique directory's name
+_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*")
+
+
 def dir_name_hits(tree: Tree, text: str) -> dict[str, PathHit]:
     """A plain word that is exactly a directory's name (accel, migration,
     gdbstub) names that directory: one directory of that name is a firm
-    area, a few are candidates, many is no signal."""
+    area, a few are candidates, many is no signal. Two words that join
+    into one (af xdp, linux user) count as that name. A unique directory
+    named the way people say an area, with a capital inside the sentence
+    or an area noun beside it (the Emscripten backend, Xen support), is
+    as firm as a path: measured on urllib3, "the Emscripten backend" sat
+    below the floor that lets a named area route."""
     hits: dict[str, PathHit] = {}
-    words = _whole_words(text)
+    stripped = re.sub(r"^(?:Who should approve this change:\s*)?(?:Should\s+)?", "", text.strip(), flags=re.IGNORECASE)
+    raw = [(m.group(0), m.start()) for m in _WORD_RE.finditer(stripped)
+           if m.start() == 0 or stripped[m.start() - 1] not in "_.-/"]
+    raw = [(w, at) for w, at in raw if (at + len(w) == len(stripped) or stripped[at + len(w)] not in "_.-/")]
+    words = [w.lower() for w, _at in raw]
     about_tests = any(w in ("test", "tests", "testing") for w in words)
-    for low in words:
-        if len(low) < 4 or low in _STOP:
-            continue
-        dirs = [d for d in tree.dir_by_base.get(_norm(low), []) if d.split("/", 1)[0] not in VENDORED]
+
+    def directories(key: str) -> list[str]:
+        dirs = [d for d in tree.dir_by_base.get(key, []) if d.split("/", 1)[0] not in VENDORED]
         if not about_tests:
             dirs = [d for d in dirs if not re.match(r"^(tests?|docs?|Documentation)/", d) and "/tests/" not in d]
+        return dirs
+
+    for i, (word, at) in enumerate(raw):
+        low = word.lower()
+        joined = words[i] + words[i + 1] if i + 1 < len(words) else ""
+        span = 2 if joined and len(joined) >= 6 and len(directories(joined)) == 1 else 1
+        if span == 2:
+            low, key = f"{words[i]} {words[i + 1]}", joined
+        else:
+            key = _norm(low)
+            after = words[i + 1] if i + 1 < len(words) else ""
+            # Three letters name an area only beside an area noun (Xen support).
+            if len(low) < (3 if after in _AREA_NOUNS else 4) or low in _STOP:
+                continue
+        dirs = directories(key)
         if not dirs or len(dirs) > 3:
             continue
+        after = words[i + span] if i + span < len(words) else ""
+        capital = (word[0].isupper() and at > 0 and low not in _LANGUAGE_WORDS
+                   and not stripped[:at].rstrip().endswith((":", ".", "?", "!")))
+        named = len(dirs) == 1 and (capital or after in _AREA_NOUNS)
         # A top-level directory of that name outranks nested ones.
         ordered = sorted(dirs, key=lambda d: (d.count("/"), d))
-        for i, d in enumerate(ordered):
-            w = 0.7 if len(dirs) == 1 else (0.6 if i == 0 and ordered[0].count("/") == 1 else 0.45)
+        for k, d in enumerate(ordered):
+            if named:
+                _add(hits, d, DIR_NAMED_WEIGHT, f"the question names the {low} area, which is {d}")
+                continue
+            w = DIR_WORD_WEIGHT if len(dirs) == 1 else (0.6 if k == 0 and ordered[0].count("/") == 1 else 0.45)
             _add(hits, d, w, f"the question names the directory {d}")
     return hits
 
