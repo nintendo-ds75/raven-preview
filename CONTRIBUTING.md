@@ -8,14 +8,17 @@ Run what CI runs:
 python -m pip install ruff==0.7.4      # once
 ruff check .                            # pyflakes rules, see ruff.toml
 python -m unittest discover -s tests -p 'test_*.py'
-for f in tests/*-unit.cjs tests/web-*.cjs tests/audit-viewer.cjs; do node "$f"; done
+./scripts/check_web.sh                  # the Node UI checks, no browser
 ```
+
+`make check` runs the same three steps. `python3 scripts/test_timing.py`
+times the Python suite file by file and lists the slowest tests.
 
 PostgreSQL contracts run in CI against a real server. To run them locally,
 start PostgreSQL and set `BRIDGE_TEST_POSTGRES=1` and `DATABASE_URL`
 (`make test-postgres` does this inside Docker).
 
-The Playwright browser suites (`tests/browser*.cjs`, `tests/brief-*.cjs`)
+The Playwright browser suites (`tests/browser*.cjs`, `tests/brief-browser.cjs`)
 need Chromium and are run by hand before a release or after UI changes.
 
 ## What CI checks
@@ -25,7 +28,7 @@ need Chromium and are run by hand before a release or after UI changes.
 | Lint | `ruff check .`: undefined names, unused imports and variables, syntax errors |
 | Tests (Python 3.11, 3.13) | The whole unittest suite |
 | PostgreSQL | `tests/test_postgres.py` against PostgreSQL 17 |
-| Web UI logic | The DOM-stubbed Node checks of the inbox, setup, interview and audit viewer |
+| Web UI logic | The Node checks in `scripts/check_web.sh`: the DOM-stubbed UI units, the page-logic checks and the audit viewer |
 | Conventional commits | Pull request titles and new commit headers |
 
 ## Writing a change

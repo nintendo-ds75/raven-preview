@@ -94,15 +94,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      # The Playwright browser suites (tests/browser*.cjs, brief-*.cjs) need
-      # Chromium and are run by hand before a release; see CONTRIBUTING.md.
+      # The same list `make check` runs, kept in one file so the two cannot
+      # drift. The Playwright browser suites (tests/browser*.cjs,
+      # tests/brief-browser.cjs) need Chromium and are run by hand before a
+      # release; see CONTRIBUTING.md.
       - name: DOM-stubbed UI checks
-        run: |
-          set -e
-          for f in tests/interview-ui-unit.cjs tests/minimal-run-ui-unit.cjs \
-                   tests/modal-lifecycle-ui-unit.cjs tests/web-agent-source-review.cjs \
-                   tests/web-setup.cjs tests/web-work-item-context.cjs tests/audit-viewer.cjs tests/workbench-ui-unit.cjs; do
-            echo "::group::$f"
-            node "$f"
-            echo "::endgroup::"
-          done
+        run: ./scripts/check_web.sh

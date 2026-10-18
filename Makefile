@@ -44,8 +44,9 @@ restore:
 	docker compose exec -T db createdb -U bridge "$(DB)"
 	docker compose exec -T db pg_restore -U bridge -d "$(DB)" --exit-on-error < "$(FILE)"
 
-# What CI runs, on this machine (needs ruff and node on PATH).
+# What CI runs, on this machine (needs ruff and node on PATH). The web
+# checks are listed in scripts/check_web.sh, which CI runs too.
 check:
 	ruff check .
 	python3 -m unittest discover -s tests -p 'test_*.py'
-	for f in tests/*-unit.cjs tests/web-*.cjs tests/audit-viewer.cjs; do node "$$f" || exit 1; done
+	./scripts/check_web.sh
