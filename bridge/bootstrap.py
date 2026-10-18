@@ -4,7 +4,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .auth import Auth
+from .auth import SETUP_AGENT_LABEL, Auth
 from .database import connect
 from .ingest import _git as _read_git, index_repo
 from .store import Store
@@ -121,7 +121,7 @@ def main():
                 agent_token = agent_path.read_text().strip() if agent_path.exists() else ""
                 agent_identity = auth._token_person(agent_token) if agent_token else ("", "", "")
                 if agent_identity[0] != person_id or agent_identity[2] != "agent":
-                    credential = auth.create_token(person_id, "Docker local MCP agent", kind="agent")
+                    credential = auth.create_token(person_id, SETUP_AGENT_LABEL, kind="agent")
                     fd = os.open(agent_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
                     with os.fdopen(fd, "w") as output:
                         output.write(credential["token"] + "\n")

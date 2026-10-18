@@ -82,6 +82,23 @@ class AccountFlowTests(SharedServer):
         self.auth.revoke_token(agent['id'])
         self.assertEqual(self.get('/api/state', cookie=cookie)['agent_connections'], [])
 
+    def test_the_setup_wizard_credential_is_listed_only_once_a_client_used_it(self):
+        """Measured on a fresh install: before connecting anything, the admin
+        read "Docker local MCP agent · Waiting for first use" under Your agent
+        connections. That is the credential the bootstrap mints for
+        ./setup --configure, not a connection they made."""
+        from bridge.auth import SETUP_AGENT_LABEL
+        cookie = self.setup_owner()
+        owner = self.get('/api/state', cookie=cookie)['me']['id']
+        wizard = self.auth.create_token(owner, label=SETUP_AGENT_LABEL)
+        self.assertEqual(self.get('/api/state', cookie=cookie)['agent_connections'], [])
+        self.auth.create_token(owner, label='Cursor')
+        self.assertEqual([t['label'] for t in self.get('/api/state', cookie=cookie)['agent_connections']], ['Cursor'])
+        self.assertEqual(self.status_of('POST', '/mcp', {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}}, token=wizard['token']), 200)
+        listed = self.get('/api/state', cookie=cookie)['agent_connections']
+        self.assertEqual(sorted(t['label'] for t in listed), ['Cursor', SETUP_AGENT_LABEL])
+        self.assertTrue(next(t for t in listed if t['label'] == SETUP_AGENT_LABEL)['last_used_at'])
+
     def test_claim_requires_admin_and_can_only_happen_once(self):
         status, _, _ = self.form('/auth/setup', dict(self.owner_data, setup_token='invalid'))
         self.assertEqual(status, 400)

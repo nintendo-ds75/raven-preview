@@ -22,7 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from .auth import LOGIN_PAGE, Auth, Identity
+from .auth import LOGIN_PAGE, SETUP_AGENT_LABEL, Auth, Identity
 from .authz import Refused
 from .briefing import mode as briefing_mode
 from .store import Invalid, field
@@ -314,7 +314,10 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         "workspace": {"name": accounts.workspace(), "needs_setup": not accounts.ready()},
                         "agent_connections": [{k: t[k] for k in ('id', 'label', 'last_used_at')}
                                               for t in (auth.tokens(self.me.id) if auth.enabled and self.me.id else [])
-                                              if t['kind'] == 'agent' and not t['revoked_at']],
+                                              if t['kind'] == 'agent' and not t['revoked_at']
+                                              # The setup wizard's credential is nothing the admin
+                                              # connected until a client has used it.
+                                              and (t['last_used_at'] or t['label'] != SETUP_AGENT_LABEL)],
                         "delivery": self.delivery_view(), "mcp_config": self.mcp_config(),
                         "sync": self.sync_view(), "github_app": github_app.status() if github_app else None,
                         # The decision card says whether a rule authorizes on its

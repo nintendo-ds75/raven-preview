@@ -36,6 +36,12 @@ SESSION_DAYS = 14
 ROLES = ("viewer", "member", "admin")
 ROLE_RANK = {"viewer": 0, "member": 1, "admin": 2}
 TOKEN_KINDS = ("agent", "human")
+# The agent credential the Docker bootstrap mints for `./setup --configure`
+# to write into the local coding client. Measured on a fresh install: the
+# admin opened Connections & setup before connecting anything and read
+# "Docker local MCP agent · Waiting for first use" as a connection they
+# had not made. It is listed only once the client has used it.
+SETUP_AGENT_LABEL = "Docker local MCP agent"
 
 
 @dataclass
