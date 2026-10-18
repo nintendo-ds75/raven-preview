@@ -38,12 +38,16 @@ class DevLoginTests(OfflineCase):
         self.token_file.write_text("not-a-token\n")
         self.assertEqual(bootstrap.dev_login(self.store), NO_CREDENTIAL)
 
-    def test_a_valid_credential_is_handed_out_with_the_login_url(self):
+    def test_a_valid_credential_is_handed_out_with_the_setup_url(self):
+        # The credential is the setup credential Create your workspace asks
+        # for, so it points there, not at the sign-in form.
         token = self.human_token()
         self.token_file.write_text(token + "\n")
-        self.assertEqual(bootstrap.dev_login(self.store), token + "\nSign in at http://localhost:7333/auth/login")
+        said = bootstrap.dev_login(self.store)
+        self.assertTrue(said.startswith(token + "\n"))
+        self.assertIn("http://localhost:7333/auth/setup", said)
         with patch.dict(os.environ, {"BRIDGE_PUBLIC_URL": "https://raven.acme.test/"}):
-            self.assertTrue(bootstrap.dev_login(self.store).endswith("\nSign in at https://raven.acme.test/auth/login"))
+            self.assertIn("https://raven.acme.test/auth/setup", bootstrap.dev_login(self.store))
 
     def test_the_switch_turns_it_off_even_with_a_valid_credential(self):
         self.token_file.write_text(self.human_token() + "\n")
