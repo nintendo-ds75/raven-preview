@@ -295,6 +295,16 @@ function harness() {
     assert.match(html,/standing rule/i);assert.match(html,/Human Reviewer/);assert.match(html,/Needs (?:another look|review)|Review needed/i);
     const stale=h.run('taskDecision(syntheticDetail.tree.nodes[2])');assert.doesNotMatch(stale,/is-signed/);
   });
+  await test('an owner who has not joined is said so on the task page, and only there',()=>{
+    const unjoined=fixture.node('waiting',{owner:'Dana Okafor',required_signers:['Dana Okafor'],owner_account:{state:'none',person_id:'p9',email:'',name:'Dana Okafor'}});
+    const h=harness();h.selectTask(fixture.tree('unjoined-run',{nodes:[unjoined]}));
+    const html=h.run('taskOverview()');
+    assert.match(html,/Waiting on Dana Okafor \(no account yet\)\. Nobody can sign for an owner who has not joined; an administrator can invite them or hand it on\./);
+    assert.match(h.run('taskDecision(syntheticDetail.tree.nodes[0])'),/Dana Okafor · no account yet/);
+    const joined=harness();joined.selectTask(fixture.tree('joined-run',{nodes:[fixture.node('waiting',{owner:'Dana Okafor',required_signers:['Dana Okafor']})]}));
+    assert.doesNotMatch(joined.run('taskOverview()'),/no account yet/);
+    assert.match(joined.run('taskOverview()'),/Waiting on Dana Okafor\. Open a question/);
+  });
   await test('a finished task reads Completed and keeps the reported-not-verified caveat',()=>{
     const h=harness();h.selectTask(fixture.tree('finished-run',{status:'completed',counts:{blocking:0,total:1},
       nodes:[fixture.node('settled',{blocking:false,authorized:true,answer:'Keep the default.',signoff:'signed',signatures:['Synthetic Reviewer']})]}));

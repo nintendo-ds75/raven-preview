@@ -99,6 +99,39 @@ class AccountFlowTests(SharedServer):
         self.assertEqual(sorted(t['label'] for t in listed), ['Cursor', SETUP_AGENT_LABEL])
         self.assertTrue(next(t for t in listed if t['label'] == SETUP_AGENT_LABEL)['last_used_at'])
 
+    def test_a_routed_owner_without_a_login_is_said_so_to_the_people_reading_the_decision(self):
+        """Measured on a demo run: a decision routed to a teammate who had
+        not joined yet reached the admin as a sign-off nobody could give,
+        and the dialog offered a note or a follow-up and nothing else. The
+        decision and the task page now say the owner has no account yet;
+        who may sign is unchanged."""
+        cookie = self.setup_owner()
+        state = self.get('/api/state', cookie=cookie)
+        admin, csrf = state['me']['id'], state['csrf_token']
+        dana = self.store.graph.add_person('Dana Okafor')
+        self.store.graph.add_authority('path', 'fetchkit/retry.py', 'decides', person_id=dana, repo='acme/fetchkit')
+        agent = self.auth.create_token(admin, label='Claude Code')['token']
+        task = self.mcp('bridge_start_task', {'title': 'Make the retry limit configurable', 'repo': 'acme/fetchkit',
+                                              'paths': 'fetchkit/retry.py'}, agent)['result']
+        node = self.mcp('bridge_add_node', {'task_id': task['task_id'], 'paths': 'fetchkit/retry.py',
+                                            'question': 'What should the default retry limit be?'}, agent)['result']
+        self.assertEqual(node['owner'], 'Dana Okafor')
+        detail = self.get(f"/api/decisions/{node['node_id']}", cookie=cookie)
+        self.assertEqual(detail['owner_account'], {'state': 'none', 'person_id': dana, 'email': '', 'name': 'Dana Okafor'})
+        self.assertNotIn('answer', detail['allowed_actions'])
+        self.assertNotIn('assign', detail['allowed_actions'])
+        tree = self.get(f"/api/tasks/{task['task_id']}/tree", cookie=cookie)
+        self.assertEqual(tree['nodes'][0]['owner_account']['state'], 'none')
+        self.assertNotIn('owner_account', self.mcp('bridge_get_tree', {'task_id': task['task_id']}, agent)['result']['nodes'][0])
+        invitation = self.post('/api/invitations', {'email': 'dana@example.test', 'role': 'member', 'person_id': dana},
+                               cookie=cookie, csrf=csrf)
+        self.assertEqual(self.get(f"/api/decisions/{node['node_id']}", cookie=cookie)['owner_account']['state'], 'invited')
+        status, _, _ = self.form('/auth/join', dict(invite=invitation['url'].split('#invite=')[1], name='Dana Okafor',
+                                                    password='another-long-password'))
+        self.assertEqual(status, 302)
+        self.assertEqual(self.get(f"/api/decisions/{node['node_id']}", cookie=cookie)['owner_account']['state'], 'account')
+        self.assertNotIn('owner_account', self.get(f"/api/tasks/{task['task_id']}/tree", cookie=cookie)['nodes'][0])
+
     def test_claim_requires_admin_and_can_only_happen_once(self):
         status, _, _ = self.form('/auth/setup', dict(self.owner_data, setup_token='invalid'))
         self.assertEqual(status, 400)

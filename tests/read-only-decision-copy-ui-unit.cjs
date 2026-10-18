@@ -63,5 +63,39 @@ async function open(role) {
   h.requests[0].resolve({...decision, owner_name: '', owner_id: ''});
   await pending;
   assert.match(h.content.innerHTML, /This decision has no owner yet; you can add follow-up questions/);
-  console.log('Read-only decision copy: member, admin, viewer and unassigned wording pass.');
+  // A routed owner who has not joined. Measured on a demo run: the admin
+  // read only that they could add a note or a follow-up, with no way on.
+  // The admin is told so and offered the invitation and the hand-on (as
+  // their recorded override); a member is told who can; nobody gains a
+  // signature.
+  const unjoined = {...decision, owner_name: 'Dana Okafor', owner_id: 'o9', updated_at: 'u1',
+    owner_account: {state: 'none', person_id: 'p9', email: '', name: 'Dana Okafor'}};
+  const openAs = async (role, d) => {
+    const h = harness();
+    h.run(`state.auth = {enabled: true}; state.me = {id: 'p2', name: 'Sam Rivera', role: '${role}', kind: 'session'}; state.decisions = []; state.owners = [{id: 'o9', name: 'Dana Okafor', team: ''}, {id: 'o1', name: 'Alex Morgan', team: 'Billing'}];`);
+    const pending = h.run("review('d1')");
+    h.requests[0].resolve(d);
+    await pending;
+    return h.content.innerHTML;
+  };
+  const adminUnjoined = await openAs('admin', unjoined);
+  assert.match(adminUnjoined, /Nobody can sign this yet/);
+  assert.match(adminUnjoined, /Dana Okafor has no account yet, so this decision waits until they join\./);
+  assert.match(adminUnjoined, /data-action="invite-owner" data-person="p9"/);
+  assert.match(adminUnjoined, /data-action="refer" data-override="1" data-id="d1" data-updated="u1"/);
+  assert.match(adminUnjoined, /recorded as your admin override/);
+  assert.doesNotMatch(adminUnjoined, /id="answer-form"|data-action="signoff"/, 'who may sign is unchanged');
+  const memberUnjoined = await openAs('member', unjoined);
+  assert.match(memberUnjoined, /Dana Okafor has no account yet/);
+  assert.match(memberUnjoined, /An administrator can invite them or hand this on\./);
+  assert.doesNotMatch(memberUnjoined, /invite-owner|data-override/);
+  const invited = await openAs('admin', {...unjoined, owner_account: {...unjoined.owner_account, state: 'invited'}});
+  assert.match(invited, /has been invited but has not joined yet/);
+  assert.match(invited, /Invite again/);
+  const joined = await openAs('admin', {...unjoined, owner_account: {...unjoined.owner_account, state: 'account'}});
+  assert.doesNotMatch(joined, /Nobody can sign this yet|invite-owner/);
+  const h2 = harness();
+  assert.match(h2.run("inviteForm([{id: 'p9', name: 'Dana Okafor', active: true, email: '', github_id: ''}], {person_id: 'p9', email: ''})"), /<option value="p9" selected>/);
+  assert.match(h2.run("inviteForm([], {email: 'dana@example.test'})"), /value="dana@example.test"/);
+  console.log('Read-only decision copy: member, admin, viewer, unassigned and unjoined-owner wording pass.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -395,6 +395,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     from .authz import ACTIONS, basis_for
                     decision["allowed_actions"] = [action for action in ACTIONS
                         if basis_for(store.graph, self.actor(), decision, action)[0]]
+                    decision["owner_account"] = self.owner_account(decision.get("owner_id"))
                     # The records its question names, with their status, as
                     # the Slack message states them.
                     from .ladder import named_records, records_line
@@ -426,7 +427,19 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         # A full authenticated agent REST read acknowledges the
                         # same actual decision revisions as the MCP tree tool.
                         return self.send(200, call_tool(store, "bridge_get_tree", {"task_id": parts[2]}))
-                    return self.send(200, get_tree(store, parts[2]))
+                    tree = get_tree(store, parts[2])
+                    # The task page says the same as the decision dialog about
+                    # an owner who cannot sign in yet; the agent's tree does not.
+                    owners_of = {r["id"]: r["owner_id"] for r in store.graph.db.execute(
+                        "SELECT id, owner_id FROM decisions WHERE run_id=? AND owner_id != ''", (parts[2],))}
+                    pending_nodes = list(tree.get("nodes") or [])
+                    while pending_nodes:
+                        node = pending_nodes.pop()
+                        account = self.owner_account(owners_of.get(node.get("node_id")))
+                        if account is not None and account["state"] != "account":
+                            node["owner_account"] = account
+                        pending_nodes.extend(node.get("children") or [])
+                    return self.send(200, tree)
                 if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "trace":
                     from .canvas import trace
                     return self.send(200, trace(store, parts[2]), etag=True)
@@ -665,6 +678,19 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                 cookie = auth.session_cookie(pid)
                 return self.send(200, {"redirect": f"/#runs/{link.run_id}"}, extra_headers={"Set-Cookie": cookie})
             return self.send(404, {"error": "Not found"})
+
+        def owner_account(self, owner_id):
+            """Whether a decision's routed owner can sign in, for the people
+            reading it. Measured on a demo run: an admin opened a decision
+            routed to a teammate who had not joined yet and read only that
+            they could add a note or a follow-up, with no way on."""
+            if not auth.enabled or not owner_id:
+                return None
+            from .authz import _owner_person_id
+            person_id = _owner_person_id(store.graph, {"owner_id": owner_id})
+            person = store.graph.get_person(person_id) if person_id else None
+            return {"state": accounts.login_state(person_id), "person_id": person_id,
+                    "email": (person or {}).get("email") or "", "name": (person or {}).get("name") or ""}
 
         def me_view(self):
             if self.me is None:

@@ -109,6 +109,21 @@ class Accounts:
         return self.graph.db.execute('SELECT 1 FROM account_passwords WHERE person_id=?',
                                      (person_id,)).fetchone() is not None
 
+    def login_state(self, person_id):
+        """Whether a person on the map can sign in: 'account' (a password
+        or a GitHub login), 'invited' (an open invitation, not accepted), or
+        'none'. A routed owner without one cannot answer or sign, and the
+        people who can see that need to know it."""
+        person = self.graph.get_person(person_id) if person_id else None
+        if person is None:
+            return 'none'
+        if self.has_password(person['id']) or person.get('github_id'):
+            return 'account'
+        open_invite = self.graph.db.execute(
+            'SELECT 1 FROM account_invites WHERE person_id=? AND consumed=0 AND expires_at>?',
+            (person['id'], int(time.time()))).fetchone()
+        return 'invited' if open_invite else 'none'
+
     def invite(self, email, role, actor, person_id=''):
         """An invitation for an email address. It links to a person on the
         map by exact email, or by the person the admin names (one seeded
