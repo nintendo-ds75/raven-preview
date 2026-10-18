@@ -122,7 +122,7 @@ Raven routes decisions using evidence, not a hand-built map. Give it at least on
 | --- | --- | --- |
 | GitHub | Pull requests, reviews, CODEOWNERS; keeps syncing | **Connections & setup → Connect GitHub**, choose repositories |
 | Local clone | Commit history, blame, CODEOWNERS | `./setup --repo /path/to/checkout --repo-name owner/name` |
-| Slack channels, Jira projects, docs sites | Evidence the agent can cite | `python -m bridge.sources scan --repo owner/name` suggests them; an admin connects each one. See [context sources](context-sources.md) |
+| Slack channels, Jira projects, docs sites | Evidence the agent can cite | `./dev shell`, then `python -m bridge.sources scan --repo owner/name` suggests them (the command runs inside the container, where the database is); an admin connects each one. See [context sources](context-sources.md) |
 
 ## 5. Run one task
 

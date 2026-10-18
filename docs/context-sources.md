@@ -137,7 +137,8 @@ sign-off requirement.
 ## Suggested sources
 
 An administrator does not have to know channel IDs and project keys up front.
-`python -m bridge.sources scan --repo owner/name` (or `POST /api/context/scan`)
+`python -m bridge.sources scan --repo owner/name` (inside the container for a Docker
+install: `./dev shell` first; or `POST /api/context/scan`)
 reads what the repository points to and checks it against what the configured
 credentials can list:
 
