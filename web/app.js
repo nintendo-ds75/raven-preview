@@ -64,6 +64,7 @@ let workspaceError = '';
 // The ownership graph and the directory (people, teams, the authority map, the coordinator) are not in the
 // polled state: the owners view fetches them when it renders.
 let ownership = null, ownershipLoading = false;
+let savings = null, savingsLoading = false, savingsAt = 0;
 let directory = null, directoryLoading = false;
 let view = 'inbox', tab = 'pending', tabChosen = false, query = '', ownerFilter = '', fetching = false;
 // The ETag of the state on screen, sent back with each poll; and when the
@@ -445,8 +446,39 @@ function inbox() {
     </div>`;
 }
 
+function durationLabel(seconds) {
+  if (seconds == null) return '—';
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return '<1m';
+  if (s < 3600) return `${Math.round(s / 60)}m`;
+  if (s < 86400) return `${Math.round(s / 360) / 10}h`.replace(/\.0h$/, 'h');
+  return `${Math.round(s / 8640) / 10}d`.replace(/\.0d$/, 'd');
+}
+
+function loadSavings() {
+  if (savingsLoading) return;
+  savingsLoading = true;
+  api('/api/metrics?days=30').then(result => { savings = result; savingsAt = Date.now(); if (['runs','owners'].includes(view)) render(); })
+    .catch(error => notify(error.message)).finally(() => { savingsLoading = false; });
+}
+
+function savedStrip() {
+  // One line of numbers from the ledger: what Raven reused, how proposals fared, how long people took.
+  if (savings === null || Date.now() - savingsAt > STALE_DRAW_MS) loadSavings();
+  if (!savings) return '<p class="saved-strip context" role="status">Measuring what Raven saved…</p>';
+  const m = savings, decided = m.proposals.signed_unchanged + m.proposals.corrected;
+  if (!m.decisions) return `<p class="saved-strip context" role="status"><strong>What Raven saved</strong> · last ${m.window_days} days · no decisions recorded yet.</p>`;
+  const parts = [`<strong>${m.reuse.total}</strong> of ${m.decisions} answered from memory or a rule`];
+  if (decided) parts.push(`<strong>${m.proposals.signed_unchanged} of ${decided}</strong> proposals signed unchanged`);
+  if (m.time_to_answer.count) parts.push(`answers in <strong>${durationLabel(m.time_to_answer.median_seconds)}</strong> median, ${durationLabel(m.time_to_answer.p90_seconds)} p90`);
+  if (m.handon.routed) parts.push(`<strong>${m.handon.handed_on} of ${m.handon.routed}</strong> handed on`);
+  if (m.reask.asked) parts.push(`<strong>${m.reask.repeated}</strong> asked again after an answer existed`);
+  if (m.wait_saved.decisions) parts.push(`<strong>${m.wait_saved.estimated ? '≈' : ''}${durationLabel(m.wait_saved.seconds)}</strong> of agent waiting avoided`);
+  return `<p class="saved-strip" role="status"><strong>What Raven saved</strong> · last ${m.window_days} days · ${parts.join(' · ')}</p>`;
+}
+
 function runs() {
-  return `<div class="wide-toolbar"><h2>Tasks in this workspace</h2>${!state.auth?.enabled || ['admin','member'].includes(state.me?.role) ? '<button class="button primary" data-action="new">Ask Raven</button>' : ''}${state.execution_config?.enabled && state.me?.role !== 'viewer' ? '<button class="button" data-action="task">Start hosted execution</button>' : ''}<span class="muted">${plural(state.runs.length, 'task')}</span></div>${state.runs.length ? `<div class="table-wrap" role="region" aria-label="Tasks" tabindex="0"><table><thead><tr><th>TASK / REPOSITORY</th><th>AGENT</th><th>STATUS</th><th>DECISIONS</th><th>UPDATED</th><th></th></tr></thead><tbody>${state.runs.map(run => {
+  return savedStrip() + `<div class="wide-toolbar"><h2>Tasks in this workspace</h2>${!state.auth?.enabled || ['admin','member'].includes(state.me?.role) ? '<button class="button primary" data-action="new">Ask Raven</button>' : ''}${state.execution_config?.enabled && state.me?.role !== 'viewer' ? '<button class="button" data-action="task">Start hosted execution</button>' : ''}<span class="muted">${plural(state.runs.length, 'task')}</span></div>${state.runs.length ? `<div class="table-wrap" role="region" aria-label="Tasks" tabindex="0"><table><thead><tr><th>TASK / REPOSITORY</th><th>AGENT</th><th>STATUS</th><th>DECISIONS</th><th>UPDATED</th><th></th></tr></thead><tbody>${state.runs.map(run => {
     const decisions = state.decisions.filter(d => d.run_id === run.id);
     const pending = decisions.filter(needsYou);
     return `<tr><td><strong>${esc(run.title)}</strong><small>${esc(run.repo)}</small></td><td>${esc(run.agent)}</td><td>${pill(pending.length ? 'Waiting for decisions' : runStatusLabel(run.status), pending.length ? '' : 'gray')}</td><td>${decisions.length} total${pending.length ? ` · ${pending.length} need a person` : ''}</td><td>${ago(run.updated_at)}</td><td><button class="button small" data-action="run" data-id="${esc(run.id)}">View run</button></td></tr>`;
@@ -504,7 +536,7 @@ function readiness() {
 }
 
 function owners() {
-  return `<div class="owners-page">${workspaceAccountCard()}${readiness()}${verifiedLayer()}<details class="history" id="repository-signals"><summary>Repository history and routing signals</summary>${ownershipGraph()}</details><div class="wide-toolbar"><h2>Owners by path pattern</h2><span class="muted">${state.owners.length} people</span></div><div class="people-grid">${state.owners.map((owner, i) => `<article class="person-card">${avatar(owner.name, i)}<h3>${esc(owner.name)}</h3><p>${esc(owner.team)}</p><code>${esc(owner.patterns)}</code><small>${state.decisions.filter(d => d.owner_id === owner.id && d.status === 'pending').length} pending · ${plural(state.decisions.filter(d => d.owner_id === owner.id && d.status === 'approved').length, 'answer')} captured</small></article>`).join('')}</div>${state.owners.length ? '<div class="notice">A configured owner is a person with verified authority for their path patterns. The patterns also route by repository-relative file path when no graph exists: simple globs, separated by commas, the last matching owner wins. You can reassign pending requests from the inbox.</div>' : empty('Start with the people who know.', 'Add an owner and the paths they are responsible for.', 'owner', 'Add your first owner')}</div>`;
+  return `<div class="owners-page">${workspaceAccountCard()}${savedStrip()}${readiness()}${verifiedLayer()}<details class="history" id="repository-signals"><summary>Repository history and routing signals</summary>${ownershipGraph()}</details><div class="wide-toolbar"><h2>Owners by path pattern</h2><span class="muted">${state.owners.length} people</span></div><div class="people-grid">${state.owners.map((owner, i) => `<article class="person-card">${avatar(owner.name, i)}<h3>${esc(owner.name)}</h3><p>${esc(owner.team)}</p><code>${esc(owner.patterns)}</code><small>${state.decisions.filter(d => d.owner_id === owner.id && d.status === 'pending').length} pending · ${plural(state.decisions.filter(d => d.owner_id === owner.id && d.status === 'approved').length, 'answer')} captured</small></article>`).join('')}</div>${state.owners.length ? '<div class="notice">A configured owner is a person with verified authority for their path patterns. The patterns also route by repository-relative file path when no graph exists: simple globs, separated by commas, the last matching owner wins. You can reassign pending requests from the inbox.</div>' : empty('Start with the people who know.', 'Add an owner and the paths they are responsible for.', 'owner', 'Add your first owner')}</div>`;
 }
 
 function newPerson() {
