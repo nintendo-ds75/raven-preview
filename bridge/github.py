@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 import threading
 import time
 import urllib.error
@@ -157,10 +158,24 @@ def _overlap_since(cursor: str) -> str:
     return (at - timedelta(hours=OVERLAP_HOURS)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+_HOSTED_RE = re.compile(r"[a-z0-9_.-]+/[a-z0-9_.-]+")
+
+
+def hosted_repo(repo: str) -> str:
+    """The owner/name a hosted repository is, or a refusal. The name is
+    spliced into the API path, so it is exactly one owner and one name:
+    never a query, a fragment, an encoded slash or a further path."""
+    key = repo_key(repo)
+    if not _HOSTED_RE.fullmatch(key):
+        raise Invalid("sync needs the repository as owner/name")
+    return key
+
+
 def register(store: Graph, repo: str) -> None:
     """A repository the scheduler should keep current."""
+    repo = hosted_repo(repo)
     with store.transaction():
-        _set_state(store, repo_key(repo))
+        _set_state(store, repo)
 
 
 SYNC_HOW = "connect GitHub under Connections & setup, or run `bridge sync <repo>`, or set GITHUB_TOKEN with BRIDGE_GITHUB_REPOS on the server"
@@ -483,9 +498,7 @@ def sync_repo(store: Graph, api: GitHubAPI, repo: str, limit: int = MAX_PULLS_BO
     never skipped, and a pull request updated at the watermark's very
     second is read again rather than left behind. The state records the
     attempt, the success and the last error."""
-    repo = repo_key(repo)
-    if "/" not in repo:
-        raise Invalid("sync needs the repository as owner/name")
+    repo = hosted_repo(repo)
     owner, _, name = repo.partition("/")
     state = sync_state(store, repo)
     cursor = state["cursor"] if state else ""

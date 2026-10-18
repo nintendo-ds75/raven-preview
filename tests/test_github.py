@@ -147,6 +147,24 @@ class SyncTests(GitHubCase):
         self.assertEqual(after[0], WES[0])
         self.assertTrue(any("Approved-by" in line for line in after[1]), after[1])
 
+    def test_a_repository_is_exactly_owner_and_name_before_it_reaches_the_api_path(self):
+        """The name is spliced into the request path: a query, a fragment,
+        an encoded slash or a further path never gets there."""
+        from bridge.github import register, sync_states
+        from bridge.store import Invalid
+        for repo in ("acme/platform?per_page=1&x=", "https://api.github.com/user#", "acme/platform%2F..%2F..%2Fuser",
+                     "acme", "acme/platform/pulls", "acme/plat form", ""):
+            with self.subTest(repo=repo), self.assertRaises(Invalid):
+                sync_repo(self.graph, self.api, repo)
+            with self.subTest(repo=repo, register=True), self.assertRaises(Invalid):
+                register(self.graph, repo)
+        self.assertEqual(self.api.requests, [])
+        self.assertEqual(sync_states(self.graph), [])
+        # The spellings a person types still mean the same repository.
+        self.assertEqual(sync_repo(self.graph, self.api, "https://github.com/Acme/Platform.git")["repo"], REPO)
+        self.assertTrue(all(path.startswith("/repos/acme/platform/") or path.startswith(("/orgs/", "/users/"))
+                            for path in self.api.requests), self.api.requests)
+
     def test_team_codeowners_resolve_to_synced_members(self):
         self.assertEqual(self.graph.team_members_by_handle("acme/billing-team"), [])
         sync_repo(self.graph, self.api, REPO)
