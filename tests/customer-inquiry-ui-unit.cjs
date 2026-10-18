@@ -6,7 +6,7 @@ const handler = source.slice(source.lastIndexOf("document.addEventListener('subm
 const escape = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 (async()=>{
   let submit, finish;
-  const calls=[], c={esc:escape,modalVersion:1,document:{addEventListener:(kind,fn)=>submit=fn},
+  const calls=[], c={esc:escape,modalVersion:1,MODEL_WAIT_MS:45000,setTimeout:()=>1,clearTimeout(){},document:{addEventListener:(kind,fn)=>submit=fn},
     api:(url,body)=>{calls.push({url,body});return new Promise(resolve=>finish=resolve)}};
   vm.createContext(c); vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../web/presentation.js'),'utf8'),c);vm.runInContext(render+handler,c);
   const html=vm.runInContext("decisionInquiry({id:'decision',run_id:'task'})",c);

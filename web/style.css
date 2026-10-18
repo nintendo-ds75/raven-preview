@@ -47,6 +47,27 @@ button:disabled{
   opacity:.55;
   cursor:wait}
 
+button[aria-busy="true"]{
+  opacity:.8;
+  cursor:progress}
+
+button[aria-busy="true"]::before{
+  content:"";
+  display:inline-block;
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:currentColor;
+  margin-right:8px;
+  animation:busy-pulse 1s ease-in-out infinite}
+
+@keyframes busy-pulse{
+  0%,100%{opacity:.25}
+  50%{opacity:1}}
+
+@media (prefers-reduced-motion:reduce){
+  button[aria-busy="true"]::before{animation:none}}
+
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{
   outline:2px solid #679574;
   outline-offset:3px}

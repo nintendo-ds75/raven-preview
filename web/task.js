@@ -2,6 +2,10 @@
 
 // These reads use normal workspace authentication. Copying a task URL grants no access.
 let taskDetail = null, taskError = '', taskTab = 'overview', taskRequest = 0;
+// What the task page last drew, so a poll that finds the same tree and
+// trace does not rebuild it; observed_at is the read's own clock, not a change.
+let taskDrawn = '', taskDrawnAt = 0;
+const taskFingerprint = (tree, trace) => JSON.stringify({...tree, observed_at: ''}) + JSON.stringify(trace);
 const taskViews = new Map();
 const taskId = () => view === 'runs' ? location.hash.slice(1).split('/')[1] || '' : '';
 const taskList = value => Array.isArray(value) ? value : [];
@@ -75,7 +79,8 @@ async function loadTask({quiet = false} = {}) {
     ]);
     if (taskId() !== id || request !== taskRequest) return;
     taskDetail = {tree,trace}; taskError = '';
-    render();
+    const drawn = taskFingerprint(tree, trace);
+    if (!(quiet && drawn === taskDrawn && Date.now() - taskDrawnAt < 60000)) { taskDrawn = drawn; taskDrawnAt = Date.now(); render(); }
     const focused = location.hash.slice(1).split('/')[2];
     if (!quiet && focused && flattenTask(tree.nodes).some(n => n.node_id === focused) && typeof review === 'function') await review(focused);
   } catch (error) {
@@ -258,10 +263,13 @@ async function submitTaskInquiry(form) {
   saved.inquiry = question; saved.inquiryPending = true; saved.inquiryError = ''; saved.inquiryResult = null;
   form.querySelector('[type="submit"]').ariaDisabled = 'true';
   render();
+  const wait = typeof AbortController === 'function' ? new AbortController() : null;
+  const cap = setTimeout(() => wait && wait.abort(), typeof MODEL_WAIT_MS === 'number' ? MODEL_WAIT_MS : 45000);
   try {
-    saved.inquiryResult = await api(`/api/tasks/${encodeURIComponent(id)}/inquiry`, {question});
-  } catch (error) { saved.inquiryError = error.message; saved.inquiryResult = null; }
+    saved.inquiryResult = await api(`/api/tasks/${encodeURIComponent(id)}/inquiry`, {question}, {signal: wait && wait.signal});
+  } catch (error) { saved.inquiryError = typeof modelWaitMessage === 'function' ? modelWaitMessage(error) : error.message; saved.inquiryResult = null; }
   finally {
+    clearTimeout(cap);
     saved.inquiryPending = false;
     if (taskId() === id) render();
   }

@@ -18,7 +18,7 @@ const fixtures = [result,
   {...result,citations:[null,{id:evidence[0].id,quote:null},{id:evidence[0].id,quote:' '}]}, grouped
 ];
 (async () => {
-  const c = {esc,prose:esc,view:'runs',location:{hash:'#runs/task'},data:{focus:{node_id:'decision'}},inquiryView:()=>({question:'',answer:null})};
+  const c = {esc,prose:esc,view:'runs',MODEL_WAIT_MS:45000,setTimeout:()=>1,clearTimeout(){},location:{hash:'#runs/task'},data:{focus:{node_id:'decision'}},inquiryView:()=>({question:'',answer:null})};
   vm.createContext(c);vm.runInContext(read('presentation.js')+read('task.js'),c);
   const brief = read('brief.js');
   const start = brief.indexOf('function inquiryCard()');

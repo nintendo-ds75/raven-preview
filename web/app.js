@@ -66,6 +66,10 @@ let workspaceError = '';
 let ownership = null, ownershipLoading = false;
 let directory = null, directoryLoading = false;
 let view = 'inbox', tab = 'pending', tabChosen = false, query = '', ownerFilter = '', fetching = false;
+// The ETag of the state on screen, sent back with each poll; and when the
+// list was last drawn, so relative times still move while nothing changes.
+let stateTag = '', lastDraw = 0;
+const STALE_DRAW_MS = 60000, MODEL_WAIT_MS = 45000;
 let toastTimer;
 let modalVersion = 0, navigationVersion = 0;
 let resetScrollOnNavigation = false;
@@ -143,11 +147,55 @@ function notify(message) {
   toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 4500);
 }
 
-async function api(path, data) {
-  const response = await fetch(path, data === undefined ? {} : {
-    method: 'POST', headers: {'Content-Type': 'application/json', 'X-Bridge-CSRF': state.csrf_token}, body: JSON.stringify(data),
+// Progress the moment a control is used: the button is disabled and says
+// what is happening before the request leaves, and goes back to its label
+// when the request fails or the control is still on screen. Measured on
+// the prototype: a sign-off, a hand-on or an answer only dimmed the button,
+// and the person waited with no sign that anything had been recorded.
+const busyLabels = {signoff: 'Signing…', refer: 'Handing on…', assign: 'Assigning…', followups: 'Adding…', reframe: 'Recording…',
+  'end-rule': 'Ending rule…', 'end-authority': 'Ending…', 'slack-sync': 'Refreshing…', 'github-refresh': 'Refreshing…',
+  'retry-delivery': 'Queuing…', token: 'Creating…', 'confirm-launch': 'Opening…', 'quick-agent': 'Connecting…',
+  'task-brief': 'Opening…', retry: 'Connecting…', 'task-refresh': 'Refreshing…', 'agent-status': 'Checking…',
+  export: 'Exporting…', fallback: 'Saving…', 'github-connect': 'Connecting…', 'github-authorize': 'Starting…'};
+function busy(control, label = 'Working…') {
+  if (!control || !control.dataset || control.dataset.busy) return () => {};
+  const html = control.innerHTML;
+  control.dataset.busy = '1';
+  control.disabled = true;
+  if (control.setAttribute) control.setAttribute('aria-busy', 'true');
+  control.textContent = label;
+  return () => {
+    delete control.dataset.busy;
+    if (control.removeAttribute) control.removeAttribute('aria-busy');
+    control.innerHTML = html;
+    control.disabled = false;
+  };
+}
+
+// The poll sends back the ETag of the state it has. An unchanged workspace
+// answers 304 with no body, and nothing is parsed or redrawn.
+async function fetchState() {
+  const body = await api('/api/state', undefined, {conditional: stateTag});
+  if (body === null) return false;
+  stateTag = body.etag || '';
+  state = body;
+  return true;
+}
+
+// conditional: the ETag of the copy already on screen ('' for none). The
+// request then carries If-None-Match, answers 304 with null, and a body
+// that does come back carries its own ETag as a non-enumerable `etag`.
+async function api(path, data, {signal, conditional} = {}) {
+  const headers = data === undefined ? {} : {'Content-Type': 'application/json', 'X-Bridge-CSRF': state.csrf_token};
+  if (conditional) headers['If-None-Match'] = conditional;
+  const response = await fetch(path, data === undefined ? {headers, signal, ...(conditional ? {cache: 'no-store'} : {})} : {
+    method: 'POST', headers, body: JSON.stringify(data), signal,
   });
+  if (conditional && response.status === 304) return null;
   const body = await response.json();
+  if (conditional !== undefined && response.ok && body && typeof body === 'object') {
+    Object.defineProperty(body, 'etag', {value: (response.headers && response.headers.get && response.headers.get('ETag')) || ''});
+  }
   if (!response.ok) { const error = new Error(body.error || 'Request failed. Please try again.'); error.status = response.status; throw error; }
   return body;
 }
@@ -195,25 +243,32 @@ async function refresh({quiet = false} = {}) {
   if (fetching) return;
   fetching = true;
   try {
-    state = await api('/api/state');
+    const changed = await fetchState();
     workspaceError = '';
-    updateWorkspaceName();
-    updateAgentConnectPrompt();
-    if ($('#agent-status')) $('#agent-status').innerHTML = agentStatus();
     $('#connection').classList.remove('offline');
-    $('#connection').innerHTML = state.auth && state.auth.enabled ? '<i></i> Shared workspace' : '<i></i> Local workspace';
-    if (state.me) {
-      $('#profile-name').textContent = state.me.name;
-      $('#profile-avatar').textContent = initials(state.me.name);
-      $('#profile-note').innerHTML = state.auth && state.auth.enabled ? `${esc(state.me.role)} · <a href="/auth/logout">Sign out</a>` : 'Self-hosted workspace';
+    if (changed) {
+      updateWorkspaceName();
+      updateAgentConnectPrompt();
+      if ($('#agent-status')) $('#agent-status').innerHTML = agentStatus();
+      $('#connection').innerHTML = state.auth && state.auth.enabled ? '<i></i> Shared workspace' : '<i></i> Local workspace';
+      if (state.me) {
+        $('#profile-name').textContent = state.me.name;
+        $('#profile-avatar').textContent = initials(state.me.name);
+        $('#profile-note').innerHTML = state.auth && state.auth.enabled ? `${esc(state.me.role)} · <a href="/auth/logout">Sign out</a>` : 'Self-hosted workspace';
+      }
+      if (personalInbox() && !tabChosen) tab = 'mine';
+      $('#inbox-count').textContent = personalInbox() ? state.decisions.filter(assignedToMe).length
+        : state.counts ? state.counts.needs_you : state.decisions.filter(needsYou).length;
     }
-    if (personalInbox() && !tabChosen) tab = 'mine';
-    $('#inbox-count').textContent = personalInbox() ? state.decisions.filter(assignedToMe).length
-      : state.counts ? state.counts.needs_you : state.decisions.filter(needsYou).length;
     if (taskId()) await loadTask({quiet});
     if (view === 'work' && typeof loadWorkbench === 'function') await loadWorkbench();
-    if (typeof renderWorkRecents === 'function') renderWorkRecents();
-    if (!taskId() && (!quiet || (!$('#modal').open && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)))) render();
+    if ((changed || !quiet) && typeof renderWorkRecents === 'function') renderWorkRecents();
+    // A quiet poll that found nothing new leaves the page alone, apart from
+    // a redraw a minute so "3 minutes ago" keeps moving. Measured in
+    // Chromium: the inbox was rebuilt every five seconds whether or not
+    // anything had changed, and text selection and hover state went with it.
+    const settled = quiet && !changed && Date.now() - lastDraw < STALE_DRAW_MS;
+    if (!taskId() && !settled && (!quiet || (!$('#modal').open && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)))) render();
   } catch (error) {
     $('#connection').classList.add('offline');
     $('#connection').innerHTML = '<i></i> Connection lost';
@@ -546,6 +601,7 @@ async function agentCredential(target) {
 }
 
 function render() {
+  lastDraw = Date.now();
   if (!state.auth) {
     $('#new-request').hidden = true;
     $('#manual-actions').hidden = true;
@@ -711,7 +767,8 @@ async function submitRequest(form) {
   if (!draft.nodePayload) draft.nodePayload = {question:data.question, context:data.context, paths:data.path, client_ref:draft.clientRef, ...(Object.keys(draft.facts || {}).length ? {facts:{...draft.facts}} : {})};
   const current = () => $('#modal').open && modalVersion === version && navigationVersion === navigation && $('#request-form') === form && location.hash === route;
   const button = form.querySelector('[type="submit"]');
-  draft.pending = true; draft.error = ''; button.disabled = true; errorEl.hidden = true;
+  draft.pending = true; draft.error = ''; errorEl.hidden = true;
+  const done = busy(button, 'Recording…');
   form.querySelectorAll('input,textarea').forEach(el => { el.readOnly = true; });
   form.querySelector('select').disabled = true;
   progress.textContent = 'Recording your question…';
@@ -749,7 +806,8 @@ async function submitRequest(form) {
     }
   } finally {
     draft.pending = false;
-    if (current()) { button.disabled = false; button.textContent = draft.scopeEditable ? 'Retry with current scope' : 'Retry question'; }
+    done();
+    if (current()) button.textContent = draft.scopeEditable ? 'Retry with current scope' : 'Retry question';
   }
 }
 
@@ -1014,6 +1072,7 @@ document.addEventListener('click', async event => {
   // The dialog as it was when the action began: a response that lands
   // after the person closed it redraws nothing.
   const version = modalVersion;
+  const done = busyLabels[action] ? busy(target, busyLabels[action]) : () => {};
   try {
     if (action === 'close') closeModal();
     if (action === 'new' || action === 'request-status') newRequest();
@@ -1154,7 +1213,7 @@ document.addEventListener('click', async event => {
       await navigator.clipboard.writeText(source.textContent);
       notify(target.dataset.target ? 'Instruction copied.' : 'Configuration copied for this workspace.');
     }
-  } catch (error) { notify(error.message); target.disabled = false; }
+  } catch (error) { notify(error.message); done(); target.disabled = false; }
 });
 
 document.addEventListener('input', event => {
@@ -1190,7 +1249,8 @@ document.addEventListener('submit', async event => {
   if (form.id === 'task-inquiry-form') { await submitTaskInquiry(form); return; }
   const button = form.querySelector('[type="submit"]');
   if (button.disabled || !form.reportValidity()) return;
-  button.disabled = true;
+  const done = busy(button, form.id === 'task-form' ? 'Starting…' : form.id === 'ingest-form' ? 'Ingesting…'
+    : ['answer-form', 'correct-form', 'rule-form'].includes(form.id) ? 'Recording…' : 'Saving…');
   const errorEl = form.querySelector('#form-error');
   errorEl.hidden = true;
   const data = Object.fromEntries(new FormData(form));
@@ -1239,7 +1299,7 @@ document.addEventListener('submit', async event => {
   } catch (error) {
     errorEl.textContent = error.message;
     errorEl.hidden = false;
-    button.disabled = false;
+    done();
   }
 });
 $('#new-request').addEventListener('click', () => view === 'owners' ? newOwner() : newRequest());
@@ -1259,6 +1319,9 @@ refresh().then(() => {
   }
 });
 setInterval(() => { if (!document.hidden) refresh({quiet:true}); }, 5000);
+// A hidden tab is not polled; the moment it is shown again it catches up,
+// rather than showing stale rows for up to five more seconds.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh({quiet:true}); });
 
 function workbenchSetupCard() {
   const config = state.workbench || {};
@@ -1273,10 +1336,20 @@ document.addEventListener('submit', async event => {
   if (button.ariaDisabled === 'true' || !form.reportValidity()) return;
   button.ariaDisabled = 'true'; output.textContent = 'Reading task context…';
   const requestVersion = modalVersion;
+  // A reading that needs the model is capped: with a slow or unreachable
+  // model endpoint the dialog otherwise waits for minutes on one line of text.
+  const wait = typeof AbortController === 'function' ? new AbortController() : null;
+  const cap = setTimeout(() => wait && wait.abort(), MODEL_WAIT_MS);
   try {
-    const result = await api(`/api/tasks/${encodeURIComponent(form.dataset.task)}/inquiry`, {question:form.querySelector('textarea').value.trim(),focus_id:form.dataset.decisionInquiry});
+    const result = await api(`/api/tasks/${encodeURIComponent(form.dataset.task)}/inquiry`, {question:form.querySelector('textarea').value.trim(),focus_id:form.dataset.decisionInquiry}, {signal: wait && wait.signal});
     if (requestVersion !== modalVersion || !form.isConnected) return;
     output.innerHTML = `<p>${esc(result.answer)}</p><small>${esc(result.notice || 'Clarification does not authorize work.')}</small>${inquiryCitations(result, 'decision-inquiry-citations')}${(result.evidence || []).length ? `<details><summary>Evidence used</summary>${result.evidence.map(e => `<h4>${esc(e.title || e.id)}</h4><p>${esc(e.text)}</p>`).join('')}</details>` : ''}`;
-  } catch (error) { if (requestVersion === modalVersion && form.isConnected) output.textContent = error.message; }
-  finally { button.ariaDisabled = 'false'; }
+  } catch (error) { if (requestVersion === modalVersion && form.isConnected) output.textContent = modelWaitMessage(error); }
+  finally { clearTimeout(cap); button.ariaDisabled = 'false'; }
 });
+
+function modelWaitMessage(error) {
+  return error && error.name === 'AbortError'
+    ? `No reading came back within ${Math.round(MODEL_WAIT_MS / 1000)} seconds. The records stand as shown; ask again in a moment.`
+    : error.message;
+}

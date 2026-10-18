@@ -5,7 +5,7 @@ const source = fs.readFileSync(require('node:path').join(__dirname, '../web/task
 const escape = v => String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 (async () => {
   const requests = []; let renders = 0;
-  const c = {view:'runs', location:{hash:'#runs/task-a'}, esc:escape,
+  const c = {view:'runs', location:{hash:'#runs/task-a'}, esc:escape, setTimeout:()=>1, clearTimeout(){},
     render:() => { renders++; }, api:(url,body) => new Promise((resolve,reject) => requests.push({url,body,resolve,reject}))};
   vm.createContext(c); vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../web/presentation.js'),'utf8'),c); vm.runInContext(source,c);
   const run = code => vm.runInContext(code,c);
