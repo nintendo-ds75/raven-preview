@@ -1,6 +1,5 @@
 """Contact selections bind exact evidence IDs; failed reasoning never grants authority."""
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
@@ -8,7 +7,6 @@ from bridge import canvas
 from bridge.config import Config
 from bridge.contact_reasoning import choose
 from bridge.llm import LLMError
-from bridge.store import Store
 
 
 class ContactReasoningContractTests(OfflineCase):
@@ -17,7 +15,7 @@ class ContactReasoningContractTests(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'contacts.db')
+        self.store = self.fresh_store('contacts.db')
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.people = {name: self.graph.add_person(name, email=name.replace(' ', '.') + '@synthetic.invalid')

@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
@@ -7,13 +6,12 @@ from bridge.auth import Identity
 from bridge.config import Config
 from bridge.inquiry import ask
 from bridge.llm import Client, LLMError, NoAPIKey
-from bridge.store import Store
 
 
 class InquiryTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'question.db')
+        self.store = self.fresh_store('question.db')
         self.actor = Identity('reader', 'Reader', 'member', 'session')
         self.source = self.store.add_record({'repo': 'example/billing', 'kind': 'doc', 'ref': 'metering',
             'title': 'Billing traffic', 'body': 'Internal test traffic is excluded from billing.', 'resolved': True})['source']

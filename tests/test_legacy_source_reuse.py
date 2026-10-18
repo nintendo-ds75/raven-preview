@@ -1,6 +1,5 @@
 """Synthetic migration/auto-rule contracts; no external services or providers."""
 import json
-from pathlib import Path
 
 from fixtures import OfflineCase
 from bridge import canvas, context_memory as cm, proof
@@ -16,7 +15,7 @@ ANSWER = 'Retain records for thirty days.'
 class LegacySourceReuseTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'legacy-reuse.db')
+        self.store = self.fresh_store('legacy-reuse.db')
         self.g = self.store.graph
         self.addCleanup(self.g.close)
         self.store.add_owner({'name': 'Ada Example', 'team': 'Example', 'patterns': 'policy/*'})

@@ -89,8 +89,7 @@ class SerializedEvidenceTests(OfflineCase):
 
 class PseudonymTests(OfflineCase):
     def test_aliases_that_share_a_pseudonym_do_not_break_ingestion(self):
-        from bridge.store import Store
-        store = Store(Path(self.temp.name) / 'aliases.db')
+        store = self.fresh_store('aliases.db')
         self.addCleanup(store.graph.close)
         store.graph.db.execute("INSERT INTO engineers(id,name,email) VALUES('one','Ada M. Example','Ada@example.invalid')")
         store.graph.db.execute("INSERT INTO engineers(id,name,email) VALUES('two','Ada Example','ada@example.invalid')")
@@ -180,7 +179,6 @@ class PseudonymTests(OfflineCase):
         pseudonyms must move both sides of that join together."""
         from bridge.ingest import index_repo
         from bridge.routing import route
-        from bridge.store import Store
         repo = Path(self.temp.name) / "ownedco"
         (repo / "billing").mkdir(parents=True)
         run_git(repo, "init", "-q", "-b", "main")
@@ -195,7 +193,7 @@ class PseudonymTests(OfflineCase):
             run_git(repo, "commit", "-q", "-m", f"billing: change {day}", env={
                 "GIT_AUTHOR_NAME": who[0], "GIT_AUTHOR_EMAIL": who[1], "GIT_AUTHOR_DATE": stamp,
                 "GIT_COMMITTER_NAME": who[0], "GIT_COMMITTER_EMAIL": who[1], "GIT_COMMITTER_DATE": stamp})
-        store = Store(Path(self.temp.name) / "ownedco.db")
+        store = self.fresh_store("ownedco.db")
         index_repo(store.graph, repo)
         question = "Should billing/meter.py round usage up to the next unit?"
         before = route(store.graph, "ownedco", question, path="billing/meter.py")

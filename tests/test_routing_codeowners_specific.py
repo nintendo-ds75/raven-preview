@@ -4,7 +4,6 @@ a file overrides the rule for its directory. Measured on a two-file node
 directory rule): the directory owner's second path outscored the file's
 owner, whom the file alone had ranked first."""
 
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
@@ -12,7 +11,6 @@ from fixtures import OfflineCase
 from bridge.ingest import parse_codeowners_text
 from bridge.routing import route_ranked
 from bridge.signals import listed_for
-from bridge.store import Store
 
 NOW = "2026-08-10T00:00:00+00:00"
 RETRY = "fetchkit/retry.py"
@@ -30,7 +28,7 @@ QUESTION = "Should MAX_RETRIES be raised from 3 to 5?"
 class SpecificCodeownerTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "owners.db")
+        self.store = self.fresh_store("owners.db")
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.graph.set_source("app", "git_now", NOW)

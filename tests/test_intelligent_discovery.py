@@ -1,13 +1,12 @@
 """Reasoning nominates evidence and questions; it never expands authority."""
 import json
 import threading
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
 from bridge import canvas, investigation, semantic_index as si
 from bridge.config import Config
-from bridge.store import Store, Invalid
+from bridge.store import Invalid
 
 
 class LocalEncoder:
@@ -21,7 +20,7 @@ class LocalEncoder:
 class ReasoningTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'reasoning.db')
+        self.store = self.fresh_store('reasoning.db')
         self.g = self.store.graph
         self.task = canvas.start_task(self.store, Config(model_api='none'), {
             'title': 'Handle prepaid balances', 'goal': 'Preserve prepaid value at renewal.', 'repo': 'example/service'})['task_id']

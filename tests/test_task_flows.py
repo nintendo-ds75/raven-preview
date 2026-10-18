@@ -15,7 +15,6 @@ import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
@@ -25,7 +24,6 @@ from bridge.canvas import wait_for_background
 from bridge.github import GitHubAPI, GitHubError, sync_repo, sync_state
 from bridge.llm import Client, LLMError
 from bridge.server import make_server
-from bridge.store import Store
 from test_auth import BOOTSTRAP, SharedServer
 from test_delivery import FakeSlack
 from test_github import REPO as GITHUB_REPO, WES, GitHubCase
@@ -319,7 +317,7 @@ class RestartTests(FlowCase):
         self.server.shutdown()
         wait_for_background(10)
         self.store.graph.close()
-        self.store = Store(Path(self.temp.name) / 'shared.db')
+        self.store = self.fresh_store('shared.db')
         self.auth = Auth(self.store, enabled=True)
         self.server = make_server(self.store, port=0, auth=self.auth)
         threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True).start()
@@ -382,7 +380,7 @@ class HostReportTests(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'report.db')
+        self.store = self.fresh_store('report.db')
         self.addCleanup(self.store.graph.close)
         self.slack = FakeSlack()
         self.delivery = self.store.connect_delivery(self.slack, base_url='https://raven.example')
@@ -527,7 +525,7 @@ class ModelOutageTests(FlowCase):
 
 class SourceOutageTests(OfflineCase):
     def test_an_unreachable_jira_records_the_error_and_marks_nothing_deleted(self):
-        store = Store(Path(self.temp.name) / 'jira.db')
+        store = self.fresh_store('jira.db')
         self.addCleanup(store.graph.close)
         jira = JiraDouble()
         self.addCleanup(jira.close)

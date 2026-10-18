@@ -670,9 +670,7 @@ class WhoMustApprove(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        from pathlib import Path
-        from bridge.store import Store
-        self.store = Store(Path(self.temp.name) / "approve.db")
+        self.store = self.fresh_store("approve.db")
         self.graph = self.store.graph
         with self.graph.transaction():
             self.owner = self.graph.add_person("A Runtime Owner", email="runtime@scope.invalid")
@@ -767,9 +765,7 @@ class WhatAFollowUpHolds(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        from pathlib import Path
-        from bridge.store import Store
-        self.store = Store(Path(self.temp.name) / "followup.db")
+        self.store = self.fresh_store("followup.db")
         graph = self.store.graph
         with graph.transaction():
             person = graph.add_person("Runtime Owner", email="runtime@followup.invalid")

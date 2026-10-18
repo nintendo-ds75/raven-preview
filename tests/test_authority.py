@@ -11,7 +11,6 @@ verified to own goes to the coordinator, never to a guess."""
 import json
 import threading
 import unittest
-from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -23,7 +22,7 @@ from bridge.mcp import dispatch
 from bridge.routing import route, route_ranked
 from bridge.scopes import decision_scopes
 from fixtures import ready_server as make_server
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 
 CFG = Config(model_api="none")
 
@@ -66,7 +65,7 @@ class IdentityTests(unittest.TestCase):
 class PeopleTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "people.db")
+        self.store = self.fresh_store("people.db")
         self.graph = self.store.graph
 
     def test_a_person_is_one_row_however_they_are_named(self):
@@ -518,7 +517,7 @@ class CoordinatorTests(OfflineCase):
 class SurfaceTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "surface.db")
+        self.store = self.fresh_store("surface.db")
 
     def test_rest_round_trip(self):
         server = make_server(self.store, port=0)

@@ -1,7 +1,6 @@
 """Deliberate current-human-source review binds exact immutable decisions."""
 import json
 import threading
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
@@ -17,7 +16,7 @@ REPO = 'synthetic/human-pins'
 class HumanSourceRevalidationTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'human-pins.db')
+        self.store = self.fresh_store('human-pins.db')
         self.g = self.store.graph
         self.addCleanup(self.g.close)
         self.store.add_owner({'name': 'Policy Owner', 'team': 'Policy', 'patterns': 'policy/*'})

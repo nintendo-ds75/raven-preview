@@ -14,7 +14,6 @@ import json
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 from fixtures import OfflineCase
 
@@ -28,7 +27,7 @@ CFG = Config(model_api="none")
 class ContractCase(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "contract.db")
+        self.store = self.fresh_store("contract.db")
         self.wes = self.store.add_owner({"name": "Wes", "team": "Billing", "patterns": "billing/*"})
 
     def start(self, title="Review billing behavior", repo="acme/platform", **extra):

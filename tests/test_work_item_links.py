@@ -1,7 +1,6 @@
 """Offline existing-record association contracts; no provider or model calls."""
 import json
 import threading
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
@@ -16,7 +15,7 @@ REPO = 'synthetic/work-items'
 class WorkItemLinksTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'links.db')
+        self.store = self.fresh_store('links.db')
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.store.add_owner({'name': 'Synthetic Policy Owner', 'team': 'Synthetic', 'patterns': 'policy/*'})

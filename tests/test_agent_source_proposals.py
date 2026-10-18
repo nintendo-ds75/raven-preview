@@ -6,7 +6,6 @@ local. No provider APIs, real messages or real credentials are used.
 import hashlib
 import hmac
 import json
-from pathlib import Path
 import threading
 import time
 import unittest
@@ -18,7 +17,7 @@ from fixtures import OfflineCase, ready_server
 import test_delivery as slack
 from bridge import canvas, context_memory as cm, mcp
 from bridge.config import Config
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 
 REPO = 'synthetic/agent-sources'
 ANSWER = 'Keep the scoped archive for thirty days.'
@@ -27,7 +26,7 @@ ANSWER = 'Keep the scoped archive for thirty days.'
 class AgentSourceProposalTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'agent-pins.db')
+        self.store = self.fresh_store('agent-pins.db')
         self.g = self.store.graph
         self.addCleanup(self.g.close)
         self.store.add_owner({'name': 'Policy Owner', 'team': 'Policy', 'patterns': 'policy/*'})

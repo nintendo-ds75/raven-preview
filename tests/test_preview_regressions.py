@@ -1,16 +1,14 @@
 """Regressions from the f48189b real-host run, with scope controls."""
-from pathlib import Path
 
 from fixtures import OfflineCase
 from bridge import canvas, ladder
 from bridge.config import Config
-from bridge.store import Store
 
 
 class PreviewRegressions(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "preview.db")
+        self.store = self.fresh_store("preview.db")
         self.graph = self.store.graph
         self.cfg = Config(model_api="none")
         self.repo = "acme/library"

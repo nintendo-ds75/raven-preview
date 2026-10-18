@@ -7,7 +7,6 @@ ACL that Raven does not implement.
 """
 
 import time
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
@@ -26,7 +25,7 @@ CFG = Config(model_api="none")
 class DecisionCase(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "isolation.db")
+        self.store = self.fresh_store("isolation.db")
         self.graph = self.store.graph
         self.alice = self.store.add_person({"name": "Alice Billing", "email": "alice@example.test"})
         self.bob = self.store.add_person({"name": "Bob Security", "email": "bob@example.test"})
@@ -142,7 +141,7 @@ class RouteAuthorityFreshnessTests(DecisionCase):
 class SlackWorkspaceIsolationTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "slack-isolation.db")
+        self.store = self.fresh_store("slack-isolation.db")
         # Isolation checks here exercise conversational webhook ingestion.
         self.store.graph.set_setting("slack_interaction_mode", "conversation")
         self.graph = self.store.graph
@@ -192,7 +191,7 @@ class SlackWorkspaceIsolationTests(OfflineCase):
         self.assertEqual(self.graph.db.execute("SELECT count(*) n FROM webhook_receipts").fetchone()["n"], 0)
 
     def test_an_unknown_workspace_cannot_be_pinned_from_an_event(self):
-        fresh = Store(Path(self.temp.name) / "not-connected.db")
+        fresh = self.fresh_store("not-connected.db")
         fresh.graph.set_setting("slack_interaction_mode", "conversation")
         self.addCleanup(fresh.graph.close)
         self.assertEqual(fresh.delivery.inbox.enqueue(self.event()), {"ok": True, "ignored": "workspace_mismatch"})
@@ -273,7 +272,7 @@ class CredentialIsolationTests(SharedServer):
 
 class SeparateWorkspaceCredentialsTests(OfflineCase):
     def test_expired_oauth_state_is_consumed_without_exchanging_the_code(self):
-        store = Store(Path(self.temp.name) / "oauth.db")
+        store = self.fresh_store("oauth.db")
         auth = Auth(store, enabled=True)
         auth._states["expired"] = time.time() - 601
         with patch("bridge.auth._http_json") as fetch:
@@ -283,8 +282,8 @@ class SeparateWorkspaceCredentialsTests(OfflineCase):
         self.assertNotIn("expired", auth._states)
 
     def test_tokens_and_task_links_from_another_database_are_not_credentials(self):
-        first = Store(Path(self.temp.name) / "first.db")
-        second = Store(Path(self.temp.name) / "second.db")
+        first = self.fresh_store("first.db")
+        second = self.fresh_store("second.db")
         person = first.add_person({"name": "Same Display Name", "email": "same@example.test"})
         second.add_person({"name": "Same Display Name", "email": "same@example.test"})
         auth_a, auth_b = Auth(first, enabled=True), Auth(second, enabled=True)

@@ -11,14 +11,13 @@ from fixtures import OfflineCase  # noqa: E402
 
 from bridge.__main__ import sync_banner  # noqa: E402
 from bridge.github import register  # noqa: E402
-from bridge.store import Store  # noqa: E402
 
 REPO = "acme/platform"
 
 
 class BannerTests(OfflineCase):
     def test_sync_is_on_only_for_a_registered_repository_that_can_be_fetched(self):
-        graph = Store(Path(self.temp.name) / "banner.db").graph
+        graph = self.fresh_store("banner.db").graph
         self.assertEqual(sync_banner(graph, set(), True), "")
         self.assertEqual(sync_banner(graph, set(), False), "")
         with graph.transaction():

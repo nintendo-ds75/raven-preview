@@ -2,19 +2,18 @@
 
 All transport calls use FakeSlack; these tests never contact a provider.
 """
-from pathlib import Path
 import unittest
 
 from fixtures import OfflineCase
 from test_delivery import FakeSlack
 from bridge.authz import Actor, basis_for
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 
 
 class PersonAssignmentIdentityTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "identity.db")
+        self.store = self.fresh_store("identity.db")
         self.graph = self.store.graph
         # Exercise the supported opt-in conversational Slack workflow.
         self.graph.set_setting("slack_interaction_mode", "conversation")

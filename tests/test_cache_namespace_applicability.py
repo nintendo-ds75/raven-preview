@@ -5,14 +5,12 @@ exercise new reuse only; no authentication service or external delivery runs.
 """
 import json
 import os
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
 from bridge import canvas, context_memory as cm, github, mcp, proof
 from bridge.authz import Actor
 from bridge.config import Config
-from bridge.store import Store
 
 
 class CacheNamespaceApplicabilityTests(OfflineCase):
@@ -33,7 +31,7 @@ class CacheNamespaceApplicabilityTests(OfflineCase):
         env = patch.dict(os.environ, {'BRIDGE_MODEL_API': 'none', 'BRIDGE_DEEP': '0'})
         env.start()
         self.addCleanup(env.stop)
-        self.store = Store(Path(self.temp.name) / 'cache.db')
+        self.store = self.fresh_store('cache.db')
         self.g = self.store.graph
         self.addCleanup(self.g.close)
         person = self.g.add_person('Synthetic Reviewer', email='reviewer@synthetic.invalid')

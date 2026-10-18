@@ -3,7 +3,6 @@
 import json
 import unittest
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -13,7 +12,7 @@ from bridge import canvas, proof
 from bridge.config import Config
 from bridge.graph import applicability_status, condition_facts, rule_status
 from bridge.ladder import run_task
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 
 
 CFG = Config(model_api="none")
@@ -91,7 +90,7 @@ class ConditionFactsTests(unittest.TestCase):
 class RepositoryRuleTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "repository-conditions.db")
+        self.store = self.fresh_store("repository-conditions.db")
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.store.add_owner({"name": "Morgan Hale", "team": "Queue", "patterns": "queue/*"})

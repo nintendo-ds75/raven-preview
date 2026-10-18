@@ -5,7 +5,6 @@ import unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase
-from bridge.store import Store
 from bridge.config import Config
 from bridge.routing import route, route_ranked
 from bridge import canvas
@@ -28,7 +27,7 @@ class NamedPathsTests(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "named.db")
+        self.store = self.fresh_store("named.db")
         g = self.graph = self.store.graph
         g.set_source(REPO, "git_now", NOW.isoformat())
         for path in ("usage.json", "README.md", "billing/usage.py", "billing/rates.py", "billing/__init__.py",

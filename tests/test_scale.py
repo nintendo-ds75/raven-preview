@@ -5,7 +5,6 @@ shares words with; every list the inbox reads pages on the server."""
 import json
 import threading
 import unittest
-from pathlib import Path
 from urllib.request import urlopen
 
 from fixtures import OfflineCase
@@ -13,7 +12,6 @@ from fixtures import OfflineCase
 from bridge import graph as graph_mod
 from bridge.llm import embed
 from fixtures import ready_server as make_server
-from bridge.store import Store
 
 REPO = "acme/platform"
 
@@ -21,7 +19,7 @@ REPO = "acme/platform"
 class BoundedRetrievalTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "scale.db")
+        self.store = self.fresh_store("scale.db")
         self.graph = self.store.graph
         self.run = self.store.add_run({"title": "seed", "agent": "test", "repo": REPO})
         self.addCleanup(setattr, graph_mod, "FULL_SCAN_MAX", graph_mod.FULL_SCAN_MAX)
@@ -72,7 +70,7 @@ class BoundedRetrievalTests(OfflineCase):
 class PaginationTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "pages.db")
+        self.store = self.fresh_store("pages.db")
         self.store.add_owner({"name": "Priya Natarajan", "team": "Billing", "patterns": "billing/*"})
         self.runs = [self.store.add_run({"title": f"task {i}", "agent": "test", "repo": REPO}) for i in range(7)]
         for i, run in enumerate(self.runs):

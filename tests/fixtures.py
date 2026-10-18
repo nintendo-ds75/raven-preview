@@ -363,6 +363,19 @@ def template_db(fixture: str) -> tuple[Path, dict]:
     return path, stats
 
 
+@functools.cache
+def empty_db() -> Path:
+    """A database with the schema migrated and no rows, made once per
+    process. Creating the schema is a hundred-odd statements, each its own
+    commit; a copy of this file opens in milliseconds, and Store runs the
+    same migrations on it and finds everything present."""
+    path = workdir() / "empty-template.db"
+    store = Store(path)
+    store.graph.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    store.graph.close()
+    return path
+
+
 class OfflineCase(unittest.TestCase):
     """A test that never reaches a model or git at ask time: the semantic
     and live rungs are off and no API key is in the environment, all of
@@ -381,6 +394,16 @@ class OfflineCase(unittest.TestCase):
         from bridge.canvas import wait_for_background
         self.addCleanup(lambda: wait_for_background(10))
         os.environ.pop("ANTHROPIC_API_KEY", None)
+
+    def fresh_store(self, name: str) -> Store:
+        """Store(path) for a file of this test's own: a new one is opened
+        on a copy of the migrated template (empty_db) rather than created
+        from nothing, and one that exists is opened as it is, as a test
+        that restarts does."""
+        target = Path(self.temp.name) / name
+        if not target.exists():
+            shutil.copyfile(empty_db(), target)
+        return Store(target)
 
     def warm_store(self, fixture: str, name: str = "") -> Store:
         """A store with the fixture repository already ingested: this

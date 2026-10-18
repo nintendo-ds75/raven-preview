@@ -4,14 +4,13 @@ All records are disposable synthetic fixtures; no providers or real graphs.
 """
 import json
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
 from bridge import canvas, context_memory as cm, decision_reads
 from bridge.config import Config
 from bridge.mcp import TOOLS, call_tool, dispatch
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 from test_auth import BOOTSTRAP, SharedServer
 
 REPO = 'synthetic/history-read'
@@ -21,7 +20,7 @@ QUESTION = 'What is the diagnostic retention policy?'
 class DecisionReadTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'history.db')
+        self.store = self.fresh_store('history.db')
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.store.add_owner({'name': 'Historical Review Owner', 'team': 'Synthetic', 'patterns': 'policy/*'})

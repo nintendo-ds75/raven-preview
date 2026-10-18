@@ -1,7 +1,6 @@
 """Human source revisions and their consumers share one writer boundary."""
 import json
 import threading
-from pathlib import Path
 from contextlib import contextmanager
 from unittest.mock import patch
 
@@ -14,7 +13,7 @@ from bridge.store import Invalid, Store
 class AtomicSourceCorrectionTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'sources.db')
+        self.store = self.fresh_store('sources.db')
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.store.add_owner({'name': 'Policy Owner', 'team': 'Policy', 'patterns': 'policy/*'})

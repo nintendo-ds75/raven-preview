@@ -1,13 +1,11 @@
 """Contact-only observations; unique synthetic people, no providers or authority assertions."""
 import json
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
 from bridge.routing_memory import candidates
 from bridge.routing import route_ranked
-from bridge.store import Store
 
 
 class ContactFixture(OfflineCase):
@@ -18,7 +16,7 @@ class ContactFixture(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'contacts.db')
+        self.store = self.fresh_store('contacts.db')
         self.graph = self.store.graph
         self.people = {name: self.graph.add_person(name, email=f'{name.lower()}@synthetic.invalid')
                        for name in ('ContactAlpha', 'ContactBeta', 'ContactGamma', 'ContactDelta')}

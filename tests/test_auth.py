@@ -31,7 +31,7 @@ class SharedServer(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "shared.db")
+        self.store = self.fresh_store("shared.db")
         env = patch.dict(os.environ, {"BRIDGE_ADMIN_TOKEN": BOOTSTRAP, "BRIDGE_SECRET": "unit-test-secret"})
         env.start()
         self.addCleanup(env.stop)
@@ -281,7 +281,7 @@ class IdentityAndRoleTests(SharedServer):
 class GitHubSignInTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "github.db")
+        self.store = self.fresh_store("github.db")
         env = patch.dict(os.environ, {"BRIDGE_GITHUB_CLIENT_ID": "cid", "BRIDGE_GITHUB_CLIENT_SECRET": "csecret",
                                       "BRIDGE_SECRET": "unit-test-secret"})
         env.start()
@@ -366,7 +366,7 @@ class RemoteMcpTests(SharedServer):
 
 class BindingTests(OfflineCase):
     def test_off_loopback_needs_auth(self):
-        store = Store(Path(self.temp.name) / "bind.db")
+        store = self.fresh_store("bind.db")
         with self.assertRaises(Invalid):
             make_server(store, port=0, host="0.0.0.0")
         with patch.dict(os.environ, {"BRIDGE_ADMIN_TOKEN": BOOTSTRAP}):

@@ -12,7 +12,7 @@ from bridge import canvas, context_memory as cm
 from bridge.config import Config
 from bridge.fact_revisions import correct_node_facts, revision_token
 from bridge.mcp import call_tool, dispatch, TOOLS, READ_ONLY_TOOLS
-from bridge.store import Store, Invalid
+from bridge.store import Invalid
 
 REPO = 'sample/widget'
 QUESTION = 'Should widget queue batching use the bounded window?'
@@ -21,7 +21,7 @@ QUESTION = 'Should widget queue batching use the bounded window?'
 class FactRevisionTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'facts.db')
+        self.store = self.fresh_store('facts.db')
         self.addCleanup(self.store.graph.close)
         self.graph = self.store.graph
         self.graph.upsert_artifact(REPO, 'src/widget.py')

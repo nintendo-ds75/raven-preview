@@ -11,7 +11,6 @@ from fixtures import OfflineCase
 
 from bridge import bootstrap
 from bridge.auth import Auth
-from bridge.store import Store
 
 NO_CREDENTIAL = "No valid development credential. Run ./dev up to initialize the workspace."
 
@@ -19,7 +18,7 @@ NO_CREDENTIAL = "No valid development credential. Run ./dev up to initialize the
 class DevLoginTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "dev.db")
+        self.store = self.fresh_store("dev.db")
         self.addCleanup(self.store.graph.close)
         self.token_file = Path(self.temp.name) / "dev-login-token"
         env = patch.dict(os.environ, {"BRIDGE_LOGIN_FILE": str(self.token_file)})
@@ -67,7 +66,7 @@ class DevLoginTests(OfflineCase):
 class InitializeWorkspaceTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "ws.db")
+        self.store = self.fresh_store("ws.db")
         self.addCleanup(self.store.graph.close)
 
     def test_no_name_means_no_setup(self):

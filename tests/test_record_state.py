@@ -1,19 +1,18 @@
 """Synthetic, provider-free external record state and snapshot contracts."""
 import json
 import threading
-from pathlib import Path
 from urllib.request import Request, urlopen
 
 from fixtures import OfflineCase, ready_server
 from bridge import mcp
 from bridge.ladder import _is_settled
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 
 
 class RecordStateTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'records.db')
+        self.store = self.fresh_store('records.db')
         self.addCleanup(self.store.graph.close)
         self.base = dict(repo='synthetic/records', kind='jira', ref='POL-1', title='Retention policy')
 

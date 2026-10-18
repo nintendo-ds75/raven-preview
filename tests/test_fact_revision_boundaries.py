@@ -11,7 +11,7 @@ from test_delivery import FakeSlack
 from bridge import canvas, context_memory as cm
 from bridge.config import Config
 from bridge.fact_revisions import correct_node_facts
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 
 REPO = 'sample/widget'
 QUESTION = 'Should widget queue batching use the bounded window?'
@@ -20,7 +20,7 @@ QUESTION = 'Should widget queue batching use the bounded window?'
 class FactCorrectionBoundaryCase(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'boundary.db')
+        self.store = self.fresh_store('boundary.db')
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.graph.upsert_artifact(REPO, 'src/widget.py')

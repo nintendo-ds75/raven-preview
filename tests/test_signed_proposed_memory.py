@@ -10,14 +10,13 @@ import json
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 from fixtures import OfflineCase
 from bridge import canvas, graph as graph_mod, llm
 from bridge.authz import Actor
 from bridge.config import Config
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 
 REPO = 'synthetic/approval-control'
 QUESTION = 'What is the current maximum retention period for diagnostic records?'
@@ -37,7 +36,7 @@ class SignedProposedMemoryTests(OfflineCase):
             guard = patch.object(llm.Client, name, side_effect=AssertionError('Provider calls forbidden'))
             guard.start()
             self.addCleanup(guard.stop)
-        self.store = Store(Path(self.temp.name) / 'proposal.db')
+        self.store = self.fresh_store('proposal.db')
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.store.add_owner({'name': 'Nisha Bell', 'team': 'Synthetic', 'patterns': 'src/packaging/*'})

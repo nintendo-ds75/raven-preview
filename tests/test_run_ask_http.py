@@ -1,12 +1,10 @@
 """The minimal UI uses the real task ladder, not a synthetic answer or hosted launch."""
 import http.client
 import json
-from pathlib import Path
 import threading
 from unittest.mock import patch
 
 from fixtures import OfflineCase, ready_server
-from bridge.store import Store
 
 
 class RunAskHTTPTests(OfflineCase):
@@ -15,7 +13,7 @@ class RunAskHTTPTests(OfflineCase):
         self.environment = patch.dict('os.environ', {'BRIDGE_MODEL_API': 'none', 'BRIDGE_SEMANTIC': '0', 'BRIDGE_LIVE': '0'})
         self.environment.start()
         self.addCleanup(self.environment.stop)
-        self.store = Store(Path(self.temp.name) / 'run-ask-http.db')
+        self.store = self.fresh_store('run-ask-http.db')
         self.g = self.store.graph
         self.addCleanup(self.g.close)
         self.repo = 'synthetic/run-ask-http'

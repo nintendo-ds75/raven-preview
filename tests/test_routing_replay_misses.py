@@ -3,14 +3,12 @@ a release manager's merges counted as approval of every file a pull
 carried, pieces of one identifier naming an unrelated file, and the verb
 of a "Should <verb> ..." question taken for an area."""
 
-from pathlib import Path
 
 from fixtures import OfflineCase
 
 from bridge.resolve import Tree, area_word_hits, term_hits
 from bridge.routing import route
 from bridge.signals import MERGE_BASE_WEIGHT, _scope_signals
-from bridge.store import Store
 
 NOW = "2026-06-20T00:00:00+00:00"
 
@@ -24,7 +22,7 @@ class GatekeeperMergeTests(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "gatekeeper.db")
+        self.store = self.fresh_store("gatekeeper.db")
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.graph.set_source("app", "git_now", NOW)

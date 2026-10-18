@@ -1,15 +1,13 @@
 """Read-only run provenance from existing rows; no new authority or identity rules."""
-from pathlib import Path
 
 from fixtures import OfflineCase
 from bridge import canvas
-from bridge.store import Store
 
 
 class RunObservabilityContractTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'run-observability.db')
+        self.store = self.fresh_store('run-observability.db')
         self.g = self.store.graph
         self.addCleanup(self.g.close)
         self.owner = self.store.add_owner({'name': 'Synthetic Contact', 'team': 'Synthetic Team', 'patterns': 'docs/*'})

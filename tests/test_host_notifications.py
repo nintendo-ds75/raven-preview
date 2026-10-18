@@ -1,4 +1,3 @@
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
 from fixtures import OfflineCase
@@ -13,7 +12,7 @@ from bridge.store import Store, Invalid
 class HostNotificationTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'notifications.db')
+        self.store = self.fresh_store('notifications.db')
         self.addCleanup(self.store.graph.close)
         self.actor = Identity('employee', 'Employee', 'member', 'agent')
         self.binding = host_sessions.event(self.store, {'event': 'prompt', 'host': 'claude',

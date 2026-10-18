@@ -22,7 +22,7 @@ from bridge import briefing, canvas
 from bridge.auth import Auth
 from bridge.authz import Actor, Refused
 from bridge.config import Config
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 
 CFG = Config(model_api="none")
 BASE = "https://raven.acme.test"
@@ -61,7 +61,7 @@ class BriefCase(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "brief.db")
+        self.store = self.fresh_store("brief.db")
         self.graph = self.store.graph
         # Personal brief links in the legacy conversational transport remain supported.
         self.graph.set_setting("slack_interaction_mode", "conversation")

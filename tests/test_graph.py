@@ -18,7 +18,7 @@ from test_ladder import seed_changes
 class GraphCase(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "graph.db")
+        self.store = self.fresh_store("graph.db")
         self.graph = self.store.graph
         self.owner = self.store.add_owner({"name": "Priya Natarajan", "team": "Billing", "patterns": "billing/*,metering/*"})
         self.run = self.store.add_run({"title": "Add usage pricing", "agent": "eval", "repo": "acme/platform"})

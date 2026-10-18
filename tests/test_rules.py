@@ -9,7 +9,6 @@ import json
 import threading
 import unittest
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from urllib.request import Request, urlopen
 
 from fixtures import OfflineCase
@@ -18,7 +17,7 @@ from bridge import canvas
 from bridge.config import Config
 from bridge.delivery import handle_slack_event
 from fixtures import ready_server as make_server
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 from test_delivery import FakeSlack
 
 CFG = Config(model_api="none")
@@ -29,7 +28,7 @@ QUESTION = "Round the overage charge to whole cents?"
 class RuleCase(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "rules.db")
+        self.store = self.fresh_store("rules.db")
         self.graph = self.store.graph
         # Exercise the supported opt-in conversational Slack workflow.
         self.graph.set_setting("slack_interaction_mode", "conversation")

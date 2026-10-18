@@ -1,7 +1,6 @@
 """Offline contracts for source history, active reliance, and authority."""
 import json
 import threading
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
@@ -15,7 +14,7 @@ REPO = 'synthetic/context'
 class ContextMemoryTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'context.db')
+        self.store = self.fresh_store('context.db')
         self.g = self.store.graph
         self.addCleanup(self.g.close)
         self.owner = self.store.add_owner({'name': 'Ada Example', 'team': 'Example', 'patterns': 'policy/*'})

@@ -1,7 +1,6 @@
 """Local cache reuse precedes contact-only clarification, without outreach."""
 import json
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
@@ -10,7 +9,6 @@ from test_rule_candidates import CFG, REPO, QUESTION, FACTS, ANSWER, CONDITIONS
 from bridge import canvas, context_memory as cm
 from bridge.config import Config
 from bridge import llm
-from bridge.store import Store
 
 
 class RuleBeforeContactTests(OfflineCase):
@@ -30,7 +28,7 @@ class RuleBeforeContactTests(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'rule-before-contact.db')
+        self.store = self.fresh_store('rule-before-contact.db')
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.store.add_owner({'name': 'Morgan Hale', 'team': 'Queue', 'patterns': 'queue/*'})

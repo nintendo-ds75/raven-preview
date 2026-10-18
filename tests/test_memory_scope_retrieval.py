@@ -4,12 +4,10 @@ Unsigned synthetic notes exercise recall, not permission to reuse an answer.
 The same tests are registered in test_postgres for its isolated real-PG run.
 """
 import json
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 from fixtures import OfflineCase
 from bridge import graph as graph_mod, llm
-from bridge.store import Store
 
 REPO = 'synthetic/solaris'
 OTHER_REPO = 'other/solaris'
@@ -25,7 +23,7 @@ QUERIES = (
 class ScopedMemoryRetrievalTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'memory.db')
+        self.store = self.fresh_store('memory.db')
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.task = self.store.add_run({'title': 'Synthetic retrieval', 'repo': REPO})['id']

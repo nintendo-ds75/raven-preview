@@ -8,7 +8,6 @@ from pathlib import Path
 from fixtures import OfflineCase, run_git
 from bridge import host_client as hc, host_sessions as hs, source_docs, sources
 from bridge.auth import Identity
-from bridge.store import Store
 from test_auth import BOOTSTRAP, SharedServer
 from test_source_scan import FakeSlack
 from test_sources_docs import PAGE, Site
@@ -31,7 +30,7 @@ def write_configs(project):
 class ContextMapTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'map.db')
+        self.store = self.fresh_store('map.db')
         self.addCleanup(self.store.graph.close)
         self.site = Site()
         self.addCleanup(self.site.close)

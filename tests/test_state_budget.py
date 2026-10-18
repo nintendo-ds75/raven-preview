@@ -9,18 +9,16 @@ import json
 import statistics
 import threading
 import time
-from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from fixtures import OfflineCase, ready_server
-from bridge.store import Store
 
 
 class StateBudgetTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'demo.db')
+        self.store = self.fresh_store('demo.db')
         self.store.seed()
         self.addCleanup(self.store.graph.close)
         server = ready_server(self.store, port=0)

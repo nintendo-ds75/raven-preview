@@ -1,7 +1,6 @@
 """Revocation reaches copied answers, transcripts, exports and host contexts."""
 import json
 import threading
-from pathlib import Path
 from types import SimpleNamespace
 from urllib.error import HTTPError
 from urllib.request import urlopen
@@ -9,13 +8,13 @@ from unittest.mock import Mock
 
 from fixtures import OfflineCase
 from bridge import canvas, mcp, source_access, visibility
-from bridge.store import Store, Invalid
+from bridge.store import Invalid
 
 
 class VisibilityTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'access.db')
+        self.store = self.fresh_store('access.db')
         self.addCleanup(self.store.graph.close)
         self.g = self.store.graph
         self.repo = 'fixture/access'

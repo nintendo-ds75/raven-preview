@@ -6,7 +6,6 @@ from test_delivery import confirmation
 import json
 import time
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
@@ -16,7 +15,6 @@ import test_readback_generations as generations
 from bridge import canvas, context_memory as cm, proof
 from bridge.config import Config
 from bridge.delivery import handle_slack_event
-from bridge.store import Store
 from bridge.teams import ConnectorAuth, TeamsBotTransport, TeamsConfig, TeamsDelivery
 
 
@@ -514,7 +512,7 @@ class TeamsSourceReviewTests(SourceReviewCases, OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'teams-source-review.db')
+        self.store = self.fresh_store('teams-source-review.db')
         self.graph = self.store.graph
         with self.graph.transaction():
             self.wes = self.graph.add_person('Wes Chen', email='wes@example.test')

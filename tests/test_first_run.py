@@ -19,7 +19,6 @@ from fixtures import ROOT, OfflineCase  # noqa: E402
 from bridge.auth import Auth  # noqa: E402
 from bridge.bootstrap import dev_login  # noqa: E402
 from bridge.setup import configure, install_host_hooks, repository_name  # noqa: E402
-from bridge.store import Store  # noqa: E402
 
 GIT_ENV = {**os.environ, "GIT_AUTHOR_NAME": "A Person", "GIT_AUTHOR_EMAIL": "a@example.test",
            "GIT_COMMITTER_NAME": "A Person", "GIT_COMMITTER_EMAIL": "a@example.test"}
@@ -46,7 +45,7 @@ class SetupCredentialTests(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "first.db")
+        self.store = self.fresh_store("first.db")
         self.addCleanup(self.store.graph.close)
         person = self.store.graph.add_person("Local developer", role="admin")
         self.token = Auth(self.store, enabled=True).create_token(person, "development", kind="human")["token"]

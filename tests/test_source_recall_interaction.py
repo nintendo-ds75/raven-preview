@@ -7,14 +7,13 @@ old answer is repaired with a current pin or declared independent by a fixture.
 import json
 import os
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
 from bridge import canvas, context_memory as cm, llm, proof
 from bridge.authz import Actor
 from bridge.config import Config
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 
 REPO = 'synthetic/source-recall'
 QUESTION = 'What retention policy governs diagnostic records?'
@@ -33,7 +32,7 @@ class SourceRecallInteractionTests(OfflineCase):
             guard = patch.object(llm.Client, method, side_effect=AssertionError('Provider calls forbidden'))
             guard.start()
             self.addCleanup(guard.stop)
-        self.store = Store(Path(self.temp.name) / 'interaction.db')
+        self.store = self.fresh_store('interaction.db')
         self.g = self.store.graph
         self.addCleanup(self.g.close)
         self.store.add_owner({'name': 'Source Reviewer', 'team': 'Synthetic', 'patterns': 'policy/*'})

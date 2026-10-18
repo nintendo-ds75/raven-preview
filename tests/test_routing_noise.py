@@ -10,7 +10,6 @@ from fixtures import OfflineCase
 from bridge.resolve import ROOT_WORD_WHEN_ANCHORED, resolve_paths
 from bridge.routing import route, route_ranked
 from bridge.signals import _MECHANICAL
-from bridge.store import Store
 
 NOW = "2026-06-20T00:00:00+00:00"
 CODE = "src/pkg/metadata.py"
@@ -19,7 +18,7 @@ CODE = "src/pkg/metadata.py"
 class RoutingNoiseTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "noise.db")
+        self.store = self.fresh_store("noise.db")
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.graph.set_source("app", "git_now", NOW)
@@ -92,7 +91,7 @@ class DominantBlameTests(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "blame.db")
+        self.store = self.fresh_store("blame.db")
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.graph.set_source("app", "git_now", NOW)
@@ -124,7 +123,7 @@ class NewFileAreaTests(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "newfile.db")
+        self.store = self.fresh_store("newfile.db")
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.graph.set_source("app", "git_now", NOW)
@@ -155,7 +154,7 @@ class MaintainersSectionTests(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "sections.db")
+        self.store = self.fresh_store("sections.db")
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.graph.set_source("app", "git_now", NOW)
@@ -200,7 +199,7 @@ class FirstContactTests(OfflineCase):
     recent author of real work on the file, not of a tooling sweep."""
 
     def test_sweep_authors_are_not_inferred_first_contacts(self):
-        store = Store(Path(self.temp.name) / "first.db")
+        store = self.fresh_store("first.db")
         graph = store.graph
         self.addCleanup(graph.close)
         graph.set_source("app", "git_now", NOW)
@@ -219,7 +218,7 @@ class FirstContactTests(OfflineCase):
         self.assertNotIn("Typo Fixer", names)
 
     def test_first_contacts_are_ordered_by_real_work_on_the_file(self):
-        store = Store(Path(self.temp.name) / "order.db")
+        store = self.fresh_store("order.db")
         graph = store.graph
         self.addCleanup(graph.close)
         graph.set_source("app", "git_now", NOW)
@@ -245,7 +244,7 @@ class DottedModuleTests(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "dotted.db")
+        self.store = self.fresh_store("dotted.db")
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.graph.set_source("app", "git_now", NOW)
@@ -293,7 +292,7 @@ class NamedFunctionTests(OfflineCase):
             run_git(self.repo, "add", path)
             run_git(self.repo, "-c", f"user.name={author}", "-c", "user.email=a@example.invalid", "commit", "-qm",
                     f"Work on {path}")
-        self.store = Store(Path(self.temp.name) / "fn.db")
+        self.store = self.fresh_store("fn.db")
         self.addCleanup(self.store.graph.close)
         index_repo(self.store.graph, self.repo, repo_name="app")
 

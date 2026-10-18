@@ -1,11 +1,10 @@
 """Accepted sync receipts are separate from immutable supporting evidence."""
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
 from bridge import canvas, context_memory as cm, mcp, proof
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 
 REPO = 'synthetic/observation'
 
@@ -13,7 +12,7 @@ REPO = 'synthetic/observation'
 class SourceObservationTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'observations.db')
+        self.store = self.fresh_store('observations.db')
         self.g = self.store.graph
         self.addCleanup(self.g.close)
         self.store.add_owner({'name': 'Ada Example', 'team': 'Policy', 'patterns': 'policy/*'})

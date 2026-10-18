@@ -1,12 +1,11 @@
 """Background memory publication retains the exact observed source revision."""
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
 from bridge import canvas, context_memory as cm, ladder
 from bridge.config import Config
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 
 
 REPO = 'background/policy'
@@ -17,7 +16,7 @@ ANSWER = 'Keep policy audit records for thirty days.'
 class BackgroundMemoryProvenanceTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'memory-provenance.db')
+        self.store = self.fresh_store('memory-provenance.db')
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.store.add_owner({'name': 'Policy Owner', 'team': 'Policy', 'patterns': 'policy/*'})

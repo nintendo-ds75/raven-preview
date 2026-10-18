@@ -3,14 +3,12 @@ import http.client
 import json
 import math
 import threading
-from pathlib import Path
 import shutil
 import subprocess
 import unittest
 
 from fixtures import OfflineCase, ROOT, ready_server
 from bridge import approval_scope, briefing
-from bridge.store import Store
 from owner_context_fixture import seed
 from test_agent_source_web import HTMLNodes
 
@@ -18,7 +16,7 @@ from test_agent_source_web import HTMLNodes
 class OwnerContextFixture:
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'owner-context.db')
+        self.store = self.fresh_store('owner-context.db')
         self.addCleanup(self.store.graph.close)
         self.fixture = seed(self.store)
 

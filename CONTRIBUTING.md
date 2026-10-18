@@ -43,6 +43,10 @@ need Chromium and are run by hand before a release or after UI changes.
   in the pull request.
 - **Keep pull requests small.** One behaviour per pull request is easier to
   review and to revert.
+- **Tests take their stores from `tests/fixtures.py`:** `self.fresh_store(name)`
+  for an empty one and `self.warm_store(fixture)` for one with a fixture
+  repository ingested. Both copy a template made once per process; creating
+  the schema or ingesting again per test is what made the suite slow.
 - **Schema changes are additive** and must work on SQLite and PostgreSQL.
 - **Never commit** credentials, customer data, `.env` files, or evaluator
   answer keys.

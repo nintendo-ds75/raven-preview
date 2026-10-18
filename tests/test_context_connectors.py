@@ -3,13 +3,12 @@ import copy
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
 from bridge import canvas, context_connectors as cc, context_memory as cm
 from bridge.config import Config
-from bridge.store import Store, Invalid
+from bridge.store import Invalid
 
 REPO = 'example/service'
 
@@ -277,7 +276,7 @@ class ConnectorCases:
 class ConnectorTests(ConnectorCases, OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'connectors.db')
+        self.store = self.fresh_store('connectors.db')
         self.g = self.store.graph
         self.addCleanup(self.g.close)
         self.store.add_owner({'name': 'Ada Example', 'team': 'Billing', 'patterns': 'billing/*'})

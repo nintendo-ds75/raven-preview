@@ -7,7 +7,6 @@ messages are sent. Historical snapshots are asserted unchanged, not upgraded.
 import json
 import time
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
@@ -22,7 +21,7 @@ from bridge.approval_scope import snapshot as approval_scope, review_epoch, tran
 from bridge.config import Config
 from bridge.delivery import _sections, complete_chat_text
 from bridge.readback import prompt_budget
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 from bridge.teams import ConnectorAuth, TeamsBotTransport, TeamsConfig, TeamsDelivery
 
 
@@ -344,7 +343,7 @@ class TeamsCombinedSourceScopeTests(CombinedSourceScopeCases, OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'teams-combined-source-scope.db')
+        self.store = self.fresh_store('teams-combined-source-scope.db')
         self.graph = self.store.graph
         with self.graph.transaction():
             self.wes = self.graph.add_person('Wes Chen', email='wes@example.test')

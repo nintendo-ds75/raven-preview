@@ -72,7 +72,7 @@ class MicrosoftFixture:
 class TeamsTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "teams.db")
+        self.store = self.fresh_store("teams.db")
         self.graph = self.store.graph
         with self.graph.transaction():
             self.wes = self.graph.add_person("Wes Chen", email="wes@example.test")

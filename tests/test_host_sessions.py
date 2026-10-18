@@ -182,7 +182,7 @@ class HostCases:
 class HostTests(HostCases, OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'hosts.db')
+        self.store = self.fresh_store('hosts.db')
         self.addCleanup(self.store.graph.close)
         self.actor = Identity('person-a', 'Ada Example', 'member', 'agent')
         self.args = {'host': 'claude', 'session_id': 'session-a', 'project': '/example/checkout',

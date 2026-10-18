@@ -13,7 +13,6 @@ import os
 import threading
 import time
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 from urllib.request import Request, urlopen
 
@@ -23,7 +22,6 @@ from bridge import canvas
 from bridge.config import Config
 from bridge.delivery import handle_slack_event, render, split_evidence, verify_slack_signature
 from fixtures import ready_server as make_server
-from bridge.store import Store
 
 CFG = Config(model_api="none")
 
@@ -62,7 +60,7 @@ class FakeSlack:
 class DeliveryCase(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "delivery.db")
+        self.store = self.fresh_store("delivery.db")
         self.graph = self.store.graph
         # These fixtures explicitly exercise the legacy conversational transport.
         self.graph.set_setting('slack_interaction_mode', 'conversation')
@@ -498,7 +496,7 @@ class OutboxTests(DeliveryCase):
         self.slack.fail = True
         self.assertEqual(self.delivery.deliver_now(), 0)
         self.graph.close()
-        self.store = Store(Path(self.temp.name) / "delivery.db")
+        self.store = self.fresh_store("delivery.db")
         self.graph = self.store.graph
         after = FakeSlack()
         delivery = self.store.connect_delivery(after, base_url="https://bridge.acme.test")
@@ -534,7 +532,7 @@ class OutboxTests(DeliveryCase):
         first.start()
         self.addCleanup(release.set)
         self.assertTrue(entered.wait(10))
-        other = Store(Path(self.temp.name) / "delivery.db")
+        other = self.fresh_store("delivery.db")
         self.addCleanup(other.graph.close)
         newcomer = FakeSlack()
         second = other.connect_delivery(newcomer, base_url="https://bridge.acme.test")
@@ -583,7 +581,7 @@ class OutboxTests(DeliveryCase):
         self.assertEqual(len(self.slack.messages), before)
 
     def test_nothing_is_queued_without_a_channel(self):
-        store = Store(Path(self.temp.name) / "silent.db")
+        store = self.fresh_store("silent.db")
         store.add_owner({"name": "Wes", "team": "Billing", "patterns": "billing/*"})
         t = canvas.start_task(store, CFG, {"title": "t", "repo": "acme/platform", "paths": "billing/usage.py"})["task_id"]
         canvas.add_node(store, CFG, {"task_id": t, "question": "Should we bill it?", "paths": "billing/usage.py"})

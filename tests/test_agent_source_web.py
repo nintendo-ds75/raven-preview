@@ -5,14 +5,13 @@ The separate browser suite exercises clicks and phone layout when Chromium runs.
 """
 import json
 from html.parser import HTMLParser
-from pathlib import Path
 import shutil
 import subprocess
 import unittest
 
 from fixtures import OfflineCase, ROOT
 from bridge import canvas, context_memory as cm
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 
 
 class HTMLNodes(HTMLParser):
@@ -46,7 +45,7 @@ class HTMLNodes(HTMLParser):
 class AgentSourceWebTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'source-web.db')
+        self.store = self.fresh_store('source-web.db')
         self.g = self.store.graph
         self.addCleanup(self.g.close)
         self.store.add_owner({'name': 'Source Reviewer', 'team': 'Policy', 'patterns': 'policy/*'})

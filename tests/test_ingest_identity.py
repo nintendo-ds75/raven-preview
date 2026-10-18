@@ -114,7 +114,7 @@ class IngestIdentityTests(OfflineCase):
         run_git(repo, "init", "-q")
         run_git(repo, "add", ".")
         run_git(repo, "commit", "-qm", "feat: seed", env=git_env(("Wes Contract", "wes@contract.example"), 0))
-        store = Store(Path(self.temp.name) / "one.db")
+        store = self.fresh_store("one.db")
         self.addCleanup(store.graph.close)
         real_run = subprocess.run
         # Unpinned: resolve HEAD, the history, the working tree, the merges.
@@ -145,7 +145,7 @@ class IngestIdentityTests(OfflineCase):
                 probes.append(command)
             return real_run(command, *args, **kwargs)
 
-        store = Store(Path(self.temp.name) / "probe.db")
+        store = self.fresh_store("probe.db")
         self.addCleanup(store.graph.close)
         with patch("bridge.ingest.subprocess.run", side_effect=counting):
             index_repo(store.graph, BUILDERS["synthco"]())

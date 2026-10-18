@@ -4,13 +4,11 @@ forwarded, a correction by a signer who shares a name, and what an
 agent credential may claim about who asked."""
 import json
 import unittest
-from pathlib import Path
 from urllib.error import HTTPError
 
 from fixtures import OfflineCase
 from bridge import briefing, canvas
 from bridge.authz import Actor
-from bridge.store import Store
 from test_delivery import DeliveryCase
 from test_portal import CFG
 from test_security_probes import LinkProbes, Workspace
@@ -18,7 +16,7 @@ from test_security_probes import LinkProbes, Workspace
 
 class CorrectionKeepsThePerson(OfflineCase):
     def workspace(self):
-        store = Store(Path(self.temp.name) / "namesake.db")
+        store = self.fresh_store("namesake.db")
         graph = store.graph
         with graph.transaction():
             wes = graph.add_person("Wes Chen", email="wes@acme.example")

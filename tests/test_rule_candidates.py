@@ -3,14 +3,12 @@
 import json
 import unittest
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 from fixtures import OfflineCase
 from bridge import canvas, ladder, llm
 from bridge.config import Config
 from bridge.graph import Decision
-from bridge.store import Store
 
 
 CFG = Config(model_api="none")
@@ -24,7 +22,7 @@ CONDITIONS = "; ".join(f"{key}={value}" for key, value in {"repo": REPO, **FACTS
 class RuleCandidateFixture(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "rule-candidates.db")
+        self.store = self.fresh_store("rule-candidates.db")
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.store.add_owner({"name": "Morgan Hale", "team": "Queue", "patterns": "queue/*"})

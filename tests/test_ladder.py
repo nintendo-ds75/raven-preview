@@ -42,7 +42,7 @@ METERING = ([("metering/exporter.py", "Yuki Tanaka", "author", i) for i in range
 class LadderCase(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "ladder.db")
+        self.store = self.fresh_store("ladder.db")
         self.graph = self.store.graph
         self.cfg = Config()
 

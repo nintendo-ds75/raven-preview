@@ -8,13 +8,12 @@ import os
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import parse_qs
 
 from fixtures import OfflineCase
 from bridge import source_slack, sources
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 
 TOKEN = 'xoxb-test-token'
 
@@ -81,7 +80,7 @@ class SlackDouble:
 class SlackSourceTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'slack.db')
+        self.store = self.fresh_store('slack.db')
         self.addCleanup(self.store.graph.close)
         self.slack = SlackDouble()
         self.addCleanup(self.slack.close)

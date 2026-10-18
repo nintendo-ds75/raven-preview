@@ -7,7 +7,6 @@ These are protocol regressions, not a model or synthetic-human quality score.
 """
 
 import json
-from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -15,7 +14,6 @@ from fixtures import OfflineCase
 from bridge import canvas
 from bridge.config import Config
 from bridge.mcp import call_tool
-from bridge.store import Store
 
 
 PATH = 'src/humanize/number.py'
@@ -45,7 +43,7 @@ class InferredContactGuidanceTests(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'contacts.db')
+        self.store = self.fresh_store('contacts.db')
         self.graph = self.store.graph
         self.graph.add_person('Contract Reviewer', slack_id='UCONTRACT')
         self.graph.add_person('Review Coordinator', slack_id='UCOORDINATOR')
@@ -109,7 +107,7 @@ class InferredContactGuidanceTests(OfflineCase):
 class DiscoveryGuidanceTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'guidance.db')
+        self.store = self.fresh_store('guidance.db')
         self.graph = self.store.graph
         self.graph.add_person('Nisha Bell')
         self.graph.add_person('Devon Hale')

@@ -30,7 +30,7 @@ from bridge import briefing, host_client, mcp_events, workbench_fs as fs
 from bridge.auth import Auth
 from bridge.config import Config
 from bridge.server import make_server
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 from bridge.workbench import Workbench
 from test_auth import BOOTSTRAP, SharedServer
 
@@ -59,7 +59,7 @@ class Workspace(SharedServer):
     def setUp(self):
         # SharedServer, plus a browser workbench so its routes reach their checks.
         OfflineCase.setUp(self)
-        self.store = Store(Path(self.temp.name) / "shared.db")
+        self.store = self.fresh_store("shared.db")
         env = patch.dict(os.environ, {"BRIDGE_ADMIN_TOKEN": BOOTSTRAP, "BRIDGE_SECRET": "unit-test-secret"})
         env.start()
         self.addCleanup(env.stop)
@@ -380,7 +380,7 @@ class LinkProbes(Workspace):
 class CallbackProbes(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "events.db")
+        self.store = self.fresh_store("events.db")
         self.addCleanup(self.store.graph.close)
         from bridge.auth import Auth
         self.person = self.store.graph.add_person("Ari Example")

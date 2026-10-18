@@ -10,13 +10,11 @@ was seventeen lines down."""
 import json
 
 import unittest
-from pathlib import Path
 
 from fixtures import OfflineCase
 
 from bridge.approval_scope import transport_text
 from bridge.delivery import LEAD_CONTEXT, render
-from bridge.store import Store
 
 LINK = "https://raven.example/brief#rvn_" + "0" * 32
 PROSE = ("The retry path in billing/usage.py currently clamps the computed wait at the configured cap and then adds "
@@ -149,7 +147,7 @@ class DemoShapeTests(OfflineCase, Shape):
             return f"1.{len(self.messages)}"
 
     def test_the_demo_decisions_read_in_order(self):
-        store = Store(Path(self.temp.name) / "demo.db")
+        store = self.fresh_store("demo.db")
         store.graph.set_setting("slack_interaction_mode", "conversation")
         slack = self.Slack()
         store.connect_delivery(slack, base_url="https://raven.example")

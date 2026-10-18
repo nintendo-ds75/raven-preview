@@ -1,11 +1,10 @@
 """Host guidance makes connected evidence discoverable without adding a gate."""
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
 from bridge import canvas, context_connectors, host_client, mcp, source_access
 from bridge.config import Config
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 
 
 class ContextGuidanceTests(OfflineCase):
@@ -76,7 +75,7 @@ class ContextGuidanceTests(OfflineCase):
 class ConnectedContextReadTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'connected-context.db')
+        self.store = self.fresh_store('connected-context.db')
         self.addCleanup(self.store.graph.close)
         self.repo = 'example/cache'
         self.task = self.store.add_run({'title': 'Investigate cache expiration', 'repo': self.repo})['id']

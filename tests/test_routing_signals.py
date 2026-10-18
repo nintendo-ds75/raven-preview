@@ -20,14 +20,13 @@ from bridge.config import Config
 from bridge.ingest import index_repo
 from bridge.ladder import ask
 from bridge.routing import route, route_ranked
-from bridge.store import Store
 from bridge.signals import _scope_signals
 
 
 class MergeWeightTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "merge-weights.db")
+        self.store = self.fresh_store("merge-weights.db")
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.timestamp = "2026-06-20T00:00:00+00:00"
@@ -150,7 +149,7 @@ class MergeWeightTests(OfflineCase):
             self.change(f"alpha-{i}", "alpha", [("Maintainer", "merger")])
         self.graph.db.commit()
         before = _scope_signals(self.graph, "app", "alpha/", 0)["merge_weights"]["maintainer"]
-        other = Store(Path(self.temp.name) / "merge-weights.db")
+        other = self.fresh_store("merge-weights.db")
         try:
             with other.graph.transaction():
                 for i in range(12):
@@ -172,7 +171,7 @@ class QemuLikeCase(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "signals.db")
+        self.store = self.fresh_store("signals.db")
         self.graph = self.store.graph
 
     def warm(self):
@@ -313,11 +312,11 @@ class RevisionIngestTests(QemuLikeCase):
         def rows(g, sql):
             return [tuple(r) for r in g.db.execute(sql, ("qemulike",))]
 
-        twice = Store(Path(self.temp.name) / "twice.db").graph
+        twice = self.fresh_store("twice.db").graph
         index_repo(twice, self.repo, rev=a)
         at_a = [rows(twice, sql) for sql in tables]
         index_repo(twice, self.repo, rev=b)
-        once = Store(Path(self.temp.name) / "once.db").graph
+        once = self.fresh_store("once.db").graph
         index_repo(once, self.repo, rev=b)
         at_b = [rows(once, sql) for sql in tables]
         self.assertTrue(at_b[0])
@@ -379,7 +378,7 @@ class LevelBlendTests(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.graph = Store(Path(self.temp.name) / "levels.db").graph
+        self.graph = self.fresh_store("levels.db").graph
 
     def seed(self, repo, rows):
         """(path, people, days_ago) per change; people are (name, email, role)."""
@@ -580,7 +579,7 @@ class RequesterTests(QemuLikeCase):
             joined = " | ".join(ln for r in ranked for ln in r[1])
             self.assertIn("of the human-written lines of util/bufferiszero.c (git blame, bots excluded)", joined)
             with patch.dict(os.environ, {"BRIDGE_BLAME": "0"}):
-                fresh = Store(Path(self.temp.name) / "noblame.db").graph
+                fresh = self.fresh_store("noblame.db").graph
                 index_repo(fresh, self.repo)
                 joined = " | ".join(ln for r in route_ranked(fresh, "qemulike", q) for ln in r[1])
                 self.assertNotIn("git blame", joined)

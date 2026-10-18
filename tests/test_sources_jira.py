@@ -7,13 +7,12 @@ import json
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 from fixtures import OfflineCase
 from bridge import source_jira, sources
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 
 AUTH = 'Basic ' + base64.b64encode(b'bot@example.invalid:secret-token').decode()
 
@@ -89,7 +88,7 @@ class JiraDouble:
 class JiraSourceTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'jira.db')
+        self.store = self.fresh_store('jira.db')
         self.addCleanup(self.store.graph.close)
         self.jira = JiraDouble()
         self.addCleanup(self.jira.close)

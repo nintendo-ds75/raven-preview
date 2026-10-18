@@ -1,7 +1,6 @@
 """Citation repair never bypasses exact evidence, support, or access checks."""
 import copy
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
@@ -9,7 +8,7 @@ from bridge import inquiry, source_access
 from bridge.auth import Identity
 from bridge.config import Config
 from bridge.llm import Client, LLMError
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 
 
 class InquiryCitationTests(OfflineCase):
@@ -215,7 +214,7 @@ class InquiryCitationTests(OfflineCase):
 class InquiryCitationRaceTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'inquiry.db')
+        self.store = self.fresh_store('inquiry.db')
         self.addCleanup(self.store.graph.close)
         self.actor = Identity('reader', 'Reader', 'member', 'session')
         self.repo = 'fixture/access'

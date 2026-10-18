@@ -2,19 +2,18 @@
 
 import base64
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
 from bridge import owner_discovery
 from bridge.mcp import TOOLS, _list_owners, dispatch
-from bridge.store import Invalid, Store, graph_summary, ownership_rows
+from bridge.store import Invalid, graph_summary, ownership_rows
 
 
 class OwnerDiscoveryTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "discovery.db")
+        self.store = self.fresh_store("discovery.db")
 
     def seed(self, count=3, evidence="Synthetic file history"):
         with self.store.connect() as db:

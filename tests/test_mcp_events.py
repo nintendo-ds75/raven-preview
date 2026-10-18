@@ -4,20 +4,19 @@ import hashlib
 import hmac
 import json
 import time
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
 from bridge import mcp_events as events
 from bridge.auth import Auth
-from bridge.store import Store, Invalid
+from bridge.store import Invalid
 from test_auth import SharedServer, BOOTSTRAP
 
 
 class EventTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'events.db')
+        self.store = self.fresh_store('events.db')
         self.g = self.store.graph
         self.addCleanup(self.g.close)
         self.person = self.g.add_person('Ari Example')

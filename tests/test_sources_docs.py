@@ -5,11 +5,10 @@ and a failed pass that keeps the cursor."""
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 
 from fixtures import OfflineCase
 from bridge import source_docs, sources
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 
 PAGE = """<html><head><title>Billing guide</title><script>track()</script></head><body>
 <nav>Home | Docs</nav><h1>Billing guide</h1><p>Usage is metered monthly in UTC.</p>
@@ -65,7 +64,7 @@ class Site:
 class DocsSourceTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'docs.db')
+        self.store = self.fresh_store('docs.db')
         self.addCleanup(self.store.graph.close)
         self.site = Site()
         self.addCleanup(self.site.close)

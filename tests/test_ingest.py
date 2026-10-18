@@ -18,7 +18,6 @@ from bridge.ladder import run_task
 from bridge.mcp import dispatch
 from bridge.routing import route
 from fixtures import ready_server as make_server
-from bridge.store import Store
 
 
 class IngestTests(OfflineCase):
@@ -85,7 +84,7 @@ class IngestTests(OfflineCase):
         (repo / "CODEOWNERS").write_text("gateway/ @sarah\n/gateway/app.py @alex\n")
         run_git(repo, "add", "-A")
         run_git(repo, "commit", "-q", "-m", "mini", env=synthco_env("alex", 0))
-        graph = Store(Path(self.temp.name) / "mini.db").graph
+        graph = self.fresh_store("mini.db").graph
         index_repo(graph, repo)
         self.assertEqual([r["ord"] for r in graph.listings("mini")], [0, 1])
         self.assertEqual([e["person"] for e in listed_for(graph, "mini", "gateway/app.py")], ["alex"])
@@ -137,7 +136,7 @@ class IngestTests(OfflineCase):
         ask-time fetch marks the rebuild superseded."""
         clone = Path(self.temp.name) / "renamed"
         shutil.copytree(self.repo, clone)
-        g = Store(Path(self.temp.name) / "renamed.db").graph
+        g = self.fresh_store("renamed.db").graph
         index_repo(g, clone, repo_name="synthco")
         self.assertIn("billing/pricing.py", g.artifact_paths("synthco"))
         g.mark_fetched("synthco", "tree", "all")

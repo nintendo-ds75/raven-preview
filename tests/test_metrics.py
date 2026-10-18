@@ -13,7 +13,7 @@ from fixtures import OfflineCase  # noqa: E402
 
 from bridge import canvas, metrics  # noqa: E402
 from bridge.config import Config  # noqa: E402
-from bridge.store import Invalid, Store  # noqa: E402
+from bridge.store import Invalid  # noqa: E402
 
 REPO = "acme/platform"
 QUESTION = "Should we bill the usage spike?"
@@ -26,7 +26,7 @@ class SeededStore(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "metrics.db")
+        self.store = self.fresh_store("metrics.db")
         self.cfg = Config(model_api="none")
         self.store.add_owner({"name": "Wes Chen", "team": "Data", "patterns": "billing/*"})
         self.store.add_owner({"name": "Mara Ortiz", "team": "Pricing", "patterns": "pricing/*"})

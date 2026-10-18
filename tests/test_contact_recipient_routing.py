@@ -5,14 +5,12 @@ not authenticated people, live delivery, or signer-eligibility tests.
 """
 import json
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
 from bridge import canvas, mcp
 from bridge.config import Config
 from bridge.routing import rank_for_decision
-from bridge.store import Store
 
 
 class ContactRecipientRoutingTests(OfflineCase):
@@ -24,7 +22,7 @@ class ContactRecipientRoutingTests(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'recipients.db')
+        self.store = self.fresh_store('recipients.db')
         self.graph = self.store.graph
         self.addCleanup(self.graph.close)
         self.people = {name: self.store.add_person({'name': name,

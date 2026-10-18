@@ -58,7 +58,7 @@ class BillingBehaviorTests(OfflineCase):
 
 class BillingProtocolTests(OfflineCase):
     def test_complete_synthetic_decision_loop_exports_code_and_reuses_history_without_ping(self):
-        store = Store(Path(self.temp.name) / 'billing.db')
+        store = self.fresh_store('billing.db')
         self.addCleanup(store.graph.close)
         cfg = Config(model_api='none')
         graph = store.graph

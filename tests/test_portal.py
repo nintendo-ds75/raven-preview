@@ -10,7 +10,6 @@ import json
 import threading
 import unittest
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from urllib.request import Request, urlopen
 
 from fixtures import OfflineCase
@@ -20,7 +19,7 @@ from bridge.authz import Actor
 from bridge.config import Config
 from bridge.delivery import TeamsTransport, handle_slack_event
 from fixtures import ready_server as make_server
-from bridge.store import Invalid, Store
+from bridge.store import Invalid
 from test_delivery import FakeSlack
 
 CFG = Config(model_api="none")
@@ -30,7 +29,7 @@ REPO = "acme/ledger"
 class PortalCase(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / "portal.db")
+        self.store = self.fresh_store("portal.db")
         self.graph = self.store.graph
         # Exercise the supported opt-in conversational Slack workflow.
         self.graph.set_setting("slack_interaction_mode", "conversation")
@@ -389,7 +388,7 @@ class RecordsAndTeamsTests(PortalCase):
 
             def read(self):
                 return b"1"
-        store = Store(Path(self.temp.name) / "teams.db")
+        store = self.fresh_store("teams.db")
         with store.graph.transaction():
             store.graph.add_person("Priya Natarajan", email="priya@acme.example")
             pid = store.graph.add_person("Wes Chen", email="wes@acme.example")

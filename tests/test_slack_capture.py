@@ -4,7 +4,6 @@ import hmac
 import json
 import threading
 import time
-from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -32,7 +31,7 @@ class SyntheticSlack:
 class CaptureCase(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'captures.db')
+        self.store = self.fresh_store('captures.db')
         self.g = self.store.graph
         # This suite exercises the explicitly enabled legacy Slack capture flow.
         self.g.set_setting("slack_interaction_mode", "conversation")

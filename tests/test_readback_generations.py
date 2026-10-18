@@ -12,7 +12,6 @@ import threading
 import unittest
 from contextlib import ExitStack
 from datetime import datetime, timezone
-from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
@@ -21,7 +20,6 @@ import test_teams as teams_fixtures
 from bridge import canvas
 from bridge.config import Config
 from bridge.delivery import handle_slack_event
-from bridge.store import Store
 from bridge.teams import ConnectorAuth, TeamsAuthError, TeamsBotTransport, TeamsConfig, TeamsDelivery
 
 
@@ -98,7 +96,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
     def restart(self):
         self.delivery.close()
         self.graph.close()
-        self.store = Store(Path(self.temp.name) / 'delivery.db')
+        self.store = self.fresh_store('delivery.db')
         self.graph = self.store.graph
         self.delivery = self.store.connect_delivery(self.slack, base_url='https://bridge.acme.test')
         self.addCleanup(self.delivery.close)
@@ -660,7 +658,7 @@ class TeamsReadbackGenerationTests(OfflineCase):
 
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'teams-generations.db')
+        self.store = self.fresh_store('teams-generations.db')
         self.graph = self.store.graph
         with self.graph.transaction():
             self.wes = self.graph.add_person('Wes Chen', email='wes@example.test')
