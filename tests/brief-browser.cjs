@@ -230,8 +230,8 @@ async function startWorld(temp, name) {
         assert.equal(await quote.evaluate(el => el.classList.contains('is-clamped')), false);
         assert(await quote.evaluate(el => el.getBoundingClientRect().height) > before);
         assert.equal(await cal.locator('#focus .brief-found [data-action="more"]').count(), 0);
-        // A quote long enough to be clamped at one width and not the other
-        // offers "Show more" only where the clamp hides something.
+        // Font metrics differ between supported Chromium environments. The
+        // control must agree with actual clipping, not a fixed character count.
         const offered = await cal.evaluate(() => {
           const saved = data.focus.found[0].quote;
           data.focus.found[0].quote = saved.slice(0, 420);
@@ -243,9 +243,11 @@ async function startWorld(temp, name) {
           render();
           return out;
         });
-        assert.deepEqual(offered, narrow ? {more: 1, hides: true} : {more: 0, hides: false});
+        assert.equal(offered.more, offered.hides ? 1 : 0, 'Show more is offered exactly when text is clipped');
       }, cal);
       await step('"Show earlier events" opens the whole history', async () => {
+        const background = cal.locator('[data-keep="task-background"]');
+        if (!(await background.evaluate(el => el.open))) await background.locator(':scope > summary').click();
         const more = cal.locator('[data-action="history-all"]');
         const hidden = Number((await more.innerText()).match(/Show (\d+) earlier/)[1]);
         const shown = await cal.locator('.brief-history > li').count();
@@ -256,6 +258,7 @@ async function startWorld(temp, name) {
       }, cal);
       const NOTE = `Tenant ids arrive as the X-Scope-OrgID header (${width}).`;
       await step('note form adds a note as the person, and the coding agent reads it', async () => {
+        await cal.locator('[data-keep="notes"] > summary').click();
         await cal.fill('#note-text', NOTE);
         await cal.locator('#note-form button[type=submit]').click();
         await toast(cal, /^Added\./);
@@ -302,6 +305,7 @@ async function startWorld(temp, name) {
         assert.equal(await val.locator('#answer-form').count(), 0);
         assert.equal(await val.locator('#handon-form').count(), 0);
         assert.equal(await val.locator('#note-form').count(), 0);
+        await val.locator('[data-keep="notes"] > summary').click();
         assert.match(await val.locator('.brief-chat').innerText(), /You have read-only access\./);
       }, val);
 
@@ -479,6 +483,7 @@ async function startWorld(temp, name) {
       const jes = await open('Sam');
       await brief(jes, samToken);
       await step('account: one invitation per width (header link on a phone, side note on a desktop)', async () => {
+        if (!narrow) await jes.locator('[data-keep="people"] > summary').click();
         assert.equal(await visibleCount(jes, '[data-action="account"]'), 1);
         assert.equal(await jes.locator(narrow ? '.brief-top [data-action="account"]' : '.brief-join [data-action="account"]').isVisible(), true);
       }, jes);
@@ -523,6 +528,7 @@ async function startWorld(temp, name) {
       // ---------------- Priya makes an account and uses the app ----------------
       await brief(cal, L.priya);
       await step('account form: makes the login with the address Raven has, and lands on the task in the app', async () => {
+        if (!narrow) await cal.locator('[data-keep="people"] > summary').click();
         assert.equal(await visibleCount(cal, '[data-action="account"]'), 1);
         await cal.locator('[data-action="account"]:visible').click();
         await cal.waitForSelector('#brief-modal[open]');
@@ -599,6 +605,7 @@ async function startWorld(temp, name) {
         const ask = cal.locator('[data-action="task-brief"]');
         assert.equal(await ask.innerText(), 'Open task page');
         await Promise.all([cal.waitForURL(/\/brief#rvn_/), ask.click()]);
+        await cal.locator('[data-keep="notes"] > summary').click();
         await cal.waitForSelector('#note-form');
       }, cal);
 

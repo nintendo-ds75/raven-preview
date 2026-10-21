@@ -24,14 +24,15 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     const page = await browser.newPage({viewport:{width:1440,height:1050}});
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
-    await page.goto(url);
+    // The legacy hosted-agent intake lives on the inbox; Work has its own composer.
+    await page.goto(`${url}/#inbox`);
     await page.getByRole('button', {name:'Start a task',exact:true}).click();
     await page.getByLabel('Task', {exact:true}).fill('Add usage-based pricing');
     assert.equal(await page.getByLabel('Repository').inputValue(), 'billing-fixture');
     await page.getByRole('button', {name:'Start task',exact:true}).click();
     await page.waitForSelector('#modal:not([open])', {state:'attached'});
     await page.waitForFunction(async () => (await (await fetch('/api/state')).json()).decisions.some(d => d.status === 'pending'));
-    await page.goto(url);
+    await page.goto(`${url}/#inbox`);
     await page.getByRole('button', {name:'Review',exact:true}).click();
     await page.waitForSelector('#modal[open] #answer');
     assert.match(await page.locator('#modal').textContent(), /Evidence:/);

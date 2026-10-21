@@ -21,6 +21,13 @@ start PostgreSQL and set `BRIDGE_TEST_POSTGRES=1` and `DATABASE_URL`
 The Playwright browser suites (`tests/browser*.cjs`, `tests/brief-browser.cjs`)
 need Chromium and are run by hand before a release or after UI changes.
 
+`tests/browser-expert-inbox.cjs` explicitly keeps the Chromium sandbox enabled.
+Run it as a non-root user in an environment that supports Chromium sandboxing,
+with a writable checkout, temporary directory and artifact destination. A root
+container or a runtime that blocks the required process/socket facilities is an
+environment blocker, not a failing application assertion. Use a suitable
+non-root desktop/container session; do not disable the sandbox to make it pass.
+
 ## What CI checks
 
 | Job | What it runs |

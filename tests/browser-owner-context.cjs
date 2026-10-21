@@ -55,6 +55,9 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.locator('#focus-question').waitFor();
     assert.equal(await page.locator('.brief-hero h1').innerText(), 'Decision review · WORK-42');
     assert.equal(await page.locator('#focus-question').innerText(), fixture.question);
+    // The first screen prioritizes the answer; background and scope expand on demand.
+    await page.locator('[data-keep="task-background"] > summary').click();
+    await page.locator('.brief-scope > summary').click();
     assert.equal(await page.locator('.brief-prompt p').textContent(), fixture.request);
     assert.equal(await page.locator('.scope-exact').getAttribute('open'), null);
     for (const value of ['Cedar','preview','WORK-42']) {

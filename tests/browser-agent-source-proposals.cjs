@@ -48,6 +48,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.equal(initial.needs_review,0);
     assert.equal(initial.authorized,false);
     assert.equal(await page.locator('#source-review-signoff').count(),0);
+    assert.equal(await page.locator('#modal .source-evidence-review').count(),1, 'one source-evidence review');
     assert.equal(await page.locator('.source-evidence-review .source-snapshot').count(),2);
     for (const record of fixture.records.slice(0,2)) {
       const block=page.locator('.source-evidence-review [data-source-record="'+record.source.record_id+'"]');
@@ -65,6 +66,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.getByRole('button',{name:'Close',exact:true}).last().click();
     assert.equal((await read(fixture.support)).authorized,false);
     await open(fixture.support);
+    assert.equal(await page.locator('#modal .source-evidence-review').count(),1, 'one source-evidence review');
     assert.equal(await page.locator('.source-evidence-review .source-snapshot').count(),2);
     const ordinary=await sign(fixture.support);
     assert.deepEqual(Object.keys(ordinary).sort(),['by','expected_updated_at']);
@@ -142,6 +144,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     // A real source update followed by the ordinary note-form refresh must
     // show its new version and require a fresh source acknowledgment.
     const changed=await update(fixture.records[3],'A new exact source revision requires a fresh review.');
+    await owner.locator('[data-keep="notes"] > summary').click();
     await owner.locator('#note-text').fill('Synthetic context-only note to refresh this task.');
     const noteResponse=owner.waitForResponse(r=>r.url().endsWith('/api/brief/note')&&r.request().method()==='POST');
     await owner.getByRole('button',{name:'Add note',exact:true}).click();

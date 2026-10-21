@@ -46,9 +46,15 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
       const more = page.locator('#manual-actions');
       if (!(await more.evaluate(d => d.open))) await more.locator('summary').click();
     };
+    const openWorkspaceLink = async name => {
+      const tools = page.locator('details.workspace-tools');
+      if (!(await tools.evaluate(d => d.open))) await tools.locator(':scope > summary').click();
+      await tools.getByRole('link', {name,exact:true}).click();
+    };
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    await page.goto(url);
+    // This suite exercises the decision inbox, not the default Work surface.
+    await page.goto(`${url}/#inbox`);
     await page.waitForSelector('.decision-card');
     // Three open questions and one node the demo agent settled itself, waiting for sign-off.
     assert.equal(await page.locator('.decision-card').count(), 4);
@@ -159,7 +165,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.keyboard.press('Escape');
 
     // Add a real owner and a routed request using the web UI.
-    await page.getByRole('link', {name:'People and ownership',exact:true}).click();
+    await openWorkspaceLink('People and ownership');
     await openMore();
     await page.getByRole('button', {name:'Add owner',exact:true}).click();
     await page.getByLabel('Name', {exact:true}).fill('Jamie Test');
@@ -211,7 +217,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.equal(answer.approval_pending, false);
 
     // Corrections are persistent, searchable, and exported with the prior answer retained.
-    await page.getByRole('link', {name:'Decision memory',exact:true}).click();
+    await openWorkspaceLink('Decision memory');
     await page.getByRole('searchbox', {name:'Search decision memory'}).fill('payment retries');
     assert.equal(await page.locator('.decision-card').count(), 1);
     await page.getByRole('button', {name:/Context & history/}).click();
@@ -231,7 +237,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 
     // The owner makes the answer a reusable rule from its card. Measured on
     // the hard end-to-end run: the form reloaded the page and made nothing.
-    await page.getByRole('link', {name:'Decision memory',exact:true}).click();
+    await openWorkspaceLink('Decision memory');
     await page.getByRole('searchbox', {name:'Search decision memory'}).fill('payment retries');
     await page.getByRole('button', {name:/Context & history/}).click();
     await page.locator('#modal summary', {hasText:'Make this answer a reusable rule'}).click();
@@ -251,7 +257,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     });
     await page.reload();
     await page.waitForSelector('.decision-card');
-    await page.getByRole('link', {name:'People and ownership',exact:true}).click();
+    await openWorkspaceLink('People and ownership');
     assert.equal(await page.locator('.person-card img').count(), 0);
     assert.match(await page.locator('#app').textContent(), /<img src=x onerror=alert\(1\)>/);
 
@@ -321,7 +327,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.match(JSON.stringify(held), /a follow-up a person marked required; adopt it with bridge_add_node/);
     await page.keyboard.press('Escape');
 
-    await page.getByRole('link', {name:'Connections & setup',exact:true}).click();
+    await openWorkspaceLink('Connections & setup');
     await page.getByRole('button', {name:'Copy configuration'}).click();
     const copied = await page.evaluate(() => navigator.clipboard.readText());
     const copiedBridge = JSON.parse(copied).mcpServers.bridge;

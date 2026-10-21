@@ -62,6 +62,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     };
     const openOwner = async (nodeId = fixture.node_id) => {
       await page.evaluate(id => review(id), nodeId);
+      assert.equal(await page.locator('#modal[open] .work-item-context').count(), 1, 'one owner-review work-item context');
       await page.locator('#modal[open] .work-item-context').waitFor();
     };
     const noContextControls = async () => {
