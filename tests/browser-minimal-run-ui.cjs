@@ -46,7 +46,8 @@ async function responseCases(browser,fixture,screenshot,errors) {
   }
   await scenario({tree:synthetic.tree('synthetic-empty',{nodes:[],notes:[],counts:{blocking:0,total:0},next:''})},async page=>{
     await page.locator('.task-summary').waitFor();assert.equal(await page.locator('details.task-question').count(),0);
-    assert.match(await page.locator('#app').innerText(),/No questions or findings recorded yet/);
+    assert.match(await page.locator('#app').innerText(),/No open questions recorded/);
+    assert.match(await page.locator('#app').innerText(),/No authorized answers recorded yet/);
     assert.match(await page.locator('.task-summary').innerText(),/0 blocker/);await screenshot('synthetic-empty',page);
   });
   await scenario({treeStatus:503},async page=>{
