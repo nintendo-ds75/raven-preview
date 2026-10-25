@@ -11,9 +11,11 @@ Docker independent verification. PostgreSQL and full Python lanes were still
 running when this ledger was updated; only an exact final-head green run closes
 them. Local aggregate collected 3,025 tests: 3,018 passed and seven skipped
 (four Docker tests and three native Codex turn cases run separately in CI).
-Codex native positive tool/context resume and pending-tool interruption/resume
-passed, but complete fresh/resumed adversarial refusal qualification is still
-pending. Managed Codex stays disabled until that gate and review pass.
+At remote `503f961`, all eight native Codex tests passed without skips, including
+fresh/resumed adversarial refusals, no native execution lifecycle, exact tool
+schema, positive context continuity and interruption/resume. The subsequent
+experimental enablement is restricted to that exact pin/model and must pass
+the same suite through the public worker entrypoint on the final head.
 
 | Design case | Current evidence / remaining qualification |
 |---|---|
@@ -47,9 +49,9 @@ pending. Managed Codex stays disabled until that gate and review pass.
 | 28 Transcript injection ≠ authority | Source content never drives dispatch without core review; provider destinations server-configured. Model instruction-following is not a substitute for gates. |
 | 29 Disclosure permission separate | Separate workspace-shared import/background polling attestations; current administrator/consent checks before and after reads; source-wide trust-boundary checks. |
 | 30 Stop/revoke/delete/backups distinct | Operational projection preserves capture controls after local withdrawal; lifecycle tests. Backup erasure not claimed. |
-| 31 Exact native session resume | Claude protocol contracts; Codex actual pinned initialize/schema and protocol fixtures, but app-server dispatch disabled pending containment acceptance; Pi/OpenCode installed-runtime scripted loops. Authenticated live loops unverified. |
+| 31 Exact native session resume | Claude protocol contracts; Codex actual pinned initialize/schema, native tool/context resume and interruption/resume passed at `503f961`; experimental dispatch limited to the tested pin/model; Pi/OpenCode installed-runtime scripted loops. Authenticated live loops unverified. |
 | 32 Version/config fail closed | Native capability and version checks; no silent runtime/provider fallback. |
-| 33 Native tool containment | Pi explicit tools/resource loader; OpenCode guarded native runtime; Claude tools-only configuration; Codex app-server dispatch disabled: read-only sandbox/schema success does not demonstrate all native tool containment. Adversarial fresh/resumed CI fixtures must establish that before any enablement. See harness docs. |
+| 33 Native tool containment | Pi explicit tools/resource loader; OpenCode guarded native runtime; Claude tools-only configuration; Codex valid native shell/file/image/network/goal/question refusals plus absent forbidden execution lifecycle passed on fresh/resumed turns at `503f961`. Exact pin/model only, no universal containment claim. Public-entrypoint final-head CI remains required. See harness docs. |
 | 34 Stable tool IDs | Durable parent intent dedup/conflict contracts; OpenCode replay protocol tests. |
 | 35 Crash during write | Existing unresolved operation ledger; no blind replay of unknown writes. |
 | 36 Accepted prompt vs terminal result | Explicit native delivery receipt and terminal-result contracts. |
@@ -63,6 +65,6 @@ pending. Managed Codex stays disabled until that gate and review pass.
 ## Setup limits observed in the implementation workspace
 
 Safe capability inspection found all dedicated `RAVEN_HOST_*_API_KEY` and model
-settings absent. Pi 1.4.0 is installed; the bundled official Codex experimental pin initializes and matches generated schemas, while the unrelated system Codex 0.159.2 does not match it. Full native turn tests require a suitable CI runner; app-server dispatch is disabled pending containment proof. No authenticated live execution was attempted.
+settings absent. Pi 1.4.0 is installed; the bundled official Codex experimental pin initializes and matches generated schemas, while the unrelated system Codex 0.159.2 does not match it. Full native turn tests passed in CI with scripted local inference; experimental dispatch requires that exact binary/model. This does not establish authenticated provider acceptance. No authenticated live execution was attempted.
 Meeting attendance was neither requested for a real call nor tested. Optional
 runtime tests use synthetic repositories and scripted local providers.

@@ -1,4 +1,4 @@
-"""Test-only Codex research transport; production worker unconditionally refuses.
+"""Test-only loopback driver for the qualified public Codex worker entrypoint.
 
 Accept only the test suite's private HOME, dummy credential and loopback URL.
 This is not a runtime opt-in or a way to use real deployment credentials.
@@ -11,7 +11,7 @@ import sys
 import tomllib
 from urllib.parse import urlsplit
 
-from bridge.harness_worker import _codex_transport, emit
+from bridge.harness_worker import codex, emit
 
 
 def main():
@@ -38,7 +38,7 @@ def main():
 
     loop = asyncio.new_event_loop()
     try:
-        loop.run_until_complete(_codex_transport(config, observer=observe))
+        loop.run_until_complete(codex(config, observer=observe))
     except Exception as error:
         emit({'kind':'error','code':type(error).__name__})
     finally:

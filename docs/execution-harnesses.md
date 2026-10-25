@@ -1,15 +1,16 @@
 # Execution harness coverage
 
 These are execution harnesses, not aliases for Raven's internal model calls.
-Enabled Claude, Pi and OpenCode adapters use Raven's durable task, approval,
-file/tool and uncertain-intent boundaries. Managed Codex is disabled: its native
-built-in tools have not been contained by the attempted suppression flags.
+Claude, Pi, OpenCode and the narrowly qualified experimental Codex adapter use
+Raven's durable task, approval, file/tool and uncertain-intent boundaries. Codex
+requires the exact native version and model below; its advertised native
+question tool is denied, not converted into a Raven judgment.
 No adapter adds permission to publish, deploy, or approve its own output.
 
 | Harness | Integration | Verification in this change |
 | --- | --- | --- |
 | Claude Agent SDK 0.2.165 | Existing in-process Raven MCP tools; native tools denied | Existing offline contracts; no new live call |
-| Codex app-server 0.162.0-alpha.17.2 | **Disabled in production.** Research transport only; no operator override | Fake protocol + installed native schema checks; full native turn blocked locally (see below) |
+| Codex app-server 0.162.0-alpha.17.2 | **Experimental**, only `gpt-5.3-codex`; parent-mediated work tools, native questions denied | Actual native scripted loop/context/resume, interruption and adversarial refusal tests passed in CI; public-entrypoint requalification pending |
 | OpenCode 1.19.4 (MIT/open source) | Guarded native HTTP sessions + private Raven MCP bridge | Installed native tool loop/resume with local scripted inference; no live provider call |
 | Pi SDK 1.4.0 (MIT/open source) | Pi's actual session/agent loop, explicitly allowlisted Raven custom tools, persistent session resume | Fake contracts plus installed SDK tool loop/resume with scripted inference |
 
@@ -47,7 +48,7 @@ and raw errors are not forwarded. Stop requests abort the session and pending
 tools. EOF, unknown model or provider fallback never counts as success.
 
 The Pi process itself is not an OS sandbox. As with Claude, task commands run
-only through Raven's separately configured command sandbox. The disabled Codex research transport has no demonstrated parent-only read/network boundary. A provider-reported dollar amount is not a billing
+only through Raven's separately configured command sandbox. The qualified Codex configuration is tested for native effect refusal, but is not an OS isolation boundary. A provider-reported dollar amount is not a billing
 ledger: the Pi threshold is checked after each assistant response and can
 overshoot by one response; missing provider pricing can report zero. Tool-count
 and host-wall-time limits still apply. Review live usage and set provider-side
@@ -118,98 +119,76 @@ initialization and scripted-inference tests are separate from Docker acceptance.
 
 ## Exact Codex native acceptance
 
-The official npm pin `@openai/codex@0.162.0-alpha.17.2` is available and now has
-an optional lockfile under `hosts/codex`. Run `npm ci --prefix hosts/codex
---ignore-scripts`; Raven prefers that package after an explicit
-`RAVEN_CODEX_BIN` override and before a different system CLI. The optional
-harness Docker image includes this pin too.
-
-The installed pin's actual experimental JSON schemas were generated and checked.
-Both start and resume responses require effective `model` and `modelProvider`;
-Raven now rejects either identity changing before it starts a turn. The actual
-resume schema has **no** `allowProviderModelFallback` request field, so Raven
-checks the returned identity rather than sending an invented option.
-
-The opt-in `tests/test_codex_native.py` exercises the real worker/app-server
-through a test-only driver (not production dispatch) against a loopback scripted
-Responses SSE provider, including native tool IDs,
-parent tool results, and persisted session resume. A separate adversarial case
-attempts native shell reads of synthetic private files/keys, native image reads,
-and a loopback network exfiltration sink on both fresh and resumed sessions; it
-also requires the advertised tool set to remain Raven-only after resume. It uses
-a temporary HOME, dummy auth and the unchanged read-only/denied-tool controls.
-Run on a host where the native sandbox can initialize:
+The experimental adapter is qualified only for official npm
+`@openai/codex@0.162.0-alpha.17.2` and model **`gpt-5.3-codex`**. Both capability
+selection and the worker independently reject a different binary version or
+model. There is no unsupported-model override. Native tools can vary by model;
+a different model/version requires new native acceptance, not just a config edit.
 
 ```sh
 npm ci --prefix hosts/codex --ignore-scripts
-python -m pip install zstandard==0.25.0  # fixture request decompression only
+export RAVEN_HOST_CODEX_MODEL=gpt-5.3-codex
+export RAVEN_HOST_CODEX_API_KEY=your-dedicated-deployment-key
+```
+
+Raven prefers this locked package after an explicit `RAVEN_CODEX_BIN` override
+and before a system CLI; overrides must still report the exact qualified pin.
+The optional harness image includes the package. Authentication/model account
+access and real inference are not established by an offline setup indicator.
+The adapter has no priced-dollar enforcement; use provider-side cost controls.
+
+The same transport configuration runs from the public `codex()` entrypoint in
+production and native CI. A temporary test HOME, dummy key and loopback scripted
+Responses SSE service ensure CI does not use a real account or live inference.
+Both start and resume validate the effective returned model/provider and session
+identity before accepting a turn. The actual resume schema has no
+`allowProviderModelFallback` field; returned identity is checked instead.
+
+The complete advertised namespace/name/type/schema is pinned in a test snapshot.
+Besides Raven's dynamic work tools, upstream still advertises
+`request_user_input`. A valid native question is explicitly refused; no answer
+is fabricated and it never becomes a Raven approval. Native goal creation and
+updates are disabled/refused, not treated as harmless bookkeeping. Task effects
+remain mediated by Raven tools and its durable intent ledger. This is not a claim
+that the binary has zero native capabilities or is itself an OS sandbox.
+
+Native acceptance checks fresh and resumed processes for:
+
+- positive dynamic tool IDs/results, retained context and exact tool metadata;
+- terminal interruption of a pending tool followed by same-session resume;
+- explicit call-ID/tool-matched native refusal of shell file/key reads, image
+  reads, shell network attempts, a second `shell_command` network entrypoint,
+  correctly formatted freeform `apply_patch`, native questions and goal changes;
+- unchanged synthetic canaries, no loopback sink hits, and no forbidden native
+  command/file/network/image/MCP/subagent execution lifecycle or delta events.
+
+Only complete native dispatch refusal receipts qualify: missing output, command
+crashes, OS PermissionErrors and unrelated/wrapped refusal text fail. These
+network tests exercise native shell entrypoints and a local sink, not an invented
+`web.run` protocol or an actual external service.
+
+```sh
+python -m pip install zstandard==0.25.0  # fixture decompression only
 BRIDGE_TEST_CODEX=1 python -m unittest discover -s tests -p test_codex_native.py -v
 ```
 
-**Verification boundary:** installed-version and native-schema tests passed in
-the implementation executor. The actual turn attempt was blocked before
-inference: the surrounding Codex sandbox masks its shared daemon directory,
-which the nested native sandbox requires to be user-owned mode 0700. A sanctioned
-outside-sandbox test attempt was also blocked by executor setup before the test
-started. No permissions, mounts or sandbox controls were changed. This matches
-[upstream nested-sandbox issue #53799](https://github.com/openai/codex/issues/53799).
-The full native loop is therefore **not locally passed**; the explicit
-`codex-native` CI job must establish it on a suitable runner. Ordinary test
-discovery skips the opt-in loop, and neither fake-protocol tests nor schema
-validation are described as full native acceptance or live OpenAI inference.
+### Evidence and remaining boundary
 
+Native CI job `121270027226` on PR #7 ran **all 8 tests, zero skips**, including
+fresh/resumed adversarial receipts and interruption. Earlier runs discovered
+native goals and the still-advertised question tool; goals were disabled rather
+than allowlisted. Exact native evidence, not feature-list booleans alone,
+established the tested boundary (`unified_exec` still reports true even when
+configured false). The public-entrypoint model/version guard change requires
+another exact-head CI run before final acceptance; previous green evidence is
+not silently attributed to the newer code.
 
-### Codex containment finding
+The implementation executor cannot create nested native turns because its
+outer sandbox masks the daemon directory; installed schema/initialize tests
+pass locally, but native turns run on the normal CI runner. No sandbox controls
+were weakened to evade that restriction. Ordinary local discovery skips those
+explicit opt-in cases. Neither scripted inference nor generated schemas prove
+live OpenAI availability, billing or production performance.
 
-The exact pinned CLI's feature listing retains native capabilities despite
-attempted `false` overrides. Denying app-server permission requests does not
-intercept native tools that run without requesting permission. A read-only
-sandbox can still allow reading and transmitting server-side data. Therefore
-`capability('codex')` always reports unavailable and the production worker
-unconditionally refuses Codex dispatch. Existing saved sessions are retained,
-not silently routed to another harness. There is no environment opt-in.
-
-External user-run Codex MCP integration is a separate existing workflow; this
-restriction concerns starting Codex inside the Raven server. Re-enablement
-requires demonstrated native built-in read/shell/network denial and the same
-proof after session resume, not merely an advertised tool list or schema pass.
-
-The native research CI gate is intentionally strict: it must fail on any builtin
-file/key/image disclosure, loopback exfiltration, unexpected tool availability
-or resumed-session regression. A passing version/schema check does not satisfy
-that gate. These negative native-turn fixtures are locally **unrun** because of
-the executor sandbox blocker; production remains disabled regardless of CI
-configuration until an explicit reviewed implementation changes that policy.
-
-Independent exact-pin probing confirmed `unified_exec` still reports `true`
-when explicitly set to `false`. Explicit `view_image`, `skill_search` and
-`skill_mcp_dependency_install` false overrides do report false and are now also
-set in the research transport. These narrower denials do not resolve the
-unified-execution boundary and do not re-enable managed Codex.
-
-The first normal-runner native acceptance run (GitHub Actions job
-`121263262037`, PR #7) reached the actual scripted tool loop and persistent
-resume. Both native tests failed the strict advertised-tool allowlist: native
-`request_user_input`, `get_goal`, `create_goal`, and `update_goal` were still
-present alongside Raven's `read_file`. No synthetic file/key/image disclosure
-or loopback network hit was observed, but absence alone is not a denial proof.
-The research fixture now also requires a call-ID-matched explicit native refusal
-receipt for each attempted shell/file, image, and network call, fresh and resumed.
-The research transport additionally sets `goals=false` and
-`collaboration_modes=false`; the installed CLI reports those flags false, but
-only a subsequent native CI run can establish their runtime effect. Production
-remains disabled pending the full positive/negative acceptance and independent
-review; these test/config changes are not a safety approval.
-
-The second native run (`121264970338`) removed the goal tools and passed the
-call-ID-specific shell/file, image, and shell-network refusal assertions, fresh
-and resumed. It still failed the strict advertised set because upstream keeps
-`request_user_input` advertised. The next research acceptance uses an exact
-full wire-schema snapshot, permitting that advertisement only with a valid
-question's explicit refusal (never a synthetic answer or a Raven approval).
-It also exercises freeform `apply_patch` via `custom_tool_call`, the separate
-`shell_command` network alias, native goal create/update refusal, unchanged
-canaries, and pending-tool interruption followed by native resume. These new
-cases await native CI; the runtime remains blocked. The network alias checks
-are native shell entry points, not a claim to have tested an invented `web.run`
-protocol or a real external network service.
+External user-run Codex MCP is a separate pre-existing workflow, unaffected by
+these managed-server qualification restrictions.

@@ -7,6 +7,7 @@ import asyncio
 from collections import defaultdict, deque
 import json
 import os
+import subprocess
 import sys
 
 
@@ -106,19 +107,32 @@ async def claude(config):
             # os._exit only after SDK disconnect completes below.
 
 
-async def codex(config):
-    # No operator bypass: pinned native flags do not establish a tools-only
-    # boundary. Keep research transport separate from production dispatch.
-    raise RuntimeError('codex_native_tool_boundary_unverified')
+async def codex(config, *, observer=None):
+    # Worker rechecks the same qualification independently of UI/capability.
+    # Never inherit qualification across another model or native release.
+    from .workbench_hosts import CODEX_MODEL, CODEX_VERSION
+    if config.get('model') != CODEX_MODEL:
+        raise RuntimeError('codex_unqualified_model')
+    binary = os.environ.get('RAVEN_CODEX_BIN', '')
+    if not binary:
+        raise RuntimeError('codex_unqualified_binary')
+    try:
+        version = subprocess.run([binary, '--version'], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        raise RuntimeError('codex_unqualified_binary') from None
+    if version.returncode != 0 or version.stdout.strip() != 'codex-cli ' + CODEX_VERSION:
+        raise RuntimeError('codex_unqualified_binary')
+    await _codex_transport(config, observer=observer)
 
 
 async def _codex_transport(config, *, observer=None):
     """Pinned app-server protocol. Dynamic tools require experimentalApi.
 
-    Research transport only; production codex() refuses to run it. Native
-    built-ins may remain enabled despite these flags and bypass parent tool
-    dispatch. Read-only is not protection against reads or network disclosure.
-    Every permission request we receive is denied, but that is not sufficient.
+    Public codex() first verifies the exact qualified native binary and model.
+    Actual native positive/negative fresh/resume tests qualify these flags, not
+    feature-list output alone. Native request_user_input remains advertised but
+    is refused, never treated as a Raven judgment or answered synthetically.
+    This is not an OS sandbox; read-only alone would not protect disclosure.
     """
     binary = os.environ['RAVEN_CODEX_BIN']
     flags = {'shell_tool': False, 'unified_exec': False, 'apps': False, 'plugins': False,

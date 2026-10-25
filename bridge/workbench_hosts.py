@@ -23,6 +23,7 @@ from .store import Invalid, now
 
 CLAUDE_SDK_VERSION = '0.2.165'
 CODEX_VERSION = '0.162.0-alpha.17.2'
+CODEX_MODEL = 'gpt-5.3-codex'
 PI_VERSION = '1.4.0'
 PROVIDERS = ('claude', 'codex', 'pi', 'opencode')
 PI_ROOT = Path(__file__).resolve().parents[1] / 'hosts' / 'pi'
@@ -163,20 +164,22 @@ def capability(provider):
         if cfg['base_url']:
             problems.append('OpenCode custom endpoints are not exposed; select a configured native provider or use Pi')
     else:
-        problems.append('Codex managed execution is disabled: native tool suppression is not established for this pin; strict parent-mediated tools are required')
+        if cfg['model'] != CODEX_MODEL:
+            problems.append('Codex experimental containment is qualified only for model ' + CODEX_MODEL)
         binary = codex_binary()
         if binary:
             try:
                 result = subprocess.run([binary, '--version'], capture_output=True, text=True, timeout=5)
-                version = result.stdout.strip().removeprefix('codex-cli ')
+                if result.returncode == 0 and result.stdout.strip() == 'codex-cli ' + CODEX_VERSION:
+                    version = CODEX_VERSION
             except (OSError, subprocess.TimeoutExpired):
                 pass
         if version != CODEX_VERSION:
             problems.append('Configure RAVEN_CODEX_BIN with codex-cli ' + CODEX_VERSION)
-    return {'id': provider, 'name': {'claude': 'Claude Agent SDK', 'codex': 'Codex app-server (disabled)', 'pi': 'Pi SDK (open source)', 'opencode': 'OpenCode (open source)'}[provider],
+    return {'id': provider, 'name': {'claude': 'Claude Agent SDK', 'codex': 'Codex app-server (experimental)', 'pi': 'Pi SDK (open source)', 'opencode': 'OpenCode (open source)'}[provider],
             'ready': not problems, 'blockers': problems, 'version': version, 'model': cfg['model'],
             'execution': 'Raven task tools; isolated commands',
-            'containment': 'tools-only; not an OS sandbox' if provider in ('claude', 'pi', 'opencode') else 'unverified native tool boundary; production dispatch disabled',
+            'containment': 'tools-only; not an OS sandbox' if provider in ('claude', 'pi', 'opencode') else 'parent-mediated work tools; native questions denied; not an OS sandbox',
             'session_location': 'Raven server, dedicated task home',
             'inference_destination': ({'claude': 'Anthropic API', 'codex': 'OpenAI API'}.get(provider) or destination),
             'live_verified': False}

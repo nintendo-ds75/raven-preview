@@ -2,6 +2,7 @@
 import asyncio
 import io
 import json
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -144,13 +145,39 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
 
 
 class CapabilityTests(unittest.TestCase):
-    def test_codex_production_dispatch_is_disabled_even_when_configured(self):
+    def test_codex_worker_and_capability_require_exact_qualified_model_and_binary(self):
         from bridge import harness_worker, workbench_hosts
-        with patch.dict('os.environ', {'RAVEN_HOST_CODEX_API_KEY':'fixture', 'RAVEN_HOST_CODEX_MODEL':'fixture'}):
-            self.assertFalse(workbench_hosts.capability('codex')['ready'])
-        with patch('bridge.harness_worker.asyncio.create_subprocess_exec', side_effect=AssertionError('Must not start')):
-            with self.assertRaisesRegex(RuntimeError, 'tool_boundary_unverified'):
-                asyncio.run(harness_worker.codex({}))
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        pin = workbench_hosts.CODEX_VERSION
+        model = workbench_hosts.CODEX_MODEL
+        with patch.dict('os.environ', {'RAVEN_HOST_CODEX_API_KEY':'fixture', 'RAVEN_HOST_CODEX_MODEL':model,
+                                       'RAVEN_CODEX_BIN':'fixture'}):
+            for version, returncode, ready in ((pin,0,True), ('different',0,False), (pin,1,False)):
+                result = SimpleNamespace(stdout='codex-cli ' + version, returncode=returncode)
+                with patch('bridge.workbench_hosts.subprocess.run', return_value=result), \
+                     patch('bridge.harness_worker._codex_transport', new_callable=AsyncMock) as transport:
+                    # Capability additionally checks native probe exit status.
+                    self.assertEqual(workbench_hosts.capability('codex')['ready'], ready)
+                    if ready:
+                        asyncio.run(harness_worker.codex({'model':model}))
+                        transport.assert_awaited_once_with({'model':model}, observer=None)
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, 'unqualified_binary'):
+                            asyncio.run(harness_worker.codex({'model':model}))
+                        transport.assert_not_awaited()
+            for error in (OSError('missing'), subprocess.TimeoutExpired('fixture', 5)):
+                with patch('bridge.harness_worker.subprocess.run', side_effect=error), \
+                     patch('bridge.harness_worker._codex_transport', new_callable=AsyncMock) as transport:
+                    with self.assertRaisesRegex(RuntimeError, 'unqualified_binary'):
+                        asyncio.run(harness_worker.codex({'model':model}))
+                    transport.assert_not_awaited()
+            with patch('bridge.harness_worker.subprocess.run', side_effect=AssertionError('No binary call')):
+                with self.assertRaisesRegex(RuntimeError, 'unqualified_model'):
+                    asyncio.run(harness_worker.codex({'model':'different'}))
+            with patch.dict('os.environ', {'RAVEN_HOST_CODEX_MODEL':'different'}), \
+                 patch('bridge.workbench_hosts.subprocess.run', return_value=SimpleNamespace(stdout='codex-cli '+pin,returncode=0)):
+                self.assertFalse(workbench_hosts.capability('codex')['ready'])
 
     def test_pi_requires_explicit_credential_model_and_provider(self):
         from bridge.workbench_hosts import capability
