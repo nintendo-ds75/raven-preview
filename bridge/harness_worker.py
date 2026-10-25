@@ -112,7 +112,7 @@ async def codex(config):
     raise RuntimeError('codex_native_tool_boundary_unverified')
 
 
-async def _codex_transport(config):
+async def _codex_transport(config, *, observer=None):
     """Pinned app-server protocol. Dynamic tools require experimentalApi.
 
     Research transport only; production codex() refuses to run it. Native
@@ -162,6 +162,8 @@ async def _codex_transport(config):
         try:
             while line := await process.stdout.readline():
                 event = json.loads(line)
+                if observer is not None:
+                    observer(event)
                 method, params = event.get('method'), event.get('params') or {}
                 if method is None and event.get('id') in requests:
                     future = requests.pop(event['id'])

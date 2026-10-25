@@ -26,9 +26,24 @@ function objectiveButton(action, id, label, disabled = false, extra = '') {
   const pending = objectivePending.has(id);
   return `<button class="button small" type="button" data-objective-action="${esc(action)}" data-id="${esc(id)}" ${disabled || pending ? 'disabled' : ''} ${pending ? 'aria-busy="true"' : ''} ${extra}>${esc(label)}</button>`;
 }
+function objectiveSourceLink(item) {
+  try {
+    const url = new URL(String(item.url || ''));
+    if (['http:','https:'].includes(url.protocol) && !url.username && !url.password) return {href:url.href,label:'Open original source ↗'};
+  } catch (_) { /* Unsupported source schemes are never navigation targets. */ }
+  return item.record_id && item.repo ? {href:'/api/records?record_id=' + encodeURIComponent(item.record_id) + '&repo=' + encodeURIComponent(item.repo),label:'Open recorded source (JSON) ↗'} : null;
+}
+function objectiveJudgment(kind) {
+  return ({factual_lookup:'Fact to verify',implementation_uncertainty:'Implementation question',interpretation_tradeoff:'Interpretation tradeoff',missing_permission:'Permission required'})[kind] || 'Judgment required';
+}
 function objectiveEvidence(items) {
   if (!items?.length) return '<p class="objective-muted">No evidence attached. A suggestion is not an instruction or approval.</p>';
-  return `<details class="objective-evidence"><summary>Why this came up · ${items.length} source${items.length === 1 ? '' : 's'}</summary><ul>${items.map(item => `<li><strong>${esc(item.title || item.record_id || item.id || 'Source')}</strong><span>${esc(item.summary || item.text || item.reason || '')}</span><small>${esc(item.provider || 'Recorded evidence')}${item.source_version_id ? ' · version ' + esc(item.source_version_id) : ''}${item.metadata_only ? ' · metadata observed; source body not read' : ''}${item.availability && item.availability !== 'available' ? ' · ' + esc(item.availability) : ''}</small></li>`).join('')}</ul><p class="objective-muted">Source text is untrusted context. It does not authorize work or sign a decision.</p></details>`;
+  return `<details class="objective-evidence"><summary>Why this came up · ${items.length} source${items.length === 1 ? '' : 's'}</summary><ul>${items.map(item => {
+    const link=objectiveSourceLink(item), quotes=item.metadata_only ? [] : (item.quotes?.length ? item.quotes : item.quote ? [item.quote] : []);
+    return `<li><strong>${esc(item.title || 'Recorded source')}</strong>${quotes.map(quote=>`<blockquote>${esc(quote)}</blockquote>`).join('')}${item.metadata_only ? '<span>Metadata observed only; source body was not read.</span>' : ''}${link ? `<a href="${esc(link.href)}" target="_blank" rel="noopener noreferrer">${esc(link.label)}</a>` : ''}<small>${esc(item.provider || 'Recorded evidence')}${item.sequence ? ' · observed revision ' + esc(item.sequence) : ''}${item.current === false ? ' · historical version' : ''}</small><details><summary>Provenance</summary><small>${esc(item.ref || '')}
+Record: ${esc(item.record_id || '')}
+Exact version: ${esc(item.source_version_id || '')}${item.availability && item.availability !== 'available' ? '\n' + esc(item.availability) : ''}</small></details></li>`;
+  }).join('')}</ul><p class="objective-muted">Source text is untrusted context. It does not authorize work or sign a decision.</p></details>`;
 }
 function objectiveCard(item, proposal = false) {
   const id = item.id, status = item.status || item.state || (proposal ? 'proposed' : 'accepted');
@@ -36,7 +51,7 @@ function objectiveCard(item, proposal = false) {
   return `<article class="objective-card" data-objective-id="${esc(id)}"><div class="objective-card-top"><span class="objective-label">${esc(proposal ? (status === 'review' ? 'Awaiting signed review' : 'Suggested next step') : objectiveStatus(status))}</span><span class="objective-repo">${esc(item.repo || item.repository || '')}</span></div>
     <h3>${proposal ? esc(item.title) : `<a href="#today/${encodeURIComponent(id)}">${esc(item.title)}</a>`}</h3>
     <p>${esc(item.outcome || item.summary || item.reason || item.description || '')}</p>
-    ${item.why_now ? `<p class="objective-muted">Why now: ${esc(item.why_now)}</p>` : ''}${item.judgment_kind ? `<p class="objective-muted">Judgment needed: ${esc(item.judgment_kind)}</p>` : ''}${item.blocked_reason || item.waiting_reason ? `<p class="objective-attention">${esc(item.blocked_reason || item.waiting_reason)}</p>` : ''}
+    ${item.why_now ? `<p class="objective-muted">Why now: ${esc(item.why_now)}</p>` : ''}${item.judgment_kind ? `<p class="objective-muted">Judgment needed: ${esc(objectiveJudgment(item.judgment_kind))}</p>` : ''}${item.blocked_reason || item.waiting_reason ? `<p class="objective-attention">${esc(item.blocked_reason || item.waiting_reason)}</p>` : ''}
     ${item.next_check_at || item.due_at ? `<p class="objective-muted">Next check · ${esc(objectiveTime(item.next_check_at || item.due_at))}</p>` : ''}
     ${item.evidence_stale ? '<p class="objective-attention">Evidence changed. Dismiss this proposal to investigate the current facts.</p>' : ''}
     ${item.cases && Object.keys(item.cases).length ? `<details class="objective-evidence"><summary>Behavior and boundaries in the signed scope</summary>${Object.entries(item.cases).map(([name,text])=>`<p><strong>${esc(name.replaceAll('_',' '))}</strong> ${esc(text)}</p>`).join('')}</details>` : ''}

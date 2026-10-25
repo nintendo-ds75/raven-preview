@@ -4,7 +4,7 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), vm = requ
 function harness(hash='#today') {
   const handlers={}, requests=[];
   const app={innerHTML:'',dataset:{},querySelectorAll:()=>[],contains:()=>false};
-  const c={console,crypto:require('node:crypto').webcrypto,view:'today',location:{hash},
+  const c={console,URL,crypto:require('node:crypto').webcrypto,view:'today',location:{hash},
     state:{auth:{enabled:false},workbench:{hosts:[]}},
     document:{activeElement:{},getElementById:id=>id==='app'?app:null,addEventListener:(type,fn)=>(handlers[type]||=[]).push(fn)},
     esc:x=>String(x??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')};
@@ -17,6 +17,14 @@ function harness(hash='#today') {
   return {c,app,run,click,submit,requests};
 }
 (async()=>{
+  let evidence=harness();
+  const rendered=evidence.run("objectiveEvidence([{record_id:'record-uuid',source_version_id:'version-hash',repo:'sample/repo',title:'Onboarding call',quote:'The trial lasts seven days.',url:'https://example.com/call',sequence:2}])");
+  assert.match(rendered,/<strong>Onboarding call<\/strong>/);assert.match(rendered,/The trial lasts seven days/);assert.match(rendered,/href="https:\/\/example.com\/call"/);assert.doesNotMatch(rendered,/<strong>record-uuid/);
+  for(const url of ['javascript:alert(1)','data:text/html,bad','meeting://private','https://user:secret@example.com']){
+    evidence.c.badURL=url;const html=evidence.run("objectiveEvidence([{record_id:'r',repo:'sample/repo',title:'Safe',url:badURL,metadata_only:true,quote:'Unread body'}])");
+    assert.doesNotMatch(html,/Unread body|href="(?:javascript:|data:|meeting:|https:\/\/user:)/);assert.match(html,/href="\/api\/records\?record_id=r&amp;repo=sample%2Frepo"/);
+  }
+  assert.equal(evidence.run("objectiveJudgment('interpretation_tradeoff')"),'Interpretation tradeoff');
   let budget=harness();budget.run("objectiveData.research_limits=[{repository:'sample/repo',used:6,limit:6,status:'throttled',next_retry_at:'2027-01-01T00:00:00Z'}];renderObjectives()");assert.match(budget.app.innerHTML,/Waiting for the research budget/);assert.match(budget.app.innerHTML,/Evidence remains queued/);
   budget.run("objectiveData.research_status=[{repository:'sample/repo',state:'blocked',attempts:3}];renderObjectives()");assert.match(budget.app.innerHTML,/Automatic retries stopped/);assert.match(budget.app.innerHTML,/explicit retry/);
   let h=harness();h.run('renderObjectives()');assert.match(h.app.innerHTML,/&lt;img/);assert.doesNotMatch(h.app.innerHTML,/<img onerror/);assert.match(h.app.innerHTML,/Live acceptance not verified/);assert.doesNotMatch(h.app.innerHTML,/Verified complete/);
@@ -48,5 +56,5 @@ function harness(hash='#today') {
   h=meetingHarness();await h.submit('',{enabled:false,workspace_shared:false},{id:'m1'},'objective-meeting-background');assert.equal(h.requests[0].data.enabled,false);assert.equal(h.requests[0].data.workspace_shared,false);
   h=meetingHarness();let release;h.c.api=async(url,data)=>{h.requests.push({url,data});if(data)await new Promise(resolve=>release=resolve);return {meetings:[]};};const saving=h.submit('',{enabled:true,workspace_shared:true},{id:'m1'},'objective-meeting-background');await Promise.resolve();await h.submit('',{enabled:true,workspace_shared:true},{id:'m1'},'objective-meeting-background');assert.equal(h.requests.length,1);release();await saving;
   for(const role of ['viewer','member']) {h=meetingHarness(role);assert.doesNotMatch(h.app.innerHTML,/Save background sync|Record consent|Stop remote bot/);await h.submit('',{enabled:true,workspace_shared:true},{id:'m1'},'objective-meeting-background');await h.click('meeting-stop','m1');assert.equal(h.requests.length,0);}
-  console.log('Today UI: 25 contract scenarios passed (DOM/API doubles).');
+  console.log('Today UI: 28 contract scenarios passed (DOM/API doubles).');
 })().catch(error=>{console.error(error);process.exitCode=1;});

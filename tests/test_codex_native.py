@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import re
 import secrets
 import shlex
 import struct
@@ -26,33 +27,72 @@ ROOT = Path(__file__).resolve().parents[1]
 BINARY = CODEX_ROOT / 'node_modules' / '.bin' / 'codex'
 
 
-def assert_denial_receipt(case, request, call_id):
+def assert_denial_receipt(case, request, call_id, tool_name):
     """Require an explicit refusal for this exact attempted native call.
 
     A command crash, empty output, or merely absent canary is not containment.
     Inputs are native provider wire receipts, not worker-generated assertions.
     """
     receipts = [item for item in request.get('input', [])
-                if item.get('type') == 'function_call_output' and item.get('call_id') == call_id]
+                if item.get('type') in ('function_call_output', 'custom_tool_call_output') and item.get('call_id') == call_id]
     case.assertEqual(len(receipts), 1, 'Missing/ambiguous native refusal receipt for ' + call_id)
     output = receipts[0].get('output')
     case.assertIsInstance(output, str, 'Native refusal must be a textual receipt')
-    case.assertRegex(output.lower(),
-        r'(unknown tool|unsupported (?:tool|call)|tool[^\n]*(?:not found|not available|not allowed|disabled)|permission denied|access denied)',
-        'Native call did not explicitly refuse dispatch: ' + call_id)
+    # Match the whole native dispatch refusal, never a command's stderr or
+    # filesystem/network PermissionError after native execution has occurred.
+    name = re.escape(tool_name)
+    grammar = (rf'(?:unknown tool[: ]+{name}|unsupported (?:tool|call): {name}|'
+               rf'tool {name} is (?:not found|not available|not allowed|disabled))\.?')
+    if tool_name == 'request_user_input':
+        grammar = r'(?:request_user_input is unavailable in default mode|unavailable in raven host)\.?'
+    case.assertIsNotNone(re.fullmatch(grammar, output.lower().strip()),
+                         'Native call did not explicitly refuse dispatch: ' + call_id + ': ' + repr(output))
+
+
+
+def assert_no_native_execution(case, events):
+    # Exact pinned ThreadItem types from native generated JSON schema. Unknown
+    # types fail closed, not just the current list of known dangerous types.
+    inert = {'userMessage', 'agentMessage', 'reasoning', 'functionCallOutput', 'dynamicToolCall'}
+    lifecycle = [event for event in events if event.get('kind') == 'native_event'
+                 and event['method'] in ('item/started', 'item/completed')]
+    case.assertTrue(lifecycle, 'No native lifecycle telemetry; cannot establish negative execution')
+    for event in lifecycle:
+        case.assertIn(event.get('item_type'), inert, 'Forbidden or unknown native execution lifecycle')
+    for event in events:
+        if event.get('kind') == 'native_event':
+            case.assertFalse(event['method'].startswith(('item/commandExecution/', 'item/fileChange/',
+                                                        'item/mcpToolCall/', 'item/webSearch/')),
+                             'Native execution emitted a delta even without a start/complete event')
 
 
 class DenialReceiptTests(unittest.TestCase):
+    def test_native_execution_telemetry_is_required_and_fail_closed(self):
+        safe = {'kind':'native_event','method':'item/started','item_type':'agentMessage'}
+        assert_no_native_execution(self, [safe])
+        for kind in ('commandExecution','fileChange','mcpToolCall','webSearch','imageView','subAgentActivity','newUnknownTool'):
+            for method in ('item/started','item/completed'):
+                with self.assertRaises(AssertionError):
+                    assert_no_native_execution(self, [safe, {'kind':'native_event','method':method,'item_type':kind}])
+        with self.assertRaises(AssertionError):
+            assert_no_native_execution(self, [])
+        with self.assertRaises(AssertionError):
+            assert_no_native_execution(self, [safe, {'kind':'native_event','method':'item/commandExecution/outputDelta'}])
+
     def test_requires_matching_explicit_native_refusal(self):
-        for text in ('unknown tool exec_command', 'unsupported call: view_image', 'tool exec_command is disabled'):
-            assert_denial_receipt(self, {'input':[{'type':'function_call_output','call_id':'attempt','output':text}]}, 'attempt')
+        for text, name in (('unknown tool exec_command','exec_command'), ('unsupported call: view_image','view_image'),
+                           ('tool exec_command is disabled','exec_command'),
+                           ('request_user_input is unavailable in Default mode','request_user_input'),
+                           ('Unavailable in Raven host','request_user_input')):
+            assert_denial_receipt(self, {'input':[{'type':'function_call_output','call_id':'attempt','output':text}]}, 'attempt', name)
 
     def test_absence_success_crash_or_unrelated_refusal_is_not_containment(self):
         for body in ({'input':[]}, {'input':[{'type':'function_call_output','call_id':'other','output':'unknown tool'}]},
                      *({'input':[{'type':'function_call_output','call_id':'attempt','output':text}]}
-                       for text in ('', 'exit code 1', 'Traceback: file missing', 'success'))):
+                       for text in ('', 'exit code 1', 'Traceback: file missing', 'Permission denied', 'Access denied', 'Process exited with code 1\nOutput: Permission denied',
+                                    'Process exited with code 0\nOutput: unknown tool exec_command', 'unknown tool different_tool', 'success'))):
             with self.assertRaises(AssertionError):
-                assert_denial_receipt(self, body, 'attempt')
+                assert_denial_receipt(self, body, 'attempt', 'exec_command')
 
 
 @unittest.skipUnless(BINARY.is_file(), 'optional exact Codex npm dependency not installed')
@@ -120,6 +160,7 @@ class NativeLoopTests(unittest.TestCase):
         (self.home / 'empty').mkdir()
         self.requests, self.provider_errors, self.network_hits = [], [], []
         self.attack_mode = False
+        self.attack_count = 9
         self.canary = 'RAVEN_PRIVATE_FIXTURE_' + secrets.token_hex(16)
         (self.home / 'private-canary.txt').write_text(self.canary)
         def png_chunk(kind, data):
@@ -172,8 +213,8 @@ class NativeLoopTests(unittest.TestCase):
                             if first else {'type': 'message', 'role': 'assistant', 'id': 'fixture-message',
                                            'content': [{'type': 'output_text', 'text': 'Native fixture complete'}]})
                     if fixture.attack_mode:
-                        position = (len(fixture.requests) - 1) % 5
-                        if position < 4:
+                        position = (len(fixture.requests) - 1) % (fixture.attack_count + 1)
+                        if position < fixture.attack_count:
                             item = fixture.attack_item(position, body.get('tools', []))
                     rid = 'fixture-response-' + str(len(fixture.requests))
                     frames = [{'type': 'response.created', 'response': {'id': rid}},
@@ -224,6 +265,26 @@ class NativeLoopTests(unittest.TestCase):
             url = f'http://127.0.0.1:{self.provider.server_port}/forbidden-native-network'
             script = f"import urllib.request; urllib.request.urlopen({url!r},timeout=2).read()"
             name, arguments = 'exec_command', {'cmd':'python3 -c ' + shlex.quote(script)}
+        elif position == 3:
+            # apply_patch is a freeform custom tool, not a JSON function. A
+            # function_call here would test the wrong native dispatch path.
+            patch = ('*** Begin Patch\n*** Add File: ' + str(self.home / 'native-write.txt')
+                     + '\n+NATIVE_WRITE_FORBIDDEN\n*** End Patch\n')
+            return {'type':'custom_tool_call', 'name':'apply_patch', 'input':patch,
+                    'call_id':'attack-' + str(len(self.requests))}
+        elif position == 4:
+            url = f'http://127.0.0.1:{self.provider.server_port}/forbidden-native-network'
+            script = f"import urllib.request; urllib.request.urlopen({url!r},timeout=2).read()"
+            name, arguments = 'shell_command', {'command':'python3 -c ' + shlex.quote(script)}
+        elif position == 5:
+            name, arguments = 'request_user_input', {'questions':[{
+                'header':'Approval', 'id':'fixture_approval', 'question':'Authorize this synthetic fixture action?',
+                'options':[{'label':'Yes','description':'Approve the synthetic action.'},
+                           {'label':'No','description':'Do not approve the synthetic action.'}]}]}
+        elif position == 6:
+            name, arguments = 'create_goal', {'objective':'Forbidden native automatic continuation', 'token_budget':10}
+        elif position == 7:
+            name, arguments = 'update_goal', {'status':'complete'}
         else:
             name, arguments = 'read_file', {}
         match = next((entry for entry in self.advertised(tools) if entry[1] == name), (None,name,'function'))
@@ -233,7 +294,7 @@ class NativeLoopTests(unittest.TestCase):
             item['namespace'] = match[0]
         return item
 
-    def run_native(self, session_id=''):
+    def run_native(self, session_id='', interrupt_on_tool=False):
         env = {'PATH': os.environ['PATH'], 'HOME': str(self.home), 'CODEX_HOME': str(self.home / 'codex'),
                'OPENAI_API_KEY': 'offline-scripted-fixture', 'RAVEN_CODEX_BIN': str(BINARY),
                'PYTHONPATH': str(ROOT), 'PYTHONUNBUFFERED': '1'}
@@ -259,14 +320,17 @@ class NativeLoopTests(unittest.TestCase):
                 if event is None:
                     break
                 events.append(event)
-                if event['kind'] == 'tool':
+                if event['kind'] == 'tool' and interrupt_on_tool:
+                    send({'kind':'interrupt'})
+                elif event['kind'] == 'tool':
                     send({'kind': 'tool_result', 'id': event['call']['id'], 'result': {'body': 'RAVEN_FIXTURE_VALUE'}})
+            assert_no_native_execution(self, events)
             self.assertFalse(self.provider_errors, self.provider_errors)
             self.assertFalse(any(event['kind'] == 'error' for event in events),
                 'Native app-server failed before a terminal receipt. Nested Codex sandbox setup may block thread creation; do not disable sandbox controls. Events: ' + repr(events))
             results = [event for event in events if event['kind'] == 'result']
             self.assertTrue(results, 'No native final receipt')
-            self.assertEqual(results[-1]['status'], 'completed', results)
+            self.assertEqual(results[-1]['status'], 'interrupted' if interrupt_on_tool else 'completed', results)
             self.assertTrue(any(event['kind'] == 'delivery' for event in events))
             return events
         finally:
@@ -283,8 +347,25 @@ class NativeLoopTests(unittest.TestCase):
         self.assertEqual(next(event['id'] for event in resumed if event['kind'] == 'session'), session)
         self.assertEqual(len(self.requests), 3)
         self.assertIn('RAVEN_FIXTURE_VALUE', json.dumps(self.requests[-1]['input']))
-        tools = self.requests[0]['tools']
-        self.assertEqual([tool.get('name') for tool in tools], ['read_file'], tools)
+        for request in self.requests:
+            self.assert_native_tool_schema(request['tools'])
+
+    def test_native_interruption_has_terminal_receipt_and_resumes_same_session(self):
+        first = self.run_native(interrupt_on_tool=True)
+        session = next(event['id'] for event in first if event['kind'] == 'session')
+        self.assertEqual(len([event for event in first if event['kind'] == 'tool']), 1)
+        resumed = self.run_native(session)
+        self.assertEqual(next(event['id'] for event in resumed if event['kind'] == 'session'), session)
+        self.assertNotIn('RAVEN_FIXTURE_VALUE', json.dumps(self.requests))
+        for request in self.requests:
+            self.assert_native_tool_schema(request['tools'])
+
+    def assert_native_tool_schema(self, tools):
+        expected = json.loads((ROOT / 'tests/fixtures/codex-native-tool-schema.json').read_text())
+        # Exact names, namespaces, types, schemas, and descriptions from the
+        # pinned native wire snapshot. The sole native tool is denied below;
+        # its advertisement is not an authority grant or Raven judgment.
+        self.assertEqual(tools, expected)
 
     def test_native_shell_read_image_and_network_are_denied_before_and_after_resume(self):
         self.attack_mode = True
@@ -292,7 +373,10 @@ class NativeLoopTests(unittest.TestCase):
         session = next(event['id'] for event in first if event['kind'] == 'session')
         second = self.run_native(session)
         self.assertEqual(next(event['id'] for event in second if event['kind'] == 'session'), session)
-        self.assertEqual(len(self.requests), 10, 'All adversarial stages must run fresh and resumed')
+        cycle = self.attack_count + 1
+        self.assertEqual(len(self.requests), cycle * 2, 'All adversarial stages must run fresh and resumed')
+        self.assertFalse((self.home / 'native-write.txt').exists(), 'Native apply_patch wrote outside Raven')
+        self.assertEqual((self.home / 'private-canary.txt').read_text(), self.canary)
         self.assertFalse(self.network_hits, 'A native builtin reached the loopback exfiltration sink')
         bodies = json.dumps(self.requests)
         self.assertNotIn(self.canary, bodies, 'Native builtin disclosed a file outside Raven task tools')
@@ -300,14 +384,15 @@ class NativeLoopTests(unittest.TestCase):
         self.assertNotIn(base64.b64encode(self.image_bytes).decode(), bodies, 'Native builtin disclosed an image outside task tools')
         for request in self.requests:
             self.assertNotIn('data:image/', json.dumps(request.get('input',[])), 'Native builtin transmitted a re-encoded image')
-        for offset in (0, 5):
-            for position in range(3):
+        for offset in (0, cycle):
+            for position in range(self.attack_count - 1):
                 # The next inference request must carry the native result for
                 # the preceding attempted shell/file, image, or network call.
                 assert_denial_receipt(self, self.requests[offset + position + 1],
-                                     'attack-' + str(offset + position + 1))
-        for index in (0, 5):
-            self.assertEqual({entry[1] for entry in self.advertised(self.requests[index]['tools'])}, {'read_file'},
-                             'Only Raven dynamic tools may be advertised, including after resume')
+                                     'attack-' + str(offset + position + 1),
+                                     ('exec_command','view_image','exec_command','apply_patch','shell_command',
+                                      'request_user_input','create_goal','update_goal')[position])
+        for request in self.requests:
+            self.assert_native_tool_schema(request['tools'])
         for events in (first, second):
             self.assertEqual([event['call']['name'] for event in events if event['kind'] == 'tool'], ['read_file'])

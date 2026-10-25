@@ -50,7 +50,10 @@ objectives.act(store, objective['id'], 'checkpoint', {'expected_revision': objec
 proposal = objectives.propose(store, {**payload, 'title': 'Close the onboarding question from the call',
     'outcome': 'Investigate which trial limit applies before changing customer-facing copy.',
     'why_now': 'The synthetic call revealed a policy ambiguity.', 'judgment_kind': 'interpretation_tradeoff',
-    'cases': {}}, [{'record_id': source['record_id'], 'source_version_id': source['source_version_id']}])
+    'cases': {'positive': 'Verify the signed trial policy before editing copy.', 'negative': 'Do not change pricing policy.',
+              'boundary': 'Ask the policy owner if interpretation changes the trial limit.', 'non_implications': 'No customer messages or publication.'},
+    'citations': [{'record_id': source['record_id'], 'source_version_id': source['source_version_id'],
+                   'quote': 'Synthetic customer asks which trial limit applies.'}]}, [{'record_id': source['record_id'], 'source_version_id': source['source_version_id']}])
 workbench = Workbench(store, [{'id': repo, 'path': str(Path(__file__).resolve().parents[1] / 'fixtures' / 'billing')}],
     Path(sys.argv[1]).parent / 'objective-fixture-copies', cfg=Config(model_api='none'))
 server = make_server(store, host='127.0.0.1', port=0, workbench=workbench)

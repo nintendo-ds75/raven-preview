@@ -200,3 +200,16 @@ The research transport additionally sets `goals=false` and
 only a subsequent native CI run can establish their runtime effect. Production
 remains disabled pending the full positive/negative acceptance and independent
 review; these test/config changes are not a safety approval.
+
+The second native run (`121264970338`) removed the goal tools and passed the
+call-ID-specific shell/file, image, and shell-network refusal assertions, fresh
+and resumed. It still failed the strict advertised set because upstream keeps
+`request_user_input` advertised. The next research acceptance uses an exact
+full wire-schema snapshot, permitting that advertisement only with a valid
+question's explicit refusal (never a synthetic answer or a Raven approval).
+It also exercises freeform `apply_patch` via `custom_tool_call`, the separate
+`shell_command` network alias, native goal create/update refusal, unchanged
+canaries, and pending-tool interruption followed by native resume. These new
+cases await native CI; the runtime remains blocked. The network alias checks
+are native shell entry points, not a claim to have tested an invented `web.run`
+protocol or a real external network service.

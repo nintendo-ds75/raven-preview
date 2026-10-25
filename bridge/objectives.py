@@ -224,6 +224,33 @@ def create(store, data, actor):
     return get(store, ident)
 
 
+def _evidence_view(store, sources, repo, citations=()):
+    """Hydrate accessible pinned snapshots, never inferred or metadata-only excerpts."""
+    sources_current(store, sources, repo)
+    result = []
+    for source in sources:
+        view = cm.citation(store.graph.db, source['record_id'], source['source_version_id'])
+        view = {**view, **{k: source[k] for k in ('metadata_only', 'metadata_sha256') if k in source}}
+        if not source.get('metadata_only'):
+            raw = store.graph.db.execute('SELECT snapshot FROM source_versions WHERE id=? AND record_id=?',
+                                        (source['source_version_id'], source['record_id'])).fetchone()
+            body = json.loads(raw['snapshot']).get('body', '') if raw else ''
+            quotes = []
+            for citation in citations if isinstance(citations, (list, tuple)) else ():
+                if not isinstance(citation, dict):
+                    continue
+                quote = citation.get('quote')
+                if (citation.get('record_id') == source['record_id']
+                        and citation.get('source_version_id') == source['source_version_id']
+                        and isinstance(quote, str) and quote.strip() and len(quote) <= 1500
+                        and isinstance(body, str) and quote in body and quote not in quotes):
+                    quotes.append(quote)
+            if quotes:
+                view.update(quotes=quotes, quote=quotes[0])
+        result.append(view)
+    return result
+
+
 def _proposal_view(store, raw):
     value = dict(raw)
     sources = json.loads(value.pop('sources'))
@@ -234,7 +261,10 @@ def _proposal_view(store, raw):
     except Invalid:
         return {'id': value['id'], 'state': value['state'], 'revision': value['revision'],
                 'withheld': True, 'title': 'Proposal withheld: source access changed'}
-    return {**value, **payload, 'sources': sources, 'evidence_stale': stale,
+    evidence = _evidence_view(store, sources, value['repository'], payload.get('citations', []))
+    citations = [{k: source[k] for k in ('record_id', 'source_version_id')} | {'quote': quote}
+                 for source in evidence for quote in source.get('quotes', [])]
+    return {**value, **payload, 'sources': evidence, 'citations': citations, 'evidence_stale': stale,
             'notice': 'Evidence changed; dismiss this proposal or re-investigate current facts' if stale else '',
             'task_id': value['governance_run_id'], 'status': value['state']}
 
@@ -250,7 +280,8 @@ def get(store, ident):
     if status == 'active':
         status = 'needs_you' if value['blocked_reason'] or any(p['state'] in ('proposed','review','preparing','review_error','reconcile') for p in proposals) else (
             'moving' if any(r['status'] in ('queued','working') for r in runs) else 'waiting')
-    return {**value, 'status': status, 'sources': [{**cm.citation(store.graph.db, s['record_id'], s['source_version_id']), **{k: s[k] for k in ('metadata_only','metadata_sha256') if k in s}} for s in _sources(store, ident)], 'runs': runs, 'proposals': proposals,
+    citations = [c for p in proposals if p['state'] == 'accepted' and not p.get('withheld') for c in p.get('citations', [])]
+    return {**value, 'status': status, 'sources': _evidence_view(store, _sources(store, ident), value['repository'], citations), 'runs': runs, 'proposals': proposals,
             'events': [{**dict(r), 'detail': json.loads(r['detail'])} for r in store.graph.db.execute('SELECT * FROM objective_events WHERE objective_id=? ORDER BY created_at,id', (ident,))],
             'notice': 'An objective survives completed coding runs. External actions require separate authorization.'}
 

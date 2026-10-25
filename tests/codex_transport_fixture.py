@@ -28,9 +28,17 @@ def main():
     config = json.loads(sys.stdin.readline())
     if Path(config['cwd']).resolve() != home / 'empty':
         raise RuntimeError('fixture_cwd_required')
+    def observe(event):
+        method = event.get('method', '')
+        if method.startswith('item/'):
+            # Test-only telemetry from the real native stream. No arguments,
+            # file contents, credentials or worker-authored inference here.
+            emit({'kind':'native_event', 'method':method,
+                  'item_type':(event.get('params') or {}).get('item', {}).get('type')})
+
     loop = asyncio.new_event_loop()
     try:
-        loop.run_until_complete(_codex_transport(config))
+        loop.run_until_complete(_codex_transport(config, observer=observe))
     except Exception as error:
         emit({'kind':'error','code':type(error).__name__})
     finally:
