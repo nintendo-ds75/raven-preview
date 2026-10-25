@@ -41,7 +41,7 @@ def assert_denial_receipt(case, request, call_id, tool_name):
     # Match the whole native dispatch refusal, never a command's stderr or
     # filesystem/network PermissionError after native execution has occurred.
     name = re.escape(tool_name)
-    grammar = (rf'(?:unknown tool[: ]+{name}|unsupported (?:tool|call): {name}|'
+    grammar = (rf'(?:unknown tool[: ]+{name}|unsupported (?:tool|call|custom tool call): {name}|'
                rf'tool {name} is (?:not found|not available|not allowed|disabled))\.?')
     if tool_name == 'request_user_input':
         grammar = r'(?:request_user_input is unavailable in default mode|unavailable in raven host)\.?'
@@ -82,6 +82,7 @@ class DenialReceiptTests(unittest.TestCase):
     def test_requires_matching_explicit_native_refusal(self):
         for text, name in (('unknown tool exec_command','exec_command'), ('unsupported call: view_image','view_image'),
                            ('tool exec_command is disabled','exec_command'),
+                           ('unsupported custom tool call: apply_patch','apply_patch'),
                            ('request_user_input is unavailable in Default mode','request_user_input'),
                            ('Unavailable in Raven host','request_user_input')):
             assert_denial_receipt(self, {'input':[{'type':'function_call_output','call_id':'attempt','output':text}]}, 'attempt', name)
@@ -388,10 +389,11 @@ class NativeLoopTests(unittest.TestCase):
             for position in range(self.attack_count - 1):
                 # The next inference request must carry the native result for
                 # the preceding attempted shell/file, image, or network call.
-                assert_denial_receipt(self, self.requests[offset + position + 1],
-                                     'attack-' + str(offset + position + 1),
-                                     ('exec_command','view_image','exec_command','apply_patch','shell_command',
-                                      'request_user_input','create_goal','update_goal')[position])
+                with self.subTest(session=offset // cycle, attack=position):
+                    assert_denial_receipt(self, self.requests[offset + position + 1],
+                                         'attack-' + str(offset + position + 1),
+                                         ('exec_command','view_image','exec_command','apply_patch','shell_command',
+                                          'request_user_input','create_goal','update_goal')[position])
         for request in self.requests:
             self.assert_native_tool_schema(request['tools'])
         for events in (first, second):

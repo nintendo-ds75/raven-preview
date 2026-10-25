@@ -5,6 +5,16 @@ This is a coverage ledger, **not a claim that all integrations work live**.
 `runtime` means the installed native SDK/server with scripted inference;
 `CI pending` is never a pass. Final aggregate/remote results belong in the PR.
 
+Observed CI checkpoint: remote `713ecaa` (local tree `81acac1`) passed real
+Chromium UI/API interactions, installed Pi/OpenCode scripted loops, and real
+Docker independent verification. PostgreSQL and full Python lanes were still
+running when this ledger was updated; only an exact final-head green run closes
+them. Local aggregate collected 3,025 tests: 3,018 passed and seven skipped
+(four Docker tests and three native Codex turn cases run separately in CI).
+Codex native positive tool/context resume and pending-tool interruption/resume
+passed, but complete fresh/resumed adversarial refusal qualification is still
+pending. Managed Codex stays disabled until that gate and review pass.
+
 | Design case | Current evidence / remaining qualification |
 |---|---|
 | 1 Outcome → bounded preparation | Implemented explicit preparation checkbox and native Workbench dispatch; HTTP/module contracts. No configured authenticated live host here. |
@@ -23,10 +33,10 @@ This is a coverage ledger, **not a claim that all integrations work live**.
 | 14 One boundary across outputs / no exception leakage | Exact objective + repository + signed move binding; no general CRM/marketing executor added. Existing authority scope remains authoritative. |
 | 15 Amendment stales outputs | Objective worker and verification bindings checked against current signed scope; contracts. Historical evidence retained. |
 | 16 Amendment at finish | Final DB writer fence in core run completion and browser result publication; regression. |
-| 17 Host claims pass, independent check fails | Real-git/fake-sandbox verifier contracts; actual Docker nonzero-exit lane CI pending. |
+| 17 Host claims pass, independent check fails | Real-git/fake-sandbox verifier contracts; actual Docker nonzero-exit lane passed at checkpoint `713ecaa`. |
 | 18 Changed bytes stale receipt | Candidate tree/patch/base/profile/core bindings; contracts. |
-| 19 Check mutates candidate | Post-command input mutation detection; actual Docker CI pending. |
-| 20 Agent edits tests | Operator-held profile supports separate tests; actual Docker signed-case positive/negative fixture CI pending. Not an adversarial oracle: mutate-and-restore inside the same sandbox is not prevented. No automatic semantic test synthesis claimed. |
+| 19 Check mutates candidate | Post-command input mutation detection; actual Docker mutation checks passed at checkpoint `713ecaa`. |
+| 20 Agent edits tests | Operator-held profile supports separate tests; actual Docker signed-case positive/negative fixture passed at checkpoint `713ecaa`. Not an adversarial oracle: mutate-and-restore inside the same sandbox is not prevented. No automatic semantic test synthesis claimed. |
 | 21 Sandbox/profile unavailable | Explicit unavailable result; contract. Docker absent locally. |
 | 22 Revoked source copied downstream | Objective/proposal/cache/worker/verification disclosure regressions. |
 | 23 Import ≠ attendance | Distinct import/Vexa capabilities and UI labels; contracts. |
@@ -45,8 +55,8 @@ This is a coverage ledger, **not a claim that all integrations work live**.
 | 36 Accepted prompt vs terminal result | Explicit native delivery receipt and terminal-result contracts. |
 | 37 Abort before/after delivery | Pending input preserved without delivery; native cancellation and supervisor tool-drain regressions. |
 | 38 Secrets/errors | Credential allowlist and safe failure handling tests; no credential values written into this report. |
-| 39 XSS | Node DOM/API-double checks; Chromium CI pending. |
-| 40 Interrupted/repeated UI flows | Node/real HTTP checks; native Chromium desktop/mobile/cancel/refresh CI pending. |
+| 39 XSS | Node DOM/API-double checks; Chromium passed at checkpoint `713ecaa`. |
+| 40 Interrupted/repeated UI flows | Node/real HTTP checks; native Chromium desktop/mobile/cancel/refresh and readable exact-source evidence passed at checkpoint `713ecaa`. |
 | 41 Existing flows and migrations | Initial 2,861-test baseline passed (4 skipped); intermediate integrated 3,001-test suite passed (9 skipped). Final frozen-tree checks and PostgreSQL CI results belong in the PR. |
 | 42 Exact reporting | Separate source tests, installed runtimes, real containers, browser and live provider stages. Local Docker/browser/PG unavailable; approved CI closes only stages it actually executes. |
 
