@@ -26,6 +26,35 @@ ROOT = Path(__file__).resolve().parents[1]
 BINARY = CODEX_ROOT / 'node_modules' / '.bin' / 'codex'
 
 
+def assert_denial_receipt(case, request, call_id):
+    """Require an explicit refusal for this exact attempted native call.
+
+    A command crash, empty output, or merely absent canary is not containment.
+    Inputs are native provider wire receipts, not worker-generated assertions.
+    """
+    receipts = [item for item in request.get('input', [])
+                if item.get('type') == 'function_call_output' and item.get('call_id') == call_id]
+    case.assertEqual(len(receipts), 1, 'Missing/ambiguous native refusal receipt for ' + call_id)
+    output = receipts[0].get('output')
+    case.assertIsInstance(output, str, 'Native refusal must be a textual receipt')
+    case.assertRegex(output.lower(),
+        r'(unknown tool|unsupported (?:tool|call)|tool[^\n]*(?:not found|not available|not allowed|disabled)|permission denied|access denied)',
+        'Native call did not explicitly refuse dispatch: ' + call_id)
+
+
+class DenialReceiptTests(unittest.TestCase):
+    def test_requires_matching_explicit_native_refusal(self):
+        for text in ('unknown tool exec_command', 'unsupported call: view_image', 'tool exec_command is disabled'):
+            assert_denial_receipt(self, {'input':[{'type':'function_call_output','call_id':'attempt','output':text}]}, 'attempt')
+
+    def test_absence_success_crash_or_unrelated_refusal_is_not_containment(self):
+        for body in ({'input':[]}, {'input':[{'type':'function_call_output','call_id':'other','output':'unknown tool'}]},
+                     *({'input':[{'type':'function_call_output','call_id':'attempt','output':text}]}
+                       for text in ('', 'exit code 1', 'Traceback: file missing', 'success'))):
+            with self.assertRaises(AssertionError):
+                assert_denial_receipt(self, body, 'attempt')
+
+
 @unittest.skipUnless(BINARY.is_file(), 'optional exact Codex npm dependency not installed')
 class NativeSchemaTests(unittest.TestCase):
     def test_installed_pin_initializes_native_stdio_without_inference(self):
@@ -271,6 +300,12 @@ class NativeLoopTests(unittest.TestCase):
         self.assertNotIn(base64.b64encode(self.image_bytes).decode(), bodies, 'Native builtin disclosed an image outside task tools')
         for request in self.requests:
             self.assertNotIn('data:image/', json.dumps(request.get('input',[])), 'Native builtin transmitted a re-encoded image')
+        for offset in (0, 5):
+            for position in range(3):
+                # The next inference request must carry the native result for
+                # the preceding attempted shell/file, image, or network call.
+                assert_denial_receipt(self, self.requests[offset + position + 1],
+                                     'attack-' + str(offset + position + 1))
         for index in (0, 5):
             self.assertEqual({entry[1] for entry in self.advertised(self.requests[index]['tools'])}, {'read_file'},
                              'Only Raven dynamic tools may be advertised, including after resume')

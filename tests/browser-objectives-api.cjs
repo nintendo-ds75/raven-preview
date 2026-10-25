@@ -15,6 +15,8 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
     page.on('pageerror',error=>errors.push(error.message));page.setDefaultTimeout(15000);
     const artifacts=process.env.BRIDGE_TEST_ARTIFACTS||path.join(root,'test-results');fs.mkdirSync(artifacts,{recursive:true});
     await page.goto(fixture.url);await page.getByRole('heading',{name:'Today',exact:true}).waitFor();
+    await page.getByRole('button',{name:'Review & take point',exact:true}).waitFor();
+    await page.getByRole('link',{name:'Make the billing release dependable',exact:true}).waitFor();
     await page.screenshot({path:path.join(artifacts,'objectives-api-desktop.png'),fullPage:true});
     await page.getByRole('button',{name:'Review & take point',exact:true}).click();
     await page.getByRole('button',{name:'Cancel',exact:true}).click();
@@ -36,20 +38,24 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
     await page.getByRole('button',{name:'Manage meeting evidence'}).click();await page.getByRole('heading',{name:'Synthetic onboarding call'}).waitFor();
     assert.match(await page.locator('.objective-editor').innerText(),/every workspace reader/i);
     const capture=page.locator('.objective-card').filter({has:page.getByRole('heading',{name:'Synthetic consent-only attendance plan',exact:true})});
-    await capture.getByText('Consent and controls',{exact:true}).click();
+    const openCaptureControls=async()=>{
+      const controls=capture.locator('details').first();
+      if(!await controls.evaluate(element=>element.open))await controls.locator('summary').click();
+    };
+    await openCaptureControls();
     const consent=capture.locator('.objective-meeting-consent');
     for(const name of ['notice_confirmed','join','transcribe'])await consent.locator(`[name=${name}]`).check();
     await Promise.all([page.waitForResponse(r=>r.url().endsWith('/consent')&&r.request().method()==='POST'),consent.getByRole('button',{name:'Record consent',exact:true}).click()]);
     await page.waitForFunction(id=>!objectivePending.has(id),fixture.attendance_id);
-    // Rerender closes controls and clears transient checkbox attestations.
-    await capture.getByText('Consent and controls',{exact:true}).click();
+    // Rerender preserves disclosure expansion but clears transient consent attestations.
+    await openCaptureControls();
     const background=capture.locator('.objective-meeting-background');
     await background.locator('[name=enabled]').check();await background.locator('[name=workspace_shared]').check();
     await Promise.all([page.waitForResponse(r=>r.url().endsWith('/background-sync')&&r.request().method()==='POST'),background.getByRole('button',{name:'Save background sync',exact:true}).click()]);
     await page.waitForFunction(id=>!objectivePending.has(id),fixture.attendance_id);
     let observed=await (await fetch(base+'/api/meetings/'+fixture.attendance_id+'?repo='+encodeURIComponent(fixture.repo))).json();
     assert.equal(observed.background_sync.enabled,1);assert.equal(observed.state,'planned');assert.equal(observed.consent.record,false);
-    await capture.getByText('Consent and controls',{exact:true}).click();
+    await openCaptureControls();
     await background.locator('[name=enabled]').uncheck();
     assert.equal(await background.locator('[name=workspace_shared]').isChecked(),false);
     await Promise.all([page.waitForResponse(r=>r.url().endsWith('/background-sync')&&r.request().method()==='POST'),background.getByRole('button',{name:'Save background sync',exact:true}).click()]);

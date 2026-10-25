@@ -186,3 +186,17 @@ when explicitly set to `false`. Explicit `view_image`, `skill_search` and
 `skill_mcp_dependency_install` false overrides do report false and are now also
 set in the research transport. These narrower denials do not resolve the
 unified-execution boundary and do not re-enable managed Codex.
+
+The first normal-runner native acceptance run (GitHub Actions job
+`121263262037`, PR #7) reached the actual scripted tool loop and persistent
+resume. Both native tests failed the strict advertised-tool allowlist: native
+`request_user_input`, `get_goal`, `create_goal`, and `update_goal` were still
+present alongside Raven's `read_file`. No synthetic file/key/image disclosure
+or loopback network hit was observed, but absence alone is not a denial proof.
+The research fixture now also requires a call-ID-matched explicit native refusal
+receipt for each attempted shell/file, image, and network call, fresh and resumed.
+The research transport additionally sets `goals=false` and
+`collaboration_modes=false`; the installed CLI reports those flags false, but
+only a subsequent native CI run can establish their runtime effect. Production
+remains disabled pending the full positive/negative acceptance and independent
+review; these test/config changes are not a safety approval.

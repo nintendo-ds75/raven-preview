@@ -124,7 +124,8 @@ async def _codex_transport(config):
     flags = {'shell_tool': False, 'unified_exec': False, 'apps': False, 'plugins': False,
              'multi_agent': False, 'hooks': False, 'browser_use': False, 'computer_use': False,
              'code_mode': False, 'code_mode_host': False, 'image_generation': False, 'memories': False,
-             'view_image': False, 'skill_search': False, 'skill_mcp_dependency_install': False}
+             'view_image': False, 'skill_search': False, 'skill_mcp_dependency_install': False,
+             'goals': False, 'collaboration_modes': False}
     args = [binary, 'app-server']
     for name, enabled in flags.items():
         args += ['-c', 'features.' + name + '=' + str(enabled).lower()]
