@@ -12,15 +12,21 @@ import os
 from pathlib import Path
 import queue
 import shutil
+import signal
 import subprocess
 import sys
 import threading
 import time
+from urllib.parse import urlsplit
 
 from .store import Invalid, now
 
 CLAUDE_SDK_VERSION = '0.2.165'
 CODEX_VERSION = '0.162.0-alpha.17.2'
+PI_VERSION = '1.4.0'
+PROVIDERS = ('claude', 'codex', 'pi', 'opencode')
+PI_ROOT = Path(__file__).resolve().parents[1] / 'hosts' / 'pi'
+CODEX_ROOT = Path(__file__).resolve().parents[1] / 'hosts' / 'codex'
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS browser_hosts (
  task_id TEXT PRIMARY KEY REFERENCES browser_tasks(task_id), provider TEXT NOT NULL,
@@ -72,20 +78,33 @@ def reconcile_cost(workbench, task_id):
                               'session_totals_usd': totals})
 
 
+def codex_binary():
+    """Explicit override, then the optional pinned local package, then PATH."""
+    configured = os.environ.get('RAVEN_CODEX_BIN')
+    if configured:
+        return configured
+    bundled = CODEX_ROOT / 'node_modules' / '.bin' / 'codex'
+    return str(bundled) if bundled.is_file() else shutil.which('codex') or ''
+
+
 def settings(provider):
-    if provider not in ('claude', 'codex'):
-        raise Invalid('Choose Claude Agent SDK or Codex app-server')
+    if provider not in PROVIDERS:
+        raise Invalid('Choose Claude Agent SDK, Codex app-server, Pi SDK or OpenCode')
     prefix = 'RAVEN_HOST_' + provider.upper()
     credential = prefix + '_API_KEY'
     # Explicit host variables only: do not borrow Raven inference or CLI login.
     return {'provider': provider, 'key': os.environ.get(credential, '').strip(),
             'credential_env': credential, 'model': os.environ.get(prefix + '_MODEL', '').strip(),
-            'workspace': os.environ.get(prefix + '_WORKSPACE_ID', '').strip()}
+            'workspace': os.environ.get(prefix + '_WORKSPACE_ID', '').strip(),
+            'model_provider': os.environ.get(prefix + '_PROVIDER', '').strip(),
+            'base_url': os.environ.get(prefix + '_BASE_URL', '').strip(),
+            'model_api': os.environ.get(prefix + '_MODEL_API', 'openai-completions').strip()}
 
 
 def capability(provider):
     cfg = settings(provider)
     problems = []
+    destination = cfg['model_provider'] + ' via ' + ('OpenCode' if provider == 'opencode' else 'Pi')
     if not cfg['key']:
         problems.append('Set ' + cfg['credential_env'] + ' on the server')
     if not cfg['model']:
@@ -98,8 +117,54 @@ def capability(provider):
             pass
         if version != CLAUDE_SDK_VERSION:
             problems.append('Install requirements-hosts.txt in the server Python environment')
+    elif provider == 'pi':
+        if cfg['base_url']:
+            try:
+                endpoint = urlsplit(cfg['base_url'])
+            except ValueError:
+                endpoint = urlsplit('')
+            if (endpoint.scheme not in ('http', 'https') or not endpoint.hostname or endpoint.username
+                    or endpoint.password or endpoint.query or endpoint.fragment
+                    or endpoint.scheme == 'http' and endpoint.hostname not in ('localhost', '127.0.0.1', '::1')):
+                problems.append('Pi custom endpoint needs HTTPS or loopback HTTP, without credentials/query/fragment')
+                destination = 'Invalid custom Pi endpoint (redacted)'
+            else:
+                destination = endpoint.scheme + '://' + endpoint.netloc + ' via Pi'
+            if cfg['model_api'] not in ('openai-completions', 'openai-responses', 'anthropic-messages'):
+                problems.append('Pi custom MODEL_API must be openai-completions, openai-responses or anthropic-messages')
+        try:
+            version = json.loads((PI_ROOT / 'node_modules/@earendil-works/pi-coding-agent/package.json').read_text())['version']
+        except (OSError, ValueError, KeyError):
+            pass
+        if version != PI_VERSION:
+            problems.append('Run npm ci --prefix hosts/pi to install pinned Pi SDK ' + PI_VERSION)
+        try:
+            node = subprocess.run([shutil.which('node') or 'node', '--version'], capture_output=True, text=True, timeout=5)
+            node_version = tuple(int(part) for part in node.stdout.strip().removeprefix('v').split('.')[:2])
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            node_version = ()
+        if node_version < (22, 19):
+            problems.append('Install Node.js >=22.19')
+        if not cfg['model_provider']:
+            problems.append('Set RAVEN_HOST_PI_PROVIDER (for example anthropic, openai or google)')
+    elif provider == 'opencode':
+        from . import opencode_host
+        version = opencode_host.installation()
+        if version == opencode_host.VERSION:
+            try:
+                probe = subprocess.run([opencode_host.binary(), '--version'], capture_output=True, text=True, timeout=5)
+                version = probe.stdout.strip()
+            except (OSError, subprocess.TimeoutExpired):
+                version = ''
+        if version != opencode_host.VERSION:
+            problems.append('Run npm ci --prefix hosts/opencode --ignore-scripts for OpenCode ' + opencode_host.VERSION)
+        if not cfg['model_provider']:
+            problems.append('Set RAVEN_HOST_OPENCODE_PROVIDER (for example anthropic or openai)')
+        if cfg['base_url']:
+            problems.append('OpenCode custom endpoints are not exposed; select a configured native provider or use Pi')
     else:
-        binary = os.environ.get('RAVEN_CODEX_BIN') or shutil.which('codex')
+        problems.append('Codex managed execution is disabled: native tool suppression is not established for this pin; strict parent-mediated tools are required')
+        binary = codex_binary()
         if binary:
             try:
                 result = subprocess.run([binary, '--version'], capture_output=True, text=True, timeout=5)
@@ -108,12 +173,12 @@ def capability(provider):
                 pass
         if version != CODEX_VERSION:
             problems.append('Configure RAVEN_CODEX_BIN with codex-cli ' + CODEX_VERSION)
-    return {'id': provider, 'name': 'Claude Agent SDK' if provider == 'claude' else 'Codex app-server',
+    return {'id': provider, 'name': {'claude': 'Claude Agent SDK', 'codex': 'Codex app-server (disabled)', 'pi': 'Pi SDK (open source)', 'opencode': 'OpenCode (open source)'}[provider],
             'ready': not problems, 'blockers': problems, 'version': version, 'model': cfg['model'],
             'execution': 'Raven task tools; isolated commands',
-            'containment': 'tools-only' if provider == 'claude' else 'advisory; read-only host sandbox',
+            'containment': 'tools-only; not an OS sandbox' if provider in ('claude', 'pi', 'opencode') else 'unverified native tool boundary; production dispatch disabled',
             'session_location': 'Raven server, dedicated task home',
-            'inference_destination': 'Anthropic API' if provider == 'claude' else 'OpenAI API',
+            'inference_destination': ({'claude': 'Anthropic API', 'codex': 'OpenAI API'}.get(provider) or destination),
             'live_verified': False}
 
 
@@ -129,6 +194,8 @@ def execute_once(workbench, task_id, call):
     This is deliberately not an exactly-once claim: an action can succeed before
     its receipt commits. Its intent survives and requires reconciliation.
     """
+    from .visibility import require_task
+    require_task(workbench.store, task_id)
     db = workbench.store.graph.db
     fingerprint = hashlib.sha256(json.dumps([call['name'], call.get('input', {})], sort_keys=True).encode()).hexdigest()
     with workbench.store.graph.transaction():
@@ -148,10 +215,9 @@ def execute_once(workbench, task_id, call):
                    (task_id, call['id'], call['name'], json.dumps(call.get('input', {}))))
     workbench.assert_worker()
     try:
-        from .visibility import require_task
         require_task(workbench.store, task_id)
         row = workbench.row(task_id)
-        if row['status'] in ('paused', 'pausing', 'cancelled') or workbench.stop.is_set():
+        if row['status'] in ('paused', 'pausing', 'cancelled', 'waiting', 'completed') or workbench.stop.is_set():
             result = {'error': 'Task interrupted before this operation; it did not run'}
         else:
             result = workbench.execute(row, call)
@@ -206,6 +272,29 @@ def reconcile(workbench, task_id, data, actor):
     return {'recorded': True, 'status': row['status'], 'next': 'Review the saved work, then explicitly continue the task.'}
 
 
+def stop_process_group(process):
+    """Only for workers launched with start_new_session=True by this module.
+
+    A harness can spawn its own server. Killing just the worker can leave that
+    server alive after cancellation, still holding a provider credential.
+    """
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
+    # The group can outlive its leader. Do not use poll() as proof that all
+    # child harnesses exited. The dedicated group contains no other task.
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait()
+
+
 class Harness:
     def run(self, workbench, task_id, prompt):
         from .workbench import SYSTEM, TOOLS
@@ -219,7 +308,13 @@ class Harness:
             raise Invalid('; '.join(cap['blockers']))
         if db.execute("SELECT 1 FROM browser_intents WHERE task_id=? AND state<>'completed'", (task_id,)).fetchone():
             raise Invalid('An earlier tool operation has an unknown outcome. Reconcile it before resuming.')
-        budget = float(os.environ.get('RAVEN_HOST_TASK_BUDGET_USD', '5'))
+        try:
+            budget = float(os.environ.get('RAVEN_HOST_TASK_BUDGET_USD', '5'))
+            timeout = float(os.environ.get('RAVEN_HOST_TURN_TIMEOUT', '900'))
+        except ValueError:
+            raise Invalid('Host budget and timeout must be finite positive numbers') from None
+        if not math.isfinite(budget) or not math.isfinite(timeout) or timeout <= 0:
+            raise Invalid('Host budget and timeout must be finite positive numbers')
         if budget <= 0 or binding['cost_usd'] >= budget:
             raise Invalid('The host task budget is exhausted. An operator must explicitly increase it to continue.')
         home = workbench.root / '.hosts' / task_id / binding['provider']
@@ -233,11 +328,20 @@ class Harness:
             env['ANTHROPIC_API_KEY'] = cfg['key']
             if cfg['workspace']:
                 env['ANTHROPIC_CUSTOM_HEADERS'] = 'anthropic-workspace-id: ' + cfg['workspace']
+        elif cfg['provider'] == 'pi':
+            env['RAVEN_PI_API_KEY'] = cfg['key']
+        elif cfg['provider'] == 'opencode':
+            from .opencode_host import binary
+            env['RAVEN_OPENCODE_API_KEY'] = cfg['key']
+            env['RAVEN_OPENCODE_BIN'] = binary()
         else:
             env['OPENAI_API_KEY'] = cfg['key']
-            env['RAVEN_CODEX_BIN'] = os.environ.get('RAVEN_CODEX_BIN') or shutil.which('codex') or ''
-        process = subprocess.Popen([sys.executable, '-m', 'bridge.harness_worker'], cwd=empty, env=env,
-                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            env['RAVEN_CODEX_BIN'] = codex_binary()
+        command = ([shutil.which('node'), str(PI_ROOT / 'worker.mjs')] if cfg['provider'] == 'pi'
+                   else [sys.executable, '-m', 'bridge.opencode_host' if cfg['provider'] == 'opencode' else 'bridge.harness_worker'])
+        process = subprocess.Popen(command, cwd=empty, env=env,
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                                   start_new_session=True)
         events = queue.Queue()
         def read():
             try:
@@ -251,17 +355,19 @@ class Harness:
         def send(value):
             process.stdin.write(json.dumps(value) + '\n')
             process.stdin.flush()
-        db.execute("UPDATE browser_hosts SET state='starting',version=?,updated_at=? WHERE task_id=?",
-                   (cap['version'], now(), task_id))
-        send({'provider': cfg['provider'], 'model': binding['model'], 'session_id': binding['session_id'],
-              'cwd': str(empty), 'prompt': prompt, 'system': SYSTEM, 'tools': TOOLS,
-              'max_turns': workbench.max_steps, 'budget_usd': budget - binding['cost_usd']})
-        deadline = time.monotonic() + float(os.environ.get('RAVEN_HOST_TURN_TIMEOUT', '900'))
+        deadline = time.monotonic() + timeout
         interrupt_at = None
         finished = False
+        prompt_delivered = False
         calls = 0
         access_check_at = 0
         try:
+            db.execute("UPDATE browser_hosts SET state='starting',version=?,updated_at=? WHERE task_id=?",
+                       (cap['version'], now(), task_id))
+            send({'provider': cfg['provider'], 'model': binding['model'], 'session_id': binding['session_id'],
+                  'cwd': str(empty), 'prompt': prompt, 'system': SYSTEM, 'tools': TOOLS,
+                  'model_provider': cfg['model_provider'], 'base_url': cfg['base_url'], 'model_api': cfg['model_api'],
+                  'max_turns': workbench.max_steps, 'budget_usd': budget - binding['cost_usd']})
             while True:
                 row = workbench.row(task_id)
                 workbench.assert_worker()
@@ -282,11 +388,17 @@ class Harness:
                     break
                 kind = event.get('kind')
                 if kind == 'tool':
+                    if finished:
+                        raise Invalid('The coding host requested a tool after its final receipt')
                     calls += 1
                     if calls > workbench.max_steps:
                         raise Invalid('The host reached its tool-call budget. Review progress before continuing.')
-                    result = execute_once(workbench, task_id, event['call'])
+                    result = ({'error': 'Host interruption requested; this tool did not run'} if interrupt_at is not None
+                              else execute_once(workbench, task_id, event['call']))
                     send({'kind': 'tool_result', 'id': event['call']['id'], 'result': result})
+                elif kind == 'delivery':
+                    if event.get('accepted') is True:
+                        prompt_delivered = True
                 elif kind == 'session':
                     db.execute("UPDATE browser_hosts SET session_id=?,state='active',updated_at=? WHERE task_id=?",
                                (event['id'], now(), task_id))
@@ -297,11 +409,20 @@ class Harness:
                     messages.append({'role': 'assistant', 'content': [{'type': 'text', 'text': event['text']}]})
                     workbench.update(task_id, messages=json.dumps(messages))
                 elif kind == 'result':
+                    if finished:
+                        raise Invalid('The coding host sent duplicate final receipts')
+                    if cfg['provider'] in ('pi', 'opencode'):
+                        cost = event.get('cost_usd')
+                        if not isinstance(cost, (int, float)) or not math.isfinite(cost) or cost < 0:
+                            raise Invalid('The coding host returned invalid usage')
+                    with workbench.store.graph.transaction():
+                        if cfg['provider'] in ('pi', 'opencode'):
+                            db.execute('UPDATE browser_hosts SET cost_usd=cost_usd+? WHERE task_id=?', (cost, task_id))
+                        workbench.record(task_id, 'host', 'Host turn ended', event)
+                        reconcile_cost(workbench, task_id)
+                        db.execute('UPDATE browser_hosts SET state=?,turns=turns+1,updated_at=? WHERE task_id=?',
+                                   ('interrupted' if interrupt_at else event.get('status', 'stopped'), now(), task_id))
                     finished = True
-                    workbench.record(task_id, 'host', 'Host turn ended', event)
-                    reconcile_cost(workbench, task_id)
-                    db.execute('UPDATE browser_hosts SET state=?,turns=turns+1,updated_at=? WHERE task_id=?',
-                               ('interrupted' if interrupt_at else event.get('status', 'stopped'), now(), task_id))
                     if event.get('is_error') and interrupt_at is None:
                         raise Invalid('The coding host ended with ' + str(event.get('status')) + '. Your session and work are saved.')
                 elif kind == 'usage':
@@ -310,14 +431,9 @@ class Harness:
                     raise Invalid('The selected coding host failed (' + str(event.get('code', 'unknown')) + '). No alternate provider was used.')
             if not finished:
                 raise Invalid('The host disconnected without a final receipt. Inspect the saved session before continuing.')
+            return {'prompt_delivered': prompt_delivered}
         finally:
-            if process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
+            stop_process_group(process)
             process.stdin.close()
             process.stdout.close()
             if not finished:

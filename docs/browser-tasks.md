@@ -1,8 +1,9 @@
 # Work directly in Raven
 
 Open **New task**, choose a repository, and describe what you want done. Raven
-runs the selected coding harness on the Raven server: Claude Agent SDK or a pinned
-Codex app-server. You do not need a separate agent window or terminal open.
+runs the selected coding harness on the Raven server: Claude Agent SDK, Pi SDK, or
+OpenCode. Managed Codex execution is currently disabled because its pinned native
+tool-suppression controls do not establish the required parent-only boundary. See [execution harness coverage](execution-harnesses.md) for exact support and verification. You do not need a separate agent window or terminal open.
 **Ask a question** reads connected evidence without starting a coding harness.
 
 The conversation shows progress and accepts follow-up messages. The overview
@@ -43,12 +44,16 @@ Install `requirements-hosts.txt` for Claude Agent SDK 0.2.165. Configure
 SDK smoke test used `claude-sonnet-4-6`. Set `RAVEN_HOST_CLAUDE_WORKSPACE_ID` if
 required by the test account. Never paste keys into a task prompt.
 
-For Codex, configure `RAVEN_CODEX_BIN` pointing to codex-cli
-`0.162.0-alpha.17.2`, `RAVEN_HOST_CODEX_API_KEY` and `RAVEN_HOST_CODEX_MODEL`.
-This adapter uses the experimental dynamic-tool interface, checks the exact CLI
-version, and refuses implicit model/provider fallback. It is not yet a verified
-guarded execution mode: the interface reports its read-only sandbox as advisory.
-Do not substitute a user's desktop session credentials for a deployment key.
+**Managed Codex cannot be enabled by credentials or installation.** Its runtime
+is retained for isolated acceptance research only. The test suite installs the
+optional exact package with `npm ci --prefix hosts/codex --ignore-scripts` and
+supplies its own dummy credential and loopback inference fixture. No deployment
+key is needed or requested for those tests.
+
+The research transport uses the experimental dynamic-tool interface and rejects
+changed effective model/provider identities. Native built-ins can remain enabled
+despite suppression flags, so read-only sandboxing is not a sufficient read or
+network boundary. Production dispatch is unconditionally blocked.
 
 Host credentials and model choice are separate from Raven's internal evidence
 reading. Internal inference uses `BRIDGE_MODEL_API=anthropic` with
@@ -118,19 +123,21 @@ private copies live under `/data/workbench` in Compose or `.bridge/workbench`
 locally. Back up both when you need to resume browser tasks after moving hosts.
 `BRIDGE_WORKBENCH_DIR` can select another persistent directory. The server runs
 one host turn at a time. Claude has a per-task dollar budget (default $5), and
-both adapters have a tool-call limit and a 15-minute turn timeout. Codex reports
-token usage but does not yet enforce a priced dollar budget; this is a release
-gap, not a cost guarantee. This version is intended for a supervised team, not a high-throughput
+enabled adapters have a tool-call limit and a 15-minute turn timeout. Pi and
+OpenCode provider-reported costs are not a hard spending guarantee; configure
+provider-side limits. The disabled Codex research transport has no priced-dollar
+enforcement. This version is intended for a supervised team, not a high-throughput
 multi-tenant execution service.
 
 Claude uses the [official Agent SDK](https://code.claude.com/docs/en/agent-sdk/python)
 with built-in tools disabled and only Raven's in-process MCP tools enabled.
 Codex uses the [app-server protocol](https://learn.chatgpt.com/docs/app-server)
 over private stdio. Harnesses receive a dedicated home, one provider credential,
-no database or connector credentials, and an empty working directory. File and
-command access goes through task-scoped Raven tools. Provider reasoning is not
+no database or connector credentials, and an empty working directory. Enabled Claude/Pi/OpenCode adapters mediate task file and command access through
+Raven tools. This claim does not apply to the disabled Codex research transport. Provider reasoning is not
 exported. Session IDs, tool IDs, versions and reported usage are saved in Raven.
 
-Local harness sessions and repository execution still send selected source text,
-prompts and tool results to the selected provider's inference API. This is local
-execution with remote inference, not an air-gapped installation.
+Local harness sessions send selected source text, prompts and tool results to
+the configured inference destination. Cloud providers mean remote inference;
+Pi can instead use an explicitly configured self-hosted endpoint. Neither choice
+alone establishes an air-gapped deployment—review connectors and runtime setup.

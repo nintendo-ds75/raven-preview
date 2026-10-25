@@ -54,6 +54,7 @@ const ago = value => {
 };
 const pill = (text, color = '') => `<span class="pill ${color}"><span class="status-dot"></span>${esc(text)}</span>`;
 const titles = {
+  today: ['Today', '', 'Today', ''],
   work: ['Raven', '', 'What should we work on?', ''],
   inbox: ['Judgment inbox', '', 'Inbox', 'Decisions your coding agents need from a person. Answer, sign, or hand on.'],
   runs: ['Tasks', '', 'Tasks', 'Every task your agents registered: what is settled, what is waiting, and on whom.'],
@@ -265,6 +266,7 @@ async function refresh({quiet = false} = {}) {
     }
     if (taskId()) await loadTask({quiet});
     if (view === 'work' && typeof loadWorkbench === 'function') await loadWorkbench();
+    if (view === 'today' && typeof loadObjectives === 'function') await loadObjectives();
     if ((changed || !quiet) && typeof renderWorkRecents === 'function') renderWorkRecents();
     // A quiet poll that found nothing new leaves the page alone, apart from
     // a redraw a minute so "3 minutes ago" keeps moving. Measured in
@@ -310,7 +312,7 @@ function navigate() {
   $('#page-title').textContent = title;
   $('#page-description').textContent = description;
   document.title = view === 'work' ? 'Raven' : `Raven · ${breadcrumb}`;
-  $('#new-request').hidden = view === 'connect';
+  $('#new-request').hidden = view === 'today' || view === 'connect';
   $('#new-request').innerHTML = `${icon('plus')}${view === 'owners' ? 'Add owner' : 'Ask Raven'}`;
   document.querySelectorAll('nav a').forEach(link => {
     link.classList.toggle('active', link.dataset.view === view);
@@ -322,6 +324,7 @@ function navigate() {
   taskDetail = null; taskError = '';
   if (taskId()) loadTask();
   if (view === 'work' && typeof loadWorkbench === 'function') loadWorkbench();
+  if (view === 'today' && typeof loadObjectives === 'function') loadObjectives();
   render();
   if (resetScrollOnNavigation && typeof window.scrollTo === 'function') window.scrollTo(0, 0);
   resetScrollOnNavigation = false;
@@ -648,7 +651,7 @@ function render() {
     $('#app').innerHTML = workspaceError ? `<div class="empty" role="alert"><h2>Workspace access unavailable</h2><p>${esc(workspaceError)}</p><button class="button" data-action="retry">Try again</button></div>` : '<p class="context" role="status">Loading workspace…</p>';
     return;
   }
-  $('#new-request').hidden = view === 'connect' || state.me?.role === 'viewer' || (view === 'owners' && !canAdminister());
+  $('#new-request').hidden = view === 'today' || view === 'connect' || state.me?.role === 'viewer' || (view === 'owners' && !canAdminister());
   $('#manual-actions').hidden = $('#new-request').hidden;
   if (typeof rememberTaskView === 'function') rememberTaskView();
   const noteDraft = $('#note-text')?.value;
@@ -656,8 +659,9 @@ function render() {
   const focusWas = $('#app').contains(active) ? focusKey(active) : '';
   const selection = active.tagName === 'INPUT' ? active.selectionStart : null;
   const disclosures = [...document.querySelectorAll('#app details[id]')].map(el => ({id: el.id, open: el.open, scroll: el.querySelector('ul')?.scrollTop || 0}));
-  $('.page-head').hidden = !!taskId() || view === 'work';
+  $('.page-head').hidden = !!taskId() || view === 'work' || view === 'today';
   document.body.classList.toggle('work-view', view === 'work');
+  if (view === 'today' && typeof renderObjectives === 'function') { $('#app').dataset.taskId = ''; renderObjectives(); return; }
   if (view === 'work' && typeof renderWorkbench === 'function') { $('#app').dataset.taskId = ''; renderWorkbench(); return; }
   $('#app').innerHTML = taskId() ? taskOverview() : ({inbox, runs, memory, owners, connect: connections})[view]();
   $('#app').dataset.taskId = taskId();

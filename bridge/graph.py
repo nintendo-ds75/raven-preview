@@ -352,6 +352,16 @@ def migrate(db: sqlite3.Connection) -> None:
     migrate_semantic(db)
     from .investigation import migrate as migrate_investigation
     migrate_investigation(db)
+    from .meeting_records import migrate as migrate_meetings
+    migrate_meetings(db)
+    from .meeting_worker import migrate as migrate_meeting_observers
+    migrate_meeting_observers(db)
+    from .artifact_verification import migrate as migrate_verification
+    migrate_verification(db)
+    from .objectives import migrate as migrate_objectives
+    migrate_objectives(db)
+    from .objective_head import migrate as migrate_objective_head
+    migrate_objective_head(db)
     from .mcp_events import migrate as migrate_events
     migrate_events(db)
     if fts_available(db):

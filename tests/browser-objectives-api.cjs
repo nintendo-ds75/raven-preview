@@ -1,0 +1,64 @@
+/* Chromium + real local API. Synthetic fixture, no external model/meeting calls. */
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+const {spawn}=require('node:child_process'),readline=require('node:readline');
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+(async()=>{
+  const root=path.resolve(__dirname,'..'),temp=fs.mkdtempSync(path.join(os.tmpdir(),'raven-objectives-browser-'));
+  const child=spawn(process.env.BRIDGE_PYTHON||'python3',[path.join(root,'tests/objectives_browser_server.py'),path.join(temp,'ui.db')],{cwd:root});
+  let stderr='',browser;child.stderr.on('data',chunk=>stderr+=chunk);
+  try {
+    const fixture=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Fixture timeout: '+stderr)),30000);const lines=readline.createInterface({input:child.stdout});lines.on('line',line=>{try{const result=JSON.parse(line);clearTimeout(timer);resolve(result);}catch{}});child.once('exit',code=>{clearTimeout(timer);reject(Error('Fixture exited '+code+': '+stderr));});});
+    const base=fixture.url.split('/#')[0];
+    browser=await chromium.launch({headless:true,...(process.env.BRIDGE_BROWSER?{executablePath:process.env.BRIDGE_BROWSER}:{})});
+    const page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[];
+    page.on('pageerror',error=>errors.push(error.message));page.setDefaultTimeout(15000);
+    const artifacts=process.env.BRIDGE_TEST_ARTIFACTS||path.join(root,'test-results');fs.mkdirSync(artifacts,{recursive:true});
+    await page.goto(fixture.url);await page.getByRole('heading',{name:'Today',exact:true}).waitFor();
+    await page.screenshot({path:path.join(artifacts,'objectives-api-desktop.png'),fullPage:true});
+    await page.getByRole('button',{name:'Review & take point',exact:true}).click();
+    await page.getByRole('button',{name:'Cancel',exact:true}).click();
+    let overview=await (await fetch(base+'/api/objectives')).json();assert.equal(overview.proposals[0].status,'proposed');
+    await page.getByRole('button',{name:'Review & take point',exact:true}).click();
+    await page.getByRole('button',{name:'Send to judgment inbox',exact:true}).click();
+    await page.getByRole('link',{name:'Open judgment review'}).waitFor();
+    overview=await (await fetch(base+'/api/objectives')).json();assert.equal(overview.proposals[0].status,'review');assert.equal(overview.objectives.length,1);
+    await page.getByRole('link',{name:'Make the billing release dependable',exact:true}).click();
+    await page.getByRole('button',{name:'Save checkpoint',exact:true}).click();
+    await page.locator('[name=summary]').fill('HTTP and browser paths checked; awaiting policy.');
+    await page.locator('[name=waiting_on]').fill('Policy reviewer');
+    await page.locator('#objective-progress-form button[type=submit]').click();
+    await page.waitForFunction(()=>document.querySelector('#app').textContent.includes('Policy reviewer'));
+    const objective=await (await fetch(base+'/api/objectives/'+fixture.objective_id)).json();assert.equal(objective.waiting_on,'Policy reviewer');
+    await page.getByRole('link',{name:'← Today',exact:true}).click();await page.getByRole('heading',{name:'Today',exact:true}).waitFor();
+    await page.goBack();await page.getByRole('heading',{name:'Make the billing release dependable',exact:true}).waitFor();
+    await page.goForward();await page.getByRole('heading',{name:'Today',exact:true}).waitFor();
+    await page.getByRole('button',{name:'Manage meeting evidence'}).click();await page.getByRole('heading',{name:'Synthetic onboarding call'}).waitFor();
+    assert.match(await page.locator('.objective-editor').innerText(),/every workspace reader/i);
+    const capture=page.locator('.objective-card').filter({has:page.getByRole('heading',{name:'Synthetic consent-only attendance plan',exact:true})});
+    await capture.getByText('Consent and controls',{exact:true}).click();
+    const consent=capture.locator('.objective-meeting-consent');
+    for(const name of ['notice_confirmed','join','transcribe'])await consent.locator(`[name=${name}]`).check();
+    await Promise.all([page.waitForResponse(r=>r.url().endsWith('/consent')&&r.request().method()==='POST'),consent.getByRole('button',{name:'Record consent',exact:true}).click()]);
+    await page.waitForFunction(id=>!objectivePending.has(id),fixture.attendance_id);
+    // Rerender closes controls and clears transient checkbox attestations.
+    await capture.getByText('Consent and controls',{exact:true}).click();
+    const background=capture.locator('.objective-meeting-background');
+    await background.locator('[name=enabled]').check();await background.locator('[name=workspace_shared]').check();
+    await Promise.all([page.waitForResponse(r=>r.url().endsWith('/background-sync')&&r.request().method()==='POST'),background.getByRole('button',{name:'Save background sync',exact:true}).click()]);
+    await page.waitForFunction(id=>!objectivePending.has(id),fixture.attendance_id);
+    let observed=await (await fetch(base+'/api/meetings/'+fixture.attendance_id+'?repo='+encodeURIComponent(fixture.repo))).json();
+    assert.equal(observed.background_sync.enabled,1);assert.equal(observed.state,'planned');assert.equal(observed.consent.record,false);
+    await capture.getByText('Consent and controls',{exact:true}).click();
+    await background.locator('[name=enabled]').uncheck();
+    assert.equal(await background.locator('[name=workspace_shared]').isChecked(),false);
+    await Promise.all([page.waitForResponse(r=>r.url().endsWith('/background-sync')&&r.request().method()==='POST'),background.getByRole('button',{name:'Save background sync',exact:true}).click()]);
+    await page.waitForFunction(id=>!objectivePending.has(id),fixture.attendance_id);
+    observed=await (await fetch(base+'/api/meetings/'+fixture.attendance_id+'?repo='+encodeURIComponent(fixture.repo))).json();
+    assert.equal(observed.background_sync.enabled,0);assert.equal(observed.state,'planned');
+    await page.getByRole('button',{name:'Close',exact:true}).click();assert.equal(await page.locator('.objective-editor').count(),0);
+    await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
+    await page.screenshot({path:path.join(artifacts,'objectives-api-mobile.png'),fullPage:true});
+    assert.deepEqual(errors,[]);console.log('Today real local API + Chromium flows passed; providers remain synthetic/unavailable.');
+  } finally {if(browser)await browser.close();child.kill('SIGTERM');fs.rmSync(temp,{recursive:true,force:true});}
+})().catch(error=>{console.error(error);process.exitCode=1;});

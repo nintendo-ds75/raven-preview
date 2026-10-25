@@ -20,6 +20,7 @@ ARG INSTALL_AGENTS=false
 RUN if [ "$INSTALL_AGENTS" = true ]; then pip install --no-cache-dir -r requirements-agents.txt; fi
 ARG INSTALL_HOSTS=false
 RUN if [ "$INSTALL_HOSTS" = true ]; then pip install --no-cache-dir -r requirements-hosts.txt; fi
+COPY --chown=bridge:bridge hosts ./hosts
 COPY --chown=bridge:bridge bridge ./bridge
 COPY --chown=bridge:bridge web ./web
 COPY --chown=bridge:bridge fixtures ./fixtures

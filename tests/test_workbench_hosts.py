@@ -126,7 +126,7 @@ class IntentTests(OfflineCase):
             self.service.step(task)
         self.assertEqual(self.service.get(task)['pending_messages'][0]['body'], 'Use the second option.')
         self.service.control(task, 'resume', self.actor)
-        with patch.object(self.service.harness, 'run') as run:
+        with patch.object(self.service.harness, 'run', return_value={'prompt_delivered': True}) as run:
             self.service.step(task)
         self.assertIn('Use the second option.', run.call_args.args[2])
         self.assertFalse(self.service.get(task)['pending_messages'])
@@ -173,7 +173,7 @@ class IntentTests(OfflineCase):
                                    (task, 'claude', 'test', 'today'))
         self.service.agent = None
         self.service.update(task, status='queued')
-        with patch.object(self.service.harness, 'run') as run:
+        with patch.object(self.service.harness, 'run', return_value={'prompt_delivered': True}) as run:
             self.service.step(task)
             self.assertEqual(self.service.row(task)['status'], 'waiting')
             for _ in range(3):
@@ -182,3 +182,27 @@ class IntentTests(OfflineCase):
             self.store.graph.db.execute("UPDATE decisions SET answer='Use 2',status='resolved',signoff='not_required',updated_at='later' WHERE id=?", (node,))
             self.service.tick()
             self.assertEqual(run.call_count, 2, 'A changed decision must wake the same host')
+
+    def test_pre_prompt_interruption_preserves_queued_user_input_until_confirmed_delivery(self):
+        task = self.submit()
+        self.service.step(task)
+        self.store.graph.db.execute('INSERT INTO browser_hosts(task_id,provider,model,session_id,updated_at) VALUES(?,?,?,?,?)',
+                                   (task, 'pi', 'test', 'existing', 'today'))
+        self.service.agent = None
+        self.service.message(task, {'text': 'Keep the strict limit.', 'request_key': 'stop-race'}, self.actor)
+        with patch.object(self.service.harness, 'run', return_value={'prompt_delivered': False}):
+            self.service.step(task)
+        self.assertEqual(self.service.row(task)['status'], 'paused')
+        self.assertEqual(self.service.get(task)['pending_messages'][0]['body'], 'Keep the strict limit.')
+        self.service.control(task, 'resume', self.actor)
+        with patch.object(self.service.harness, 'run', return_value={'prompt_delivered': True}) as run:
+            self.service.step(task)
+        self.assertIn('Keep the strict limit.', run.call_args.args[2])
+        self.assertFalse(self.service.get(task)['pending_messages'])
+
+    def test_completed_receipt_replay_still_requires_current_source_access(self):
+        task = self.submit()
+        self.service.step(task)
+        with patch('bridge.visibility.require_task', side_effect=Invalid('Source access revoked')):
+            with self.assertRaisesRegex(Invalid, 'Source access revoked'):
+                hosts.execute_once(self.service, task, call('read_file', {'path':'policy.py'}))

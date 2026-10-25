@@ -548,6 +548,9 @@ class Store:
                                      "memory is evidence, not sign-off, until a person signs it." if people else
                                      "Adopt each with bridge_add_node(adopt=<node_id>); the task finishes once "
                                      "they are answered."))
+            if status == 'completed':
+                from .objectives import assert_task_authority
+                assert_task_authority(self, run_id, db=db)
             db.execute("UPDATE runs SET status=?,updated_at=? WHERE id=?", (status, now(), run_id))
             self.event(db, "run_updated", status, run_id=run_id)
         return {"id": run_id, "status": status}

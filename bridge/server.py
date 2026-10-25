@@ -243,7 +243,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                                        and self.me.id == link.person["id"])
                     view["viewer"]["interview_decision_id"] = link.decision_id
                     return self.send(200, view)
-                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js", "/presentation.js", "/workbench.js", "/workbench.css"):
+                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js", "/presentation.js", "/workbench.js", "/workbench.css", "/objectives.js", "/objectives.css"):
                     if url.path == "/" and auth.enabled and self.me is None:
                         if parse_qs(url.query).get("github_connect") == ["1"]:
                             cookie = "bridge_github_connect=1; Max-Age=600; Path=/; HttpOnly; SameSite=Lax"
@@ -258,13 +258,33 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     files['/presentation.js'] = 'presentation.js'
                     files['/workbench.js'] = 'workbench.js'
                     files['/workbench.css'] = 'workbench.css'
+                    files['/objectives.js'] = 'objectives.js'
+                    files['/objectives.css'] = 'objectives.css'
                     file = WEB / files[url.path]
                     return self.send(200, file.read_bytes(), (mimetypes.guess_type(str(file))[0] or "text/plain") + "; charset=utf-8",
                                      etag=True, cache="no-cache")
                 self.require("viewer")
+                if url.path == '/api/objectives':
+                    from .objectives import overview
+                    return self.send(200, overview(store, workbench))
+                if len(parts) == 3 and parts[:2] == ['api', 'objectives']:
+                    from .objectives import get
+                    return self.send(200, get(store, parts[2]))
+                if parts[:2] == ['api', 'meetings']:
+                    from . import meeting_records
+                    repo = field({'repo': parse_qs(url.query).get('repo', [''])[0]}, 'repo', limit=100)
+                    if len(parts) == 2:
+                        return self.send(200, meeting_records.list_meetings(store, repo))
+                    if len(parts) == 3:
+                        return self.send(200, meeting_records.operational_view(store, meeting_records.get(store, parts[2], repo)))
+                    return self.send(404, {'error': 'Unknown meeting resource'})
                 if len(parts) in (3, 4) and parts[:2] == ['api', 'workbench']:
                     if not workbench:
                         return self.send(503, {'error': 'Browser execution is not configured'})
+                    if len(parts) == 4 and parts[3] == 'verification':
+                        from .artifact_verification import Verifier
+                        verifier = Verifier(workbench)
+                        return self.send(200, {'config': verifier.config(), 'receipts': verifier.list(parts[2])})
                     if len(parts) == 4 and parts[3] == 'patch':
                         from .visibility import require_task
                         require_task(store, parts[2])
@@ -753,7 +773,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
             content_type = self.headers.get("Content-Type", "").split(";")[0]
             try:
                 length = int(self.headers.get("Content-Length", "0"))
-                limit = (1 << 20) if path.startswith("/webhooks/") else 65536
+                limit = (8 << 20) if re.fullmatch(r"/api/meetings/[^/]+/import", path) else ((1 << 20) if path.startswith("/webhooks/") else 65536)
                 if not 0 < length <= limit:
                     return self.send(413, {"error": f"Request must be between 1 and {limit} bytes"})
                 raw = self.rfile.read(length)
@@ -856,7 +876,74 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                              "and a person assigns or hands it on")
                 else:
                     self.require("member")
-                if path == '/api/ask':
+                if path == '/api/objectives':
+                    from .objectives import create
+                    if 'start_preparation' in data and type(data['start_preparation']) is not bool:
+                        raise Invalid('start_preparation must be an explicit boolean')
+                    result = create(store, data, self.me)
+                    if data.get('start_preparation'):
+                        from .objectives import act, get, digest
+                        try:
+                            result = act(store, result['id'], 'dispatch', {'request_key': 'initial:' + digest(field(data, 'request_key', limit=100))[:64],
+                                'expected_revision': 1}, self.me, workbench)
+                        except Invalid as error:
+                            with store.graph.transaction() as db:
+                                db.execute('UPDATE objectives SET blocked_reason=? WHERE id=?', (str(error)[:1000], result['id']))
+                            result = get(store, result['id'])
+                elif path == '/api/objectives/watch':
+                    self.require('admin')
+                    from .objective_head import configure_watch
+                    result = configure_watch(store, data, self.me)
+                elif path == '/api/objectives/scan':
+                    from .objective_head import scan
+                    result = scan(store, data, self.me)
+                elif path.startswith('/api/objectives/'):
+                    from .objectives import act
+                    parts = path.strip('/').split('/')
+                    if len(parts) != 4:
+                        raise Invalid('Unknown objective action')
+                    result = act(store, parts[2], parts[3], data, self.me, workbench)
+                elif path.startswith('/api/proposals/'):
+                    from .objectives import proposal_action
+                    parts = path.strip('/').split('/')
+                    if len(parts) != 4:
+                        raise Invalid('Unknown proposal action')
+                    result = proposal_action(store, parts[2], parts[3], data, self.me)
+                elif path == '/api/meetings':
+                    self.require('admin')
+                    from . import meeting_records
+                    result = meeting_records.operational_view(store, meeting_records.create(store, data))
+                elif path.startswith('/api/meetings/'):
+                    self.require('admin')
+                    from . import meeting_records
+                    parts = path.strip('/').split('/')
+                    if len(parts) != 4:
+                        raise Invalid('Unknown meeting action')
+                    ident, action = parts[2], parts[3].replace('-', '_')
+                    repo = field(data, 'repo', limit=100)
+                    attributed = {**data, 'by': self.me.name or 'local operator'}
+                    if action == 'consent':
+                        result = meeting_records.set_consent(store, ident, repo, attributed)
+                    elif action == 'import':
+                        result = meeting_records.import_transcript(store, ident, repo, attributed)
+                    elif action == 'background_sync':
+                        from .meeting_worker import configure_sync
+                        result = configure_sync(store, ident, repo, attributed, self.me)
+                    elif action == 'sync':
+                        result = meeting_records.sync_transcript(store, ident, repo, attributed)
+                    elif action == 'revoke':
+                        result = meeting_records.revoke(store, ident, repo)
+                    elif action == 'reconcile':
+                        result = meeting_records.reconcile(store, ident, repo)
+                    elif action in ('join', 'stop', 'delete_remote'):
+                        result = meeting_records.command(store, ident, repo, action, options=data.get('options'))
+                    else:
+                        raise Invalid('Unknown meeting action')
+                    if isinstance(result, dict) and 'meeting' in result:
+                        result = {**result, 'meeting': meeting_records.operational_view(store, result['meeting'])}
+                    elif isinstance(result, dict) and 'provider' in result and 'state' in result:
+                        result = meeting_records.operational_view(store, result)
+                elif path == '/api/ask':
                     from .inquiry import ask
                     result = ask(store, data, self.me)
                 elif path == '/api/workbench':
@@ -869,7 +956,11 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     parts = path.strip('/').split('/')
                     if len(parts) != 4:
                         return self.send(404, {'error': 'Unknown task action'})
-                    if parts[3] == 'reconcile':
+                    if parts[3] == 'verification':
+                        self.require('admin')
+                        from .artifact_verification import Verifier
+                        result = Verifier(workbench).verify(parts[2], field(data, 'profile_id', limit=100), self.me)
+                    elif parts[3] == 'reconcile':
                         self.require('admin')
                         from .workbench_hosts import reconcile
                         result = reconcile(workbench, parts[2], data, self.me)
