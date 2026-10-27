@@ -14,7 +14,7 @@ from fixtures import OfflineCase, ready_server
 from bridge import meeting_worker as mw, objectives as obj, objective_head as head, workbench_hosts as hosts
 from bridge.auth import Identity
 from bridge.config import Config
-from bridge.store import Invalid
+from bridge.store import Invalid, now
 
 CODEX_ENV = {'RAVEN_HOST_CODEX_API_KEY': 'fixture', 'RAVEN_HOST_CODEX_MODEL': hosts.CODEX_MODEL,
              'RAVEN_CODEX_BIN': 'fixture-codex'}
@@ -226,6 +226,33 @@ class EventDrivenScanTests(ObjectiveCase):
             'summary': 'Await report', 'next_check_at': '2020-01-01T00:00:00Z', 'waiting_on': 'Customer'}, self.actor)
         self.assertEqual(self.scans().call_count, 1)
         self.assertEqual(obj.get(self.store, self.created['id'])['next_check_at'], '')
+        self.assertEqual(self.scans().call_count, 0)
+
+    def test_a_checkpoint_set_for_later_is_read_once(self):
+        self.scans()
+        obj.act(self.store, self.created['id'], 'checkpoint', {'request_key': 'later', 'expected_revision': self.created['revision'],
+            'summary': 'Await report', 'next_check_at': '2999-01-01T00:00:00Z', 'waiting_on': 'Customer'}, self.actor)
+        self.assertEqual(self.scans().call_count, 1, 'the objective changed, so it is read against the same evidence once')
+        self.assertEqual(self.scans(ticks=2).call_count, 0)
+
+    def test_a_linked_run_that_finishes_is_read_once(self):
+        self.scans()
+        with self.store.graph.transaction() as db:
+            db.execute("INSERT INTO runs(id,title,agent,repo,status,updated_at) VALUES('run1','Worker','test','sample/project','working',?)", (now(),))
+            db.execute("INSERT INTO objective_runs VALUES(?,'run1','Bounded internal preparation',?)", (self.created['id'], now()))
+        self.assertEqual(self.scans().call_count, 1, 'a new linked run is part of what the head reads')
+        self.assertEqual(self.scans().call_count, 0)
+        with self.store.graph.transaction() as db:
+            db.execute("UPDATE runs SET status='completed' WHERE id='run1'")
+        self.assertEqual(self.scans().call_count, 1, 'a finished run changes the objective the head evaluates')
+        self.assertEqual(self.scans(ticks=2).call_count, 0)
+
+    def test_a_backend_switch_after_a_blocked_reading_reads_again(self):
+        self.worker.cfg = SimpleNamespace(semantic_retrieval=True, model_api='claude-cli', model='')
+        self.assertEqual(self.scans('blocked').call_count, 1)
+        self.assertEqual(self.scans().call_count, 0)
+        self.worker.cfg = SimpleNamespace(semantic_retrieval=True, model_api='anthropic', model='claude-sonnet-4-5')
+        self.assertEqual(self.scans().call_count, 1, 'the backend that refused is not the one configured now')
         self.assertEqual(self.scans().call_count, 0)
 
     def test_corpus_revision_is_computed_once_per_repository_per_tick(self):

@@ -392,10 +392,12 @@ class Worker:
                             db.execute("UPDATE objectives SET next_check_at='',blocked_reason=?,revision=revision+1,updated_at=? WHERE id=?", ('Scheduled checkpoint is due; review the current outcome evidence', now(), value['id']))
                             obj.event(self.store, value['id'], 'checkpoint_due', 'Scheduled checkpoint became due.')
                 if self.cfg.semantic_retrieval:
-                    corpus = corpus_for(value['repository'])
+                    if checkpoint_due:
+                        value = obj.row(self.store, value['id'])  # the due checkpoint just changed the objective
+                    key = self.scan_key(value, corpus_for(value['repository']))
                     mark = self.store.graph.db.execute('SELECT corpus FROM objective_scan_marks WHERE objective_id=?', (value['id'],)).fetchone()
-                    if mark and mark['corpus'] == corpus and not checkpoint_due:
-                        continue  # Nothing new to read: the evidence is what it was last time.
+                    if mark and mark['corpus'] == key and not checkpoint_due:
+                        continue  # Nothing new to read: the evidence and the objective are what they were last time.
                     from .auth import Identity
                     result = scan(self.store, {'repository': value['repository'], 'request_key': 'background:' + value['id']},
                          obj.current_actor(self.store, Identity(value['requester_id'], value['requester'], 'member', value['requester_kind']), allow_operator=self.allow_operator), cfg=self.cfg, objective_id=value['id'], automatic=True)
@@ -404,7 +406,7 @@ class Worker:
                         with self.store.graph.transaction() as db:
                             db.execute('INSERT INTO objective_scan_marks(objective_id,corpus,updated_at) VALUES(?,?,?) '
                                        'ON CONFLICT(objective_id) DO UPDATE SET corpus=excluded.corpus,updated_at=excluded.updated_at',
-                                       (value['id'], corpus, now()))
+                                       (value['id'], key, now()))
                     if result['status'] != 'blocked' and value['blocked_reason'].startswith('Investigation stopped after three'):
                         with self.store.graph.transaction() as db:
                             db.execute("UPDATE objectives SET blocked_reason='',updated_at=? WHERE id=? AND blocked_reason=?", (now(), value['id'], value['blocked_reason']))
@@ -414,6 +416,15 @@ class Worker:
                     self.resume_with_facts(value, result)
             except (Invalid, LLMError, ValueError, TypeError):
                 continue
+
+    def scan_key(self, value, corpus):
+        """What the last reading of an objective was made against: every input
+        scan() fingerprints, so a finished run, an edited checkpoint or a
+        changed backend reads again, and unchanged inputs never do."""
+        runs = [r['status'] for r in self.store.graph.db.execute(
+            'SELECT r.status FROM objective_runs o JOIN runs r ON r.id=o.task_id WHERE o.objective_id=? ORDER BY o.created_at', (value['id'],))]
+        return obj.digest([corpus, value['revision'], value['waiting_on'], runs,
+                           getattr(self.cfg, 'model_api', ''), getattr(self.cfg, 'model', '')])
 
     def investigate_watches(self, corpus_for=None):
         if not self.cfg.semantic_retrieval:
