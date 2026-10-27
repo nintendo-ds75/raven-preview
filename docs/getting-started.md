@@ -164,10 +164,14 @@ starts. Nothing here is needed for the task flow above. To turn it on:
 2. Browser execution: `BRIDGE_WORKBENCH=1`, the checkout variables and one
    harness credential from [work directly in Raven](browser-tasks.md#run-in-docker).
    Without it an objective can be saved and reviewed but not dispatched.
-3. An admin opts each repository into background investigation
+3. Optionally, an admin opts a repository into an evidence watch
    (`POST /api/objectives/watch`, or **Today → Find opportunities → Enable a
-   repository watch**). Without a
-   watch, investigation runs only when someone clicks **Find opportunities**.
+   repository watch**) so new evidence is investigated before any objective
+   exists. With a model backend configured, the worker also re-reads each
+   *active objective* on its own whenever its repository's evidence changes
+   or a scheduled checkpoint comes due, within the automatic budget; without
+   a backend, or with `BRIDGE_SEMANTIC=0`, investigation runs only when
+   someone clicks **Find opportunities**.
 
 Without a backend, **Today** shows objectives and says investigation is
 unavailable; it never fabricates a proposal. Meeting transcripts are imported
