@@ -99,7 +99,8 @@ jobs:
           node-version: "22"
       # The same list `make check` runs, kept in one file so the two cannot
       # drift. The Playwright browser suites (tests/browser*.cjs,
-      # tests/brief-browser.cjs) need Chromium and are run by hand before a
+      # tests/brief-browser.cjs) need Chromium; the two Today suites run in
+      # the startup-os-browser job below, the rest are run by hand before a
       # release; see CONTRIBUTING.md.
       - name: DOM-stubbed UI checks
         run: ./scripts/check_web.sh
@@ -162,6 +163,11 @@ jobs:
     name: Docker packaging and independent no-network verification
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # Advisory until stabilised: it pulls base images from Docker Hub and
+    # builds on top of them, so an upstream change or a registry hiccup
+    # red-lines every pull request. Read this job's own result; it does not
+    # fail the check.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -186,6 +192,10 @@ jobs:
     name: Experimental Codex containment (local scripted inference)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Advisory until stabilised: the app-server pin is an alpha npm release
+    # that upstream can change under us. Read this job's own result; it does
+    # not fail the check.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
