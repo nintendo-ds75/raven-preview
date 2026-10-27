@@ -282,6 +282,9 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     if not workbench:
                         return self.send(503, {'error': 'Browser execution is not configured'})
                     if len(parts) == 4 and parts[3] == 'verification':
+                        # Receipts bind candidate bytes and operator profiles;
+                        # a viewer does not read them.
+                        self.require('member')
                         from .artifact_verification import Verifier
                         verifier = Verifier(workbench)
                         return self.send(200, {'config': verifier.config(), 'receipts': verifier.list(parts[2])})

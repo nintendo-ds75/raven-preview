@@ -337,6 +337,30 @@ class WorkbenchTests(OfflineCase):
         self.assertIn('changed after completion', self.service.row(task)['error'])
         self.assertFalse(self.agent.seen)
 
+    def test_verification_receipts_need_a_member_not_a_viewer(self):
+        auth = Auth(self.store, enabled=True)
+        server = ready_server(self.store, 0, auth=auth, workbench=self.service)
+        thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
+        thread.start()
+        base = 'http://127.0.0.1:' + str(server.server_port)
+        try:
+            task = self.submit()
+            codes = {}
+            for role in ('viewer', 'member'):
+                person = self.store.add_person({'name': role + ' reader', 'role': role})
+                token = auth.create_token(person['id'], kind='human')['token']
+                req = Request(base + '/api/workbench/' + task + '/verification', headers={'Authorization': 'Bearer ' + token})
+                try:
+                    codes[role] = urlopen(req).status
+                except HTTPError as caught:
+                    codes[role] = caught.code
+            self.assertEqual(codes['viewer'], 403)
+            self.assertEqual(codes['member'], 200)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
     def test_authenticated_viewers_and_agent_tokens_cannot_start_browser_agents(self):
         auth = Auth(self.store, enabled=True)
         server = ready_server(self.store, 0, auth=auth, workbench=self.service)
