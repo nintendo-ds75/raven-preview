@@ -263,7 +263,11 @@ async function refresh({quiet = false} = {}) {
       if (personalInbox() && !tabChosen) tab = 'mine';
       $('#inbox-count').textContent = personalInbox() ? state.decisions.filter(assignedToMe).length
         : state.counts ? state.counts.needs_you : state.decisions.filter(needsYou).length;
+      // What Today wants from the person: open proposals and blocked objectives.
+      const today = typeof objectiveTodayCount === 'function' ? objectiveTodayCount(state.today) : 0;
+      if ($('#today-count')) { $('#today-count').textContent = today; $('#today-count').hidden = !today; }
     }
+    renderModelStrip();
     if (taskId()) await loadTask({quiet});
     if (view === 'work' && typeof loadWorkbench === 'function') await loadWorkbench();
     if (view === 'today' && typeof loadObjectives === 'function') await loadObjectives();
@@ -285,6 +289,18 @@ async function refresh({quiet = false} = {}) {
     } else if (taskId()) { taskError = error.message; render(); }
     else if (!quiet) $('#app').innerHTML = `<div class="empty"><h3>We couldn’t reach your workspace.</h3><p>${esc(error.message)}</p><button class="button" data-action="retry">Try again</button></div>`;
   } finally { fetching = false; }
+}
+
+// One line under the page head on Today, Inbox and Connect: what the
+// configured backend lets Raven do, and where questions wait when no Slack
+// is connected. Read from /api/state; nothing here probes a provider.
+function renderModelStrip() {
+  const strip = $('#model-strip');
+  if (!strip) return;
+  const lines = [state.model?.notice || '', state.delivery && !state.delivery.enabled ? 'No Slack connected: questions wait in the inbox.' : ''].filter(Boolean);
+  const shown = !!state.auth && ['today', 'inbox', 'connect'].includes(view) && lines.length > 0;
+  strip.textContent = shown ? lines.join(' ') : '';
+  strip.hidden = !shown;
 }
 
 function loadOwnership() {
@@ -647,6 +663,7 @@ async function agentCredential(target) {
 
 function render() {
   lastDraw = Date.now();
+  if (typeof renderModelStrip === 'function') renderModelStrip();
   if (!state.auth) {
     $('#new-request').hidden = true;
     $('#manual-actions').hidden = true;

@@ -15,8 +15,9 @@ import fixtures  # noqa: E402,F401
 for key in tuple(os.environ):
     if key.startswith(('RAVEN_HOST_', 'VEXA_', 'RAVEN_VEXA_')) or key in ('ANTHROPIC_API_KEY', 'OPENAI_API_KEY'):
         os.environ.pop(key, None)
-os.environ.update(BRIDGE_MODEL_API='none', BRIDGE_SEMANTIC='0', BRIDGE_LIVE='0')
+os.environ.update(BRIDGE_MODEL_API='none', BRIDGE_SEMANTIC='0', BRIDGE_LIVE='0', BRIDGE_OBJECTIVE_TICK_SECONDS='1')
 from bridge import objectives, meeting_records  # noqa: E402
+from bridge.objective_head import Worker as ObjectiveWorker  # noqa: E402
 from bridge.auth import Identity  # noqa: E402
 from bridge.config import Config  # noqa: E402
 from bridge.server import make_server  # noqa: E402
@@ -57,6 +58,8 @@ proposal = objectives.propose(store, {**payload, 'title': 'Close the onboarding 
 workbench = Workbench(store, [{'id': repo, 'path': str(Path(__file__).resolve().parents[1] / 'fixtures' / 'billing')}],
     Path(sys.argv[1]).parent / 'objective-fixture-copies', cfg=Config(model_api='none'))
 server = make_server(store, host='127.0.0.1', port=0, workbench=workbench)
+# The worker that turns a signed scope into an accepted objective, as the app runs it; without a model it only activates reviews and due checkpoints.
+ObjectiveWorker(store, workbench, allow_operator=True).start()
 print(json.dumps({'url': f'http://127.0.0.1:{server.server_port}/#today', 'repo': repo, 'objective_id': objective['id'],
     'proposal_id': proposal['id'], 'meeting_id': meeting['id'], 'attendance_id': attendance['id'], 'live_providers': False}), flush=True)
 server.serve_forever()

@@ -63,11 +63,15 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
 
     def test_missing_keys_do_not_enable_optional_paid_backends(self):
-        with patch.dict(os.environ, {}, clear=True), patch("builtins.input", side_effect=["", "y", "", "n", "n", "y"]), patch("getpass.getpass", return_value=""):
-            self.run_config(interactive=True)
+        with patch.dict(os.environ, {}, clear=True), patch("builtins.input", side_effect=["", "y", "", "n", "n", "y"]), \
+                patch("getpass.getpass", return_value=""), contextlib.redirect_stdout(io.StringIO()) as output:
+            configure(self.args, self.path, interactive=True)
         text = self.path.read_text()
         self.assertNotIn("BRIDGE_AGENTS", text)
         self.assertNotIn("BRIDGE_MODEL_API", text)
+        # The wizard says what Raven does without a key, in the words the pages use.
+        self.assertIn("No model key: Raven routes, records, reminds and keeps signed decisions; it will not write briefs "
+                      "or propose work. Add a key later in Connections & setup.", output.getvalue())
 
     def test_invalid_configuration_does_not_touch_existing_file(self):
         self.path.write_text("BRIDGE_PORT=7333\n")

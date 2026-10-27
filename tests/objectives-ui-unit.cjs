@@ -56,5 +56,29 @@ function harness(hash='#today') {
   h=meetingHarness();await h.submit('',{enabled:false,workspace_shared:false},{id:'m1'},'objective-meeting-background');assert.equal(h.requests[0].data.enabled,false);assert.equal(h.requests[0].data.workspace_shared,false);
   h=meetingHarness();let release;h.c.api=async(url,data)=>{h.requests.push({url,data});if(data)await new Promise(resolve=>release=resolve);return {meetings:[]};};const saving=h.submit('',{enabled:true,workspace_shared:true},{id:'m1'},'objective-meeting-background');await Promise.resolve();await h.submit('',{enabled:true,workspace_shared:true},{id:'m1'},'objective-meeting-background');assert.equal(h.requests.length,1);release();await saving;
   for(const role of ['viewer','member']) {h=meetingHarness(role);assert.doesNotMatch(h.app.innerHTML,/Save background sync|Record consent|Stop remote bot/);await h.submit('',{enabled:true,workspace_shared:true},{id:'m1'},'objective-meeting-background');await h.click('meeting-stop','m1');assert.equal(h.requests.length,0);}
-  console.log('Today UI: 28 contract scenarios passed (DOM/API doubles).');
+  // Today groups work by what it waits on; closed objectives fold away; the
+  // sidebar count is the server's two counts added up; no dead 'pending' state.
+  h=harness();h.c.fixture.objectives=[{id:'o1',title:'Blocked outcome',status:'needs_you',revision:1,blocked_reason:'Scheduled checkpoint is due'},{id:'o2',title:'Moving outcome',status:'moving',revision:1,runs:[{task_id:'t2',status:'working',updated_at:new Date().toISOString()}]},{id:'o3',title:'Finished outcome',status:'waiting',revision:1,runs:[{task_id:'t3',status:'completed',updated_at:new Date().toISOString()}]},{id:'o4',title:'Stale outcome',status:'waiting',revision:1,runs:[{task_id:'t4',status:'completed',updated_at:'2020-01-01T00:00:00Z'}]}];
+  h.c.fixture.proposals=[{id:'p1',title:'Suggested move',status:'proposed',revision:2},{id:'p2',title:'Reviewed move',status:'review',revision:3,task_id:'gov-task',reviewer:'Policy Owner'}];
+  h.c.fixture.closed=[{id:'o9',title:'Achieved outcome',status:'achieved',lifecycle:'achieved',revision:4}];h.c.fixture.today={proposals_open:1,objectives_needing_you:1};
+  h.run('renderObjectives()');
+  const section=key=>{const html=h.app.innerHTML;const start=html.indexOf(`data-group="${key}"`);const end=html.indexOf('<section class="objective-section"',start+1);return html.slice(start,end<0?undefined:end);};
+  assert.match(section('decide'),/Needs your decision/);assert.match(section('decide'),/Suggested move/);assert.match(section('decide'),/Blocked outcome/);assert.doesNotMatch(section('decide'),/Reviewed move|Moving outcome/);
+  assert.match(section('progress'),/In progress/);assert.match(section('progress'),/Moving outcome/);assert.match(section('progress'),/Awaiting signed review · Policy Owner/);
+  assert.match(section('review'),/Ready to review/);assert.match(section('review'),/Finished outcome/);assert.doesNotMatch(section('review'),/Stale outcome/);
+  assert.match(h.app.innerHTML,/<details class="objective-evidence objective-closed"><summary>Closed · 1<\/summary>[^]*Achieved outcome/);
+  assert.equal(h.run('objectiveTodayCount(fixture.today)'),(section('decide').match(/<article class="objective-card"/g)||[]).length);
+  assert.doesNotMatch(fs.readFileSync(require('node:path').join(__dirname,'../web/objectives.js'),'utf8'),/'pending'/);
+  assert.match(h.app.innerHTML,/<div id="evidence-mount"><\/div>/);assert.doesNotMatch(h.app.innerHTML,/Open loops/);
+  // Without a model key: the open loops block carries the notice and Find opportunities is off.
+  h.c.state.model={backend:'none',proposals:false,notice:'Suggestions and briefs are off: no model key. Routing, records, reminders and signed decisions still run.'};
+  h.c.fixture.without_model={followups:[{id:'d1',run_id:'t1',task_title:'Pilot CSV path',question:'Which trial limit applies?'}],needs_review:[{id:'d2',run_id:'t1',task_title:'Pilot CSV path',question:'Keep the CSV example?',review_reason:'The policy it leaned on was corrected'}],checkpoints_due:[{id:'o1',title:'Blocked outcome',next_check_at:'2020-01-01T00:00:00Z',waiting_on:'Pilot'}],new_records:[{repository:'sample/repo',count:3}],totals:{followups:12,needs_review:1,checkpoints_due:1,new_records:1}};
+  h.run('renderObjectives()');
+  assert.match(h.app.innerHTML,/Open loops \(no model key\)/);assert.match(h.app.innerHTML,/Suggestions and briefs are off: no model key\./);assert.match(h.app.innerHTML,/Which trial limit applies\?/);assert.match(h.app.innerHTML,/The policy it leaned on was corrected/);assert.match(h.app.innerHTML,/sample\/repo<\/strong> · 3 records/);assert.match(h.app.innerHTML,/11 more\./);
+  assert.match(h.app.innerHTML,/data-objective-action="scan-panel"[^>]*disabled[^>]*title="Suggestions and briefs are off: no model key\. Routing, records, reminders and signed decisions still run\."/);
+  await h.click('scan-panel');assert.doesNotMatch(h.app.innerHTML,/Inspect evidence/);
+  // The inbox card links a scope review to #today/<proposal id>.
+  h=harness('#today/p1');h.run('renderObjectives()');assert.match(h.app.innerHTML,/Suggested next step/);assert.match(h.app.innerHTML,/Investigate source/);assert.doesNotMatch(h.app.innerHTML,/Objective unavailable/);
+  h=harness('#today/p1');await h.run('loadObjectives()');assert.deepEqual(h.requests.map(r=>r.url),['/api/objectives']);assert.match(h.app.innerHTML,/Investigate source/);
+  console.log('Today UI: 34 contract scenarios passed (DOM/API doubles).');
 })().catch(error=>{console.error(error);process.exitCode=1;});
