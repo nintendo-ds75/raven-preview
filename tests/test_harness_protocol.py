@@ -152,7 +152,7 @@ class CapabilityTests(unittest.TestCase):
         pin = workbench_hosts.CODEX_VERSION
         model = workbench_hosts.CODEX_MODEL
         with patch.dict('os.environ', {'RAVEN_HOST_CODEX_API_KEY':'fixture', 'RAVEN_HOST_CODEX_MODEL':model,
-                                       'RAVEN_CODEX_BIN':'fixture'}):
+                                       'RAVEN_CODEX_BIN':'fixture', 'BRIDGE_HOST_PROBE_SECONDS':'0'}):
             for version, returncode, ready in ((pin,0,True), ('different',0,False), (pin,1,False)):
                 result = SimpleNamespace(stdout='codex-cli ' + version, returncode=returncode)
                 with patch('bridge.workbench_hosts.subprocess.run', return_value=result), \

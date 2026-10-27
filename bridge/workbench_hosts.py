@@ -102,9 +102,53 @@ def settings(provider):
             'model_api': os.environ.get(prefix + '_MODEL_API', 'openai-completions').strip()}
 
 
-def capability(provider):
+PROBE_TTL_ENV = 'BRIDGE_HOST_PROBE_SECONDS'
+PROBE_TTL = 60.0
+_probes = {}
+_probe_lock = threading.Lock()
+
+
+def probe_ttl():
+    """Seconds one installation probe answers for; 0 disables the cache."""
+    try:
+        value = float(os.environ.get(PROBE_TTL_ENV, '') or PROBE_TTL)
+    except ValueError:
+        return PROBE_TTL
+    return value if math.isfinite(value) and value > 0 else 0.0
+
+
+def reset_probes():
+    with _probe_lock:
+        _probes.clear()
+
+
+def capability(provider, *, refresh=False):
+    """Readiness of one harness, cached per configuration for probe_ttl().
+
+    Page polls read the cached answer; a binary is only probed once per TTL,
+    and never while the credential or model is unset, because the host cannot
+    be ready then anyway. Dispatch passes refresh=True for a current answer.
+    """
     cfg = settings(provider)
+    key = (provider, tuple(sorted(cfg.items())), os.environ.get('RAVEN_CODEX_BIN', ''))
+    with _probe_lock:
+        cached = _probes.get(key)
+        if cached and not refresh and cached[0] > time.monotonic():
+            return _view(cached[1])
+        result = _probe(provider, cfg)
+        ttl = probe_ttl()
+        if ttl:
+            _probes[key] = (time.monotonic() + ttl, result)
+        return _view(result)
+
+
+def _view(result):
+    return {**result, 'blockers': list(result['blockers'])}
+
+
+def _probe(provider, cfg):
     problems = []
+    configured = bool(cfg['key'] and cfg['model'])
     destination = cfg['model_provider'] + ' via ' + ('OpenCode' if provider == 'opencode' else 'Pi')
     if not cfg['key']:
         problems.append('Set ' + cfg['credential_env'] + ' on the server')
@@ -139,19 +183,20 @@ def capability(provider):
             pass
         if version != PI_VERSION:
             problems.append('Run npm ci --prefix hosts/pi to install pinned Pi SDK ' + PI_VERSION)
-        try:
-            node = subprocess.run([shutil.which('node') or 'node', '--version'], capture_output=True, text=True, timeout=5)
-            node_version = tuple(int(part) for part in node.stdout.strip().removeprefix('v').split('.')[:2])
-        except (OSError, ValueError, subprocess.TimeoutExpired):
-            node_version = ()
-        if node_version < (22, 19):
-            problems.append('Install Node.js >=22.19')
+        if configured:
+            try:
+                node = subprocess.run([shutil.which('node') or 'node', '--version'], capture_output=True, text=True, timeout=5)
+                node_version = tuple(int(part) for part in node.stdout.strip().removeprefix('v').split('.')[:2])
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                node_version = ()
+            if node_version < (22, 19):
+                problems.append('Install Node.js >=22.19')
         if not cfg['model_provider']:
             problems.append('Set RAVEN_HOST_PI_PROVIDER (for example anthropic, openai or google)')
     elif provider == 'opencode':
         from . import opencode_host
         version = opencode_host.installation()
-        if version == opencode_host.VERSION:
+        if version == opencode_host.VERSION and configured:
             try:
                 probe = subprocess.run([opencode_host.binary(), '--version'], capture_output=True, text=True, timeout=5)
                 version = probe.stdout.strip()
@@ -166,7 +211,7 @@ def capability(provider):
     else:
         if cfg['model'] != CODEX_MODEL:
             problems.append('Codex experimental containment is qualified only for model ' + CODEX_MODEL)
-        binary = codex_binary()
+        binary = codex_binary() if configured else ''
         if binary:
             try:
                 result = subprocess.run([binary, '--version'], capture_output=True, text=True, timeout=5)
@@ -176,6 +221,8 @@ def capability(provider):
                 pass
         if version != CODEX_VERSION:
             problems.append('Configure RAVEN_CODEX_BIN with codex-cli ' + CODEX_VERSION)
+    if not configured:
+        problems.append('The installed harness is probed once the credential and model are set')
     return {'id': provider, 'name': {'claude': 'Claude Agent SDK', 'codex': 'Codex app-server (experimental)', 'pi': 'Pi SDK (open source)', 'opencode': 'OpenCode (open source)'}[provider],
             'ready': not problems, 'blockers': problems, 'version': version, 'model': cfg['model'],
             'execution': 'Raven task tools; isolated commands',
@@ -306,7 +353,7 @@ class Harness:
         require_task(workbench.store, task_id)
         reconcile_cost(workbench, task_id)
         binding = dict(db.execute('SELECT * FROM browser_hosts WHERE task_id=?', (task_id,)).fetchone())
-        cfg, cap = settings(binding['provider']), capability(binding['provider'])
+        cfg, cap = settings(binding['provider']), capability(binding['provider'], refresh=True)
         if not cap['ready']:
             raise Invalid('; '.join(cap['blockers']))
         if db.execute("SELECT 1 FROM browser_intents WHERE task_id=? AND state<>'completed'", (task_id,)).fetchone():
