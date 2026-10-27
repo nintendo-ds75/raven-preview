@@ -109,5 +109,8 @@ BRIDGE_TEST_DOCKER=1 python -m unittest discover -s tests -p test_artifact_docke
 ```
 
 These opt-in tests were added but **not run in the implementation workspace**,
-which had no Docker CLI/daemon. They must pass in CI before container acceptance
-is claimed. Normal unittest discovery reports them as skipped, never fake-green.
+which had no Docker CLI/daemon. They passed in CI at the historical checkpoint
+`713ecaa`; that says nothing about later commits. The job runs as advisory in CI
+(it depends on external image pulls), so container acceptance for a given head
+is claimed only from that job's own result on that head. Normal unittest
+discovery reports these tests as skipped, never fake-green.

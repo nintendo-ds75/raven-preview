@@ -108,7 +108,11 @@ For example, a checkout at `/srv/repos/project` uses
 Ingestion and the browser task runner use that same checkout.
 The regular Compose stack supports repository reading and drafting.
 
-For isolated test commands, use the opt-in overlay:
+For isolated test commands, use the opt-in overlay. Its Dockerfile
+(`docker/Dockerfile.workbench`) starts from the local image tag
+`raven-workbench-base` and adds the Docker CLI, so build the application image
+under that tag first; for Pi, OpenCode or Codex build the
+[harness image](execution-harnesses.md#optional-docker-runtime) under that tag instead:
 
 ```sh
 docker build --build-arg INSTALL_HOSTS=true -t raven-workbench-base .

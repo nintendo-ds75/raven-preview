@@ -10,7 +10,7 @@ No adapter adds permission to publish, deploy, or approve its own output.
 | Harness | Integration | Verification in this change |
 | --- | --- | --- |
 | Claude Agent SDK 0.2.165 | Existing in-process Raven MCP tools; native tools denied | Existing offline contracts; no new live call |
-| Codex app-server 0.162.0-alpha.17.2 | **Experimental**, only `gpt-5.3-codex`; parent-mediated work tools, native questions denied | Actual native scripted loop/context/resume, interruption and adversarial refusal tests passed in CI; public-entrypoint requalification pending |
+| Codex app-server 0.162.0-alpha.17.2 | **Experimental**, only `gpt-5.3-codex`; parent-mediated work tools, native questions denied | Actual native scripted loop/context/resume, interruption and adversarial refusal tests passed at a historical CI checkpoint (`503f961`); the `codex-native` job is advisory in CI, so each head's result is read from that job |
 | OpenCode 1.19.4 (MIT/open source) | Guarded native HTTP sessions + private Raven MCP bridge | Installed native tool loop/resume with local scripted inference; no live provider call |
 | Pi SDK 1.4.0 (MIT/open source) | Pi's actual session/agent loop, explicitly allowlisted Raven custom tools, persistent session resume | Fake contracts plus installed SDK tool loop/resume with scripted inference |
 
@@ -96,26 +96,42 @@ with scripted inference; no actual Ollama/vLLM/model service was contacted.
 
 ## Optional Docker runtime
 
-The default Python image ships adapter source and manifests, but deliberately
-does not install Node/Pi/OpenCode. To include their pinned dependencies:
+Three Dockerfiles stack by local image tag:
+
+1. The root `Dockerfile` builds the Raven application image (Python, the
+   `bridge` package, the `hosts/` manifests). `INSTALL_HOSTS=true` adds the
+   Claude Agent SDK from `requirements-hosts.txt`; it deliberately installs no
+   Node, Pi, OpenCode or Codex package. Tag it as you like; CI and the harness
+   image call it `raven-core-base`.
+2. `docker/Dockerfile.harnesses` starts `FROM` that tag (`RAVEN_BASE_IMAGE`,
+   default `raven-core-base`), copies Node 22.19.0 from its official Debian
+   image and runs the three npm lockfiles (`hosts/pi`, `hosts/opencode`,
+   `hosts/codex`) with install scripts disabled. Skip it when Claude is the only
+   harness you run.
+3. `docker/Dockerfile.workbench`, which `compose.workbench.yaml` builds, starts
+   `FROM raven-workbench-base` and adds only the Docker CLI. So the image you
+   want the server to run must carry that tag: the harness image for all four
+   harnesses, or the root image for Claude alone.
 
 ```sh
 docker build --build-arg INSTALL_HOSTS=true -t raven-core-base .
-docker build -f docker/Dockerfile.harnesses -t raven-workbench-base .
+docker build -f docker/Dockerfile.harnesses -t raven-workbench-base .   # or: tag the root image raven-workbench-base
 docker compose -f compose.yaml -f compose.workbench.yaml up --build -d
 ```
 
-The explicit harness image copies Node 22.19.0 from its official Debian image
-and installs the three npm lockfiles with install scripts disabled. The existing
-workbench overlay still grants Docker control only to the trusted Raven server,
+The workbench overlay grants Docker control only to the trusted Raven server,
 not to any model or harness process. Set the host variables in the deployment
 environment, never in the image. Loopback custom model endpoints refer to the
 container itself, not the Docker host. Use an operator-managed HTTPS endpoint
 when inference runs elsewhere.
 
-This change's local environment did not have Docker; the Dockerfile was reviewed
-but image build and container acceptance were **not run**. Native pinned package
-initialization and scripted-inference tests are separate from Docker acceptance.
+The `docker-verification` CI job builds the root image with
+`INSTALL_SEMANTIC=false` and the harness image on top of it, then runs the
+installed Pi and OpenCode checks with networking disabled and the independent
+verifier against real containers. That job is advisory in CI (it depends on
+external image pulls), so read its own result for the head you care about; the
+implementation workspace that wrote these adapters had no Docker and never
+built the images itself.
 
 ## Exact Codex native acceptance
 
@@ -174,8 +190,11 @@ BRIDGE_TEST_CODEX=1 python -m unittest discover -s tests -p test_codex_native.py
 
 ### Evidence and remaining boundary
 
-Native CI job `121270027226` on PR #7 ran **all 8 tests, zero skips**, including
-fresh/resumed adversarial receipts and interruption. Earlier runs discovered
+At a historical checkpoint, native CI job `121270027226` on PR #7 (remote
+`503f961`) ran **all 8 tests, zero skips**, including fresh/resumed adversarial
+receipts and interruption. That result belongs to that commit; the `codex-native`
+job now runs as advisory on every change (its npm pin is an alpha), and the
+result for a later head is the one that job reports there. Earlier runs discovered
 native goals and the still-advertised question tool; goals were disabled rather
 than allowlisted. Exact native evidence, not feature-list booleans alone,
 established the tested boundary (`unified_exec` still reports true even when

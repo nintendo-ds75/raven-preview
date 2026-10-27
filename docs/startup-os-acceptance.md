@@ -3,19 +3,27 @@
 This is a coverage ledger, **not a claim that all integrations work live**.
 `Contract` means an offline behavioral test with explicit model/provider doubles;
 `runtime` means the installed native SDK/server with scripted inference;
-`CI pending` is never a pass. Final aggregate/remote results belong in the PR.
+`CI pending` is never a pass.
 
-Observed CI checkpoint: remote `713ecaa` (local tree `81acac1`) passed real
-Chromium UI/API interactions, installed Pi/OpenCode scripted loops, and real
-Docker independent verification. PostgreSQL and full Python lanes were still
-running when this ledger was updated; only an exact final-head green run closes
-them. Local aggregate collected 3,025 tests: 3,018 passed and seven skipped
-(four Docker tests and three native Codex turn cases run separately in CI).
+Every commit hash below is a **historical checkpoint**: what CI or a local run
+observed at that commit, on that day. None of it transfers to later commits.
+The verification of the final head of any change lives in that change's pull
+request and its CI runs, not in this document; read the job results there, and
+treat the `docker-verification` and `codex-native` jobs, which run as advisory
+because they depend on external image pulls and an alpha npm pin, by their own
+result rather than by the overall check.
+
+Historical checkpoints recorded here: at remote `713ecaa` (local tree
+`81acac1`) CI passed real Chromium UI/API interactions, installed Pi/OpenCode
+scripted loops, and real Docker independent verification, while the PostgreSQL
+and full Python lanes were still running when this ledger was written. A local
+aggregate at that tree collected 3,025 tests: 3,018 passed and seven skipped
+(four Docker tests and three native Codex turn cases that run separately in CI).
 At remote `503f961`, all eight native Codex tests passed without skips, including
 fresh/resumed adversarial refusals, no native execution lifecycle, exact tool
-schema, positive context continuity and interruption/resume. The subsequent
+schema, positive context continuity and interruption/resume. The later
 experimental enablement is restricted to that exact pin/model and must pass
-the same suite through the public worker entrypoint on the final head.
+the same suite through the public worker entrypoint on whatever head ships it.
 
 | Design case | Current evidence / remaining qualification |
 |---|---|
@@ -59,7 +67,7 @@ the same suite through the public worker entrypoint on the final head.
 | 38 Secrets/errors | Credential allowlist and safe failure handling tests; no credential values written into this report. |
 | 39 XSS | Node DOM/API-double checks; Chromium passed at checkpoint `713ecaa`. |
 | 40 Interrupted/repeated UI flows | Node/real HTTP checks; native Chromium desktop/mobile/cancel/refresh and readable exact-source evidence passed at checkpoint `713ecaa`. |
-| 41 Existing flows and migrations | Initial 2,861-test baseline passed (4 skipped); intermediate integrated 3,001-test suite passed (9 skipped). Final frozen-tree checks and PostgreSQL CI results belong in the PR. |
+| 41 Existing flows and migrations | Initial 2,861-test baseline passed (4 skipped); intermediate integrated 3,001-test suite passed (9 skipped). Both are historical local runs; final-head checks and PostgreSQL CI results belong in the PR. |
 | 42 Exact reporting | Separate source tests, installed runtimes, real containers, browser and live provider stages. Local Docker/browser/PG unavailable; approved CI closes only stages it actually executes. |
 
 ## Setup limits observed in the implementation workspace
