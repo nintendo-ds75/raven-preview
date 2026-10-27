@@ -70,3 +70,54 @@ function inquiryCitations(result, key = 'inquiry-citations') {
   }
   return `<details class="inquiry-citations" id="${esc(key)}" data-keep="${esc(key)}"><summary>Exact quotes · ${citations.length}</summary>${Array.from(groups.values(), ({source, quotes}) => `<figure><figcaption>${esc(source.title || source.id)}<small>Source: ${esc(source.id)}${source.version ? ` · Version: ${esc(source.version)}` : ''}</small></figcaption>${quotes.map(quote => `<blockquote>${esc(quote)}</blockquote>`).join('')}</figure>`).join('')}</details>`;
 }
+
+// An objective-scope decision (Review & take point on Today) stores the
+// proposed scope as JSON in its context; the signature binds to that text.
+// A person reads a card instead: the outcome, the question, what the move
+// will and won't do, its bound and the evidence. Mirrors bridge/objective_text.py:
+// nothing is invented, a malformed context gives null and the plain context shows.
+const OBJECTIVE_OPTIONS = ['Yes, take point', 'Not now', 'Change the scope'];
+const OBJECTIVE_CASES = [['positive', 'Will'], ['negative', 'Won’t'], ['boundary', 'Edge'], ['non_implication', 'Does not imply']];
+function objectiveScope(d) {
+  if (!d || (d.category !== 'objective_scope' && !String(d.client_ref || '').startsWith('objective-acceptance:'))) return null;
+  const lines = String(d.context || '').split('\n');
+  while (lines.length && /^(Paths|Options): /.test(lines[lines.length - 1])) lines.pop();
+  const text = lines.join('\n').trim();
+  if (!text.startsWith('{')) return null;
+  let gov;
+  try { gov = JSON.parse(text); } catch { return null; }
+  if (!gov || typeof gov !== 'object' || Array.isArray(gov)) return null;
+  const str = value => typeof value === 'string' ? value.trim() : '';
+  const items = value => (Array.isArray(value) ? value.filter(v => typeof v === 'string') : typeof value === 'string' ? value.split('\n') : [])
+    .map(line => line.replace(/\s+/g, ' ').trim().replace(/^(?:[-*•–—]\s+)/, '').trim()).filter(Boolean);
+  const cases = gov.cases && typeof gov.cases === 'object' && !Array.isArray(gov.cases) ? gov.cases : {};
+  const proposal = String(d.client_ref || '').startsWith('objective-acceptance:') ? d.client_ref.slice('objective-acceptance:'.length).trim() : '';
+  const ident = str(gov.objective_id) || str(gov.proposal_id) || proposal;
+  const what = str(gov.title) || str(gov.outcome);
+  return {title: str(gov.title), outcome: str(gov.outcome),
+    question: what ? `Should Raven take point on ${what}?` : 'Should Raven take point on this?', options: [...OBJECTIVE_OPTIONS],
+    cases: Object.fromEntries(OBJECTIVE_CASES.map(([key]) => [key, items(key === 'non_implication' && !(key in cases) ? cases.non_implications : cases[key])])),
+    guardrails: str(gov.guardrails), stop_criteria: str(gov.stop_criteria), success_criteria: str(gov.success_criteria),
+    why_now: str(gov.why_now), judgment_kind: str(gov.judgment_kind),
+    evidence: (Array.isArray(gov.citations) ? gov.citations : []).slice(0, 12).filter(c => c && typeof c === 'object' && str(c.quote))
+      .map(c => ({quote: str(c.quote), title: str(c.title) || str(c.source_title)})),
+    link_to_today: ident ? `#today/${encodeURIComponent(ident)}` : ''};
+}
+
+// The card for a scope objectiveScope() or the brief's server-made `objective` gave.
+// Headings and lists, so a screen reader walks it; quotes fold when long.
+function objectiveScopeCard(card, key = 'objective-scope') {
+  if (!card || typeof card !== 'object') return '';
+  const cases = OBJECTIVE_CASES.filter(([k]) => (card.cases?.[k] || []).length);
+  const evidence = Array.isArray(card.evidence) ? card.evidence : [];
+  const long = evidence.reduce((n, e) => n + String(e.quote || '').length, 0) > 240;
+  return `<section class="objective-scope" aria-label="Proposed scope">
+    ${card.outcome ? `<p class="objective-scope-outcome"><strong>Outcome:</strong> ${esc(card.outcome)}</p>` : ''}
+    <p class="objective-scope-question"><strong>${esc(card.question || 'Should Raven take point on this?')}</strong> <span class="muted">${(card.options || OBJECTIVE_OPTIONS).map(esc).join(' · ')}</span></p>
+    ${cases.map(([k, label]) => `<h4>${label}</h4><ul>${card.cases[k].map(item => `<li>${esc(item)}</li>`).join('')}</ul>`).join('')}
+    ${card.guardrails ? `<p><strong>Within:</strong> ${esc(card.guardrails)}</p>` : ''}
+    ${card.stop_criteria ? `<p><strong>Stop when:</strong> ${esc(card.stop_criteria)}</p>` : ''}
+    ${evidence.length ? `<details class="objective-scope-evidence" id="${esc(key)}-evidence" ${long ? '' : 'open'}><summary>Evidence (${evidence.length})</summary><ul>${evidence.map(e => `<li><blockquote>${esc(e.quote)}</blockquote>${e.title ? `<cite>${esc(e.title)}</cite>` : ''}</li>`).join('')}</ul></details>` : ''}
+    ${card.link_to_today ? `<a class="objective-scope-link" href="${esc(card.link_to_today)}">Open in Today</a>` : ''}
+  </section>`;
+}
