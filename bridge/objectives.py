@@ -601,7 +601,7 @@ def proposal_action(store, ident, action, data, actor, cfg=None):
             'rationale': payload['why_now'], 'source_evidence': [{'record_id': s['record_id'], 'source_version_id': s['source_version_id'], 'role': s.get('role', 'support')} for s in sources if not s.get('metadata_only')]})
         decision = store.get_decision(node['node_id'])
         if not decision.get('owner_id'):
-            decision = _route_to_accepter(store, decision, actor)
+            decision = _route_fallback(store, decision, actor, value['repository'])
         with store.graph.transaction() as db:
             sources_current(store, sources, value['repository'], exact=True)
             db.execute("UPDATE objective_proposals SET state='review',governance_run_id=?,decision_id=?,acceptance_hash=?,scope_hash=?,revision=revision+1,updated_at=? WHERE id=?",
@@ -615,6 +615,30 @@ def proposal_action(store, ident, action, data, actor, cfg=None):
         raise
 
 
+SCOPE_FALLBACKS = ('accepter', 'coordinator', 'none')
+
+
+def _route_fallback(store, decision, actor, repo=''):
+    """Where a governance node no authority map covers goes, by the
+    objective_scope_fallback setting: to the person who accepted the
+    proposal (the default), to the coordinator, or nowhere, left visibly
+    unassigned with the reason on the node for an administrator."""
+    mode = store.graph.get_setting('objective_scope_fallback') or 'accepter'
+    if mode == 'accepter':
+        return _route_to_accepter(store, decision, actor)
+    if mode == 'coordinator':
+        person = store.graph.coordinator(repo)
+        if person is not None:
+            return _assign_scope(store, decision, person['id'], person['name'], 'objective-coordinator',
+                                 'Assigned to ' + person['name'] + ' as the coordinator: no authority map covers this scope')
+        reason = 'An administrator must assign this scope review: no authority map covers it and no coordinator is set'
+    else:
+        reason = 'An administrator must assign this scope review: no authority map covers it and the fallback owner is off'
+    with store.graph.transaction() as db:
+        db.execute('UPDATE decisions SET routing_reason=? WHERE id=?', (reason, decision['id']))
+    return store.get_decision(decision['id'])
+
+
 def _route_to_accepter(store, decision, actor):
     """A governance node no authority map covers is routed to the person
     who accepted the proposal, through the inbox's own assignment, with
@@ -622,14 +646,18 @@ def _route_to_accepter(store, decision, actor):
     not an owner, so the node stays visibly unassigned."""
     if not actor.id:
         return decision
+    return _assign_scope(store, decision, actor.id, actor.name, 'objective-accepter',
+                         'Assigned to ' + actor.name + ' as the objective accepter: no authority map covers this scope') or decision
+
+
+def _assign_scope(store, decision, person_id, name, basis, reason):
     with store.graph.transaction():
-        owner_id = store.graph.owner_id_for_person(actor.id)
+        owner_id = store.graph.owner_id_for_person(person_id)
     if not owner_id:
-        return decision
-    store.assign(decision['id'], {'owner_id': owner_id, 'by': actor.name}, actor=None)
+        return None
+    store.assign(decision['id'], {'owner_id': owner_id, 'by': name}, actor=None)
     with store.graph.transaction() as db:
-        db.execute("UPDATE decisions SET routing_reason=?,actor_basis='objective-accepter' WHERE id=?",
-                   ('Assigned to ' + actor.name + ' as the objective accepter: no authority map covers this scope', decision['id']))
+        db.execute('UPDATE decisions SET routing_reason=?,actor_basis=? WHERE id=?', (reason, basis, decision['id']))
     return store.get_decision(decision['id'])
 
 

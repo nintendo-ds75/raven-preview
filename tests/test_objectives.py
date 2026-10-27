@@ -113,6 +113,44 @@ class ObjectiveTests(OfflineCase):
         with self.assertRaises(Invalid):
             obj.act(self.store, created['id'], 'achieve', {'request_key': 'a', 'expected_revision': 1, 'summary': 'done'}, actor)
 
+    def test_objective_scope_fallback_setting_chooses_the_unrouted_owner(self):
+        """No authority map covers the scope review: the setting says whether
+        it goes to the accepter, the coordinator, or waits for an admin. Each
+        mode starts from a fresh workspace: once a node has an owner, the
+        next like it is routed to that owner before any fallback."""
+        def review(mode, *, coordinator=False):
+            store = self.fresh_store('fallback-' + mode + ('' if coordinator else '-unset'))
+            self.addCleanup(store.graph.close)
+            source = store.add_record(self.record_data)['source']
+            pin = {k: source[k] for k in ('record_id', 'source_version_id')}
+            with store.graph.transaction():
+                member_id = store.graph.add_person('Member', role='member')
+                coordinator_id = store.graph.add_person('Coordinator', role='admin')
+            member = Identity(member_id, 'Member', 'member', 'session')
+            if mode:
+                store.graph.set_setting('objective_scope_fallback', mode)
+            if coordinator:
+                store.graph.set_setting('coordinator', coordinator_id)
+            proposal = obj.propose(store, {**self.proposal(), 'citations': [{**pin, 'quote': 'The CSV example does not work.'}]}, [pin])
+            reviewed = obj.proposal_action(store, proposal['id'], 'accept', {'request_key': 'review', 'expected_revision': proposal['revision']}, member)
+            return store, store.get_decision(reviewed['decision_id']), member_id, coordinator_id
+        for mode in ('', 'accepter'):
+            with self.subTest(mode=mode or 'default'):
+                store, decision, member_id, _ = review(mode)
+                self.assertEqual(decision['owner_id'], store.graph.owner_id_for_person(member_id))
+                self.assertEqual(decision['actor_basis'], 'objective-accepter')
+        # The core already hands what nobody owns to a coordinator when one is
+        # set; the setting keeps the accepter out of it either way.
+        store, decision, _, coordinator_id = review('coordinator', coordinator=True)
+        self.assertEqual(decision['owner_id'], store.graph.owner_id_for_person(coordinator_id))
+        self.assertNotEqual(decision['actor_basis'], 'objective-accepter')
+        store, decision, _, _ = review('coordinator')
+        self.assertFalse(decision['owner_id'])
+        self.assertIn('no coordinator is set', decision['routing_reason'])
+        store, decision, _, _ = review('none')
+        self.assertFalse(decision['owner_id'])
+        self.assertIn('administrator must assign', decision['routing_reason'])
+
     def test_revision_retry_and_closed_objective(self):
         created = self.create()
         data = {'request_key': 'pause', 'expected_revision': 1}
