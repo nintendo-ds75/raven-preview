@@ -80,5 +80,13 @@ function harness(hash='#today') {
   // The inbox card links a scope review to #today/<proposal id>.
   h=harness('#today/p1');h.run('renderObjectives()');assert.match(h.app.innerHTML,/Suggested next step/);assert.match(h.app.innerHTML,/Investigate source/);assert.doesNotMatch(h.app.innerHTML,/Objective unavailable/);
   h=harness('#today/p1');await h.run('loadObjectives()');assert.deepEqual(h.requests.map(r=>r.url),['/api/objectives']);assert.match(h.app.innerHTML,/Investigate source/);
-  console.log('Today UI: 34 contract scenarios passed (DOM/API doubles).');
+  // 'Not now' opens a reason field inside the card; nothing is posted until a reason of three characters is given.
+  h=harness();await h.click('dismiss','p1');assert.equal(h.requests.length,0);assert.match(h.app.innerHTML,/id="objective-dismiss-form"[^>]*data-id="p1"/);assert.match(h.app.innerHTML,/name="rationale"[^>]*maxlength="200"/);assert.match(h.app.innerHTML,/shapes the next investigation/);
+  await h.submit('objective-dismiss-form',{rationale:'  '},{id:'p1'});assert.equal(h.requests.length,0);assert.match(h.app.innerHTML,/A reason of at least 3 characters is required/);
+  await h.submit('objective-dismiss-form',{rationale:'Already handled on the pilot branch'},{id:'p1'});assert.equal(h.requests[0].url,'/api/proposals/p1/dismiss');assert.equal(h.requests[0].data.rationale,'Already handled on the pilot branch');assert.equal(h.requests[0].data.expected_revision,2);assert.ok(h.requests[0].data.request_key);
+  // A card under review says who it waits on, with the reason the review was routed there.
+  h=harness();h.c.fixture.proposals=[{id:'p2',title:'Reviewed move',status:'review',revision:3,task_id:'gov-task',reviewer:'Policy Owner',reviewer_reason:'Assigned to Policy Owner as the objective accepter: no authority map covers this scope'}];h.run('renderObjectives()');
+  assert.match(h.app.innerHTML,/Waiting on Policy Owner \(Assigned to Policy Owner as the objective accepter: no authority map covers this scope\)/);
+  h.c.fixture.proposals[0].reviewer_reason='';h.run('renderObjectives()');assert.match(h.app.innerHTML,/Waiting on Policy Owner<\/p>/);
+  console.log('Today UI: 36 contract scenarios passed (DOM/API doubles).');
 })().catch(error=>{console.error(error);process.exitCode=1;});

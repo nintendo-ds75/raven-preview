@@ -1,9 +1,10 @@
 """Persisted request bounds; all inference is a counted deterministic double."""
+import json
 import threading
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import objective_head as head
+from bridge import objective_head as head, objectives as obj
 from bridge.auth import Identity
 from bridge.store import Store, Invalid
 
@@ -39,8 +40,45 @@ class ObjectiveBudgetTests(OfflineCase):
         self.assertGreater(self.client.calls, 0)
 
     def record(self, revision):
-        self.store.add_record({'repo': self.repo, 'ref': 'meeting', 'kind': 'note',
-            'title': 'Meeting evidence', 'body': 'Distinct transcript update ' + str(revision)})
+        source = self.store.add_record({'repo': self.repo, 'ref': 'meeting', 'kind': 'note',
+            'title': 'Meeting evidence', 'body': 'Distinct transcript update ' + str(revision)})['source']
+        return {k: source[k] for k in ('record_id', 'source_version_id')}
+
+    def decline(self, index, pin):
+        """A proposal on the current evidence, dismissed with a reason."""
+        payload = {'title': 'Move ' + str(index), 'outcome': 'Prepare it', 'success_criteria': 'Done', 'stop_criteria': 'Blocked',
+                   'guardrails': 'Private only', 'repository': self.repo, 'provider': 'claude', 'why_now': 'Evidence says so',
+                   'citations': [{**pin, 'quote': 'Distinct transcript update'}]}
+        proposal = obj.propose(self.store, payload, [pin])
+        return obj.proposal_action(self.store, proposal['id'], 'dismiss', {'request_key': 'dismiss-' + str(index),
+            'expected_revision': proposal['revision'], 'rationale': 'Reason ' + str(index)}, self.actor)
+
+    def test_declined_rationales_reach_the_next_investigation(self):
+        class CapturingHead:
+            def __init__(self):
+                self.inputs = []
+
+            def complete_json(self, purpose, system, prompt, **kwargs):
+                if purpose == 'objective factual research':
+                    return {'action': 'finish', 'disposition': 'needs_judgment', 'observations': [], 'reason': 'A judgment remains'}
+                self.inputs.append((system, json.loads(prompt)))
+                return {'proposal': None, 'reason': 'Nothing new to propose'}
+        self.client = CapturingHead()
+        first = self.decline(1, self.record(1))
+        result = head.scan(self.store, {'repository': self.repo, 'request_key': 'after-one'}, self.actor, client=self.client)
+        self.assertEqual(result['status'], 'no_change')
+        system, prompt = self.client.inputs[-1]
+        self.assertIn('Do not re-propose a declined move unless the cited evidence is newer than the declination.', system)
+        self.assertEqual(prompt['declined_before'], [{'title': 'Move 1', 'rationale': 'Reason 1', 'updated_at': first['updated_at']}])
+        for index in range(2, 7):
+            self.decline(index, self.record(index))
+        self.record(7)
+        self.assertEqual(head.scan(self.store, {'repository': self.repo, 'request_key': 'after-six'}, self.actor, client=self.client)['status'], 'no_change')
+        declined = self.client.inputs[-1][1]['declined_before']
+        self.assertEqual([d['title'] for d in declined], ['Move 6', 'Move 5', 'Move 4', 'Move 3', 'Move 2'])
+        self.assertEqual([d['rationale'] for d in declined], ['Reason 6', 'Reason 5', 'Reason 4', 'Reason 3', 'Reason 2'])
+        self.assertNotIn('Move 1', json.dumps(self.client.inputs[-1][1]))
+        self.assertEqual(len(self.client.inputs), 2)
 
     def scan(self, **kwargs):
         return head.scan(self.store, {'repository': self.repo, 'request_key': 'scan'}, self.actor,

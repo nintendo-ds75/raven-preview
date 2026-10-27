@@ -58,10 +58,11 @@ function objectiveCard(item, proposal = false) {
     ${item.why_now ? `<p class="objective-muted">Why now: ${esc(item.why_now)}</p>` : ''}${item.judgment_kind ? `<p class="objective-muted">Judgment needed: ${esc(objectiveJudgment(item.judgment_kind))}</p>` : ''}${item.blocked_reason || item.waiting_reason ? `<p class="objective-attention">${esc(item.blocked_reason || item.waiting_reason)}</p>` : ''}
     ${item.next_check_at || item.due_at ? `<p class="objective-muted">Next check · ${esc(objectiveTime(item.next_check_at || item.due_at))}</p>` : ''}
     ${item.evidence_stale ? '<p class="objective-attention">Evidence changed. Dismiss this proposal to investigate the current facts.</p>' : ''}
+    ${proposal && status === 'review' && item.reviewer ? `<p class="objective-muted">Waiting on ${esc(item.reviewer)}${item.reviewer_reason ? ` (${esc(item.reviewer_reason)})` : ''}</p>` : ''}
     ${item.cases && Object.keys(item.cases).length ? `<details class="objective-evidence"><summary>Behavior and boundaries in the signed scope</summary>${Object.entries(item.cases).map(([name,text])=>`<p><strong>${esc(name.replaceAll('_',' '))}</strong> ${esc(text)}</p>`).join('')}</details>` : ''}
     ${objectiveResearch(item.research)}
     ${objectiveEvidence(item.evidence || item.sources)}
-    <div class="objective-actions">${proposal && OPEN_PROPOSAL.includes(status) && objectiveCanWrite() ? (status === 'reconcile' || item.evidence_stale ? '' : objectiveButton('review-accept', id, status === 'review_error' ? 'Retry judgment review' : 'Review & take point')) + objectiveButton('dismiss', id, 'Not now') : proposal && status === 'review' ? `<a class="objective-text-link" href="#runs/${encodeURIComponent(item.task_id || item.governance_run_id || '')}">Open judgment review ↗</a>` : !proposal ? `<a class="objective-text-link" href="#today/${encodeURIComponent(id)}">Open objective <span aria-hidden="true">↗</span></a>` : ''}</div></article>`;
+    <div class="objective-actions">${proposal && OPEN_PROPOSAL.includes(status) && objectiveCanWrite() ? objectivePanel === 'dismiss:' + id ? `<form id="objective-dismiss-form" class="objective-dismiss" data-id="${esc(id)}">${objectiveField('rationale', 'Why not now? The reason shapes the next investigation.', {rows:2, max:200})}<button type="submit" class="button small" ${objectivePending.has(id) ? 'disabled aria-busy="true"' : ''}>Dismiss with this reason</button>${objectiveButton('close-panel', '', 'Keep it')}</form>` : (status === 'reconcile' || item.evidence_stale ? '' : objectiveButton('review-accept', id, status === 'review_error' ? 'Retry judgment review' : 'Review & take point')) + objectiveButton('dismiss', id, 'Not now') : proposal && status === 'review' ? `<a class="objective-text-link" href="#runs/${encodeURIComponent(item.task_id || item.governance_run_id || '')}">Open judgment review ↗</a>` : !proposal ? `<a class="objective-text-link" href="#today/${encodeURIComponent(id)}">Open objective <span aria-hidden="true">↗</span></a>` : ''}</div></article>`;
 }
 function objectiveResearchLimits() {
   const limits = objectiveData.research_limits || [];
@@ -226,7 +227,7 @@ document.addEventListener('click', async event => {
   const item = [...objectiveProposals(), ...(objectiveData?.objectives || []), objectiveData?.detail].filter(Boolean).find(item => item.id === id);
 
   if (!item) return;
-  if (action === 'dismiss') return objectiveMutate(id, '/api/proposals/' + encodeURIComponent(id) + '/dismiss', {expected_revision:item.revision,request_key:objectiveKey(action + ':' + id)});
+  if (action === 'dismiss') { objectivePanel = 'dismiss:' + id; objectiveError = ''; renderObjectives(); return; }
   if (['pause','resume','cancel','dispatch'].includes(action)) return objectiveMutate(id, '/api/objectives/' + encodeURIComponent(id) + '/' + action, {expected_revision:item.revision,request_key:objectiveKey(action + ':' + id)});
 });
 document.addEventListener('submit', async event => {
@@ -305,6 +306,12 @@ document.addEventListener('submit', async event => {
   if (form.id === 'objective-create-form') return objectiveMutate('new','/api/objectives',{...data,start_preparation:data.start_preparation === true || data.start_preparation === 'on',request_key:objectiveKey('new'),source_ids:[]});
   if (form.id === 'objective-watch-form') return objectiveMutate('watch','/api/objectives/watch',{repository:data.repository,enabled:data.enabled === true || data.enabled === 'on',request_key:objectiveKey('watch')});
   if (form.id === 'objective-scan-form') return objectiveMutate('scan','/api/objectives/scan',{...data,retry_failed:data.retry_failed === true,request_key:objectiveKey('scan')});
+  if (form.id === 'objective-dismiss-form') {
+    const item = objectiveProposals().find(item => item.id === id), rationale = String(data.rationale || '').trim();
+    if (!item) return;
+    if (rationale.length < 3) { objectiveError = 'A reason of at least 3 characters is required; it shapes the next investigation'; renderObjectives(); return; }
+    return objectiveMutate(id,'/api/proposals/' + encodeURIComponent(id) + '/dismiss',{rationale,expected_revision:item.revision,request_key:objectiveKey('dismiss:' + id)});
+  }
   if (form.id === 'objective-progress-form') {
     const item = objectiveData.detail?.id === id ? objectiveData.detail : objectiveData.objectives.find(item => item.id === id);
     if (!item) return;

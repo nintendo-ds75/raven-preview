@@ -242,7 +242,7 @@ class StandingRuleTests(GovernanceCase):
         self.assertEqual(self.store.graph.db.execute('SELECT state FROM objective_proposals WHERE id=?', (proposal['id'],)).fetchone()['state'], 'reconcile')
         with self.assertRaisesRegex(Invalid, 'Standing rule'):
             obj.proposal_action(self.store, proposal['id'], 'accept', {'request_key': 'retry', 'expected_revision': result['revision']}, self.operator)
-        dismissed = obj.proposal_action(self.store, proposal['id'], 'dismiss', {'request_key': 'dismiss', 'expected_revision': result['revision']}, self.operator)
+        dismissed = obj.proposal_action(self.store, proposal['id'], 'dismiss', {'request_key': 'dismiss', 'expected_revision': result['revision'], 'rationale': 'The standing rule already covers this'}, self.operator)
         self.assertEqual(dismissed['state'], 'dismissed')
 
 
