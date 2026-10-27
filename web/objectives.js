@@ -63,14 +63,17 @@ function objectiveCard(item, proposal = false) {
     ${item.cases && Object.keys(item.cases).length ? `<details class="objective-evidence"><summary>Behavior and boundaries in the signed scope</summary>${Object.entries(item.cases).map(([name,text])=>`<p><strong>${esc(name.replaceAll('_',' '))}</strong> ${esc(text)}</p>`).join('')}</details>` : ''}
     ${objectiveResearch(item.research)}
     ${objectiveEvidence(item.evidence || item.sources)}
-    <div class="objective-actions">${proposal && OPEN_PROPOSAL.includes(status) && objectiveCanWrite() ? objectivePanel === 'dismiss:' + id ? `<form id="objective-dismiss-form" class="objective-dismiss" data-id="${esc(id)}">${objectiveField('rationale', 'Why not now? The reason shapes the next investigation.', {rows:2, max:200})}<button type="submit" class="button small" ${objectivePending.has(id) ? 'disabled aria-busy="true"' : ''}>Dismiss with this reason</button>${objectiveButton('close-panel', '', 'Keep it')}</form>` : (status === 'reconcile' || item.evidence_stale ? '' : objectiveButton('review-accept', id, status === 'review_error' ? 'Retry judgment review' : 'Review & take point')) + objectiveButton('dismiss', id, 'Not now') : proposal && status === 'review' ? `<a class="objective-text-link" href="#runs/${encodeURIComponent(item.task_id || item.governance_run_id || '')}">Open judgment review ↗</a>` : !proposal ? `<a class="objective-text-link" href="#today/${encodeURIComponent(id)}">Open objective <span aria-hidden="true">↗</span></a>` : ''}</div></article>`;
+    <div class="objective-actions">${proposal && OPEN_PROPOSAL.includes(status) && objectiveCanWrite() ? objectivePanel === 'dismiss:' + id ? `<form id="objective-dismiss-form" class="objective-dismiss" data-id="${esc(id)}">${objectiveField('rationale', 'Why not now? The reason shapes the next investigation.', {rows:2, max:200, id:'objective-dismiss-rationale'})}<button type="submit" class="button small" ${objectivePending.has(id) ? 'disabled aria-busy="true"' : ''}>Dismiss with this reason</button>${objectiveButton('close-panel', '', 'Keep it')}</form>` : (status === 'reconcile' || item.evidence_stale ? '' : objectiveButton('review-accept', id, status === 'review_error' ? 'Retry judgment review' : 'Review & take point')) + objectiveButton('dismiss', id, 'Not now', false, `id="objective-dismiss-${esc(id)}"`) : proposal && status === 'review' ? `<a class="objective-text-link" href="#runs/${encodeURIComponent(item.task_id || item.governance_run_id || '')}">Open judgment review ↗</a>` : !proposal ? `<a class="objective-text-link" href="#today/${encodeURIComponent(id)}">Open objective <span aria-hidden="true">↗</span></a>` : ''}</div></article>`;
 }
 // One line from GET /api/metrics: what became of the proposals in the window, read from the ledger, never from a proposal's own claims.
+// Nothing is said until a proposal was judged in the window, and nothing where no model can propose one.
 function objectiveProposalPrecision() {
-  const work = objectiveData?.metrics?.work_proposals;
-  if (!work || typeof work !== 'object') return '';
+  const metrics = objectiveData?.metrics, work = metrics?.work_proposals;
+  if (!work || typeof work !== 'object' || objectiveScanOff()) return '';
+  if (!((work.signed ?? 0) + (work.corrected ?? 0) + (work.dismissed ?? 0))) return '';
   const pct = work.precision == null ? 'not yet measurable' : Math.round(work.precision * 100) + '%';
-  return `<p class="objective-precision">Proposals: ${esc(work.signed ?? 0)} signed · ${esc(work.dismissed ?? 0)} declined · precision ${esc(pct)}</p>`;
+  const span = metrics.window_days ? `last ${metrics.window_days} days` : 'all time';
+  return `<p class="objective-precision">Proposals, ${esc(span)}: ${esc(work.signed ?? 0)} signed · ${esc(work.dismissed ?? 0)} declined · precision ${esc(pct)}</p>`;
 }
 function objectiveResearchLimits() {
   const limits = objectiveData.research_limits || [];
@@ -78,7 +81,7 @@ function objectiveResearchLimits() {
   const unavailable = objectiveData.background_inference?.available === false ? objectiveData.background_inference.notice : '';
   const precision = objectiveProposalPrecision(), declined = objectiveData.metrics?.work_proposals?.declined_recent;
   // The reasons the next investigation of each repository reads, so the lesson store can be inspected.
-  const declinedList = Array.isArray(declined) && declined.length ? `<h3>Declined recently</h3><ul class="objective-declined">${declined.map(item => `<li><strong>${esc(item.title || 'Proposal')}</strong> · ${esc(item.rationale || '')}<small>${esc(item.repository || '')} · ${esc(objectiveTime(item.updated_at))}</small></li>`).join('')}</ul><p class="objective-muted">The next investigation of each repository reads its last five reasons before proposing.</p>` : '';
+  const declinedList = Array.isArray(declined) && declined.length ? `<h3>Declined recently</h3><ul class="objective-declined">${declined.map(item => `<li><strong>${esc(item.title || 'Proposal')}</strong>${item.rationale ? ' · ' + esc(item.rationale) : ''}<small>${esc(item.repository || '')} · ${esc(objectiveTime(item.updated_at))}</small></li>`).join('')}</ul><p class="objective-muted">The next investigation of each repository reads its last five reasons before proposing.</p>` : '';
   return limits.length || statuses.length || unavailable || precision || declinedList ? `<section class="objective-side-section"><h2>Background investigation</h2>${unavailable ? `<p role="status">${esc(unavailable)}</p>` : ''}${statuses.map(item=>`<p role="status"><strong>${esc(item.repository)}</strong>: ${esc(item.state)} · ${esc(item.attempts)} attempts. ${item.state === 'blocked' ? 'Automatic retries stopped. Repair setup, then use Find opportunities → explicit retry; or re-enable the watch.' : item.state === 'failed' ? 'Investigation was inconclusive; bounded retry may follow.' : 'Investigation in progress.'}</p>`).join('')}${limits.map(limit=>`<p><strong>${esc(limit.repository)}</strong> · ${esc(limit.used)}/${esc(limit.limit)} attempts in the rolling hour.</p>${limit.status === 'throttled' ? `<p role="status">Waiting for the research budget. Next eligible check: ${esc(objectiveTime(limit.next_retry_at))}. Evidence remains queued; this is not a completed investigation.</p>` : ''}`).join('')}${precision}${declinedList}<p class="objective-muted">Automatic reads are debounced and bounded. Manual investigation is a separate explicit request.</p></section>` : '';
 }
 function objectiveResearch(packet) {
@@ -119,7 +122,7 @@ function objectiveGroups(data) {
     waiting: objectives.filter(o => !['needs_you', 'moving'].includes(o.status) && !ready(o)).map(item => ({item}))};
 }
 function objectiveGroup(key, title, entries, empty) {
-  return `<section class="objective-section" data-group="${esc(key)}"><div class="objective-section-head"><h2>${esc(title)}</h2><span>${entries.length}</span></div>${entries.length ? entries.map(entry => objectiveCard(entry.item, !!entry.proposal)).join('') : `<div class="objective-empty-card"><p>${esc(empty)}</p></div>`}</section>`;
+  return `<section class="objective-section" data-group="${esc(key)}"><div class="objective-section-head"><h2 id="objective-group-${esc(key)}" tabindex="-1">${esc(title)}</h2><span>${entries.length}</span></div>${entries.length ? entries.map(entry => objectiveCard(entry.item, !!entry.proposal)).join('') : `<div class="objective-empty-card"><p>${esc(empty)}</p></div>`}</section>`;
 }
 function objectiveClosed(items) {
   return items.length ? `<details class="objective-evidence objective-closed"><summary>Closed · ${items.length}</summary>${items.map(item => objectiveCard(item)).join('')}</details>` : '';
@@ -149,8 +152,8 @@ function renderObjectives() {
   if (view !== 'today' || !state.auth) return;
   const app = document.getElementById('app'), id = objectiveId();
   const active = document.activeElement;
-  if (app.dataset.objectivePanel === objectivePanel && app.dataset.objectiveRoute === objectiveRoute() && active?.closest?.('form') && app.contains(active) && !objectivePending.size) return;
-  app.dataset.objectivePanel = objectivePanel; app.dataset.objectiveRoute = objectiveRoute();
+  if (app.dataset.objectivePanel === objectivePanel && app.dataset.objectiveRoute === objectiveRoute() && app.dataset.objectiveError === objectiveError && app.dataset.objectiveNotice === objectiveNotice && active?.closest?.('form') && app.contains(active) && !objectivePending.size) return;
+  app.dataset.objectivePanel = objectivePanel; app.dataset.objectiveRoute = objectiveRoute(); app.dataset.objectiveError = objectiveError; app.dataset.objectiveNotice = objectiveNotice;
   const focus = active?.id, selection = [active?.selectionStart, active?.selectionEnd];
   const opened = new Set([...app.querySelectorAll('details')].map((el,index) => el.open ? index : -1));
   if (!objectiveData) {
@@ -193,6 +196,15 @@ function renderObjectives() {
     }
   }
 }
+// Focus the first of these ids that is on the page: into the dismiss form as it opens, back to
+// its 'Not now' button as it closes, or to the group heading when that card is gone.
+function objectiveFocus(...ids) {
+  for (const id of ids) {
+    const target = document.getElementById(id);
+    if (target) { target.focus({preventScroll:true}); return true; }
+  }
+  return false;
+}
 async function loadObjectives() {
   if (view !== 'today' || !state.auth) return;
   const route = objectiveRoute(), id = objectiveId(), request = ++objectiveRequest;
@@ -230,7 +242,7 @@ document.addEventListener('click', async event => {
   if (!button || view !== 'today' || button.disabled) return;
   const action = button.dataset.objectiveAction, id = button.dataset.id || '';
   if (action === 'refresh') return loadObjectives();
-  if (action === 'close-panel') { objectivePanel = ''; objectiveError = ''; renderObjectives(); return; }
+  if (action === 'close-panel') { const was = objectivePanel; objectivePanel = ''; objectiveError = ''; renderObjectives(); if (was.startsWith('dismiss:')) objectiveFocus('objective-dismiss-' + was.slice(8), 'objective-group-decide'); return; }
   if (action === 'scan-panel' && objectiveScanOff()) return;  // Nothing to find without a model backend.
   if (action === 'new' || action === 'scan-panel') { objectivePanel = action === 'new' ? 'new' : 'scan'; renderObjectives(); return; }
   if (action === 'checkpoint' || action === 'review-achieve') { objectivePanel = (action === 'checkpoint' ? 'checkpoint:' : 'achieve:') + id; renderObjectives(); return; }
@@ -240,7 +252,7 @@ document.addEventListener('click', async event => {
   const item = [...objectiveProposals(), ...(objectiveData?.objectives || []), objectiveData?.detail].filter(Boolean).find(item => item.id === id);
 
   if (!item) return;
-  if (action === 'dismiss') { objectivePanel = 'dismiss:' + id; objectiveError = ''; renderObjectives(); return; }
+  if (action === 'dismiss') { objectivePanel = 'dismiss:' + id; objectiveError = ''; renderObjectives(); objectiveFocus('objective-dismiss-rationale'); return; }
   if (['pause','resume','cancel','dispatch'].includes(action)) return objectiveMutate(id, '/api/objectives/' + encodeURIComponent(id) + '/' + action, {expected_revision:item.revision,request_key:objectiveKey(action + ':' + id)});
 });
 document.addEventListener('submit', async event => {
@@ -254,9 +266,9 @@ document.addEventListener('submit', async event => {
   await objectiveMutate(id, '/api/proposals/' + encodeURIComponent(id) + '/accept', {expected_revision:item.revision,request_key:objectiveKey('accept:' + id)});
 });
 
-function objectiveField(name, label, {required = true, type = 'text', value = '', rows = 0, max = 4000} = {}) {
+function objectiveField(name, label, {required = true, type = 'text', value = '', rows = 0, max = 4000, id = ''} = {}) {
   const saved = objectiveDrafts.get(objectivePanel)?.[name] ?? value;
-  return `<label>${esc(label)}${rows ? `<textarea name="${esc(name)}" rows="${rows}" maxlength="${max}" ${required ? 'required' : ''}>${esc(saved)}</textarea>` : `<input name="${esc(name)}" type="${esc(type)}" maxlength="${max}" value="${esc(saved)}" ${required ? 'required' : ''}>`}</label>`;
+  return `<label>${esc(label)}${rows ? `<textarea name="${esc(name)}" ${id ? `id="${esc(id)}"` : ''} rows="${rows}" maxlength="${max}" ${required ? 'required' : ''}>${esc(saved)}</textarea>` : `<input name="${esc(name)}" type="${esc(type)}" maxlength="${max}" value="${esc(saved)}" ${required ? 'required' : ''}>`}</label>`;
 }
 function objectiveRepositories() {
   const repositories = objectiveData?.repositories || state.workbench?.repositories || [];
@@ -322,8 +334,11 @@ document.addEventListener('submit', async event => {
   if (form.id === 'objective-dismiss-form') {
     const item = objectiveProposals().find(item => item.id === id), rationale = String(data.rationale || '').trim();
     if (!item) return;
-    if (rationale.length < 3) { objectiveError = 'A reason of at least 3 characters is required; it shapes the next investigation'; renderObjectives(); return; }
-    return objectiveMutate(id,'/api/proposals/' + encodeURIComponent(id) + '/dismiss',{rationale,expected_revision:item.revision,request_key:objectiveKey('dismiss:' + id)});
+    if (rationale.length < 3) { objectiveError = 'A reason of at least 3 characters is required; it shapes the next investigation'; renderObjectives(); objectiveFocus('objective-dismiss-rationale'); return; }
+    await objectiveMutate(id,'/api/proposals/' + encodeURIComponent(id) + '/dismiss',{rationale,expected_revision:item.revision,request_key:objectiveKey('dismiss:' + id)});
+    // The form stays open only when the server refused; otherwise the card's button, or the group when the card is gone.
+    if (objectivePanel === 'dismiss:' + id) objectiveFocus('objective-dismiss-rationale'); else objectiveFocus('objective-dismiss-' + id, 'objective-group-decide');
+    return;
   }
   if (form.id === 'objective-progress-form') {
     const item = objectiveData.detail?.id === id ? objectiveData.detail : objectiveData.objectives.find(item => item.id === id);

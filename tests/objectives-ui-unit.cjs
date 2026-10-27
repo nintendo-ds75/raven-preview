@@ -14,7 +14,7 @@ function harness(hash='#today') {
   const run=code=>vm.runInContext(code,c);run('objectiveData=fixture');
   const click=async(action,id='')=>{const button={disabled:false,dataset:{objectiveAction:action,id}};for(const fn of handlers.click||[])await fn({target:{closest:()=>button}});};
   const submit=async(id,data={},dataset={},className='')=>{const form={id,dataset,className,reportValidity:()=>true,querySelectorAll:()=>Object.entries(data).map(([name,value])=>typeof value==='boolean'?{name,type:'checkbox',checked:value}:{name,value,type:'text'})};for(const fn of handlers.submit||[])await fn({target:form,preventDefault(){}});};
-  return {c,app,run,click,submit,requests};
+  return {c,app,run,click,submit,requests,handlers};
 }
 (async()=>{
   let evidence=harness();
@@ -95,9 +95,29 @@ function harness(hash='#today') {
   assert.match(h.app.innerHTML,/Waiting on Policy Owner \(Assigned to Policy Owner as the objective accepter: no authority map covers this scope\)/);
   h.c.fixture.proposals[0].reviewer_reason='';h.run('renderObjectives()');assert.match(h.app.innerHTML,/Waiting on Policy Owner<\/p>/);
   // The research aside carries the ledger's precision line and the declined reasons from /api/metrics, read once with Today; a failed read hides only that line.
-  h=harness();h.c.api=async(url,data)=>{h.requests.push({url,data});return url==='/api/metrics'?{work_proposals:{signed:3,dismissed:1,precision:0.75,declined_recent:[{repository:'sample/repo',title:'Rewrite the importer',rationale:'The importer is being replaced next quarter',updated_at:'2026-10-20T10:00:00Z'}]}}:h.c.fixture;};
+  h=harness();h.c.api=async(url,data)=>{h.requests.push({url,data});return url==='/api/metrics'?{window_days:30,work_proposals:{signed:3,dismissed:1,precision:0.75,declined_recent:[{repository:'sample/repo',title:'Rewrite the importer',rationale:'The importer is being replaced next quarter',updated_at:'2026-10-20T10:00:00Z'}]}}:h.c.fixture;};
   await h.run('loadObjectives()');assert.deepEqual(h.requests.map(r=>r.url),['/api/objectives','/api/metrics']);
-  assert.match(h.app.innerHTML,/Proposals: 3 signed · 1 declined · precision 75%/);assert.match(h.app.innerHTML,/Declined recently/);assert.match(h.app.innerHTML,/Rewrite the importer<\/strong> · The importer is being replaced next quarter/);
-  h=harness();h.c.api=async(url)=>{if(url==='/api/metrics')throw Error('metrics unavailable');return h.c.fixture;};await h.run('loadObjectives()');assert.match(h.app.innerHTML,/Ship safely/);assert.doesNotMatch(h.app.innerHTML,/Proposals: |metrics unavailable/);
-  console.log('Today UI: 38 contract scenarios passed (DOM/API doubles).');
+  assert.match(h.app.innerHTML,/Proposals, last 30 days: 3 signed · 1 declined · precision 75%/);assert.match(h.app.innerHTML,/Declined recently/);assert.match(h.app.innerHTML,/Rewrite the importer<\/strong> · The importer is being replaced next quarter/);
+  h=harness();h.c.api=async(url)=>{if(url==='/api/metrics')throw Error('metrics unavailable');return h.c.fixture;};await h.run('loadObjectives()');assert.match(h.app.innerHTML,/Ship safely/);assert.doesNotMatch(h.app.innerHTML,/Proposals, |metrics unavailable/);
+  // The line names its window and says nothing while no proposal was judged in it: older dismissals list on their own, a withheld one without a reason.
+  const metricsHarness=(work,metrics={})=>{const item=harness();item.c.api=async(url)=>url==='/api/metrics'?{window_days:30,...metrics,work_proposals:work}:item.c.fixture;return item;};
+  h=metricsHarness({signed:0,corrected:0,dismissed:0,precision:null,declined_recent:[{repository:'sample/repo',withheld:true,title:'Proposal withheld: source access changed',updated_at:'2026-09-01T10:00:00Z'}]});await h.run('loadObjectives()');
+  assert.doesNotMatch(h.app.innerHTML,/Proposals, |not yet measurable/);assert.match(h.app.innerHTML,/Declined recently/);assert.match(h.app.innerHTML,/Proposal withheld: source access changed<\/strong><small>/);
+  h=metricsHarness({signed:2,dismissed:2,precision:0.5},{window_days:0});await h.run('loadObjectives()');assert.match(h.app.innerHTML,/Proposals, all time: 2 signed · 2 declined · precision 50%/);
+  // Where nothing can be investigated there is no precision to report, and the section stays hidden with it.
+  h=metricsHarness({signed:2,dismissed:2,precision:0.5});h.c.state.model={backend:'none',proposals:false,investigation:false,notice:'No model key.'};await h.run('loadObjectives()');assert.doesNotMatch(h.app.innerHTML,/Proposals, |Background investigation/);
+  // A short reason is refused on screen even while focus is inside the form, the typed text stays, and focus follows the form:
+  // into the reason field as it opens, back to the card's 'Not now' as it closes, to the group heading when the card is gone; never to the body.
+  h=harness();const focused=[];h.app.contains=()=>true;h.c.document.getElementById=id=>id==='app'?h.app:h.app.innerHTML.includes(`id="${id}"`)?{id,focus(){focused.push(id);}}:null;
+  h.c.document.activeElement={id:'objective-dismiss-p1',closest:()=>null};await h.click('dismiss','p1');
+  assert.deepEqual(focused,['objective-dismiss-rationale']);assert.match(h.app.innerHTML,/<textarea name="rationale" id="objective-dismiss-rationale"/);assert.doesNotMatch(h.app.innerHTML,/id="objective-dismiss-p1"/);
+  const dismissForm={id:'objective-dismiss-form',className:'objective-dismiss',querySelectorAll:()=>[{name:'rationale',value:'ok',type:'text'}]};
+  for(const fn of h.handlers.input)fn({target:{closest:()=>dismissForm}});
+  h.c.document.activeElement={id:'objective-dismiss-rationale',closest:()=>dismissForm,selectionStart:2,selectionEnd:2};
+  await h.submit('objective-dismiss-form',{rationale:'ok'},{id:'p1'});
+  assert.equal(h.requests.length,0);assert.match(h.app.innerHTML,/role="alert">A reason of at least 3 characters is required/);assert.match(h.app.innerHTML,/id="objective-dismiss-rationale"[^>]*>ok<\/textarea>/);assert.equal(focused.at(-1),'objective-dismiss-rationale');
+  await h.click('close-panel');assert.equal(focused.at(-1),'objective-dismiss-p1');assert.doesNotMatch(h.app.innerHTML,/id="objective-dismiss-form"|at least 3 characters/);
+  await h.click('dismiss','p1');await h.submit('objective-dismiss-form',{rationale:'Already handled'},{id:'p1'});assert.equal(h.requests.filter(r=>r.data).length,1);assert.equal(focused.at(-1),'objective-dismiss-p1');
+  await h.click('dismiss','p1');h.c.fixture={...h.c.fixture,proposals:[]};await h.submit('objective-dismiss-form',{rationale:'Already handled'},{id:'p1'});assert.equal(focused.at(-1),'objective-group-decide');assert.match(h.app.innerHTML,/<h2 id="objective-group-decide" tabindex="-1">/);
+  console.log('Today UI: 43 contract scenarios passed (DOM/API doubles).');
 })().catch(error=>{console.error(error);process.exitCode=1;});
