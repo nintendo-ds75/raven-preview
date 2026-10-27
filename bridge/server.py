@@ -916,7 +916,12 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         raise Forbidden(403, "An agent credential does not choose who decides: Raven routes the node, "
                                              "and a person assigns or hands it on")
                 else:
-                    self.require("member")
+                    # A person's own session-record opt-out is theirs whatever
+                    # their role; the store still refuses anyone else's.
+                    own_recording = (len(inquiry_parts) == 4 and inquiry_parts[:2] == ['api', 'people']
+                                     and inquiry_parts[3] == 'recording'
+                                     and self.me is not None and self.me.id == inquiry_parts[2])
+                    self.require("viewer" if own_recording else "member")
                 if path == '/api/objectives':
                     from .objectives import create
                     if 'start_preparation' in data and type(data['start_preparation']) is not bool:

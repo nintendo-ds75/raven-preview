@@ -169,6 +169,12 @@ class WithdrawRouteTests(SharedServer):
         self.assertEqual({p["name"]: p["recording_optout"] for p in people if p["name"].startswith(("Pat", "Oli"))},
                          {"Pat Author": True, "Oli Other": False})
         self.assertFalse(self.post(f"/api/people/{pat['id']}/recording", {"optout": False}, token=BOOTSTRAP)["recording_optout"])
+        # A viewer sets their own opt-out too, and nobody else's.
+        val = self.post("/api/people", {"name": "Val Viewer", "role": "viewer"}, token=BOOTSTRAP)
+        val_token = self.post("/api/tokens", {"person_id": val["id"], "kind": "human"}, token=BOOTSTRAP)["token"]
+        self.assertEqual(self.status_of("POST", f"/api/people/{pat['id']}/recording", {"optout": True}, token=val_token), 403)
+        self.assertTrue(self.post(f"/api/people/{val['id']}/recording", {"optout": True}, token=val_token)["recording_optout"])
+        self.assertTrue(next(p for p in self.get("/api/people", token=oli_token)["people"] if p["id"] == val["id"])["recording_optout"])
         settings = self.post("/api/settings", {"session_records": True, "objective_scope_fallback": "none"}, token=BOOTSTRAP)
         self.assertEqual((settings["session_records"], settings["objective_scope_fallback"]), (True, "none"))
         self.assertEqual(self.status_of("POST", "/api/settings", {"objective_scope_fallback": "anyone"}, token=BOOTSTRAP), 400)
