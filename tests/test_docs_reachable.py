@@ -1,5 +1,7 @@
 """Every document is reachable from the index, and every HTTP route the
-server dispatches is in the reference."""
+server dispatches is in the reference: the literal route strings, the
+routes it dispatches on a split path with the action named on the dispatch
+line, and the few whose action it forwards to a module unnamed."""
 import re
 import unittest
 from fixtures import ROOT
@@ -9,19 +11,49 @@ _RELATIVE_LINK = re.compile(r"\[[^\]]*\]\(([^)#\s]+)(?:#[^)]*)?\)")
 # Literal route strings in the server's GET and POST dispatch, with any
 # trailing slash a prefix match carries (`/api/context/sources/`) dropped.
 _ROUTE = re.compile(r"""['"](/api/[A-Za-z0-9_/\-]+)['"]""")
-# Routes the server dispatches on a split path rather than a literal string,
-# so the regex cannot see them. Each must still be in the reference.
-_DYNAMIC_ROUTES = (
+# A split-path dispatch names its collection either on the line itself
+# (`parts[:2] == ["api", "tasks"]`) or on the block it sits in
+# (`path.startswith('/api/workbench/')`), and its action by position
+# (`parts[3] == "tree"`, `parts[3] in {"answer", "assign"}`).
+_PREFIX = re.compile(r"""\w*parts\[:(\d)\] == \[([^\]]*)\]|path\.startswith\(["'](/api/[a-z\-]+)/["']\)""")
+_ACTION = re.compile(r"""\w*parts\[(\d)\]\s*(?:==\s*["']([a-z\-]+)["']|in\s*[{(]([^})]*)[})])""")
+_WORD = re.compile(r"""["']([a-z\-]+)["']""")
+# Routes whose action the server forwards to a module without naming it
+# (`act(store, parts[2], parts[3], ...)`), so no regex can harvest them.
+# Each must still be in the reference; add one here only with that reason.
+_FORWARDED_ROUTES = (
     "/api/objectives/:id/pause|resume|cancel|checkpoint|dispatch|achieve",
     "/api/proposals/:id/accept|dismiss",
     "/api/meetings/:id/consent|import|background-sync|sync|revoke|reconcile|join|stop|delete-remote",
-    "/api/workbench/:id/verification",
-    "/api/workbench/:id/patch",
-    "/api/tasks/:id/inquiry",
+    "/api/workbench/:id/pause|resume|cancel",
 )
 # Literal strings in server.py that are not routes a client calls: none at
 # the moment. Add a route here only with the reason it stays undocumented.
 _INTERNAL_ROUTES = frozenset()
+
+
+def _split_routes(server):
+    """Every `/api/<collection>/:id/<action>` the server dispatches on a
+    split path with the action named on the dispatch line."""
+    routes, prefix = set(), None
+    for line in server.splitlines():
+        found = _PREFIX.search(line)
+        if found:
+            prefix = _WORD.findall(found.group(2)) if found.group(1) else found.group(3).strip("/").split("/")
+        for match in _ACTION.finditer(line):
+            if prefix is None or int(match.group(1)) != len(prefix) + 1:
+                continue  # an action below a nested id (`parts[5]`) is documented with its parent
+            for action in ([match.group(2)] if match.group(2) else _WORD.findall(match.group(3))):
+                routes.add("/" + "/".join(prefix) + "/:id/" + action)
+    return routes
+
+
+def _documented(route, reference):
+    """The route appears in the reference on its own, with any id name
+    (`:run_id`), or inside an alternation such as `/api/x/:id/pause|resume`."""
+    collection, action = route.rsplit("/:id/", 1)
+    pattern = re.escape(collection) + r"/:[a-z_]+/(?:[a-z\-]+\|)*" + re.escape(action) + r"(?![a-z\-])"
+    return re.search(pattern, reference) is not None
 
 
 def _require_checkout():
@@ -76,9 +108,20 @@ class RoutesDocumentedTests(unittest.TestCase):
 
     def test_the_split_path_routes_are_in_the_reference(self):
         _require_checkout()
+        server = (ROOT / "bridge" / "server.py").read_text()
         reference = (DOCS / "reference.md").read_text()
-        missing = [route for route in _DYNAMIC_ROUTES if route not in reference]
+        routes = sorted(_split_routes(server))
+        self.assertGreater(len(routes), 15, "the split-path dispatch should yield more than a dozen routes")
+        for expected in ("/api/decisions/:id/reframe", "/api/tasks/:id/interviews", "/api/workbench/:id/reconcile"):
+            self.assertIn(expected, routes, "the harvester must see routes the hand list used to miss")
+        missing = [route for route in routes if not _documented(route, reference)]
         self.assertEqual(missing, [], f"routes dispatched on a split path that docs/reference.md does not name: {missing}")
+
+    def test_the_forwarded_routes_are_in_the_reference(self):
+        _require_checkout()
+        reference = (DOCS / "reference.md").read_text()
+        missing = [route for route in _FORWARDED_ROUTES if route not in reference]
+        self.assertEqual(missing, [], f"routes whose action a module names that docs/reference.md does not list: {missing}")
 
 
 if __name__ == "__main__":
