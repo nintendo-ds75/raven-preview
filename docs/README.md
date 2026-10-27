@@ -5,6 +5,7 @@ reachable only by chance (`tests/test_docs_reachable.py` checks that).
 
 **Start here**
 
+- [What Raven is](positioning.md): the one-sentence description, who it is for, what breaks today, what Raven is not, and the boundaries each document backs.
 - [Getting started](getting-started.md): install, create the workspace, connect your coding agent, run one task, troubleshoot.
 - [How Raven works](overview.md): what a task looks like inside Raven, how answers are reused, who gets asked, where your data goes, what this preview promises.
 - [Technical reference](reference.md): every MCP tool, HTTP endpoint, setting and page.
