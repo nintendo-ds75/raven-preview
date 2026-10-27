@@ -184,3 +184,46 @@ dismiss <kind> --repo owner/name --target <target>` (or
 shows the latest scan with each suggestion's state: suggested, dismissed or
 connected. Suggestions can name a Jira project not every reader may see, so all
 of these are for administrators only; agents and members never see them.
+
+## Pasted evidence and session records
+
+Not every piece of evidence lives behind a connector. A member can paste a
+customer message, an email or a thread into **Add evidence** on Today, pick the
+repository and what it is (note, Slack, email, document, ticket), and save it.
+It becomes an ordinary record, the same kind `POST /api/records` and
+`bridge_import_record` write: workspace-visible, citable by the ladder, read by
+objective research the moment it is saved, and never a sign-off. A paste holds
+at most 20,000 characters; a longer thread is split, or imported as a
+[meeting transcript](meeting-adapters.md).
+
+Every record written over HTTP or MCP carries a **server-stamped author**: the
+person whose session, token or agent credential made the request. The body may
+name an author; the stored author is still the person who wrote the record, and
+the name the body claimed is kept in the `record_added` event only. The record's
+access scope says so (`basis: author`, the attesting person's id, the transport),
+and the same stamp is what lets that person withdraw it later. Records that
+Raven writes for itself (Slack capture, connector sync, meeting import) keep the
+source's own author, because no person wrote them.
+
+**Session records** are off by default. With the admin setting
+`session_records` on, a task that finishes as completed leaves one record of
+kind `session` in the `raven:session` namespace, written by Raven in the agent's
+name: the kickoff verdict, one line per decision (its question, owner, outcome,
+standing), the paths the submitted diff names, the proof id and the diff's
+SHA-256, and the final status. A session record never contains the diff body,
+a host session's prompt, an interview transcript, a Slack conversation, a
+notification payload or an answer's text. It is clipped at 20,000 characters
+and says so. A person who would rather not appear in them opts out on their
+own row (`POST /api/people/:id/recording` with `optout: true`, their own or an
+admin's call); a task whose requester or agent resolves to an opted-out person
+leaves no record. The record cannot be imported from outside: a `session` or
+`conversation` kind over HTTP or MCP is refused.
+
+**Withdrawing a record.** The record's attested author, or an admin, withdraws
+it with **Withdraw** under the form or `POST /api/records/:id/withdraw` with a
+`reason`. Withdrawal blocks existing dependent reuse and retains the audit
+history; it does not promise physical erasure. The record becomes inaccessible,
+every version is withheld, a decision that relied on it goes to review, a
+proposal that cited it is withheld, the research catalog drops it and the
+corpus revision moves, so an enabled watch re-evaluates. The event
+`record_withdrawn` names who withdrew it and why.

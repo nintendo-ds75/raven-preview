@@ -81,6 +81,16 @@ class CaptureCase(OfflineCase):
 
 
 class CapturedSlackTests(CaptureCase):
+    def test_remember_is_a_synonym_of_record(self):
+        recorded = self.accept(self.original('rec', ts='1700000001.000001', text='record: Keep for thirty days.'))
+        remembered = self.accept(self.original('rem', ts='1700000002.000001', text='remember: Keep for thirty days.'))
+        self.assertEqual((remembered['body'], remembered['title']), (recorded['body'], recorded['title']))
+        self.assertEqual(remembered['body'], 'Keep for thirty days.')
+        self.assertEqual(self.g.db.execute("SELECT count(*) c FROM source_records").fetchone()['c'], 2)
+        self.enqueue(self.original('plain', ts='1700000003.000001', text='Remembering nothing in particular.'))
+        self.delivery.inbox.process()
+        self.assertEqual(self.g.db.execute("SELECT count(*) c FROM source_records").fetchone()['c'], 2)
+
     def test_explicit_capture_is_canonical_and_receipt_is_atomic_with_import(self):
         self.enqueue(self.original())
         with patch.object(self.store, 'add_record', side_effect=RuntimeError('synthetic importer failure')):

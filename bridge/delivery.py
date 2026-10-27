@@ -1807,7 +1807,7 @@ def _named_mentions(graph, text: str) -> str:
     return re.sub(r"<@([A-Z0-9]+)(?:\|([^>]*))?>", name, text or "")
 
 
-_CAPTURE_RE = re.compile(r"^\s*(?:<@[A-Z0-9]+>\s*)?(?:(?:bridge|raven)[,:]?\s*)?record\s*[:\-]\s*(.+)$", re.IGNORECASE | re.DOTALL)
+_CAPTURE_RE = re.compile(r"^\s*(?:<@[A-Z0-9]+>\s*)?(?:(?:bridge|raven)[,:]?\s*)?(?:record|remember)\s*[:\-]\s*(.+)$", re.IGNORECASE | re.DOTALL)
 
 
 def capture_record(delivery: Delivery, channel: str, ts: str, user_id: str, text: str,

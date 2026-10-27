@@ -270,7 +270,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                                        and self.me.id == link.person["id"])
                     view["viewer"]["interview_decision_id"] = link.decision_id
                     return self.send(200, view)
-                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js", "/presentation.js", "/workbench.js", "/workbench.css", "/objectives.js", "/objectives.css"):
+                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js", "/presentation.js", "/workbench.js", "/workbench.css", "/objectives.js", "/objectives.css", "/evidence.js"):
                     if url.path == "/" and auth.enabled and self.me is None:
                         if parse_qs(url.query).get("github_connect") == ["1"]:
                             cookie = "bridge_github_connect=1; Max-Age=600; Path=/; HttpOnly; SameSite=Lax"
@@ -287,6 +287,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     files['/workbench.css'] = 'workbench.css'
                     files['/objectives.js'] = 'objectives.js'
                     files['/objectives.css'] = 'objectives.css'
+                    files['/evidence.js'] = 'evidence.js'
                     file = WEB / files[url.path]
                     return self.send(200, file.read_bytes(), (mimetypes.guess_type(str(file))[0] or "text/plain") + "; charset=utf-8",
                                      etag=True, cache="no-cache")
@@ -340,6 +341,11 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     return self.send(200, store.lookup_record(**args))
                 if url.path == '/api/records':
                     query = parse_qs(url.query)
+                    if 'namespace' in query and 'record_id' not in query:
+                        # The newest records of one namespace (pasted evidence), titles only.
+                        self.require('member')
+                        return self.send(200, store.list_records(query['namespace'][0], query.get('limit', ['10'])[0],
+                                                                 repo=query.get('repo', [''])[0]))
                     return self.send(200, store.get_record(query.get('record_id', [''])[0], query.get('repo', [''])[0]))
                 if url.path == "/api/state":
                     from .sources import report as source_report
@@ -1020,7 +1026,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     self.require("admin")
                     result = store.delivery.sync_directory()
                 elif path == "/api/records":
-                    result = store.add_record(data)
+                    # The record's author is the person on this request, whatever the body says.
+                    result = store.add_record(data, actor=self.actor())
                 elif path == "/api/context/sources":
                     # An administrator attests the source is shared with every reader.
                     self.require("admin")
@@ -1237,6 +1244,10 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     elif len(parts) == 5 and parts[:3] == ["api", "deliveries", "inbound"] and parts[4] == "retry":
                         self.require("admin")
                         result = store.delivery.retry_inbound(parts[3])
+                    elif len(parts) == 4 and parts[:2] == ["api", "records"] and parts[3] == "withdraw":
+                        result = store.withdraw_record(parts[2], data, self.actor())
+                    elif len(parts) == 4 and parts[:2] == ["api", "people"] and parts[3] == "recording":
+                        result = store.set_recording_optout(parts[2], data, actor=self.actor())
                     elif len(parts) == 4 and parts[:2] == ["api", "tokens"] and parts[3] == "revoke":
                         owned = any(t["id"] == parts[2] for t in auth.tokens(self.me.id))
                         if not owned:

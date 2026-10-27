@@ -8,7 +8,7 @@ from a transcript. For what Raven is as a whole, and what it is not, read
 ## The loop
 
 1. Import permission-scoped evidence (including [meeting transcripts](meeting-adapters.md))
-   or use the existing GitHub, Slack, Jira, documentation and context connectors. For Vexa, explicitly authorize per-occurrence notice/transcription and workspace disclosure, then enable background sync. After a separate authorized Join, read-only polling imports the exact occurrence transcript; no recurring-room consent or automatic attendance is inferred.
+   or use the existing GitHub, Slack, Jira, documentation and context connectors. A member can also paste a customer message, an email or a thread with **Add evidence** on Today; it is saved as an ordinary record in their name ([pasted evidence and session records](context-sources.md#pasted-evidence-and-session-records)). For Vexa, explicitly authorize per-occurrence notice/transcription and workspace disclosure, then enable background sync. After a separate authorized Join, read-only polling imports the exact occurrence transcript; no recurring-room consent or automatic attendance is inferred.
 2. **Find opportunities** runs a bounded read-only search/read investigation through the configured Raven model
    backend before proposing any judgment. It searches the whole eligible corpus, not only recent meeting chunks, preserves exact quotes and reports unread sources/partial meeting coverage. Retrievable factual answers return as progress rather than needless judgment requests. It can return no useful move. Exact quoted record/version citations
    are checked; inaccessible, changed or invented evidence rejects the result.
