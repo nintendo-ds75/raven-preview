@@ -22,7 +22,16 @@ window of days, for the whole workspace and for each repository:
   first contact referred on (`owner_changed` with `referral`);
 - agent wait avoided: for each reused decision, the time a person took
   to answer the decision it reused; when that is unknown, the window's
-  median time to answer, counted as estimated.
+  median time to answer, counted as estimated;
+- the same numbers per decision category (`by_category`), so the scope
+  reviews an objective proposal opens (`objective_scope`) are read apart
+  from the questions an agent asks on a task;
+- work proposals: what became of the moves the objective head proposed,
+  read from `objective_proposals` alone: how many were signed, corrected
+  by a standing rule or dismissed, the precision that gives, how long a
+  signature took, and the reasons people gave when they declined.
+  Nothing in the proposal's own payload, confidence claims included, is
+  read; only what a person did with it.
 
 bridge_wait durations are not persisted, so the wait avoided is the
 human time the reused answer originally took, not a measured wait.
@@ -47,6 +56,11 @@ EXCLUDED_STATUSES = ("suggested", "adopted", "withdrawn")
 REASK_DAYS = 90
 DEFAULT_DAYS = 30
 MAX_DAYS = 3650
+OPEN_PROPOSAL_STATES = ("proposed", "review", "preparing", "review_error", "reconcile")
+# Categories always reported, even when the window holds none of them.
+REPORTED_CATEGORIES = ("", "objective_scope")
+REASON_PREFIX = 60
+TOP_REASONS = 5
 
 
 def window_days(raw) -> int:
@@ -105,7 +119,7 @@ def _rate(part, whole):
 
 
 class _Record:
-    __slots__ = ("id", "repo", "question", "status", "signoff", "owner_id", "source_id", "created_at",
+    __slots__ = ("id", "repo", "category", "question", "status", "signoff", "owner_id", "source_id", "created_at",
                  "in_window", "proposal", "outcome", "asked", "memory", "rule", "duplicate", "handon",
                  "routed", "answer_seconds", "signature_seconds", "first_human_at", "reused_from")
 
@@ -119,7 +133,7 @@ def _records(db, cutoff: str, lookback: str, repo_filter: str):
         args.append(lookback)
     rows = db.execute(
         "SELECT d.id, d.run_id, d.question, d.status, d.signoff, d.owner_id, d.source_id, d.created_at, "
-        "d.repo AS decision_repo, r.repo AS run_repo FROM decisions d JOIN runs r ON r.id=d.run_id "
+        "d.category, d.repo AS decision_repo, r.repo AS run_repo FROM decisions d JOIN runs r ON r.id=d.run_id "
         "WHERE " + " AND ".join(where) + " ORDER BY d.created_at, d.id", args).fetchall()
     marks = ",".join("?" for _ in EVENT_KINDS)
     event_args = list(EVENT_KINDS)
@@ -140,6 +154,7 @@ def _records(db, cutoff: str, lookback: str, repo_filter: str):
         rec.signoff, rec.owner_id, rec.source_id, rec.created_at = (row["signoff"] or "", row["owner_id"],
                                                                      row["source_id"] or "", row["created_at"])
         rec.repo = repo_key(row["decision_repo"] or row["run_repo"] or "")
+        rec.category = row["category"] or ""
         if repo_filter and rec.repo != repo_filter:
             continue
         rec.in_window = not cutoff or rec.created_at >= cutoff
@@ -257,6 +272,44 @@ def _aggregate(records, answered_index, known_waits):
     }
 
 
+def _work_proposals(db, cutoff: str, repo: str) -> dict:
+    """What became of the moves the objective head proposed in the
+    window, from the proposal ledger's own states and timestamps: the
+    person's action on each proposal, never the proposal's own words."""
+    args, where = [], []
+    if cutoff:
+        where.append("created_at >= ?")
+        args.append(cutoff)
+    if repo:
+        where.append("repository = ?")
+        args.append(repo)
+    rows = db.execute("SELECT state, rationale, created_at, updated_at FROM objective_proposals"
+                      + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY created_at, id", args).fetchall()
+    states = [r["state"] for r in rows]
+    signed, corrected, dismissed = states.count("accepted"), states.count("reconcile"), states.count("dismissed")
+    reasons = {}
+    for r in rows:
+        if r["state"] == "dismissed":
+            prefix = " ".join((r["rationale"] or "").split())[:REASON_PREFIX]
+            reasons[prefix] = reasons.get(prefix, 0) + 1
+    top = sorted(reasons.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP_REASONS]
+    from .objective_head import declined_before
+    repos = [repo] if repo else [r["repository"] for r in db.execute(
+        "SELECT DISTINCT repository FROM objective_proposals WHERE state='dismissed' ORDER BY repository")]
+    declined = [{"repository": name, **row} for name in repos for row in declined_before(db, name)]
+    return {
+        "created": len(rows),
+        "open": sum(1 for s in states if s in OPEN_PROPOSAL_STATES),
+        "signed": signed, "corrected": corrected, "dismissed": dismissed,
+        "precision": _rate(signed, signed + corrected + dismissed),
+        # An accepted row's updated_at is the acceptance: the activation is
+        # the last write to the row, so created_at -> updated_at is the wait.
+        "time_to_signature": _percentiles([_seconds(r["created_at"], r["updated_at"]) for r in rows if r["state"] == "accepted"]),
+        "dismissed_reasons": [{"reason": reason, "count": count} for reason, count in top],
+        "declined_recent": declined,
+    }
+
+
 def summary(store, repo: str = "", days=DEFAULT_DAYS) -> dict:
     """What Raven saved in the last `days` days (0 for all time), for the
     workspace and, when no repository is named, for each repository."""
@@ -288,4 +341,8 @@ def summary(store, repo: str = "", days=DEFAULT_DAYS) -> dict:
             groups.setdefault(r.repo, []).append(r)
         out["by_repo"] = [{"repo": name, **_aggregate(rows, answered_index, known)}
                           for name, rows in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))]
+    categories = sorted(set(REPORTED_CATEGORIES) | {r.category for r in windowed})
+    out["by_category"] = [{"category": name, **_aggregate([r for r in windowed if r.category == name], answered_index, known)}
+                          for name in categories]
+    out["work_proposals"] = _work_proposals(db, cutoff, repo)
     return out

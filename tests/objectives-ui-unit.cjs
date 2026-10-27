@@ -88,5 +88,10 @@ function harness(hash='#today') {
   h=harness();h.c.fixture.proposals=[{id:'p2',title:'Reviewed move',status:'review',revision:3,task_id:'gov-task',reviewer:'Policy Owner',reviewer_reason:'Assigned to Policy Owner as the objective accepter: no authority map covers this scope'}];h.run('renderObjectives()');
   assert.match(h.app.innerHTML,/Waiting on Policy Owner \(Assigned to Policy Owner as the objective accepter: no authority map covers this scope\)/);
   h.c.fixture.proposals[0].reviewer_reason='';h.run('renderObjectives()');assert.match(h.app.innerHTML,/Waiting on Policy Owner<\/p>/);
-  console.log('Today UI: 36 contract scenarios passed (DOM/API doubles).');
+  // The research aside carries the ledger's precision line and the declined reasons from /api/metrics, read once with Today; a failed read hides only that line.
+  h=harness();h.c.api=async(url,data)=>{h.requests.push({url,data});return url==='/api/metrics'?{work_proposals:{signed:3,dismissed:1,precision:0.75,declined_recent:[{repository:'sample/repo',title:'Rewrite the importer',rationale:'The importer is being replaced next quarter',updated_at:'2026-10-20T10:00:00Z'}]}}:h.c.fixture;};
+  await h.run('loadObjectives()');assert.deepEqual(h.requests.map(r=>r.url),['/api/objectives','/api/metrics']);
+  assert.match(h.app.innerHTML,/Proposals: 3 signed · 1 declined · precision 75%/);assert.match(h.app.innerHTML,/Declined recently/);assert.match(h.app.innerHTML,/Rewrite the importer<\/strong> · The importer is being replaced next quarter/);
+  h=harness();h.c.api=async(url)=>{if(url==='/api/metrics')throw Error('metrics unavailable');return h.c.fixture;};await h.run('loadObjectives()');assert.match(h.app.innerHTML,/Ship safely/);assert.doesNotMatch(h.app.innerHTML,/Proposals: |metrics unavailable/);
+  console.log('Today UI: 38 contract scenarios passed (DOM/API doubles).');
 })().catch(error=>{console.error(error);process.exitCode=1;});

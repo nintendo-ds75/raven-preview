@@ -64,11 +64,21 @@ function objectiveCard(item, proposal = false) {
     ${objectiveEvidence(item.evidence || item.sources)}
     <div class="objective-actions">${proposal && OPEN_PROPOSAL.includes(status) && objectiveCanWrite() ? objectivePanel === 'dismiss:' + id ? `<form id="objective-dismiss-form" class="objective-dismiss" data-id="${esc(id)}">${objectiveField('rationale', 'Why not now? The reason shapes the next investigation.', {rows:2, max:200})}<button type="submit" class="button small" ${objectivePending.has(id) ? 'disabled aria-busy="true"' : ''}>Dismiss with this reason</button>${objectiveButton('close-panel', '', 'Keep it')}</form>` : (status === 'reconcile' || item.evidence_stale ? '' : objectiveButton('review-accept', id, status === 'review_error' ? 'Retry judgment review' : 'Review & take point')) + objectiveButton('dismiss', id, 'Not now') : proposal && status === 'review' ? `<a class="objective-text-link" href="#runs/${encodeURIComponent(item.task_id || item.governance_run_id || '')}">Open judgment review ↗</a>` : !proposal ? `<a class="objective-text-link" href="#today/${encodeURIComponent(id)}">Open objective <span aria-hidden="true">↗</span></a>` : ''}</div></article>`;
 }
+// One line from GET /api/metrics: what became of the proposals in the window, read from the ledger, never from a proposal's own claims.
+function objectiveProposalPrecision() {
+  const work = objectiveData?.metrics?.work_proposals;
+  if (!work || typeof work !== 'object') return '';
+  const pct = work.precision == null ? 'not yet measurable' : Math.round(work.precision * 100) + '%';
+  return `<p class="objective-precision">Proposals: ${esc(work.signed ?? 0)} signed · ${esc(work.dismissed ?? 0)} declined · precision ${esc(pct)}</p>`;
+}
 function objectiveResearchLimits() {
   const limits = objectiveData.research_limits || [];
   const statuses = objectiveData.research_status || [];
   const unavailable = objectiveData.background_inference?.available === false ? objectiveData.background_inference.notice : '';
-  return limits.length || statuses.length || unavailable ? `<section class="objective-side-section"><h2>Background investigation</h2>${unavailable ? `<p role="status">${esc(unavailable)}</p>` : ''}${statuses.map(item=>`<p role="status"><strong>${esc(item.repository)}</strong>: ${esc(item.state)} · ${esc(item.attempts)} attempts. ${item.state === 'blocked' ? 'Automatic retries stopped. Repair setup, then use Find opportunities → explicit retry; or re-enable the watch.' : item.state === 'failed' ? 'Investigation was inconclusive; bounded retry may follow.' : 'Investigation in progress.'}</p>`).join('')}${limits.map(limit=>`<p><strong>${esc(limit.repository)}</strong> · ${esc(limit.used)}/${esc(limit.limit)} attempts in the rolling hour.</p>${limit.status === 'throttled' ? `<p role="status">Waiting for the research budget. Next eligible check: ${esc(objectiveTime(limit.next_retry_at))}. Evidence remains queued; this is not a completed investigation.</p>` : ''}`).join('')}<p class="objective-muted">Automatic reads are debounced and bounded. Manual investigation is a separate explicit request.</p></section>` : '';
+  const precision = objectiveProposalPrecision(), declined = objectiveData.metrics?.work_proposals?.declined_recent;
+  // The reasons the next investigation of each repository reads, so the lesson store can be inspected.
+  const declinedList = Array.isArray(declined) && declined.length ? `<h3>Declined recently</h3><ul class="objective-declined">${declined.map(item => `<li><strong>${esc(item.title || 'Proposal')}</strong> · ${esc(item.rationale || '')}<small>${esc(item.repository || '')} · ${esc(objectiveTime(item.updated_at))}</small></li>`).join('')}</ul><p class="objective-muted">The next investigation of each repository reads its last five reasons before proposing.</p>` : '';
+  return limits.length || statuses.length || unavailable || precision || declinedList ? `<section class="objective-side-section"><h2>Background investigation</h2>${unavailable ? `<p role="status">${esc(unavailable)}</p>` : ''}${statuses.map(item=>`<p role="status"><strong>${esc(item.repository)}</strong>: ${esc(item.state)} · ${esc(item.attempts)} attempts. ${item.state === 'blocked' ? 'Automatic retries stopped. Repair setup, then use Find opportunities → explicit retry; or re-enable the watch.' : item.state === 'failed' ? 'Investigation was inconclusive; bounded retry may follow.' : 'Investigation in progress.'}</p>`).join('')}${limits.map(limit=>`<p><strong>${esc(limit.repository)}</strong> · ${esc(limit.used)}/${esc(limit.limit)} attempts in the rolling hour.</p>${limit.status === 'throttled' ? `<p role="status">Waiting for the research budget. Next eligible check: ${esc(objectiveTime(limit.next_retry_at))}. Evidence remains queued; this is not a completed investigation.</p>` : ''}`).join('')}${precision}${declinedList}<p class="objective-muted">Automatic reads are debounced and bounded. Manual investigation is a separate explicit request.</p></section>` : '';
 }
 function objectiveResearch(packet) {
   if (!packet) return '';
@@ -191,6 +201,8 @@ async function loadObjectives() {
     if (id && !proposal) result.detail = await api('/api/objectives/' + encodeURIComponent(id));
     if (view !== 'today' || route !== objectiveRoute() || request !== objectiveRequest) return;
     objectiveData = result; objectiveError = ''; renderObjectives();
+    // The ledger's proposal numbers, read once with Today itself; a missing metrics read never hides Today.
+    if (!id) { try { result.metrics = await api('/api/metrics'); } catch (_) { result.metrics = null; } if (objectiveData === result) renderObjectives(); }
   } catch (error) {
     if (view !== 'today' || route !== objectiveRoute() || request !== objectiveRequest) return;
     if ([401,403].includes(error.status)) objectiveData = null;
