@@ -2303,6 +2303,8 @@ def finish_task(store, data, sleep=None, stop=None) -> dict:
     if status == "completed" and diff.strip():
         from .proof import create as create_proof
         proof = create_proof(store, task_id, diff, checks=checks)
+    if status == "completed":
+        session_record(store, task_id, diff, proof)
     # Starting or retrying the reader changes the next step. A person can
     # also correct an answer during the wait. Refresh only the guidance:
     # the submitted reading and saved proof keep their own snapshots, and
@@ -2337,6 +2339,95 @@ def finish_task(store, data, sleep=None, stop=None) -> dict:
                        + (f" ({len(ruled)} by a reusable rule made earlier, not signed on this task)" if ruled else "")
                        + f". {read}: {verified}. "
                        "Authorized is not verified; code review is still the gate on shipping.")}
+
+
+SESSION_RECORD_LIMIT = 20000
+
+
+def _session_outcome(n: dict, corrected: set) -> str:
+    """What became of one decision, in a few words and without its answer."""
+    if n.get("status") == "duplicate" and n.get("duplicate_of"):
+        return f"reused from {n['duplicate_of']}"
+    if n.get("source") == "memory" and n.get("source_id"):
+        return f"reused from {n['source_id']}"
+    if n.get("signoff") == "rule":
+        return "by rule"
+    if n.get("signoff") == "signed":
+        how = "corrected" if n["node_id"] in corrected else "signed unchanged"
+        return f"{how} by {n.get('signed_by') or n.get('answered_by') or 'a person'}"
+    if n.get("status") == "suggested":
+        return "suggested"
+    if n.get("status") in ("assumed", "proposed"):
+        return "assumed"
+    if n.get("answered_by"):
+        return f"answered by {n['answered_by']}"
+    return n.get("status") or "open"
+
+
+def session_summary(store, task_id: str, diff: str = "", proof=None) -> str:
+    """The compact text of a session record: the kickoff verdict, one line
+    per decision (question, owner, outcome, standing), the paths the
+    submitted diff names, the proof id and diff hash, the final status.
+    Built from the task ledger only: never the diff body, a host session's
+    prompt, an interview transcript, a Slack conversation or a notification
+    payload. Clipped at SESSION_RECORD_LIMIT with a trailing [clipped] line."""
+    from .llm import diff_paths
+    run = _task(store, task_id)
+    ledger = trace(store, task_id)
+    corrected = {e["decision_id"] for e in ledger["events"]
+                 if e["kind"] == "signoff" and isinstance(e["detail"], dict) and e["detail"].get("corrected")}
+    lines = [f"Task {task_id}: {run['title']}", f"Kickoff verdict: {run['verdict'] or 'none'}", "Decisions:"]
+    nodes = _flatten(get_tree(store, task_id)["nodes"])
+    if not nodes:
+        lines.append("- none")
+    for n in nodes:
+        standing = "authorized" if n.get("authorized") else "blocking" if n.get("blocking") else n.get("status") or "open"
+        lines.append(f"- {n['node_id']}: {_clip(n.get('question') or '', 300)} | owner: {n.get('owner') or 'unassigned'} "
+                     f"| outcome: {_session_outcome(n, corrected)} | standing: {standing}")
+    lines.append("Files touched:")
+    paths = sorted(diff_paths(diff or ""))
+    lines.extend(f"- {path}" for path in paths) if paths else lines.append("- none")
+    if proof:
+        lines.append(f"Proof {proof['id']}, diff sha256 {proof['payload']['change']['sha256']}")
+    else:
+        lines.append("Proof: none (no diff submitted)")
+    lines.append(f"Final status: {ledger['status']}")
+    body = "\n".join(lines)
+    if len(body) > SESSION_RECORD_LIMIT:
+        tail = "\n[clipped]"
+        body = body[:SESSION_RECORD_LIMIT - len(tail)].rstrip() + tail
+    return body
+
+
+def session_record(store, task_id: str, diff: str = "", proof=None) -> dict | None:
+    """After a task finishes: one `session` record naming its decisions and
+    signers, when the admin setting is on and no resolvable person on the
+    task (requester, agent) opted out. The same task writes the same record
+    (kind and ref identify it). A failure to write never fails the finish;
+    it is logged as session_record_failed."""
+    graph = store.graph
+    try:
+        if graph.get_setting("session_records") != "1":
+            return None
+        run = _task(store, task_id)
+        for who in (run["requester"], run["agent"]):
+            person = graph.find_person(who or "") if who else None
+            if person and store.recording_optout(person["id"]):
+                graph.append_event("session_record_skipped", {"task_id": task_id, "person_id": person["id"]})
+                return None
+        body = session_summary(store, task_id, diff, proof)
+        return store.add_record({"repo": run["repo"], "kind": "session", "ref": "task:" + task_id,
+                                 "provider": "generic", "namespace": "raven:session", "title": run["title"],
+                                 "author": run["agent"], "body": body, "resolved": True,
+                                 "access_scope": json.dumps({"basis": "session", "transport": "raven",
+                                                             "workspace_shared": True}, sort_keys=True)})
+    except Exception as error:  # noqa: BLE001 - the finish already happened; the record is best effort
+        try:
+            graph.append_event("session_record_failed", {"task_id": task_id, "error": _clip(str(error), 300)})
+        except Exception:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).exception("session record for %s could not be written or logged", task_id)
+        return None
 
 
 def _conformance(store, task_id: str, signed: list[dict], diff: str, cfg=None) -> list[dict]:

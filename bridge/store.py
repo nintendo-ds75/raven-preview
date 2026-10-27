@@ -17,6 +17,7 @@ class Invalid(ValueError):
 
 
 BRIEF_MODES = ("off", "static")
+OBJECTIVE_SCOPE_FALLBACKS = ("accepter", "coordinator", "none")
 
 
 def brief_mode(graph):
@@ -340,6 +341,7 @@ class Store:
         p = dict(p)
         p["authority"] = [a for a in self.authority() if a["person_id"] == person_id]
         p["teams"] = [t["name"] for t in self.graph.teams() if person_id in t["members"]]
+        p["recording_optout"] = self.recording_optout(person_id)
         return p
 
     def people(self):
@@ -351,6 +353,7 @@ class Store:
             d = dict(p)
             d["authority"] = [a for a in rows if a["person_id"] == p["id"]]
             d["teams"] = [t["name"] for t in teams if p["id"] in t["members"]]
+            d["recording_optout"] = self.recording_optout(p["id"])
             out.append(d)
         return out
 
@@ -446,6 +449,8 @@ class Store:
                 "slack_capture_repo": graph.get_setting("slack_capture_repo"),
                 "auto_rules": graph.get_setting("auto_rules") == "1",
                 "notify_requester": graph.get_setting("notify_requester") == "1",
+                "session_records": graph.get_setting("session_records") == "1",
+                "objective_scope_fallback": graph.get_setting("objective_scope_fallback") or "accepter",
                 "brief_mode": brief_mode(graph),
                 "coordinators": {k[len("coordinator:"):]: graph.get_person(v)
                                  for k, v in graph.db.execute("SELECT key, value FROM settings WHERE key LIKE 'coordinator:%'")}}
@@ -481,12 +486,39 @@ class Store:
                     raise Invalid(f"brief_mode must be one of {', '.join(BRIEF_MODES)}")
                 graph.set_setting("brief_mode", mode)
                 graph.append_event("setting_changed", {"key": "brief_mode", "value": mode})
-            for key in ("auto_rules", "notify_requester"):
+            for key in ("auto_rules", "notify_requester", "session_records"):
                 if key in data:
                     on = data[key] in (True, 1, "1", "true", "on")
                     graph.set_setting(key, "1" if on else "0")
                     graph.append_event("setting_changed", {"key": key, "value": "1" if on else "0"})
+            if "objective_scope_fallback" in data:
+                fallback = str(data["objective_scope_fallback"] or "")
+                if fallback not in OBJECTIVE_SCOPE_FALLBACKS:
+                    raise Invalid(f"objective_scope_fallback must be one of {', '.join(OBJECTIVE_SCOPE_FALLBACKS)}")
+                graph.set_setting("objective_scope_fallback", fallback)
+                graph.append_event("setting_changed", {"key": "objective_scope_fallback", "value": fallback})
         return self.settings()
+
+    def recording_optout(self, person_id):
+        """Whether this person asked that no session record name their
+        finished tasks; off by default."""
+        return self.graph.get_setting(f"recording_optout:{person_id}") == "1"
+
+    def set_recording_optout(self, person_id, data, actor=None):
+        """A person's own opt-out from session records, or an admin's on
+        their behalf; an agent credential and other members cannot."""
+        if self.graph.get_person(person_id) is None:
+            raise Invalid("Person not found")
+        if actor is not None and not (actor.id == person_id or (actor.role == "admin" and actor.kind != "agent")):
+            raise Invalid("Only the person or an admin changes a recording opt-out")
+        optout = data.get("optout") if isinstance(data, dict) else data
+        if type(optout) is not bool:
+            raise Invalid("optout must be an explicit boolean")
+        with self.graph.transaction():
+            self.graph.set_setting(f"recording_optout:{person_id}", "1" if optout else "0")
+            self.graph.append_event("recording_optout_changed", {"person_id": person_id, "optout": optout,
+                                                                 "by": getattr(actor, "name", "") or "local operator"})
+        return self.person(person_id)
 
     def add_run(self, data):
         values = (uuid.uuid4().hex[:12], field(data, "title", limit=300),
