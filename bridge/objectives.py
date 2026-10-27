@@ -324,6 +324,9 @@ def get(store, ident):
 
 CLOSED = ('achieved', 'stopped', 'cancelled')
 OPEN_LOOP_LIMIT = 10
+# What the objective worker writes as blocked_reason when a scheduled
+# checkpoint comes due (it clears next_check_at at the same time).
+CHECKPOINT_DUE_REASON = 'Scheduled checkpoint is due; review the current outcome evidence'
 
 
 def without_model(store, limit=OPEN_LOOP_LIMIT):
@@ -341,9 +344,12 @@ def without_model(store, limit=OPEN_LOOP_LIMIT):
     needs_review = [dict(r) for r in db.execute(
         "SELECT d.id,d.question,d.run_id,d.review_reason,d.updated_at,r.title AS task_title FROM decisions d JOIN runs r ON r.id=d.run_id "
         "WHERE d.needs_review=1 AND d.draft=0 ORDER BY d.updated_at DESC LIMIT ?", (limit,))]
+    # A checkpoint is due from its time until someone acts on it: the worker
+    # marks it (blocked_reason) and clears next_check_at, so both forms count.
+    due_sql = "lifecycle='active' AND ((next_check_at<>'' AND next_check_at<=?) OR blocked_reason=?)"
     checkpoints = [dict(r) for r in db.execute(
-        "SELECT id,title,repository,next_check_at,waiting_on FROM objectives WHERE lifecycle='active' AND next_check_at<>'' AND next_check_at<=? "
-        "ORDER BY next_check_at LIMIT ?", (now(), limit))]
+        "SELECT id,title,repository,next_check_at,waiting_on FROM objectives WHERE " + due_sql + " "
+        "ORDER BY next_check_at,updated_at LIMIT ?", (now(), CHECKPOINT_DUE_REASON, limit))]
     # A record whose content changed after the repository's last completed
     # investigation (the head version's observed_at; a re-sync of unchanged
     # content only refreshes last_observed_at), or every record where nothing
@@ -357,7 +363,7 @@ def without_model(store, limit=OPEN_LOOP_LIMIT):
     return {'followups': followups, 'needs_review': needs_review, 'checkpoints_due': checkpoints, 'new_records': new_records,
             'totals': {'followups': count("SELECT count(*) AS c FROM decisions WHERE status='suggested' AND draft=0"),
                        'needs_review': count("SELECT count(*) AS c FROM decisions WHERE needs_review=1 AND draft=0"),
-                       'checkpoints_due': count("SELECT count(*) AS c FROM objectives WHERE lifecycle='active' AND next_check_at<>'' AND next_check_at<=?", (now(),)),
+                       'checkpoints_due': count("SELECT count(*) AS c FROM objectives WHERE " + due_sql, (now(), CHECKPOINT_DUE_REASON)),
                        'new_records': count('SELECT count(*) AS c FROM (SELECT s.repo ' + new_sql + ' GROUP BY s.repo) AS repos')}}
 
 
@@ -457,6 +463,8 @@ def _plan(store, db, value, action, data, workbench, key):
     elif action == 'checkpoint':
         plan['summary'] = field(data, 'summary', limit=4000)
         plan['changes'].update(next_check_at=_timestamp(data.get('next_check_at', '')), waiting_on=str(data.get('waiting_on') or '')[:1000])
+        if value['blocked_reason'] == CHECKPOINT_DUE_REASON:
+            plan['changes']['blocked_reason'] = ''  # the due checkpoint was just recorded
     elif action == 'achieve':
         plan['summary'] = field(data, 'summary', limit=4000)
         plan['control'] = _worker_controls(store, ident, 'pause', workbench)

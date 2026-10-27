@@ -234,6 +234,16 @@ class ObjectiveTests(OfflineCase):
         self.assertEqual(current['next_check_at'], '')
         worker.tick()
         self.assertEqual(len([e for e in obj.get(self.store, value['id'])['events'] if e['kind'] == 'checkpoint_due']), 1)
+        # The open loops keep listing it under Checkpoints due until someone
+        # records the next checkpoint, which also lifts the block.
+        loops = obj.overview(self.store)['without_model']
+        self.assertEqual([(c['id'], c['next_check_at']) for c in loops['checkpoints_due']], [(value['id'], '')])
+        self.assertEqual(loops['totals']['checkpoints_due'], 1)
+        current = self.action(current, 'checkpoint', summary='Report arrived', next_check_at='2999-01-01T00:00:00Z')
+        self.assertEqual((current['status'], current['blocked_reason']), ('waiting', ''))
+        self.assertEqual(obj.overview(self.store)['without_model']['checkpoints_due'], [])
+        worker.tick()
+        self.assertEqual(len([e for e in obj.get(self.store, value['id'])['events'] if e['kind'] == 'checkpoint_due']), 1)
 
     def test_revocation_withholds_copied_objective_and_proposal(self):
         created = self.create()

@@ -152,7 +152,8 @@ signed answer is reused and the inbox shows where it came from; a person
 signs again only when a source changed. Someone takes point on an outcome by
 hand (**Take point on an outcome**, with preparation unchecked) and saves a
 checkpoint with a next check date; when it comes due, the objective moves to
-**Needs your decision** and the open loops list it under *Checkpoints due*.
+**Needs your decision** and the open loops list it under *Checkpoints due*,
+both until someone records the next checkpoint.
 Nothing has been proposed, briefed or started by a model: the `Find
 opportunities` button is off, with the same sentence as its reason.
 

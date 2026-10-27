@@ -389,7 +389,7 @@ class Worker:
                     with self.store.graph.transaction() as db:
                         current = obj.row(self.store, value['id'])
                         if current['next_check_at'] and current['next_check_at'] <= now():
-                            db.execute("UPDATE objectives SET next_check_at='',blocked_reason=?,revision=revision+1,updated_at=? WHERE id=?", ('Scheduled checkpoint is due; review the current outcome evidence', now(), value['id']))
+                            db.execute("UPDATE objectives SET next_check_at='',blocked_reason=?,revision=revision+1,updated_at=? WHERE id=?", (obj.CHECKPOINT_DUE_REASON, now(), value['id']))
                             obj.event(self.store, value['id'], 'checkpoint_due', 'Scheduled checkpoint became due.')
                 if self.cfg.semantic_retrieval:
                     if checkpoint_due:
