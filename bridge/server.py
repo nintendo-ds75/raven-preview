@@ -85,9 +85,12 @@ def model_view(cfg=None):
 
 def today_counts(store):
     """What Today wants from the person, as two counts the sidebar badge
-    adds up: open proposals and active objectives that are blocked."""
+    adds up: open proposals and active objectives that are blocked. An open
+    proposal is what Today's Needs your decision lists: one that waits on a
+    person, not a scope out for signature (that is In progress, and the inbox
+    counts it); a child proposal is folded into its objective's card."""
     db = store.graph.db
-    proposals = db.execute("SELECT count(*) AS c FROM objective_proposals WHERE state IN ('proposed','review','review_error','reconcile')").fetchone()['c']
+    proposals = db.execute("SELECT count(*) AS c FROM objective_proposals WHERE state IN ('proposed','review_error','reconcile') AND objective_id=''").fetchone()['c']
     objectives = db.execute("SELECT count(*) AS c FROM objectives WHERE lifecycle='active' AND blocked_reason<>''").fetchone()['c']
     return {'proposals_open': int(proposals or 0), 'objectives_needing_you': int(objectives or 0)}
 

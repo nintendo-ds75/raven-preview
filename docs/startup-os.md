@@ -51,8 +51,11 @@ from a transcript. For what Raven is as a whole, and what it is not, read
    signature, named `Awaiting signed review · <owner>`), **Ready to review**
    (waiting objectives whose worker finished in the last seven days), and a
    folded **Closed** list. The sidebar's Today count adds up the open
-   proposals and blocked objectives `GET /api/state` reports (`today`), next
-   to `model`, which says what the configured backend allows. Nothing on
+   proposals and blocked objectives `GET /api/state` reports (`today`): the
+   same proposals **Needs your decision** lists, so a scope out for signature
+   is counted by the inbox, not here. Next to it, `model` says what the
+   configured backend allows (`proposals`, automatic suggestions;
+   `investigation`, an explicit **Find opportunities** click). Nothing on
    Today posts to Slack; the inbox and its deliveries stay the only channel.
 
 An explicit manual **Take point on an outcome** saves a person's outcome and

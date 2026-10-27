@@ -132,9 +132,20 @@ class StateBudgetTests(OfflineCase):
         today = json.loads(self.get('/api/state')[2])['today']
         self.assertEqual(today, {'proposals_open': before['proposals_open'] + 1,
                                  'objectives_needing_you': before['objectives_needing_you'] + 1})
+        # The badge counts what Needs your decision lists: a scope out for
+        # signature is In progress (and the inbox counts it), and a child
+        # proposal is folded into its objective's card.
+        with self.store.graph.transaction() as db:
+            db.execute("UPDATE objective_proposals SET state='review' WHERE id=?", (proposal['id'],))
+        self.assertEqual(json.loads(self.get('/api/state')[2])['today']['proposals_open'], before['proposals_open'])
+        with self.store.graph.transaction() as db:
+            db.execute("UPDATE objective_proposals SET state='proposed' WHERE id=?", (proposal['id'],))
+        obj.propose(self.store, payload, [pin], objective_id=created['id'])
+        self.assertEqual(json.loads(self.get('/api/state')[2])['today']['proposals_open'], before['proposals_open'] + 1)
         obj.proposal_action(self.store, proposal['id'], 'dismiss', {'request_key': 'drop', 'expected_revision': proposal['revision']}, actor)
         obj.block(self.store, created['id'], '')
-        self.assertEqual(json.loads(self.get('/api/state')[2])['today'], before)
+        self.assertEqual(json.loads(self.get('/api/state')[2])['today']['objectives_needing_you'], before['objectives_needing_you'])
+        self.assertEqual(json.loads(self.get('/api/state')[2])['today']['proposals_open'], before['proposals_open'])
 
     def test_claude_cli_allows_a_manual_investigation_but_no_automatic_suggestions(self):
         """The internal claude-cli backend serves an explicit Find opportunities
