@@ -90,8 +90,42 @@ On a repository frozen before a real change, with the real question set, Raven r
 - **Target:** ≥ 80 % contacts right, no future leak, one scored live run per release.
 - **Checks:** the evaluator's replay tools (`evals/audit`, `evals/chronological`).
 
+### 13. Evidence intake and recording
+A member can add evidence from the UI or Slack and the next investigation can read it; every record names who vouched for it; session records exist only when an admin turned them on and never carry what a person did not publish.
+- **Measure:** seconds from paste to a cited record; records over HTTP with a caller-supplied scope (must be 0); refusals (oversize, viewer, kind `session` over HTTP, opted-out person); withdrawal effects.
+- **Target:** pasted record cited by a scripted scan within one worker tick; 0 caller-supplied scopes; 20,001 chars refused with the meeting-import hint; `session_records` off on a fresh workspace; every withdrawal effect tested on SQLite and PostgreSQL.
+- **Checks:** `tests/test_records_attestation.py`, `tests/test_session_records.py`, `tests/test_withdraw_record.py`, `tests/evidence-ui-unit.cjs`, `tests/test_slack_capture.py`, `tests/test_background_cost.py`.
+
+### 14. Proposal quality
+One bounded move with verbatim citations and four cases; counted good only by what people did with it.
+- **Measure:** citation validity; case completeness; precision = signed / (signed + corrected + dismissed) from `GET /api/metrics` `work_proposals`; bench precision/recall on the labelled corpus.
+- **Target:** 100 % of stored proposals have four cases and only verbatim quotes; invented quotes refused; bench precision ≥ 0.7 and recall ≥ 0.6; live precision reported, not targeted, until 20 real proposals exist.
+- **Checks:** `tests/test_proposal_bench.py`, `tests/test_metrics.py`, `tests/test_objectives.py`.
+
+### 15. Attention budget
+Nothing reaches a person before a person asked for it; the one message a proposal produces reads like every other Raven decision; a default install costs nothing in the background.
+- **Measure:** messages per proposal before and after a human click; words and JSON before the options line; open proposals per repository; subprocess spawns per poll on a default install; scans per corpus change.
+- **Target:** 0 messages before "Review & take point"; exactly one deduped signoff message per proposal per person; ≤ 150 words and no JSON before the options; ≤ 1 open proposal per repository; 0 subprocess spawns across 20 polls; 1 scan per objective per corpus change.
+- **Checks:** `tests/test_delivery.py`, `tests/test_background_cost.py`, `tests/test_objectives.py`, `tests/objective-decision-ui-unit.cjs`.
+
+### 16. Learning
+Dismissals are honoured, carry a reason and shape the next investigation; signed decisions resurface as evidence, never as approval.
+- **Measure:** identical dismissed fingerprint re-shown; reasonless dismissals accepted; last five rationales present in the next model input and on Today; replay of signed decisions through the ladder.
+- **Target:** 0 re-pitches with an unchanged fingerprint; 0 reasonless dismissals; rationales reach the model input and the aside in every scripted run; ≥ 5 of 6 replayed decisions resurface with signoff still required.
+- **Checks:** `tests/test_objective_budget.py`, `tests/test_objectives.py`, `tests/test_decision_replay.py`, `tests/objectives-ui-unit.cjs`.
+
+### 17. Positioning clarity
+One sentence a VP of Engineering repeats, identical wherever it appears, with capability boundaries that match the code.
+- **Measure:** README lead equals the positioning sentence; word count; every boundary link in `docs/positioning.md` resolves; every surface under `BRIDGE_MODEL_API=none` carries the fixed no-model notice; documented disagreements.
+- **Target:** identical and under 35 words; 100 % of links resolve; 100 % of no-model surfaces carry the notice; zero disagreements.
+- **Checks:** `tests/test_customer_text.py`, `tests/test_docs_links.py`, `tests/test_docs_reachable.py`, `tests/test_setup.py`, `tests/test_state_budget.py`, `tests/objectives-ui-unit.cjs`.
+
 ## Scorecard
 
 Kept outside the repository with each iteration's evidence; the current scores
 are summarised in the improvement log. A dimension's score changes only in a
 commit or report that names the evidence.
+
+Bench numbers on the synthetic corpus (`tests/fixtures/proposals`) prove
+machinery; live precision is reported, not targeted, until 20 real
+proposals exist.

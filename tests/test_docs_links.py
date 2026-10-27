@@ -69,5 +69,24 @@ class DocsAgreeTests(unittest.TestCase):
         self.assertEqual(broken, {}, f"links to files that are not in the repository: {broken}")
 
 
+class RubricChecksTests(unittest.TestCase):
+    """Dimensions 13-17 of the quality rubric name the tests that check
+    them; every path in their Checks lines is a file in the repository."""
+
+    def test_rubric_dimensions_13_to_17_name_tests_that_exist(self):
+        _tracked_text()
+        text = (ROOT / "docs" / "quality-rubric.md").read_text()
+        sections = re.split(r"^### (\d+)\. ", text, flags=re.M)
+        named = {}
+        for number, body in zip(sections[1::2], sections[2::2]):
+            if 13 <= int(number) <= 17:
+                checks = re.search(r"\*\*Checks:\*\*(.*)", body)
+                self.assertIsNotNone(checks, f"dimension {number} has no Checks line")
+                named[int(number)] = re.findall(r"`(tests/[^`]+)`", checks.group(1))
+        self.assertEqual(sorted(named), [13, 14, 15, 16, 17])
+        missing = {n: [p for p in paths if not (ROOT / p).is_file()] for n, paths in named.items()}
+        self.assertEqual({n: p for n, p in missing.items() if p}, {}, "rubric Checks name files that are not in the repository")
+
+
 if __name__ == "__main__":
     unittest.main()
