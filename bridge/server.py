@@ -75,8 +75,12 @@ def model_view(cfg=None):
         notice = 'Manual investigation only; automatic suggestions need an API key.'
     else:
         notice = 'Suggestions and briefs are off: no model key. Routing, records, reminders and signed decisions still run.'
+    # `proposals`: automatic suggestions (watches, background investigation).
+    # `investigation`: an explicit Find opportunities click, which the internal
+    # claude-cli backend also serves.
     return {'backend': backend, 'model': status['model'], 'semantic': bool(status['semantic_enabled']),
-            'proposals': backend in ('anthropic', 'openai'), 'notice': notice}
+            'proposals': backend in ('anthropic', 'openai'),
+            'investigation': backend in ('anthropic', 'openai', 'claude-cli'), 'notice': notice}
 
 
 def today_counts(store):

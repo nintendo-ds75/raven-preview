@@ -15,7 +15,8 @@ const objectiveCanWrite = () => !!state.auth && (!state.auth.enabled || ['admin'
 // What the sidebar badge shows: the counts /api/state carries, added up.
 const objectiveTodayCount = today => (today?.proposals_open || 0) + (today?.objectives_needing_you || 0);
 const OPEN_PROPOSAL = ['proposed', 'review_error', 'reconcile'];
-const objectiveModelOff = () => state.model?.proposals === false;
+const objectiveModelOff = () => state.model?.proposals === false;  // no automatic suggestions
+const objectiveScanOff = () => state.model?.investigation === false;  // no Find opportunities click either
 const objectiveCanAdmin = () => !!state.auth && (!state.auth.enabled || state.me?.role === 'admin');
 const OBJECTIVE_STATUS = {proposed:'Suggested', accepted:'Accepted', active:'In progress', running:'Working', queued:'Queued',
   waiting:'Waiting', blocked:'Needs attention', paused:'Paused', cancelled:'Cancelled', completed:'Completed', achieved:'Achieved · human attested', stopped:'Stopped', needs_you:'Needs you', moving:'In progress', review:'Awaiting signed review', needs_judgment:'Needs judgment', ready:'Ready to start',
@@ -126,7 +127,7 @@ function objectiveOpenLoops() {
   return `<section class="objective-section" id="objective-open-loops"><div class="objective-section-head"><h2>Open loops (no model key)</h2></div><p class="objective-notice" role="status">${esc(state.model.notice)}</p>
     ${list('followups', 'Follow-ups nobody adopted', item => `<a href="#runs/${encodeURIComponent(item.run_id || '')}">${esc(item.task_title || 'Task')}</a> · ${esc(item.question)}`)}
     ${list('needs_review', 'Answers that need a second look', item => `<a href="#runs/${encodeURIComponent(item.run_id || '')}">${esc(item.task_title || 'Task')}</a> · ${esc(item.question)}${item.review_reason ? ` · ${esc(item.review_reason)}` : ''}`)}
-    ${list('checkpoints_due', 'Checkpoints due', item => `<a href="#today/${encodeURIComponent(item.id)}">${esc(item.title)}</a> · due ${esc(objectiveTime(item.next_check_at))}${item.waiting_on ? ` · waiting on ${esc(item.waiting_on)}` : ''}`)}
+    ${list('checkpoints_due', 'Checkpoints due', item => `<a href="#today/${encodeURIComponent(item.id)}">${esc(item.title)}</a>${item.next_check_at ? ` · due ${esc(objectiveTime(item.next_check_at))}` : ' · due now'}${item.waiting_on ? ` · waiting on ${esc(item.waiting_on)}` : ''}`)}
     ${list('new_records', 'New evidence since the last investigation', item => `<strong>${esc(item.repository)}</strong> · ${esc(item.count)} record${item.count === 1 ? '' : 's'}`)}
   </section>`;
 }
@@ -153,7 +154,7 @@ function renderObjectives() {
     const proposal = item ? null : objectiveProposals().find(item => item.id === id);
     content = item ? objectiveDetail(item) : proposal ? objectiveProposalPage(proposal) : '<section class="objective-empty"><h1>Objective unavailable</h1><p>It may have been removed or your access may have changed.</p><a href="#today">Back to Today</a></section>';
   } else {
-    const groups = objectiveGroups(objectiveData), off = objectiveModelOff();
+    const groups = objectiveGroups(objectiveData), off = objectiveScanOff();
     content = `<header class="objective-heading"><div><p class="objective-label">YOUR WORK, WITH CONTINUITY</p><h1>Today</h1><p>What waits on you, what is moving, and what is ready to look at.</p></div>${objectiveCanWrite() ? `<div class="objective-actions">${objectiveButton('new','','Take point on an outcome')}${objectiveButton('scan-panel','','Find opportunities', off, off ? `title="${esc(state.model.notice)}"` : '')}</div>` : ''}</header><div class="objective-layout"><section>
     ${objectiveGroup('decide', 'Needs your decision', groups.decide, 'Nothing waits on you. Suggestions and blocked objectives appear here; nothing starts just because a source says to do it.')}
     ${objectiveGroup('progress', 'In progress', groups.progress, 'No worker is running and no scope is out for signature.')}
@@ -217,7 +218,7 @@ document.addEventListener('click', async event => {
   const action = button.dataset.objectiveAction, id = button.dataset.id || '';
   if (action === 'refresh') return loadObjectives();
   if (action === 'close-panel') { objectivePanel = ''; objectiveError = ''; renderObjectives(); return; }
-  if (action === 'scan-panel' && objectiveModelOff()) return;  // Nothing to find without a model key.
+  if (action === 'scan-panel' && objectiveScanOff()) return;  // Nothing to find without a model backend.
   if (action === 'new' || action === 'scan-panel') { objectivePanel = action === 'new' ? 'new' : 'scan'; renderObjectives(); return; }
   if (action === 'checkpoint' || action === 'review-achieve') { objectivePanel = (action === 'checkpoint' ? 'checkpoint:' : 'achieve:') + id; renderObjectives(); return; }
   if (action === 'review-accept') { objectivePanel = 'accept:' + id; renderObjectives(); return; }

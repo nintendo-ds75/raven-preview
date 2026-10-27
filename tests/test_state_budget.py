@@ -135,3 +135,17 @@ class StateBudgetTests(OfflineCase):
         obj.proposal_action(self.store, proposal['id'], 'dismiss', {'request_key': 'drop', 'expected_revision': proposal['revision']}, actor)
         obj.block(self.store, created['id'], '')
         self.assertEqual(json.loads(self.get('/api/state')[2])['today'], before)
+
+    def test_claude_cli_allows_a_manual_investigation_but_no_automatic_suggestions(self):
+        """The internal claude-cli backend serves an explicit Find opportunities
+        click and nothing in the background: the page keeps the button and the
+        open loops block."""
+        with patch.dict(os.environ, {'BRIDGE_MODEL_API': 'claude-cli', 'BRIDGE_CLAUDE_BIN': '/bin/sh'}):
+            self.base = self.serve()
+        model = json.loads(self.get('/api/state')[2])['model']
+        self.assertEqual((model['backend'], model['proposals'], model['investigation']), ('claude-cli', False, True))
+        self.assertEqual(model['notice'], 'Manual investigation only; automatic suggestions need an API key.')
+        with patch.dict(os.environ, {'BRIDGE_MODEL_API': 'none'}):
+            self.base = self.serve()
+        model = json.loads(self.get('/api/state')[2])['model']
+        self.assertEqual((model['proposals'], model['investigation']), (False, False))
