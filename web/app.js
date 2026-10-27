@@ -482,11 +482,14 @@ function loadSavings() {
   if (savingsLoading) return;
   savingsLoading = true;
   api('/api/metrics?days=30').then(result => { savings = result; savingsAt = Date.now(); if (['runs','owners'].includes(view)) render(); })
-    .catch(error => notify(error.message)).finally(() => { savingsLoading = false; });
+    // The numbers are a member's to read; a viewer gets no strip and no error.
+    .catch(error => { if (error.status === 403) { savings = false; savingsAt = Date.now(); if (['runs','owners'].includes(view)) render(); } else notify(error.message); })
+    .finally(() => { savingsLoading = false; });
 }
 
 function savedStrip() {
   // One line of numbers from the ledger: what Raven reused, how proposals fared, how long people took.
+  if (savings === false) return '';
   if (savings === null || Date.now() - savingsAt > STALE_DRAW_MS) loadSavings();
   if (!savings) return '<p class="saved-strip context" role="status">Measuring what Raven saved…</p>';
   const m = savings, decided = m.proposals.signed_unchanged + m.proposals.corrected;

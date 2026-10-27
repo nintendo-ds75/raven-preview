@@ -38,14 +38,14 @@ class SeededStore(OfflineCase):
     def node(self, task, question=QUESTION, path="billing/usage.py", category=""):
         return canvas.add_node(self.store, self.cfg, {"task_id": task, "question": question, "paths": path, "category": category})
 
-    def proposal(self, ident, state, *, created_hours, updated_hours=None, rationale="", payload=None, repo=REPO):
+    def proposal(self, ident, state, *, created_hours, updated_hours=None, rationale="", payload=None, repo=REPO, sources=()):
         """A row in the proposal ledger as the objective head and the
         person's action on it would have left it."""
         stamp = lambda hours: (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()  # noqa: E731
         with self.store.graph.transaction() as db:
             db.execute("INSERT INTO objective_proposals(id,objective_id,repository,fingerprint,payload,sources,state,rationale,created_at,updated_at) "
                        "VALUES(?,?,?,?,?,?,?,?,?,?)",
-                       (ident, "", repo, "fp-" + ident, json.dumps(payload or {"title": "Move " + ident}), "[]", state, rationale,
+                       (ident, "", repo, "fp-" + ident, json.dumps(payload or {"title": "Move " + ident}), json.dumps(list(sources)), state, rationale,
                         stamp(created_hours), stamp(updated_hours if updated_hours is not None else created_hours)))
 
     def settle(self, task, node_id, answer):
@@ -194,6 +194,29 @@ class MetricsTests(SeededStore):
         self.assertEqual([d["rationale"] for d in boasted["declined_recent"]], [d["rationale"] for d in m["declined_recent"]])
         json.dumps(boasted)
 
+    def test_a_dismissal_whose_source_access_lapsed_is_counted_but_its_words_are_withheld(self):
+        # A member declined a proposal citing a source and the reason quotes it;
+        # the source then became inaccessible. The Today page withholds that
+        # proposal, so the numbers withhold its title and reason too.
+        record = {"repo": REPO, "kind": "note", "ref": "pilot-call", "body": "Pricing is frozen until Q3.", "title": "Pilot call"}
+        source = self.store.add_record(record)["source"]
+        pin = {k: source[k] for k in ("record_id", "source_version_id")}
+        self.proposal("q", "dismissed", created_hours=3, updated_hours=2, payload={"title": "Unfreeze the pricing page"},
+                      rationale="Not now: the pilot call says pricing is frozen until Q3", sources=[pin])
+        self.proposal("r", "dismissed", created_hours=4, updated_hours=1, rationale="Already shipped")
+        before = metrics.summary(self.store, days=30)["work_proposals"]
+        self.assertEqual([d["title"] for d in before["declined_recent"]], ["Move r", "Unfreeze the pricing page"])
+        self.assertEqual([d["reason"] for d in before["dismissed_reasons"]], ["Already shipped", "Not now: the pilot call says pricing is frozen until Q3"])
+        self.store.add_record({**record, "availability": "inaccessible"})
+        after = metrics.summary(self.store, days=30)["work_proposals"]
+        self.assertNotIn("Unfreeze the pricing page", json.dumps(after))
+        self.assertNotIn("frozen until Q3", json.dumps(after))
+        self.assertEqual((after["created"], after["dismissed"], after["precision"]), (2, 2, 0.0))
+        self.assertEqual(after["dismissed_reasons"], [{"reason": "Already shipped", "count": 1}])
+        self.assertEqual(after["declined_recent"], [
+            {"repository": REPO, "title": "Move r", "rationale": "Already shipped", "updated_at": before["declined_recent"][0]["updated_at"]},
+            {"repository": REPO, "withheld": True, "title": metrics.WITHHELD_TITLE, "updated_at": before["declined_recent"][1]["updated_at"]}])
+
     def test_the_window_and_the_repository_bound_what_is_counted(self):
         ids = self.seed()
         other = self.task("Pricing page copy", "k4", repo="acme/web")
@@ -248,3 +271,26 @@ class MetricsSurfaceTests(SharedServer):
         status = call_tool(self.store, "bridge_connection_status", {})
         self.assertEqual(status["metrics"]["decisions"], 1)
         self.assertEqual(status["metrics"]["window_days"], 30)
+
+    def test_a_viewer_and_an_agent_are_refused_and_a_member_never_reads_withheld_words(self):
+        member = self.post("/api/people", {"name": "Rosa Member", "role": "member"}, token=BOOTSTRAP)
+        viewer = self.post("/api/people", {"name": "Val Viewer", "role": "viewer"}, token=BOOTSTRAP)
+        token = lambda person, kind: self.post("/api/tokens", {"person_id": person["id"], "kind": kind}, token=BOOTSTRAP)["token"]  # noqa: E731
+        # The numbers carry the reasons members gave when they declined: a member's to read, never a viewer's or an agent's.
+        self.assertEqual(self.status_of("GET", "/api/metrics", token=token(viewer, "human")), 403)
+        self.assertEqual(self.status_of("GET", "/api/metrics", token=token(member, "agent")), 403)
+        record = {"repo": REPO, "kind": "note", "ref": "pilot-call", "body": "Pricing is frozen until Q3.", "title": "Pilot call"}
+        source = self.store.add_record(record)["source"]
+        with self.store.graph.transaction() as db:
+            db.execute("INSERT INTO objective_proposals(id,objective_id,repository,fingerprint,payload,sources,state,rationale,created_at,updated_at) "
+                       "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                       ("q", "", REPO, "fp-q", json.dumps({"title": "Unfreeze the pricing page"}),
+                        json.dumps([{k: source[k] for k in ("record_id", "source_version_id")}]), "dismissed",
+                        "Not now: the pilot call says pricing is frozen until Q3", "2026-10-20T10:00:00+00:00", "2026-10-20T11:00:00+00:00"))
+        human = token(member, "human")
+        self.assertIn("Unfreeze the pricing page", json.dumps(self.get("/api/metrics?days=0", token=human)["work_proposals"]))
+        self.store.add_record({**record, "availability": "inaccessible"})
+        read = self.get("/api/metrics?days=0", token=human)["work_proposals"]
+        self.assertNotIn("Unfreeze the pricing page", json.dumps(read))
+        self.assertNotIn("frozen until Q3", json.dumps(read))
+        self.assertEqual((read["dismissed"], read["dismissed_reasons"], read["declined_recent"][0]["withheld"]), (1, [], True))

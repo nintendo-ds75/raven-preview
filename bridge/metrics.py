@@ -31,7 +31,9 @@ window of days, for the whole workspace and for each repository:
   by a standing rule or dismissed, the precision that gives, how long a
   signature took, and the reasons people gave when they declined.
   Nothing in the proposal's own payload, confidence claims included, is
-  read; only what a person did with it.
+  read; only what a person did with it. A dismissed proposal whose
+  source access is no longer current is counted but its title and
+  reason are withheld, exactly as the Today page withholds the proposal.
 
 bridge_wait durations are not persisted, so the wait avoided is the
 human time the reused answer originally took, not a measured wait.
@@ -41,7 +43,7 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 
-from .store import repo_key
+from .store import Invalid, repo_key
 
 PROPOSAL_EVENTS = ("resolve", "proposed", "assume", "node_settled")
 ANSWER_EVENTS = ("owner_approved", "answer_corrected")
@@ -57,6 +59,7 @@ REASK_DAYS = 90
 DEFAULT_DAYS = 30
 MAX_DAYS = 3650
 OPEN_PROPOSAL_STATES = ("proposed", "review", "preparing", "review_error", "reconcile")
+WITHHELD_TITLE = "Proposal withheld: source access changed"
 # Categories always reported, even when the window holds none of them.
 REPORTED_CATEGORIES = ("", "objective_scope")
 REASON_PREFIX = 60
@@ -70,7 +73,6 @@ def window_days(raw) -> int:
     if not text:
         return DEFAULT_DAYS
     if not text.isdigit():
-        from .store import Invalid
         raise Invalid("days must be a whole number of days (0 for all time)")
     return min(int(text), MAX_DAYS)
 
@@ -272,6 +274,35 @@ def _aggregate(records, answered_index, known_waits):
     }
 
 
+def _withheld(db, row) -> bool:
+    """Whether the proposal's text must be withheld: the same check the
+    viewer routes make before showing a proposal, so lost source access
+    withholds the title and the reason here too."""
+    from .objectives import sources_current_db
+    try:
+        sources_current_db(db, json.loads(row["sources"] or "[]"), row["repository"])
+    except Invalid:
+        return True
+    return False
+
+
+def _declined_recent(db, repo):
+    """The rows the next investigation of this repository reads
+    (objective_head.declined_before), with withheld ones reduced to the
+    stub the Today page shows: no title, no reason."""
+    from .objective_head import DECLINED_LIMIT
+    rows = db.execute("SELECT repository, payload, sources, rationale, updated_at FROM objective_proposals "
+                      "WHERE repository=? AND state='dismissed' ORDER BY updated_at DESC LIMIT " + str(int(DECLINED_LIMIT)), (repo,))
+    out = []
+    for r in rows:
+        if _withheld(db, r):
+            out.append({"repository": repo, "withheld": True, "title": WITHHELD_TITLE, "updated_at": r["updated_at"]})
+        else:
+            out.append({"repository": repo, "title": str(json.loads(r["payload"]).get("title") or ""),
+                        "rationale": r["rationale"], "updated_at": r["updated_at"]})
+    return out
+
+
 def _work_proposals(db, cutoff: str, repo: str) -> dict:
     """What became of the moves the objective head proposed in the
     window, from the proposal ledger's own states and timestamps: the
@@ -283,20 +314,18 @@ def _work_proposals(db, cutoff: str, repo: str) -> dict:
     if repo:
         where.append("repository = ?")
         args.append(repo)
-    rows = db.execute("SELECT state, rationale, created_at, updated_at FROM objective_proposals"
+    rows = db.execute("SELECT state, rationale, created_at, updated_at, repository, sources FROM objective_proposals"
                       + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY created_at, id", args).fetchall()
     states = [r["state"] for r in rows]
     signed, corrected, dismissed = states.count("accepted"), states.count("reconcile"), states.count("dismissed")
     reasons = {}
     for r in rows:
-        if r["state"] == "dismissed":
+        if r["state"] == "dismissed" and not _withheld(db, r):
             prefix = " ".join((r["rationale"] or "").split())[:REASON_PREFIX]
             reasons[prefix] = reasons.get(prefix, 0) + 1
     top = sorted(reasons.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP_REASONS]
-    from .objective_head import declined_before
     repos = [repo] if repo else [r["repository"] for r in db.execute(
         "SELECT DISTINCT repository FROM objective_proposals WHERE state='dismissed' ORDER BY repository")]
-    declined = [{"repository": name, **row} for name in repos for row in declined_before(db, name)]
     return {
         "created": len(rows),
         "open": sum(1 for s in states if s in OPEN_PROPOSAL_STATES),
@@ -306,7 +335,7 @@ def _work_proposals(db, cutoff: str, repo: str) -> dict:
         # the last write to the row, so created_at -> updated_at is the wait.
         "time_to_signature": _percentiles([_seconds(r["created_at"], r["updated_at"]) for r in rows if r["state"] == "accepted"]),
         "dismissed_reasons": [{"reason": reason, "count": count} for reason, count in top],
-        "declined_recent": declined,
+        "declined_recent": [row for name in repos for row in _declined_recent(db, name)],
     }
 
 

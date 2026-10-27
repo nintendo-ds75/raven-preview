@@ -215,8 +215,11 @@ class WriteGateProbes(Workspace):
                                                                "params": {"name": name, "arguments": args}},
                                             token=self.viewer_agent), 403, name)
         self.assertFalse(self.mcp("bridge_get_tree", {"task_id": self.task}, self.viewer_agent)["isError"])
-        for path in ("/api/context/suggestions", "/api/export", f"/api/tasks/{self.task}/interviews"):
+        for path in ("/api/context/suggestions", "/api/export", f"/api/tasks/{self.task}/interviews", "/api/metrics"):
             self.assertEqual(self.status_of("GET", path, token=self.viewer_token), 403, path)
+        # The numbers carry the reasons members gave when they declined: a member's to read, never an agent's.
+        self.assertEqual(self.status_of("GET", "/api/metrics", token=self.agent), 403)
+        self.assertEqual(self.status_of("GET", "/api/metrics", token=self.owner_token), 200)
         self.assertEqual(self.get("/api/tokens", token=self.viewer_token)["tokens"][0]["person_id"], self.viewer["id"])
         self.assertEqual({t["person_id"] for t in self.get("/api/tokens", token=self.agent)["tokens"]}, {self.owner["id"]})
 
