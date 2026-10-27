@@ -102,8 +102,10 @@ result, or a new judgment request. Watches retain their dirty corpus until a
 real evaluation can run. An explicit watch configuration update clears its
 handled-corpus pointer to permit recovery, but never clears budget history.
 
-A deliberate authenticated manual scan is separate user-requested inference
-and does not spend or reset the automatic budget. All current membership,
+A deliberate authenticated manual scan is separate user-requested inference:
+it spends its own per-repository budget of the same size (six per rolling
+hour, no debounce) and never spends or resets the automatic one; only an
+administrator's explicit `override: true` is exempt. All current membership,
 source access, scope and publication fences still apply. Automatic workers
 always call `scan(..., automatic=True)` and never use the explicit failed-input
 retry override. The independent three-attempt limit for identical failed
