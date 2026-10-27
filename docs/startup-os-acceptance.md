@@ -13,6 +13,8 @@ treat the `docker-verification` and `codex-native` jobs, which run as advisory
 because they depend on external image pulls and an alpha npm pin, by their own
 result rather than by the overall check.
 
+Merged head: `33cadb0` on `main` (pull request #8, CI run 40476859500) passed the Python 3.11 and 3.13 lanes, the PostgreSQL contracts, the Node UI checks and the Chromium Today suites; the two advisory jobs run nightly. The ledger below predates that merge and is kept as history.
+
 Historical checkpoints recorded here: at remote `713ecaa` (local tree
 `81acac1`) CI passed real Chromium UI/API interactions, installed Pi/OpenCode
 scripted loops, and real Docker independent verification, while the PostgreSQL
