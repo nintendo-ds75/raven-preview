@@ -4,6 +4,8 @@ Inference proposes; existing core signatures authorize. Scheduler leases only
 read/evaluate work. It never sends, publishes, joins a meeting or buys anything.
 """
 import json
+import math
+import os
 import sys
 import threading
 import time
@@ -39,6 +41,9 @@ Keep the complete proposal under 10000 characters, including every case and cita
 BACKGROUND_LIMIT = 6
 BACKGROUND_WINDOW = 3600
 BACKGROUND_DEBOUNCE = 60
+TICK_ENV = 'BRIDGE_OBJECTIVE_TICK_SECONDS'
+TICK_SECONDS = 15.0
+IDLE_SECONDS = 60.0
 
 
 def migrate(db):
@@ -59,6 +64,18 @@ def migrate(db):
     columns = {r['name'] for r in db.execute('PRAGMA table_info(objective_evaluations)')}
     if 'lease_owner' not in columns:
         db.execute("ALTER TABLE objective_evaluations ADD COLUMN lease_owner TEXT NOT NULL DEFAULT ''")
+    # The corpus revision each active objective was last evaluated against,
+    # so the worker only re-reads a repository whose evidence changed.
+    db.executescript('''CREATE TABLE IF NOT EXISTS objective_scan_marks (
+      objective_id TEXT PRIMARY KEY, corpus TEXT NOT NULL, updated_at TEXT NOT NULL);''')
+
+
+def tick_seconds(env=TICK_ENV, default=TICK_SECONDS):
+    try:
+        value = float(os.environ.get(env, '') or default)
+    except ValueError:
+        return default
+    return value if math.isfinite(value) and value > 0 else default
 
 
 def background_budget(store, repo, *, at=None):
@@ -312,10 +329,31 @@ class Worker:
         self.stop = threading.Event()
         self.thread = None
 
+    def needs_work(self):
+        """Cheap enough to ask every tick: a workbench, a model backend, or saved
+        objective state means the worker has something to do."""
+        if self.workbench is not None or self.cfg.semantic_retrieval:
+            return True
+        db = self.store.graph.db
+        return any(db.execute('SELECT 1 FROM ' + table + ' LIMIT 1').fetchone()
+                   for table in ('objectives', 'objective_proposals', 'objective_watches'))
+
+    def interval(self):
+        """Seconds between ticks: the configured interval while there is work,
+        a slow idle poll otherwise so enabling later still takes effect."""
+        return tick_seconds() if self.needs_work() else IDLE_SECONDS
+
     def tick(self):
+        from .objective_research import corpus_revision
+        corpora = {}
+        def corpus_for(repo):
+            # One corpus revision per repository per tick, shared by watches and objectives.
+            if repo not in corpora:
+                corpora[repo] = corpus_revision(self.store, repo)
+            return corpora[repo]
         activate_reviews(self.store, allow_operator=self.allow_operator)
         self.dispatch_signed_moves()
-        self.investigate_watches()
+        self.investigate_watches(corpus_for)
         # Expired preparations are local orchestration only. Core client keys
         # recover prior effects, never repeat an external operation.
         cutoff = (datetime.now(timezone.utc)-timedelta(minutes=10)).isoformat()
@@ -326,16 +364,27 @@ class Worker:
             try:
                 obj.require_visible(self.store, value)
                 # Keep a scheduled human checkpoint durable even without a model.
-                if value['next_check_at'] and value['next_check_at'] <= now():
+                checkpoint_due = bool(value['next_check_at'] and value['next_check_at'] <= now())
+                if checkpoint_due:
                     with self.store.graph.transaction() as db:
                         current = obj.row(self.store, value['id'])
                         if current['next_check_at'] and current['next_check_at'] <= now():
                             db.execute("UPDATE objectives SET next_check_at='',blocked_reason=?,revision=revision+1,updated_at=? WHERE id=?", ('Scheduled checkpoint is due; review the current outcome evidence', now(), value['id']))
                             obj.event(self.store, value['id'], 'checkpoint_due', 'Scheduled checkpoint became due.')
                 if self.cfg.semantic_retrieval:
+                    corpus = corpus_for(value['repository'])
+                    mark = self.store.graph.db.execute('SELECT corpus FROM objective_scan_marks WHERE objective_id=?', (value['id'],)).fetchone()
+                    if mark and mark['corpus'] == corpus and not checkpoint_due:
+                        continue  # Nothing new to read: the evidence is what it was last time.
                     from .auth import Identity
                     result = scan(self.store, {'repository': value['repository'], 'request_key': 'background:' + value['id']},
                          obj.current_actor(self.store, Identity(value['requester_id'], value['requester'], 'member', value['requester_kind']), allow_operator=self.allow_operator), cfg=self.cfg, objective_id=value['id'], automatic=True)
+                    if result['status'] not in ('pending', 'throttled'):
+                        # A deferred reading keeps the objective due; anything else was evaluated against this corpus.
+                        with self.store.graph.transaction() as db:
+                            db.execute('INSERT INTO objective_scan_marks(objective_id,corpus,updated_at) VALUES(?,?,?) '
+                                       'ON CONFLICT(objective_id) DO UPDATE SET corpus=excluded.corpus,updated_at=excluded.updated_at',
+                                       (value['id'], corpus, now()))
                     if result['status'] != 'blocked' and value['blocked_reason'].startswith('Investigation stopped after three'):
                         with self.store.graph.transaction() as db:
                             db.execute("UPDATE objectives SET blocked_reason='',updated_at=? WHERE id=? AND blocked_reason=?", (now(), value['id'], value['blocked_reason']))
@@ -346,14 +395,15 @@ class Worker:
             except (Invalid, LLMError, ValueError, TypeError):
                 continue
 
-    def investigate_watches(self):
+    def investigate_watches(self, corpus_for=None):
         if not self.cfg.semantic_retrieval:
             return
         from .auth import Identity
         from .objective_research import corpus_revision
+        corpus_for = corpus_for or (lambda repo: corpus_revision(self.store, repo))
         for watch in list(self.store.graph.db.execute('SELECT * FROM objective_watches WHERE enabled=1')):
             try:
-                corpus = corpus_revision(self.store, watch['repository'])
+                corpus = corpus_for(watch['repository'])
                 if corpus == watch['last_corpus']:
                     continue
                 result = scan(self.store, {'repository': watch['repository'], 'request_key': 'watch:' + corpus[:60], 'watch_revision': watch['updated_at']},
@@ -421,13 +471,16 @@ class Worker:
         def run():
             try:
                 while not self.stop.is_set():
+                    wait = IDLE_SECONDS
                     try:
-                        self.tick()
+                        if self.needs_work():
+                            wait = tick_seconds()
+                            self.tick()
                     except Exception:
                         # Keep the durable worker alive after a transient polling
                         # failure. Do not log provider responses or credentials.
                         print('Raven objective worker: polling failed; retrying saved work', file=sys.stderr)
-                    self.stop.wait(15)
+                    self.stop.wait(wait)
             finally:
                 self.store.graph.close_thread()
         self.thread = threading.Thread(target=run, name='raven-objectives', daemon=True)

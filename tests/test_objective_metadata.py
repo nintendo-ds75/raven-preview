@@ -141,7 +141,8 @@ class ObjectiveMetadataTests(OfflineCase):
     def test_background_worker_survives_transient_tick_failure(self):
         from unittest.mock import patch
         from bridge.config import Config
-        worker = head.Worker(self.store, cfg=Config(model_api='none'))
+        # A workbench means the worker has work, so the loop ticks instead of idling.
+        worker = head.Worker(self.store, object(), cfg=Config(model_api='none'))
         calls = []
         def tick():
             calls.append(True)
