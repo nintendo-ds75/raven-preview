@@ -16,7 +16,6 @@ from bridge.config import Config  # noqa: E402
 from bridge.store import Invalid  # noqa: E402
 
 REPO = "acme/platform"
-REPON = REPO
 QUESTION = "Should we bill the usage spike?"
 HOUR = 3600
 
@@ -39,7 +38,7 @@ class SeededStore(OfflineCase):
     def node(self, task, question=QUESTION, path="billing/usage.py", category=""):
         return canvas.add_node(self.store, self.cfg, {"task_id": task, "question": question, "paths": path, "category": category})
 
-    def proposal(self, ident, state, *, created_hours, updated_hours=None, rationale="", payload=None, repo=REPON):
+    def proposal(self, ident, state, *, created_hours, updated_hours=None, rationale="", payload=None, repo=REPO):
         """A row in the proposal ledger as the objective head and the
         person's action on it would have left it."""
         stamp = lambda hours: (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()  # noqa: E731
