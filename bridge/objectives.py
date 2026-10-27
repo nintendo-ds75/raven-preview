@@ -322,14 +322,62 @@ def get(store, ident):
             'notice': 'An objective survives completed coding runs. External actions require separate authorization.'}
 
 
+CLOSED = ('achieved', 'stopped', 'cancelled')
+OPEN_LOOP_LIMIT = 10
+
+
+def without_model(store, limit=OPEN_LOOP_LIMIT):
+    """What waits on a person whether or not a model is configured: the
+    follow-ups agents suggested and nobody adopted, answers put in doubt by a
+    correction, checkpoints that came due, and evidence recorded since the
+    last investigation of each repository. Each list is capped, with the
+    total beside it, so Today says what is open without a brief."""
+    db = store.graph.db
+    def count(sql, params=()):
+        return int(db.execute(sql, params).fetchone()['c'] or 0)
+    followups = [dict(r) for r in db.execute(
+        "SELECT d.id,d.question,d.run_id,d.created_at,r.title AS task_title FROM decisions d JOIN runs r ON r.id=d.run_id "
+        "WHERE d.status='suggested' AND d.draft=0 ORDER BY d.created_at DESC LIMIT ?", (limit,))]
+    needs_review = [dict(r) for r in db.execute(
+        "SELECT d.id,d.question,d.run_id,d.review_reason,d.updated_at,r.title AS task_title FROM decisions d JOIN runs r ON r.id=d.run_id "
+        "WHERE d.needs_review=1 AND d.draft=0 ORDER BY d.updated_at DESC LIMIT ?", (limit,))]
+    checkpoints = [dict(r) for r in db.execute(
+        "SELECT id,title,repository,next_check_at,waiting_on FROM objectives WHERE lifecycle='active' AND next_check_at<>'' AND next_check_at<=? "
+        "ORDER BY next_check_at LIMIT ?", (now(), limit))]
+    # A record observed after the repository's last completed investigation,
+    # or every record where nothing was ever investigated.
+    new_sql = ("FROM source_records s WHERE s.availability='available' AND s.last_observed_at>coalesce("
+               "(SELECT max(e.updated_at) FROM objective_evaluations e WHERE e.repository=s.repo AND e.state='completed'),'')")
+    new_records = [{'repository': r['repo'], 'count': int(r['c'])} for r in db.execute(
+        'SELECT s.repo,count(*) AS c ' + new_sql + ' GROUP BY s.repo ORDER BY s.repo LIMIT ?', (limit,))]
+    return {'followups': followups, 'needs_review': needs_review, 'checkpoints_due': checkpoints, 'new_records': new_records,
+            'totals': {'followups': count("SELECT count(*) AS c FROM decisions WHERE status='suggested' AND draft=0"),
+                       'needs_review': count("SELECT count(*) AS c FROM decisions WHERE needs_review=1 AND draft=0"),
+                       'checkpoints_due': count("SELECT count(*) AS c FROM objectives WHERE lifecycle='active' AND next_check_at<>'' AND next_check_at<=?", (now(),)),
+                       'new_records': count('SELECT count(*) AS c FROM (SELECT s.repo ' + new_sql + ' GROUP BY s.repo) AS repos')}}
+
+
+def _reviewers(store, proposals):
+    """Who a proposal under review waits on: the owner of its governance
+    node, named so Today can say whose signature is wanted."""
+    for proposal in proposals:
+        if proposal.get('state') == 'review' and proposal.get('decision_id') and not proposal.get('withheld'):
+            owner = store.graph.db.execute('SELECT o.name FROM decisions d JOIN owners o ON o.id=d.owner_id WHERE d.id=?',
+                                           (proposal['decision_id'],)).fetchone()
+            proposal['reviewer'] = owner['name'] if owner else ''
+    return proposals
+
+
 def overview(store, workbench=None):
-    items = []
+    items, closed = [], []
     for r in store.graph.db.execute('SELECT id,lifecycle,revision FROM objectives ORDER BY updated_at DESC LIMIT 100'):
         try:
-            items.append(get(store, r['id']))
+            value = get(store, r['id'])
+            _reviewers(store, value['proposals'])
         except Invalid:
-            items.append({'id': r['id'], 'status': 'blocked', 'revision': r['revision'], 'withheld': True,
-                          'title': 'Objective withheld: source access changed'})
+            value = {'id': r['id'], 'status': 'blocked', 'revision': r['revision'], 'withheld': True,
+                     'title': 'Objective withheld: source access changed'}
+        (closed if r['lifecycle'] in CLOSED else items).append(value)
     if workbench:
         config = workbench.config()
     else:
@@ -361,8 +409,8 @@ def overview(store, workbench=None):
             continue
         seen_repos.add(evaluation['repository'])
         research.append({'repository': evaluation['repository'], 'reason': result.get('reason', ''), **packet})
-    return {'objectives': items, 'research': research, 'research_limits': research_limits, 'research_status': research_status, 'background_inference': background_inference, 'watches': [dict(w) for w in store.graph.db.execute('SELECT repository,enabled FROM objective_watches ORDER BY repository')], 'proposals': [_proposal_view(store, r) for r in store.graph.db.execute(
-        "SELECT * FROM objective_proposals WHERE objective_id='' AND state IN ('proposed','review','preparing','review_error','reconcile') ORDER BY created_at DESC LIMIT 50")],
+    return {'objectives': items, 'closed': closed, 'without_model': without_model(store), 'research': research, 'research_limits': research_limits, 'research_status': research_status, 'background_inference': background_inference, 'watches': [dict(w) for w in store.graph.db.execute('SELECT repository,enabled FROM objective_watches ORDER BY repository')], 'proposals': _reviewers(store, [_proposal_view(store, r) for r in store.graph.db.execute(
+        "SELECT * FROM objective_proposals WHERE objective_id='' AND state IN ('proposed','review','preparing','review_error','reconcile') ORDER BY created_at DESC LIMIT 50")]),
         'capabilities': config.get('hosts', []), 'repositories': config.get('repositories') or repositories(store),
         'execution_ready': bool(config.get('ready'))}
 
@@ -612,7 +660,7 @@ def proposal_action(store, ident, action, data, actor, cfg=None):
             'rationale': payload['why_now'], 'source_evidence': [{'record_id': s['record_id'], 'source_version_id': s['source_version_id'], 'role': s.get('role', 'support')} for s in sources if not s.get('metadata_only')]})
         decision = store.get_decision(node['node_id'])
         if not decision.get('owner_id'):
-            decision = _route_to_accepter(store, decision, actor)
+            decision = _route_fallback(store, decision, actor, value['repository'])
         with store.graph.transaction() as db:
             sources_current(store, sources, value['repository'], exact=True)
             db.execute("UPDATE objective_proposals SET state='review',governance_run_id=?,decision_id=?,acceptance_hash=?,scope_hash=?,revision=revision+1,updated_at=? WHERE id=?",
@@ -626,6 +674,30 @@ def proposal_action(store, ident, action, data, actor, cfg=None):
         raise
 
 
+SCOPE_FALLBACKS = ('accepter', 'coordinator', 'none')
+
+
+def _route_fallback(store, decision, actor, repo=''):
+    """Where a governance node no authority map covers goes, by the
+    objective_scope_fallback setting: to the person who accepted the
+    proposal (the default), to the coordinator, or nowhere, left visibly
+    unassigned with the reason on the node for an administrator."""
+    mode = store.graph.get_setting('objective_scope_fallback') or 'accepter'
+    if mode == 'accepter':
+        return _route_to_accepter(store, decision, actor)
+    if mode == 'coordinator':
+        person = store.graph.coordinator(repo)
+        if person is not None:
+            return _assign_scope(store, decision, person['id'], person['name'], 'objective-coordinator',
+                                 'Assigned to ' + person['name'] + ' as the coordinator: no authority map covers this scope')
+        reason = 'An administrator must assign this scope review: no authority map covers it and no coordinator is set'
+    else:
+        reason = 'An administrator must assign this scope review: no authority map covers it and the fallback owner is off'
+    with store.graph.transaction() as db:
+        db.execute('UPDATE decisions SET routing_reason=? WHERE id=?', (reason, decision['id']))
+    return store.get_decision(decision['id'])
+
+
 def _route_to_accepter(store, decision, actor):
     """A governance node no authority map covers is routed to the person
     who accepted the proposal, through the inbox's own assignment, with
@@ -633,14 +705,18 @@ def _route_to_accepter(store, decision, actor):
     not an owner, so the node stays visibly unassigned."""
     if not actor.id:
         return decision
+    return _assign_scope(store, decision, actor.id, actor.name, 'objective-accepter',
+                         'Assigned to ' + actor.name + ' as the objective accepter: no authority map covers this scope') or decision
+
+
+def _assign_scope(store, decision, person_id, name, basis, reason):
     with store.graph.transaction():
-        owner_id = store.graph.owner_id_for_person(actor.id)
+        owner_id = store.graph.owner_id_for_person(person_id)
     if not owner_id:
-        return decision
-    store.assign(decision['id'], {'owner_id': owner_id, 'by': actor.name}, actor=None)
+        return None
+    store.assign(decision['id'], {'owner_id': owner_id, 'by': name}, actor=None)
     with store.graph.transaction() as db:
-        db.execute("UPDATE decisions SET routing_reason=?,actor_basis='objective-accepter' WHERE id=?",
-                   ('Assigned to ' + actor.name + ' as the objective accepter: no authority map covers this scope', decision['id']))
+        db.execute('UPDATE decisions SET routing_reason=?,actor_basis=? WHERE id=?', (reason, basis, decision['id']))
     return store.get_decision(decision['id'])
 
 

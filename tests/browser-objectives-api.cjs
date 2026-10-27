@@ -33,6 +33,18 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
     await page.getByRole('button',{name:'Send to judgment inbox',exact:true}).click();
     await page.getByRole('link',{name:'Open judgment review'}).waitFor();
     overview=await (await fetch(base+'/api/objectives')).json();assert.equal(overview.proposals[0].status,'review');assert.equal(overview.objectives.length,1);
+    assert.match(await page.locator('[data-group="progress"]').innerText(),/Awaiting signed review · Fixture operator/);
+    // One step further: the owner signs the scope in the inbox through the UI and
+    // the objective worker turns the proposal into an accepted objective.
+    await page.goto(base+'/#inbox');await page.getByRole('button',{name:/All decisions/}).click();
+    const scopeCard=page.locator('.decision-card').filter({hasText:'Should Raven take point on: Close the onboarding question from the call?'});
+    await scopeCard.getByRole('button',{name:/Review/}).click();
+    await page.locator('#modal [data-action="signoff"]').click();
+    await page.waitForFunction(()=>!document.querySelector('#modal [data-action="signoff"]'));
+    const accepted=await (async()=>{for(let attempt=0;attempt<40;attempt++){const current=await (await fetch(base+'/api/objectives')).json();const signed=current.objectives.flatMap(item=>item.proposals||[]).find(item=>item.id===fixture.proposal_id);if(signed&&signed.status==='accepted')return current;await new Promise(resolve=>setTimeout(resolve,500));}throw Error('The signed proposal was not accepted by the objective worker');})();
+    assert.equal(accepted.objectives.length,2);assert.equal(accepted.proposals.length,0);
+    await page.goto(fixture.url);await page.getByRole('heading',{name:'Today',exact:true}).waitFor();
+    await page.getByRole('link',{name:'Close the onboarding question from the call',exact:true}).waitFor();
     await page.getByRole('link',{name:'Make the billing release dependable',exact:true}).click();
     await page.getByRole('button',{name:'Save checkpoint',exact:true}).click();
     await page.locator('[name=summary]').fill('HTTP and browser paths checked; awaiting policy.');

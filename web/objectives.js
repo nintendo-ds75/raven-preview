@@ -12,6 +12,10 @@ const objectiveRoute = () => location.hash.slice(1);
 const objectiveId = () => { try { return view === 'today' ? decodeURIComponent(location.hash.slice(1).split('/')[1] || '') : ''; } catch { return ''; } };
 const objectiveProposals = () => [...(objectiveData?.proposals || []), ...(objectiveData?.detail?.proposals || []), ...(objectiveData?.objectives || []).flatMap(item => item.proposals || [])];
 const objectiveCanWrite = () => !!state.auth && (!state.auth.enabled || ['admin', 'member'].includes(state.me?.role));
+// What the sidebar badge shows: the counts /api/state carries, added up.
+const objectiveTodayCount = today => (today?.proposals_open || 0) + (today?.objectives_needing_you || 0);
+const OPEN_PROPOSAL = ['proposed', 'review_error', 'reconcile'];
+const objectiveModelOff = () => state.model?.proposals === false;
 const objectiveCanAdmin = () => !!state.auth && (!state.auth.enabled || state.me?.role === 'admin');
 const OBJECTIVE_STATUS = {proposed:'Suggested', accepted:'Accepted', active:'In progress', running:'Working', queued:'Queued',
   waiting:'Waiting', blocked:'Needs attention', paused:'Paused', cancelled:'Cancelled', completed:'Completed', achieved:'Achieved · human attested', stopped:'Stopped', needs_you:'Needs you', moving:'In progress', review:'Awaiting signed review', needs_judgment:'Needs judgment', ready:'Ready to start',
@@ -48,7 +52,7 @@ Exact version: ${esc(item.source_version_id || '')}${item.availability && item.a
 function objectiveCard(item, proposal = false) {
   const id = item.id, status = item.status || item.state || (proposal ? 'proposed' : 'accepted');
   if (item.withheld) return `<article class="objective-card"><h3>Content withheld</h3><p>Source access changed. Re-establish permission before inspecting or acting on this item.</p></article>`;
-  return `<article class="objective-card" data-objective-id="${esc(id)}"><div class="objective-card-top"><span class="objective-label">${esc(proposal ? (status === 'review' ? 'Awaiting signed review' : 'Suggested next step') : objectiveStatus(status))}</span><span class="objective-repo">${esc(item.repo || item.repository || '')}</span></div>
+  return `<article class="objective-card" data-objective-id="${esc(id)}"><div class="objective-card-top"><span class="objective-label">${esc(proposal ? (status === 'review' ? 'Awaiting signed review' + (item.reviewer ? ' · ' + item.reviewer : '') : 'Suggested next step') : objectiveStatus(status))}</span><span class="objective-repo">${esc(item.repo || item.repository || '')}</span></div>
     <h3>${proposal ? esc(item.title) : `<a href="#today/${encodeURIComponent(id)}">${esc(item.title)}</a>`}</h3>
     <p>${esc(item.outcome || item.summary || item.reason || item.description || '')}</p>
     ${item.why_now ? `<p class="objective-muted">Why now: ${esc(item.why_now)}</p>` : ''}${item.judgment_kind ? `<p class="objective-muted">Judgment needed: ${esc(objectiveJudgment(item.judgment_kind))}</p>` : ''}${item.blocked_reason || item.waiting_reason ? `<p class="objective-attention">${esc(item.blocked_reason || item.waiting_reason)}</p>` : ''}
@@ -57,7 +61,7 @@ function objectiveCard(item, proposal = false) {
     ${item.cases && Object.keys(item.cases).length ? `<details class="objective-evidence"><summary>Behavior and boundaries in the signed scope</summary>${Object.entries(item.cases).map(([name,text])=>`<p><strong>${esc(name.replaceAll('_',' '))}</strong> ${esc(text)}</p>`).join('')}</details>` : ''}
     ${objectiveResearch(item.research)}
     ${objectiveEvidence(item.evidence || item.sources)}
-    <div class="objective-actions">${proposal && ['proposed','pending','review_error','reconcile'].includes(status) && objectiveCanWrite() ? (status === 'reconcile' || item.evidence_stale ? '' : objectiveButton('review-accept', id, status === 'review_error' ? 'Retry judgment review' : 'Review & take point')) + objectiveButton('dismiss', id, 'Not now') : proposal && status === 'review' ? `<a class="objective-text-link" href="#runs/${encodeURIComponent(item.task_id || item.governance_run_id || '')}">Open judgment review ↗</a>` : !proposal ? `<a class="objective-text-link" href="#today/${encodeURIComponent(id)}">Open objective <span aria-hidden="true">↗</span></a>` : ''}</div></article>`;
+    <div class="objective-actions">${proposal && OPEN_PROPOSAL.includes(status) && objectiveCanWrite() ? (status === 'reconcile' || item.evidence_stale ? '' : objectiveButton('review-accept', id, status === 'review_error' ? 'Retry judgment review' : 'Review & take point')) + objectiveButton('dismiss', id, 'Not now') : proposal && status === 'review' ? `<a class="objective-text-link" href="#runs/${encodeURIComponent(item.task_id || item.governance_run_id || '')}">Open judgment review ↗</a>` : !proposal ? `<a class="objective-text-link" href="#today/${encodeURIComponent(id)}">Open objective <span aria-hidden="true">↗</span></a>` : ''}</div></article>`;
 }
 function objectiveResearchLimits() {
   const limits = objectiveData.research_limits || [];
@@ -89,6 +93,46 @@ function objectiveDetail(item) {
     <section class="objective-section"><h2>Next-step proposals</h2>${(item.proposals || []).filter(proposal => ['proposed','review','review_error','reconcile','preparing'].includes(proposal.status || proposal.state)).map(proposal => objectiveCard(proposal,true)).join('') || '<p class="objective-muted">No next-step proposal awaiting review.</p>'}</section><section class="objective-section"><h2>Linked work</h2>${tasks.length ? tasks.map(task => `<a class="objective-task-link" href="#${task.browser_task ? 'work' : 'runs'}/${encodeURIComponent(task.task_id || task.id)}"><strong>${esc(task.title || task.prompt || task.task_id)}</strong><span>${esc(objectiveStatus(task.status))}</span></a>`).join('') : '<p class="objective-muted">No execution task linked yet.</p>'}</section>
     <section class="objective-section"><h2>Saved progress</h2>${checkpoints.length ? `<ol class="objective-timeline">${checkpoints.map(point => `<li><strong>${esc(point.summary || point.label || point.kind || 'Checkpoint')}</strong><p>${esc(point.detail && typeof point.detail === 'string' ? point.detail : point.note || '')}</p><time>${esc(objectiveTime(point.created_at || point.at))}</time></li>`).join('')}</ol>` : '<p class="objective-muted">No checkpoints yet. Progress stays attached to this objective across sessions.</p>'}</section></section><aside>${objectiveEvidence(item.evidence || item.sources)}${objectiveCapabilities()}<p class="objective-muted">Evidence, acceptance, judgment, execution and verification are separate records.</p></aside></div>`;
 }
+// Today groups work by what it waits on, from the status fields the server
+// computes: a person's decision, a worker, or a look at a finished run.
+function objectiveGroups(data) {
+  const proposals = data.proposals || [], objectives = data.objectives || [];
+  const stateOf = item => item.status || item.state || '';
+  const recentRun = item => (item.runs || []).some(run => run.status === 'completed' && Date.now() - new Date(run.updated_at).getTime() < 7 * 86400e3);
+  const ready = item => item.status === 'waiting' && recentRun(item);
+  return {
+    decide: [...proposals.filter(p => OPEN_PROPOSAL.includes(stateOf(p))).map(item => ({item, proposal: true})), ...objectives.filter(o => o.status === 'needs_you').map(item => ({item}))],
+    progress: [...objectives.filter(o => o.status === 'moving').map(item => ({item})), ...proposals.filter(p => stateOf(p) === 'review').map(item => ({item, proposal: true}))],
+    review: objectives.filter(ready).map(item => ({item})),
+    waiting: objectives.filter(o => !['needs_you', 'moving'].includes(o.status) && !ready(o)).map(item => ({item}))};
+}
+function objectiveGroup(key, title, entries, empty) {
+  return `<section class="objective-section" data-group="${esc(key)}"><div class="objective-section-head"><h2>${esc(title)}</h2><span>${entries.length}</span></div>${entries.length ? entries.map(entry => objectiveCard(entry.item, !!entry.proposal)).join('') : `<div class="objective-empty-card"><p>${esc(empty)}</p></div>`}</section>`;
+}
+function objectiveClosed(items) {
+  return items.length ? `<details class="objective-evidence objective-closed"><summary>Closed · ${items.length}</summary>${items.map(item => objectiveCard(item)).join('')}</details>` : '';
+}
+// Without a model key nothing is proposed, so Today lists what a person can
+// still close: follow-ups nobody adopted, answers put in doubt, checkpoints
+// that came due, and evidence recorded since the last investigation.
+function objectiveOpenLoops() {
+  const loops = objectiveData?.without_model;
+  if (!loops || !objectiveModelOff()) return '';
+  const totals = loops.totals || {};
+  const list = (key, title, line) => {
+    const items = loops[key] || [], total = totals[key] ?? items.length;
+    return `<div class="objective-loop"><h3>${esc(title)} <span>${total}</span></h3>${items.length ? `<ul>${items.map(item => `<li>${line(item)}</li>`).join('')}</ul>${total > items.length ? `<p class="objective-muted">${total - items.length} more.</p>` : ''}` : '<p class="objective-muted">None.</p>'}</div>`;
+  };
+  return `<section class="objective-section" id="objective-open-loops"><div class="objective-section-head"><h2>Open loops (no model key)</h2></div><p class="objective-notice" role="status">${esc(state.model.notice)}</p>
+    ${list('followups', 'Follow-ups nobody adopted', item => `<a href="#runs/${encodeURIComponent(item.run_id || '')}">${esc(item.task_title || 'Task')}</a> · ${esc(item.question)}`)}
+    ${list('needs_review', 'Answers that need a second look', item => `<a href="#runs/${encodeURIComponent(item.run_id || '')}">${esc(item.task_title || 'Task')}</a> · ${esc(item.question)}${item.review_reason ? ` · ${esc(item.review_reason)}` : ''}`)}
+    ${list('checkpoints_due', 'Checkpoints due', item => `<a href="#today/${encodeURIComponent(item.id)}">${esc(item.title)}</a> · due ${esc(objectiveTime(item.next_check_at))}${item.waiting_on ? ` · waiting on ${esc(item.waiting_on)}` : ''}`)}
+    ${list('new_records', 'New evidence since the last investigation', item => `<strong>${esc(item.repository)}</strong> · ${esc(item.count)} record${item.count === 1 ? '' : 's'}`)}
+  </section>`;
+}
+function objectiveProposalPage(item) {
+  return `<a class="objective-text-link" href="#today">← Today</a><header class="objective-detail-heading"><p class="objective-label">Suggested next step · ${esc(item.repo || item.repository || '')}</p><h1>${esc(item.title || 'Proposal')}</h1></header><div class="objective-layout"><section>${objectiveCard(item, true)}</section><aside>${objectiveCapabilities()}<p class="objective-muted">A suggestion becomes work only after its scope is signed in the inbox.</p></aside></div>`;
+}
 function renderObjectives() {
   if (view !== 'today' || !state.auth) return;
   const app = document.getElementById('app'), id = objectiveId();
@@ -101,16 +145,21 @@ function renderObjectives() {
     app.innerHTML = `<section class="objective-empty"><h1>${objectiveError ? 'Could not open Today' : 'Opening Today…'}</h1>${objectiveError ? `<p role="alert">${esc(objectiveError)}</p>${objectiveButton('refresh','','Try again')}` : '<span class="loading-dot"></span>'}</section>`;
     return;
   }
-  const proposals = (objectiveData.proposals || []).filter(item => ['proposed','pending','review','review_error'].includes(item.status || item.state));
-  const objectives = objectiveData.objectives || [];
+  const objectives = objectiveData.objectives || [], closed = objectiveData.closed || [];
   let content;
   if (id) {
-    const item = objectiveData.detail?.id === id ? objectiveData.detail : objectives.find(item => item.id === id);
-    content = item ? objectiveDetail(item) : '<section class="objective-empty"><h1>Objective unavailable</h1><p>It may have been removed or your access may have changed.</p><a href="#today">Back to Today</a></section>';
+    const item = objectiveData.detail?.id === id ? objectiveData.detail : [...objectives, ...closed].find(item => item.id === id);
+    // The inbox card links a scope review to #today/<proposal id>.
+    const proposal = item ? null : objectiveProposals().find(item => item.id === id);
+    content = item ? objectiveDetail(item) : proposal ? objectiveProposalPage(proposal) : '<section class="objective-empty"><h1>Objective unavailable</h1><p>It may have been removed or your access may have changed.</p><a href="#today">Back to Today</a></section>';
   } else {
-    content = `<header class="objective-heading"><div><p class="objective-label">YOUR WORK, WITH CONTINUITY</p><h1>Today</h1><p>Useful next steps. The evidence behind them. One place to keep work moving.</p></div>${objectiveCanWrite() ? `<div class="objective-actions">${objectiveButton('new','','Take point on an outcome')}${objectiveButton('scan-panel','','Find opportunities')}</div>` : ''}</header><div class="objective-layout"><section>
-    <section class="objective-section"><div class="objective-section-head"><h2>Suggested for you</h2><span>${proposals.length}</span></div>${proposals.length ? proposals.map(item => objectiveCard(item,true)).join('') : '<div class="objective-empty-card"><h3>Nothing waiting for acceptance</h3><p>Suggestions appear when connected evidence points to an open loop. Nothing starts just because a source says to do it.</p></div>'}</section>
-    ${(objectiveData.research || []).map(packet=>objectiveResearch(packet)).join('')}<section class="objective-section"><div class="objective-section-head"><h2>Accepted objectives</h2><span>${objectives.length}</span></div>${objectives.length ? objectives.map(item => objectiveCard(item)).join('') : '<div class="objective-empty-card"><h3>Keep the outcome in view</h3><p>Accept a suggestion to track its next step, blockers and verification across agent sessions.</p><a class="objective-text-link" href="#work">Start a task instead ↗</a></div>'}</section></section><aside>${objectiveCapabilities()}${objectiveResearchLimits()}<section class="objective-side-section"><h2>Meeting evidence</h2><p class="objective-muted">Transcripts are context, never a participant’s approval. Recording requires an explicit consent record.</p>${objectiveButton('meetings','','Manage meeting evidence')}</section><p class="objective-muted">Accepted objectives do not bypass the judgment inbox. <a href="#inbox">Review decisions ↗</a></p></aside></div>`;
+    const groups = objectiveGroups(objectiveData), off = objectiveModelOff();
+    content = `<header class="objective-heading"><div><p class="objective-label">YOUR WORK, WITH CONTINUITY</p><h1>Today</h1><p>What waits on you, what is moving, and what is ready to look at.</p></div>${objectiveCanWrite() ? `<div class="objective-actions">${objectiveButton('new','','Take point on an outcome')}${objectiveButton('scan-panel','','Find opportunities', off, off ? `title="${esc(state.model.notice)}"` : '')}</div>` : ''}</header><div class="objective-layout"><section>
+    ${objectiveGroup('decide', 'Needs your decision', groups.decide, 'Nothing waits on you. Suggestions and blocked objectives appear here; nothing starts just because a source says to do it.')}
+    ${objectiveGroup('progress', 'In progress', groups.progress, 'No worker is running and no scope is out for signature.')}
+    ${objectiveGroup('review', 'Ready to review', groups.review, 'No objective finished a run in the last seven days.')}
+    ${groups.waiting.length ? objectiveGroup('waiting', 'Waiting on something else', groups.waiting, '') : ''}
+    ${(objectiveData.research || []).map(packet=>objectiveResearch(packet)).join('')}${objectiveClosed(closed)}${objectiveOpenLoops()}${!objectives.length && !closed.length ? '<div class="objective-empty-card"><h3>Keep the outcome in view</h3><p>Accept a suggestion to track its next step, blockers and verification across agent sessions.</p><a class="objective-text-link" href="#work">Start a task instead ↗</a></div>' : ''}</section><aside><div id="evidence-mount"></div>${objectiveCapabilities()}${objectiveResearchLimits()}<section class="objective-side-section"><h2>Meeting evidence</h2><p class="objective-muted">Transcripts are context, never a participant’s approval. Recording requires an explicit consent record.</p>${objectiveButton('meetings','','Manage meeting evidence')}</section><p class="objective-muted">Accepted objectives do not bypass the judgment inbox. <a href="#inbox">Review decisions ↗</a></p></aside></div>`;
   }
   const accepted = objectivePanel.startsWith('accept:') ? objectiveProposals().find(item => 'accept:' + item.id === objectivePanel) : null;
   if (accepted) content = objectiveAcceptance(accepted) + content;
@@ -137,7 +186,8 @@ async function loadObjectives() {
   const route = objectiveRoute(), id = objectiveId(), request = ++objectiveRequest;
   try {
     const result = await api('/api/objectives');
-    if (id) result.detail = await api('/api/objectives/' + encodeURIComponent(id));
+    const proposal = id && [...(result.proposals || []), ...(result.objectives || []).flatMap(item => item.proposals || [])].some(item => item.id === id);
+    if (id && !proposal) result.detail = await api('/api/objectives/' + encodeURIComponent(id));
     if (view !== 'today' || route !== objectiveRoute() || request !== objectiveRequest) return;
     objectiveData = result; objectiveError = ''; renderObjectives();
   } catch (error) {
@@ -161,20 +211,16 @@ async function objectiveMutate(key, url, payload) {
     objectivePending.delete(key); renderObjectives();
   }
 }
-document.addEventListener('input', event => {
-  if (event.target.id === 'objective-success' && objectivePanel.startsWith('accept:')) {
-    objectiveDrafts.set(objectivePanel, {success_criteria:event.target.value});
-  }
-});
 document.addEventListener('click', async event => {
   const button = event.target.closest?.('[data-objective-action]');
   if (!button || view !== 'today' || button.disabled) return;
   const action = button.dataset.objectiveAction, id = button.dataset.id || '';
   if (action === 'refresh') return loadObjectives();
   if (action === 'close-panel') { objectivePanel = ''; objectiveError = ''; renderObjectives(); return; }
+  if (action === 'scan-panel' && objectiveModelOff()) return;  // Nothing to find without a model key.
   if (action === 'new' || action === 'scan-panel') { objectivePanel = action === 'new' ? 'new' : 'scan'; renderObjectives(); return; }
   if (action === 'checkpoint' || action === 'review-achieve') { objectivePanel = (action === 'checkpoint' ? 'checkpoint:' : 'achieve:') + id; renderObjectives(); return; }
-  if (action === 'review-accept') { objectivePanel = 'accept:' + id; renderObjectives(); document.getElementById('objective-success')?.focus(); return; }
+  if (action === 'review-accept') { objectivePanel = 'accept:' + id; renderObjectives(); return; }
   if (action === 'review-cancel') { objectivePanel = 'cancel:' + id; renderObjectives(); return; }
   if (action === 'meetings') { objectivePanel = 'meetings'; const repos = objectiveData?.repositories || []; objectiveMeetingRepo ||= objectiveData?.detail?.repository || repos[0]?.id || repos[0] || ''; renderObjectives(); try { objectiveMeetings = objectiveMeetingRepo ? await api(objectiveMeetingsURL()) : {meetings:[]}; } catch(error) { objectiveError = error.message; } renderObjectives(); return; }
   const item = [...objectiveProposals(), ...(objectiveData?.objectives || []), objectiveData?.detail].filter(Boolean).find(item => item.id === id);

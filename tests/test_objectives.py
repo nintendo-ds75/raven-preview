@@ -113,6 +113,77 @@ class ObjectiveTests(OfflineCase):
         with self.assertRaises(Invalid):
             obj.act(self.store, created['id'], 'achieve', {'request_key': 'a', 'expected_revision': 1, 'summary': 'done'}, actor)
 
+    def test_today_without_a_model_lists_followups_reviews_checkpoints_and_new_records(self):
+        """Without a model key Today still says what is open: unadopted
+        follow-ups, answers put in doubt, due checkpoints and evidence recorded
+        since the last investigation; closed objectives leave the main list."""
+        run = canvas.start_task(self.store, Config(model_api='none'), {'title': 'Pilot CSV path', 'goal': 'Fix the example',
+            'repo': 'sample/project', 'agent': 'Fixture agent', 'requester': 'Local operator', 'client_key': 'open-loops'})
+        with self.store.graph.transaction() as db:
+            suggested = self.store.graph.add_decision(run['task_id'], 'Which trial limit applies?', 'followup', 'suggested')
+            doubted = self.store.graph.add_decision(run['task_id'], 'Keep the CSV example?', 'design', 'approved', answer='Yes', answered_by='Local operator')
+            db.execute("UPDATE decisions SET needs_review=1,review_reason='The trial policy it leaned on was corrected' WHERE id=?", (doubted,))
+        created = self.create()
+        self.action(created, 'checkpoint', summary='Waiting on the pilot', next_check_at='2020-01-01T00:00:00+00:00')
+        overview = obj.overview(self.store)
+        open_loops = overview['without_model']
+        self.assertEqual([(f['id'], f['task_title']) for f in open_loops['followups']], [(suggested, 'Pilot CSV path')])
+        self.assertEqual(open_loops['needs_review'][0]['id'], doubted)
+        self.assertEqual(open_loops['needs_review'][0]['review_reason'], 'The trial policy it leaned on was corrected')
+        self.assertEqual([c['id'] for c in open_loops['checkpoints_due']], [created['id']])
+        self.assertEqual(open_loops['new_records'], [{'repository': 'sample/project', 'count': 1}])
+        self.assertEqual(open_loops['totals'], {'followups': 1, 'needs_review': 1, 'checkpoints_due': 1, 'new_records': 1})
+        from bridge.store import now
+        with self.store.graph.transaction() as db:
+            db.execute("INSERT INTO objective_evaluations(id,objective_id,repository,fingerprint,state,result,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+                       ('eval-1', '', 'sample/project', 'fp-1', 'completed', '{}', now(), now()))
+        self.assertEqual(obj.overview(self.store)['without_model']['new_records'], [])
+        self.store.add_record({**self.record_data, 'ref': 'second-call', 'body': 'The customer asked again.'})
+        self.assertEqual(obj.overview(self.store)['without_model']['new_records'], [{'repository': 'sample/project', 'count': 1}])
+        self.action(obj.get(self.store, created['id']), 'cancel')
+        overview = obj.overview(self.store)
+        self.assertEqual(overview['objectives'], [])
+        self.assertEqual([c['id'] for c in overview['closed']], [created['id']])
+        self.assertEqual(overview['without_model']['checkpoints_due'], [])
+
+    def test_objective_scope_fallback_setting_chooses_the_unrouted_owner(self):
+        """No authority map covers the scope review: the setting says whether
+        it goes to the accepter, the coordinator, or waits for an admin. Each
+        mode starts from a fresh workspace: once a node has an owner, the
+        next like it is routed to that owner before any fallback."""
+        def review(mode, *, coordinator=False):
+            store = self.fresh_store('fallback-' + mode + ('' if coordinator else '-unset'))
+            self.addCleanup(store.graph.close)
+            source = store.add_record(self.record_data)['source']
+            pin = {k: source[k] for k in ('record_id', 'source_version_id')}
+            with store.graph.transaction():
+                member_id = store.graph.add_person('Member', role='member')
+                coordinator_id = store.graph.add_person('Coordinator', role='admin')
+            member = Identity(member_id, 'Member', 'member', 'session')
+            if mode:
+                store.graph.set_setting('objective_scope_fallback', mode)
+            if coordinator:
+                store.graph.set_setting('coordinator', coordinator_id)
+            proposal = obj.propose(store, {**self.proposal(), 'citations': [{**pin, 'quote': 'The CSV example does not work.'}]}, [pin])
+            reviewed = obj.proposal_action(store, proposal['id'], 'accept', {'request_key': 'review', 'expected_revision': proposal['revision']}, member)
+            return store, store.get_decision(reviewed['decision_id']), member_id, coordinator_id
+        for mode in ('', 'accepter'):
+            with self.subTest(mode=mode or 'default'):
+                store, decision, member_id, _ = review(mode)
+                self.assertEqual(decision['owner_id'], store.graph.owner_id_for_person(member_id))
+                self.assertEqual(decision['actor_basis'], 'objective-accepter')
+        # The core already hands what nobody owns to a coordinator when one is
+        # set; the setting keeps the accepter out of it either way.
+        store, decision, _, coordinator_id = review('coordinator', coordinator=True)
+        self.assertEqual(decision['owner_id'], store.graph.owner_id_for_person(coordinator_id))
+        self.assertNotEqual(decision['actor_basis'], 'objective-accepter')
+        store, decision, _, _ = review('coordinator')
+        self.assertFalse(decision['owner_id'])
+        self.assertIn('no coordinator is set', decision['routing_reason'])
+        store, decision, _, _ = review('none')
+        self.assertFalse(decision['owner_id'])
+        self.assertIn('administrator must assign', decision['routing_reason'])
+
     def test_revision_retry_and_closed_objective(self):
         created = self.create()
         data = {'request_key': 'pause', 'expected_revision': 1}

@@ -6,9 +6,11 @@ for a client that accepts it; static files revalidate instead of being
 downloaded on every visit; MCP responses are never compressed."""
 import gzip
 import json
+import os
 import statistics
 import threading
 import time
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -21,12 +23,15 @@ class StateBudgetTests(OfflineCase):
         self.store = self.fresh_store('demo.db')
         self.store.seed()
         self.addCleanup(self.store.graph.close)
+        self.base = self.serve()
+
+    def serve(self):
         server = ready_server(self.store, port=0)
         server.RequestHandlerClass.log_message = lambda *args: None
         threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True).start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
-        self.base = f'http://127.0.0.1:{server.server_address[1]}'
+        return f'http://127.0.0.1:{server.server_address[1]}'
 
     def get(self, path, **headers):
         try:
@@ -99,3 +104,34 @@ class StateBudgetTests(OfflineCase):
         with urlopen(request) as response:
             self.assertIsNone(response.headers.get('Content-Encoding'))
             self.assertGreater(len(response.read()), 1024)
+
+    def test_state_says_what_the_backend_allows_and_what_today_wants(self):
+        """Every page says what Raven can do with the configured backend, and
+        the sidebar badge adds up what Today wants from the person."""
+        from bridge import objectives as obj
+        from bridge.auth import Identity
+        with patch.dict(os.environ, {'BRIDGE_MODEL_API': 'none'}):
+            base = self.serve()
+        self.base = base
+        state = json.loads(self.get('/api/state')[2])
+        self.assertEqual(state['model']['backend'], 'none')
+        self.assertFalse(state['model']['proposals'])
+        self.assertEqual(state['model']['notice'],
+                         'Suggestions and briefs are off: no model key. Routing, records, reminders and signed decisions still run.')
+        before = state['today']
+        actor = Identity('', 'Local operator', 'admin', 'operator')
+        source = self.store.add_record({'repo': 'sample/project', 'kind': 'note', 'ref': 'pilot-call',
+                                        'body': 'The CSV example does not work.', 'title': 'Pilot call'})['source']
+        pin = {k: source[k] for k in ('record_id', 'source_version_id')}
+        payload = {'title': 'Pilot to value', 'outcome': 'Prepare the CSV path', 'success_criteria': 'First report',
+                   'stop_criteria': 'Customer declines', 'guardrails': 'No external sending', 'repository': 'sample/project',
+                   'provider': 'claude', 'why_now': 'Pilot is blocked', 'citations': [{**pin, 'quote': 'The CSV example does not work.'}]}
+        proposal = obj.propose(self.store, payload, [pin])
+        created = obj.create(self.store, {**payload, 'request_key': 'today-count', 'source_ids': [pin['record_id']]}, actor)
+        obj.block(self.store, created['id'], 'Scheduled checkpoint is due; review the current outcome evidence')
+        today = json.loads(self.get('/api/state')[2])['today']
+        self.assertEqual(today, {'proposals_open': before['proposals_open'] + 1,
+                                 'objectives_needing_you': before['objectives_needing_you'] + 1})
+        obj.proposal_action(self.store, proposal['id'], 'dismiss', {'request_key': 'drop', 'expected_revision': proposal['revision']}, actor)
+        obj.block(self.store, created['id'], '')
+        self.assertEqual(json.loads(self.get('/api/state')[2])['today'], before)

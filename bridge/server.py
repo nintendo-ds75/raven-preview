@@ -62,6 +62,32 @@ def loopback_aliases(netloc: str) -> set[str]:
     return {f"127.0.0.1{suffix}", f"localhost{suffix}", f"[::1]{suffix}"}
 
 
+def model_view(cfg=None):
+    """What the configured model backend lets Raven do, in the sentence
+    every page shows. Read once per server: a poll must not reload the
+    configuration or probe a host."""
+    from .config import backend_status, load
+    status = backend_status(cfg or load())
+    backend = status['backend']
+    if backend in ('anthropic', 'openai'):
+        notice = f"Model: {status['model']}. Suggestions on for watched repositories."
+    elif backend == 'claude-cli':
+        notice = 'Manual investigation only; automatic suggestions need an API key.'
+    else:
+        notice = 'Suggestions and briefs are off: no model key. Routing, records, reminders and signed decisions still run.'
+    return {'backend': backend, 'model': status['model'], 'semantic': bool(status['semantic_enabled']),
+            'proposals': backend in ('anthropic', 'openai'), 'notice': notice}
+
+
+def today_counts(store):
+    """What Today wants from the person, as two counts the sidebar badge
+    adds up: open proposals and active objectives that are blocked."""
+    db = store.graph.db
+    proposals = db.execute("SELECT count(*) AS c FROM objective_proposals WHERE state IN ('proposed','review','review_error','reconcile')").fetchone()['c']
+    objectives = db.execute("SELECT count(*) AS c FROM objectives WHERE lifecycle='active' AND blocked_reason<>''").fetchone()['c']
+    return {'proposals_open': int(proposals or 0), 'objectives_needing_you': int(objectives or 0)}
+
+
 class Forbidden(Exception):
     def __init__(self, code, message):
         super().__init__(message)
@@ -100,6 +126,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
     # Published through Docker, the port people reach is not the port the
     # process bound, so the public URL is the only thing that knows it.
     public_hosts = loopback_aliases(public_host) if public_host else set()
+    model = model_view()
 
     class Handler(BaseHTTPRequestHandler):
         me: Identity | None = None
@@ -344,6 +371,9 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                               # connected until a client has used it.
                                               and (t['last_used_at'] or t['label'] != SETUP_AGENT_LABEL)],
                         "delivery": self.delivery_view(), "mcp_config": self.mcp_config(),
+                        # What the backend lets Raven do, and what Today wants
+                        # from the person, so every page can say both.
+                        "model": model, "today": today_counts(store),
                         "sync": self.sync_view(), "github_app": github_app.status() if github_app else None,
                         # The decision card says whether a rule authorizes on its
                         # own, and the inbox marks overdue questions; without these
