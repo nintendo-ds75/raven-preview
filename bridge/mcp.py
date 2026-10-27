@@ -121,7 +121,7 @@ TOOLS = [
          {"path": "Absolute path to a local git checkout", "repo": "Optional repository name override", "max_commits": "Optional history depth (0 = all)"}, ["path"]),
     tool("bridge_import_record", "Import a ticket, document or Slack record retrieved through your connected tools. For an existing stored record, use bridge_lookup_record, bridge_get_record and bridge_link_work_item to attach task context without reimporting it. Copy the source accurately, including status, author and permalink. This is evidence and a routing signal, never human authorization. Do not import secrets, unrelated private records, or Slack Real-time Search results (they must stay transient).",
          {"repo": "Repository owner/name", "kind": "ticket, jira, issue, doc, slack or note; kinds retain separate identities", "ref": "Stable source identifier such as NET-102",
-          "title": "Source title", "body": "Source text", "author": "Source author's email, Slack member ID or full name",
+          "title": "Source title", "body": "Source text", "author": "Source author's email, Slack member ID or full name; recorded as a claim, the stored author is the person whose credential imports it",
           "url": "Original permalink", "status": "Source status including Cancelled, Superseded or Won't Do",
           "resolved": {"type": ["boolean", "string", "integer"], "description": "Source resolution flag, never Raven approval. False prevents settled evidence; open or unknown status also prevents it."},
           "paths": {"type": ["string", "array"], "items": {"type": "string"}, "description": "Complete related-path snapshot, comma separated or array. Supplied replaces old paths, [] clears; omitted retains."},
@@ -293,6 +293,15 @@ def _ingest_repo(store, args):
         raise Invalid(str(error))
 
 
+def _import_actor(principal):
+    """Who an import is attributed to: the credential behind an HTTP MCP
+    call, else the local operator on stdio. The record's author is this
+    person, not whatever the arguments claim."""
+    from .auth import OPERATOR
+    from .authz import Actor
+    return Actor.from_identity(principal if principal is not None else OPERATOR)
+
+
 HANDLERS = {
     'bridge_review_discovery': lambda store, args: __import__('bridge.investigation', fromlist=['review']).review(store, args, defer=True),
     "bridge_start_task": lambda store, args: canvas.start_task(store, load(), args),
@@ -307,7 +316,7 @@ HANDLERS = {
     "bridge_search_decisions": lambda store, args: __import__("bridge.decision_reads", fromlist=["search"]).search(store, args),
     "bridge_list_owners": _list_owners,
     "bridge_ingest_repo": _ingest_repo,
-    "bridge_import_record": lambda store, args: store.add_record(args),
+    "bridge_import_record": lambda store, args, principal=None: store.add_record(args, actor=_import_actor(principal)),
     "bridge_get_record": lambda store, args: store.get_record(args['record_id'], args['repo']),
     "bridge_link_work_item": lambda store, args: store.link_work_item(args),
     "bridge_lookup_record": lambda store, args: store.lookup_record(**args),
@@ -424,6 +433,8 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None, principal
         # With a progress sleep the finish waits for the whole reading of
         # the diff; without one it answers in time and keeps the reading.
         result = canvas.finish_task(store, args, sleep=sleep, stop=stop)
+    elif name == "bridge_import_record":
+        result = HANDLERS[name](store, args, principal)
     else:
         result = HANDLERS[name](store, args)
     if name in ("bridge_start_task", "bridge_add_node"):

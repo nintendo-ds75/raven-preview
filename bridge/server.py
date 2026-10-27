@@ -313,6 +313,11 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     return self.send(200, store.lookup_record(**args))
                 if url.path == '/api/records':
                     query = parse_qs(url.query)
+                    if 'namespace' in query and 'record_id' not in query:
+                        # The newest records of one namespace (pasted evidence), titles only.
+                        self.require('member')
+                        return self.send(200, store.list_records(query['namespace'][0], query.get('limit', ['10'])[0],
+                                                                 repo=query.get('repo', [''])[0]))
                     return self.send(200, store.get_record(query.get('record_id', [''])[0], query.get('repo', [''])[0]))
                 if url.path == "/api/state":
                     from .sources import report as source_report
@@ -990,7 +995,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     self.require("admin")
                     result = store.delivery.sync_directory()
                 elif path == "/api/records":
-                    result = store.add_record(data)
+                    # The record's author is the person on this request, whatever the body says.
+                    result = store.add_record(data, actor=self.actor())
                 elif path == "/api/context/sources":
                     # An administrator attests the source is shared with every reader.
                     self.require("admin")

@@ -1455,16 +1455,24 @@ class Store:
                     "total": total, "page": page, "size": size, "counts": inbox_counts(db, hours),
                     "overdue_hours": hours}
 
-    def add_record(self, data):
+    def add_record(self, data, actor=None):
         """A record from outside git: a ticket, a document, a chat decision.
         Kind and ref identify it (the same pair updates it), the url is its
         locator, the paths tie it to the areas it is about. Supplied paths
         replace the snapshot (including []); omitted paths are unchanged. It is
-        evidence the ladder can cite, never sign-off."""
+        evidence the ladder can cite, never sign-off.
+
+        `actor` is who writes it over HTTP or MCP: the record's author is
+        then that person and its access scope says the server attested it,
+        whatever the body claims (a claimed author is kept in the event).
+        In-process writers (meeting import, connectors, Slack capture) pass
+        none and keep the source's own author."""
         repo = repo_key(str(data.get("repo") or ""))
         kind = re.sub(r"[^a-z0-9_-]", "", str(data.get("kind") or "note").lower())[:30] or "note"
         if kind in ("pr", "merge", "commit", "review"):
             raise Invalid("kinds pr, merge, commit and review come from git and GitHub; use ticket, doc, slack or note")
+        if actor is not None and kind in ("session", "conversation"):
+            raise Invalid("session records are written by Raven, not imported")
         ref = field(data, "ref", limit=200)
         for key, limit in (('title', 300), ('body', 20000), ('author', 100), ('created_at', 40), ('url', 1000),
                            ('status', 40), ('namespace', 1000), ('external_id', 500), ('updated_at', 40),
@@ -1476,6 +1484,12 @@ class Store:
         if not title and not body:
             raise Invalid("A record needs a title or a body")
         author = str(data.get("author") or "")[:100]
+        claimed_author = ""
+        if actor is not None:
+            claimed_author, author = author, str(actor.name or "")[:100]
+            data = {**data, "author": author, "access_scope": json.dumps(
+                {"basis": "author", "attested_by": actor.id or "", "transport": actor.kind, "workspace_shared": True},
+                sort_keys=True)}
         created = str(data.get("created_at") or "")[:40]
         url = str(data.get("url") or "")[:1000]
         status = str(data.get("status") or "")[:40]
@@ -1544,7 +1558,9 @@ class Store:
                           "availability": availability, "access_scope": str(data.get("access_scope", prior_snapshot.get('access_scope', '')) or "")})
             if data.get("task_id"):
                 cm.add_anchor(graph.db, str(data["task_id"]), observed['id'], observed['version_id'], str(data.get('anchor_role') or 'work_item'))
-            graph.append_event("record_added", {"repo": repo, "kind": kind, "ref": ref, "url": url, "author": author})
+            graph.append_event("record_added", {"repo": repo, "kind": kind, "ref": ref, "url": url, "author": author,
+                                                **({"attested_by": actor.id or "", "transport": actor.kind} if actor is not None else {}),
+                                                **({"claimed_author": claimed_author} if claimed_author and claimed_author != author else {})})
         return {"repo": repo, "kind": kind, "ref": ref, "url": url,
                 "paths": graph.paths_of_intents(repo, [(kind, stored_ref)]).get((kind, stored_ref), []),
                 "source": cm.citation(graph.db, observed['id'], observed['version_id']), "changed": observed['changed'],
@@ -1572,6 +1588,40 @@ class Store:
                     'latest_observation': cm.latest_observation(row),
                     'identities': [dict(identity) for identity in db.execute('SELECT provider,namespace,object_kind,external_id FROM source_identities WHERE record_id=? ORDER BY provider,namespace,external_id', (record_id,))],
                     'source_ordering': 'provided' if (row['newest_sequence'] is not None or row['newest_updated_at'] or any(v['source_sequence'] is not None or v['source_updated_at'] for v in versions)) else 'unknown; revisions order local observations only'}
+
+    def list_records(self, namespace, limit=10, repo=""):
+        """The newest records in one namespace (pasted evidence, session
+        records): titles and attribution, never bodies. Withdrawn records
+        stay listed, marked, so the person who withdrew one sees it held."""
+        namespace = str(namespace or "").strip()
+        if not namespace:
+            raise Invalid("namespace is required")
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            raise Invalid("limit must be an integer from 1 to 100")
+        if not 1 <= limit <= 100:
+            raise Invalid("limit must be an integer from 1 to 100")
+        sql = ("SELECT s.id,s.repo,s.head_id,s.availability,s.display_ref,s.object_kind,s.last_observed_at,v.snapshot "
+               "FROM source_records s JOIN source_versions v ON v.id=s.head_id WHERE s.namespace=?")
+        args = [namespace]
+        if repo:
+            sql += " AND s.repo=?"
+            args.append(repo_key(repo))
+        out = []
+        with self.connect() as db:
+            for row in db.execute(sql + " ORDER BY s.last_observed_at DESC, s.id LIMIT ?", (*args, limit)):
+                snapshot = json.loads(row["snapshot"])
+                try:
+                    scope = json.loads(snapshot.get("access_scope") or "{}")
+                except ValueError:
+                    scope = {}
+                out.append({"record_id": row["id"], "repo": row["repo"], "kind": row["object_kind"],
+                            "ref": row["display_ref"], "title": snapshot.get("title", ""), "author": snapshot.get("author", ""),
+                            "url": snapshot.get("url", ""), "source_created_at": snapshot.get("source_created_at", ""),
+                            "observed_at": row["last_observed_at"], "availability": row["availability"],
+                            "attested_by": str((scope or {}).get("attested_by", "")) if isinstance(scope, dict) else ""})
+        return {"namespace": namespace, "records": out}
 
     def lookup_record(self, **query):
         """Resolve an exact external key without requiring a prior import or internal ID."""
