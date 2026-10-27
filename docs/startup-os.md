@@ -13,11 +13,13 @@ from a transcript. For what Raven is as a whole, and what it is not, read
    backend before proposing any judgment. It searches the whole eligible corpus, not only recent meeting chunks, preserves exact quotes and reports unread sources/partial meeting coverage. Retrievable factual answers return as progress rather than needless judgment requests. It can return no useful move. Exact quoted record/version citations
    are checked; inaccessible, changed or invented evidence rejects the result.
    No model backend means unavailable, not a fabricated recommendation: the
-   button is off, and every page says so in one line under its heading
-   (`Suggestions and briefs are off: no model key. Routing, records, reminders
-   and signed decisions still run.`; with the internal `claude-cli` backend,
-   `Manual investigation only; automatic suggestions need an API key.`; with a
-   key, `Model: <model>. Suggestions on for watched repositories.`). Today
+   button is off, and Today, the inbox and Connections & setup each say so in
+   one line under the heading (`Suggestions and briefs are off: no model key.
+   Routing, records, reminders and signed decisions still run. Add a key with
+   ./setup --configure and restart.`; with the internal `claude-cli` backend,
+   `Manual investigation only; automatic suggestions need an API key.`, and
+   the button stays on for that manual click; with a key, `Model: <model>.
+   Suggestions on for watched repositories.`). Today
    then lists the **open loops** a person can still close without a model:
    follow-ups agents suggested that nobody adopted, answers a correction put in
    doubt, checkpoints that came due, and evidence recorded since the last
@@ -130,11 +132,12 @@ describes. Nothing below needs a live provider until day 8.
 
 **Day 0.** `./setup`, with the Anthropic key left blank, prints `No model key: Raven routes,
 records, reminds and keeps signed decisions; it will not write briefs or
-propose work. Add a key later in Connections & setup.` Today, the inbox and
-Connections & setup each carry one line under the heading: `Suggestions and
-briefs are off: no model key. Routing, records, reminders and signed decisions
-still run.` and, until a Slack bot is connected, `No Slack connected:
-questions wait in the inbox.`
+propose work. Add a key later with ./setup --configure (or ANTHROPIC_API_KEY /
+OPENAI_API_KEY in .env) and restart.` Today, the inbox and Connections & setup
+each carry one line under the heading: `Suggestions and briefs are off: no
+model key. Routing, records, reminders and signed decisions still run. Add a
+key with ./setup --configure and restart.` and, until a Slack bot is
+connected, `No Slack connected: questions wait in the inbox.`
 
 **Days 1 to 3.** Each person pastes what they already have into **Add
 evidence on Today**: the notes from a customer call, the pricing policy, the
@@ -157,8 +160,9 @@ both until someone records the next checkpoint.
 Nothing has been proposed, briefed or started by a model: the `Find
 opportunities` button is off, with the same sentence as its reason.
 
-**Day 8.** An administrator adds an Anthropic or OpenAI key in Connections &
-setup and restarts. The line under each heading now reads `Model: <model>.
+**Day 8.** An administrator adds an Anthropic or OpenAI key with `./setup
+--configure` (or in `.env`, see [getting started](getting-started.md#optional-today-and-background-investigation))
+and restarts. The line under each heading now reads `Model: <model>.
 Suggestions on for watched repositories.` and the open loops block leaves
 Today. The administrator enables an evidence watch on the repository
 (**Find opportunities → Enable a repository watch**).
@@ -174,7 +178,8 @@ configured execution harness is ready, dispatches a private-copy worker; when
 none is, the objective says so in its `blocked_reason` and stays under **Needs
 your decision** rather than pretending to run. A finished run moves the
 objective to **Ready to review** for seven days; a person records a checkpoint
-or attests the outcome, and the objective folds into **Closed**.
+(which keeps the objective open and schedules its next check) or attests the
+outcome or cancels it, which folds the objective into **Closed**.
 
 ## Verification coverage
 
