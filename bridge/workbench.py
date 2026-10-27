@@ -143,7 +143,7 @@ class Workbench:
         key = field(data, 'request_key', limit=100)
         repo = field(data, 'repository', limit=100)
         provider = str(data.get('host') or 'claude')
-        cap = hosts.capability(provider) if not self.agent else None
+        cap = hosts.capability(provider, refresh=True) if not self.agent else None
         if cap and not cap['ready']:
             raise Invalid('; '.join(cap['blockers']))
         entry = next((r for r in self.repositories if r['id'] == repo), None)

@@ -324,7 +324,9 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         actor = self.actor()
                         for decision in current["decisions"]:
                             decision["can_act"] = can_act(store.graph, actor, decision)
-                    return self.send(200, etag=True, value={**current, 'workbench': workbench.config() if workbench else {'enabled': False, 'repositories': []},
+                    return self.send(200, etag=True, value={**current, 'workbench': workbench.config() if workbench else {'enabled': False, 'ready': False, 'hosts': [], 'repositories': [],
+                        # No host is probed on a poll when browser execution is off.
+                        'reason': 'Browser execution is off on this server; start Raven with --workbench or BRIDGE_WORKBENCH=1'},
                         'question_repositories': question_repositories(store),
                         'browser_tasks': workbench.list() if workbench else [], "context_sources": source_report(store), "execution_config": {
                         "enabled": executions is not None,

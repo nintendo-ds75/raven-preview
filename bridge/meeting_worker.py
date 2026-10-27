@@ -4,6 +4,8 @@ Each network result is fenced by lease, consent, exact occurrence and current
 administrator identity. Credentials are exclusively the server's Vexa config.
 """
 import logging
+import math
+import os
 import threading
 import time
 import uuid
@@ -11,6 +13,23 @@ import uuid
 from . import context_memory as cm, meeting_records as mr
 from .meeting_providers import Vexa
 from .store import Invalid, now
+
+TICK_ENV = 'BRIDGE_MEETING_TICK_SECONDS'
+TICK_SECONDS = 15.0
+IDLE_SECONDS = 60.0
+
+
+def tick_seconds(env=TICK_ENV, default=TICK_SECONDS):
+    try:
+        value = float(os.environ.get(env, '') or default)
+    except ValueError:
+        return default
+    return value if math.isfinite(value) and value > 0 else default
+
+
+def configured():
+    """Whether the server has a Vexa origin and key at all; no network."""
+    return bool(os.environ.get('BRIDGE_VEXA_URL', '').strip() and os.environ.get('VEXA_API_KEY', '').strip())
 
 
 def migrate(db):
@@ -85,15 +104,27 @@ class Worker:
         if self.thread:
             self.thread.join(timeout=35)
 
+    def needs_work(self):
+        """An enabled observer, or a Vexa configuration one could be enabled under."""
+        if configured():
+            return True
+        return self.store.graph.db.execute('SELECT 1 FROM meeting_observers WHERE enabled=1 LIMIT 1').fetchone() is not None
+
+    def interval(self):
+        return tick_seconds() if self.needs_work() else IDLE_SECONDS
+
     def _run(self):
         try:
             while not self.stop_event.is_set():
+                wait = IDLE_SECONDS
                 try:
-                    self.tick()
+                    if self.needs_work():
+                        wait = tick_seconds()
+                        self.tick()
                 except Exception:
                     # A transient database/configuration failure must not kill recovery.
                     logging.getLogger(__name__).error('Meeting observer tick failed; retrying without provider mutations')
-                self.stop_event.wait(15)
+                self.stop_event.wait(wait)
         finally:
             self.store.graph.close_thread()
 
