@@ -1,5 +1,6 @@
 """Browser execution contracts; fake inference, real git and decision graph."""
 import json
+import tempfile
 from pathlib import Path
 import threading
 import unittest
@@ -414,3 +415,22 @@ class WorkbenchTests(OfflineCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SymlinkedRootTests(unittest.TestCase):
+    """A task copy may live under a symlinked directory (macOS /tmp and /var
+    point into /private): only symlinks inside the copy are an escape."""
+
+    def test_symlinked_ancestor_of_the_root_is_not_an_escape(self):
+        from bridge import workbench_fs as fs
+        with tempfile.TemporaryDirectory() as temp:
+            real = Path(temp) / 'real'
+            (real / 'copy').mkdir(parents=True)
+            (real / 'copy' / 'a.py').write_text('x = 1\n')
+            link = Path(temp) / 'link'
+            link.symlink_to(real, target_is_directory=True)
+            root = link / 'copy'
+            self.assertEqual(fs.safe_path(root, 'a.py').read_text(), 'x = 1\n')
+            (real / 'copy' / 'out').symlink_to(real)
+            with self.assertRaises(fs.Invalid):
+                fs.safe_path(root, 'out/copy/a.py')

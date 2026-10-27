@@ -67,7 +67,9 @@ def _safe_external(path, workbench):
     if resolved.is_relative_to(workbench.root.resolve()):
         raise Invalid('Verification configuration cannot be stored in agent task copies')
     for ancestor in raw.parents:
-        if ancestor.is_symlink():
+        # A symlinked ancestor the operating system owns (macOS /tmp and /var
+        # point into /private) is not a path an agent or operator can repoint.
+        if ancestor.is_symlink() and ancestor.lstat().st_uid != 0:
             raise Invalid('Verification configuration cannot traverse symlinks')
     return resolved
 
