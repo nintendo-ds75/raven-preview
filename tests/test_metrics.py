@@ -194,6 +194,22 @@ class MetricsTests(SeededStore):
         self.assertEqual([d["rationale"] for d in boasted["declined_recent"]], [d["rationale"] for d in m["declined_recent"]])
         json.dumps(boasted)
 
+    def test_a_signed_move_a_later_signed_move_superseded_still_counts_as_signed(self):
+        # Three successive moves on one objective were signed (2 h, 1 h and
+        # 3 h to acceptance): activating each later one rewrites the previous
+        # accepted row to `superseded` and leaves its acceptance time alone
+        # (objective_head.activate_reviews); one move was dismissed.
+        self.proposal("a", "superseded", created_hours=9, updated_hours=7)
+        self.proposal("b", "superseded", created_hours=6, updated_hours=5)
+        self.proposal("c", "accepted", created_hours=4, updated_hours=1)
+        self.proposal("d", "dismissed", created_hours=3, updated_hours=2, rationale="Not this quarter")
+        m = metrics.summary(self.store, days=30)["work_proposals"]
+        self.assertEqual((m["created"], m["open"], m["signed"], m["corrected"], m["dismissed"]), (4, 0, 3, 0, 1))
+        self.assertEqual(m["precision"], 0.75)
+        self.assertEqual(m["time_to_signature"], {"count": 3, "median_seconds": 2 * HOUR, "p90_seconds": 3 * HOUR})
+        # Every row in the window is in a bucket (`reconcile` is both open and corrected, so it is left out here).
+        self.assertEqual(m["open"] + m["signed"] + m["dismissed"], m["created"])
+
     def test_a_dismissal_whose_source_access_lapsed_is_counted_but_its_words_are_withheld(self):
         # A member declined a proposal citing a source and the reason quotes it;
         # the source then became inaccessible. The Today page withholds that

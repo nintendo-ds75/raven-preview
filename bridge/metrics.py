@@ -59,6 +59,9 @@ REASK_DAYS = 90
 DEFAULT_DAYS = 30
 MAX_DAYS = 3650
 OPEN_PROPOSAL_STATES = ("proposed", "review", "preparing", "review_error", "reconcile")
+# A person signed these: `accepted`, and `superseded` once a later signed
+# move on the same objective replaced it (the row keeps its acceptance).
+SIGNED_PROPOSAL_STATES = ("accepted", "superseded")
 WITHHELD_TITLE = "Proposal withheld: source access changed"
 # Categories always reported, even when the window holds none of them.
 REPORTED_CATEGORIES = ("", "objective_scope")
@@ -317,7 +320,8 @@ def _work_proposals(db, cutoff: str, repo: str) -> dict:
     rows = db.execute("SELECT state, rationale, created_at, updated_at, repository, sources FROM objective_proposals"
                       + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY created_at, id", args).fetchall()
     states = [r["state"] for r in rows]
-    signed, corrected, dismissed = states.count("accepted"), states.count("reconcile"), states.count("dismissed")
+    signed = sum(1 for s in states if s in SIGNED_PROPOSAL_STATES)
+    corrected, dismissed = states.count("reconcile"), states.count("dismissed")
     reasons = {}
     for r in rows:
         if r["state"] == "dismissed" and not _withheld(db, r):
@@ -331,9 +335,10 @@ def _work_proposals(db, cutoff: str, repo: str) -> dict:
         "open": sum(1 for s in states if s in OPEN_PROPOSAL_STATES),
         "signed": signed, "corrected": corrected, "dismissed": dismissed,
         "precision": _rate(signed, signed + corrected + dismissed),
-        # An accepted row's updated_at is the acceptance: the activation is
-        # the last write to the row, so created_at -> updated_at is the wait.
-        "time_to_signature": _percentiles([_seconds(r["created_at"], r["updated_at"]) for r in rows if r["state"] == "accepted"]),
+        # A signed row's updated_at is the acceptance: the activation is the
+        # last write to the row (superseding it later does not touch it), so
+        # created_at -> updated_at is the wait.
+        "time_to_signature": _percentiles([_seconds(r["created_at"], r["updated_at"]) for r in rows if r["state"] in SIGNED_PROPOSAL_STATES]),
         "dismissed_reasons": [{"reason": reason, "count": count} for reason, count in top],
         "declined_recent": [row for name in repos for row in _declined_recent(db, name)],
     }
