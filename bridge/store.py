@@ -549,8 +549,14 @@ class Store:
                                      "Adopt each with bridge_add_node(adopt=<node_id>); the task finishes once "
                                      "they are answered."))
             if status == 'completed':
-                from .objectives import assert_task_authority
-                assert_task_authority(self, run_id, db=db)
+                # An ordinary completion never loads the objectives head: one
+                # existence check, guarded by the table's presence, decides
+                # whether an objective's authority applies to this task.
+                bound = (db.execute('PRAGMA table_info(objective_run_authority)').fetchall()
+                         and db.execute('SELECT 1 FROM objective_run_authority WHERE task_id=?', (run_id,)).fetchone())
+                if bound:
+                    from .objectives import assert_task_authority
+                    assert_task_authority(self, run_id, db=db)
             db.execute("UPDATE runs SET status=?,updated_at=? WHERE id=?", (status, now(), run_id))
             self.event(db, "run_updated", status, run_id=run_id)
         return {"id": run_id, "status": status}
