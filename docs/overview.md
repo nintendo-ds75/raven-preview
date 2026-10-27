@@ -10,8 +10,9 @@ this preview does and does not promise. For installation, see
 Start in Raven’s browser conversation, or connect your coding agent over MCP once. Give the agent a task such as “add usage-based pricing.” You do not need to supply file paths, owner names, or a list of decisions. The agent discovers those as it reads the repository. If Raven cannot place the task yet, the agent returns with the files it found. As it explores the work, Raven and the agent build a tree of decisions: which usage counts, what allowance to give, how to handle overages, and whether a particular customer needs different terms. An answer can reveal another question. The tree grows with the task.
 
 Raven reviews the agent's investigation for missing judgment, searches records
-and previous answers with a local learned embedding model, and compares evidence
-to choose a first contact. The agent reviews those suggestions before asking
+and previous answers by keywords and a hashed embedding, with a local learned
+embedding model (FastEmbed, BGE small) beside them when the image installs it,
+and compares evidence to choose a first contact. The agent reviews those suggestions before asking
 people. Local Claude Code and Codex use installed hooks and the resume adapter;
 supported Work cloud chats and dots can subscribe to signed task events. See
 [the investigation and wake-up flow](investigation-and-events.md) for setup
@@ -71,6 +72,19 @@ are separate from Raven's own inference. See [browser setup](browser-tasks.md)
 for dependencies, execution limits, data flow, and the optional command sandbox.
 The older **Ask Raven** action in Tasks creates a decision run and may contact an
 owner. Its confirmation screen distinguishes that action from a read-only question.
+
+### Today: from evidence to one piece of work (preview)
+
+**Today** turns the loop around: instead of waiting for an agent to ask, Raven
+reads evidence a person imported (a meeting transcript, notes, the connected
+sources) and proposes one bounded piece of work with the quotes that justify it.
+The proposal is an ordinary judgment node in the same inbox: the owner reviews
+it, and only the exact signed scope can start a coding worker, which prepares
+the change in a private copy and nothing more. A completed run is not the
+business outcome; a person records that separately. It needs a configured model
+backend and browser execution, an admin opts each repository into background
+investigation, and it has not been exercised with a live provider or a real
+meeting yet. [Today and its limits](startup-os.md).
 
 At completion, `bridge_export_proof` returns a portable review bundle containing
 the exact submitted diff hash, decision revisions, recorded signers, scope,

@@ -149,6 +149,33 @@ What happens:
 4. **Tasks** shows the whole run: questions, answers, who decided, and the review of
    the submitted diff.
 
+## Optional: Today and background investigation
+
+**Today** is a preview. Raven reads evidence a person imported (meeting
+transcripts, notes, connected sources), proposes one bounded piece of work with
+its citations, and a person signs it in the inbox before any coding worker
+starts. Nothing here is needed for the task flow above. To turn it on:
+
+1. A model backend: `BRIDGE_MODEL_API=anthropic` with `ANTHROPIC_API_KEY` (or
+   `BRIDGE_MODEL_API=openai` with `OPENAI_API_KEY`) in Raven's `.env`, and
+   `BRIDGE_MODEL`. `./setup --configure` saves the Anthropic key for you. The
+   `claude-cli` backend works for an explicit **Find opportunities** click but
+   not for background investigation, which needs an enforceable token bound.
+2. Browser execution: `BRIDGE_WORKBENCH=1`, the checkout variables and one
+   harness credential from [work directly in Raven](browser-tasks.md#run-in-docker).
+   Without it an objective can be saved and reviewed but not dispatched.
+3. An admin opts each repository into background investigation
+   (`POST /api/objectives/watch`, or **Today → Find opportunities → Enable a
+   repository watch**). Without a
+   watch, investigation runs only when someone clicks **Find opportunities**.
+
+Without a backend, **Today** shows objectives and says investigation is
+unavailable; it never fabricates a proposal. Meeting transcripts are imported
+by an admin; joining a meeting needs a separately configured Vexa server and
+per-occurrence consent ([meeting adapters](meeting-adapters.md)). The whole
+feature has been verified with scripted inference and synthetic repositories,
+not with a live provider or a real meeting: [Today](startup-os.md).
+
 ## Operate
 
 ```sh
@@ -190,5 +217,6 @@ Still stuck: `./dev status` and `./dev logs`, then open an issue with the output
 
 - [Slack notifications](slack.md) · [GitHub connection](github-connection.md) · [context sources](context-sources.md)
 - [Work in the browser](browser-tasks.md): run Claude inside Raven without a separate agent
+- [Today](startup-os.md) (preview): from imported evidence to one signed piece of work
 - [Host adapters](host-adapters.md): how the hooks register tasks and resume idle sessions
 - [Running a pilot with one team](../PILOT.md) · [Docker, hosting and backups](../DOCKER.md)

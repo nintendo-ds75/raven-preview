@@ -80,6 +80,7 @@ Add the Raven rule it offers to `CLAUDE.md` or `AGENTS.md`, so the agent calls `
 - **Context the agent can cite.** GitHub sync plus opt-in Slack channels, Jira projects and documentation sites; Raven can scan a repository and suggest which to connect. [Context sources](docs/context-sources.md)
 - **Agents keep working.** A hook holds the agent while a person answers, or a local supervisor resumes the same session later. [Host adapters](docs/host-adapters.md)
 - **Or run the agent in Raven.** Start a task from the browser and Raven runs Claude in a private copy of the repository, with tests in a no-network sandbox. [Browser tasks](docs/browser-tasks.md)
+- **Today (preview).** Raven can investigate imported evidence (meeting transcripts, notes, connected sources) and suggest one bounded piece of work with the evidence behind it. A person reviews and signs it in the same inbox before any coding worker runs. Needs a model backend and the optional browser execution; not yet exercised with a live provider. [Today](docs/startup-os.md)
 
 ## How it works
 
