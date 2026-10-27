@@ -197,6 +197,33 @@ class ObjectiveTests(OfflineCase):
         with self.assertRaises(Invalid):
             self.action(closed, 'resume')
 
+    def test_new_evidence_ignores_git_history_and_unchanged_resyncs(self):
+        """Ingested commits, merges and pull requests are not evidence a person
+        recorded, and a re-sync that leaves a record unchanged does not make it
+        new again after an investigation."""
+        from bridge.store import now
+        g = self.store.graph
+        g.upsert_intent('sample/project', 'commit', 'abc123', 'Fix the CSV example', '', 'dev', now(),
+                        metadata={'provider': 'git', 'namespace': 'sample/project', 'external_id': 'abc123', 'object_kind': 'commit'})
+        g.upsert_intent('sample/project', 'pr', '7', 'CSV export', 'Adds the export', 'dev', now(),
+                        metadata={'provider': 'github', 'namespace': 'github.com', 'external_id': '7', 'object_kind': 'pr'})
+        self.assertEqual(obj.overview(self.store)['without_model']['new_records'], [{'repository': 'sample/project', 'count': 1}])
+        with self.store.graph.transaction() as db:
+            db.execute("INSERT INTO objective_evaluations(id,objective_id,repository,fingerprint,state,result,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+                       ('eval-1', '', 'sample/project', 'fp-1', 'completed', '{}', now(), now()))
+        self.assertEqual(obj.overview(self.store)['without_model']['new_records'], [])
+        # The same note and the same commit observed again, unchanged.
+        self.assertFalse(self.store.add_record(self.record_data)['changed'])
+        g.upsert_intent('sample/project', 'commit', 'abc123', 'Fix the CSV example', '', 'dev', now(),
+                        metadata={'provider': 'git', 'namespace': 'sample/project', 'external_id': 'abc123', 'object_kind': 'commit'})
+        loops = obj.overview(self.store)['without_model']
+        self.assertEqual((loops['new_records'], loops['totals']['new_records']), ([], 0))
+        # A note whose content changed is new again; a commit never is.
+        self.assertTrue(self.store.add_record({**self.record_data, 'body': 'The customer asked again.'})['changed'])
+        g.upsert_intent('sample/project', 'commit', 'def456', 'Second commit', '', 'dev', now(),
+                        metadata={'provider': 'git', 'namespace': 'sample/project', 'external_id': 'def456', 'object_kind': 'commit'})
+        self.assertEqual(obj.overview(self.store)['without_model']['new_records'], [{'repository': 'sample/project', 'count': 1}])
+
     def test_due_checkpoint_survives_restart_without_inference(self):
         created = self.create()
         value = self.action(created, 'checkpoint', summary='Await report', next_check_at='2020-01-01T00:00:00Z', waiting_on='Customer')

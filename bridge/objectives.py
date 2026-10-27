@@ -344,9 +344,13 @@ def without_model(store, limit=OPEN_LOOP_LIMIT):
     checkpoints = [dict(r) for r in db.execute(
         "SELECT id,title,repository,next_check_at,waiting_on FROM objectives WHERE lifecycle='active' AND next_check_at<>'' AND next_check_at<=? "
         "ORDER BY next_check_at LIMIT ?", (now(), limit))]
-    # A record observed after the repository's last completed investigation,
-    # or every record where nothing was ever investigated.
-    new_sql = ("FROM source_records s WHERE s.availability='available' AND s.last_observed_at>coalesce("
+    # A record whose content changed after the repository's last completed
+    # investigation (the head version's observed_at; a re-sync of unchanged
+    # content only refreshes last_observed_at), or every record where nothing
+    # was ever investigated. Git history (commits, merges, pull requests,
+    # reviews) is not evidence somebody recorded, so it is left out.
+    new_sql = ("FROM source_records s JOIN source_versions v ON v.id=s.head_id WHERE s.availability='available' "
+               "AND s.provider<>'git' AND s.object_kind NOT IN ('commit','merge','pr','review') AND v.observed_at>coalesce("
                "(SELECT max(e.updated_at) FROM objective_evaluations e WHERE e.repository=s.repo AND e.state='completed'),'')")
     new_records = [{'repository': r['repo'], 'count': int(r['c'])} for r in db.execute(
         'SELECT s.repo,count(*) AS c ' + new_sql + ' GROUP BY s.repo ORDER BY s.repo LIMIT ?', (limit,))]
