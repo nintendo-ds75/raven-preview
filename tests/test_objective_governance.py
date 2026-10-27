@@ -288,3 +288,19 @@ class SchemaTests(GovernanceCase):
             self.skipTest('index catalog query is SQLite-specific')
         names = {r['name'] for r in self.store.graph.db.execute("SELECT name FROM sqlite_master WHERE type='index'")}
         self.assertTrue({'objective_proposals_objective_state', 'objective_events_objective', 'objective_runs_task'} <= names)
+
+
+class MigrationTests(GovernanceCase):
+    def test_each_claim_column_is_added_on_its_own(self):
+        import sqlite3
+        if sqlite3.sqlite_version_info < (3, 35):
+            self.skipTest('needs ALTER TABLE DROP COLUMN')
+        db = self.store.graph.db
+        # A start that died between the two ALTERs left only pending_request.
+        db.execute('ALTER TABLE objectives DROP COLUMN pending_since')
+        self.assertNotIn('pending_since', {r['name'] for r in db.execute('PRAGMA table_info(objectives)')})
+        obj.migrate(db)
+        columns = {r['name'] for r in db.execute('PRAGMA table_info(objectives)')}
+        self.assertLessEqual({'pending_request', 'pending_since'}, columns)
+        objective = obj.create(self.store, self.payload, self.operator)
+        obj.act(self.store, objective['id'], 'checkpoint', {'request_key': 'cp', 'expected_revision': 1, 'summary': 'Await', 'waiting_on': 'Customer'}, self.operator)

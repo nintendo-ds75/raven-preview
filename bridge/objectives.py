@@ -65,8 +65,11 @@ def migrate(db):
     columns = {r['name'] for r in db.execute('PRAGMA table_info(objectives)')}
     if 'requester_kind' not in columns:
         db.execute("ALTER TABLE objectives ADD COLUMN requester_kind TEXT NOT NULL DEFAULT 'unknown'")
+    # Each column by its own name: on SQLite every ALTER commits on its
+    # own, so a start that died between the two must add the second later.
     if 'pending_request' not in columns:
         db.execute("ALTER TABLE objectives ADD COLUMN pending_request TEXT NOT NULL DEFAULT ''")
+    if 'pending_since' not in columns:
         db.execute("ALTER TABLE objectives ADD COLUMN pending_since TEXT NOT NULL DEFAULT ''")
     db.executescript(INDEXES)
 
