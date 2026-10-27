@@ -33,7 +33,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
     await page.getByRole('button',{name:'Send to judgment inbox',exact:true}).click();
     await page.getByRole('link',{name:'Open judgment review'}).waitFor();
     overview=await (await fetch(base+'/api/objectives')).json();assert.equal(overview.proposals[0].status,'review');assert.equal(overview.objectives.length,1);
-    assert.match(await page.locator('[data-group="progress"]').innerText(),/Awaiting signed review · Fixture operator/);
+    assert.match(await page.locator('[data-group="progress"]').innerText(),/Awaiting signed review · Fixture operator/i);
     // One step further: the owner signs the scope in the inbox through the UI and
     // the objective worker turns the proposal into an accepted objective.
     await page.goto(base+'/#inbox');await page.getByRole('button',{name:/All decisions/}).click();
