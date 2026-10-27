@@ -70,6 +70,34 @@ class WithdrawRecordTests(OfflineCase):
         with self.assertRaises(Invalid):
             self.store.withdraw_record("nope", {"reason": "x"}, self.admin)
 
+    def test_reposting_another_members_key_does_not_take_the_record_over(self):
+        """A member who re-posts another member's repo/kind/ref (all visible in
+        the paste list) must not become its attested author: that would let
+        them withdraw it and strip the author's right to."""
+        source = self.paste()["source"]
+        with self.assertRaisesRegex(Invalid, "written by someone else"):
+            self.paste(actor=self.other, title="Taken over", body="Mine now")
+        with self.assertRaisesRegex(Invalid, "written by someone else"):
+            self.paste(actor=Actor(id="p-other", name="Oli's agent", role="admin", kind="agent"))
+        head = self.store.get_record(source["record_id"], REPO)
+        self.assertEqual(len(head["versions"]), 1)
+        self.assertEqual(json.loads(head["versions"][0]["snapshot"]["access_scope"])["attested_by"], "p-author")
+        # A Slack capture nobody attested is not a member's to claim either.
+        captured = self.store.add_record({"repo": REPO, "kind": "slack", "ref": "C1:1", "provider": "slack",
+                                          "namespace": "T1", "title": "Captured", "body": "Decided in Slack."})["source"]
+        with self.assertRaisesRegex(Invalid, "written by someone else"):
+            self.store.add_record({"repo": REPO, "kind": "slack", "ref": "C1:1", "provider": "slack",
+                                   "namespace": "T1", "title": "Claimed", "body": "Mine."}, actor=self.other)
+        self.assertEqual(len(self.store.get_record(captured["record_id"], REPO)["versions"]), 1)
+        # The author updates their own record and keeps the right to withdraw it.
+        self.assertTrue(self.paste(body="Could we pay yearly, from March?")["changed"])
+        with self.assertRaisesRegex(Invalid, "wrote this record, or an admin"):
+            self.store.withdraw_record(source["record_id"], {"reason": "not mine"}, self.other)
+        self.assertTrue(self.store.withdraw_record(source["record_id"], {"reason": "Shared by mistake"}, self.author)["withdrawn"])
+        # An admin may update anyone's record.
+        self.paste(ref="paste:2", actor=self.other)
+        self.assertTrue(self.paste(ref="paste:2", actor=self.admin, body="Edited by an admin")["changed"])
+
     def test_withdrawal_blocks_reuse_and_keeps_history(self):
         source = self.paste()["source"]
         did = self.dependent_decision(source)

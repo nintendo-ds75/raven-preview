@@ -1574,6 +1574,20 @@ class Store:
                     created = previous['created_at']
                 prior_version = graph.db.execute('SELECT v.snapshot FROM source_records s JOIN source_versions v ON v.id=s.head_id WHERE s.intent_id=?', (previous['id'],)).fetchone()
                 prior_snapshot = json.loads(prior_version['snapshot']) if prior_version else {}
+                if actor is not None and not (actor.role == "admin" and actor.kind != "agent"):
+                    # Re-posting the same key would re-stamp the record in the
+                    # writer's name, and the attested author is who may withdraw
+                    # it: only that author, or an admin, updates it. A record
+                    # nobody attested (connector, Slack capture) is not for a
+                    # member to claim either.
+                    try:
+                        prior_scope = json.loads(prior_snapshot.get("access_scope") or "{}")
+                    except ValueError:
+                        prior_scope = {}
+                    prior_attested = str(prior_scope.get("attested_by", "")) if isinstance(prior_scope, dict) else ""
+                    if prior_attested != (actor.id or ""):
+                        raise Invalid("This record already exists and was written by someone else; "
+                                      "only its author or an admin can update it")
                 if 'availability' not in data:
                     availability = prior_snapshot.get('availability', 'available')
             else:
