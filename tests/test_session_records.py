@@ -27,17 +27,16 @@ class SessionRecordTests(ContractCase):
         return task, node["node_id"]
 
     def seed_secrets(self, task, decision_id):
-        db = self.store.graph.db
-        db.execute("INSERT INTO host_sessions(id,principal,host,session_id,project,repo,task_id,initial_prompt,created_at,updated_at) "
-                   "VALUES(?,'p','claude','s1','proj','acme/platform',?,'SECRET_PROMPT_TOKEN','2026-01-01','2026-01-01')", ("hs-" + task, task))
         person = self.store.add_person({"name": "Interviewee " + task})
-        db.execute("INSERT INTO interviews(id,task_id,decision_id,person_id,client_key,decision_revision,scope,transcript,created_at,updated_at) "
-                   "VALUES(?,?,?,?,'k','r','{}','SECRET_TRANSCRIPT_TOKEN','2026-01-01','2026-01-01')", ("iv-" + task, task, decision_id, person["id"]))
-        db.execute("INSERT INTO slack_conversation(id,decision_id,channel,thread_ts,person_id,role,text,created_at) "
-                   "VALUES(?,?,'C1','1.1',?,'user','SECRET_SLACK_TOKEN','2026-01-01')", ("sc-" + task, decision_id, person["id"]))
-        db.execute("INSERT INTO notifications(id,decision_id,run_id,kind,channel,person_name,dedupe_key,payload,state,attempts,created_at) "
-                   "VALUES(?,?,?,'ask','slack','Wes',?,'SECRET_PAYLOAD_TOKEN','sent',1,'2026-01-01')", ("n-" + task, decision_id, task, "dedupe-" + task))
-        self.store.graph.db.commit()
+        with self.store.graph.transaction() as db:
+            db.execute("INSERT INTO host_sessions(id,principal,host,session_id,project,repo,task_id,initial_prompt,created_at,updated_at) "
+                       "VALUES(?,'p','claude','s1','proj','acme/platform',?,'SECRET_PROMPT_TOKEN','2026-01-01','2026-01-01')", ("hs-" + task, task))
+            db.execute("INSERT INTO interviews(id,task_id,decision_id,person_id,client_key,decision_revision,scope,transcript,created_at,updated_at) "
+                       "VALUES(?,?,?,?,'k','r','{}','SECRET_TRANSCRIPT_TOKEN','2026-01-01','2026-01-01')", ("iv-" + task, task, decision_id, person["id"]))
+            db.execute("INSERT INTO slack_conversation(id,decision_id,channel,thread_ts,person_id,role,text,created_at) "
+                       "VALUES(?,?,'C1','1.1',?,'user','SECRET_SLACK_TOKEN','2026-01-01')", ("sc-" + task, decision_id, person["id"]))
+            db.execute("INSERT INTO notifications(id,decision_id,run_id,kind,channel,person_name,dedupe_key,payload,state,attempts,created_at) "
+                       "VALUES(?,?,?,'ask','slack','Wes',?,'SECRET_PAYLOAD_TOKEN','sent',1,'2026-01-01')", ("n-" + task, decision_id, task, "dedupe-" + task))
 
     def finish(self, task, **args):
         with patch("bridge.llm.check_conformance", return_value=None):
