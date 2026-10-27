@@ -1655,6 +1655,51 @@ class Store:
                             "attested_by": str((scope or {}).get("attested_by", "")) if isinstance(scope, dict) else ""})
         return {"namespace": namespace, "records": out}
 
+    def withdraw_record(self, record_id, data, actor):
+        """The record's attested author, or an admin, takes a record back:
+        it becomes inaccessible, every version is withheld, and whatever
+        relied on it goes to review. The audit history stays; nothing here
+        promises the bytes are gone. The corpus revision moves so an
+        enabled watch re-evaluates."""
+        from . import context_memory as cm
+        from .authz import Actor
+        if not isinstance(actor, Actor):
+            raise Invalid("Withdrawing a record needs a signed-in person")
+        reason = field(data if isinstance(data, dict) else {"reason": data}, "reason", limit=500)
+        graph = self.graph
+        with graph.transaction():
+            db = graph.db
+            row = db.execute("SELECT * FROM source_records WHERE id=?", (str(record_id),)).fetchone()
+            if row is None:
+                raise Invalid("Source record not found")
+            head = db.execute("SELECT snapshot FROM source_versions WHERE id=?", (row["head_id"],)).fetchone()
+            snapshot = json.loads(head["snapshot"]) if head else {}
+            try:
+                scope = json.loads(snapshot.get("access_scope") or "{}")
+            except ValueError:
+                scope = {}
+            attested_by = str(scope.get("attested_by", "")) if isinstance(scope, dict) else ""
+            is_admin = actor.role == "admin" and actor.kind != "agent"
+            if not is_admin and not (attested_by and attested_by == actor.id and actor.kind != "agent"):
+                raise Invalid("Only the person who wrote this record, or an admin, can withdraw it")
+            if row["availability"] == "inaccessible":
+                return {"record_id": row["id"], "availability": "inaccessible", "withdrawn": True,
+                        "affected_decisions": [], "already": True}
+            db.execute("UPDATE source_records SET availability='inaccessible' WHERE id=?", (row["id"],))
+            at = now()
+            for version in db.execute("SELECT id FROM source_versions WHERE record_id=?", (row["id"],)).fetchall():
+                db.execute("INSERT INTO withheld_source_versions VALUES(?,?,?) ON CONFLICT(source_version_id) DO NOTHING",
+                           (version["id"], reason, at))
+            affected = cm.invalidate(db, row["id"], row["head_id"], include_current=True,
+                                     reason_override=f"Source withdrawn by its author: {reason}")
+            graph.append_event("record_withdrawn", {"record_id": row["id"], "repo": row["repo"], "reason": reason,
+                                                    "by": actor.name, "actor_id": actor.id, "actor_kind": actor.kind,
+                                                    "affected_decisions": affected})
+            graph._bump(row["repo"])
+        return {"record_id": row["id"], "availability": "inaccessible", "withdrawn": True,
+                "affected_decisions": affected,
+                "notice": "Reuse is blocked and dependents are under review; the audit history is kept."}
+
     def lookup_record(self, **query):
         """Resolve an exact external key without requiring a prior import or internal ID."""
         from . import source_lookup

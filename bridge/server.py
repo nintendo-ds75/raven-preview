@@ -1213,6 +1213,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     elif len(parts) == 5 and parts[:3] == ["api", "deliveries", "inbound"] and parts[4] == "retry":
                         self.require("admin")
                         result = store.delivery.retry_inbound(parts[3])
+                    elif len(parts) == 4 and parts[:2] == ["api", "records"] and parts[3] == "withdraw":
+                        result = store.withdraw_record(parts[2], data, self.actor())
                     elif len(parts) == 4 and parts[:2] == ["api", "people"] and parts[3] == "recording":
                         result = store.set_recording_optout(parts[2], data, actor=self.actor())
                     elif len(parts) == 4 and parts[:2] == ["api", "tokens"] and parts[3] == "revoke":
