@@ -30,7 +30,9 @@ Raven imports active full members through Slack's paginated directory API when t
 
 Connect GitHub or ingest a local clone for CODEOWNERS, commits, blame, and review history. The host agent can also call `bridge_import_record` with a ticket or document it retrieved through its own connected tools. Include the original author, status, permalink, and related paths. A matched record's author can be an inferred first contact. Imported text is evidence, never signoff.
 
-Raven captures `record: <decision text>` in channels the bot can already see. Set
+Raven captures `record: <decision text>` in channels the bot can already see;
+`remember: <decision text>` works the same way, as does either prefix after
+`@Raven`. Set
 `slack_capture_repo` in workspace settings for that capture. Only an explicit,
 non-thread `message` or `app_mention` enrolls its exact workspace/channel/message
 identity. The authenticated event's workspace and the repository selected when
