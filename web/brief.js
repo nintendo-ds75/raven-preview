@@ -258,7 +258,7 @@ function focusCard(f) {
     ${back}<p class="brief-kicker">${kicker}</p>
     <h2 id="focus-question" tabindex="-1">${esc(f.question)}</h2>
     ${f.brief ? `<p class="brief-lead">${prose(f.brief)}</p>` : ''}
-    ${f.context && !sameAsBrief ? `<div class="brief-block"><span class="label">Context from the coding agent</span><p>${prose(f.context)}</p></div>` : ''}
+    ${f.objective && typeof objectiveScopeCard === 'function' ? `<div class="brief-block"><span class="label">Proposed scope</span>${objectiveScopeCard(f.objective, `brief-${f.node_id}`)}</div>` : f.context && !sameAsBrief ? `<div class="brief-block"><span class="label">Context from the coding agent</span><p>${prose(f.context)}</p></div>` : ''}
     ${f.answer ? `<div class="brief-block is-answer"><span class="label">${mine ? 'Your answer' : (['signed', 'rule'].includes(f.signoff) ? 'Signed answer' : 'Answer on the table') + (f.answered_by ? ' · ' + esc(f.answered_by) : '')}</span><p>${prose(f.answer)}</p>${f.rationale ? `<p class="brief-why-line">Why: ${prose(f.rationale)}</p>` : ''}</div>` : ''}
     ${f.prediction ? `<div class="brief-block is-guess"><span class="label">How you decided before · a guess, not approved</span><p>${prose(f.prediction)}</p></div>` : ''}
     ${f.replacement_ends_rule ? '<p class="context">Recording a new or corrected answer retires the existing standing rule. An unchanged-answer sign-off keeps it. Future automatic reuse needs a fresh explicit make-rule action.</p>' : ''}
