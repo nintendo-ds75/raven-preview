@@ -126,6 +126,36 @@ class UnlockedWorkbenchTests(GovernanceCase):
         self.dispatch(objective, 'start', workbench)
         self.assertEqual(len(workbench.submits), 1)
 
+    def test_a_live_claim_refuses_actions_that_would_record_over_it(self):
+        objective = obj.create(self.store, self.payload, self.operator)
+        with self.store.graph.transaction() as db:
+            db.execute("UPDATE objectives SET pending_request='in-flight',pending_since=? WHERE id=?", (now(), objective['id']))
+        for action, extra in (('checkpoint', {'waiting_on': 'Customer'}), ('cancel', {}), ('achieve', {})):
+            with self.assertRaisesRegex(Invalid, 'still completing'):
+                obj.act(self.store, objective['id'], action, {'request_key': action, 'expected_revision': 1, 'summary': 'Meanwhile', **extra}, self.operator)
+            saved = obj.row(self.store, objective['id'])
+            self.assertEqual((saved['pending_request'], saved['lifecycle'], saved['revision']), ('in-flight', 'active', 1))
+
+    def test_a_checkpoint_during_submission_neither_clears_the_claim_nor_loses_the_run(self):
+        objective = obj.create(self.store, self.payload, self.operator)
+        case = self
+
+        class InterleavedWorkbench(FakeWorkbench):
+            def submit(self, data, actor):
+                # Another person's checkpoint arrives while this submission is
+                # still outside the lock; it must wait, not record over the claim.
+                with case.assertRaisesRegex(Invalid, 'still completing'):
+                    obj.act(case.store, objective['id'], 'checkpoint', {'request_key': 'meanwhile', 'expected_revision': 1,
+                        'summary': 'Await report', 'waiting_on': 'Customer'}, case.operator)
+                return super().submit(data, actor)
+
+        workbench = InterleavedWorkbench(self.store)
+        started = self.dispatch(objective, 'start', workbench)
+        self.assertEqual(len(workbench.submits), 1)
+        self.assertEqual(len(started['runs']), 1)
+        self.assertEqual(obj.row(self.store, objective['id'])['pending_request'], '')
+        self.assertEqual(len(obj.get(self.store, objective['id'])['runs']), 1)
+
     def test_pause_resume_and_cancel_control_workers_outside_the_lock(self):
         objective = obj.create(self.store, self.payload, self.operator)
         workbench = FakeWorkbench(self.store)

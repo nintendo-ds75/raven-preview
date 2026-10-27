@@ -440,13 +440,20 @@ def _plan(store, db, value, action, data, workbench, key):
     return plan
 
 
+def _unclaimed(value):
+    """Refuse every action while another request holds a live claim: a
+    checkpoint or cancel recorded meanwhile would clear that claim and
+    leave its submitted worker with no record on the objective."""
+    expired = (datetime.now(timezone.utc) - CLAIM_TTL).isoformat()
+    if value['pending_request'] and value['pending_since'] > expired:
+        raise Invalid('Another request on this objective is still completing; reopen it shortly')
+
+
 def _claim(db, value, key):
     """Hold the objective for one request while it calls the workbench
     unlocked: a concurrent or repeated request sees the claim and neither
     submits a second worker nor records over the first."""
-    expired = (datetime.now(timezone.utc) - CLAIM_TTL).isoformat()
-    if value['pending_request'] and value['pending_since'] > expired:
-        raise Invalid('Another request on this objective is still completing; reopen it shortly')
+    _unclaimed(value)
     db.execute('UPDATE objectives SET pending_request=?,pending_since=? WHERE id=?', (key, now(), value['id']))
 
 
@@ -485,6 +492,7 @@ def act(store, ident, action, data, actor, workbench=None):
         if value['lifecycle'] in ('achieved', 'stopped'):
             raise Invalid('This objective is closed; create a new objective for new work')
         plan = _plan(store, db, value, action, data, workbench, key)
+        _unclaimed(value)
         if plan['submit'] is None and not plan['control']:
             return _record(store, db, value, action, actor, key, fingerprint, plan)
         _claim(db, value, key)
