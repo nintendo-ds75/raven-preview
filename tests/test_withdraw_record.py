@@ -55,6 +55,13 @@ class WithdrawRecordTests(OfflineCase):
         self.assertEqual((done["availability"], done["withdrawn"]), ("inaccessible", True))
         other = self.paste(ref="paste:2", actor=self.other)["source"]
         self.assertTrue(self.store.withdraw_record(other["record_id"], {"reason": "duplicate"}, self.admin)["withdrawn"])
+        # Authorisation follows access_scope.attested_by, not the stored author:
+        # a ticket Pat imported in Oli's name is still Pat's to withdraw.
+        imported = self.paste(ref="paste:3", author="Oli Other")["source"]
+        self.assertEqual(imported["author"], "Oli Other")
+        with self.assertRaisesRegex(Invalid, "wrote this record, or an admin"):
+            self.store.withdraw_record(imported["record_id"], {"reason": "in my name"}, self.other)
+        self.assertTrue(self.store.withdraw_record(imported["record_id"], {"reason": "wrong ticket"}, self.author)["withdrawn"])
         # An in-process record with no attested author: only an admin.
         unattested = self.store.add_record({"repo": REPO, "kind": "note", "ref": "n1", "title": "Note", "body": "x"})["source"]
         with self.assertRaises(Invalid):

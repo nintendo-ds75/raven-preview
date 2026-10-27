@@ -196,14 +196,17 @@ objective research the moment it is saved, and never a sign-off. A paste holds
 at most 20,000 characters; a longer thread is split, or imported as a
 [meeting transcript](meeting-adapters.md).
 
-Every record written over HTTP or MCP carries a **server-stamped author**: the
-person whose session, token or agent credential made the request. The body may
-name an author; the stored author is still the person who wrote the record, and
-the name the body claimed is kept in the `record_added` event only. The record's
-access scope says so (`basis: author`, the attesting person's id, the transport),
-and the same stamp is what lets that person withdraw it later. Records that
-Raven writes for itself (Slack capture, connector sync, meeting import) keep the
-source's own author, because no person wrote them.
+Every record written over HTTP or MCP carries a **server-stamped access
+scope**: `basis: author`, the id of the person whose session, token or agent
+credential made the request (`attested_by` and `imported_by`), the transport,
+and the shared attestation, whatever the body claims. The stored `author` is
+the source's own: a ticket's reporter or a message's sender, which routing
+reads as a weak contact for the record's paths, not the person who imported
+it. A body that names no author, such as the **Add evidence** form, attributes
+the record to the person who pasted it. The stamp, not the author, is what
+lets the importing person withdraw the record later. Records that Raven writes
+for itself (Slack capture, connector sync, meeting import) keep the source's
+own author and carry no stamp, because no person wrote them.
 
 **Session records** are off by default. With the admin setting
 `session_records` on, a task that finishes as completed leaves one record of

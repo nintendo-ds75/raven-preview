@@ -1494,11 +1494,13 @@ class Store:
         replace the snapshot (including []); omitted paths are unchanged. It is
         evidence the ladder can cite, never sign-off.
 
-        `actor` is who writes it over HTTP or MCP: the record's author is
-        then that person and its access scope says the server attested it,
-        whatever the body claims (a claimed author is kept in the event).
+        `actor` is who writes it over HTTP or MCP: the access scope then
+        says the server attested it and who imported it, whatever the body
+        claims. The author stays the source's own (a ticket's reporter is a
+        contact signal for its paths); a body that names none, such as the
+        paste form, attributes the record to the person who wrote it.
         In-process writers (meeting import, connectors, Slack capture) pass
-        none and keep the source's own author."""
+        none and keep the source's own author and scope."""
         repo = repo_key(str(data.get("repo") or ""))
         kind = re.sub(r"[^a-z0-9_-]", "", str(data.get("kind") or "note").lower())[:30] or "note"
         if kind in ("pr", "merge", "commit", "review"):
@@ -1516,12 +1518,11 @@ class Store:
         if not title and not body:
             raise Invalid("A record needs a title or a body")
         author = str(data.get("author") or "")[:100]
-        claimed_author = ""
         if actor is not None:
-            claimed_author, author = author, str(actor.name or "")[:100]
+            author = author or str(actor.name or "")[:100]
             data = {**data, "author": author, "access_scope": json.dumps(
-                {"basis": "author", "attested_by": actor.id or "", "transport": actor.kind, "workspace_shared": True},
-                sort_keys=True)}
+                {"basis": "author", "attested_by": actor.id or "", "imported_by": actor.id or "",
+                 "transport": actor.kind, "workspace_shared": True}, sort_keys=True)}
         created = str(data.get("created_at") or "")[:40]
         url = str(data.get("url") or "")[:1000]
         status = str(data.get("status") or "")[:40]
@@ -1591,8 +1592,8 @@ class Store:
             if data.get("task_id"):
                 cm.add_anchor(graph.db, str(data["task_id"]), observed['id'], observed['version_id'], str(data.get('anchor_role') or 'work_item'))
             graph.append_event("record_added", {"repo": repo, "kind": kind, "ref": ref, "url": url, "author": author,
-                                                **({"attested_by": actor.id or "", "transport": actor.kind} if actor is not None else {}),
-                                                **({"claimed_author": claimed_author} if claimed_author and claimed_author != author else {})})
+                                                **({"attested_by": actor.id or "", "imported_by": actor.id or "", "transport": actor.kind}
+                                                   if actor is not None else {})})
         return {"repo": repo, "kind": kind, "ref": ref, "url": url,
                 "paths": graph.paths_of_intents(repo, [(kind, stored_ref)]).get((kind, stored_ref), []),
                 "source": cm.citation(graph.db, observed['id'], observed['version_id']), "changed": observed['changed'],
