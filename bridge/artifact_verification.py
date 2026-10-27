@@ -48,6 +48,17 @@ def _tree(root):
     return result
 
 
+def _stamp(root):
+    """Every file the tree hash covers with its size, modification time and
+    executable bit: the git patch omits ignored files, so the patch alone
+    cannot say whether the candidate's bytes are still the hashed ones."""
+    stamp = []
+    for rel in fs.files(root):
+        status = fs.safe_path(root, rel).stat()
+        stamp.append([rel, status.st_size, status.st_mtime_ns, bool(status.st_mode & 0o111)])
+    return stamp
+
+
 def _copy(root, target, listing):
     for rel, entry in listing.items():
         content = fs.safe_path(root, rel).read_bytes()
@@ -150,8 +161,9 @@ class Verifier:
     def _snapshot(self, task_id, *, reuse=False):
         """The current binding of a task's candidate. A receipt-producing
         call hashes the actual tree; a listing may reuse the last tree hash
-        while the base revision, patch digest and decision vector are the
-        ones it was computed under, so polling does not reread every byte."""
+        while the base revision, patch digest, decision vector and the
+        files' sizes and times are the ones it was computed under, so
+        polling does not reread every byte."""
         from .visibility import require_task
         require_task(self.workbench.store, task_id)
         row = self.workbench.row(task_id)
@@ -169,7 +181,7 @@ class Verifier:
         binding = {'base_revision': row['revision'], 'repository': row['repository'],
                    'patch_sha256': hashlib.sha256(patch.encode()).hexdigest(), 'patch_bytes': len(patch.encode()),
                    'objectives': objectives, 'decisions': _decisions(self.workbench, task_id)}
-        key = _digest({k: binding[k] for k in ('base_revision', 'patch_sha256', 'decisions')})
+        key = _digest({**{k: binding[k] for k in ('base_revision', 'patch_sha256', 'decisions')}, 'files': _stamp(root)})
         cache = self.workbench.__dict__.setdefault('_verification_trees', {})
         cached = cache.get(task_id)
         if reuse and cached and cached[0] == key:

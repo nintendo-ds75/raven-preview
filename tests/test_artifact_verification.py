@@ -98,6 +98,20 @@ class VerificationTests(OfflineCase):
             self.verifier.list(self.task)
             self.assertEqual(tree.call_count, 2)
 
+    def test_an_edited_ignored_file_revokes_usable_pass_in_the_listing(self):
+        (self.candidate / '.git' / 'info').mkdir(exist_ok=True)
+        (self.candidate / '.git' / 'info' / 'exclude').write_text('generated.txt\n')
+        self.verify()
+        self.assertTrue(self.verifier.list(self.task)[0]['usable_pass'])
+        patch_before = fs.diff(self.candidate)
+        # Build output the task copy's git ignores: the patch does not change, the bytes do.
+        (self.candidate / 'generated.txt').write_text('built\n')
+        self.assertEqual(fs.diff(self.candidate), patch_before)
+        listed = self.verifier.list(self.task)[0]
+        self.assertFalse(listed['usable_pass'])
+        self.assertFalse(listed['current'])
+        self.assertEqual(listed['status'], 'passed')
+
     def test_test_mutation_of_executed_source_is_not_success_for_returned_bytes(self):
         self.sandbox.callback = lambda root: (root / 'module.py').write_text('VALUE = 99\n')
         receipt = self.verify()
