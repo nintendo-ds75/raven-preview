@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The advisory jobs (Docker packaging, Codex containment) skip pull
+  # requests and run nightly instead, or on demand.
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -165,8 +170,9 @@ jobs:
     timeout-minutes: 25
     # Advisory until stabilised: it pulls base images from Docker Hub and
     # builds on top of them, so an upstream change or a registry hiccup
-    # red-lines every pull request. Read this job's own result; it does not
-    # fail the check.
+    # red-lines every pull request. It runs on push, nightly and on demand,
+    # not on pull requests; read its own result, it does not fail the check.
+    if: github.event_name != 'pull_request'
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -193,8 +199,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Advisory until stabilised: the app-server pin is an alpha npm release
-    # that upstream can change under us. Read this job's own result; it does
-    # not fail the check.
+    # that upstream can change under us. It runs on push, nightly and on
+    # demand, not on pull requests; read its own result, it does not fail
+    # the check.
+    if: github.event_name != 'pull_request'
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
