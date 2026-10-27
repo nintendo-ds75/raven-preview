@@ -16,6 +16,12 @@ from a transcript.
    outcome, limits and positive/negative/boundary cases are inside that node's
    signed scope. The existing owner, required signers and source-review rules
    apply. The initial click is not approval.
+   The signer never reads that scope as JSON: the inbox card, the decision
+   dialog, the personal task page and the Slack message show the same short
+   card instead (the outcome, the question, what the move will and won't do and
+   its edge cases, the bound, the cited evidence, and a link back to Today),
+   built from the stored scope without adding to it. The JSON stays the text
+   the signature binds to.
 4. Only the exact current signed answer and scope activate the move. A signed
    refusal or corrected scope does not accidentally authorize the old proposal.
    A durable worker dispatches the signed move to the selected configured
