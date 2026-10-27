@@ -35,7 +35,8 @@ Return JSON {"proposal":null,"reason":"why no material move"} or
 "reason":"..."}. Cases must make the consequential behavior and limits readable;
 not an owner-authored rule language. Cite at least one supplied source. Stay
 within the current objective scope; propose a new judgment if scope must change.
-Keep the complete proposal under 10000 characters, including every case and citation.'''
+Keep the complete proposal under 10000 characters, including every case and citation.
+Do not re-propose a declined move unless the cited evidence is newer than the declination.'''
 
 
 BACKGROUND_LIMIT = 6
@@ -154,6 +155,20 @@ def evidence(store, repo, source_ids=None):
     return packet
 
 
+DECLINED_LIMIT = 5
+
+
+def declined_before(db, repo, limit=DECLINED_LIMIT):
+    """The last few proposals a person dismissed in this repository, each
+    with the reason they gave: what the next investigation reads before
+    proposing, so a declined move is not proposed again on the same
+    evidence. Read from the proposal ledger; there is no separate store."""
+    rows = db.execute("SELECT payload,rationale,updated_at FROM objective_proposals WHERE repository=? AND state='dismissed' "
+                      "ORDER BY updated_at DESC LIMIT " + str(int(limit)), (repo,))
+    return [{'title': str(json.loads(r['payload']).get('title') or ''), 'rationale': r['rationale'], 'updated_at': r['updated_at']}
+            for r in rows]
+
+
 def scan(store, data, actor, *, cfg=None, client=None, objective_id='', automatic=False):
     obj.human(actor)
     actor = obj.current_actor(store, actor, 'admin' if data.get('watch_revision') else 'member')
@@ -233,8 +248,13 @@ def scan(store, data, actor, *, cfg=None, client=None, objective_id='', automati
         disclosure_sources = [{k: source[k] for k in ('record_id','source_version_id')} for source in packet]
         disclosure_sources.extend({**source, 'metadata_only': True} for source in investigation.get('metadata_dependencies', []) if source['record_id'] not in read_ids)
         if investigation['disposition'] == 'needs_judgment':
+            # Dismissals are not part of the fingerprint: on unchanged
+            # evidence the cached reading already suppresses the same
+            # proposal, and a reason only matters once there is new evidence.
+            declined = declined_before(store.graph.db, repo)
             result = (client or Client(cfg)).complete_json('objective investigation', SYSTEM,
-                json.dumps({'objective': context, 'evidence': packet, 'research': {k: investigation[k] for k in ('observations','coverage','reason')}}), max_tokens=3000, bounded=True)
+                json.dumps({'objective': context, 'evidence': packet, 'research': {k: investigation[k] for k in ('observations','coverage','reason')},
+                            'declined_before': declined}), max_tokens=3000, bounded=True)
         else:
             result = {'proposal': None, 'reason': investigation['reason']}
         if not isinstance(result, dict) or 'proposal' not in result:

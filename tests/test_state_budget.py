@@ -142,7 +142,7 @@ class StateBudgetTests(OfflineCase):
             db.execute("UPDATE objective_proposals SET state='proposed' WHERE id=?", (proposal['id'],))
         obj.propose(self.store, payload, [pin], objective_id=created['id'])
         self.assertEqual(json.loads(self.get('/api/state')[2])['today']['proposals_open'], before['proposals_open'] + 1)
-        obj.proposal_action(self.store, proposal['id'], 'dismiss', {'request_key': 'drop', 'expected_revision': proposal['revision']}, actor)
+        obj.proposal_action(self.store, proposal['id'], 'dismiss', {'request_key': 'drop', 'expected_revision': proposal['revision'], 'rationale': 'Counted; not pursuing'}, actor)
         obj.block(self.store, created['id'], '')
         self.assertEqual(json.loads(self.get('/api/state')[2])['today']['objectives_needing_you'], before['objectives_needing_you'])
         self.assertEqual(json.loads(self.get('/api/state')[2])['today']['proposals_open'], before['proposals_open'])

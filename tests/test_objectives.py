@@ -380,12 +380,25 @@ class ObjectiveTests(OfflineCase):
     def test_stale_proposal_can_be_dismissed_so_new_evidence_can_progress(self):
         objective = self.create()
         proposal = obj.propose(self.store, self.proposal(), [self.pin], objective_id=objective['id'])
+        # A dismissal teaches the next investigation, so it needs a reason:
+        # none, a blank one, or the old default are refused and change nothing.
+        for data in ({}, {'rationale': '  '}, {'rationale': 'No'}, {'rationale': 'Not pursuing this proposal'}):
+            with self.assertRaisesRegex(Invalid, 'reason of at least 3 characters'):
+                obj.proposal_action(self.store, proposal['id'], 'dismiss', {'expected_revision': 1, 'request_key': 'dismiss-old', **data}, self.actor)
+        self.assertEqual(obj.get(self.store, objective['id'])['proposals'][0]['state'], 'proposed')
+        dismissed = obj.proposal_action(self.store, proposal['id'], 'dismiss', {'expected_revision': 1, 'request_key': 'dismiss-old', 'rationale': 'The CSV issue is already fixed on the pilot branch'}, self.actor)
+        self.assertEqual(dismissed['state'], 'dismissed')
+        self.assertEqual(dismissed['rationale'], 'The CSV issue is already fixed on the pilot branch')
+        # The identical proposal on the same evidence is the dismissed one, not a new card.
+        again = obj.propose(self.store, self.proposal(), [self.pin], objective_id=objective['id'])
+        self.assertEqual((again['id'], again['state']), (proposal['id'], 'dismissed'))
+        self.assertEqual([p['state'] for p in obj.get(self.store, objective['id'])['proposals']], ['dismissed'])
+        # Newer evidence makes the dismissed card stale and can carry a new one.
         source = self.store.add_record({**self.record_data, 'body': 'A different issue now blocks the pilot.'})['source']
         self.assertTrue(obj.get(self.store, objective['id'])['proposals'][0]['evidence_stale'])
-        dismissed = obj.proposal_action(self.store, proposal['id'], 'dismiss', {'expected_revision': 1, 'request_key': 'dismiss-old'}, self.actor)
-        self.assertEqual(dismissed['state'], 'dismissed')
         fresh = obj.propose(self.store, self.proposal(), [{k: source[k] for k in ('record_id','source_version_id')}], objective_id=objective['id'])
         self.assertNotEqual(fresh['id'], proposal['id'])
+        self.assertEqual(fresh['state'], 'proposed')
 
     def test_core_completion_refuses_paused_owning_objective(self):
         objective = self.create()
@@ -398,7 +411,7 @@ class ObjectiveTests(OfflineCase):
 
     def test_idempotent_dismissal_rechecks_disclosure_after_source_revocation(self):
         proposal = obj.propose(self.store, self.proposal(), [self.pin])
-        data = {'expected_revision': 1, 'request_key': 'dismiss'}
+        data = {'expected_revision': 1, 'request_key': 'dismiss', 'rationale': 'Already covered elsewhere'}
         self.assertIn('outcome', obj.proposal_action(self.store, proposal['id'], 'dismiss', data, self.actor))
         self.store.add_record({**self.record_data, 'availability': 'inaccessible'})
         replay = obj.proposal_action(self.store, proposal['id'], 'dismiss', data, self.actor)

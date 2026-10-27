@@ -58,6 +58,8 @@ CREATE INDEX IF NOT EXISTS objective_runs_task ON objective_runs(task_id);
 # A request that calls the workbench outside the writer lock holds the
 # objective this long at most; a crashed caller's claim expires on its own.
 CLAIM_TTL = timedelta(minutes=10)
+# What a dismissal used to say when nobody gave a reason; refused now.
+DEFAULT_DISMISSAL = 'Not pursuing this proposal'
 
 
 def migrate(db):
@@ -372,9 +374,10 @@ def _reviewers(store, proposals):
     node, named so Today can say whose signature is wanted."""
     for proposal in proposals:
         if proposal.get('state') == 'review' and proposal.get('decision_id') and not proposal.get('withheld'):
-            owner = store.graph.db.execute('SELECT o.name FROM decisions d JOIN owners o ON o.id=d.owner_id WHERE d.id=?',
+            owner = store.graph.db.execute('SELECT o.name, d.routing_reason FROM decisions d JOIN owners o ON o.id=d.owner_id WHERE d.id=?',
                                            (proposal['decision_id'],)).fetchone()
             proposal['reviewer'] = owner['name'] if owner else ''
+            proposal['reviewer_reason'] = (owner['routing_reason'] or '') if owner else ''
     return proposals
 
 
@@ -636,8 +639,13 @@ def proposal_action(store, ident, action, data, actor, cfg=None):
         if value['state'] not in ('proposed', 'review', 'review_error', 'reconcile'):
             raise Invalid('This proposal is no longer open or its review is being prepared')
         if action == 'dismiss':
+            # The reason is read by the next investigation of this
+            # repository, so a dismissal without one teaches nothing.
+            reason = data.get('rationale')
+            if not isinstance(reason, str) or len(reason.strip()) < 3 or reason.strip() == DEFAULT_DISMISSAL:
+                raise Invalid('A reason of at least 3 characters is required; it shapes the next investigation')
             db.execute("UPDATE objective_proposals SET state='dismissed',rationale=?,revision=revision+1,updated_at=? WHERE id=?",
-                       (field(data, 'rationale', 'Not pursuing this proposal', 2000), now(), ident))
+                       (field(data, 'rationale', limit=2000), now(), ident))
             result = _proposal_view(store, db.execute('SELECT * FROM objective_proposals WHERE id=?', (ident,)).fetchone())
             _save_request(db, key, fingerprint, result)
             return result
