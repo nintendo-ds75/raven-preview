@@ -71,7 +71,7 @@ class SetupTests(unittest.TestCase):
         self.assertNotIn("BRIDGE_MODEL_API", text)
         # The wizard says what Raven does without a key, in the words the pages use.
         self.assertIn("No model key: Raven routes, records, reminds and keeps signed decisions; it will not write briefs "
-                      "or propose work. Add a key later in Connections & setup.", output.getvalue())
+                      "or propose work. Add a key later with ./setup --configure (or ANTHROPIC_API_KEY / OPENAI_API_KEY in .env) and restart.", output.getvalue())
 
     def test_invalid_configuration_does_not_touch_existing_file(self):
         self.path.write_text("BRIDGE_PORT=7333\n")

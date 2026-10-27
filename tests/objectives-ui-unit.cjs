@@ -71,11 +71,11 @@ function harness(hash='#today') {
   assert.doesNotMatch(fs.readFileSync(require('node:path').join(__dirname,'../web/objectives.js'),'utf8'),/'pending'/);
   assert.match(h.app.innerHTML,/<div id="evidence-mount"><\/div>/);assert.doesNotMatch(h.app.innerHTML,/Open loops/);
   // Without a model key: the open loops block carries the notice and Find opportunities is off.
-  h.c.state.model={backend:'none',proposals:false,investigation:false,notice:'Suggestions and briefs are off: no model key. Routing, records, reminders and signed decisions still run.'};
+  h.c.state.model={backend:'none',proposals:false,investigation:false,notice:'Suggestions and briefs are off: no model key. Routing, records, reminders and signed decisions still run. Add a key with ./setup --configure and restart.'};
   h.c.fixture.without_model={followups:[{id:'d1',run_id:'t1',task_title:'Pilot CSV path',question:'Which trial limit applies?'}],needs_review:[{id:'d2',run_id:'t1',task_title:'Pilot CSV path',question:'Keep the CSV example?',review_reason:'The policy it leaned on was corrected'}],checkpoints_due:[{id:'o1',title:'Blocked outcome',next_check_at:'2020-01-01T00:00:00Z',waiting_on:'Pilot'}],new_records:[{repository:'sample/repo',count:3}],totals:{followups:12,needs_review:1,checkpoints_due:1,new_records:1}};
   h.run('renderObjectives()');
   assert.match(h.app.innerHTML,/Open loops \(no model key\)/);assert.match(h.app.innerHTML,/Suggestions and briefs are off: no model key\./);assert.match(h.app.innerHTML,/Which trial limit applies\?/);assert.match(h.app.innerHTML,/The policy it leaned on was corrected/);assert.match(h.app.innerHTML,/sample\/repo<\/strong> · 3 records/);assert.match(h.app.innerHTML,/11 more\./);
-  assert.match(h.app.innerHTML,/data-objective-action="scan-panel"[^>]*disabled[^>]*title="Suggestions and briefs are off: no model key\. Routing, records, reminders and signed decisions still run\."/);
+  assert.match(h.app.innerHTML,/data-objective-action="scan-panel"[^>]*disabled[^>]*title="Suggestions and briefs are off: no model key\. Routing, records, reminders and signed decisions still run\. Add a key with \.\/setup --configure and restart\."/);
   await h.click('scan-panel');assert.doesNotMatch(h.app.innerHTML,/Inspect evidence/);
   // A due checkpoint the worker already marked has no next_check_at left; it is still listed.
   h.c.fixture.without_model.checkpoints_due=[{id:'o1',title:'Blocked outcome',next_check_at:'',waiting_on:'Pilot'}];h.run('renderObjectives()');assert.match(h.app.innerHTML,/Blocked outcome<\/a> · due now · waiting on Pilot/);

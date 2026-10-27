@@ -307,7 +307,7 @@ def configure(args, path: Path, interactive: bool) -> None:
             if updates.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
                 updates["BRIDGE_MODEL_API"] = "anthropic"
             else:
-                print("No model key: Raven routes, records, reminds and keeps signed decisions; it will not write briefs or propose work. Add a key later in Connections & setup.")
+                print("No model key: Raven routes, records, reminds and keeps signed decisions; it will not write briefs or propose work. Add a key later with ./setup --configure (or ANTHROPIC_API_KEY / OPENAI_API_KEY in .env) and restart.")
         print("Slack is optional: people can answer in the Raven inbox without it.")
         ask("a Slack bot (notifications with a link to each decision; see docs/slack.md)", [("SLACK_BOT_TOKEN", "Slack bot token", True),
             ("SLACK_SIGNING_SECRET", "Slack signing secret", True),

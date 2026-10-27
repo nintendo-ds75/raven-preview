@@ -117,7 +117,7 @@ class StateBudgetTests(OfflineCase):
         self.assertEqual(state['model']['backend'], 'none')
         self.assertFalse(state['model']['proposals'])
         self.assertEqual(state['model']['notice'],
-                         'Suggestions and briefs are off: no model key. Routing, records, reminders and signed decisions still run.')
+                         'Suggestions and briefs are off: no model key. Routing, records, reminders and signed decisions still run. Add a key with ./setup --configure and restart.')
         before = state['today']
         actor = Identity('', 'Local operator', 'admin', 'operator')
         source = self.store.add_record({'repo': 'sample/project', 'kind': 'note', 'ref': 'pilot-call',
