@@ -30,4 +30,10 @@
 @media(max-width:760px){.objective-layout{display:block}.objective-layout>aside{border-left:0;border-top:1px solid var(--line);padding:24px 0 0}.objective-heading{align-items:flex-start;flex-direction:column;gap:16px}.objective-heading h1,.objective-detail-heading h1{font-size:27px}.objective-card,.objective-editor{padding:18px}.objective-editor textarea,.objective-editor input,.objective-editor select{font-size:16px}.objective-actions .button{min-height:44px}.objective-card-top{align-items:flex-start}.objective-repo{max-width:55%;overflow-wrap:anywhere}}
 .objective-editor details>summary{cursor:pointer;padding:12px 0;color:var(--muted)}.objective-editor form{margin-bottom:20px}.objective-editor .objective-check{display:flex;align-items:flex-start;gap:10px;line-height:1.6}.objective-check input[type=checkbox]{width:16px;min-height:16px;flex-shrink:0;margin:3px 0 0}.objective-meeting-join{border-top:1px solid var(--line);padding-top:10px}
 
+/* Open loops: the model-free block on Today. One list per kind of loop,
+   styled like the evidence lists; long titles wrap rather than overflow. */
+.objective-loop{border-top:1px solid var(--line);padding:12px 0 4px;font-size:12px;line-height:1.6;overflow-wrap:anywhere;min-width:0}
+.objective-loop h3{display:flex;justify-content:space-between;gap:12px;font-size:13px;font-weight:550;margin:0 0 8px}.objective-loop h3 span{color:var(--muted);font-weight:400;flex-shrink:0}
+.objective-loop ul{list-style:none;margin:0 0 8px;padding:0}.objective-loop li{margin-bottom:10px;color:var(--text)}.objective-loop li a{color:var(--green)}.objective-loop li a:hover{text-decoration:underline}
+#objective-open-loops .objective-notice{border-top:0;padding-top:0}
 .objective-evidence blockquote{margin:10px 0;padding:8px 12px;border-left:2px solid var(--line);white-space:pre-wrap;color:var(--text)}
