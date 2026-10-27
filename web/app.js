@@ -353,6 +353,8 @@ function kindBadge(d) {
 function decisionCard(d, index) {
   const approved = d.status === 'approved';
   const settled = settledNow(d);
+  // An objective's proposed scope is stored as JSON; the card reads it as a scope, never as JSON.
+  const scope = typeof objectiveScope === 'function' ? objectiveScope(d) : null;
   let box;
   if (d.needs_review) box = `<div class="context-box prediction"><span class="label">Needs review · ${esc(d.review_reason || 'an answer it leaned on was corrected')}</span>${esc(d.answer || d.prediction || '')}</div>`;
   else if (approved) box = `<div class="context-box"><span class="label">Recorded answer · ${esc(d.answered_by || d.owner_name || '')}</span>${esc(d.answer)}</div>`;
@@ -364,7 +366,7 @@ function decisionCard(d, index) {
   else box = `<div class="context-box"><span class="label">Working on</span>${esc(d.run_title)} <span class="muted">/ ${esc(d.path)}</span></div>`;
   return `<article class="decision-card">
     <div class="card-top"><span class="agent-symbol">${d.agent.includes('Claude') ? '✳' : d.agent.includes('Codex') ? '⌘' : '◇'}</span><span>${esc(d.agent)}</span><span>·</span><span class="repo">${esc(d.repo)}</span>${kindBadge(d)}<time datetime="${esc(d.created_at)}">${ago(d.created_at)}</time></div>
-    <h3>${esc(d.question)}</h3><p class="context">${esc(d.context)}</p>
+    <h3>${esc(d.question)}</h3>${scope ? objectiveScopeCard(scope, `scope-${d.id}`) : `<p class="context">${esc(d.context)}</p>`}
     ${box}
     <div class="card-bottom"><span class="owner">${avatar(d.owner_name, index)}${esc(d.owner_name || 'Unassigned')}</span>${pill(statusLabel(d), settled ? 'green' : '')}${signoffLabel(d)}<button class="button small ${settled ? '' : 'soft'}" data-action="review" data-id="${esc(d.id)}">${settled ? 'View decision' : 'Review'} ${icon('arrow')}</button></div>
   </article>`;
@@ -996,7 +998,8 @@ function decisionReviewScope(d) {
 }
 
 function decisionBackground(d) {
-  return `<details class="history decision-background" ${!d.answer && !d.prediction ? 'open' : ''}><summary>Recorded background & evidence</summary><p class="context">Context captured when this question was raised may describe an earlier unresolved state. Read it alongside the current answer and scope above.</p>${d.brief ? `<p><strong>Original brief:</strong> ${esc(d.brief)}</p>` : ''}<p class="modal-context">${esc(d.context || '')}</p>${d.evidence ? `<p class="context"><strong>Recorded evidence:</strong> ${esc(d.evidence)}</p>` : ''}${workItemContext(d)}${sourceEvidence(d.sources, d.needs_review ? null : d.source_revalidation)}</details>`;
+  const scope = typeof objectiveScope === 'function' ? objectiveScope(d) : null;
+  return `<details class="history decision-background" ${!d.answer && !d.prediction ? 'open' : ''}><summary>Recorded background & evidence</summary><p class="context">Context captured when this question was raised may describe an earlier unresolved state. Read it alongside the current answer and scope above.</p>${d.brief ? `<p><strong>Original brief:</strong> ${esc(d.brief)}</p>` : ''}${scope ? objectiveScopeCard(scope, `background-${d.id}`) : `<p class="modal-context">${esc(d.context || '')}</p>`}${d.evidence ? `<p class="context"><strong>Recorded evidence:</strong> ${esc(d.evidence)}</p>` : ''}${workItemContext(d)}${sourceEvidence(d.sources, d.needs_review ? null : d.source_revalidation)}</details>`;
 }
 
 // Why the signed-in person may only read this decision, and what would let

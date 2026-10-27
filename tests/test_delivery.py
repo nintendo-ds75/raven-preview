@@ -763,6 +763,41 @@ class RenderTests(unittest.TestCase):
         self.assertIn("Options: a | b", out["text"])
         self.assertEqual(out["blocks"][0]["type"], "section")
 
+    def test_an_objective_scope_reads_as_a_scope_not_json(self):
+        # Review & take point stores the proposed scope as JSON the signature
+        # binds to. Measured with customers: the Slack lead was 400 characters
+        # of that JSON. The person reads the scope in words; the task link,
+        # options and reply instructions are unchanged.
+        from bridge import objective_text
+        gov = {"title": "Draft the renewal note for Acme", "outcome": "Acme renews before the 30th.",
+               "success_criteria": "A note the account owner can send.", "stop_criteria": "Any pricing change.",
+               "guardrails": "Private preparation only; no sending.", "repository": "acme/platform", "provider": "claude",
+               "why_now": "Due in nine days.", "judgment_kind": "interpretation_tradeoff",
+               "cases": {"positive": "Draft the note", "negative": "Send anything to Acme",
+                         "boundary": "A tier change needs a new judgment", "non_implications": "The price is not agreed"},
+               "citations": [{"record_id": "r1", "source_version_id": "v1", "quote": "We want to renew by the 30th. " * 30}],
+               "research_digest": "a" * 64, "source_dependencies_digest": "b" * 64}
+        row = {"id": "d1", "question": "Should Raven take point on: Draft the renewal note for Acme?", "run_title": "Draft the renewal note",
+               "repo": "acme/platform", "brief": "", "context": json.dumps(gov), "category": "objective_scope",
+               "client_ref": "objective-acceptance:p1", "owner_evidence": "", "evidence": "",
+               "options": json.dumps(["Yes, take point", "Not now", "Change the scope"]), "answer": "", "answered_by": "", "kind": "new"}
+        text = render(row, "ask", "Wes", "https://b", "", task_link="https://b/brief#rvn_x")["text"]
+        # Nothing of the JSON before the recorded-scope appendix, whose
+        # facts table is the same for every decision.
+        self.assertNotIn("{", text.split("Decision scope")[0])
+        self.assertNotIn("research_digest", text)
+        self.assertNotIn("Context:", text)
+        scope = objective_text.slack_text(gov)
+        self.assertLessEqual(len(scope), 700)
+        self.assertIn(transport_text(scope), text)
+        self.assertIn("Will: Draft the note", text)
+        self.assertIn("<https://b/brief#rvn_x|Open the task>", text)
+        self.assertIn("Options: Yes, take point | Not now | Change the scope", text)
+        self.assertIn("Reply", text)
+        # An ordinary decision is rendered as before.
+        plain = render({**row, "category": "policy", "client_ref": "", "context": "Usage jumped 11x."}, "ask", "Wes", "https://b", "")["text"]
+        self.assertIn("Context: Usage jumped 11x.", plain)
+
     def test_why_you_keeps_a_parenthetical_whole(self):
         # Measured live: the line ended mid-parenthesis, cut at a "; " inside it.
         row = {"id": "d1", "question": "Bill it?", "run_title": "Pricing", "repo": "acme/platform", "brief": "",

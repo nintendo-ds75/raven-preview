@@ -1481,6 +1481,14 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
         lines.append(f"Why: {_clip(row['review_reason'], 600, 'the inbox has the rest')}")
     brief = drop_absence(row.get("brief") or "")
     context = _message_context(row.get("context") or "")
+    # An objective's proposed scope is stored as JSON the signature binds
+    # to. The person reads it as a few sentences and the cases, in place
+    # of the first LEAD_CONTEXT characters of JSON and the appendix.
+    from . import objective_text
+    governance = objective_text.parse(raw_scope.get("context") or "", raw_scope.get("category") or "",
+                                      raw_scope.get("client_ref") or "")
+    if governance is not None:
+        context = transport_text(objective_text.slack_text(governance))
     if brief and _same_words(brief, context):
         # A brief that only repeats the context is the context, said once.
         brief = ""
@@ -1491,7 +1499,10 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
     if brief:
         lines.append(brief)
     elif context and not _only_trailers(context):
-        if len(context) <= LEAD_CONTEXT:
+        if governance is not None:
+            lines.append(context)
+            context_shown_whole = True
+        elif len(context) <= LEAD_CONTEXT:
             lines.append("Context: " + context)
             context_shown_whole = True
         else:

@@ -2146,3 +2146,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .inquiry-citations figcaption { font-weight:600; }
 .inquiry-citations figcaption small { display:block; font-weight:400; }
 .inquiry-citations blockquote { margin:8px 0; padding:0 0 0 12px; border-left:2px solid var(--line); white-space:pre-wrap; }
+
+/* An objective's proposed scope, read as a card in the inbox, the decision dialog and the task page. */
+.objective-scope { font-size:13px; line-height:1.6; color:#bebfb6; margin:var(--space-2) 0 var(--space-3); min-width:0; overflow-wrap:anywhere; }
+.objective-scope p { margin:0 0 var(--space-2); white-space:normal; }
+.objective-scope h4 { margin:var(--space-2) 0 2px; font-size:11px; letter-spacing:.6px; text-transform:uppercase; color:#83d97a; }
+.objective-scope ul { margin:0 0 var(--space-2); padding-left:1.1em; }
+.objective-scope li { margin:0; }
+.objective-scope blockquote { margin:4px 0; padding:0 0 0 12px; border-left:2px solid var(--line); white-space:pre-wrap; }
+.objective-scope cite { font-style:normal; font-size:12px; color:#bebfb6; }
+.objective-scope details { margin:0 0 var(--space-2); }
+.objective-scope summary { cursor:pointer; }
+.objective-scope-link { display:inline-block; margin-bottom:var(--space-2); }

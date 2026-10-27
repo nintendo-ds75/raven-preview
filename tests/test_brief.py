@@ -264,6 +264,31 @@ class PageTests(BriefCase, Http):
         self.delivery.deliver_now()
         self.token = self.links("UWES")[self.a["node_id"]]
 
+    def test_an_objective_scope_is_a_card_not_json(self):
+        # Review & take point stores the proposed scope as JSON; the page
+        # carries the card and a summary, and the JSON only inside the scope.
+        gov = {"title": "Draft the renewal note", "outcome": "The renewal lands before the 30th.",
+               "success_criteria": "A note ready to send.", "stop_criteria": "Any pricing change.",
+               "guardrails": "Private preparation only.", "repository": "acme/platform", "provider": "claude",
+               "why_now": "Due soon.", "judgment_kind": "interpretation_tradeoff",
+               "cases": {"positive": "Draft the note", "negative": "Send it", "boundary": "A tier change needs a new judgment",
+                         "non_implications": "The price is not agreed"},
+               "citations": [{"record_id": "r1", "source_version_id": "v1", "quote": "Renew by the 30th."}],
+               "research_digest": "a" * 64, "source_dependencies_digest": "b" * 64}
+        node = self.node(self.t, question="Should Raven take point on: Draft the renewal note?", context=json.dumps(gov),
+                         category="objective_scope", client_ref="objective-acceptance:p1")
+        page = briefing.overview(self.store, self.link(self.mint(self.wes, self.t, node["node_id"])))
+        focus = page["focus"]
+        self.assertNotIn("{", focus["context"])
+        self.assertIn("Raven proposes to take point on Draft the renewal note", focus["context"])
+        self.assertEqual(focus["objective"]["cases"]["positive"], ["Draft the note"])
+        self.assertEqual(focus["objective"]["cases"]["non_implication"], ["The price is not agreed"])
+        self.assertEqual(focus["objective"]["evidence"], [{"quote": "Renew by the 30th.", "title": ""}])
+        self.assertEqual(focus["objective"]["link_to_today"], "#today/p1")
+        ordinary = briefing.overview(self.store, self.link(self.token))["focus"]
+        self.assertIsNone(ordinary["objective"])
+        self.assertEqual(ordinary["context"], "Usage jumped 11x on enterprise-two during the rollout.")
+
     def test_the_page_shows_the_task_to_its_person(self):
         status, page, headers = self.brief(self.token)
         self.assertEqual(status, 200)
