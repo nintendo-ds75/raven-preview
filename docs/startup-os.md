@@ -2,7 +2,8 @@
 
 **Today** adds an evidence-to-work head around the existing Raven task, judgment,
 source, and execution core. It does not replace that core or infer permission
-from a transcript.
+from a transcript. For what Raven is as a whole, and what it is not, read
+[What Raven is](positioning.md).
 
 ## The loop
 
