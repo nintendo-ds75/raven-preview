@@ -63,13 +63,23 @@ class ObjectiveHTTPTests(unittest.TestCase):
                     post('/api/objectives/' + created['id'] + '/pause', {
                         'request_key': 'http-stale', 'expected_revision': created['revision']})
                 self.assertEqual(failure.exception.code, 400)
+                blocked = post('/api/objectives', {'request_key': 'http-start', 'title': 'HTTP prepared outcome',
+                    'outcome': 'Prepare evidence only', 'repository': fixture['repo'], 'provider': 'claude',
+                    'success_criteria': 'A reviewed artifact', 'stop_criteria': 'Ask on unclear policy',
+                    'guardrails': 'No publication', 'source_ids': [], 'start_preparation': True})
+                # No host is configured in the fixture: the refusal is recorded
+                # as an objective event with a revision bump, not a raw update.
+                self.assertTrue(blocked['blocked_reason'])
+                self.assertEqual(blocked['revision'], 2)
+                self.assertEqual(blocked['runs'], [])
+                self.assertEqual([e['summary'] for e in blocked['events'] if e['kind'] == 'dispatch_blocked'], [blocked['blocked_reason']])
                 proposal = overview['proposals'][0]
                 review = post('/api/proposals/' + proposal['id'] + '/accept', {
                     'request_key': 'http-accept', 'expected_revision': proposal['revision']})
                 self.assertEqual(review['status'], 'review')
                 self.assertTrue(review['decision_id'])
-                self.assertEqual(len(get('/api/objectives')['objectives']), 2)
-                # Creating the governance review did not create a third active objective.
+                self.assertEqual(len(get('/api/objectives')['objectives']), 3)
+                # Creating the governance review did not create a fourth active objective.
                 meeting = post('/api/meetings', {'repo': fixture['repo'], 'provider': 'import',
                     'namespace': 'http-fixture', 'title': 'HTTP transcript', 'platform': 'import',
                     'native_meeting_id': 'http-meeting'})

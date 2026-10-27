@@ -90,6 +90,33 @@ class ObjectiveBudgetTests(OfflineCase):
             self.assertEqual(head.background_budget(self.store, self.repo)['used'], 1)
             self.assertEqual(self.client.calls, 2)
 
+    def test_manual_scans_spend_a_bounded_budget_unless_an_admin_overrides(self):
+        def manual(key, actor=None, **data):
+            return head.scan(self.store, {'repository': self.repo, 'request_key': key, **data}, actor or self.actor, client=self.client)
+        with patch('bridge.objective_head.time.time', return_value=10000):
+            for index in range(1, 7):
+                self.record(index)
+                self.assertEqual(manual('manual-' + str(index))['status'], 'no_change')
+            self.assertEqual(self.client.calls, 6)
+            self.record(7)
+            throttled = manual('manual-7')
+            self.assertEqual(throttled['status'], 'throttled')
+            self.assertTrue(throttled['next_retry_at'])
+            self.assertEqual(throttled['background_budget']['kind'], 'manual')
+            self.assertEqual(self.client.calls, 6)
+            self.assertEqual(head.background_budget(self.store, self.repo)['used'], 0)
+            member = Identity(self.store.graph.add_person('Member', role='member'), 'Member', 'member', 'session')
+            with self.assertRaisesRegex(Invalid, 'administrator'):
+                manual('member-override', member, override=True)
+            with self.assertRaises(Invalid):
+                manual('bad-override', override='yes')
+            self.assertEqual(self.client.calls, 6)
+            self.assertEqual(manual('admin-override', override=True)['status'], 'no_change')
+            self.assertEqual(self.client.calls, 7)
+        with patch('bridge.objective_head.time.time', return_value=13601):
+            self.record(8)
+            self.assertEqual(manual('manual-8')['status'], 'no_change')
+
     def test_simultaneous_writer_claims_only_one_debounced_attempt(self):
         barrier = threading.Barrier(2)
         outcomes, errors = [], []

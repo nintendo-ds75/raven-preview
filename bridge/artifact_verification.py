@@ -147,7 +147,11 @@ class Verifier:
             {'trusted_fixtures': bool(p.get('overlay_dir'))} for p in profiles], 'blockers': blockers,
             'assurance': 'independent_profile', 'limitations': LIMITATIONS}
 
-    def _snapshot(self, task_id):
+    def _snapshot(self, task_id, *, reuse=False):
+        """The current binding of a task's candidate. A receipt-producing
+        call hashes the actual tree; a listing may reuse the last tree hash
+        while the base revision, patch digest and decision vector are the
+        ones it was computed under, so polling does not reread every byte."""
         from .visibility import require_task
         require_task(self.workbench.store, task_id)
         row = self.workbench.row(task_id)
@@ -161,11 +165,21 @@ class Verifier:
         for binding in self.workbench.store.graph.db.execute('SELECT a.objective_id,a.proposal_id,o.lifecycle,o.revision FROM objective_run_authority a JOIN objectives o ON o.id=a.objective_id WHERE a.task_id=?', (task_id,)):
             assert_objective_authority(self.workbench.store, binding['objective_id'], binding['proposal_id'])
             objectives.append(dict(binding))
-        tree = _tree(root)
         patch = fs.diff(root)
-        return {'base_revision': row['revision'], 'repository': row['repository'],
-                'candidate_tree_sha256': _digest(tree), 'patch_sha256': hashlib.sha256(patch.encode()).hexdigest(),
-                'patch_bytes': len(patch.encode()), 'objectives': objectives, 'decisions': _decisions(self.workbench, task_id)}, tree
+        binding = {'base_revision': row['revision'], 'repository': row['repository'],
+                   'patch_sha256': hashlib.sha256(patch.encode()).hexdigest(), 'patch_bytes': len(patch.encode()),
+                   'objectives': objectives, 'decisions': _decisions(self.workbench, task_id)}
+        key = _digest({k: binding[k] for k in ('base_revision', 'patch_sha256', 'decisions')})
+        cache = self.workbench.__dict__.setdefault('_verification_trees', {})
+        cached = cache.get(task_id)
+        if reuse and cached and cached[0] == key:
+            tree = cached[1]
+        else:
+            tree = _tree(root)
+            if len(cache) >= 64:
+                cache.pop(next(iter(cache)))
+            cache[task_id] = (key, tree)
+        return {**binding, 'candidate_tree_sha256': _digest(tree)}, tree
 
     def _profile(self, profile_id, repository):
         profile = next((p for p in self._profiles() if p['id'] == profile_id), None)
@@ -251,16 +265,24 @@ class Verifier:
         from .visibility import require_task
         require_task(self.workbench.store, task_id)
         self.workbench.row(task_id)
-        receipts = []
-        for row in self.workbench.store.graph.db.execute('SELECT * FROM artifact_verification_receipts WHERE task_id=? ORDER BY created_at DESC', (task_id,)):
+        receipts, binding, profiles = [], None, {}
+        rows = list(self.workbench.store.graph.db.execute('SELECT * FROM artifact_verification_receipts WHERE task_id=? ORDER BY created_at DESC', (task_id,)))
+        if rows:
+            # One binding per listing, shared by every receipt.
+            try:
+                binding, _ = self._snapshot(task_id, reuse=True)
+            except Invalid:
+                binding = None
+        for row in rows:
             payload = json.loads(row['payload'])
             current = False
-            try:
-                binding, _ = self._snapshot(task_id)
-                _, _, profile_hash = self._profile(row['profile_id'], binding['repository'])
-                current = binding == payload['binding'] and profile_hash == payload['profile_sha256']
-            except Invalid:
-                pass
+            if binding is not None:
+                try:
+                    if row['profile_id'] not in profiles:
+                        profiles[row['profile_id']] = self._profile(row['profile_id'], binding['repository'])[2]
+                    current = binding == payload['binding'] and profiles[row['profile_id']] == payload['profile_sha256']
+                except Invalid:
+                    pass
             receipts.append({'id': row['id'], **payload, 'current': current,
                              'usable_pass': current and payload['status'] == 'passed'})
         return receipts

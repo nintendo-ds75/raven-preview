@@ -44,12 +44,17 @@ BACKGROUND_DEBOUNCE = 60
 TICK_ENV = 'BRIDGE_OBJECTIVE_TICK_SECONDS'
 TICK_SECONDS = 15.0
 IDLE_SECONDS = 60.0
+# A signed move that cannot start yet is retried this often, not every tick.
+DISPATCH_RETRY = 60
 
 
 def migrate(db):
     db.executescript('''CREATE TABLE IF NOT EXISTS objective_background_attempts (
-      id TEXT PRIMARY KEY, repository TEXT NOT NULL, started_at REAL NOT NULL);
+      id TEXT PRIMARY KEY, repository TEXT NOT NULL, started_at REAL NOT NULL, kind TEXT NOT NULL DEFAULT 'automatic');
       CREATE INDEX IF NOT EXISTS objective_background_by_repo ON objective_background_attempts(repository,started_at);''')
+    attempt_columns = {r['name'] for r in db.execute('PRAGMA table_info(objective_background_attempts)')}
+    if 'kind' not in attempt_columns:
+        db.execute("ALTER TABLE objective_background_attempts ADD COLUMN kind TEXT NOT NULL DEFAULT 'automatic'")
     db.executescript('''CREATE TABLE IF NOT EXISTS objective_evaluations (
       id TEXT PRIMARY KEY, objective_id TEXT NOT NULL DEFAULT '', repository TEXT NOT NULL,
       fingerprint TEXT NOT NULL UNIQUE, state TEXT NOT NULL, lease_owner TEXT NOT NULL DEFAULT '', lease_until REAL NOT NULL DEFAULT 0,
@@ -78,32 +83,39 @@ def tick_seconds(env=TICK_ENV, default=TICK_SECONDS):
     return value if math.isfinite(value) and value > 0 else default
 
 
-def background_budget(store, repo, *, at=None):
-    """Public cost-control metadata only, not evidence or successful research."""
+def background_budget(store, repo, *, at=None, kind='automatic'):
+    """Public cost-control metadata only, not evidence or successful research.
+
+    Automatic and explicit manual investigation each have a budget of this
+    size per repository, so a person's request is neither hidden behind
+    the background debounce nor exempt from a spending bound."""
     stamp = time.time() if at is None else at
     repo = repo_key(repo)
     attempts = [r['started_at'] for r in store.graph.db.execute(
-        'SELECT started_at FROM objective_background_attempts WHERE repository=? AND started_at>? ORDER BY started_at',
-        (repo, stamp - BACKGROUND_WINDOW))]
-    next_allowed = max(attempts[-1] + BACKGROUND_DEBOUNCE if attempts else 0,
+        'SELECT started_at FROM objective_background_attempts WHERE repository=? AND kind=? AND started_at>? ORDER BY started_at',
+        (repo, kind, stamp - BACKGROUND_WINDOW))]
+    # The debounce smooths automatic reaction to new evidence; an explicit
+    # request is deliberate and only the hourly bound applies to it.
+    next_allowed = max(attempts[-1] + BACKGROUND_DEBOUNCE if attempts and kind == 'automatic' else 0,
                        attempts[0] + BACKGROUND_WINDOW if len(attempts) >= BACKGROUND_LIMIT else 0)
-    return {'repository': repo, 'limit': BACKGROUND_LIMIT, 'window_seconds': BACKGROUND_WINDOW,
+    return {'repository': repo, 'kind': kind, 'limit': BACKGROUND_LIMIT, 'window_seconds': BACKGROUND_WINDOW,
             'used': len(attempts), 'remaining': max(0, BACKGROUND_LIMIT - len(attempts)),
             'status': 'throttled' if next_allowed > stamp else 'available',
             'next_retry_at': datetime.fromtimestamp(next_allowed, timezone.utc).isoformat() if next_allowed > stamp else ''}
 
 
-def _claim_background(store, repo):
+def _claim_background(store, repo, kind='automatic'):
     # Caller holds Graph.transaction: SQLite writer / PostgreSQL advisory lock.
     stamp = time.time()
-    budget = background_budget(store, repo, at=stamp)
+    budget = background_budget(store, repo, at=stamp, kind=kind)
     if budget['status'] == 'throttled':
         return {'status': 'throttled', 'proposal': None, 'next_retry_at': budget['next_retry_at'],
-                'reason': 'Background investigation is waiting for its repository request budget; no new model request was made.',
+                'reason': ('Background investigation' if kind == 'automatic' else 'Investigation')
+                          + ' is waiting for its repository request budget; no new model request was made.',
                 'background_budget': budget}
     store.graph.db.execute('DELETE FROM objective_background_attempts WHERE repository=? AND started_at<=?',
                            (repo, stamp - BACKGROUND_WINDOW))
-    store.graph.db.execute('INSERT INTO objective_background_attempts VALUES(?,?,?)', (uuid.uuid4().hex, repo, stamp))
+    store.graph.db.execute('INSERT INTO objective_background_attempts VALUES(?,?,?,?)', (uuid.uuid4().hex, repo, stamp, kind))
     return None
 
 
@@ -155,6 +167,11 @@ def scan(store, data, actor, *, cfg=None, client=None, objective_id='', automati
                 raise Invalid('This repository watch changed during research; no proposal was published')
         return current
     actor = revalidate_scan_reader()
+    if 'override' in data and type(data['override']) is not bool:
+        raise Invalid('override must be an explicit boolean')
+    override = bool(data.get('override')) and not automatic
+    if override and not actor.allows('admin'):
+        raise Invalid('Only a workspace administrator can override the investigation budget')
     cfg = cfg or load()
     if automatic and cfg.model_api == 'claude-cli':
         return {'status': 'blocked', 'proposal': None,
@@ -195,8 +212,11 @@ def scan(store, data, actor, *, cfg=None, client=None, objective_id='', automati
                     'reason': 'Investigation stopped after three inconclusive attempts for these exact inputs. Review configuration or provide materially new evidence before retrying.'}
         if prior and prior['lease_until'] > time.time():
             return {'status': 'pending', 'proposal': None, 'reason': 'This evidence is already being investigated'}
-        if automatic:
-            throttled = _claim_background(store, repo)
+        if not override:
+            # Every model request, manual or automatic, spends a bounded
+            # per-repository budget; only an administrator's explicit
+            # override on a manual request is exempt.
+            throttled = _claim_background(store, repo, 'automatic' if automatic else 'manual')
             if throttled:
                 return throttled
         if prior:
@@ -444,7 +464,15 @@ class Worker:
     def dispatch_signed_moves(self):
         """A signed bounded move owns follow-through without a second launch prompt."""
         from .auth import Identity
+        stamp = time.time()
+        # Per-proposal backoff lives with this worker; the dict is created
+        # here so the scheduling constructor stays untouched.
+        attempts = {k: v for k, v in self.__dict__.get('_dispatch_attempts', {}).items() if stamp - v < DISPATCH_RETRY}
+        self._dispatch_attempts = attempts
         for proposal in list(self.store.graph.db.execute("SELECT p.* FROM objective_proposals p WHERE p.state='accepted' AND NOT EXISTS (SELECT 1 FROM objective_run_authority a WHERE a.proposal_id=p.id)")):
+            if proposal['id'] in attempts:
+                continue
+            attempts[proposal['id']] = stamp
             value = None
             try:
                 value = obj.row(self.store, proposal['objective_id'])
@@ -459,11 +487,9 @@ class Worker:
                 # No command is attempted if capability or scope checks fail.
                 # Keep the durable move pending for setup/reconciliation, not a
                 # fictitious running task. Do not expose provider credentials.
+                # One event records the block; the same reason is not repeated.
                 if value is not None:
-                    reason = str(error)[:1000]
-                    with self.store.graph.transaction() as db:
-                        if obj.row(self.store, value['id'])['blocked_reason'] != reason:
-                            db.execute('UPDATE objectives SET blocked_reason=?,updated_at=? WHERE id=?', (reason, now(), value['id']))
+                    obj.block(self.store, value['id'], str(error), kind='dispatch_blocked', detail={'proposal_id': proposal['id']})
 
     def start(self):
         if self.thread:

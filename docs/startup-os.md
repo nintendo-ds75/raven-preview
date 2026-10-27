@@ -67,18 +67,31 @@ See [execution harnesses](execution-harnesses.md) for the exact supported runtim
 and model-provider distinctions, readiness blockers and offline/live coverage.
 See [artifact verification](artifact-verification.md) for independent operator
 profiles, candidate-byte bindings and the limitations of repository-owned tests.
-The new verification API is `GET /api/workbench/{id}/verification` and an
+The new verification API is `GET /api/workbench/{id}/verification` (workspace
+member or above; receipts bind candidate bytes and operator profiles) and an
 administrator can `POST` the same route with an operator-configured `profile_id`.
-A client cannot submit an arbitrary command as an independent profile.
+A client cannot submit an arbitrary command as an independent profile. A
+listing reuses the last candidate tree hash while the task's base revision,
+patch digest and decision vector are unchanged; a receipt-producing run always
+hashes the actual bytes.
 
 ## API boundaries
 
 - `GET /api/objectives`, `GET /api/objectives/{id}`: visible objective state.
 - `POST /api/objectives`: explicit human request; idempotent `request_key`.
-- `POST /api/objectives/scan`: bounded investigation of a named repository.
+- `POST /api/objectives/scan`: bounded investigation of a named repository. Manual
+  scans spend their own per-repository budget of the same size as the automatic
+  one (6 model requests per rolling hour); over budget the result is
+  `status: throttled` with `next_retry_at` and no model request. An
+  administrator may pass `override: true` on a manual scan to spend outside it.
 - `POST /api/objectives/watch`: administrator opt-in/disable for new-evidence investigation.
 - `POST /api/meetings/{id}/background-sync`: explicit administrator opt-in/disable for periodic read-only Vexa observation; separate from Join, Stop and Revoke.
 - `POST /api/proposals/{id}/accept|dismiss`: revision-checked review initiation or feedback.
+  When no authority map covers the governance node, it is assigned to the accepting
+  member through the inbox's own assignment with the basis `objective-accepter`
+  recorded on the node; a mapped owner keeps it. A node a standing rule already
+  answers is reconciled with the rule named, never activated: dismiss it and
+  propose a narrower move for explicit review.
 - `POST /api/objectives/{id}/pause|resume|cancel|checkpoint|dispatch|achieve`:
   `expected_revision` and `request_key` required; actor comes from authentication.
 - Meeting creation, consent, import, sync, join, stop, revoke and remote deletion

@@ -6,7 +6,7 @@ are untrusted evidence until an ordinary, current core decision is signed.
 import hashlib
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from . import context_memory as cm
 from .store import Invalid, field, now, repo_key
@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS objectives (
  provider TEXT NOT NULL, requester_id TEXT NOT NULL, requester TEXT NOT NULL, requester_kind TEXT NOT NULL DEFAULT 'unknown',
  lifecycle TEXT NOT NULL DEFAULT 'active', revision INTEGER NOT NULL DEFAULT 1,
  next_check_at TEXT NOT NULL DEFAULT '', waiting_on TEXT NOT NULL DEFAULT '',
- blocked_reason TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+ blocked_reason TEXT NOT NULL DEFAULT '', pending_request TEXT NOT NULL DEFAULT '',
+ pending_since TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS objective_sources (
  objective_id TEXT NOT NULL REFERENCES objectives(id), record_id TEXT NOT NULL,
  source_version_id TEXT NOT NULL, PRIMARY KEY(objective_id,record_id,source_version_id));
@@ -47,12 +48,27 @@ CREATE TABLE IF NOT EXISTS objective_proposals (
  rationale TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 '''
 
+# Plain CREATE INDEX IF NOT EXISTS runs unchanged on SQLite and PostgreSQL.
+INDEXES = '''
+CREATE INDEX IF NOT EXISTS objective_proposals_objective_state ON objective_proposals(objective_id,state);
+CREATE INDEX IF NOT EXISTS objective_events_objective ON objective_events(objective_id);
+CREATE INDEX IF NOT EXISTS objective_runs_task ON objective_runs(task_id);
+'''
+
+# A request that calls the workbench outside the writer lock holds the
+# objective this long at most; a crashed caller's claim expires on its own.
+CLAIM_TTL = timedelta(minutes=10)
+
 
 def migrate(db):
     db.executescript(SCHEMA)
     columns = {r['name'] for r in db.execute('PRAGMA table_info(objectives)')}
     if 'requester_kind' not in columns:
         db.execute("ALTER TABLE objectives ADD COLUMN requester_kind TEXT NOT NULL DEFAULT 'unknown'")
+    if 'pending_request' not in columns:
+        db.execute("ALTER TABLE objectives ADD COLUMN pending_request TEXT NOT NULL DEFAULT ''")
+        db.execute("ALTER TABLE objectives ADD COLUMN pending_since TEXT NOT NULL DEFAULT ''")
+    db.executescript(INDEXES)
 
 
 def digest(value):
@@ -173,6 +189,22 @@ def event(store, ident, kind, summary, actor='', detail=None):
         (uuid.uuid4().hex, ident, kind, summary, actor, json.dumps(detail or {}), now()))
 
 
+def block(store, ident, reason, actor='', *, kind='blocked', detail=None):
+    """Record why a saved objective cannot move: a revision bump and one
+    event per changed reason, never a row per polling tick. An empty
+    reason clears the block. Returns whether anything changed."""
+    reason = str(reason or '')[:1000]
+    with store.graph.transaction() as db:
+        current = row(store, ident)
+        if current['blocked_reason'] == reason:
+            return False
+        db.execute('UPDATE objectives SET blocked_reason=?,revision=revision+1,updated_at=? WHERE id=?',
+                   (reason, now(), ident))
+        event(store, ident, kind, reason or 'The earlier block no longer applies.', actor,
+              {**(detail or {}), 'provenance': 'system-observation', 'independently_verified': False})
+        return True
+
+
 def _timestamp(value):
     if not value:
         return ''
@@ -281,6 +313,7 @@ def get(store, ident):
         status = 'needs_you' if value['blocked_reason'] or any(p['state'] in ('proposed','review','preparing','review_error','reconcile') for p in proposals) else (
             'moving' if any(r['status'] in ('queued','working') for r in runs) else 'waiting')
     citations = [c for p in proposals if p['state'] == 'accepted' and not p.get('withheld') for c in p.get('citations', [])]
+    value = {k: v for k, v in value.items() if k not in ('pending_request', 'pending_since')}
     return {**value, 'status': status, 'sources': _evidence_view(store, _sources(store, ident), value['repository'], citations), 'runs': runs, 'proposals': proposals,
             'events': [{**dict(r), 'detail': json.loads(r['detail'])} for r in store.graph.db.execute('SELECT * FROM objective_events WHERE objective_id=? ORDER BY created_at,id', (ident,))],
             'notice': 'An objective survives completed coding runs. External actions require separate authorization.'}
@@ -349,6 +382,94 @@ def _save_request(db, key, fingerprint, result):
     db.execute('INSERT INTO objective_requests VALUES(?,?,?)', (key, fingerprint, json.dumps(result)))
 
 
+def _plan(store, db, value, action, data, workbench, key):
+    """Validate an action and decide its effects inside the writer lock.
+
+    Workbench calls (host probes, subprocesses) are only described here;
+    act() makes them after the lock is released and records them after."""
+    ident = value['id']
+    plan = {'changes': {}, 'summary': str(data.get('summary') or ''), 'control': [], 'submit': None}
+    if action == 'pause':
+        plan['changes']['lifecycle'] = 'paused'
+        plan['control'] = _worker_controls(store, ident, 'pause', workbench)
+    elif action == 'resume':
+        assert_objective_authority(store, ident)
+        plan['changes'].update(lifecycle='active', blocked_reason='')
+        plan['control'] = _worker_controls(store, ident, 'resume', workbench)
+    elif action == 'cancel':
+        plan['changes'].update(lifecycle='stopped', next_check_at='')
+        plan['control'] = _worker_controls(store, ident, 'cancel', workbench)
+    elif action == 'checkpoint':
+        plan['summary'] = field(data, 'summary', limit=4000)
+        plan['changes'].update(next_check_at=_timestamp(data.get('next_check_at', '')), waiting_on=str(data.get('waiting_on') or '')[:1000])
+    elif action == 'achieve':
+        plan['summary'] = field(data, 'summary', limit=4000)
+        plan['control'] = _worker_controls(store, ident, 'pause', workbench)
+        plan['changes'].update(lifecycle='achieved', next_check_at='')
+    elif action == 'dispatch':
+        if value['lifecycle'] != 'active':
+            raise Invalid('Resume this objective before starting work')
+        if workbench is None:
+            raise Invalid('Browser execution is not configured; objective is saved')
+        active = db.execute("SELECT 1 FROM objective_runs o JOIN browser_tasks b ON b.task_id=o.task_id WHERE o.objective_id=? AND b.status NOT IN ('completed','cancelled','failed')", (ident,)).fetchone()
+        if active:
+            raise Invalid('This objective already has an unfinished worker; open or resume that task')
+        assert_objective_authority(store, ident)
+        sources_current(store, _latest_sources(store, ident), value['repository'], exact=True)
+        accepted = db.execute("SELECT id,payload FROM objective_proposals WHERE objective_id=? AND state='accepted' ORDER BY updated_at DESC LIMIT 1", (ident,)).fetchone()
+        move = json.loads(accepted['payload']) if accepted else value
+        prompt = '\n'.join([
+            'Accepted objective outcome: ' + value['outcome'],
+            'Outer objective guardrails: ' + value['guardrails'],
+            'Outer objective stop criteria: ' + value['stop_criteria'],
+            'Exact current move (all cases and limits are part of its signed scope):',
+            json.dumps({k: move[k] for k in ('outcome', 'success_criteria', 'stop_criteria', 'guardrails', 'cases', 'judgment_kind') if k in move}, ensure_ascii=False),
+            'Prepare and verify work in the private repository only. No external publication, communication, deployment or spending is authorized. Route consequential choices through Raven. Coding completion is not objective achievement.'])
+        if len(prompt) > 12000:
+            raise Invalid('The complete signed move exceeds the host prompt bound; revise its scope explicitly rather than truncating its limits')
+        plan['submit'] = {'prompt': prompt, 'repository': value['repository'], 'host': value['provider'],
+                          'request_key': 'objective:' + digest([ident, key])[:60]}
+        plan['proposal_id'] = accepted['id'] if accepted else ''
+        plan['changes'].update(blocked_reason='', waiting_on='Coding worker; outcome still requires evidence')
+        plan['summary'] = 'Started a private-copy coding worker; no external actions authorized.'
+    else:
+        raise Invalid('Unknown objective action')
+    return plan
+
+
+def _claim(db, value, key):
+    """Hold the objective for one request while it calls the workbench
+    unlocked: a concurrent or repeated request sees the claim and neither
+    submits a second worker nor records over the first."""
+    expired = (datetime.now(timezone.utc) - CLAIM_TTL).isoformat()
+    if value['pending_request'] and value['pending_since'] > expired:
+        raise Invalid('Another request on this objective is still completing; reopen it shortly')
+    db.execute('UPDATE objectives SET pending_request=?,pending_since=? WHERE id=?', (key, now(), value['id']))
+
+
+def _release(store, ident, key):
+    with store.graph.transaction() as db:
+        db.execute("UPDATE objectives SET pending_request='',pending_since='' WHERE id=? AND pending_request=?", (ident, key))
+
+
+def _record(store, db, value, action, actor, key, fingerprint, plan):
+    ident = value['id']
+    changes = dict(plan['changes'])
+    if plan['submit'] is not None:
+        task_id = plan['task_id']
+        db.execute('INSERT INTO objective_runs VALUES(?,?,?,?)', (ident, task_id, 'Bounded internal preparation', now()))
+        db.execute('INSERT INTO objective_run_authority VALUES(?,?,?)', (task_id, ident, plan['proposal_id']))
+        for source in _latest_sources(store, ident):
+            cm.add_anchor(db, task_id, source['record_id'], source['source_version_id'], 'context')
+    changes.update(revision=value['revision'] + 1, updated_at=now(), pending_request='', pending_since='')
+    db.execute('UPDATE objectives SET ' + ','.join(k+'=?' for k in changes) + ' WHERE id=?', (*changes.values(), ident))
+    event(store, ident, action, plan['summary'] or action, actor.id,
+          {'provenance': 'human-attested' if action == 'achieve' else 'human-request', 'independently_verified': False})
+    result = get(store, ident)
+    _save_request(db, key, fingerprint, result)
+    return result
+
+
 def act(store, ident, action, data, actor, workbench=None):
     human(actor)
     with store.graph.transaction() as db:
@@ -360,63 +481,26 @@ def act(store, ident, action, data, actor, workbench=None):
         _revision(data, value)
         if value['lifecycle'] in ('achieved', 'stopped'):
             raise Invalid('This objective is closed; create a new objective for new work')
-        changes = {}
-        summary = str(data.get('summary') or '')
-        if action == 'pause':
-            changes['lifecycle'] = 'paused'
-            _control_workers(store, ident, 'pause', actor, workbench)
-        elif action == 'resume':
-            assert_objective_authority(store, ident)
-            changes.update(lifecycle='active', blocked_reason='')
-            _control_workers(store, ident, 'resume', actor, workbench)
-        elif action == 'cancel':
-            changes.update(lifecycle='stopped', next_check_at='')
-            _control_workers(store, ident, 'cancel', actor, workbench)
-        elif action == 'checkpoint':
-            summary = field(data, 'summary', limit=4000)
-            changes.update(next_check_at=_timestamp(data.get('next_check_at', '')), waiting_on=str(data.get('waiting_on') or '')[:1000])
-        elif action == 'achieve':
-            summary = field(data, 'summary', limit=4000)
-            _control_workers(store, ident, 'pause', actor, workbench)
-            changes.update(lifecycle='achieved', next_check_at='')
-        elif action == 'dispatch':
-            if value['lifecycle'] != 'active':
-                raise Invalid('Resume this objective before starting work')
-            if workbench is None:
-                raise Invalid('Browser execution is not configured; objective is saved')
-            active = db.execute("SELECT 1 FROM objective_runs o JOIN browser_tasks b ON b.task_id=o.task_id WHERE o.objective_id=? AND b.status NOT IN ('completed','cancelled','failed')", (ident,)).fetchone()
-            if active:
-                raise Invalid('This objective already has an unfinished worker; open or resume that task')
-            assert_objective_authority(store, ident)
-            sources_current(store, _latest_sources(store, ident), value['repository'], exact=True)
-            accepted = db.execute("SELECT id,payload FROM objective_proposals WHERE objective_id=? AND state='accepted' ORDER BY updated_at DESC LIMIT 1", (ident,)).fetchone()
-            move = json.loads(accepted['payload']) if accepted else value
-            prompt = '\n'.join([
-                'Accepted objective outcome: ' + value['outcome'],
-                'Outer objective guardrails: ' + value['guardrails'],
-                'Outer objective stop criteria: ' + value['stop_criteria'],
-                'Exact current move (all cases and limits are part of its signed scope):',
-                json.dumps({k: move[k] for k in ('outcome', 'success_criteria', 'stop_criteria', 'guardrails', 'cases', 'judgment_kind') if k in move}, ensure_ascii=False),
-                'Prepare and verify work in the private repository only. No external publication, communication, deployment or spending is authorized. Route consequential choices through Raven. Coding completion is not objective achievement.'])
-            if len(prompt) > 12000:
-                raise Invalid('The complete signed move exceeds the host prompt bound; revise its scope explicitly rather than truncating its limits')
-            result = workbench.submit({'prompt': prompt, 'repository': value['repository'], 'host': value['provider'],
-                                       'request_key': 'objective:' + digest([ident, key])[:60]}, actor)
-            db.execute('INSERT INTO objective_runs VALUES(?,?,?,?)', (ident, result['task_id'], 'Bounded internal preparation', now()))
-            db.execute('INSERT INTO objective_run_authority VALUES(?,?,?)', (result['task_id'], ident, accepted['id'] if accepted else ''))
-            for source in _latest_sources(store, ident):
-                cm.add_anchor(db, result['task_id'], source['record_id'], source['source_version_id'], 'context')
-            changes.update(blocked_reason='', waiting_on='Coding worker; outcome still requires evidence')
-            summary = 'Started a private-copy coding worker; no external actions authorized.'
-        else:
-            raise Invalid('Unknown objective action')
-        changes.update(revision=value['revision'] + 1, updated_at=now())
-        db.execute('UPDATE objectives SET ' + ','.join(k+'=?' for k in changes) + ' WHERE id=?', (*changes.values(), ident))
-        event(store, ident, action, summary or action, actor.id,
-              {'provenance': 'human-attested' if action == 'achieve' else 'human-request', 'independently_verified': False})
-        result = get(store, ident)
-        _save_request(db, key, fingerprint, result)
-        return result
+        plan = _plan(store, db, value, action, data, workbench, key)
+        if plan['submit'] is None and not plan['control']:
+            return _record(store, db, value, action, actor, key, fingerprint, plan)
+        _claim(db, value, key)
+    # The workbench probes hosts and subprocesses and opens transactions of
+    # its own; it never runs under this module's writer lock. The claim,
+    # not the lock, keeps a retry from submitting a second worker.
+    try:
+        if plan['submit'] is not None:
+            plan['task_id'] = workbench.submit(plan['submit'], actor)['task_id']
+        for task_id, control in plan['control']:
+            workbench.control(task_id, control, actor)
+        with store.graph.transaction() as db:
+            current = row(store, ident)
+            if current['pending_request'] != key:
+                raise Invalid('This request lost its claim on the objective; reopen it before acting again')
+            return _record(store, db, current, action, actor, key, fingerprint, plan)
+    except BaseException:
+        _release(store, ident, key)
+        raise
 
 
 def governance_context(payload, sources):
@@ -487,7 +571,7 @@ def proposal_action(store, ident, action, data, actor, cfg=None):
             _save_request(db, key, fingerprint, result)
             return result
         if value['state'] == 'reconcile':
-            raise Invalid('The signed response changed the proposal; dismiss it or review the changed judgment in the existing inbox')
+            raise Invalid(value['rationale'] or 'The signed response changed the proposal; dismiss it or review the changed judgment in the existing inbox')
         if action != 'accept':
             raise Invalid('Unknown proposal action')
         if value['decision_id']:
@@ -512,10 +596,12 @@ def proposal_action(store, ident, action, data, actor, cfg=None):
             'category': 'objective_scope', 'requester': actor.name})
         answer = 'Take point on ' + payload['outcome'] + '\nWithin: ' + payload['guardrails'] + '\nOnly private preparation; no external actions authorized.'
         if node.get('authorized'):
-            raise Invalid('A prior rule resolved this governance request; create a fresh scoped proposal for explicit review')
+            return _rule_resolved(store, ident, value, task_id, node, key, fingerprint)
         canvas.settle_node(store, {'task_id': task_id, 'node_id': node['node_id'], 'answer': answer,
             'rationale': payload['why_now'], 'source_evidence': [{'record_id': s['record_id'], 'source_version_id': s['source_version_id'], 'role': s.get('role', 'support')} for s in sources if not s.get('metadata_only')]})
         decision = store.get_decision(node['node_id'])
+        if not decision.get('owner_id'):
+            decision = _route_to_accepter(store, decision, actor)
         with store.graph.transaction() as db:
             sources_current(store, sources, value['repository'], exact=True)
             db.execute("UPDATE objective_proposals SET state='review',governance_run_id=?,decision_id=?,acceptance_hash=?,scope_hash=?,revision=revision+1,updated_at=? WHERE id=?",
@@ -527,6 +613,44 @@ def proposal_action(store, ident, action, data, actor, cfg=None):
         with store.graph.transaction() as db:
             db.execute("UPDATE objective_proposals SET state='review_error',updated_at=? WHERE id=?", (now(), ident))
         raise
+
+
+def _route_to_accepter(store, decision, actor):
+    """A governance node no authority map covers is routed to the person
+    who accepted the proposal, through the inbox's own assignment, with
+    the basis recorded on the node. An operator without a person row is
+    not an owner, so the node stays visibly unassigned."""
+    if not actor.id:
+        return decision
+    with store.graph.transaction():
+        owner_id = store.graph.owner_id_for_person(actor.id)
+    if not owner_id:
+        return decision
+    store.assign(decision['id'], {'owner_id': owner_id, 'by': actor.name}, actor=None)
+    with store.graph.transaction() as db:
+        db.execute("UPDATE decisions SET routing_reason=?,actor_basis='objective-accepter' WHERE id=?",
+                   ('Assigned to ' + actor.name + ' as the objective accepter: no authority map covers this scope', decision['id']))
+    return store.get_decision(decision['id'])
+
+
+def _rule_resolved(store, ident, value, task_id, node, key, fingerprint):
+    """A standing rule answered the governance question. Only the exact
+    current signed answer activates a move, and a rule is not a signature
+    on this proposal: it is reconciled with the rule named, so the person
+    can dismiss it and propose a narrower move for explicit review."""
+    decision = store.get_decision(node['node_id'])
+    signer = decision.get('signed_by') or decision.get('answered_by') or 'its owner'
+    rule = decision.get('source_id') or node['node_id']
+    reason = ('Standing rule ' + str(rule) + ' made by ' + str(signer) + ' already answers this governance question; '
+              'a rule is not a signature on this exact proposal. Dismiss it and propose a narrower move for explicit review.')
+    with store.graph.transaction() as db:
+        db.execute("UPDATE objective_proposals SET state='reconcile',governance_run_id=?,decision_id=?,rationale=?,revision=revision+1,updated_at=? WHERE id=?",
+                   (task_id, node['node_id'], reason, now(), ident))
+        if value['objective_id']:
+            block(store, value['objective_id'], reason, kind='blocked', detail={'proposal_id': ident, 'decision_id': node['node_id'], 'rule_id': rule})
+        result = _proposal_view(store, db.execute('SELECT * FROM objective_proposals WHERE id=?', (ident,)).fetchone())
+        _save_request(db, key, fingerprint, result)
+        return result
 
 
 def assert_objective_authority(store, ident, proposal_id=None, db=None):
@@ -564,13 +688,16 @@ def assert_task_authority(store, task_id, db=None):
         assert_objective_authority(store, value['id'], linked['proposal_id'], db=db)
 
 
-def _control_workers(store, ident, action, actor, workbench):
-    active = [dict(r) for r in store.graph.db.execute('SELECT b.task_id,b.status FROM objective_runs o JOIN browser_tasks b ON b.task_id=o.task_id WHERE o.objective_id=?', (ident,))]
-    for run in active:
+def _worker_controls(store, ident, action, workbench):
+    """Which linked workers an action controls, decided under the writer
+    lock; act() sends the controls once the lock is released."""
+    controls = []
+    for run in store.graph.db.execute('SELECT b.task_id,b.status FROM objective_runs o JOIN browser_tasks b ON b.task_id=o.task_id WHERE o.objective_id=?', (ident,)):
         if run['status'] in ('completed', 'cancelled', 'failed'):
             continue
         if action == 'resume' and run['status'] != 'paused':
             continue
         if not workbench:
             raise Invalid('The linked worker service is unavailable; no objective control was changed')
-        workbench.control(run['task_id'], action, actor)
+        controls.append((run['task_id'], action))
+    return controls

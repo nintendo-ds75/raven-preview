@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from fixtures import OfflineCase
 from bridge import artifact_verification as av, workbench_fs as fs
@@ -79,6 +80,23 @@ class VerificationTests(OfflineCase):
         self.assertFalse(listed['usable_pass'])
         self.assertEqual(listed['status'], 'passed')
         self.assertEqual(listed['id'], receipt['id'])
+
+    def test_listing_reuses_the_tree_hash_until_the_candidate_or_judgment_changes(self):
+        self.verify()
+        self.verify()
+        self.workbench.__dict__.pop('_verification_trees', None)  # a fresh process has no reusable hash
+        with patch.object(av, '_tree', wraps=av._tree) as tree:
+            first = self.verifier.list(self.task)
+            second = self.verifier.list(self.task)
+            self.assertEqual(tree.call_count, 1)
+            self.assertEqual([r['usable_pass'] for r in first], [True, True])
+            self.assertEqual(first, second)
+            (self.candidate / 'module.py').write_text('VALUE = 5\n')
+            changed = self.verifier.list(self.task)
+            self.assertEqual(tree.call_count, 2)
+            self.assertEqual([r['usable_pass'] for r in changed], [False, False])
+            self.verifier.list(self.task)
+            self.assertEqual(tree.call_count, 2)
 
     def test_test_mutation_of_executed_source_is_not_success_for_returned_bytes(self):
         self.sandbox.callback = lambda root: (root / 'module.py').write_text('VALUE = 99\n')

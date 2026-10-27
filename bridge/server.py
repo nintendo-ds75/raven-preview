@@ -282,6 +282,9 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     if not workbench:
                         return self.send(503, {'error': 'Browser execution is not configured'})
                     if len(parts) == 4 and parts[3] == 'verification':
+                        # Receipts bind candidate bytes and operator profiles;
+                        # a viewer does not read them.
+                        self.require('member')
                         from .artifact_verification import Verifier
                         verifier = Verifier(workbench)
                         return self.send(200, {'config': verifier.config(), 'receipts': verifier.list(parts[2])})
@@ -884,13 +887,12 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         raise Invalid('start_preparation must be an explicit boolean')
                     result = create(store, data, self.me)
                     if data.get('start_preparation'):
-                        from .objectives import act, get, digest
+                        from .objectives import act, block, get, digest
                         try:
                             result = act(store, result['id'], 'dispatch', {'request_key': 'initial:' + digest(field(data, 'request_key', limit=100))[:64],
                                 'expected_revision': 1}, self.me, workbench)
                         except Invalid as error:
-                            with store.graph.transaction() as db:
-                                db.execute('UPDATE objectives SET blocked_reason=? WHERE id=?', (str(error)[:1000], result['id']))
+                            block(store, result['id'], str(error), self.me.id, kind='dispatch_blocked')
                             result = get(store, result['id'])
                 elif path == '/api/objectives/watch':
                     self.require('admin')
