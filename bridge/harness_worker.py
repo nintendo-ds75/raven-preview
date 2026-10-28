@@ -7,6 +7,7 @@ import asyncio
 from collections import defaultdict, deque
 import json
 import os
+import subprocess
 import sys
 
 
@@ -19,6 +20,7 @@ async def claude(config):
                                  ResultMessage, AssistantMessage, SystemMessage, TextBlock,
                                  create_sdk_mcp_server, tool, HookMatcher)
     pending = {}
+    delivered = False
     observed_calls = defaultdict(deque)
 
     async def before_tool(payload, tool_use_id, context):
@@ -86,10 +88,16 @@ async def claude(config):
                 if isinstance(message, SystemMessage) and message.subtype == 'init':
                     emit({'kind': 'session', 'id': message.data['session_id']})
                 elif isinstance(message, AssistantMessage):
+                    if not delivered:
+                        emit({'kind': 'delivery', 'accepted': True})
+                        delivered = True
                     for block in message.content:
                         if isinstance(block, TextBlock):
                             emit({'kind': 'text', 'text': block.text})
                 elif isinstance(message, ResultMessage):
+                    if not delivered and message.num_turns > 0:
+                        emit({'kind': 'delivery', 'accepted': True})
+                        delivered = True
                     emit({'kind': 'session', 'id': message.session_id})
                     emit({'kind': 'result', 'status': message.subtype, 'cost_usd': message.total_cost_usd,
                           'usage': message.usage, 'turns': message.num_turns, 'is_error': message.is_error})
@@ -99,17 +107,39 @@ async def claude(config):
             # os._exit only after SDK disconnect completes below.
 
 
-async def codex(config):
+async def codex(config, *, observer=None):
+    # Worker rechecks the same qualification independently of UI/capability.
+    # Never inherit qualification across another model or native release.
+    from .workbench_hosts import CODEX_MODEL, CODEX_VERSION
+    if config.get('model') != CODEX_MODEL:
+        raise RuntimeError('codex_unqualified_model')
+    binary = os.environ.get('RAVEN_CODEX_BIN', '')
+    if not binary:
+        raise RuntimeError('codex_unqualified_binary')
+    try:
+        version = subprocess.run([binary, '--version'], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        raise RuntimeError('codex_unqualified_binary') from None
+    if version.returncode != 0 or version.stdout.strip() != 'codex-cli ' + CODEX_VERSION:
+        raise RuntimeError('codex_unqualified_binary')
+    await _codex_transport(config, observer=observer)
+
+
+async def _codex_transport(config, *, observer=None):
     """Pinned app-server protocol. Dynamic tools require experimentalApi.
 
-    Its read-only sandbox is a host control, not a Raven authorization claim.
-    Every permission request is denied; only Raven dynamic tools can mutate the
-    task copy. No thread/shellCommand or command/exec API is exposed to clients.
+    Public codex() first verifies the exact qualified native binary and model.
+    Actual native positive/negative fresh/resume tests qualify these flags, not
+    feature-list output alone. Native request_user_input remains advertised but
+    is refused, never treated as a Raven judgment or answered synthetically.
+    This is not an OS sandbox; read-only alone would not protect disclosure.
     """
     binary = os.environ['RAVEN_CODEX_BIN']
     flags = {'shell_tool': False, 'unified_exec': False, 'apps': False, 'plugins': False,
              'multi_agent': False, 'hooks': False, 'browser_use': False, 'computer_use': False,
-             'code_mode': False, 'code_mode_host': False, 'image_generation': False, 'memories': False}
+             'code_mode': False, 'code_mode_host': False, 'image_generation': False, 'memories': False,
+             'view_image': False, 'skill_search': False, 'skill_mcp_dependency_install': False,
+             'goals': False, 'collaboration_modes': False}
     args = [binary, 'app-server']
     for name, enabled in flags.items():
         args += ['-c', 'features.' + name + '=' + str(enabled).lower()]
@@ -117,6 +147,10 @@ async def codex(config):
     process = await asyncio.create_subprocess_exec(*args, stdin=asyncio.subprocess.PIPE,
                                                  stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
     requests, tool_requests = {}, {}
+    allowed_tools = {spec['name'] for spec in config['tools']}
+    completed = False
+    interrupted = False
+    delivered = False
     turn_id, thread_id = '', config['session_id']
     done = asyncio.Event()
     sequence = 0
@@ -132,62 +166,95 @@ async def codex(config):
         future = asyncio.get_running_loop().create_future()
         requests[ident] = future
         await send({'id': ident, 'method': method, 'params': params})
-        return await asyncio.wait_for(future, timeout=60)
+        try:
+            return await asyncio.wait_for(future, timeout=60)
+        finally:
+            requests.pop(ident, None)
 
     async def read():
-        nonlocal turn_id
-        while line := await process.stdout.readline():
-            event = json.loads(line)
-            method, params = event.get('method'), event.get('params') or {}
-            if method is None and event.get('id') in requests:
-                future = requests.pop(event['id'])
-                if not future.done():
-                    if 'error' in event:
-                        future.set_exception(RuntimeError('app_server_request_failed'))
+        nonlocal turn_id, completed, delivered
+        try:
+            while line := await process.stdout.readline():
+                event = json.loads(line)
+                if observer is not None:
+                    observer(event)
+                method, params = event.get('method'), event.get('params') or {}
+                if method is None and event.get('id') in requests:
+                    future = requests.pop(event['id'])
+                    if not future.done():
+                        if 'error' in event:
+                            future.set_exception(RuntimeError('app_server_request_failed'))
+                        else:
+                            future.set_result(event.get('result', {}))
+                elif method == 'item/tool/call':
+                    ident = params.get('callId')
+                    valid = (params.get('threadId') == thread_id and turn_id
+                             and params.get('turnId') == turn_id and not completed
+                             and isinstance(ident, str) and ident and ident not in tool_requests
+                             and params.get('tool') in allowed_tools
+                             and isinstance(params.get('arguments'), dict))
+                    if not valid:
+                        await send({'id': event['id'], 'result': {'success': False, 'contentItems': [
+                            {'type': 'inputText', 'text': 'Invalid, duplicate or out-of-scope task tool call'}]}})
+                        continue
+                    tool_requests[ident] = event['id']
+                    emit({'kind': 'tool', 'call': {'id': ident, 'name': params['tool'], 'input': params['arguments']}})
+                elif method == 'turn/started' and params.get('threadId') == thread_id:
+                    # The notification can precede turn/start's response. Only
+                    # the selected thread may establish this turn's identity.
+                    candidate = params.get('turn', {}).get('id')
+                    if candidate and not turn_id:
+                        turn_id = candidate
+                        if not delivered:
+                            emit({'kind': 'delivery', 'accepted': True})
+                            delivered = True
+                elif method == 'item/completed' and params.get('threadId') == thread_id and params.get('turnId') == turn_id and not completed:
+                    if params.get('item', {}).get('type') == 'agentMessage':
+                        emit({'kind': 'text', 'text': params['item'].get('text', '')})
+                elif method == 'thread/tokenUsage/updated' and params.get('threadId') == thread_id:
+                    emit({'kind': 'usage', 'usage': params.get('tokenUsage')})
+                elif method == 'turn/completed' and params.get('threadId') == thread_id and params.get('turn', {}).get('id') == turn_id and not completed:
+                    status = params['turn'].get('status', 'unknown')
+                    completed = True
+                    emit({'kind': 'result', 'status': status,
+                          'is_error': status != 'completed', 'turn_id': turn_id})
+                    done.set()
+                elif method and 'id' in event:
+                    # Unrecognized server requests never gain implicit approval.
+                    if method.endswith('/requestApproval'):
+                        result = {'decision': 'decline'}
+                    elif method.endswith('/requestPermissions'):
+                        result = {'permissions': {}, 'scope': 'turn'}
                     else:
-                        future.set_result(event.get('result', {}))
-            elif method == 'item/tool/call':
-                ident = params['callId']
-                if params.get('threadId') != thread_id or params.get('turnId') != turn_id:
-                    await send({'id': event['id'], 'result': {'success': False, 'contentItems': [
-                        {'type': 'inputText', 'text': 'Tool call belongs to a different task or turn'}]}})
-                    continue
-                tool_requests[ident] = event['id']
-                emit({'kind': 'tool', 'call': {'id': ident, 'name': params['tool'], 'input': params['arguments']}})
-            elif method == 'turn/started':
-                turn_id = params['turn']['id']
-            elif method == 'item/completed' and params.get('item', {}).get('type') == 'agentMessage':
-                emit({'kind': 'text', 'text': params['item'].get('text', '')})
-            elif method == 'thread/tokenUsage/updated':
-                emit({'kind': 'usage', 'usage': params.get('tokenUsage')})
-            elif method == 'turn/completed':
-                emit({'kind': 'result', 'status': params['turn']['status'],
-                      'is_error': params['turn']['status'] == 'failed', 'turn_id': params['turn']['id']})
-                done.set()
-            elif method and 'id' in event:
-                # Unrecognized server requests never gain implicit approval.
-                if method.endswith('/requestApproval'):
-                    result = {'decision': 'decline'}
-                elif method.endswith('/requestPermissions'):
-                    result = {'permissions': {}, 'scope': 'turn'}
-                else:
-                    await send({'id': event['id'], 'error': {'code': -32601, 'message': 'Unavailable in Raven host'}})
-                    continue
-                await send({'id': event['id'], 'result': result})
-        done.set()
+                        await send({'id': event['id'], 'error': {'code': -32601, 'message': 'Unavailable in Raven host'}})
+                        continue
+                    await send({'id': event['id'], 'result': result})
+        finally:
+            # EOF or a malformed frame cannot leave initialize/start waiting
+            # for a full timeout, nor masquerade as a successful completion.
+            for future in list(requests.values()):
+                if not future.done():
+                    future.set_exception(RuntimeError('app_server_disconnected'))
+            done.set()
 
     async def commands():
+        nonlocal interrupted
         while line := await asyncio.to_thread(sys.stdin.readline):
             value = json.loads(line)
             if value.get('kind') == 'tool_result' and value['id'] in tool_requests:
                 await send({'id': tool_requests.pop(value['id']), 'result': {
                     'success': 'error' not in value['result'], 'contentItems': [
                         {'type': 'inputText', 'text': json.dumps(value['result'])}]}})
-            elif value.get('kind') == 'interrupt' and turn_id:
-                await request('turn/interrupt', {'threadId': thread_id, 'turnId': turn_id})
+            elif value.get('kind') == 'interrupt':
+                interrupted = True
+                if turn_id:
+                    await request('turn/interrupt', {'threadId': thread_id, 'turnId': turn_id})
+        interrupted = True
+        if turn_id and not completed:
+            await request('turn/interrupt', {'threadId': thread_id, 'turnId': turn_id})
 
     reader = asyncio.create_task(read())
-    listener = None
+    listener = asyncio.create_task(commands())
     try:
         await request('initialize', {'clientInfo': {'name': 'raven', 'version': '1'},
                                      'capabilities': {'experimentalApi': True}})
@@ -200,20 +267,44 @@ async def codex(config):
             result = await request('thread/start', {**common, 'allowProviderModelFallback': False,
                 'dynamicTools': [{'type': 'function', 'name': s['name'], 'description': s['description'],
                                   'inputSchema': s['input_schema']} for s in config['tools']]})
-        thread_id = result['thread']['id']
+        if result.get('model') != config['model'] or result.get('modelProvider') != 'openai':
+            raise RuntimeError('app_server_model_identity_changed')
+        selected_thread = result['thread']['id']
+        if thread_id and selected_thread != thread_id:
+            raise RuntimeError('app_server_resume_identity_changed')
+        thread_id = selected_thread
         emit({'kind': 'session', 'id': thread_id})
-        listener = asyncio.create_task(commands())
+        if interrupted:
+            emit({'kind': 'result', 'status': 'interrupted', 'is_error': True})
+            return
         result = await request('turn/start', {'threadId': thread_id,
                 'input': [{'type': 'text', 'text': config['prompt'], 'text_elements': []}]})
-        turn_id = result['turn']['id']
+        selected_turn = result['turn']['id']
+        if turn_id and selected_turn != turn_id:
+            raise RuntimeError('app_server_turn_identity_changed')
+        turn_id = selected_turn
+        if not delivered:
+            emit({'kind': 'delivery', 'accepted': True})
+            delivered = True
+        if interrupted and not completed:
+            await request('turn/interrupt', {'threadId': thread_id, 'turnId': turn_id})
         await done.wait()
+        if reader.done():
+            await reader
+        if not completed:
+            raise RuntimeError('app_server_missing_final_receipt')
     finally:
         reader.cancel()
         if listener:
             listener.cancel()
+        await asyncio.gather(reader, *([listener] if listener else []), return_exceptions=True)
         if process.returncode is None:
             process.terminate()
-            await process.wait()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
 
 
 def main():

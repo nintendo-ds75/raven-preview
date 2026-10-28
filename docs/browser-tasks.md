@@ -1,8 +1,10 @@
 # Work directly in Raven
 
 Open **New task**, choose a repository, and describe what you want done. Raven
-runs the selected coding harness on the Raven server: Claude Agent SDK or a pinned
-Codex app-server. You do not need a separate agent window or terminal open.
+runs the selected coding harness on the Raven server: Claude Agent SDK, Pi SDK,
+OpenCode, or the narrowly qualified experimental Codex app-server. Codex requires
+exactly version `0.162.0-alpha.17.2` and model `gpt-5.3-codex`; other versions or
+models fail closed. See [execution harness coverage](execution-harnesses.md) for exact support and verification. You do not need a separate agent window or terminal open.
 **Ask a question** reads connected evidence without starting a coding harness.
 
 The conversation shows progress and accepts follow-up messages. The overview
@@ -43,12 +45,20 @@ Install `requirements-hosts.txt` for Claude Agent SDK 0.2.165. Configure
 SDK smoke test used `claude-sonnet-4-6`. Set `RAVEN_HOST_CLAUDE_WORKSPACE_ID` if
 required by the test account. Never paste keys into a task prompt.
 
-For Codex, configure `RAVEN_CODEX_BIN` pointing to codex-cli
-`0.162.0-alpha.17.2`, `RAVEN_HOST_CODEX_API_KEY` and `RAVEN_HOST_CODEX_MODEL`.
-This adapter uses the experimental dynamic-tool interface, checks the exact CLI
-version, and refuses implicit model/provider fallback. It is not yet a verified
-guarded execution mode: the interface reports its read-only sandbox as advisory.
-Do not substitute a user's desktop session credentials for a deployment key.
+**Experimental managed Codex requires the exact qualified binary and model.**
+Install the optional package with `npm ci --prefix hosts/codex --ignore-scripts`,
+set `RAVEN_CODEX_BIN` to its `codex` binary, and configure
+`RAVEN_HOST_CODEX_API_KEY` with `RAVEN_HOST_CODEX_MODEL=gpt-5.3-codex`.
+Capability checks and the worker independently reject a different binary version
+or model. No newly configured credentials were used in implementation testing.
+The native CI suite supplies its own dummy credential and loopback inference;
+its success is not authenticated live-provider acceptance.
+
+The adapter uses the experimental dynamic-tool interface and rejects changed
+effective model/provider identities. Fresh/resumed tests check explicit native
+refusals and absence of effectful native execution, not just suppression flags
+or read-only sandboxing. Native questions remain unavailable; use Raven's
+ordinary core judgment/signoff path instead.
 
 Host credentials and model choice are separate from Raven's internal evidence
 reading. Internal inference uses `BRIDGE_MODEL_API=anthropic` with
@@ -98,7 +108,11 @@ For example, a checkout at `/srv/repos/project` uses
 Ingestion and the browser task runner use that same checkout.
 The regular Compose stack supports repository reading and drafting.
 
-For isolated test commands, use the opt-in overlay:
+For isolated test commands, use the opt-in overlay. Its Dockerfile
+(`docker/Dockerfile.workbench`) starts from the local image tag
+`raven-workbench-base` and adds the Docker CLI, so build the application image
+under that tag first; for Pi, OpenCode or Codex build the
+[harness image](execution-harnesses.md#optional-docker-runtime) under that tag instead:
 
 ```sh
 docker build --build-arg INSTALL_HOSTS=true -t raven-workbench-base .
@@ -118,19 +132,26 @@ private copies live under `/data/workbench` in Compose or `.bridge/workbench`
 locally. Back up both when you need to resume browser tasks after moving hosts.
 `BRIDGE_WORKBENCH_DIR` can select another persistent directory. The server runs
 one host turn at a time. Claude has a per-task dollar budget (default $5), and
-both adapters have a tool-call limit and a 15-minute turn timeout. Codex reports
-token usage but does not yet enforce a priced dollar budget; this is a release
-gap, not a cost guarantee. This version is intended for a supervised team, not a high-throughput
+enabled adapters have a tool-call limit and a 15-minute turn timeout. Pi and
+OpenCode provider-reported costs are not a hard spending guarantee; configure
+provider-side limits. Codex also has no priced-dollar enforcement. This version is intended for a supervised team, not a high-throughput
 multi-tenant execution service.
 
 Claude uses the [official Agent SDK](https://code.claude.com/docs/en/agent-sdk/python)
 with built-in tools disabled and only Raven's in-process MCP tools enabled.
 Codex uses the [app-server protocol](https://learn.chatgpt.com/docs/app-server)
 over private stdio. Harnesses receive a dedicated home, one provider credential,
-no database or connector credentials, and an empty working directory. File and
-command access goes through task-scoped Raven tools. Provider reasoning is not
+no database or connector credentials, and an empty working directory. Enabled
+adapters mediate task file and command access through Raven tools. The exact
+Codex pin/model was checked with valid fresh/resumed native shell, file, image,
+network, goal and question calls: effectful native calls were refused and no
+native execution lifecycle was observed. Its advertised `request_user_input`
+tool is unavailable, not a separate way to obtain Raven judgment or approval.
+This is a tested configuration boundary, not a general-purpose OS sandbox or
+a guarantee for other models/versions. Provider reasoning is not
 exported. Session IDs, tool IDs, versions and reported usage are saved in Raven.
 
-Local harness sessions and repository execution still send selected source text,
-prompts and tool results to the selected provider's inference API. This is local
-execution with remote inference, not an air-gapped installation.
+Local harness sessions send selected source text, prompts and tool results to
+the configured inference destination. Cloud providers mean remote inference;
+Pi can instead use an explicitly configured self-hosted endpoint. Neither choice
+alone establishes an air-gapped deployment—review connectors and runtime setup.

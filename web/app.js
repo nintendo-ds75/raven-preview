@@ -54,6 +54,7 @@ const ago = value => {
 };
 const pill = (text, color = '') => `<span class="pill ${color}"><span class="status-dot"></span>${esc(text)}</span>`;
 const titles = {
+  today: ['Today', '', 'Today', ''],
   work: ['Raven', '', 'What should we work on?', ''],
   inbox: ['Judgment inbox', '', 'Inbox', 'Decisions your coding agents need from a person. Answer, sign, or hand on.'],
   runs: ['Tasks', '', 'Tasks', 'Every task your agents registered: what is settled, what is waiting, and on whom.'],
@@ -262,9 +263,14 @@ async function refresh({quiet = false} = {}) {
       if (personalInbox() && !tabChosen) tab = 'mine';
       $('#inbox-count').textContent = personalInbox() ? state.decisions.filter(assignedToMe).length
         : state.counts ? state.counts.needs_you : state.decisions.filter(needsYou).length;
+      // What Today wants from the person: open proposals and blocked objectives.
+      const today = typeof objectiveTodayCount === 'function' ? objectiveTodayCount(state.today) : 0;
+      if ($('#today-count')) { $('#today-count').textContent = today; $('#today-count').hidden = !today; }
     }
+    renderModelStrip();
     if (taskId()) await loadTask({quiet});
     if (view === 'work' && typeof loadWorkbench === 'function') await loadWorkbench();
+    if (view === 'today' && typeof loadObjectives === 'function') await loadObjectives();
     if ((changed || !quiet) && typeof renderWorkRecents === 'function') renderWorkRecents();
     // A quiet poll that found nothing new leaves the page alone, apart from
     // a redraw a minute so "3 minutes ago" keeps moving. Measured in
@@ -283,6 +289,18 @@ async function refresh({quiet = false} = {}) {
     } else if (taskId()) { taskError = error.message; render(); }
     else if (!quiet) $('#app').innerHTML = `<div class="empty"><h3>We couldn’t reach your workspace.</h3><p>${esc(error.message)}</p><button class="button" data-action="retry">Try again</button></div>`;
   } finally { fetching = false; }
+}
+
+// One line under the page head on Today, Inbox and Connect: what the
+// configured backend lets Raven do, and where questions wait when no Slack
+// is connected. Read from /api/state; nothing here probes a provider.
+function renderModelStrip() {
+  const strip = $('#model-strip');
+  if (!strip) return;
+  const lines = [state.model?.notice || '', state.delivery && !state.delivery.enabled ? 'No Slack connected: questions wait in the inbox.' : ''].filter(Boolean);
+  const shown = !!state.auth && ['today', 'inbox', 'connect'].includes(view) && lines.length > 0;
+  strip.textContent = shown ? lines.join(' ') : '';
+  strip.hidden = !shown;
 }
 
 function loadOwnership() {
@@ -310,7 +328,7 @@ function navigate() {
   $('#page-title').textContent = title;
   $('#page-description').textContent = description;
   document.title = view === 'work' ? 'Raven' : `Raven · ${breadcrumb}`;
-  $('#new-request').hidden = view === 'connect';
+  $('#new-request').hidden = view === 'today' || view === 'connect';
   $('#new-request').innerHTML = `${icon('plus')}${view === 'owners' ? 'Add owner' : 'Ask Raven'}`;
   document.querySelectorAll('nav a').forEach(link => {
     link.classList.toggle('active', link.dataset.view === view);
@@ -322,6 +340,7 @@ function navigate() {
   taskDetail = null; taskError = '';
   if (taskId()) loadTask();
   if (view === 'work' && typeof loadWorkbench === 'function') loadWorkbench();
+  if (view === 'today' && typeof loadObjectives === 'function') loadObjectives();
   render();
   if (resetScrollOnNavigation && typeof window.scrollTo === 'function') window.scrollTo(0, 0);
   resetScrollOnNavigation = false;
@@ -350,6 +369,8 @@ function kindBadge(d) {
 function decisionCard(d, index) {
   const approved = d.status === 'approved';
   const settled = settledNow(d);
+  // An objective's proposed scope is stored as JSON; the card reads it as a scope, never as JSON.
+  const scope = typeof objectiveScope === 'function' ? objectiveScope(d) : null;
   let box;
   if (d.needs_review) box = `<div class="context-box prediction"><span class="label">Needs review · ${esc(d.review_reason || 'an answer it leaned on was corrected')}</span>${esc(d.answer || d.prediction || '')}</div>`;
   else if (approved) box = `<div class="context-box"><span class="label">Recorded answer · ${esc(d.answered_by || d.owner_name || '')}</span>${esc(d.answer)}</div>`;
@@ -361,7 +382,7 @@ function decisionCard(d, index) {
   else box = `<div class="context-box"><span class="label">Working on</span>${esc(d.run_title)} <span class="muted">/ ${esc(d.path)}</span></div>`;
   return `<article class="decision-card">
     <div class="card-top"><span class="agent-symbol">${d.agent.includes('Claude') ? '✳' : d.agent.includes('Codex') ? '⌘' : '◇'}</span><span>${esc(d.agent)}</span><span>·</span><span class="repo">${esc(d.repo)}</span>${kindBadge(d)}<time datetime="${esc(d.created_at)}">${ago(d.created_at)}</time></div>
-    <h3>${esc(d.question)}</h3><p class="context">${esc(d.context)}</p>
+    <h3>${esc(d.question)}</h3>${scope ? objectiveScopeCard(scope, `scope-${d.id}`) : `<p class="context">${esc(d.context)}</p>`}
     ${box}
     <div class="card-bottom"><span class="owner">${avatar(d.owner_name, index)}${esc(d.owner_name || 'Unassigned')}</span>${pill(statusLabel(d), settled ? 'green' : '')}${signoffLabel(d)}<button class="button small ${settled ? '' : 'soft'}" data-action="review" data-id="${esc(d.id)}">${settled ? 'View decision' : 'Review'} ${icon('arrow')}</button></div>
   </article>`;
@@ -461,11 +482,14 @@ function loadSavings() {
   if (savingsLoading) return;
   savingsLoading = true;
   api('/api/metrics?days=30').then(result => { savings = result; savingsAt = Date.now(); if (['runs','owners'].includes(view)) render(); })
-    .catch(error => notify(error.message)).finally(() => { savingsLoading = false; });
+    // The numbers are a member's to read; a viewer gets no strip and no error.
+    .catch(error => { if (error.status === 403) { savings = false; savingsAt = Date.now(); if (['runs','owners'].includes(view)) render(); } else notify(error.message); })
+    .finally(() => { savingsLoading = false; });
 }
 
 function savedStrip() {
   // One line of numbers from the ledger: what Raven reused, how proposals fared, how long people took.
+  if (savings === false) return '';
   if (savings === null || Date.now() - savingsAt > STALE_DRAW_MS) loadSavings();
   if (!savings) return '<p class="saved-strip context" role="status">Measuring what Raven saved…</p>';
   const m = savings, decided = m.proposals.signed_unchanged + m.proposals.corrected;
@@ -642,13 +666,14 @@ async function agentCredential(target) {
 
 function render() {
   lastDraw = Date.now();
+  if (typeof renderModelStrip === 'function') renderModelStrip();
   if (!state.auth) {
     $('#new-request').hidden = true;
     $('#manual-actions').hidden = true;
     $('#app').innerHTML = workspaceError ? `<div class="empty" role="alert"><h2>Workspace access unavailable</h2><p>${esc(workspaceError)}</p><button class="button" data-action="retry">Try again</button></div>` : '<p class="context" role="status">Loading workspace…</p>';
     return;
   }
-  $('#new-request').hidden = view === 'connect' || state.me?.role === 'viewer' || (view === 'owners' && !canAdminister());
+  $('#new-request').hidden = view === 'today' || view === 'connect' || state.me?.role === 'viewer' || (view === 'owners' && !canAdminister());
   $('#manual-actions').hidden = $('#new-request').hidden;
   if (typeof rememberTaskView === 'function') rememberTaskView();
   const noteDraft = $('#note-text')?.value;
@@ -656,8 +681,9 @@ function render() {
   const focusWas = $('#app').contains(active) ? focusKey(active) : '';
   const selection = active.tagName === 'INPUT' ? active.selectionStart : null;
   const disclosures = [...document.querySelectorAll('#app details[id]')].map(el => ({id: el.id, open: el.open, scroll: el.querySelector('ul')?.scrollTop || 0}));
-  $('.page-head').hidden = !!taskId() || view === 'work';
+  $('.page-head').hidden = !!taskId() || view === 'work' || view === 'today';
   document.body.classList.toggle('work-view', view === 'work');
+  if (view === 'today' && typeof renderObjectives === 'function') { $('#app').dataset.taskId = ''; renderObjectives(); return; }
   if (view === 'work' && typeof renderWorkbench === 'function') { $('#app').dataset.taskId = ''; renderWorkbench(); return; }
   $('#app').innerHTML = taskId() ? taskOverview() : ({inbox, runs, memory, owners, connect: connections})[view]();
   $('#app').dataset.taskId = taskId();
@@ -992,7 +1018,8 @@ function decisionReviewScope(d) {
 }
 
 function decisionBackground(d) {
-  return `<details class="history decision-background" ${!d.answer && !d.prediction ? 'open' : ''}><summary>Recorded background & evidence</summary><p class="context">Context captured when this question was raised may describe an earlier unresolved state. Read it alongside the current answer and scope above.</p>${d.brief ? `<p><strong>Original brief:</strong> ${esc(d.brief)}</p>` : ''}<p class="modal-context">${esc(d.context || '')}</p>${d.evidence ? `<p class="context"><strong>Recorded evidence:</strong> ${esc(d.evidence)}</p>` : ''}${workItemContext(d)}${sourceEvidence(d.sources, d.needs_review ? null : d.source_revalidation)}</details>`;
+  const scope = typeof objectiveScope === 'function' ? objectiveScope(d) : null;
+  return `<details class="history decision-background" ${!d.answer && !d.prediction ? 'open' : ''}><summary>Recorded background & evidence</summary><p class="context">Context captured when this question was raised may describe an earlier unresolved state. Read it alongside the current answer and scope above.</p>${d.brief ? `<p><strong>Original brief:</strong> ${esc(d.brief)}</p>` : ''}${scope ? objectiveScopeCard(scope, `background-${d.id}`) : `<p class="modal-context">${esc(d.context || '')}</p>`}${d.evidence ? `<p class="context"><strong>Recorded evidence:</strong> ${esc(d.evidence)}</p>` : ''}${workItemContext(d)}${sourceEvidence(d.sources, d.needs_review ? null : d.source_revalidation)}</details>`;
 }
 
 // Why the signed-in person may only read this decision, and what would let

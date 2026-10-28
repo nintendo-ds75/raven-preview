@@ -35,8 +35,18 @@ class SeededStore(OfflineCase):
         return canvas.start_task(self.store, self.cfg, {"title": title, "agent": "test", "repo": repo, "client_key": key,
                                                         "paths": "billing/usage.py", "requester": "Priya"})["task_id"]
 
-    def node(self, task, question=QUESTION, path="billing/usage.py"):
-        return canvas.add_node(self.store, self.cfg, {"task_id": task, "question": question, "paths": path})
+    def node(self, task, question=QUESTION, path="billing/usage.py", category=""):
+        return canvas.add_node(self.store, self.cfg, {"task_id": task, "question": question, "paths": path, "category": category})
+
+    def proposal(self, ident, state, *, created_hours, updated_hours=None, rationale="", payload=None, repo=REPO, sources=()):
+        """A row in the proposal ledger as the objective head and the
+        person's action on it would have left it."""
+        stamp = lambda hours: (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()  # noqa: E731
+        with self.store.graph.transaction() as db:
+            db.execute("INSERT INTO objective_proposals(id,objective_id,repository,fingerprint,payload,sources,state,rationale,created_at,updated_at) "
+                       "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                       (ident, "", repo, "fp-" + ident, json.dumps(payload or {"title": "Move " + ident}), json.dumps(list(sources)), state, rationale,
+                        stamp(created_hours), stamp(updated_hours if updated_hours is not None else created_hours)))
 
     def settle(self, task, node_id, answer):
         canvas.settle_node(self.store, {"task_id": task, "node_id": node_id, "answer": answer, "rationale": "why"})
@@ -116,8 +126,112 @@ class MetricsTests(SeededStore):
         self.assertEqual(m["wait_saved"], {"seconds": 8 * HOUR, "decisions": 2, "estimated": 0})
         self.assertEqual([r["repo"] for r in m["by_repo"]], [REPO])
         self.assertEqual({k: v for k, v in m["by_repo"][0].items() if k != "repo"},
-                         {k: v for k, v in m.items() if k not in ("window_days", "since", "until", "repo", "by_repo")})
+                         {k: v for k, v in m.items() if k not in ("window_days", "since", "until", "repo", "by_repo", "by_category", "work_proposals")})
         json.dumps(m)
+
+    def test_objective_scope_nodes_count_by_category(self):
+        # Nothing yet: both categories are still reported, empty.
+        self.assertEqual([(c["category"], c["decisions"]) for c in metrics.summary(self.store)["by_category"]],
+                         [("", 0), ("objective_scope", 0)])
+        self.seed()
+        t = self.task("Pilot to value", "k9")
+        signed = self.node(t, "Prepare the CSV path as proposed?", "billing/export.py", category="objective_scope")
+        self.settle(t, signed["node_id"], "Prepare it.")
+        self.sign(signed["node_id"])
+        corrected = self.node(t, "Prepare the importer as proposed?", "billing/import.py", category="objective_scope")
+        self.settle(t, corrected["node_id"], "Prepare it.")
+        self.sign(corrected["node_id"], answer="Prepare only the CSV half.", rationale="narrower")
+        m = metrics.summary(self.store, days=30)
+        by_category = {c["category"]: c for c in m["by_category"]}
+        # The ladder categorises some task questions itself ('policy'); the two reported ones are always there.
+        self.assertEqual(list(by_category), sorted(by_category))
+        self.assertLessEqual({"", "objective_scope"}, set(by_category))
+        scope = by_category["objective_scope"]
+        self.assertEqual((scope["decisions"], scope["proposals"]["signed_unchanged"], scope["proposals"]["corrected"]), (2, 1, 1))
+        self.assertEqual(scope["proposals"]["unchanged_rate"], 0.5)
+        # Every decision is in exactly one category and the workspace totals keep their shape.
+        self.assertEqual(sum(c["decisions"] for c in m["by_category"]), m["decisions"])
+        self.assertEqual(sum(c["proposals"]["signed_unchanged"] for c in m["by_category"]), m["proposals"]["signed_unchanged"])
+        self.assertEqual((m["decisions"], m["proposals"]["signed_unchanged"], m["proposals"]["corrected"]), (9, 2, 2))
+        self.assertEqual(set(m["proposals"]), {"total", "signed_unchanged", "corrected", "by_rule", "open", "unchanged_rate", "corrected_rate"})
+
+    def test_work_proposals_are_counted_from_the_ledger(self):
+        self.assertEqual(metrics.summary(self.store)["work_proposals"],
+                         {"created": 0, "open": 0, "signed": 0, "corrected": 0, "dismissed": 0, "precision": None,
+                          "time_to_signature": {"count": 0, "median_seconds": None, "p90_seconds": None},
+                          "dismissed_reasons": [], "declined_recent": []})
+        # Two signed (1 h and 3 h to acceptance), one a standing rule reconciled,
+        # three dismissed, one still open; and a dismissal from before the window.
+        self.proposal("a", "accepted", created_hours=2, updated_hours=1)
+        self.proposal("b", "accepted", created_hours=5, updated_hours=2)
+        self.proposal("c", "reconcile", created_hours=6, rationale="Standing rule r1 already answers this governance question")
+        self.proposal("d", "dismissed", created_hours=8, updated_hours=7, rationale="Customer already has a CSV path")
+        self.proposal("e", "dismissed", created_hours=9, updated_hours=4, rationale="Customer already has a   CSV path")
+        self.proposal("f", "dismissed", created_hours=10, updated_hours=3, rationale="Out of scope for the pilot; " + "x" * 80)
+        self.proposal("g", "proposed", created_hours=1)
+        self.proposal("h", "dismissed", created_hours=24 * 40, updated_hours=24 * 39, rationale="Too early")
+        self.proposal("w", "dismissed", created_hours=1, rationale="Other repository", repo="acme/web")
+        m = metrics.summary(self.store, days=30)["work_proposals"]
+        self.assertEqual((m["created"], m["open"], m["signed"], m["corrected"], m["dismissed"]), (8, 2, 2, 1, 4))
+        self.assertEqual(m["precision"], round(2 / 7, 3))
+        self.assertEqual(m["time_to_signature"], {"count": 2, "median_seconds": 2 * HOUR, "p90_seconds": 3 * HOUR})
+        self.assertEqual(m["dismissed_reasons"], [{"reason": "Customer already has a CSV path", "count": 2},
+                                                  {"reason": "Other repository", "count": 1},
+                                                  {"reason": ("Out of scope for the pilot; " + "x" * 80)[:60], "count": 1}])
+        # What the next investigation of each repository reads: its last five dismissals, window or not.
+        self.assertEqual([(d["repository"], d["title"], d["rationale"]) for d in m["declined_recent"]],
+                         [(REPO, "Move f", "Out of scope for the pilot; " + "x" * 80), (REPO, "Move e", "Customer already has a   CSV path"),
+                          (REPO, "Move d", "Customer already has a CSV path"), (REPO, "Move h", "Too early"), ("acme/web", "Move w", "Other repository")])
+        one = metrics.summary(self.store, repo=REPO, days=30)["work_proposals"]
+        self.assertEqual((one["created"], one["dismissed"], one["precision"]), (7, 3, round(2 / 6, 3)))
+        self.assertEqual([d["title"] for d in one["declined_recent"]], ["Move f", "Move e", "Move d", "Move h"])
+        self.assertEqual(metrics.summary(self.store, days=0)["work_proposals"]["created"], 9)
+        # Nothing the proposer wrote is read: a payload claiming confidence changes no number.
+        with self.store.graph.transaction() as db:
+            db.execute("UPDATE objective_proposals SET payload=?", (json.dumps({"title": "Move", "confidence": "high", "precision": 1.0, "state": "accepted"}),))
+        boasted = metrics.summary(self.store, days=30)["work_proposals"]
+        self.assertEqual({k: v for k, v in boasted.items() if k != "declined_recent"}, {k: v for k, v in m.items() if k != "declined_recent"})
+        self.assertEqual([d["rationale"] for d in boasted["declined_recent"]], [d["rationale"] for d in m["declined_recent"]])
+        json.dumps(boasted)
+
+    def test_a_signed_move_a_later_signed_move_superseded_still_counts_as_signed(self):
+        # Three successive moves on one objective were signed (2 h, 1 h and
+        # 3 h to acceptance): activating each later one rewrites the previous
+        # accepted row to `superseded` and leaves its acceptance time alone
+        # (objective_head.activate_reviews); one move was dismissed.
+        self.proposal("a", "superseded", created_hours=9, updated_hours=7)
+        self.proposal("b", "superseded", created_hours=6, updated_hours=5)
+        self.proposal("c", "accepted", created_hours=4, updated_hours=1)
+        self.proposal("d", "dismissed", created_hours=3, updated_hours=2, rationale="Not this quarter")
+        m = metrics.summary(self.store, days=30)["work_proposals"]
+        self.assertEqual((m["created"], m["open"], m["signed"], m["corrected"], m["dismissed"]), (4, 0, 3, 0, 1))
+        self.assertEqual(m["precision"], 0.75)
+        self.assertEqual(m["time_to_signature"], {"count": 3, "median_seconds": 2 * HOUR, "p90_seconds": 3 * HOUR})
+        # Every row in the window is in a bucket (`reconcile` is both open and corrected, so it is left out here).
+        self.assertEqual(m["open"] + m["signed"] + m["dismissed"], m["created"])
+
+    def test_a_dismissal_whose_source_access_lapsed_is_counted_but_its_words_are_withheld(self):
+        # A member declined a proposal citing a source and the reason quotes it;
+        # the source then became inaccessible. The Today page withholds that
+        # proposal, so the numbers withhold its title and reason too.
+        record = {"repo": REPO, "kind": "note", "ref": "pilot-call", "body": "Pricing is frozen until Q3.", "title": "Pilot call"}
+        source = self.store.add_record(record)["source"]
+        pin = {k: source[k] for k in ("record_id", "source_version_id")}
+        self.proposal("q", "dismissed", created_hours=3, updated_hours=2, payload={"title": "Unfreeze the pricing page"},
+                      rationale="Not now: the pilot call says pricing is frozen until Q3", sources=[pin])
+        self.proposal("r", "dismissed", created_hours=4, updated_hours=1, rationale="Already shipped")
+        before = metrics.summary(self.store, days=30)["work_proposals"]
+        self.assertEqual([d["title"] for d in before["declined_recent"]], ["Move r", "Unfreeze the pricing page"])
+        self.assertEqual([d["reason"] for d in before["dismissed_reasons"]], ["Already shipped", "Not now: the pilot call says pricing is frozen until Q3"])
+        self.store.add_record({**record, "availability": "inaccessible"})
+        after = metrics.summary(self.store, days=30)["work_proposals"]
+        self.assertNotIn("Unfreeze the pricing page", json.dumps(after))
+        self.assertNotIn("frozen until Q3", json.dumps(after))
+        self.assertEqual((after["created"], after["dismissed"], after["precision"]), (2, 2, 0.0))
+        self.assertEqual(after["dismissed_reasons"], [{"reason": "Already shipped", "count": 1}])
+        self.assertEqual(after["declined_recent"], [
+            {"repository": REPO, "title": "Move r", "rationale": "Already shipped", "updated_at": before["declined_recent"][0]["updated_at"]},
+            {"repository": REPO, "withheld": True, "title": metrics.WITHHELD_TITLE, "updated_at": before["declined_recent"][1]["updated_at"]}])
 
     def test_the_window_and_the_repository_bound_what_is_counted(self):
         ids = self.seed()
@@ -163,6 +277,8 @@ class MetricsSurfaceTests(SharedServer):
         read = self.get("/api/metrics?days=7", token=token)
         self.assertEqual((read["window_days"], read["decisions"], read["reask"]["asked"]), (7, 1, 1))
         self.assertEqual(read["by_repo"][0]["repo"], REPO)
+        self.assertEqual([c["category"] for c in read["by_category"]], ["", "objective_scope"])
+        self.assertEqual(read["work_proposals"]["precision"], None)
         self.assertEqual(self.get(f"/api/metrics?repo={REPO}&days=0", token=token)["repo"], REPO)
         with self.assertRaises(HTTPError) as refused:
             self.get("/api/metrics?days=soon", token=token)
@@ -171,3 +287,26 @@ class MetricsSurfaceTests(SharedServer):
         status = call_tool(self.store, "bridge_connection_status", {})
         self.assertEqual(status["metrics"]["decisions"], 1)
         self.assertEqual(status["metrics"]["window_days"], 30)
+
+    def test_a_viewer_and_an_agent_are_refused_and_a_member_never_reads_withheld_words(self):
+        member = self.post("/api/people", {"name": "Rosa Member", "role": "member"}, token=BOOTSTRAP)
+        viewer = self.post("/api/people", {"name": "Val Viewer", "role": "viewer"}, token=BOOTSTRAP)
+        token = lambda person, kind: self.post("/api/tokens", {"person_id": person["id"], "kind": kind}, token=BOOTSTRAP)["token"]  # noqa: E731
+        # The numbers carry the reasons members gave when they declined: a member's to read, never a viewer's or an agent's.
+        self.assertEqual(self.status_of("GET", "/api/metrics", token=token(viewer, "human")), 403)
+        self.assertEqual(self.status_of("GET", "/api/metrics", token=token(member, "agent")), 403)
+        record = {"repo": REPO, "kind": "note", "ref": "pilot-call", "body": "Pricing is frozen until Q3.", "title": "Pilot call"}
+        source = self.store.add_record(record)["source"]
+        with self.store.graph.transaction() as db:
+            db.execute("INSERT INTO objective_proposals(id,objective_id,repository,fingerprint,payload,sources,state,rationale,created_at,updated_at) "
+                       "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                       ("q", "", REPO, "fp-q", json.dumps({"title": "Unfreeze the pricing page"}),
+                        json.dumps([{k: source[k] for k in ("record_id", "source_version_id")}]), "dismissed",
+                        "Not now: the pilot call says pricing is frozen until Q3", "2026-10-20T10:00:00+00:00", "2026-10-20T11:00:00+00:00"))
+        human = token(member, "human")
+        self.assertIn("Unfreeze the pricing page", json.dumps(self.get("/api/metrics?days=0", token=human)["work_proposals"]))
+        self.store.add_record({**record, "availability": "inaccessible"})
+        read = self.get("/api/metrics?days=0", token=human)["work_proposals"]
+        self.assertNotIn("Unfreeze the pricing page", json.dumps(read))
+        self.assertNotIn("frozen until Q3", json.dumps(read))
+        self.assertEqual((read["dismissed"], read["dismissed_reasons"], read["declined_recent"][0]["withheld"]), (1, [], True))

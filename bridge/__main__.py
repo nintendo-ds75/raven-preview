@@ -181,6 +181,11 @@ def main():
     from .mcp_events import Worker as EventWorker
     event_worker = EventWorker(store)
     event_worker.start()
+    from .objective_head import Worker as ObjectiveWorker
+    objective_worker = ObjectiveWorker(store, workbench, allow_operator=not auth.enabled)
+    objective_worker.start()
+    from .meeting_worker import Worker as MeetingWorker
+    meeting_worker = MeetingWorker(store, allow_operator=not auth.enabled).start()
     try:
         server = make_server(store, args.port, executions, host=args.host, auth=auth, public_url=args.public_url,
                              github_app=github_app, github_syncer=syncer, teams_adapter=teams_adapter, workbench=workbench)
@@ -219,6 +224,8 @@ def main():
         context_refresher.close()
         source_syncer.close()
         event_worker.close()
+        meeting_worker.close()
+        objective_worker.close()
         if delivery:
             delivery.close()
         if webhook:

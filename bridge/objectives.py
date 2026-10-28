@@ -1,0 +1,810 @@
+"""Durable outcome ownership around (never instead of) Raven's judgment core.
+
+A completed coding run is progress, not an achieved business outcome. Proposals
+are untrusted evidence until an ordinary, current core decision is signed.
+"""
+import hashlib
+import json
+import uuid
+from datetime import datetime, timedelta, timezone
+
+from . import context_memory as cm
+from .store import Invalid, field, now, repo_key
+
+SCHEMA = '''
+CREATE TABLE IF NOT EXISTS objectives (
+ id TEXT PRIMARY KEY, request_key TEXT NOT NULL UNIQUE, request_hash TEXT NOT NULL,
+ title TEXT NOT NULL, outcome TEXT NOT NULL, success_criteria TEXT NOT NULL,
+ stop_criteria TEXT NOT NULL, guardrails TEXT NOT NULL, repository TEXT NOT NULL,
+ provider TEXT NOT NULL, requester_id TEXT NOT NULL, requester TEXT NOT NULL, requester_kind TEXT NOT NULL DEFAULT 'unknown',
+ lifecycle TEXT NOT NULL DEFAULT 'active', revision INTEGER NOT NULL DEFAULT 1,
+ next_check_at TEXT NOT NULL DEFAULT '', waiting_on TEXT NOT NULL DEFAULT '',
+ blocked_reason TEXT NOT NULL DEFAULT '', pending_request TEXT NOT NULL DEFAULT '',
+ pending_since TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS objective_sources (
+ objective_id TEXT NOT NULL REFERENCES objectives(id), record_id TEXT NOT NULL,
+ source_version_id TEXT NOT NULL, PRIMARY KEY(objective_id,record_id,source_version_id));
+CREATE TABLE IF NOT EXISTS objective_metadata_dependencies (
+ objective_id TEXT NOT NULL REFERENCES objectives(id), record_id TEXT NOT NULL,
+ source_version_id TEXT NOT NULL, metadata_sha256 TEXT NOT NULL,
+ PRIMARY KEY(objective_id,record_id,source_version_id,metadata_sha256));
+CREATE TABLE IF NOT EXISTS objective_runs (
+ objective_id TEXT NOT NULL REFERENCES objectives(id), task_id TEXT NOT NULL,
+ purpose TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(objective_id,task_id));
+CREATE TABLE IF NOT EXISTS objective_run_authority (
+ task_id TEXT PRIMARY KEY, objective_id TEXT NOT NULL, proposal_id TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS objective_events (
+ id TEXT PRIMARY KEY, objective_id TEXT NOT NULL REFERENCES objectives(id),
+ kind TEXT NOT NULL, summary TEXT NOT NULL, actor_id TEXT NOT NULL,
+ detail TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS objective_requests (
+ request_key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS objective_proposals (
+ id TEXT PRIMARY KEY, objective_id TEXT NOT NULL DEFAULT '', repository TEXT NOT NULL,
+ fingerprint TEXT NOT NULL UNIQUE, payload TEXT NOT NULL, sources TEXT NOT NULL,
+ state TEXT NOT NULL DEFAULT 'proposed', revision INTEGER NOT NULL DEFAULT 1,
+ governance_run_id TEXT NOT NULL DEFAULT '', decision_id TEXT NOT NULL DEFAULT '',
+ acceptance_hash TEXT NOT NULL DEFAULT '', scope_hash TEXT NOT NULL DEFAULT '',
+ rationale TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+'''
+
+# Plain CREATE INDEX IF NOT EXISTS runs unchanged on SQLite and PostgreSQL.
+INDEXES = '''
+CREATE INDEX IF NOT EXISTS objective_proposals_objective_state ON objective_proposals(objective_id,state);
+CREATE INDEX IF NOT EXISTS objective_events_objective ON objective_events(objective_id);
+CREATE INDEX IF NOT EXISTS objective_runs_task ON objective_runs(task_id);
+'''
+
+# A request that calls the workbench outside the writer lock holds the
+# objective this long at most; a crashed caller's claim expires on its own.
+CLAIM_TTL = timedelta(minutes=10)
+# What a dismissal used to say when nobody gave a reason; refused now.
+DEFAULT_DISMISSAL = 'Not pursuing this proposal'
+
+
+def migrate(db):
+    db.executescript(SCHEMA)
+    columns = {r['name'] for r in db.execute('PRAGMA table_info(objectives)')}
+    if 'requester_kind' not in columns:
+        db.execute("ALTER TABLE objectives ADD COLUMN requester_kind TEXT NOT NULL DEFAULT 'unknown'")
+    # Each column by its own name: on SQLite every ALTER commits on its
+    # own, so a start that died between the two must add the second later.
+    if 'pending_request' not in columns:
+        db.execute("ALTER TABLE objectives ADD COLUMN pending_request TEXT NOT NULL DEFAULT ''")
+    if 'pending_since' not in columns:
+        db.execute("ALTER TABLE objectives ADD COLUMN pending_since TEXT NOT NULL DEFAULT ''")
+    db.executescript(INDEXES)
+
+
+def digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def human(actor):
+    if actor is None or actor.kind == 'agent' or not actor.allows('member'):
+        raise Invalid('A signed-in workspace member must request objective work')
+
+
+def current_actor(store, actor, role='member', *, allow_operator=True):
+    """Resolve current membership, never recreate privilege from saved names."""
+    from .auth import Identity
+    if actor.id:
+        person = store.graph.db.execute('SELECT id,name,role,active FROM people WHERE id=?', (actor.id,)).fetchone()
+        if not person or not person['active']:
+            raise Invalid('The requester is no longer an active workspace member')
+        current = Identity(person['id'], person['name'], person['role'], 'session')
+    elif allow_operator and actor.kind == 'operator':
+        current = Identity('', 'Local operator', 'admin', 'operator')
+    else:
+        raise Invalid('A current named workspace identity is required for background work')
+    if not current.allows(role):
+        raise Invalid('The requester no longer has the required workspace role')
+    return current
+
+
+def row(store, ident):
+    result = store.graph.db.execute('SELECT * FROM objectives WHERE id=?', (ident,)).fetchone()
+    if result is None:
+        raise Invalid('Objective not found')
+    return dict(result)
+
+
+def _metadata_changed(source, current, historical=None):
+    from .objective_research import metadata_fingerprint
+    expected = source.get('metadata_sha256')
+    if not expected and historical:
+        expected = metadata_fingerprint(historical)
+    return not expected or metadata_fingerprint(current) != expected
+
+
+def sources_current_db(db, sources, repo, *, exact=False):
+    """Read-only checks safe inside the core's selected writer transaction."""
+    from .context_connectors import fresh
+    out = []
+    for source in sources:
+        record = db.execute('SELECT repo,availability,head_id FROM source_records WHERE id=?', (source['record_id'],)).fetchone()
+        if not record or record['repo'] != repo_key(repo) or record['availability'] != 'available' or not fresh(db, source['record_id']):
+            raise Invalid('Objective source access is not current; content is withheld')
+        version = source.get('source_version_id') or record['head_id']
+        historical = cm.citation(db, source['record_id'], version)
+        withheld = db.execute('SELECT 1 FROM withheld_source_versions WHERE source_version_id=?', (version,)).fetchone()
+        if not historical or withheld:
+            raise Invalid('Objective source access is not current; content is withheld')
+        current = cm.citation(db, source['record_id'], record['head_id'])
+        changed = (_metadata_changed(source, current, historical) if source.get('metadata_only')
+                   else record['head_id'] != version)
+        if exact and changed:
+            raise Invalid('Objective evidence changed; review the current source before acting')
+        out.append(current)
+    return out
+
+
+def sources_current(store, sources, repo, *, exact=False):
+    return sources_current_db(store.graph.db, sources, repo, exact=exact)
+
+
+def remember_sources(store, ident, sources):
+    """Persist body reads and metadata-only disclosure without conflating them."""
+    from .objective_research import metadata_fingerprint
+    db = store.graph.db
+    for source in sources:
+        if source.get('metadata_only'):
+            observed = cm.citation(db, source['record_id'], source['source_version_id'])
+            if not observed:
+                raise Invalid('The observed metadata source version is missing')
+            expected = source.get('metadata_sha256') or metadata_fingerprint(observed)
+            db.execute('INSERT INTO objective_metadata_dependencies VALUES(?,?,?,?) ON CONFLICT DO NOTHING',
+                       (ident, source['record_id'], source['source_version_id'], expected))
+        else:
+            db.execute('INSERT OR IGNORE INTO objective_sources VALUES(?,?,?)',
+                       (ident, source['record_id'], source['source_version_id']))
+
+
+def _sources(store, ident, db=None):
+    db = db or store.graph.db
+    full = [dict(r) for r in db.execute('SELECT record_id,source_version_id FROM objective_sources WHERE objective_id=?', (ident,))]
+    metadata = [{**dict(r), 'metadata_only': True} for r in db.execute(
+        'SELECT record_id,source_version_id,metadata_sha256 FROM objective_metadata_dependencies WHERE objective_id=?', (ident,))]
+    return full + metadata
+
+
+def _latest_sources(store, ident):
+    selected = {}
+    sources = _sources(store, ident)
+    # Scope relies on body reads when present; disclosure retains every historical pin.
+    read_ids = {source['record_id'] for source in sources if not source.get('metadata_only')}
+    for source in sources:
+        if source.get('metadata_only') and source['record_id'] in read_ids:
+            continue
+        version = store.graph.db.execute('SELECT sequence FROM source_versions WHERE id=?', (source['source_version_id'],)).fetchone()
+        if version and (source['record_id'] not in selected or version['sequence'] > selected[source['record_id']][0]):
+            selected[source['record_id']] = (version['sequence'], source)
+    return [source for _, source in selected.values()]
+
+
+def require_visible(store, value):
+    sources_current(store, _sources(store, value['id']), value['repository'])
+    from .visibility import require_task
+    for run in store.graph.db.execute('SELECT task_id FROM objective_runs WHERE objective_id=?', (value['id'],)):
+        require_task(store, run['task_id'])
+
+
+def event(store, ident, kind, summary, actor='', detail=None):
+    store.graph.db.execute('INSERT INTO objective_events VALUES(?,?,?,?,?,?,?)',
+        (uuid.uuid4().hex, ident, kind, summary, actor, json.dumps(detail or {}), now()))
+
+
+def block(store, ident, reason, actor='', *, kind='blocked', detail=None):
+    """Record why a saved objective cannot move: a revision bump and one
+    event per changed reason, never a row per polling tick. An empty
+    reason clears the block. Returns whether anything changed."""
+    reason = str(reason or '')[:1000]
+    with store.graph.transaction() as db:
+        current = row(store, ident)
+        if current['blocked_reason'] == reason:
+            return False
+        db.execute('UPDATE objectives SET blocked_reason=?,revision=revision+1,updated_at=? WHERE id=?',
+                   (reason, now(), ident))
+        event(store, ident, kind, reason or 'The earlier block no longer applies.', actor,
+              {**(detail or {}), 'provenance': 'system-observation', 'independently_verified': False})
+        return True
+
+
+def _timestamp(value):
+    if not value:
+        return ''
+    if not isinstance(value, str):
+        raise Invalid('next_check_at must be an ISO timestamp with timezone')
+    try:
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if parsed.tzinfo is None:
+            raise ValueError()
+        return parsed.astimezone(timezone.utc).isoformat()
+    except ValueError as error:
+        raise Invalid('next_check_at must be an ISO timestamp with timezone') from error
+
+
+def _payload(data):
+    result = {k: field(data, k, limit=limit) for k, limit in (
+        ('title', 300), ('outcome', 2000), ('success_criteria', 2000),
+        ('stop_criteria', 2000), ('guardrails', 2000), ('repository', 100))}
+    result['repository'] = repo_key(result['repository'])
+    provider = data.get('provider', 'claude')
+    from .workbench_hosts import settings
+    settings(provider)  # Validate identifier, without requiring credentials to save an objective.
+    result['provider'] = provider
+    return result
+
+
+def create(store, data, actor):
+    human(actor)
+    payload = _payload(data)
+    key = field(data, 'request_key', limit=100)
+    ids = data.get('source_ids', [])
+    if not isinstance(ids, list) or len(ids) > 100 or any(not isinstance(v, str) for v in ids):
+        raise Invalid('source_ids must contain at most 100 record IDs')
+    selected = sources_current(store, [{'record_id': ident} for ident in sorted(set(ids))], payload['repository'])
+    fingerprint = digest([payload, sorted(set(ids)), actor.id, data.get('start_preparation', False)])
+    with store.graph.transaction() as db:
+        prior = db.execute('SELECT id,request_hash FROM objectives WHERE request_key=?', (key,)).fetchone()
+        if prior:
+            if prior['request_hash'] != fingerprint:
+                raise Invalid('This request key belongs to a different objective')
+            return get(store, prior['id'])
+        ident, stamp = uuid.uuid4().hex[:16], now()
+        db.execute('INSERT INTO objectives(id,request_key,request_hash,title,outcome,success_criteria,stop_criteria,guardrails,repository,provider,requester_id,requester,requester_kind,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                   (ident, key, fingerprint, *[payload[k] for k in ('title','outcome','success_criteria','stop_criteria','guardrails','repository','provider')], actor.id, actor.name, actor.kind, stamp, stamp))
+        for source in selected:
+            db.execute('INSERT INTO objective_sources VALUES(?,?,?)', (ident, source['record_id'], source['source_version_id']))
+        event(store, ident, 'accepted', 'A person asked Raven to take point within the recorded scope.', actor.id,
+              {'authority': 'explicit-human-request', 'external_actions_authorized': False})
+    return get(store, ident)
+
+
+def _evidence_view(store, sources, repo, citations=()):
+    """Hydrate accessible pinned snapshots, never inferred or metadata-only excerpts."""
+    sources_current(store, sources, repo)
+    result = []
+    for source in sources:
+        view = cm.citation(store.graph.db, source['record_id'], source['source_version_id'])
+        view = {**view, **{k: source[k] for k in ('metadata_only', 'metadata_sha256') if k in source}}
+        if not source.get('metadata_only'):
+            raw = store.graph.db.execute('SELECT snapshot FROM source_versions WHERE id=? AND record_id=?',
+                                        (source['source_version_id'], source['record_id'])).fetchone()
+            body = json.loads(raw['snapshot']).get('body', '') if raw else ''
+            quotes = []
+            for citation in citations if isinstance(citations, (list, tuple)) else ():
+                if not isinstance(citation, dict):
+                    continue
+                quote = citation.get('quote')
+                if (citation.get('record_id') == source['record_id']
+                        and citation.get('source_version_id') == source['source_version_id']
+                        and isinstance(quote, str) and quote.strip() and len(quote) <= 1500
+                        and isinstance(body, str) and quote in body and quote not in quotes):
+                    quotes.append(quote)
+            if quotes:
+                view.update(quotes=quotes, quote=quotes[0])
+        result.append(view)
+    return result
+
+
+def _proposal_view(store, raw):
+    value = dict(raw)
+    sources = json.loads(value.pop('sources'))
+    payload = json.loads(value.pop('payload'))
+    try:
+        current = sources_current(store, sources, value['repository'])
+        stale = any(_metadata_changed(s, c, cm.citation(store.graph.db, s['record_id'], s['source_version_id'])) if s.get('metadata_only') else s['source_version_id'] != c['source_version_id'] for s, c in zip(sources, current))
+    except Invalid:
+        return {'id': value['id'], 'state': value['state'], 'revision': value['revision'],
+                'withheld': True, 'title': 'Proposal withheld: source access changed'}
+    evidence = _evidence_view(store, sources, value['repository'], payload.get('citations', []))
+    citations = [{k: source[k] for k in ('record_id', 'source_version_id')} | {'quote': quote}
+                 for source in evidence for quote in source.get('quotes', [])]
+    return {**value, **payload, 'sources': evidence, 'citations': citations, 'evidence_stale': stale,
+            'notice': 'Evidence changed; dismiss this proposal or re-investigate current facts' if stale else '',
+            'task_id': value['governance_run_id'], 'status': value['state']}
+
+
+def get(store, ident):
+    value = row(store, ident)
+    require_visible(store, value)
+    runs = [dict(r) for r in store.graph.db.execute('SELECT o.task_id,o.purpose,r.status,r.title,r.updated_at FROM objective_runs o JOIN runs r ON r.id=o.task_id WHERE o.objective_id=? ORDER BY o.created_at', (ident,))]
+    for run in runs:
+        run['browser_task'] = bool(store.graph.db.execute('SELECT 1 FROM browser_tasks WHERE task_id=?', (run['task_id'],)).fetchone())
+    proposals = [_proposal_view(store, r) for r in store.graph.db.execute('SELECT * FROM objective_proposals WHERE objective_id=? ORDER BY created_at DESC', (ident,))]
+    status = value['lifecycle']
+    if status == 'active':
+        status = 'needs_you' if value['blocked_reason'] or any(p['state'] in ('proposed','review','preparing','review_error','reconcile') for p in proposals) else (
+            'moving' if any(r['status'] in ('queued','working') for r in runs) else 'waiting')
+    citations = [c for p in proposals if p['state'] == 'accepted' and not p.get('withheld') for c in p.get('citations', [])]
+    value = {k: v for k, v in value.items() if k not in ('pending_request', 'pending_since')}
+    return {**value, 'status': status, 'sources': _evidence_view(store, _sources(store, ident), value['repository'], citations), 'runs': runs, 'proposals': proposals,
+            'events': [{**dict(r), 'detail': json.loads(r['detail'])} for r in store.graph.db.execute('SELECT * FROM objective_events WHERE objective_id=? ORDER BY created_at,id', (ident,))],
+            'notice': 'An objective survives completed coding runs. External actions require separate authorization.'}
+
+
+CLOSED = ('achieved', 'stopped', 'cancelled')
+OPEN_LOOP_LIMIT = 10
+# What the objective worker writes as blocked_reason when a scheduled
+# checkpoint comes due (it clears next_check_at at the same time).
+CHECKPOINT_DUE_REASON = 'Scheduled checkpoint is due; review the current outcome evidence'
+
+
+def without_model(store, limit=OPEN_LOOP_LIMIT):
+    """What waits on a person whether or not a model is configured: the
+    follow-ups agents suggested and nobody adopted, answers put in doubt by a
+    correction, checkpoints that came due, and evidence recorded since the
+    last investigation of each repository. Each list is capped, with the
+    total beside it, so Today says what is open without a brief."""
+    db = store.graph.db
+    def count(sql, params=()):
+        return int(db.execute(sql, params).fetchone()['c'] or 0)
+    followups = [dict(r) for r in db.execute(
+        "SELECT d.id,d.question,d.run_id,d.created_at,r.title AS task_title FROM decisions d JOIN runs r ON r.id=d.run_id "
+        "WHERE d.status='suggested' AND d.draft=0 ORDER BY d.created_at DESC LIMIT ?", (limit,))]
+    needs_review = [dict(r) for r in db.execute(
+        "SELECT d.id,d.question,d.run_id,d.review_reason,d.updated_at,r.title AS task_title FROM decisions d JOIN runs r ON r.id=d.run_id "
+        "WHERE d.needs_review=1 AND d.draft=0 ORDER BY d.updated_at DESC LIMIT ?", (limit,))]
+    # A checkpoint is due from its time until someone acts on it: the worker
+    # marks it (blocked_reason) and clears next_check_at, so both forms count.
+    due_sql = "lifecycle='active' AND ((next_check_at<>'' AND next_check_at<=?) OR blocked_reason=?)"
+    checkpoints = [dict(r) for r in db.execute(
+        "SELECT id,title,repository,next_check_at,waiting_on FROM objectives WHERE " + due_sql + " "
+        "ORDER BY next_check_at,updated_at LIMIT ?", (now(), CHECKPOINT_DUE_REASON, limit))]
+    # A record whose content changed after the repository's last completed
+    # investigation (the head version's observed_at; a re-sync of unchanged
+    # content only refreshes last_observed_at), or every record where nothing
+    # was ever investigated. Git history (commits, merges, pull requests,
+    # reviews) is not evidence somebody recorded, so it is left out.
+    new_sql = ("FROM source_records s JOIN source_versions v ON v.id=s.head_id WHERE s.availability='available' "
+               "AND s.provider<>'git' AND s.object_kind NOT IN ('commit','merge','pr','review') AND v.observed_at>coalesce("
+               "(SELECT max(e.updated_at) FROM objective_evaluations e WHERE e.repository=s.repo AND e.state='completed'),'')")
+    new_records = [{'repository': r['repo'], 'count': int(r['c'])} for r in db.execute(
+        'SELECT s.repo,count(*) AS c ' + new_sql + ' GROUP BY s.repo ORDER BY s.repo LIMIT ?', (limit,))]
+    return {'followups': followups, 'needs_review': needs_review, 'checkpoints_due': checkpoints, 'new_records': new_records,
+            'totals': {'followups': count("SELECT count(*) AS c FROM decisions WHERE status='suggested' AND draft=0"),
+                       'needs_review': count("SELECT count(*) AS c FROM decisions WHERE needs_review=1 AND draft=0"),
+                       'checkpoints_due': count("SELECT count(*) AS c FROM objectives WHERE " + due_sql, (now(), CHECKPOINT_DUE_REASON)),
+                       'new_records': count('SELECT count(*) AS c FROM (SELECT s.repo ' + new_sql + ' GROUP BY s.repo) AS repos')}}
+
+
+def _reviewers(store, proposals):
+    """Who a proposal under review waits on: the owner of its governance
+    node, named so Today can say whose signature is wanted."""
+    for proposal in proposals:
+        if proposal.get('state') == 'review' and proposal.get('decision_id') and not proposal.get('withheld'):
+            owner = store.graph.db.execute('SELECT o.name, d.routing_reason FROM decisions d JOIN owners o ON o.id=d.owner_id WHERE d.id=?',
+                                           (proposal['decision_id'],)).fetchone()
+            proposal['reviewer'] = owner['name'] if owner else ''
+            proposal['reviewer_reason'] = (owner['routing_reason'] or '') if owner else ''
+    return proposals
+
+
+def overview(store, workbench=None):
+    items, closed = [], []
+    for r in store.graph.db.execute('SELECT id,lifecycle,revision FROM objectives ORDER BY updated_at DESC LIMIT 100'):
+        try:
+            value = get(store, r['id'])
+            _reviewers(store, value['proposals'])
+        except Invalid:
+            value = {'id': r['id'], 'status': 'blocked', 'revision': r['revision'], 'withheld': True,
+                     'title': 'Objective withheld: source access changed'}
+        (closed if r['lifecycle'] in CLOSED else items).append(value)
+    if workbench:
+        config = workbench.config()
+    else:
+        from .workbench_hosts import capability, PROVIDERS
+        config = {'hosts': [capability(p) for p in PROVIDERS]}
+    from .inquiry import repositories
+    from .objective_research import corpus_revision
+    from .objective_head import background_budget
+    research_limits = [background_budget(store, r['repository']) for r in store.graph.db.execute('SELECT DISTINCT repository FROM objective_background_attempts ORDER BY repository')]
+    from .config import load
+    background_cfg = load()
+    background_inference = {'available': background_cfg.model_api != 'claude-cli',
+        'notice': 'Automatic investigation requires a token-bounded API backend. The internal claude-cli backend supports explicit manual investigation only.' if background_cfg.model_api == 'claude-cli' else ''}
+    research_status, status_repos = [], set()
+    for evaluation in store.graph.db.execute('SELECT repository,state,attempts,updated_at FROM objective_evaluations ORDER BY updated_at DESC LIMIT 100'):
+        if evaluation['repository'] in status_repos:
+            continue
+        status_repos.add(evaluation['repository'])
+        if evaluation['state'] in ('failed', 'blocked', 'running'):
+            research_status.append(dict(evaluation))
+    research = []
+    seen_repos = set()
+    for evaluation in store.graph.db.execute("SELECT repository,result FROM objective_evaluations WHERE state='completed' ORDER BY updated_at DESC LIMIT 20"):
+        if evaluation['repository'] in seen_repos:
+            continue
+        result = json.loads(evaluation['result'])
+        packet = result.get('research') or {}
+        if (packet.get('coverage') or {}).get('corpus_snapshot') != corpus_revision(store, evaluation['repository']):
+            continue
+        seen_repos.add(evaluation['repository'])
+        research.append({'repository': evaluation['repository'], 'reason': result.get('reason', ''), **packet})
+    return {'objectives': items, 'closed': closed, 'without_model': without_model(store), 'research': research, 'research_limits': research_limits, 'research_status': research_status, 'background_inference': background_inference, 'watches': [dict(w) for w in store.graph.db.execute('SELECT repository,enabled FROM objective_watches ORDER BY repository')], 'proposals': _reviewers(store, [_proposal_view(store, r) for r in store.graph.db.execute(
+        "SELECT * FROM objective_proposals WHERE objective_id='' AND state IN ('proposed','review','preparing','review_error','reconcile') ORDER BY created_at DESC LIMIT 50")]),
+        'capabilities': config.get('hosts', []), 'repositories': config.get('repositories') or repositories(store),
+        'execution_ready': bool(config.get('ready'))}
+
+
+def _revision(data, value):
+    if type(data.get('expected_revision')) is not int or data['expected_revision'] != value['revision']:
+        raise Invalid('This item changed; reopen it before acting')
+
+
+def _prior(db, data, ident, action, actor):
+    key = field(data, 'request_key', limit=100)
+    fingerprint = digest([ident, action, data, actor.id])
+    prior = db.execute('SELECT * FROM objective_requests WHERE request_key=?', (key,)).fetchone()
+    if prior and prior['fingerprint'] != fingerprint:
+        raise Invalid('This request key belongs to a different action')
+    return key, fingerprint, json.loads(prior['result']) if prior else None
+
+
+def _save_request(db, key, fingerprint, result):
+    db.execute('INSERT INTO objective_requests VALUES(?,?,?)', (key, fingerprint, json.dumps(result)))
+
+
+def _plan(store, db, value, action, data, workbench, key):
+    """Validate an action and decide its effects inside the writer lock.
+
+    Workbench calls (host probes, subprocesses) are only described here;
+    act() makes them after the lock is released and records them after."""
+    ident = value['id']
+    plan = {'changes': {}, 'summary': str(data.get('summary') or ''), 'control': [], 'submit': None}
+    if action == 'pause':
+        plan['changes']['lifecycle'] = 'paused'
+        plan['control'] = _worker_controls(store, ident, 'pause', workbench)
+    elif action == 'resume':
+        assert_objective_authority(store, ident)
+        plan['changes'].update(lifecycle='active', blocked_reason='')
+        plan['control'] = _worker_controls(store, ident, 'resume', workbench)
+    elif action == 'cancel':
+        plan['changes'].update(lifecycle='stopped', next_check_at='')
+        plan['control'] = _worker_controls(store, ident, 'cancel', workbench)
+    elif action == 'checkpoint':
+        plan['summary'] = field(data, 'summary', limit=4000)
+        plan['changes'].update(next_check_at=_timestamp(data.get('next_check_at', '')), waiting_on=str(data.get('waiting_on') or '')[:1000])
+        if value['blocked_reason'] == CHECKPOINT_DUE_REASON:
+            plan['changes']['blocked_reason'] = ''  # the due checkpoint was just recorded
+    elif action == 'achieve':
+        plan['summary'] = field(data, 'summary', limit=4000)
+        plan['control'] = _worker_controls(store, ident, 'pause', workbench)
+        plan['changes'].update(lifecycle='achieved', next_check_at='')
+    elif action == 'dispatch':
+        if value['lifecycle'] != 'active':
+            raise Invalid('Resume this objective before starting work')
+        if workbench is None:
+            raise Invalid('Browser execution is not configured; objective is saved')
+        active = db.execute("SELECT 1 FROM objective_runs o JOIN browser_tasks b ON b.task_id=o.task_id WHERE o.objective_id=? AND b.status NOT IN ('completed','cancelled','failed')", (ident,)).fetchone()
+        if active:
+            raise Invalid('This objective already has an unfinished worker; open or resume that task')
+        assert_objective_authority(store, ident)
+        sources_current(store, _latest_sources(store, ident), value['repository'], exact=True)
+        accepted = db.execute("SELECT id,payload FROM objective_proposals WHERE objective_id=? AND state='accepted' ORDER BY updated_at DESC LIMIT 1", (ident,)).fetchone()
+        move = json.loads(accepted['payload']) if accepted else value
+        prompt = '\n'.join([
+            'Accepted objective outcome: ' + value['outcome'],
+            'Outer objective guardrails: ' + value['guardrails'],
+            'Outer objective stop criteria: ' + value['stop_criteria'],
+            'Exact current move (all cases and limits are part of its signed scope):',
+            json.dumps({k: move[k] for k in ('outcome', 'success_criteria', 'stop_criteria', 'guardrails', 'cases', 'judgment_kind') if k in move}, ensure_ascii=False),
+            'Prepare and verify work in the private repository only. No external publication, communication, deployment or spending is authorized. Route consequential choices through Raven. Coding completion is not objective achievement.'])
+        if len(prompt) > 12000:
+            raise Invalid('The complete signed move exceeds the host prompt bound; revise its scope explicitly rather than truncating its limits')
+        plan['submit'] = {'prompt': prompt, 'repository': value['repository'], 'host': value['provider'],
+                          'request_key': 'objective:' + digest([ident, key])[:60]}
+        plan['proposal_id'] = accepted['id'] if accepted else ''
+        plan['changes'].update(blocked_reason='', waiting_on='Coding worker; outcome still requires evidence')
+        plan['summary'] = 'Started a private-copy coding worker; no external actions authorized.'
+    else:
+        raise Invalid('Unknown objective action')
+    return plan
+
+
+def _unclaimed(value):
+    """Refuse every action while another request holds a live claim: a
+    checkpoint or cancel recorded meanwhile would clear that claim and
+    leave its submitted worker with no record on the objective."""
+    expired = (datetime.now(timezone.utc) - CLAIM_TTL).isoformat()
+    if value['pending_request'] and value['pending_since'] > expired:
+        raise Invalid('Another request on this objective is still completing; reopen it shortly')
+
+
+def _claim(db, value, key):
+    """Hold the objective for one request while it calls the workbench
+    unlocked: a concurrent or repeated request sees the claim and neither
+    submits a second worker nor records over the first."""
+    _unclaimed(value)
+    db.execute('UPDATE objectives SET pending_request=?,pending_since=? WHERE id=?', (key, now(), value['id']))
+
+
+def _release(store, ident, key):
+    with store.graph.transaction() as db:
+        db.execute("UPDATE objectives SET pending_request='',pending_since='' WHERE id=? AND pending_request=?", (ident, key))
+
+
+def _record(store, db, value, action, actor, key, fingerprint, plan):
+    ident = value['id']
+    changes = dict(plan['changes'])
+    if plan['submit'] is not None:
+        task_id = plan['task_id']
+        db.execute('INSERT INTO objective_runs VALUES(?,?,?,?)', (ident, task_id, 'Bounded internal preparation', now()))
+        db.execute('INSERT INTO objective_run_authority VALUES(?,?,?)', (task_id, ident, plan['proposal_id']))
+        for source in _latest_sources(store, ident):
+            cm.add_anchor(db, task_id, source['record_id'], source['source_version_id'], 'context')
+    changes.update(revision=value['revision'] + 1, updated_at=now(), pending_request='', pending_since='')
+    db.execute('UPDATE objectives SET ' + ','.join(k+'=?' for k in changes) + ' WHERE id=?', (*changes.values(), ident))
+    event(store, ident, action, plan['summary'] or action, actor.id,
+          {'provenance': 'human-attested' if action == 'achieve' else 'human-request', 'independently_verified': False})
+    result = get(store, ident)
+    _save_request(db, key, fingerprint, result)
+    return result
+
+
+def act(store, ident, action, data, actor, workbench=None):
+    human(actor)
+    with store.graph.transaction() as db:
+        value = row(store, ident)
+        require_visible(store, value)
+        key, fingerprint, prior = _prior(db, data, ident, action, actor)
+        if prior is not None:
+            return get(store, ident)
+        _revision(data, value)
+        if value['lifecycle'] in ('achieved', 'stopped'):
+            raise Invalid('This objective is closed; create a new objective for new work')
+        plan = _plan(store, db, value, action, data, workbench, key)
+        _unclaimed(value)
+        if plan['submit'] is None and not plan['control']:
+            return _record(store, db, value, action, actor, key, fingerprint, plan)
+        _claim(db, value, key)
+    # The workbench probes hosts and subprocesses and opens transactions of
+    # its own; it never runs under this module's writer lock. The claim,
+    # not the lock, keeps a retry from submitting a second worker.
+    try:
+        if plan['submit'] is not None:
+            plan['task_id'] = workbench.submit(plan['submit'], actor)['task_id']
+        for task_id, control in plan['control']:
+            workbench.control(task_id, control, actor)
+        with store.graph.transaction() as db:
+            current = row(store, ident)
+            if current['pending_request'] != key:
+                raise Invalid('This request lost its claim on the objective; reopen it before acting again')
+            return _record(store, db, current, action, actor, key, fingerprint, plan)
+    except BaseException:
+        _release(store, ident, key)
+        raise
+
+
+def governance_context(payload, sources):
+    """Keep every decision limit readable; bind bulky research without truncation."""
+    context = {key: value for key, value in payload.items() if key != 'research'}
+    context['research_digest'] = digest(payload.get('research', {}))
+    context['source_dependencies_digest'] = digest(sources)
+    text = json.dumps(context, ensure_ascii=False)
+    if len(text) > 12000:
+        raise Invalid('The complete proposed scope exceeds the judgment context limit; propose a smaller bounded move')
+    return text
+
+
+def propose(store, payload, sources, *, objective_id=''):
+    """Only bounded validated head output calls this; it grants no authority."""
+    payload = _payload(payload) | {'why_now': field(payload, 'why_now', limit=2000),
+        'cases': payload.get('cases', {}), 'judgment_kind': payload.get('judgment_kind', 'interpretation_tradeoff'),
+        'citations': payload.get('citations', []), 'research': payload.get('research', {})}
+    governance_context(payload, sources)
+    sources_current(store, sources, payload['repository'], exact=True)
+    if not sources:
+        raise Invalid('An originated proposal requires current versioned evidence')
+    fingerprint = digest([objective_id, payload, sources])
+    with store.graph.transaction() as db:
+        prior = db.execute('SELECT * FROM objective_proposals WHERE fingerprint=?', (fingerprint,)).fetchone()
+        if prior:
+            return _proposal_view(store, prior)
+        if not objective_id:
+            existing = db.execute("SELECT * FROM objective_proposals WHERE objective_id='' AND repository=? AND state IN ('proposed','review','preparing','review_error','reconcile')", (payload['repository'],)).fetchone()
+            if existing:
+                return _proposal_view(store, existing)
+        if objective_id:
+            existing = db.execute("SELECT * FROM objective_proposals WHERE objective_id=? AND state IN ('proposed','review','preparing','review_error','reconcile')", (objective_id,)).fetchone()
+            if existing:
+                return _proposal_view(store, existing)
+        ident, stamp = uuid.uuid4().hex[:16], now()
+        db.execute('INSERT INTO objective_proposals(id,objective_id,repository,fingerprint,payload,sources,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
+                   (ident, objective_id, payload['repository'], fingerprint, json.dumps(payload), json.dumps(sources), stamp, stamp))
+        if objective_id:
+            event(store, objective_id, 'proposal', payload['why_now'], detail={'proposal_id': ident})
+        return _proposal_view(store, db.execute('SELECT * FROM objective_proposals WHERE id=?', (ident,)).fetchone())
+
+
+def proposal_action(store, ident, action, data, actor, cfg=None):
+    human(actor)
+    from . import canvas
+    from .config import Config
+    from .approval_scope import scope_hash
+    from .store import answer_hash
+    with store.graph.transaction() as db:
+        raw = db.execute('SELECT * FROM objective_proposals WHERE id=?', (ident,)).fetchone()
+        if raw is None:
+            raise Invalid('Proposal not found')
+        value = dict(raw)
+        sources = json.loads(value['sources'])
+        if action != 'dismiss':
+            sources_current(store, sources, value['repository'], exact=True)
+        key, fingerprint, prior = _prior(db, data, ident, action, actor)
+        if prior is not None:
+            return _proposal_view(store, raw)
+        _revision(data, value)
+        if value['state'] not in ('proposed', 'review', 'review_error', 'reconcile'):
+            raise Invalid('This proposal is no longer open or its review is being prepared')
+        if action == 'dismiss':
+            # The reason is read by the next investigation of this
+            # repository, so a dismissal without one teaches nothing.
+            reason = data.get('rationale')
+            if not isinstance(reason, str) or len(reason.strip()) < 3 or reason.strip() == DEFAULT_DISMISSAL:
+                raise Invalid('A reason of at least 3 characters is required; it shapes the next investigation')
+            db.execute("UPDATE objective_proposals SET state='dismissed',rationale=?,revision=revision+1,updated_at=? WHERE id=?",
+                       (field(data, 'rationale', limit=2000), now(), ident))
+            result = _proposal_view(store, db.execute('SELECT * FROM objective_proposals WHERE id=?', (ident,)).fetchone())
+            _save_request(db, key, fingerprint, result)
+            return result
+        if value['state'] == 'reconcile':
+            raise Invalid(value['rationale'] or 'The signed response changed the proposal; dismiss it or review the changed judgment in the existing inbox')
+        if action != 'accept':
+            raise Invalid('Unknown proposal action')
+        if value['decision_id']:
+            result = _proposal_view(store, raw)
+            _save_request(db, key, fingerprint, result)
+            return result
+        db.execute("UPDATE objective_proposals SET state='preparing',updated_at=? WHERE id=?", (now(), ident))
+    # Existing core APIs may open their own transactions and read connectors.
+    # Never hold our writer lock across them. Stable client identities recover
+    # a completed kickoff/node if a later step fails.
+    try:
+        payload = json.loads(value['payload'])
+        run = canvas.start_task(store, Config(model_api='none'), {'title': payload['title'], 'goal': payload['outcome'],
+            'repo': value['repository'], 'agent': 'Raven objective head', 'requester': actor.name, 'client_key': 'objective-review:' + ident})
+        task_id = run['task_id']
+        with store.graph.transaction() as db:
+            for source in sources:
+                cm.add_anchor(db, task_id, source['record_id'], source['source_version_id'], 'context')
+        node = canvas.add_node(store, Config(model_api='none'), {'task_id': task_id,
+            'question': 'Should Raven take point on: ' + payload['title'] + '?',
+            'context': governance_context(payload, sources), 'client_ref': 'objective-acceptance:' + ident,
+            'category': 'objective_scope', 'requester': actor.name})
+        answer = 'Take point on ' + payload['outcome'] + '\nWithin: ' + payload['guardrails'] + '\nOnly private preparation; no external actions authorized.'
+        if node.get('authorized'):
+            return _rule_resolved(store, ident, value, task_id, node, key, fingerprint)
+        canvas.settle_node(store, {'task_id': task_id, 'node_id': node['node_id'], 'answer': answer,
+            'rationale': payload['why_now'], 'source_evidence': [{'record_id': s['record_id'], 'source_version_id': s['source_version_id'], 'role': s.get('role', 'support')} for s in sources if not s.get('metadata_only')]})
+        decision = store.get_decision(node['node_id'])
+        if not decision.get('owner_id'):
+            decision = _route_fallback(store, decision, actor, value['repository'])
+        with store.graph.transaction() as db:
+            sources_current(store, sources, value['repository'], exact=True)
+            db.execute("UPDATE objective_proposals SET state='review',governance_run_id=?,decision_id=?,acceptance_hash=?,scope_hash=?,revision=revision+1,updated_at=? WHERE id=?",
+                       (task_id, node['node_id'], answer_hash(answer), scope_hash(decision), now(), ident))
+            result = _proposal_view(store, db.execute('SELECT * FROM objective_proposals WHERE id=?', (ident,)).fetchone())
+            _save_request(db, key, fingerprint, result)
+            return result
+    except Exception:
+        with store.graph.transaction() as db:
+            db.execute("UPDATE objective_proposals SET state='review_error',updated_at=? WHERE id=?", (now(), ident))
+        raise
+
+
+SCOPE_FALLBACKS = ('accepter', 'coordinator', 'none')
+
+
+def _route_fallback(store, decision, actor, repo=''):
+    """Where a governance node no authority map covers goes, by the
+    objective_scope_fallback setting: to the person who accepted the
+    proposal (the default), to the coordinator, or nowhere, left visibly
+    unassigned with the reason on the node for an administrator."""
+    mode = store.graph.get_setting('objective_scope_fallback') or 'accepter'
+    if mode == 'accepter':
+        return _route_to_accepter(store, decision, actor)
+    if mode == 'coordinator':
+        person = store.graph.coordinator(repo)
+        if person is not None:
+            return _assign_scope(store, decision, person['id'], person['name'], 'objective-coordinator',
+                                 'Assigned to ' + person['name'] + ' as the coordinator: no authority map covers this scope')
+        reason = 'An administrator must assign this scope review: no authority map covers it and no coordinator is set'
+    else:
+        reason = 'An administrator must assign this scope review: no authority map covers it and the fallback owner is off'
+    with store.graph.transaction() as db:
+        db.execute('UPDATE decisions SET routing_reason=? WHERE id=?', (reason, decision['id']))
+    return store.get_decision(decision['id'])
+
+
+def _route_to_accepter(store, decision, actor):
+    """A governance node no authority map covers is routed to the person
+    who accepted the proposal, through the inbox's own assignment, with
+    the basis recorded on the node. An operator without a person row is
+    not an owner, so the node stays visibly unassigned."""
+    if not actor.id:
+        return decision
+    return _assign_scope(store, decision, actor.id, actor.name, 'objective-accepter',
+                         'Assigned to ' + actor.name + ' as the objective accepter: no authority map covers this scope') or decision
+
+
+def _assign_scope(store, decision, person_id, name, basis, reason):
+    with store.graph.transaction():
+        owner_id = store.graph.owner_id_for_person(person_id)
+    if not owner_id:
+        return None
+    store.assign(decision['id'], {'owner_id': owner_id, 'by': name}, actor=None)
+    with store.graph.transaction() as db:
+        db.execute('UPDATE decisions SET routing_reason=?,actor_basis=? WHERE id=?', (reason, basis, decision['id']))
+    return store.get_decision(decision['id'])
+
+
+def _rule_resolved(store, ident, value, task_id, node, key, fingerprint):
+    """A standing rule answered the governance question. Only the exact
+    current signed answer activates a move, and a rule is not a signature
+    on this proposal: it is reconciled with the rule named, so the person
+    can dismiss it and propose a narrower move for explicit review."""
+    decision = store.get_decision(node['node_id'])
+    signer = decision.get('signed_by') or decision.get('answered_by') or 'its owner'
+    rule = decision.get('source_id') or node['node_id']
+    reason = ('Standing rule ' + str(rule) + ' made by ' + str(signer) + ' already answers this governance question; '
+              'a rule is not a signature on this exact proposal. Dismiss it and propose a narrower move for explicit review.')
+    with store.graph.transaction() as db:
+        db.execute("UPDATE objective_proposals SET state='reconcile',governance_run_id=?,decision_id=?,rationale=?,revision=revision+1,updated_at=? WHERE id=?",
+                   (task_id, node['node_id'], reason, now(), ident))
+        if value['objective_id']:
+            block(store, value['objective_id'], reason, kind='blocked', detail={'proposal_id': ident, 'decision_id': node['node_id'], 'rule_id': rule})
+        result = _proposal_view(store, db.execute('SELECT * FROM objective_proposals WHERE id=?', (ident,)).fetchone())
+        _save_request(db, key, fingerprint, result)
+        return result
+
+
+def assert_objective_authority(store, ident, proposal_id=None, db=None):
+    """Consume current core judgment; never create or infer approval here."""
+    from .approval_scope import scope_hash
+    from .store import answer_hash
+    db = db or store.graph.db
+    query = "SELECT * FROM objective_proposals WHERE objective_id=? AND state='accepted'"
+    proposals = list(db.execute(query, (ident,)))
+    if proposal_id is not None:
+        if not proposal_id:
+            return
+        proposals = [p for p in proposals if p['id'] == proposal_id]
+        if not proposals:
+            raise Invalid('This worker scope was superseded; start a fresh worker for the new signed move')
+    for proposal in proposals:
+        decision = store.get_decision(proposal['decision_id'], _db=db)
+        if (not decision['authorized'] or answer_hash(decision['answer']) != proposal['acceptance_hash']
+                or scope_hash(decision) != proposal['scope_hash']):
+            raise Invalid('The objective judgment changed or requires review; resolve it in the existing inbox before continuing')
+        sources_current_db(db, json.loads(proposal['sources']), proposal['repository'], exact=True)
+
+
+def assert_task_authority(store, task_id, db=None):
+    db = db or store.graph.db
+    for linked in db.execute('SELECT objective_id,proposal_id FROM objective_run_authority WHERE task_id=?', (task_id,)):
+        value = dict(db.execute('SELECT * FROM objectives WHERE id=?', (linked['objective_id'],)).fetchone())
+        from .visibility import affected
+        denied, tasks = affected(db)
+        sources = _sources(store, value['id'], db=db)
+        if task_id in tasks or any(s['record_id'] in denied or s['source_version_id'] in denied for s in sources):
+            raise Invalid('Objective source access is not current; this worker cannot continue')
+        if value['lifecycle'] != 'active':
+            raise Invalid('The owning objective is paused or closed; this worker cannot continue')
+        assert_objective_authority(store, value['id'], linked['proposal_id'], db=db)
+
+
+def _worker_controls(store, ident, action, workbench):
+    """Which linked workers an action controls, decided under the writer
+    lock; act() sends the controls once the lock is released."""
+    controls = []
+    for run in store.graph.db.execute('SELECT b.task_id,b.status FROM objective_runs o JOIN browser_tasks b ON b.task_id=o.task_id WHERE o.objective_id=?', (ident,)):
+        if run['status'] in ('completed', 'cancelled', 'failed'):
+            continue
+        if action == 'resume' and run['status'] != 'paused':
+            continue
+        if not workbench:
+            raise Invalid('The linked worker service is unavailable; no objective control was changed')
+        controls.append((run['task_id'], action))
+    return controls

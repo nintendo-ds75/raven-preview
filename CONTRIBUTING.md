@@ -19,7 +19,9 @@ start PostgreSQL and set `BRIDGE_TEST_POSTGRES=1` and `DATABASE_URL`
 (`make test-postgres` does this inside Docker).
 
 The Playwright browser suites (`tests/browser*.cjs`, `tests/brief-browser.cjs`)
-need Chromium and are run by hand before a release or after UI changes.
+need Chromium. CI runs the two Today suites (`tests/browser-objectives.cjs`,
+`tests/browser-objectives-api.cjs`) in the `startup-os-browser` job; the others
+are run by hand before a release or after UI changes.
 
 ## What CI checks
 
@@ -29,6 +31,10 @@ need Chromium and are run by hand before a release or after UI changes.
 | Tests (Python 3.11, 3.13) | The whole unittest suite |
 | PostgreSQL | `tests/test_postgres.py` against PostgreSQL 17 |
 | Web UI logic | The Node checks in `scripts/check_web.sh`: the DOM-stubbed UI units, the page-logic checks and the audit viewer |
+| Startup OS browser | The two Today Playwright suites in Chromium against a real local server with synthetic providers |
+| Installed harnesses | The pinned Pi and OpenCode packages with scripted inference, no provider keys |
+| Docker verification (advisory) | Builds the root and harness images, runs installed checks with networking disabled and the independent verifier against real containers; `continue-on-error`, because it depends on external image pulls, so read its own result |
+| Codex containment (advisory) | `tests/test_codex_native.py` against the pinned alpha app-server with local scripted inference; `continue-on-error` until the pin stabilises, so read its own result |
 | Conventional commits | Pull request titles and new commit headers |
 
 ## Writing a change

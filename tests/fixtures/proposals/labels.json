@@ -1,0 +1,111 @@
+{
+  "repository": "sample/project",
+  "notice": "Hand labels for corpus.json. 'worth_surfacing' is the human judgment; 'title' and 'quote' are the one expected decision and its verbatim evidence. 'pitch' scripts the undiscriminating model double the precision/recall run uses: what it would say about that record if it pitched on every record. A pitch quote that is not in the record is deliberately invented so the citation check has something to refuse.",
+  "records": {
+    "r01": {
+      "worth_surfacing": true,
+      "title": "Add a CSV export of the invoice list",
+      "quote": "Could the invoice list be exported as CSV with the same columns the screen shows?"
+    },
+    "r02": {
+      "worth_surfacing": true,
+      "title": "Keep pilot sandbox data across nightly resets",
+      "quote": "they asked twice whether we can keep it for the trial"
+    },
+    "r03": {
+      "worth_surfacing": true,
+      "title": "Extend webhook retries to cover a day-long receiver outage",
+      "quote": "Can retries continue for at least 24 hours?"
+    },
+    "r04": {
+      "worth_surfacing": true,
+      "title": "Point the onboarding checklist at the current API key page",
+      "quote": "Three new accounts got stuck there this week."
+    },
+    "r05": {
+      "worth_surfacing": true,
+      "title": "Offer a ninety-day audit log download",
+      "quote": "The screen only shows thirty days."
+    },
+    "r06": {
+      "worth_surfacing": true,
+      "title": "Explain or raise the fifty-row bulk import limit",
+      "quote": "two customers hit the 50-row limit on the bulk import page today"
+    },
+    "r07": {
+      "worth_surfacing": true,
+      "title": "Align dashboard inactivity timeout with the SSO session",
+      "quote": "The mismatch is the top complaint from our team leads.",
+      "pitch": {
+        "disposition": "needs_judgment",
+        "quote": "The mismatch is the main complaint from our team leads.",
+        "why": "a paraphrase, not the record's words: the citation check refuses it and this positive is lost (a false negative by design)"
+      }
+    },
+    "r08": {
+      "worth_surfacing": true,
+      "title": "Stop the nightly report failing on export bucket space",
+      "quote": "the customer-facing report was late both times and two tickets came in"
+    },
+    "r09": {
+      "worth_surfacing": false,
+      "why": "a thank-you; nothing to do",
+      "pitch": {"disposition": "no_material_move"}
+    },
+    "r10": {
+      "worth_surfacing": false,
+      "why": "social; nothing to do",
+      "pitch": {"disposition": "no_material_move"}
+    },
+    "r11": {
+      "worth_surfacing": false,
+      "why": "a factual question the records already answer (r12)",
+      "pitch": {"disposition": "factual_answer", "quote": "which timezone does the audit log use?"}
+    },
+    "r12": {
+      "worth_surfacing": false,
+      "why": "a fact on file, not a move",
+      "pitch": {"disposition": "factual_answer", "quote": "Audit log timestamps are stored and shown in UTC"}
+    },
+    "r13": {
+      "worth_surfacing": false,
+      "why": "an office notice",
+      "pitch": {"disposition": "no_material_move"}
+    },
+    "r14": {
+      "worth_surfacing": false,
+      "why": "marketing sent to the workspace, not evidence of a customer need",
+      "pitch": {"disposition": "no_material_move"}
+    },
+    "r15": {
+      "worth_surfacing": false,
+      "why": "an internal where-is question; the double invents a quote the record does not contain",
+      "pitch": {"disposition": "needs_judgment", "title": "Move the staging credentials into the vault", "quote": "the staging credentials are missing from the vault"}
+    },
+    "r16": {
+      "worth_surfacing": false,
+      "why": "a vendor pitch; the double invents a customer request",
+      "pitch": {"disposition": "needs_judgment", "title": "Buy the monitoring suite while it is discounted", "quote": "the customer asked us to buy monitoring"}
+    },
+    "r17": {
+      "worth_surfacing": false,
+      "why": "a session record of finished work; the double invents an outcome the record never states",
+      "pitch": {"disposition": "needs_judgment", "title": "Roll the CSV header change forward", "quote": "The agent deployed the change to production"}
+    },
+    "r18": {
+      "worth_surfacing": false,
+      "why": "a deploy notice; the double invents an alert",
+      "pitch": {"disposition": "needs_judgment", "title": "Investigate the 2.14.1 error spike", "quote": "error rate doubled after the deploy"}
+    },
+    "r19": {
+      "worth_surfacing": false,
+      "why": "a one-off support request, not a product move; the pitch is verbatim so the gate passes it (a false positive by design)",
+      "pitch": {"disposition": "needs_judgment", "title": "Re-send expired invoice PDF links", "quote": "The PDF link expired before accounting opened it."}
+    },
+    "r20": {
+      "worth_surfacing": false,
+      "why": "a renewal with nothing asked; the pitch is verbatim so the gate passes it (a false positive by design)",
+      "pitch": {"disposition": "needs_judgment", "title": "Plan the Brisk Tandem renewal follow-up", "quote": "no changes requested"}
+    }
+  }
+}

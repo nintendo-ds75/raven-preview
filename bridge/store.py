@@ -19,6 +19,7 @@ class Invalid(ValueError):
 BRIEF_MODES = ("off", "static")
 # New questions Raven sends one person in a rolling week; 0 turns the limit off.
 WEEKLY_QUESTION_LIMIT = 10
+OBJECTIVE_SCOPE_FALLBACKS = ("accepter", "coordinator", "none")
 
 
 def brief_mode(graph):
@@ -342,6 +343,7 @@ class Store:
         p = dict(p)
         p["authority"] = [a for a in self.authority() if a["person_id"] == person_id]
         p["teams"] = [t["name"] for t in self.graph.teams() if person_id in t["members"]]
+        p["recording_optout"] = self.recording_optout(person_id)
         return p
 
     def people(self):
@@ -353,6 +355,7 @@ class Store:
             d = dict(p)
             d["authority"] = [a for a in rows if a["person_id"] == p["id"]]
             d["teams"] = [t["name"] for t in teams if p["id"] in t["members"]]
+            d["recording_optout"] = self.recording_optout(p["id"])
             out.append(d)
         return out
 
@@ -449,6 +452,8 @@ class Store:
                 "slack_capture_repo": graph.get_setting("slack_capture_repo"),
                 "auto_rules": graph.get_setting("auto_rules") == "1",
                 "notify_requester": graph.get_setting("notify_requester") == "1",
+                "session_records": graph.get_setting("session_records") == "1",
+                "objective_scope_fallback": graph.get_setting("objective_scope_fallback") or "accepter",
                 "brief_mode": brief_mode(graph),
                 "coordinators": {k[len("coordinator:"):]: graph.get_person(v)
                                  for k, v in graph.db.execute("SELECT key, value FROM settings WHERE key LIKE 'coordinator:%'")}}
@@ -493,12 +498,39 @@ class Store:
                     raise Invalid(f"brief_mode must be one of {', '.join(BRIEF_MODES)}")
                 graph.set_setting("brief_mode", mode)
                 graph.append_event("setting_changed", {"key": "brief_mode", "value": mode})
-            for key in ("auto_rules", "notify_requester"):
+            for key in ("auto_rules", "notify_requester", "session_records"):
                 if key in data:
                     on = data[key] in (True, 1, "1", "true", "on")
                     graph.set_setting(key, "1" if on else "0")
                     graph.append_event("setting_changed", {"key": key, "value": "1" if on else "0"})
+            if "objective_scope_fallback" in data:
+                fallback = str(data["objective_scope_fallback"] or "")
+                if fallback not in OBJECTIVE_SCOPE_FALLBACKS:
+                    raise Invalid(f"objective_scope_fallback must be one of {', '.join(OBJECTIVE_SCOPE_FALLBACKS)}")
+                graph.set_setting("objective_scope_fallback", fallback)
+                graph.append_event("setting_changed", {"key": "objective_scope_fallback", "value": fallback})
         return self.settings()
+
+    def recording_optout(self, person_id):
+        """Whether this person asked that no session record name their
+        finished tasks; off by default."""
+        return self.graph.get_setting(f"recording_optout:{person_id}") == "1"
+
+    def set_recording_optout(self, person_id, data, actor=None):
+        """A person's own opt-out from session records, or an admin's on
+        their behalf; an agent credential and other members cannot."""
+        if self.graph.get_person(person_id) is None:
+            raise Invalid("Person not found")
+        if actor is not None and not (actor.id == person_id or (actor.role == "admin" and actor.kind != "agent")):
+            raise Invalid("Only the person or an admin changes a recording opt-out")
+        optout = data.get("optout") if isinstance(data, dict) else data
+        if type(optout) is not bool:
+            raise Invalid("optout must be an explicit boolean")
+        with self.graph.transaction():
+            self.graph.set_setting(f"recording_optout:{person_id}", "1" if optout else "0")
+            self.graph.append_event("recording_optout_changed", {"person_id": person_id, "optout": optout,
+                                                                 "by": getattr(actor, "name", "") or "local operator"})
+        return self.person(person_id)
 
     def add_run(self, data):
         values = (uuid.uuid4().hex[:12], field(data, "title", limit=300),
@@ -560,6 +592,15 @@ class Store:
                                      "memory is evidence, not sign-off, until a person signs it." if people else
                                      "Adopt each with bridge_add_node(adopt=<node_id>); the task finishes once "
                                      "they are answered."))
+            if status == 'completed':
+                # An ordinary completion never loads the objectives head: one
+                # existence check, guarded by the table's presence, decides
+                # whether an objective's authority applies to this task.
+                bound = (db.execute('PRAGMA table_info(objective_run_authority)').fetchall()
+                         and db.execute('SELECT 1 FROM objective_run_authority WHERE task_id=?', (run_id,)).fetchone())
+                if bound:
+                    from .objectives import assert_task_authority
+                    assert_task_authority(self, run_id, db=db)
             db.execute("UPDATE runs SET status=?,updated_at=? WHERE id=?", (status, now(), run_id))
             self.event(db, "run_updated", status, run_id=run_id)
         return {"id": run_id, "status": status}
@@ -1464,16 +1505,26 @@ class Store:
                     "total": total, "page": page, "size": size, "counts": inbox_counts(db, hours),
                     "overdue_hours": hours}
 
-    def add_record(self, data):
+    def add_record(self, data, actor=None):
         """A record from outside git: a ticket, a document, a chat decision.
         Kind and ref identify it (the same pair updates it), the url is its
         locator, the paths tie it to the areas it is about. Supplied paths
         replace the snapshot (including []); omitted paths are unchanged. It is
-        evidence the ladder can cite, never sign-off."""
+        evidence the ladder can cite, never sign-off.
+
+        `actor` is who writes it over HTTP or MCP: the access scope then
+        says the server attested it and who imported it, whatever the body
+        claims. The author stays the source's own (a ticket's reporter is a
+        contact signal for its paths); a body that names none, such as the
+        paste form, attributes the record to the person who wrote it.
+        In-process writers (meeting import, connectors, Slack capture) pass
+        none and keep the source's own author and scope."""
         repo = repo_key(str(data.get("repo") or ""))
         kind = re.sub(r"[^a-z0-9_-]", "", str(data.get("kind") or "note").lower())[:30] or "note"
         if kind in ("pr", "merge", "commit", "review"):
             raise Invalid("kinds pr, merge, commit and review come from git and GitHub; use ticket, doc, slack or note")
+        if actor is not None and kind in ("session", "conversation"):
+            raise Invalid("session records are written by Raven, not imported")
         ref = field(data, "ref", limit=200)
         for key, limit in (('title', 300), ('body', 20000), ('author', 100), ('created_at', 40), ('url', 1000),
                            ('status', 40), ('namespace', 1000), ('external_id', 500), ('updated_at', 40),
@@ -1485,6 +1536,11 @@ class Store:
         if not title and not body:
             raise Invalid("A record needs a title or a body")
         author = str(data.get("author") or "")[:100]
+        if actor is not None:
+            author = author or str(actor.name or "")[:100]
+            data = {**data, "author": author, "access_scope": json.dumps(
+                {"basis": "author", "attested_by": actor.id or "", "imported_by": actor.id or "",
+                 "transport": actor.kind, "workspace_shared": True}, sort_keys=True)}
         created = str(data.get("created_at") or "")[:40]
         url = str(data.get("url") or "")[:1000]
         status = str(data.get("status") or "")[:40]
@@ -1536,6 +1592,20 @@ class Store:
                     created = previous['created_at']
                 prior_version = graph.db.execute('SELECT v.snapshot FROM source_records s JOIN source_versions v ON v.id=s.head_id WHERE s.intent_id=?', (previous['id'],)).fetchone()
                 prior_snapshot = json.loads(prior_version['snapshot']) if prior_version else {}
+                if actor is not None and not (actor.role == "admin" and actor.kind != "agent"):
+                    # Re-posting the same key would re-stamp the record in the
+                    # writer's name, and the attested author is who may withdraw
+                    # it: only that author, or an admin, updates it. A record
+                    # nobody attested (connector, Slack capture) is not for a
+                    # member to claim either.
+                    try:
+                        prior_scope = json.loads(prior_snapshot.get("access_scope") or "{}")
+                    except ValueError:
+                        prior_scope = {}
+                    prior_attested = str(prior_scope.get("attested_by", "")) if isinstance(prior_scope, dict) else ""
+                    if prior_attested != (actor.id or ""):
+                        raise Invalid("This record already exists and was written by someone else; "
+                                      "only its author or an admin can update it")
                 if 'availability' not in data:
                     availability = prior_snapshot.get('availability', 'available')
             else:
@@ -1553,7 +1623,9 @@ class Store:
                           "availability": availability, "access_scope": str(data.get("access_scope", prior_snapshot.get('access_scope', '')) or "")})
             if data.get("task_id"):
                 cm.add_anchor(graph.db, str(data["task_id"]), observed['id'], observed['version_id'], str(data.get('anchor_role') or 'work_item'))
-            graph.append_event("record_added", {"repo": repo, "kind": kind, "ref": ref, "url": url, "author": author})
+            graph.append_event("record_added", {"repo": repo, "kind": kind, "ref": ref, "url": url, "author": author,
+                                                **({"attested_by": actor.id or "", "imported_by": actor.id or "", "transport": actor.kind}
+                                                   if actor is not None else {})})
         return {"repo": repo, "kind": kind, "ref": ref, "url": url,
                 "paths": graph.paths_of_intents(repo, [(kind, stored_ref)]).get((kind, stored_ref), []),
                 "source": cm.citation(graph.db, observed['id'], observed['version_id']), "changed": observed['changed'],
@@ -1581,6 +1653,85 @@ class Store:
                     'latest_observation': cm.latest_observation(row),
                     'identities': [dict(identity) for identity in db.execute('SELECT provider,namespace,object_kind,external_id FROM source_identities WHERE record_id=? ORDER BY provider,namespace,external_id', (record_id,))],
                     'source_ordering': 'provided' if (row['newest_sequence'] is not None or row['newest_updated_at'] or any(v['source_sequence'] is not None or v['source_updated_at'] for v in versions)) else 'unknown; revisions order local observations only'}
+
+    def list_records(self, namespace, limit=10, repo=""):
+        """The newest records in one namespace (pasted evidence, session
+        records): titles and attribution, never bodies. Withdrawn records
+        stay listed, marked, so the person who withdrew one sees it held."""
+        namespace = str(namespace or "").strip()
+        if not namespace:
+            raise Invalid("namespace is required")
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            raise Invalid("limit must be an integer from 1 to 100")
+        if not 1 <= limit <= 100:
+            raise Invalid("limit must be an integer from 1 to 100")
+        sql = ("SELECT s.id,s.repo,s.head_id,s.availability,s.display_ref,s.object_kind,s.last_observed_at,v.snapshot "
+               "FROM source_records s JOIN source_versions v ON v.id=s.head_id WHERE s.namespace=?")
+        args = [namespace]
+        if repo:
+            sql += " AND s.repo=?"
+            args.append(repo_key(repo))
+        out = []
+        with self.connect() as db:
+            for row in db.execute(sql + " ORDER BY s.last_observed_at DESC, s.id LIMIT ?", (*args, limit)):
+                snapshot = json.loads(row["snapshot"])
+                try:
+                    scope = json.loads(snapshot.get("access_scope") or "{}")
+                except ValueError:
+                    scope = {}
+                out.append({"record_id": row["id"], "repo": row["repo"], "kind": row["object_kind"],
+                            "ref": row["display_ref"], "title": snapshot.get("title", ""), "author": snapshot.get("author", ""),
+                            "url": snapshot.get("url", ""), "source_created_at": snapshot.get("source_created_at", ""),
+                            "observed_at": row["last_observed_at"], "availability": row["availability"],
+                            "attested_by": str((scope or {}).get("attested_by", "")) if isinstance(scope, dict) else ""})
+        return {"namespace": namespace, "records": out}
+
+    def withdraw_record(self, record_id, data, actor):
+        """The record's attested author, or an admin, takes a record back:
+        it becomes inaccessible, every version is withheld, and whatever
+        relied on it goes to review. The audit history stays; nothing here
+        promises the bytes are gone. The corpus revision moves so an
+        enabled watch re-evaluates."""
+        from . import context_memory as cm
+        from .authz import Actor
+        if not isinstance(actor, Actor):
+            raise Invalid("Withdrawing a record needs a signed-in person")
+        reason = field(data if isinstance(data, dict) else {"reason": data}, "reason", limit=500)
+        graph = self.graph
+        with graph.transaction():
+            db = graph.db
+            row = db.execute("SELECT * FROM source_records WHERE id=?", (str(record_id),)).fetchone()
+            if row is None:
+                raise Invalid("Source record not found")
+            head = db.execute("SELECT snapshot FROM source_versions WHERE id=?", (row["head_id"],)).fetchone()
+            snapshot = json.loads(head["snapshot"]) if head else {}
+            try:
+                scope = json.loads(snapshot.get("access_scope") or "{}")
+            except ValueError:
+                scope = {}
+            attested_by = str(scope.get("attested_by", "")) if isinstance(scope, dict) else ""
+            is_admin = actor.role == "admin" and actor.kind != "agent"
+            if not is_admin and not (attested_by and attested_by == actor.id and actor.kind != "agent"):
+                raise Invalid("Only the person who wrote this record, or an admin, can withdraw it")
+            if row["availability"] == "inaccessible":
+                return {"record_id": row["id"], "availability": "inaccessible", "withdrawn": True,
+                        "affected_decisions": [], "already": True}
+            db.execute("UPDATE source_records SET availability='inaccessible' WHERE id=?", (row["id"],))
+            at = now()
+            for version in db.execute("SELECT id FROM source_versions WHERE record_id=?", (row["id"],)).fetchall():
+                db.execute("INSERT INTO withheld_source_versions VALUES(?,?,?) ON CONFLICT(source_version_id) DO NOTHING",
+                           (version["id"], reason, at))
+            affected = cm.invalidate(db, row["id"], row["head_id"], include_current=True,
+                                     reason_override=f"Source withdrawn by its author: {reason}")
+            graph.append_event("record_withdrawn", {"record_id": row["id"], "repo": row["repo"], "reason": reason,
+                                                    "by": actor.name, "actor_id": actor.id, "actor_kind": actor.kind,
+                                                    "affected_decisions": affected})
+            graph._bump(row["repo"])
+        return {"record_id": row["id"], "availability": "inaccessible", "withdrawn": True,
+                "affected_decisions": affected,
+                "notice": "Reuse is blocked and dependents are under review; the audit history is kept."}
 
     def lookup_record(self, **query):
         """Resolve an exact external key without requiring a prior import or internal ID."""

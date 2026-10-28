@@ -1,6 +1,8 @@
 'use strict';
 
 const workViews = new Map();
+const workVerifications = new Map();
+const workVerificationPending = new Set();
 let workMode = 'task', workAnswer = null;
 let workRequest = 0, workData = null, workError = '', workOverview = !window.matchMedia?.('(max-width:900px)').matches;
 const workId = () => view === 'work' ? location.hash.slice(1).split('/')[1] || '' : '';
@@ -60,6 +62,12 @@ async function loadWorkbench() {
     if ([401,403,404].includes(error.status)) workData = null;
     workError = error.message; renderWorkbench();
   }
+}
+
+function workVerificationPanel(task) {
+  const id = task.task_id, saved = workVerifications.get(id), pending = workVerificationPending.has(id);
+  const admin = !state.auth.enabled || state.me?.role === 'admin';
+  return `<section class="work-result"><h3>Independent artifact checks</h3><p>Operator-selected checks bind the actual candidate and current judgments. Passing repository-owned tests is not proof of every intended behavior.</p><button class="button small" data-work-action="verification-status" ${pending ? 'disabled' : ''}>${saved ? 'Refresh verification' : 'Inspect verification'}</button>${saved ? `<p>${esc((saved.config?.blockers || []).join('. '))}</p>${(saved.receipts || []).map(r => `<details><summary>${esc(r.profile_id)} · ${esc(r.usable_pass ? 'Current configured checks passed' : r.status + (r.current ? '' : ' · no longer current'))}</summary><p>${esc(r.coverage_basis)} · ${esc(r.coverage)}</p><p>${esc(r.reason)}</p><small>Candidate ${esc(r.binding?.candidate_tree_sha256 || '')}</small></details>`).join('') || '<p>No independent verification receipt.</p>'}${admin && saved.config?.ready ? (saved.config.profiles || []).filter(p=>p.repository === task.repository).map(p=>`<button class="button small" data-work-action="verify-profile" data-profile="${esc(p.id)}" ${pending ? 'disabled' : ''}>Run ${esc(p.label || p.id)}</button>`).join('') : ''}` : ''}</section>`;
 }
 
 function workComposer(id, enabled) {
@@ -155,9 +163,10 @@ function renderWorkbench() {
     <div class="work-layout ${workOverview ? '' : 'overview-closed'}"><section class="work-thread" aria-label="Task conversation"><div class="work-messages">${messages.map(m => `<article class="work-message ${m.role}"><span class="work-speaker">${m.role === 'user' ? esc(m.actor || task.requester || 'Requester') : 'Raven'}</span><div>${workText(m.text)}</div></article>`).join('')}
     ${task.pending_messages.map(m => `<article class="work-message user"><span class="work-speaker">${esc(m.actor)} · queued</span><div>${esc(m.body)}</div></article>`).join('')}
     ${task.status === 'waiting' ? `<div class="work-waiting"><span class="status-dot"></span><p>${esc(task.summary || 'Waiting for a reply.')}<small>You can close this page. Raven continues when the task has an update.</small></p></div>` : ''}
-    ${task.host?.provider && task.host.provider !== 'scripted' ? `<p class="work-footnote">${esc(task.host.provider === 'claude' ? 'Claude Agent SDK' : 'Codex app-server')} · ${esc(task.host.model)}${task.host.session_id ? ' · session saved' : ''}</p>` : ''}
+    ${task.host?.provider && task.host.provider !== 'scripted' ? `<p class="work-footnote">${esc(({claude:'Claude Agent SDK',codex:'Codex app-server',pi:'Pi Agent SDK',opencode:'OpenCode'})[task.host.provider] || task.host.provider)} · ${esc(task.host.model)}${task.host.session_id ? ' · session saved' : ''}</p>` : ''}
     ${task.error ? `<p class="work-error" role="alert">${esc(task.error)}</p>` : ''}
     ${['paused','cancelled'].includes(task.status) ? (task.unresolved_operations || []).map(op => `<details class="work-activity" data-work-detail="intent-${esc(op.call_id)}"><summary>Check an uncertain operation: ${esc(op.operation || 'Saved operation')}</summary><p>Inspect the saved files and execution records before continuing. Raven will not repeat this operation automatically.</p><pre>${esc(JSON.stringify(op.arguments,null,2))}</pre>${state.me?.role === 'admin' ? `<form data-work-reconcile="${esc(op.call_id)}"><label>Observed outcome<select name="outcome" required><option value="">Choose after inspecting</option><option value="completed">The operation completed</option><option value="not_run">The operation did not run</option></select></label><label>What evidence did you check?<textarea name="note" maxlength="2000" required>${esc(inspections[op.call_id]?.note || '')}</textarea></label><button class="button" type="submit">Record inspection</button></form>` : '<p>A workspace admin must inspect and reconcile this operation.</p>'}</details>`).join('') : ''}
+    ${task.status === 'completed' ? workVerificationPanel(task) : ''}
     ${task.status === 'completed' ? `<article class="work-result"><h2>${incompleteReview ? 'Patch ready for manual review' : 'Ready for your review'}</h2>${incompleteReview ? '<p class="work-error">The automatic code review is incomplete. Owner approvals and test results do not replace reviewing the patch.</p>' : ''}<div class="work-result-text">${workText(task.summary)}</div><div class="work-result-actions"><a class="button" href="/api/workbench/${encodeURIComponent(id)}/patch">Download patch</a><a class="button" href="#runs/${encodeURIComponent(id)}">Decisions & review</a></div><small>The original repository is unchanged. No commit, push or deployment was made.</small></article>` : ''}
     ${activities.length ? `<details class="work-activity" data-work-detail="activity"><summary>${running ? 'Working · ' : ''}${esc(latest ? workActivityLabel(latest) : 'Activity')}<span>${activities.length} steps</span></summary><ol>${activities.map(a => `<li><details data-work-detail="action-${esc(a.id)}"><summary>${esc(workActivityLabel(a))}</summary><pre>${esc(JSON.stringify(a.detail,null,2))}</pre></details></li>`).join('')}</ol></details>` : '<p class="work-muted" role="status">Preparing a private repository copy…</p>'}
     </div><div class="work-reply">${allowed ? workComposer(id, task.status !== 'pausing') : '<p class="work-muted">You have view access to this conversation.</p>'}</div></section>${workBirdseye(tree,trace,task)}</div>`;
@@ -224,6 +233,20 @@ document.addEventListener('click', async event => {
   const button = event.target.closest('[data-work-action]');
   if (!button) return;
   const action = button.dataset.workAction, id = workId();
+  if (action === 'verification-status' || action === 'verify-profile') {
+    if (workVerificationPending.has(id)) return;
+    if (action === 'verify-profile' && state.auth.enabled && state.me?.role !== 'admin') return;
+    workVerificationPending.add(id); renderWorkbench();
+    try {
+      if (action === 'verify-profile') await api(`/api/workbench/${encodeURIComponent(id)}/verification`, {profile_id:button.dataset.profile});
+      const result = await api(`/api/workbench/${encodeURIComponent(id)}/verification`);
+      if (id === workId()) {workVerifications.set(id, result); workError = '';}
+    } catch (error) {
+      workVerifications.delete(id);
+      if (id === workId()) workError = error.message;
+    } finally { workVerificationPending.delete(id); if (id === workId()) renderWorkbench(); }
+    return;
+  }
   if (action === 'overview') { workOverview = !workOverview; renderWorkbench(); if (window.matchMedia?.('(max-width:900px)').matches) window.scrollTo({top:0,behavior:'instant'}); return; }
   button.disabled = true;
   try {

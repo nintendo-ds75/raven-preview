@@ -62,6 +62,39 @@ def loopback_aliases(netloc: str) -> set[str]:
     return {f"127.0.0.1{suffix}", f"localhost{suffix}", f"[::1]{suffix}"}
 
 
+def model_view(cfg=None):
+    """What the configured model backend lets Raven do, in the sentence
+    every page shows. Read once per server: a poll must not reload the
+    configuration or probe a host."""
+    from .config import backend_status, load
+    status = backend_status(cfg or load())
+    backend = status['backend']
+    if backend in ('anthropic', 'openai'):
+        notice = f"Model: {status['model']}. Suggestions on for watched repositories."
+    elif backend == 'claude-cli':
+        notice = 'Manual investigation only; automatic suggestions need an API key.'
+    else:
+        notice = 'Suggestions and briefs are off: no model key. Routing, records, reminders and signed decisions still run. Add a key with ./setup --configure and restart.'
+    # `proposals`: automatic suggestions (watches, background investigation).
+    # `investigation`: an explicit Find opportunities click, which the internal
+    # claude-cli backend also serves.
+    return {'backend': backend, 'model': status['model'], 'semantic': bool(status['semantic_enabled']),
+            'proposals': backend in ('anthropic', 'openai'),
+            'investigation': backend in ('anthropic', 'openai', 'claude-cli'), 'notice': notice}
+
+
+def today_counts(store):
+    """What Today wants from the person, as two counts the sidebar badge
+    adds up: open proposals and active objectives that are blocked. An open
+    proposal is what Today's Needs your decision lists: one that waits on a
+    person, not a scope out for signature (that is In progress, and the inbox
+    counts it); a child proposal is folded into its objective's card."""
+    db = store.graph.db
+    proposals = db.execute("SELECT count(*) AS c FROM objective_proposals WHERE state IN ('proposed','review_error','reconcile') AND objective_id=''").fetchone()['c']
+    objectives = db.execute("SELECT count(*) AS c FROM objectives WHERE lifecycle='active' AND blocked_reason<>''").fetchone()['c']
+    return {'proposals_open': int(proposals or 0), 'objectives_needing_you': int(objectives or 0)}
+
+
 class Forbidden(Exception):
     def __init__(self, code, message):
         super().__init__(message)
@@ -100,6 +133,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
     # Published through Docker, the port people reach is not the port the
     # process bound, so the public URL is the only thing that knows it.
     public_hosts = loopback_aliases(public_host) if public_host else set()
+    model = model_view()
 
     class Handler(BaseHTTPRequestHandler):
         me: Identity | None = None
@@ -243,7 +277,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                                        and self.me.id == link.person["id"])
                     view["viewer"]["interview_decision_id"] = link.decision_id
                     return self.send(200, view)
-                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js", "/presentation.js", "/workbench.js", "/workbench.css"):
+                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js", "/presentation.js", "/workbench.js", "/workbench.css", "/objectives.js", "/objectives.css", "/evidence.js"):
                     if url.path == "/" and auth.enabled and self.me is None:
                         if parse_qs(url.query).get("github_connect") == ["1"]:
                             cookie = "bridge_github_connect=1; Max-Age=600; Path=/; HttpOnly; SameSite=Lax"
@@ -258,13 +292,37 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     files['/presentation.js'] = 'presentation.js'
                     files['/workbench.js'] = 'workbench.js'
                     files['/workbench.css'] = 'workbench.css'
+                    files['/objectives.js'] = 'objectives.js'
+                    files['/objectives.css'] = 'objectives.css'
+                    files['/evidence.js'] = 'evidence.js'
                     file = WEB / files[url.path]
                     return self.send(200, file.read_bytes(), (mimetypes.guess_type(str(file))[0] or "text/plain") + "; charset=utf-8",
                                      etag=True, cache="no-cache")
                 self.require("viewer")
+                if url.path == '/api/objectives':
+                    from .objectives import overview
+                    return self.send(200, overview(store, workbench))
+                if len(parts) == 3 and parts[:2] == ['api', 'objectives']:
+                    from .objectives import get
+                    return self.send(200, get(store, parts[2]))
+                if parts[:2] == ['api', 'meetings']:
+                    from . import meeting_records
+                    repo = field({'repo': parse_qs(url.query).get('repo', [''])[0]}, 'repo', limit=100)
+                    if len(parts) == 2:
+                        return self.send(200, meeting_records.list_meetings(store, repo))
+                    if len(parts) == 3:
+                        return self.send(200, meeting_records.operational_view(store, meeting_records.get(store, parts[2], repo)))
+                    return self.send(404, {'error': 'Unknown meeting resource'})
                 if len(parts) in (3, 4) and parts[:2] == ['api', 'workbench']:
                     if not workbench:
                         return self.send(503, {'error': 'Browser execution is not configured'})
+                    if len(parts) == 4 and parts[3] == 'verification':
+                        # Receipts bind candidate bytes and operator profiles;
+                        # a viewer does not read them.
+                        self.require('member')
+                        from .artifact_verification import Verifier
+                        verifier = Verifier(workbench)
+                        return self.send(200, {'config': verifier.config(), 'receipts': verifier.list(parts[2])})
                     if len(parts) == 4 and parts[3] == 'patch':
                         from .visibility import require_task
                         require_task(store, parts[2])
@@ -290,6 +348,11 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     return self.send(200, store.lookup_record(**args))
                 if url.path == '/api/records':
                     query = parse_qs(url.query)
+                    if 'namespace' in query and 'record_id' not in query:
+                        # The newest records of one namespace (pasted evidence), titles only.
+                        self.require('member')
+                        return self.send(200, store.list_records(query['namespace'][0], query.get('limit', ['10'])[0],
+                                                                 repo=query.get('repo', [''])[0]))
                     return self.send(200, store.get_record(query.get('record_id', [''])[0], query.get('repo', [''])[0]))
                 if url.path == "/api/state":
                     from .sources import report as source_report
@@ -304,7 +367,9 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         actor = self.actor()
                         for decision in current["decisions"]:
                             decision["can_act"] = can_act(store.graph, actor, decision)
-                    return self.send(200, etag=True, value={**current, 'workbench': workbench.config() if workbench else {'enabled': False, 'repositories': []},
+                    return self.send(200, etag=True, value={**current, 'workbench': workbench.config() if workbench else {'enabled': False, 'ready': False, 'hosts': [], 'repositories': [],
+                        # No host is probed on a poll when browser execution is off.
+                        'reason': 'Browser execution is off on this server; start Raven with --workbench or BRIDGE_WORKBENCH=1'},
                         'question_repositories': question_repositories(store),
                         'browser_tasks': workbench.list() if workbench else [], "context_sources": source_report(store), "execution_config": {
                         "enabled": executions is not None,
@@ -319,6 +384,9 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                               # connected until a client has used it.
                                               and (t['last_used_at'] or t['label'] != SETUP_AGENT_LABEL)],
                         "delivery": self.delivery_view(), "mcp_config": self.mcp_config(),
+                        # What the backend lets Raven do, and what Today wants
+                        # from the person, so every page can say both.
+                        "model": model, "today": today_counts(store),
                         "sync": self.sync_view(), "github_app": github_app.status() if github_app else None,
                         # The decision card says whether a rule authorizes on its
                         # own, and the inbox marks overdue questions; without these
@@ -362,8 +430,11 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         raise Invalid("limit must be an integer")
                     return self.send(200, {"ownership": store.ownership(query.get("repo", [""])[0], limit=limit)})
                 if url.path == "/api/metrics":
-                    # What Raven saved, from the ledger: member-readable,
-                    # no admin standing needed to see the value.
+                    # What Raven saved, from the ledger: member-readable, no
+                    # admin standing needed to see the value; a viewer or an
+                    # agent credential is refused, as it carries the reasons
+                    # members gave when they declined proposals.
+                    self.require("member")
                     from .metrics import summary as saved_summary
                     query = parse_qs(url.query)
                     try:
@@ -753,7 +824,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
             content_type = self.headers.get("Content-Type", "").split(";")[0]
             try:
                 length = int(self.headers.get("Content-Length", "0"))
-                limit = (1 << 20) if path.startswith("/webhooks/") else 65536
+                limit = (8 << 20) if re.fullmatch(r"/api/meetings/[^/]+/import", path) else ((1 << 20) if path.startswith("/webhooks/") else 65536)
                 if not 0 < length <= limit:
                     return self.send(413, {"error": f"Request must be between 1 and {limit} bytes"})
                 raw = self.rfile.read(length)
@@ -855,8 +926,79 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         raise Forbidden(403, "An agent credential does not choose who decides: Raven routes the node, "
                                              "and a person assigns or hands it on")
                 else:
-                    self.require("member")
-                if path == '/api/ask':
+                    # A person's own session-record opt-out is theirs whatever
+                    # their role; the store still refuses anyone else's.
+                    own_recording = (len(inquiry_parts) == 4 and inquiry_parts[:2] == ['api', 'people']
+                                     and inquiry_parts[3] == 'recording'
+                                     and self.me is not None and self.me.id == inquiry_parts[2])
+                    self.require("viewer" if own_recording else "member")
+                if path == '/api/objectives':
+                    from .objectives import create
+                    if 'start_preparation' in data and type(data['start_preparation']) is not bool:
+                        raise Invalid('start_preparation must be an explicit boolean')
+                    result = create(store, data, self.me)
+                    if data.get('start_preparation'):
+                        from .objectives import act, block, get, digest
+                        try:
+                            result = act(store, result['id'], 'dispatch', {'request_key': 'initial:' + digest(field(data, 'request_key', limit=100))[:64],
+                                'expected_revision': 1}, self.me, workbench)
+                        except Invalid as error:
+                            block(store, result['id'], str(error), self.me.id, kind='dispatch_blocked')
+                            result = get(store, result['id'])
+                elif path == '/api/objectives/watch':
+                    self.require('admin')
+                    from .objective_head import configure_watch
+                    result = configure_watch(store, data, self.me)
+                elif path == '/api/objectives/scan':
+                    from .objective_head import scan
+                    result = scan(store, data, self.me)
+                elif path.startswith('/api/objectives/'):
+                    from .objectives import act
+                    parts = path.strip('/').split('/')
+                    if len(parts) != 4:
+                        raise Invalid('Unknown objective action')
+                    result = act(store, parts[2], parts[3], data, self.me, workbench)
+                elif path.startswith('/api/proposals/'):
+                    from .objectives import proposal_action
+                    parts = path.strip('/').split('/')
+                    if len(parts) != 4:
+                        raise Invalid('Unknown proposal action')
+                    result = proposal_action(store, parts[2], parts[3], data, self.me)
+                elif path == '/api/meetings':
+                    self.require('admin')
+                    from . import meeting_records
+                    result = meeting_records.operational_view(store, meeting_records.create(store, data))
+                elif path.startswith('/api/meetings/'):
+                    self.require('admin')
+                    from . import meeting_records
+                    parts = path.strip('/').split('/')
+                    if len(parts) != 4:
+                        raise Invalid('Unknown meeting action')
+                    ident, action = parts[2], parts[3].replace('-', '_')
+                    repo = field(data, 'repo', limit=100)
+                    attributed = {**data, 'by': self.me.name or 'local operator'}
+                    if action == 'consent':
+                        result = meeting_records.set_consent(store, ident, repo, attributed)
+                    elif action == 'import':
+                        result = meeting_records.import_transcript(store, ident, repo, attributed)
+                    elif action == 'background_sync':
+                        from .meeting_worker import configure_sync
+                        result = configure_sync(store, ident, repo, attributed, self.me)
+                    elif action == 'sync':
+                        result = meeting_records.sync_transcript(store, ident, repo, attributed)
+                    elif action == 'revoke':
+                        result = meeting_records.revoke(store, ident, repo)
+                    elif action == 'reconcile':
+                        result = meeting_records.reconcile(store, ident, repo)
+                    elif action in ('join', 'stop', 'delete_remote'):
+                        result = meeting_records.command(store, ident, repo, action, options=data.get('options'))
+                    else:
+                        raise Invalid('Unknown meeting action')
+                    if isinstance(result, dict) and 'meeting' in result:
+                        result = {**result, 'meeting': meeting_records.operational_view(store, result['meeting'])}
+                    elif isinstance(result, dict) and 'provider' in result and 'state' in result:
+                        result = meeting_records.operational_view(store, result)
+                elif path == '/api/ask':
                     from .inquiry import ask
                     result = ask(store, data, self.me)
                 elif path == '/api/workbench':
@@ -869,7 +1011,11 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     parts = path.strip('/').split('/')
                     if len(parts) != 4:
                         return self.send(404, {'error': 'Unknown task action'})
-                    if parts[3] == 'reconcile':
+                    if parts[3] == 'verification':
+                        self.require('admin')
+                        from .artifact_verification import Verifier
+                        result = Verifier(workbench).verify(parts[2], field(data, 'profile_id', limit=100), self.me)
+                    elif parts[3] == 'reconcile':
                         self.require('admin')
                         from .workbench_hosts import reconcile
                         result = reconcile(workbench, parts[2], data, self.me)
@@ -895,7 +1041,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     self.require("admin")
                     result = store.delivery.sync_directory()
                 elif path == "/api/records":
-                    result = store.add_record(data)
+                    # The record's author is the person on this request, whatever the body says.
+                    result = store.add_record(data, actor=self.actor())
                 elif path == "/api/context/sources":
                     # An administrator attests the source is shared with every reader.
                     self.require("admin")
@@ -1112,6 +1259,10 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     elif len(parts) == 5 and parts[:3] == ["api", "deliveries", "inbound"] and parts[4] == "retry":
                         self.require("admin")
                         result = store.delivery.retry_inbound(parts[3])
+                    elif len(parts) == 4 and parts[:2] == ["api", "records"] and parts[3] == "withdraw":
+                        result = store.withdraw_record(parts[2], data, self.actor())
+                    elif len(parts) == 4 and parts[:2] == ["api", "people"] and parts[3] == "recording":
+                        result = store.set_recording_optout(parts[2], data, actor=self.actor())
                     elif len(parts) == 4 and parts[:2] == ["api", "tokens"] and parts[3] == "revoke":
                         owned = any(t["id"] == parts[2] for t in auth.tokens(self.me.id))
                         if not owned:

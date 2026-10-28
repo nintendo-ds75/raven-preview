@@ -54,6 +54,15 @@ vm.runInContext('let savings = null, savingsLoading = false, savingsAt = 0; cons
   const shown = value => vm.runInContext(`savings = ${JSON.stringify(value)}; savedStrip()`, context);
   assert.match(shown({...summary, wait_saved: {seconds: 3600, decisions: 1, estimated: 1}}), /<strong>≈1h<\/strong> of agent waiting avoided/);
   assert.match(shown({...summary, decisions: 0}), /no decisions recorded yet/);
+  // A viewer is refused the numbers (403): the strip is empty and nothing is announced or asked again.
+  let notified = 0; context.notify = () => { notified++; };
+  context.api = async p => { requests.push(p); const error = new Error('Your role (viewer) does not allow this; it needs member'); error.status = 403; throw error; };
+  vm.runInContext('savings = null; savingsAt = 0;', context);
+  assert.match(context.savedStrip(), /Measuring/);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(context.savedStrip(), '');
+  assert.equal(notified, 0);
+  assert.equal(requests.length, 2, 'the refusal is not asked again');
   // The strip opens Tasks and People & ownership.
   assert.match(source, /function runs\(\) \{\n  return savedStrip\(\) \+ `<div class="wide-toolbar"><h2>Tasks in this workspace<\/h2>/);
   assert.match(source, /function owners\(\) \{\n  return `<div class="owners-page">\$\{workspaceAccountCard\(\)\}\$\{savedStrip\(\)\}/);

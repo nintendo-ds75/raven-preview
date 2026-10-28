@@ -29,8 +29,13 @@ def safe_path(root, name):
     parts = PurePosixPath(name)
     if parts.is_absolute() or '..' in parts.parts or any(p.casefold() == '.git' for p in parts.parts):
         raise Invalid('Path must stay inside the task copy and outside .git')
-    path = Path(root).joinpath(*parts.parts)
-    if not path.resolve().is_relative_to(Path(root).resolve()) or any(p.is_symlink() for p in [path, *path.parents]):
+    base = Path(root)
+    path = base.joinpath(*parts.parts)
+    # Only the components below the task copy are checked for symlinks: the
+    # copy itself may sit under a symlinked directory (macOS /tmp, /var) and
+    # that is not an escape from it.
+    inside = [path, *path.parents][:len(parts.parts)]
+    if not path.resolve().is_relative_to(base.resolve()) or any(p.is_symlink() for p in inside):
         raise Invalid('Symlinks and paths outside the task copy are not allowed')
     return path
 

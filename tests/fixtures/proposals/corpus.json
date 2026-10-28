@@ -1,0 +1,231 @@
+{
+  "repository": "sample/project",
+  "notice": "Synthetic. Every person, company and message here is invented for tests/test_proposal_bench.py.",
+  "records": [
+    {
+      "id": "r01",
+      "kind": "email",
+      "ref": "paste:halvard-invoices",
+      "provider": "generic",
+      "namespace": "raven:paste",
+      "title": "Halvard Freight asks for a CSV export of invoices",
+      "author": "Ines Ferrer (Halvard Freight)",
+      "created_at": "2026-09-01T09:00:00+00:00",
+      "body": "Hello,\n\nOur finance team copies invoices into their ledger by hand every month. Could the invoice list be exported as CSV with the same columns the screen shows? We would start the pilot next quarter if that works.\n\nInes"
+    },
+    {
+      "id": "r02",
+      "kind": "slack",
+      "ref": "C0FIXTURE:1756800000.000100",
+      "provider": "slack",
+      "namespace": "T0FIXTURE",
+      "title": "pilot sandbox resets",
+      "author": "Devan Okoro",
+      "url": "https://slack.com/archives/C0FIXTURE/p1756800000000100",
+      "created_at": "2026-09-02T10:15:00+00:00",
+      "body": "the pilot sandbox resets every night and the Halvard test data goes with it; they asked twice whether we can keep it for the trial"
+    },
+    {
+      "id": "r03",
+      "kind": "email",
+      "ref": "paste:orrin-webhooks",
+      "provider": "generic",
+      "namespace": "raven:paste",
+      "title": "Orrin Labs: webhook retries stop too early",
+      "author": "Tobiah Quill (Orrin Labs)",
+      "created_at": "2026-09-03T14:30:00+00:00",
+      "body": "Your webhooks stop after three attempts. Our receiver is down for maintenance every Sunday and we lose the events from that window. Can retries continue for at least 24 hours?"
+    },
+    {
+      "id": "r04",
+      "kind": "meeting",
+      "ref": "meeting:fixture-weekly:0001",
+      "provider": "generic",
+      "namespace": "meeting:generic:fixture",
+      "title": "Weekly product sync",
+      "author": "Meret Lindqvist",
+      "created_at": "2026-09-04T16:00:00+00:00",
+      "body": "Meret: the onboarding checklist still refers to the old API key page. Three new accounts got stuck there this week. Someone needs to decide whether we redirect the old page or rewrite the checklist.\nDevan: let's take that offline and come back with a proposal.\nMeret: fine, but before the next batch of trials starts."
+    },
+    {
+      "id": "r05",
+      "kind": "email",
+      "ref": "paste:quillon-audit",
+      "provider": "generic",
+      "namespace": "raven:paste",
+      "title": "Quillon Press: audit log download for compliance",
+      "author": "Sunniva Marsh (Quillon Press)",
+      "created_at": "2026-09-05T08:45:00+00:00",
+      "body": "Our compliance review needs the audit log for the last ninety days as a file. The screen only shows thirty days. Is there a way to download the full range?"
+    },
+    {
+      "id": "r06",
+      "kind": "slack",
+      "ref": "C0FIXTURE:1757100000.000200",
+      "provider": "slack",
+      "namespace": "T0FIXTURE",
+      "title": "bulk import limit",
+      "author": "Priya Vanterpool",
+      "url": "https://slack.com/archives/C0FIXTURE/p1757100000000200",
+      "created_at": "2026-09-06T11:05:00+00:00",
+      "body": "support: two customers hit the 50-row limit on the bulk import page today and asked what the limit is for; nothing in the docs says"
+    },
+    {
+      "id": "r07",
+      "kind": "email",
+      "ref": "paste:brisk-sso",
+      "provider": "generic",
+      "namespace": "raven:paste",
+      "title": "Brisk Tandem: dashboard signs users out too early",
+      "author": "Caspian Rowe (Brisk Tandem)",
+      "created_at": "2026-09-07T13:20:00+00:00",
+      "body": "Our users get signed out of the dashboard after fifteen minutes of inactivity. Their SSO session lasts eight hours. The mismatch is the top complaint from our team leads."
+    },
+    {
+      "id": "r08",
+      "kind": "slack",
+      "ref": "C0FIXTURE:1757300000.000300",
+      "provider": "slack",
+      "namespace": "T0FIXTURE",
+      "title": "nightly report job",
+      "author": "Devan Okoro",
+      "url": "https://slack.com/archives/C0FIXTURE/p1757300000000300",
+      "created_at": "2026-09-08T07:50:00+00:00",
+      "body": "eng: the nightly report job failed twice this week because the export bucket ran out of space; the customer-facing report was late both times and two tickets came in"
+    },
+    {
+      "id": "r09",
+      "kind": "email",
+      "ref": "paste:halvard-thanks",
+      "provider": "generic",
+      "namespace": "raven:paste",
+      "title": "Re: last week's fix",
+      "author": "Ines Ferrer (Halvard Freight)",
+      "created_at": "2026-09-09T09:10:00+00:00",
+      "body": "Thanks for the quick fix last week, all good now on our side."
+    },
+    {
+      "id": "r10",
+      "kind": "slack",
+      "ref": "C0FIXTURE:1757500000.000400",
+      "provider": "slack",
+      "namespace": "T0FIXTURE",
+      "title": "team lunch",
+      "author": "Priya Vanterpool",
+      "url": "https://slack.com/archives/C0FIXTURE/p1757500000000400",
+      "created_at": "2026-09-10T12:00:00+00:00",
+      "body": "lunch is at noon on Thursday, the usual place"
+    },
+    {
+      "id": "r11",
+      "kind": "email",
+      "ref": "paste:orrin-timezone",
+      "provider": "generic",
+      "namespace": "raven:paste",
+      "title": "Orrin Labs: audit log timezone",
+      "author": "Tobiah Quill (Orrin Labs)",
+      "created_at": "2026-09-11T15:40:00+00:00",
+      "body": "Quick one: which timezone does the audit log use? Our analysts compare it with their own logs."
+    },
+    {
+      "id": "r12",
+      "kind": "note",
+      "ref": "note:audit-log-timezone",
+      "title": "Audit log timestamps",
+      "author": "Meret Lindqvist",
+      "created_at": "2026-09-11T16:00:00+00:00",
+      "body": "Audit log timestamps are stored and shown in UTC; the export carries an offset column for local time."
+    },
+    {
+      "id": "r13",
+      "kind": "slack",
+      "ref": "C0FIXTURE:1757800000.000500",
+      "provider": "slack",
+      "namespace": "T0FIXTURE",
+      "title": "office closed",
+      "author": "Devan Okoro",
+      "url": "https://slack.com/archives/C0FIXTURE/p1757800000000500",
+      "created_at": "2026-09-12T08:00:00+00:00",
+      "body": "reminder: the office is closed on Monday; support rota is unchanged"
+    },
+    {
+      "id": "r14",
+      "kind": "email",
+      "ref": "paste:digest-september",
+      "provider": "generic",
+      "namespace": "raven:paste",
+      "title": "Monthly product digest",
+      "author": "Product marketing",
+      "created_at": "2026-09-13T06:00:00+00:00",
+      "body": "This month: three new integrations, a refreshed dashboard theme, and our webinar on Tuesday. Read more on the blog."
+    },
+    {
+      "id": "r15",
+      "kind": "slack",
+      "ref": "C0FIXTURE:1758000000.000600",
+      "provider": "slack",
+      "namespace": "T0FIXTURE",
+      "title": "staging credentials doc",
+      "author": "Priya Vanterpool",
+      "url": "https://slack.com/archives/C0FIXTURE/p1758000000000600",
+      "created_at": "2026-09-14T10:30:00+00:00",
+      "body": "anyone know where the staging credentials doc moved? the wiki link 404s"
+    },
+    {
+      "id": "r16",
+      "kind": "email",
+      "ref": "paste:vendor-monitoring",
+      "provider": "generic",
+      "namespace": "raven:paste",
+      "title": "Special offer on monitoring",
+      "author": "Sales at Vantage Metrics (vendor)",
+      "created_at": "2026-09-15T05:30:00+00:00",
+      "body": "Buy our monitoring suite this week and save thirty percent. Reply to book a demo."
+    },
+    {
+      "id": "r17",
+      "kind": "session",
+      "ref": "task:fixturetask0001",
+      "provider": "generic",
+      "namespace": "raven:session",
+      "title": "Repair the invoice CSV header",
+      "author": "Fixture agent",
+      "created_at": "2026-09-16T17:00:00+00:00",
+      "resolved": true,
+      "access_scope": "{\"basis\": \"session\", \"transport\": \"raven\", \"workspace_shared\": true}",
+      "body": "Task fixturetask0001: Repair the invoice CSV header\nKickoff verdict: go\nDecisions:\n- d0001: Keep the header row in the CSV export when the list is empty? | owner: Policy Owner | outcome: signed unchanged by Policy Owner | standing: authorized\nFiles touched:\n- export/csv.py\n- tests/test_export.py\nProof: none (no diff submitted)\nFinal status: completed"
+    },
+    {
+      "id": "r18",
+      "kind": "slack",
+      "ref": "C0FIXTURE:1758300000.000700",
+      "provider": "slack",
+      "namespace": "T0FIXTURE",
+      "title": "deploy 2.14.1",
+      "author": "Devan Okoro",
+      "url": "https://slack.com/archives/C0FIXTURE/p1758300000000700",
+      "created_at": "2026-09-17T18:10:00+00:00",
+      "body": "deploy of 2.14.1 finished at 18:05, no alerts, error rate flat"
+    },
+    {
+      "id": "r19",
+      "kind": "email",
+      "ref": "paste:quillon-resend",
+      "provider": "generic",
+      "namespace": "raven:paste",
+      "title": "Quillon Press: March invoice again",
+      "author": "Sunniva Marsh (Quillon Press)",
+      "created_at": "2026-09-18T09:25:00+00:00",
+      "body": "Could you send the invoice for March again? The PDF link expired before accounting opened it."
+    },
+    {
+      "id": "r20",
+      "kind": "note",
+      "ref": "note:brisk-renewal",
+      "title": "Brisk Tandem renewal",
+      "author": "Caspian Rowe (Brisk Tandem)",
+      "created_at": "2026-09-19T11:45:00+00:00",
+      "body": "Customer success: Brisk Tandem renewed for a year, no changes requested; keep the quarterly check-in."
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 """Browser execution contracts; fake inference, real git and decision graph."""
 import json
+import tempfile
 from pathlib import Path
 import threading
 import unittest
@@ -199,6 +200,60 @@ class WorkbenchTests(OfflineCase):
                 self.service.execute(self.service.row(task), call('present_result', {'summary': 'Done'}))
         self.assertNotEqual(self.service.row(task)['status'], 'completed')
 
+    def test_new_factual_evidence_resumes_same_objective_worker_once(self):
+        from bridge import objectives, objective_head
+        self.store.graph.db.execute("INSERT INTO people(id,name,role,active) VALUES(?,?,?,1)", (self.actor.id, self.actor.name, 'member'))
+        source_data = {'repo': 'sample/project', 'kind': 'note', 'ref': 'pilot', 'body': 'Pilot needs a CSV example.'}
+        first = self.store.add_record(source_data)['source']
+        objective = objectives.create(self.store, {'request_key': 'owned-continuity', 'title': 'Pilot outcome',
+            'outcome': 'Prepare the pilot CSV path', 'success_criteria': 'Customer gets a report',
+            'stop_criteria': 'Scope changes', 'guardrails': 'Private preparation only',
+            'repository': 'sample/project', 'provider': 'claude', 'source_ids': [first['record_id']]}, self.actor)
+        dispatched = objectives.act(self.store, objective['id'], 'dispatch', {'request_key': 'dispatch-owned', 'expected_revision': 1}, self.actor, self.service)
+        task = next(r['task_id'] for r in dispatched['runs'] if r['browser_task'])
+        self.service.step(task)
+        self.service.update(task, status='waiting', wait_revision=self.service.fingerprint(task))
+        source = self.store.add_record({**source_data, 'body': 'The accepted CSV header is account_id.'})['source']
+        class FactualReader:
+            def complete_json(self, purpose, system, prompt, **kwargs):
+                if purpose != 'objective factual research':
+                    raise AssertionError('A factual source answer must not request new judgment')
+                return {'action': 'finish', 'disposition': 'factual_answer', 'reason': 'Header established from the updated source.',
+                    'observations': [{'kind': 'fact', 'statement': 'Use the accepted header account_id.', 'citations': [{
+                        'record_id': source['record_id'], 'source_version_id': source['source_version_id'],
+                        'quote': 'The accepted CSV header is account_id.'}]}]}
+        result = objective_head.scan(self.store, {'repository': 'sample/project', 'request_key': 'new-fact'}, self.actor,
+                                     client=FactualReader(), objective_id=objective['id'])
+        worker = objective_head.Worker(self.store, self.service, Config(model_api='none'))
+        worker.resume_with_facts(objective, result)
+        worker.resume_with_facts(objective, result)
+        self.assertEqual(self.service.row(task)['status'], 'queued')
+        pending = self.service.get(task)['pending_messages']
+        self.assertEqual(len(pending), 1)
+        self.assertIn('account_id', pending[0]['body'])
+        self.service.step(task)
+        self.assertEqual(len(self.service.list()), 1)
+        self.assertEqual(objectives.get(self.store, objective['id'])['lifecycle'], 'active')
+        self.assertEqual(self.service.get(task)['pending_messages'], [])
+
+    def test_objective_pause_during_presentation_prevents_final_publication(self):
+        from bridge import objectives
+        task = self.submit()
+        self.service.step(task)
+        objective = objectives.create(self.store, {'request_key': 'owned', 'title': 'Owned outcome',
+            'outcome': 'Prepare policy safely', 'success_criteria': 'Observed adoption',
+            'stop_criteria': 'Owner changes scope', 'guardrails': 'Private preparation only',
+            'repository': 'sample/project', 'provider': 'claude'}, self.actor)
+        self.store.graph.db.execute('INSERT INTO objective_run_authority VALUES(?,?,?)', (task, objective['id'], ''))
+        self.service.record(task, 'tool', 'finish_task', {'input': {'checks': 'Tests passed'}, 'result': {'status': 'completed'}})
+        def pause_during_review(*args, **kwargs):
+            self.store.graph.db.execute("UPDATE objectives SET lifecycle='paused',revision=revision+1 WHERE id=?", (objective['id'],))
+            return {'status': 'completed'}
+        with patch('bridge.workbench.mcp.call_tool', side_effect=pause_during_review):
+            with self.assertRaisesRegex(Invalid, 'paused or closed'):
+                self.service.execute(self.service.row(task), call('present_result', {'summary': 'Done'}))
+        self.assertNotEqual(self.service.row(task)['status'], 'completed')
+
     def test_incomplete_advisory_review_needs_explicit_acknowledgment_and_warning(self):
         task = self.submit()
         self.service.step(task)
@@ -282,6 +337,30 @@ class WorkbenchTests(OfflineCase):
         self.assertIn('changed after completion', self.service.row(task)['error'])
         self.assertFalse(self.agent.seen)
 
+    def test_verification_receipts_need_a_member_not_a_viewer(self):
+        auth = Auth(self.store, enabled=True)
+        server = ready_server(self.store, 0, auth=auth, workbench=self.service)
+        thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
+        thread.start()
+        base = 'http://127.0.0.1:' + str(server.server_port)
+        try:
+            task = self.submit()
+            codes = {}
+            for role in ('viewer', 'member'):
+                person = self.store.add_person({'name': role + ' reader', 'role': role})
+                token = auth.create_token(person['id'], kind='human')['token']
+                req = Request(base + '/api/workbench/' + task + '/verification', headers={'Authorization': 'Bearer ' + token})
+                try:
+                    codes[role] = urlopen(req).status
+                except HTTPError as caught:
+                    codes[role] = caught.code
+            self.assertEqual(codes['viewer'], 403)
+            self.assertEqual(codes['member'], 200)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
     def test_authenticated_viewers_and_agent_tokens_cannot_start_browser_agents(self):
         auth = Auth(self.store, enabled=True)
         server = ready_server(self.store, 0, auth=auth, workbench=self.service)
@@ -360,3 +439,22 @@ class WorkbenchTests(OfflineCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SymlinkedRootTests(unittest.TestCase):
+    """A task copy may live under a symlinked directory (macOS /tmp and /var
+    point into /private): only symlinks inside the copy are an escape."""
+
+    def test_symlinked_ancestor_of_the_root_is_not_an_escape(self):
+        from bridge import workbench_fs as fs
+        with tempfile.TemporaryDirectory() as temp:
+            real = Path(temp) / 'real'
+            (real / 'copy').mkdir(parents=True)
+            (real / 'copy' / 'a.py').write_text('x = 1\n')
+            link = Path(temp) / 'link'
+            link.symlink_to(real, target_is_directory=True)
+            root = link / 'copy'
+            self.assertEqual(fs.safe_path(root, 'a.py').read_text(), 'x = 1\n')
+            (real / 'copy' / 'out').symlink_to(real)
+            with self.assertRaises(fs.Invalid):
+                fs.safe_path(root, 'out/copy/a.py')

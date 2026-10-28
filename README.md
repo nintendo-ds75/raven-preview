@@ -4,11 +4,12 @@
 
 <h1 align="center">Raven</h1>
 
-<p align="center"><strong>Your coding agents do the work. Raven gets them the human judgment they need.</strong></p>
+<p align="center"><strong>Raven is the self-hosted decision record between your customers, your team and your coding agents: evidence goes in, one signed decision comes out, and the agent does the work.</strong></p>
 
 <p align="center">
   <a href="docs/getting-started.md">Getting started</a> ·
   <a href="docs/getting-started.md#3-connect-your-coding-agent">Connect your agent</a> ·
+  <a href="docs/positioning.md">What Raven is</a> ·
   <a href="docs/overview.md">How it works</a> ·
   <a href="docs/reference.md">Reference</a> ·
   <a href="docs/README.md">All docs</a> ·
@@ -74,12 +75,13 @@ Add the Raven rule it offers to `CLAUDE.md` or `AGENTS.md`, so the agent calls `
 
 - **Decisions, not tickets.** The agent writes each judgment call as a node on the task's tree: the question, its context, the options and what each leads to. [How a task unfolds](docs/overview.md#the-decisions-inside-a-task)
 - **Routing from evidence.** CODEOWNERS, commit and review history, imported records and earlier answers decide who is asked, and every message says why. No ownership spreadsheet to maintain. [Who does Raven ask?](docs/overview.md#who-does-raven-ask)
-- **Answers from memory, signed by people.** When the records or a past decision already answer the question, Raven proposes that answer with its citation. The owner still signs; a cache hit is not approval.
+- **Answers from memory, signed by people.** When the records or a past decision already answer the question, Raven proposes that answer with its citation. The owner still signs; a cache hit is not approval. [How answers are reused](docs/overview.md#less-coordination-more-useful-autonomy)
 - **A finish gate.** `bridge_finish_task` is refused while a decision is unsigned, and a corrected answer puts the work that leaned on it up for review. [Change proof](docs/change-proof.md)
 - **People answer where they are.** In the Raven inbox, or from a Slack notification that links to the task. Replies are read back before anything is recorded. [Slack](docs/slack.md)
 - **Context the agent can cite.** GitHub sync plus opt-in Slack channels, Jira projects and documentation sites; Raven can scan a repository and suggest which to connect. [Context sources](docs/context-sources.md)
 - **Agents keep working.** A hook holds the agent while a person answers, or a local supervisor resumes the same session later. [Host adapters](docs/host-adapters.md)
 - **Or run the agent in Raven.** Start a task from the browser and Raven runs Claude in a private copy of the repository, with tests in a no-network sandbox. [Browser tasks](docs/browser-tasks.md)
+- **Today (preview).** Raven can investigate imported evidence (meeting transcripts, notes, connected sources) and suggest one bounded piece of work with the evidence behind it. A person reviews and signs it in the same inbox before any coding worker runs. Needs a model backend and the optional browser execution; not yet exercised with a live provider ([what this preview can promise](docs/overview.md#what-this-preview-can-promise-today)). [Today](docs/startup-os.md)
 
 ## How it works
 

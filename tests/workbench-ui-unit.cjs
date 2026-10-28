@@ -41,5 +41,9 @@ function harness(id='task') {
   h.c.fixture.trace.notifications=[{person_name:'Earlier contact'}];h.run('renderWorkbench()');assert.match(h.elements.app.innerHTML,/Earlier contact/);
   h.task.status='completed';h.task.summary='Agent claims done';h.tree.review={status:'failed'};h.run('renderWorkbench()');
   assert.match(h.elements.app.innerHTML,/Patch ready for manual review/);assert.match(h.elements.app.innerHTML,/automatic code review is incomplete/);
-  console.log('Browser task UI: 9 scenario checks passed (DOM/API doubles).');
+  h.run("workVerifications.set('task',{config:{ready:true,profiles:[{id:'heldout',repository:'sample/repo',label:'Behavior cases'}]},receipts:[{profile_id:'heldout',status:'passed',current:false,usable_pass:false,coverage:'<script>bad</script>',coverage_basis:'operator-held-fixtures',binding:{candidate_tree_sha256:'abc'}}]})");
+  h.run('renderWorkbench()');assert.match(h.elements.app.innerHTML,/no longer current/);assert.match(h.elements.app.innerHTML,/&lt;script&gt;/);assert.doesNotMatch(h.elements.app.innerHTML,/Current configured checks passed/);
+  h.c.state.auth.enabled=true;h.c.state.me={role:'viewer'};h.run('renderWorkbench()');assert.doesNotMatch(h.elements.app.innerHTML,/data-work-action="verify-profile"/);
+  h.task.withheld=true;h.run('renderWorkbench()');assert.match(h.elements.app.innerHTML,/Access needs attention/);assert.doesNotMatch(h.elements.app.innerHTML,/Behavior cases|operator-held-fixtures/);
+  console.log('Browser task UI: 12 scenario checks passed (DOM/API doubles).');
 })().catch(e=>{console.error(e);process.exitCode=1;});

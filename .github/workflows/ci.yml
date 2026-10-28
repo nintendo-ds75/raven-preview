@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The advisory jobs (Docker packaging, Codex containment) skip pull
+  # requests and run nightly instead, or on demand.
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -49,7 +54,7 @@ jobs:
       # (requirements-teams.txt) by the Teams callback tests, which skip
       # without it: 246 tests in seven files, among them every check of the
       # Bot Connector token verification.
-      - run: python -m pip install cryptography==49.0.0 httpx==0.28.1 -r requirements-teams.txt
+      - run: python -m pip install cryptography==49.0.0 httpx==0.28.1 -r requirements-teams.txt -r requirements-agents.txt
       - name: Unit, integration and contract tests
         run: python -m unittest discover -s tests -p 'test_*.py'
 
@@ -99,7 +104,119 @@ jobs:
           node-version: "22"
       # The same list `make check` runs, kept in one file so the two cannot
       # drift. The Playwright browser suites (tests/browser*.cjs,
-      # tests/brief-browser.cjs) need Chromium and are run by hand before a
+      # tests/brief-browser.cjs) need Chromium; the two Today suites run in
+      # the startup-os-browser job below, the rest are run by hand before a
       # release; see CONTRIBUTING.md.
       - name: DOM-stubbed UI checks
         run: ./scripts/check_web.sh
+
+  startup-os-browser:
+    name: Startup OS browser (Chromium, synthetic providers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install pinned official Playwright and Chromium
+        run: |
+          npm install --prefix "$RUNNER_TEMP/raven-ui" --no-audit --no-fund playwright@1.62.1
+          "$RUNNER_TEMP/raven-ui/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Native Today interactions and real local API
+        env:
+          BRIDGE_TEST_ARTIFACTS: test-results/startup-os
+        run: |
+          export PLAYWRIGHT_MODULE="$RUNNER_TEMP/raven-ui/node_modules/playwright"
+          node tests/browser-objectives.cjs
+          node tests/browser-objectives-api.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: startup-os-browser
+          path: test-results/startup-os
+          if-no-files-found: ignore
+
+  execution-harnesses:
+    name: Installed harnesses (scripted inference, no provider keys)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.19.0"
+      - name: Install exact official harness dependency locks
+        run: |
+          npm ci --prefix hosts/pi --ignore-scripts
+          npm ci --prefix hosts/opencode --ignore-scripts
+      - name: Real SDK and native server loops with scripted inference only
+        run: |
+          node tests/pi-harness-unit.cjs
+          node tests/pi-sdk-unit.cjs
+          node tests/opencode-guard-unit.cjs
+          python -c "from bridge.opencode_host import installation, VERSION; assert installation() == VERSION"
+          PYTHONPATH=tests python -m unittest test_harness_protocol test_workbench_hosts test_opencode_host -v
+
+  docker-verification:
+    name: Docker packaging and independent no-network verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Advisory until stabilised: it pulls base images from Docker Hub and
+    # builds on top of them, so an upstream change or a registry hiccup
+    # red-lines every pull request. It runs on push, nightly and on demand,
+    # not on pull requests; read its own result, it does not fail the check.
+    if: github.event_name != 'pull_request'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Prepare test image and optional runtime image (no semantic model download)
+        run: |
+          docker pull python:3.13-slim-bookworm
+          docker build --build-arg INSTALL_SEMANTIC=false -t raven-core-base .
+          docker build -f docker/Dockerfile.harnesses -t raven-harnesses-ci .
+      - name: Installed image acceptance with network disabled
+        run: |
+          docker run --rm --network none --entrypoint node raven-harnesses-ci tests/pi-sdk-unit.cjs
+          docker run --rm --network none --entrypoint python raven-harnesses-ci -c "from bridge.opencode_host import installation, VERSION; assert installation() == VERSION"
+          docker run --rm --network none --entrypoint python raven-harnesses-ci -m unittest discover -s tests -p test_opencode_host.py -v
+      - name: Actual isolated behavioral verification receipts
+        env:
+          BRIDGE_TEST_DOCKER: "1"
+        run: python -m unittest discover -s tests -p test_artifact_docker.py -v
+
+  codex-native:
+    name: Experimental Codex containment (local scripted inference)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Advisory until stabilised: the app-server pin is an alpha npm release
+    # that upstream can change under us. It runs on push, nightly and on
+    # demand, not on pull requests; read its own result, it does not fail
+    # the check.
+    if: github.event_name != 'pull_request'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.19.0"
+      - name: Install exact official app-server pin and fixture codec
+        run: |
+          npm ci --prefix hosts/codex --ignore-scripts
+          python -m pip install zstandard==0.25.0
+      - name: Native schema, shell/read/network denial and resumed containment
+        env:
+          BRIDGE_TEST_CODEX: "1"
+        run: PYTHONPATH=tests python -m unittest test_codex_native -v

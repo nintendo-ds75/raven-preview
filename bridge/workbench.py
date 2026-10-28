@@ -110,7 +110,7 @@ class Workbench:
 
 
     def config(self):
-        providers = [] if self.agent else [hosts.capability(p) for p in ('claude', 'codex')]
+        providers = [] if self.agent else [hosts.capability(p) for p in hosts.PROVIDERS]
         return {'enabled': True, 'ready': bool(self.agent) or any(p['ready'] for p in providers),
                 'hosts': providers, 'question_ready': True,
                 'repositories': [{'id': r['id'], 'name': r['id']} for r in self.repositories],
@@ -143,7 +143,7 @@ class Workbench:
         key = field(data, 'request_key', limit=100)
         repo = field(data, 'repository', limit=100)
         provider = str(data.get('host') or 'claude')
-        cap = hosts.capability(provider) if not self.agent else None
+        cap = hosts.capability(provider, refresh=True) if not self.agent else None
         if cap and not cap['ready']:
             raise Invalid('; '.join(cap['blockers']))
         entry = next((r for r in self.repositories if r['id'] == repo), None)
@@ -254,6 +254,8 @@ class Workbench:
                 raise Invalid('Worker no longer owns the database lock')
 
     def execute(self, row, call):
+        from .objectives import assert_task_authority
+        assert_task_authority(self.store, row['task_id'])
         name, args = call['name'], dict(call.get('input') or {})
         tid, root = row['task_id'], self.root / row['task_id']
         if row['status'] == 'completed':
@@ -328,7 +330,11 @@ class Workbench:
                     if manual_review:
                         result['manual_review_required'] = True
                         args['summary'] = 'Automatic review is incomplete. This patch needs manual code review.\n\n' + args['summary']
-                    self.update(tid, status='completed', wait_revision=self.fingerprint(tid, tree), summary=args['summary'])
+                    with self.store.graph.transaction() as db:
+                        assert_task_authority(self.store, tid, db=db)
+                        if self.row(tid)['status'] in ('paused', 'pausing', 'cancelled'):
+                            raise Invalid('This task was interrupted during completion; no final result was published')
+                        self.update(tid, status='completed', wait_revision=self.fingerprint(tid, tree), summary=args['summary'])
                 else:
                     result['browser_next'] = 'Read this review and investigate its concerns. Then call present_result with the final summary, actual tests and remaining limitations.'
             elif review.get('status') == 'running':
@@ -347,6 +353,8 @@ class Workbench:
             return
         self.update(task_id, status='running', error='')
         try:
+            from .objectives import assert_task_authority
+            assert_task_authority(self.store, task_id)
             root = self.root / task_id
             messages = json.loads(row['messages'])
             if not messages:
@@ -427,7 +435,9 @@ class Workbench:
                   if not binding['session_id'] else
                   'Continue task ' + task_id + '. Read bridge_get_tree before acting on decisions.\n' +
                   '\n'.join(item['actor'] + ': ' + item['body'] for item in inputs))
-        self.harness.run(self, task_id, prompt)
+        delivery = self.harness.run(self, task_id, prompt)
+        if not isinstance(delivery, dict) or delivery.get('prompt_delivered') is not True:
+            raise Invalid('The host did not confirm prompt delivery. Saved input remains pending; inspect the saved session before continuing.')
         with self.store.graph.transaction():
             for item in inputs:
                 self.store.graph.db.execute('UPDATE browser_inputs SET consumed=1 WHERE id=?', (item['id'],))

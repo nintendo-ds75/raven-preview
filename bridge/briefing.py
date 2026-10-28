@@ -747,10 +747,17 @@ def _focus(store, link: Link, nodes: list[dict], decision_id: str = "") -> dict 
     path = d.get("path") or ""
     if not paths and path and path != "unknown":
         paths = [path]
+    # An objective's proposed scope is JSON the signature binds to; the
+    # person reads its summary and a card, never the JSON.
+    from . import objective_text
+    governance = objective_text.parse(d.get("context") or "", d.get("category") or "", d.get("client_ref") or "")
+    objective = objective_text.card(governance) if governance is not None else None
+    if objective is not None:
+        context = objective_text.summary(governance)
     # Handing on, as `not me @person` does in Slack, on the same standing.
     can_refer = (_open(d) and d["status"] in ("pending", "resolved", "partial", "assumed", "proposed")
                  and bool(authz.basis_for(graph, link.actor, d, "refer")[0]))
-    return {"node_id": d["id"], "question": d["question"], "context": context, "paths": paths,
+    return {"node_id": d["id"], "question": d["question"], "context": context, "paths": paths, "objective": objective,
             "source_revalidation": d.get("source_revalidation"),
             "source_anchors": d.get("source_anchors", []), "work_item_association": d.get("work_item_association"),
             "approval_scope_text": d["approval_scope_text"], "replacement_ends_rule": bool(d.get("reusable")),
