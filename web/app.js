@@ -613,13 +613,19 @@ const authorityEnded = a => Boolean(a.effective_to) && a.effective_to.slice(0, 1
 const authorityOf = (a, p) => a.person_id ? a.person_id === p.id : !a.is_team && sameName(a.who, p.name);
 
 // One line per authority row: what they decide, where, and where the record
-// came from. Only a live row can be ended; an ended one stays, muted.
+// came from. Only a live row can be ended; an ended one stays, muted. The
+// list is headed 'Decides', so a 'decides' row names only its scope; a row
+// Raven learned from an answer links to that decision instead of naming
+// its id.
+const LEARNED_NOTE = /^answered decision (\S+), which reached them on inference$/;
 function authorityRow(a, who = '') {
   const ended = authorityEnded(a);
-  const parts = [`<strong>${esc(roleLabels[a.role] || a.role)} ${esc(a.scope_kind === 'repo' ? 'everything' : a.scope)}</strong>`,
-    esc(a.repo || 'every repository'), `from ${esc(sourceLabels[a.source] || a.source)}`];
+  const learned = LEARNED_NOTE.exec(a.note || '');
+  const role = a.role === 'decides' ? '' : `${roleLabels[a.role] || a.role} `;
+  const parts = [`<strong>${esc(role)}${esc(a.scope_kind === 'repo' ? 'everything' : a.scope)}</strong>`,
+    esc(a.repo || 'every repository'), learned ? `learned from <a href="#inbox" data-action="review" data-id="${esc(learned[1])}" title="Open the decision">an answer</a>` : `from ${esc(sourceLabels[a.source] || a.source)}`];
   if (a.asserted_by) parts.push(`asserted by ${esc(a.asserted_by)}`);
-  if (a.note) parts.push(esc(a.note));
+  if (a.note && !learned) parts.push(esc(a.note));
   if (!a.accepted) parts.push('(not yet accepted)');
   if (ended) parts.push(`ended ${esc(a.effective_to.slice(0, 10))}`);
   if (who) parts.unshift(esc(who));
@@ -637,17 +643,17 @@ function authorityRows(rows, who) {
 // A person, what the pending decisions wait on them for, and every authority
 // row recorded for them. Authority ids and data-action=end-authority are the
 // table's; only where they are shown changed.
-function personCard(p, index, rows = []) {
+function personCard(p, rows = []) {
   const team = `${esc(p.team || '')}${p.teams && p.teams.length ? `${p.team ? ' · ' : ''}${esc(p.teams.join(', '))}` : ''}`;
   const identities = [p.email, p.github_login ? '@' + p.github_login : '', p.slack_id ? 'Slack ' + p.slack_id : ''].filter(Boolean).map(esc).join(' · ');
   const waiting = state.decisions.filter(d => d.status === 'pending' && (d.owner_id === p.id || sameName(d.owner_name, p.name))).length;
-  return `<article class="person-card${p.active ? '' : ' inactive'}">${avatar(p.name, index)}<h2>${esc(p.name)}</h2>${team ? `<p>${team}</p>` : ''}${identities ? `<small>${identities}</small>` : ''}${p.active ? '' : '<small>inactive</small>'}${waiting ? `<p class="person-waiting">Waiting on them: ${waiting}</p>` : ''}<h3>Decides</h3>${authorityRows(rows)}${canAdminister() ? `<button class="button text" data-action="authority" data-person="${esc(p.id)}" aria-label="Say what they decide: ${esc(p.name)}">Say what they decide</button>` : ''}</article>`;
+  return `<article class="person-card${p.active ? '' : ' inactive'}">${avatar(p.name)}<h2>${esc(p.name)}</h2>${team ? `<p>${team}</p>` : ''}${identities ? `<small>${identities}</small>` : ''}${p.active ? '' : '<small>inactive</small>'}${waiting ? `<p class="person-waiting">Waiting on them: ${waiting}</p>` : ''}<h3>Decides</h3>${authorityRows(rows)}${canAdminister() ? `<button class="button small" data-action="authority" data-person="${esc(p.id)}" aria-label="Say what they decide: ${esc(p.name)}">Say what they decide</button>` : ''}</article>`;
 }
 
 // Rows the directory records for a team or a name no person card carries:
 // shown under one last card so no record disappears with the table.
-function otherCard(rows, index) {
-  return `<article class="person-card">${avatar('Other', index)}<h2>Other</h2><h3>Decides</h3>${authorityRows(rows, true)}</article>`;
+function otherCard(rows) {
+  return `<article class="person-card">${avatar('Other')}<h2>Other</h2><h3>Decides</h3>${authorityRows(rows, true)}</article>`;
 }
 
 function owners() {
@@ -660,13 +666,13 @@ function owners() {
   if (actions) actions.innerHTML = `<span class="page-count muted">${plural(people.length, 'person', 'people')}</span>${canAdminister() ? '<button class="button primary" data-action="person">Add person</button><details class="more-menu"><summary aria-label="More actions">More</summary><div class="more-menu-items"><button class="button text" data-action="team">Add team</button></div></details>' : ''}`;
   if (!people.length && !rows.length) return empty('Nobody yet.', 'Add the people who decide, or connect a repository in Settings and Raven finds them.', canAdminister() ? 'person' : '', 'Add person');
   const shown = new Set();
-  const cards = people.map((p, i) => {
+  const cards = people.map(p => {
     const mine = rows.filter(a => !shown.has(a.id) && authorityOf(a, p));
     mine.forEach(a => shown.add(a.id));
-    return personCard(p, i, mine);
+    return personCard(p, mine);
   });
   const other = rows.filter(a => !shown.has(a.id));
-  if (other.length) cards.push(otherCard(other, people.length));
+  if (other.length) cards.push(otherCard(other));
   return `<div class="people-grid">${cards.join('')}</div>`;
 }
 
