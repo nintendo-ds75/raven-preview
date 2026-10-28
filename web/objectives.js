@@ -144,15 +144,18 @@ function objectiveOpenLoops() {
   const loops = objectiveData?.without_model;
   if (!loops || !objectiveModelOff()) return '';
   const totals = loops.totals || {};
+  // A kind of loop with nothing in it is not listed; with nothing in any, the section is not drawn.
   const list = (key, title, line) => {
     const items = loops[key] || [], total = totals[key] ?? items.length;
-    return `<div class="objective-loop"><h3>${esc(title)} <span>${total}</span></h3>${items.length ? `<ul>${items.map(item => `<li>${line(item)}</li>`).join('')}</ul>${total > items.length ? `<p class="objective-muted">${total - items.length} more.</p>` : ''}` : '<p class="objective-muted">None.</p>'}</div>`;
+    if (!total || !items.length) return '';
+    return `<div class="objective-loop"><h3>${esc(title)} <span>${total}</span></h3><ul>${items.map(item => `<li>${line(item)}</li>`).join('')}</ul>${total > items.length ? `<p class="objective-muted">${total - items.length} more.</p>` : ''}</div>`;
   };
-  return `<section class="objective-section" id="objective-open-loops"><div class="objective-section-head"><h2>Open loops</h2></div>
-    ${list('followups', 'Follow-ups nobody adopted', item => `<a href="#runs/${encodeURIComponent(item.run_id || '')}">${esc(item.task_title || 'Task')}</a> · ${esc(item.question)}`)}
-    ${list('needs_review', 'Answers that need a second look', item => `<a href="#runs/${encodeURIComponent(item.run_id || '')}">${esc(item.task_title || 'Task')}</a> · ${esc(item.question)}${item.review_reason ? ` · ${esc(item.review_reason)}` : ''}`)}
-    ${list('checkpoints_due', 'Checkpoints due', item => `<a href="#today/${encodeURIComponent(item.id)}">${esc(item.title)}</a>${item.next_check_at ? ` · due ${esc(objectiveTime(item.next_check_at))}` : ' · due now'}${item.waiting_on ? ` · waiting on ${esc(item.waiting_on)}` : ''}`)}
-  </section>`;
+  const lists = [
+    list('followups', 'Follow-ups nobody adopted', item => `<a href="#runs/${encodeURIComponent(item.run_id || '')}">${esc(item.task_title || 'Task')}</a> · ${esc(item.question)}`),
+    list('needs_review', 'Answers that need a second look', item => `<a href="#runs/${encodeURIComponent(item.run_id || '')}">${esc(item.task_title || 'Task')}</a> · ${esc(item.question)}${item.review_reason ? ` · ${esc(item.review_reason)}` : ''}`),
+    list('checkpoints_due', 'Checkpoints due', item => `<a href="#today/${encodeURIComponent(item.id)}">${esc(item.title)}</a>${item.next_check_at ? ` · due ${esc(objectiveTime(item.next_check_at))}` : ' · due now'}${item.waiting_on ? ` · waiting on ${esc(item.waiting_on)}` : ''}`),
+  ].join('');
+  return lists ? `<section class="objective-section" id="objective-open-loops"><div class="objective-section-head"><h2>Open loops</h2></div>${lists}</section>` : '';
 }
 function objectiveProposalPage(item) {
   return `<a class="objective-text-link" href="#today">← Outcomes</a><header class="objective-detail-heading"><p class="objective-label">Suggested next step · ${esc(item.repo || item.repository || '')}</p><h1>${esc(item.title || 'Proposal')}</h1></header>${objectiveCard(item, true)}`;
