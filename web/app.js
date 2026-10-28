@@ -379,47 +379,61 @@ function metrics() {
   ].map(([label, count, note, glyph]) => `<div class="metric"><div class="metric-label">${label}${icon(glyph)}</div><div class="metric-number">${count}</div><div class="metric-note ${glyph === 'layers' ? 'green' : ''}">${note}</div></div>`).join('')}</div>`;
 }
 
-function kindBadge(d) {
-  // A recorded answer is a person's answer, whatever it began as. Measured live on 5e967e4: a signed docs
-  // card showed a Prediction badge beside "Answer recorded".
-  const kind = d.status === 'approved' ? 'answer' : d.kind || (d.prediction ? 'prediction' : 'new');
-  return `<span class="pill ${kind === 'evidence' ? 'green' : kind === 'prediction' ? '' : 'gray'}">${esc(kindLabels[kind] || kind)}</span>`;
+// Text a person decides from is shown whole: folded after a few lines with
+// a Show more button, never cut off. A short text has no button. The fold
+// is a class the button toggles; `shown` keeps the choice across redraws.
+const shown = new Set();
+function clamped(text, cls, key) {
+  const long = String(text || '').length > 220;
+  const folded = long && !shown.has(key);
+  return `<p class="${cls}${folded ? ' is-clamped' : ''}">${esc(text || '')}</p>${long ? `<button type="button" class="button text more" data-action="more" data-key="${esc(key)}">${folded ? 'Show more' : 'Show less'}</button>` : ''}`;
+}
+
+// The one box a card or the dialog shows for what is on the table: a
+// suggestion, a default, evidence, the agent's own answer, or an answer a
+// person stands behind. Label and body only; the pill says the state.
+function answerBox(d, actions = '') {
+  const body = d.answer || d.prediction || '';
+  let label = '', tone = 'prediction';
+  if (d.needs_review || d.source_refresh_required) label = `Needs a second look · ${d.review_reason || d.source_notice || 'an answer it leaned on was corrected'}`;
+  else if (d.status === 'approved') { label = `Answered by ${d.answered_by || d.owner_name || 'a person'}`; tone = ''; }
+  else if (['assumed', 'proposed'].includes(d.status) && signedNow(d)) { label = `Signed by ${d.signed_by || nameList(signersOf(d)) || 'a person'} · began as ${beganAs(d)}`; tone = ''; }
+  else if (halfSigned(d)) label = `Signed by ${nameList(signersOf(d))}, still waiting on ${nameList(stillToSign(d)) || 'a required approver'}`;
+  else if (d.status === 'resolved' || d.status === 'partial') { label = d.kind === 'answer' ? `Answered by ${d.answered_by || 'a person'}` : d.kind === 'agent' ? 'The agent decided' : 'Found in evidence'; tone = signedNow(d) ? '' : 'prediction'; }
+  else if (d.status === 'assumed') label = 'Default used';
+  else if (d.status === 'proposed' || (d.status === 'pending' && d.prediction)) label = predictionLabel(d);
+  if (!label || !body) return '';
+  return `<div class="context-box ${tone}"><span class="label">${esc(label)}</span>${esc(body)}${actions}</div>`;
 }
 
 function decisionCard(d, index) {
-  const approved = d.status === 'approved';
-  const settled = settledNow(d);
   // An objective's proposed scope is stored as JSON; the card reads it as a scope, never as JSON.
   const scope = typeof objectiveScope === 'function' ? objectiveScope(d) : null;
-  let box;
-  if (d.needs_review) box = `<div class="context-box prediction"><span class="label">Needs review · ${esc(d.review_reason || 'an answer it leaned on was corrected')}</span>${esc(d.answer || d.prediction || '')}</div>`;
-  else if (approved) box = `<div class="context-box"><span class="label">Recorded answer · ${esc(d.answered_by || d.owner_name || '')}</span>${esc(d.answer)}</div>`;
-  else if (d.status === 'resolved' || d.status === 'partial') box = `<div class="context-box"><span class="label">${resolvedLabel(d)} · ${esc(d.kind === 'agent' ? d.rationale || '' : d.evidence || '')}</span>${esc(d.answer)}</div>`;
-  else if ((d.status === 'assumed' || d.status === 'proposed') && signedNow(d)) box = `<div class="context-box"><span class="label">${esc(signedAs(d))} · began as ${esc(beganAs(d))}</span>${esc(d.answer || d.prediction || '')}</div>`;
-  else if (d.status === 'assumed' || d.status === 'proposed') box = `<div class="context-box prediction"><span class="label">${d.status === 'assumed' ? 'Default assumed · confirm or correct' : 'Prediction, unconfirmed · not a decision'}</span>${esc(d.answer || d.prediction || '')}</div>`;
-  else if (d.prediction) box = `<div class="context-box prediction"><span class="label">Suggested from a prior decision · approval pending</span>${esc(d.prediction)}</div>`;
-  else if (d.brief) box = `<div class="context-box"><span class="label">The brief · ${esc(d.run_title)}</span>${esc(d.brief)}</div>`;
-  else box = `<div class="context-box"><span class="label">Working on</span>${esc(d.run_title)} <span class="muted">/ ${esc(d.path)}</span></div>`;
+  const settled = settledNow(d);
+  const overdueMs = ((state.settings && state.settings.overdue_hours) || 72) * 3600e3;
+  const age = Date.now() - new Date(d.created_at).getTime();
+  const open = d.status === 'pending' && age > overdueMs ? `<span class="muted">open ${plural(Math.floor(age / 864e5), 'day')}</span>` : '';
+  const wantsSign = d.needs_review || (d.signoff === 'required' && d.status !== 'pending');
+  const button = scope ? 'Review and accept' : wantsSign ? 'Sign' : settled ? 'View' : 'Answer';
+  const taskHref = `#${(state.browser_tasks || []).some(t => t.task_id === d.run_id) ? 'work' : 'runs'}/${encodeURIComponent(d.run_id || '')}`;
   return `<article class="decision-card">
-    <div class="card-top"><span class="agent-symbol">${d.agent.includes('Claude') ? '✳' : d.agent.includes('Codex') ? '⌘' : '◇'}</span><span>${esc(d.agent)}</span><span>·</span><span class="repo">${esc(d.repo)}</span>${kindBadge(d)}<time datetime="${esc(d.created_at)}">${ago(d.created_at)}</time></div>
-    <h3>${esc(d.question)}</h3>${scope ? objectiveScopeCard(scope, `scope-${d.id}`) : `<p class="context">${esc(d.context)}</p>`}
-    ${box}
-    <div class="card-bottom"><span class="owner">${avatar(d.owner_name, index)}${esc(d.owner_name || 'Unassigned')}</span>${pill(statusLabel(d), settled ? 'green' : '')}${signoffLabel(d)}<button class="button small ${settled ? '' : 'soft'}" data-action="review" data-id="${esc(d.id)}">${settled ? 'View decision' : 'Review'} ${icon('arrow')}</button></div>
+    <div class="card-top"><span class="agent-symbol">${d.agent.includes('Claude') ? '✳' : d.agent.includes('Codex') ? '⌘' : '◇'}</span><span>${esc(d.agent)}</span><span>·</span><span class="repo">${esc(d.repo)}</span><time datetime="${esc(d.created_at)}">${ago(d.created_at)}</time>${open}</div>
+    <h3>${esc(d.question)}</h3>${d.run_title ? `<a class="card-task" href="${esc(taskHref)}" data-action="run" data-id="${esc(d.run_id)}">${esc(d.run_title)}</a>` : ''}
+    ${scope ? objectiveScopeCard(scope, `scope-${d.id}`) : clamped(d.context, 'context', `card-${d.id}`)}
+    ${answerBox(d)}
+    <div class="card-bottom"><span class="owner">${avatar(d.owner_name, index)}${esc(d.owner_name || 'No owner yet')}</span>${statusPill(d)}<button class="button small ${settled ? '' : 'soft'}" data-action="review" data-id="${esc(d.id)}">${button}</button></div>
   </article>`;
 }
 
 const eventLabels = {signed_in:'Person signed in', conformance_read:'Code review saved', task_note:'Context added', expand:'Decision explored', run_complete:'Evidence search finished', memory_reranked:'Prior answers compared', brief_withheld:'Unreliable brief withheld',task_started:'Task kicked off', node_added:'Node written to the tree', node_settled:'Settled by the agent', followup_added:'Follow-up question added', signoff:'Signed off', run_started:'Task registered', judgment_requested:'Judgment requested', prediction_suggested:'Prior answer suggested', owner_approved:'Decision recorded', answer_corrected:'Answer corrected', previous_answer:'Previous answer retained', owner_changed:'Owner reassigned', run_updated:'Run status updated', resolve:'Resolved from evidence', assume:'Default assumed', proposed:'Unratified proposal found', dedup_open:'Duplicate of an open question', twin_closed:'Twin question settled', route_unknown:'No owner in the graph', ask_drafted:'Routed from the ownership graph', index:'Repository ingested', conflict_resolved:'Newest answer won a conflict', memory_record_conflict:'Memory and record disagree', superseded:'Superseded', superseded_record:'Stale record replaced by newer', ownership_invalidated:'Ownership changed', followup_context:'Follow-up context resolved', route_learned:'Owner learned', overturn:'Answer overturned', answer:'Answer recorded'};
 const quietEvents = new Set(['probe','expand','decompose','run_complete','previous_answer','memory_noop','memory_updated']);
-const kindLabels = {evidence:'Evidence', prediction:'Prediction', new:'New judgment', agent:'Agent-settled', followup:'Follow-up', answer:'Answered by a person'};
-const statusLabels = {pending:'Needs judgment', approved:'Answer recorded', resolved:'Resolved from evidence', partial:'Partly resolved', assumed:'Default assumed', proposed:'Prediction, unconfirmed', duplicate:'Duplicate', suggested:'Follow-up for the agent', adopted:'Adopted by the agent'};
 // A signature, or a rule a person made, is what authorizes an answer; where the answer came from
 // (evidence, a prediction, an assumed default) stays visible, and never reads as unconfirmed once signed.
 const signedNow = d => ['signed','rule'].includes(d.signoff) && !d.needs_review;
-const signedAs = d => d.signoff === 'rule' ? 'Covered by a reusable rule' : `Signed${d.signed_by ? ` · ${d.signed_by}` : ''}`;
 // How a suggested answer relates to what it leans on, and the scope that answer was given for when this
-// request is outside it: "the same policy", "an analogy" and a conflict must read differently to the owner.
+// request is outside it: "the same policy" and "an earlier decision" must read differently to the owner.
 const predictionScope = d => { const m = /(?:^|; )prediction scope: ([^;]+)/.exec(d.evidence || ''); return m ? m[1].trim() : ''; };
-const predictionLabel = d => /how they decide \(the same policy/.test(d.evidence || '') ? 'Your earlier policy, applied here · confirm or correct' : /how they decide/.test(d.evidence || '') ? 'A guess from your earlier answers · confirm or correct' : 'Suggested from a prior answer · not approved';
+const predictionLabel = d => /how they decide \(the same policy/.test(d.evidence || '') ? 'Your earlier policy, applied here' : 'Suggested answer · from an earlier decision';
 const beganAs = d => d.kind === 'agent' ? 'the agent’s own answer' : d.status === 'assumed' ? 'a default Raven assumed' : d.status === 'proposed' ? 'a prediction from an earlier answer' : d.status === 'partial' ? 'a partial answer from evidence' : 'an answer from evidence';
 // Who a decision still waits on: each required approver without a
 // signature on it. Measured live: a decision its owner had answered read
@@ -428,9 +442,25 @@ const listOf = raw => { try { const v = Array.isArray(raw) ? raw : JSON.parse(ra
 const signersOf = d => listOf(d.signatures).map(s => String(s?.by || '')).filter(Boolean);
 const stillToSign = d => { const done = signersOf(d).map(n => n.toLowerCase()); return listOf(d.required_signers).map(String).filter(n => !done.includes(n.toLowerCase())); };
 const halfSigned = d => d.signoff === 'required' && signersOf(d).length > 0;
-const statusLabel = d => d.needs_review ? 'Needs review' : halfSigned(d) ? 'Signed in part' : d.status === 'suggested' && d.followup_required ? 'Required follow-up' : d.status === 'proposed' && signedNow(d) ? 'Signed prediction' : d.status === 'assumed' && signedNow(d) ? 'Signed default' : d.kind === 'agent' && d.status === 'resolved' ? 'Settled by the agent' : statusLabels[d.status] || d.status;
-const resolvedLabel = d => halfSigned(d) ? `${d.kind === 'answer' ? 'Answered and signed' : 'Signed'} by ${signersOf(d).join(', ')}, still waiting on ${stillToSign(d).join(', ') || 'a required approver'}` : d.kind === 'answer' ? `Answered by ${d.answered_by || 'a person'}` : d.kind === 'agent' ? 'Settled by the agent' : d.status === 'partial' ? 'Partly resolved from evidence' : d.status === 'assumed' ? 'Default assumed' : d.status === 'proposed' ? 'Prediction, unconfirmed' : 'Resolved from evidence';
-const signoffLabel = d => d.signoff === 'required' ? pill(halfSigned(d) && stillToSign(d).length ? `Waiting on ${stillToSign(d).join(', ')}` : 'Sign-off wanted') : d.signoff === 'signed' ? pill(`Signed · ${d.signed_by || ''}`, 'green') : d.signoff === 'rule' ? pill('Covered by a reusable rule', 'green') : '';
+// Status is one sentence that names a person, never a count or a term:
+// the same words on the card, the task page and the dialog. Two names at
+// most, then "and N more"; an empty name is never rendered.
+const nameList = list => list.length <= 2 ? list.join(', ') : `${list.slice(0, 2).join(', ')} and ${list.length - 2} more`;
+function statusSentence(d) {
+  if (d.needs_review || d.source_refresh_required) return {text: 'Needs a second look', tone: 'waiting'};
+  if (d.status === 'suggested') return {text: 'Follow-up for the agent', tone: 'neutral'};
+  if (d.status === 'adopted') return {text: 'Adopted by the agent', tone: 'neutral'};
+  if (d.status === 'duplicate') return {text: 'Duplicate', tone: 'neutral'};
+  if (d.status === 'pending') return {text: d.owner_name ? `Waiting on ${d.owner_name}` : 'No owner yet', tone: 'waiting'};
+  if (d.signoff === 'rule') return {text: 'Covered by a rule', tone: 'done'};
+  if (d.signoff === 'signed') { const by = d.signed_by || nameList(signersOf(d)); return {text: by ? `Signed by ${by}` : 'Signed', tone: 'done'}; }
+  if (halfSigned(d)) { const left = stillToSign(d); return {text: `Signed by ${nameList(signersOf(d))}${left.length ? `, waiting on ${nameList(left)}` : ''}`, tone: 'waiting'}; }
+  if (d.status === 'approved') return {text: `Answered by ${d.answered_by || d.owner_name || 'a person'}`, tone: 'done'};
+  if (needsYou(d)) return {text: d.owner_name ? `Sign-off wanted from ${d.owner_name}` : 'No owner yet', tone: 'waiting'};
+  const word = String(d.status || '').replaceAll('_', ' ');
+  return {text: word ? word[0].toUpperCase() + word.slice(1) : 'Recorded', tone: 'neutral'};
+}
+const statusPill = d => { const s = statusSentence(d); return pill(s.text, s.tone); };
 const settledStatuses = ['approved','resolved','partial'];
 const settledNow = d => !needsYou(d) && (settledStatuses.includes(d.status) || signedNow(d));
 // A person is needed for an open question, for a node Raven or the agent resolved without one, and for a
@@ -454,39 +484,33 @@ function activity() {
   }).join('') : '<p class="context">Activity appears as your agents start working.</p>'}</div></div>`;
 }
 
-function empty(title, description, action = '', button = '') {
-  return `<div class="empty">${icon('inbox')}<h3>${esc(title)}</h3><p>${esc(description)}</p>${action ? `<button class="button soft" data-action="${action}">${esc(button)}</button>` : ''}</div>`;
+function empty(title, description = '', action = '', button = '') {
+  return `<div class="empty">${icon('inbox')}<h3>${esc(title)}</h3>${description ? `<p>${esc(description)}</p>` : ''}${action ? `<button class="button soft" data-action="${action}">${esc(button)}</button>` : ''}</div>`;
 }
 
-// An empty tab says what it would hold and where the open work is. Measured
-// in Chromium: an empty Overdue tab and an empty Assigned-to-me tab both
-// read "You’re all caught up" above a workspace with four open decisions.
-function emptyInbox(query, tab, open) {
-  if (query) return empty('No matching decisions.', 'Try a different search.');
-  if (!state.decisions.length) return empty('You’re all caught up.', 'When an agent needs a person, the decision appears here.', 'help-connect', 'Connect an agent');
-  const elsewhere = open ? `${plural(open, 'decision')} elsewhere in the workspace ${open === 1 ? 'needs' : 'need'} a person: see Needs review.` : 'Nothing in the workspace waits on a person.';
-  if (tab === 'overdue') return empty('Nothing is overdue.', `Decisions open longer than ${Math.round(((state.settings && state.settings.overdue_hours) || 72) / 24)} days appear here. ${elsewhere}`);
-  if (tab === 'mine') return empty('Nothing waits on you.', elsewhere);
-  if (tab === 'predicted') return empty('No suggestions awaiting review.', 'An answer Raven suggests from an earlier decision appears here until a person confirms it.');
-  if (tab === 'evidence') return empty('Nothing resolved from evidence.', 'An answer Raven finds in connected records appears here for its owner to sign.');
-  return empty('You’re all caught up.', 'When an agent needs a person, the decision appears here.');
+// An empty tab says what it would hold. Measured in Chromium: an empty
+// Assigned-to-me tab read "You’re all caught up" above a workspace with
+// four open decisions.
+function emptyInbox(query, tab) {
+  if (query || (tab === 'decided' && ownerFilter)) return empty('No matching decisions.', 'Try a different search.');
+  if (tab === 'mine') return empty('Nothing waits on you.');
+  if (tab === 'decided') return empty('No decisions recorded yet.');
+  return state.decisions.length ? empty('Nothing needs a person.', 'When an agent needs a person, it appears here.')
+    : empty('Nothing needs a person.', 'When an agent needs a person, it appears here.', 'help-connect', 'Open Settings');
 }
 
+const decidedNow = d => settledStatuses.includes(d.status) && !d.superseded_by;
 function inbox() {
-  const pending = state.decisions.filter(needsYou);
-  const isPredicted = d => (d.status === 'pending' && d.prediction) || (['assumed','proposed'].includes(d.status) && !signedNow(d));
-  const isEvidence = d => ['resolved','partial'].includes(d.status);
-  const overdueMs = ((state.settings && state.settings.overdue_hours) || 72) * 3600e3;
-  const isOverdue = d => d.status === 'pending' && (Date.now() - new Date(d.created_at).getTime()) > overdueMs;
-  const mine = assignedToMe;
-  const rows = state.decisions.filter(d => (tab === 'all' || (tab === 'mine' ? mine(d) : tab === 'predicted' ? isPredicted(d) : tab === 'evidence' ? isEvidence(d) : tab === 'overdue' ? isOverdue(d) : needsYou(d))) && `${d.question} ${d.context} ${d.owner_name}`.toLowerCase().includes(query.toLowerCase()));
-  const demo = state.runs.some(r => r.agent.startsWith('Demo'));
-  return `${state.execution_config?.enabled ? '<div class="wide-toolbar"><button class="button primary" data-action="task">Start a task</button></div>' : ''}${demo ? `<div class="demo-banner">${icon('help')}Sample workspace · Demo runs are illustrative. New agent requests will appear here in real time.</div>` : ''}
-    <div class="work-grid"><section><div class="section-header"><h2>Across your workspace</h2>${pill(pending.length, 'gray')}<span class="muted">Each question names the person needed.</span></div>
-    <div class="toolbar">${[...(state.auth?.enabled && state.me?.role !== 'viewer' ? [['mine','Assigned to me',state.decisions.filter(mine).length]] : []),['pending','Needs review',pending.length],['overdue','Overdue',state.decisions.filter(isOverdue).length],['predicted','Suggested',state.decisions.filter(isPredicted).length],['evidence','From evidence',state.decisions.filter(isEvidence).length],['all','All decisions',state.decisions.length]].map(([key,label,count]) => `<button class="tab ${tab === key ? 'active' : ''}" data-action="tab" data-tab="${key}" aria-pressed="${tab === key}">${label}<span>${count}</span></button>`).join('')}<label class="search" aria-label="Search decisions">${icon('search')}<input id="inbox-search" type="search" placeholder="Search…" value="${esc(query)}"></label></div>
-    <div class="decision-list">${rows.length ? rows.map(decisionCard).join('') : emptyInbox(query, tab, pending.length)}</div>
-    <div class="section-footnote">${icon('shield')}Every answer keeps its owner, context, and history.</div></section>
-    </div>`;
+  const tabs = [...(state.auth?.enabled && state.me?.role !== 'viewer' ? [['mine', 'Needs me', state.decisions.filter(assignedToMe).length]] : []),
+    ['pending', 'All open', state.decisions.filter(needsYou).length], ['decided', 'Decided', state.decisions.filter(decidedNow).length]];
+  if (!tabs.some(([key]) => key === tab)) tab = personalInbox() ? 'mine' : 'pending';
+  const q = query.toLowerCase();
+  const rows = tab === 'decided'
+    ? state.decisions.filter(d => decidedNow(d) && (!ownerFilter || d.owner_id === ownerFilter) && `${d.question} ${d.answer} ${d.rationale} ${d.owner_name} ${d.evidence}`.toLowerCase().includes(q))
+      .sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')))
+    : state.decisions.filter(d => (tab === 'mine' ? assignedToMe(d) : needsYou(d)) && `${d.question} ${d.context} ${d.owner_name}`.toLowerCase().includes(q));
+  return `<div class="toolbar">${tabs.map(([key, label, count]) => `<button class="tab ${tab === key ? 'active' : ''}" data-action="tab" data-tab="${key}" aria-pressed="${tab === key}">${label}<span>${count}</span></button>`).join('')}<label class="search" aria-label="Search decisions">${icon('search')}<input id="inbox-search" type="search" placeholder="Search" value="${esc(query)}"></label>${tab === 'decided' ? `<select id="owner-filter" aria-label="Filter by owner"><option value="">All owners</option>${state.owners.map(o => `<option value="${esc(o.id)}" ${ownerFilter === o.id ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select>` : ''}</div>
+    <div class="decision-list">${rows.length ? rows.map(decisionCard).join('') : emptyInbox(query, tab)}</div>`;
 }
 
 function durationLabel(seconds) {
@@ -529,11 +553,6 @@ function runs() {
     const pending = decisions.filter(needsYou);
     return `<tr><td><strong>${esc(run.title)}</strong><small>${esc(run.repo)}</small></td><td>${esc(run.agent)}</td><td>${pill(pending.length ? 'Waiting for decisions' : runStatusLabel(run.status), pending.length ? '' : 'gray')}</td><td>${decisions.length} total${pending.length ? ` · ${pending.length} need a person` : ''}</td><td>${ago(run.updated_at)}</td><td><button class="button small" data-action="run" data-id="${esc(run.id)}">View run</button></td></tr>`;
   }).join('')}</tbody></table></div>` : empty('No tasks yet.', 'Connect your coding agent, then give it a task. It appears here with its decisions.', 'help-connect', 'Connect an agent')}`;
-}
-
-function memory() {
-  const decisions = state.decisions.filter(d => settledStatuses.includes(d.status) && !d.superseded_by && (!ownerFilter || d.owner_id === ownerFilter) && `${d.question} ${d.answer} ${d.rationale} ${d.owner_name} ${d.evidence}`.toLowerCase().includes(query.toLowerCase()));
-  return `<p class="notice">A past answer is evidence for the next task, not permission to use it. Fresh owner signoff is required unless an enabled standing rule covers the new case.</p><div class="filter-row"><input id="memory-search" type="search" placeholder="Search questions, answers, or rationale…" aria-label="Search decision memory" value="${esc(query)}"><select id="owner-filter" aria-label="Filter by owner"><option value="">All owners</option>${state.owners.map(o => `<option value="${esc(o.id)}" ${ownerFilter === o.id ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select><button class="button" data-action="export">Export history ↗</button></div><div class="memory-list">${decisions.length ? decisions.map(d => `<article class="decision-card"><div class="card-top">${pill(statusLabel(d),signedNow(d) ? 'green' : '')}${signoffLabel(d)}${kindBadge(d)}<span>${esc(d.answered_by || d.owner_name || '')}</span><time>${ago(d.updated_at)}</time></div><h3>${esc(d.question)}</h3><p class="result-answer">${esc(d.answer)}</p><p class="context">${esc(d.rationale || d.evidence || '')}</p><button class="button small" data-action="review" data-id="${esc(d.id)}">Context & history ${icon('arrow')}</button></article>`).join('') : empty('A place for decisions worth remembering.', query || ownerFilter ? 'No decisions match these filters.' : 'Answers recorded in the inbox will appear here with their context and revision history.')}</div>`;
 }
 
 function ownershipGraph() {
@@ -925,7 +944,7 @@ function ruleBox(d) {
   if (d.reusable) {
     return `<div class="context-box"><span class="label">Reusable rule${d.rule_by ? ` · made by ${esc(d.rule_by)}` : ''}</span>Questions memory matches to this answer ${state.settings && state.settings.auto_rules ? 'resolve without a fresh signature' : 'are shown as covered by this rule (automatic rules are off, so a person still signs)'}${d.rule_conditions ? ` when they satisfy <strong>${esc(d.rule_conditions)}</strong>` : ''}${d.rule_scope === 'any' ? ', in any scope' : ', in this scope only'}${d.rule_expires ? `, until ${esc(d.rule_expires.slice(0, 10))}` : ''}. Ending it puts every outstanding node it authorized back in front of a person.<div class="modal-actions"><button class="button small" data-action="end-rule" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}">End the rule</button></div></div>`;
   }
-  return `<details class="history"><summary>Make this answer a reusable rule</summary><form id="rule-form" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}"><label for="rule-conditions">Applies when the question mentions (optional; one phrase per line)</label><textarea id="rule-conditions" name="conditions" maxlength="500" placeholder="enterprise plan"></textarea><label for="rule-expires">Expires (optional, YYYY-MM-DD)</label><input id="rule-expires" name="expires" maxlength="25" placeholder="2027-01-01"><label for="rule-scope"><input type="checkbox" id="rule-scope" name="scope" value="any"> Applies anywhere (other customers, other files); otherwise only in this decision's own scope</label><p class="context">By default every decision is request-specific: a later task that asks the same thing gets this answer as evidence and still needs your signature. A rule skips that signature while its conditions hold, once automatic rules are on under People &amp; ownership. Conditions are checked against what the agent states as facts (<code>plan=enterprise</code>) or phrases the question carries and does not deny; a missing fact means a person decides.</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button class="button primary small" type="submit">Make it a rule</button></div></form></details>`;
+  return `<details class="history"><summary>Make this a rule</summary><form id="rule-form" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}"><label for="rule-conditions">Applies when the question mentions (optional; one phrase per line)</label><textarea id="rule-conditions" name="conditions" maxlength="500" placeholder="enterprise plan"></textarea><label for="rule-expires">Expires (optional, YYYY-MM-DD)</label><input id="rule-expires" name="expires" maxlength="25" placeholder="2027-01-01"><label for="rule-scope"><input type="checkbox" id="rule-scope" name="scope" value="any"> Applies anywhere (other customers, other files); otherwise only in this decision's own scope</label><p class="context">By default every decision is request-specific: a later task that asks the same thing gets this answer as evidence and still needs your signature. A rule skips that signature while its conditions hold, once automatic rules are on in Settings. Conditions are checked against what the agent states as facts (<code>plan=enterprise</code>) or phrases the question carries and does not deny; a missing fact means a person decides.</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button class="button primary small" type="submit">Make it a rule</button></div></form></details>`;
 }
 
 function sourceSnapshots(sources) {
@@ -982,12 +1001,10 @@ function applicabilityFields(d, prefix) {
   let spec = {};
   try { spec = typeof d.applicability === 'string' ? JSON.parse(d.applicability || '{}') : (d.applicability || {}); } catch (_) { /* Old rows have no declaration. */ }
   const pairs = obj => Object.entries(obj || {}).map(([k, v]) => `${k}=${v}`).join(', ');
-  return `<details class="history"><summary>Where this answer applies (optional)</summary>
-    <label for="${prefix}-requires">Required facts</label><input id="${prefix}-requires" name="applies_when" value="${esc(pairs(spec.requires))}" placeholder="plan=enterprise, region=us" maxlength="2000">
+  return `<label for="${prefix}-requires">Required facts</label><input id="${prefix}-requires" name="applies_when" value="${esc(pairs(spec.requires))}" placeholder="plan=enterprise, region=us" maxlength="2000">
     <label for="${prefix}-excludes">Exceptions</label><input id="${prefix}-excludes" name="excludes_when" value="${esc(pairs(spec.excludes))}" placeholder="contract=monthly" maxlength="2000">
     <label for="${prefix}-paths">Repository paths</label><input id="${prefix}-paths" name="applies_to_paths" value="${esc((spec.paths || []).join(', '))}" placeholder="billing/, pricing/rules.py" maxlength="2000">
-    <label for="${prefix}-until">Valid until</label><input id="${prefix}-until" name="valid_until" type="date" value="${esc((spec.valid_until || '').slice(0, 10))}">
-    <p class="context">A later agent must state every required fact and a matching path before Raven reuses this answer. Missing information goes back to a person. This does not make the answer an automatic rule.</p></details>`;
+    <label for="${prefix}-until">Valid until</label><input id="${prefix}-until" name="valid_until" type="date" value="${esc((spec.valid_until || '').slice(0, 10))}">`;
 }
 
 function takeApplicability(data) {
@@ -1009,30 +1026,31 @@ function takeApplicability(data) {
 
 function followupControls(d) {
   if (!(d.allowed_actions || []).includes('followup')) return '';
-  return `<div class="context-box"><span class="label">Follow-up questions for the agent · the right questions for the next level</span><textarea id="followups" aria-label="Follow-up questions" placeholder="One question per line. They appear on the agent's tree under this decision." maxlength="4000"></textarea><label for="followups-required"><input type="checkbox" id="followups-required"> Required: the task cannot finish until the agent takes these up and they are answered</label><button class="button small soft" data-action="followups" data-id="${esc(d.id)}">Add follow-up questions</button></div>`;
+  return `<h3>Follow-up questions for the agent</h3><textarea id="followups" aria-label="Follow-up questions" placeholder="One question per line." maxlength="4000"></textarea><label for="followups-required"><input type="checkbox" id="followups-required"> Required before the task can finish</label><div class="modal-actions"><button class="button small" data-action="followups" data-id="${esc(d.id)}">Add follow-up questions</button></div>`;
 }
 
 function reframeControls(d) {
   if (!(d.allowed_actions || []).includes('correct') || ['withdrawn','duplicate','adopted','suggested'].includes(d.status)) return '';
-  return `<details class="history"><summary>Is this the wrong question?</summary>
-    <p class="context">Replace the question when its premise is mistaken. This clears its old answer and signatures, reroutes it, and marks dependent work for review. Its history is retained.</p>
+  return `<h3>Change the question</h3>
     <label for="reframe-question">Corrected question</label><textarea id="reframe-question" maxlength="2000">${esc(d.question)}</textarea>
-    <label for="reframe-reason">Why does the question need to change?</label><textarea id="reframe-reason" maxlength="4000"></textarea>
-    <button class="button small" data-action="reframe" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}">Replace question and clear old signatures</button></details>`;
+    <label for="reframe-reason">Why</label><textarea id="reframe-reason" maxlength="4000"></textarea>
+    <div class="modal-actions"><button class="button small" data-action="reframe" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}">Replace the question</button></div>`;
 }
 
 // Closed by default: the person opened the decision to answer it, and the
 // answer form is what should be on screen; the question box is one line
-// away for the times the context is not enough.
+// away for the times the context is not enough. Absent when the server has
+// no model to read with.
 function decisionInquiry(d) {
-  return `<details class="decision-inquiry" id="decision-inquiry-${esc(d.id)}"><summary>Ask Raven before deciding</summary><form data-decision-inquiry="${esc(d.id)}" data-task="${esc(d.run_id)}"><label for="decision-inquiry-text">Question about the context, alternatives or consequences</label><textarea id="decision-inquiry-text" name="question" maxlength="2000" required placeholder="What would change if we choose the other option?"></textarea><p class="context">Read-only clarification. Record your answer or sign off separately below.</p><button class="button small" type="submit">Ask Raven</button><div class="decision-inquiry-result" role="status"></div></form></details>`;
+  if (state.model?.investigation === false) return '';
+  return `<details class="decision-inquiry" id="decision-inquiry-${esc(d.id)}"><summary>Ask Raven</summary><form data-decision-inquiry="${esc(d.id)}" data-task="${esc(d.run_id)}"><label class="sr-only" for="decision-inquiry-text">Question for Raven</label><textarea id="decision-inquiry-text" name="question" maxlength="2000" required placeholder="What would change if we chose the other option?"></textarea><button class="button small" type="submit">Ask</button><div class="decision-inquiry-result" role="status"></div></form></details>`;
 }
 
-// Show the current record before the request that originally raised it.
-function decisionCurrentSummary(d) {
-  const stale = d.needs_review || d.source_refresh_required;
-  const title = stale ? 'Recorded answer · review required' : d.signoff === 'rule' ? 'Answer covered by standing rule' : signedNow(d) ? 'Current signed answer' : 'Current recorded answer';
-  return `<section class="decision-current" aria-label="Current decision"><div class="metadata">${stale ? pill('Approval needs review') : pill(statusLabel(d))}${stale ? '' : signoffLabel(d)}</div><h3>${d.answer ? title : 'No answer recorded yet'}</h3>${d.answer ? `<p class="decision-current-answer">${esc(d.answer)}</p>` : ''}<p class="context">${d.signed_by ? `Recorded signer: ${esc(d.signed_by)}. ` : ''}${d.answered_by ? `Answer recorded by: ${esc(d.answered_by)}. ` : ''}Owner: ${esc(d.owner_name || 'Unassigned')}.</p>${stale ? `<p class="task-warning">${esc(d.review_reason || d.source_notice || 'Review current evidence before using this answer. Earlier sign-off does not authorize it while review is required.')}</p>` : ''}${d.rationale ? `<p class="decision-current-reason"><strong>Why:</strong> ${esc(d.rationale)}</p>` : ''}</section>`;
+// The current answer (when nothing newer is on the table) and the context
+// the question was asked with, folded after four lines.
+function decisionCurrentSummary(d, withAnswer = true) {
+  const scope = typeof objectiveScope === 'function' ? objectiveScope(d) : null;
+  return `<section class="decision-current" aria-label="Current decision">${withAnswer && d.answer ? `<p class="decision-current-answer">${esc(d.answer)}</p>${d.rationale ? `<p class="decision-current-reason"><strong>Why:</strong> ${esc(d.rationale)}</p>` : ''}` : ''}${scope ? objectiveScopeCard(scope, `current-${d.id}`) : clamped(d.context, 'modal-context', `modal-${d.id}`)}</section>`;
 }
 
 function decisionReviewScope(d) {
@@ -1046,22 +1064,14 @@ function decisionReviewScope(d) {
   // Preserve the literal fallback for numbers JavaScript cannot represent.
   const unsafe = value => typeof value === 'number' ? !Number.isFinite(value) || Object.is(value,-0) || Number.isInteger(value) && !Number.isSafeInteger(value) : value !== null && typeof value === 'object' && Object.values(value).some(unsafe);
   if (unsafe(scope)) return approvalScope(d);
-  return `<section class="decision-current-scope" aria-label="Current recorded scope"><h3>Current recorded scope</h3><dl class="scope-fields">${fields.map(([key,value]) => `<dt>${esc(labels[key] || key)}</dt><dd data-scope-field="${esc(key)}">${scopeValue(value,key)}</dd>`).join('')}</dl><details class="history decision-original-scope"><summary>Original request & complete recorded scope</summary><p class="context">The request and its background may predate the current answer above. They do not replace its recorded decision or approval status.</p>${approvalScope(d)}</details></section>`;
+  return `<section class="decision-current-scope" aria-label="Current recorded scope"><h3>Current recorded scope</h3><dl class="scope-fields">${fields.map(([key,value]) => `<dt>${esc(labels[key] || key)}</dt><dd data-scope-field="${esc(key)}">${scopeValue(value,key)}</dd>`).join('')}</dl><details class="history decision-original-scope"><summary>Original request & complete recorded scope</summary>${approvalScope(d)}</details></section>`;
 }
 
 function decisionBackground(d) {
   const scope = typeof objectiveScope === 'function' ? objectiveScope(d) : null;
-  return `<details class="history decision-background" ${!d.answer && !d.prediction ? 'open' : ''}><summary>Recorded background & evidence</summary><p class="context">Context captured when this question was raised may describe an earlier unresolved state. Read it alongside the current answer and scope above.</p>${d.brief ? `<p><strong>Original brief:</strong> ${esc(d.brief)}</p>` : ''}${scope ? objectiveScopeCard(scope, `background-${d.id}`) : `<p class="modal-context">${esc(d.context || '')}</p>`}${d.evidence ? `<p class="context"><strong>Recorded evidence:</strong> ${esc(d.evidence)}</p>` : ''}${workItemContext(d)}${sourceEvidence(d.sources, d.needs_review ? null : d.source_revalidation)}</details>`;
+  return `<details class="history decision-background" ${!d.answer && !d.prediction ? 'open' : ''}><summary>Recorded background & evidence</summary>${d.brief ? `<p><strong>Original brief:</strong> ${esc(d.brief)}</p>` : ''}${scope ? objectiveScopeCard(scope, `background-${d.id}`) : d.context ? `<p class="modal-context">${esc(d.context)}</p>` : ''}${d.evidence ? `<p class="context"><strong>Recorded evidence:</strong> ${esc(d.evidence)}</p>` : ''}${workItemContext(d)}${sourceEvidence(d.sources, d.needs_review ? null : d.source_revalidation)}</details>`;
 }
 
-// Why the signed-in person may only read this decision, and what would let
-// them act: the authority map (a person it names for the decision's scope
-// may answer and sign). Measured in a shared workspace: a member whose
-// name matched the owner's read "Alex Morgan owns this decision" under
-// their own name, with no way on.
-// An invitation links to a person on the map by exact email on its own. A
-// person seeded without an email (an owner from CODEOWNERS or git history)
-// is linked only when the admin names them here, never by a matching name.
 function inviteForm(people, preset = {}) {
   const unlinked = people.filter(p => p.active && !p.email && !p.github_id);
   const picker = unlinked.length ? `<label>Who this is for<select name="person_id"><option value="">A new teammate</option>${unlinked.map(p => `<option value="${esc(p.id)}"${preset.person_id === p.id ? ' selected' : ''}>${esc(p.name)}${p.team ? ` · ${esc(p.team)}` : ''} — already on the map, no email</option>`).join('')}</select></label><p class="field-help">A person already on the map with this email is linked on their own. Someone on the map without an email is linked only when you name them here; a matching name is not enough.</p>` : '';
@@ -1076,19 +1086,30 @@ function inviteForm(people, preset = {}) {
 function ownerAccountNotice(d, withActions) {
   const account = d.owner_account;
   if (!account || account.state === 'account' || !d.owner_name) return '';
-  const who = esc(d.owner_name);
+  const who = esc(d.owner_name), first = esc(String(d.owner_name).trim().split(/\s+/)[0]);
   const admin = state.me?.role === 'admin';
   const actions = !withActions ? '' : admin
-    ? `<div class="modal-actions"><button class="button small" data-action="invite-owner" data-person="${esc(account.person_id || '')}" data-email="${esc(account.email || '')}">${account.state === 'invited' ? 'Invite again' : `Invite ${who}`}</button></div><div class="modal-owner">${avatar(d.owner_name)}<select id="assign-owner" aria-label="Decision owner">${ownerOptions(d.owner_id)}</select><button class="button small soft" data-action="refer" data-override="1" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}">Hand on &amp; learn</button></div><p class="context">Handing on is recorded as your admin override: it moves this request to the person you pick and teaches Raven that they decide, once they answer. It signs nothing.</p>`
+    ? `<div class="modal-actions"><button class="button small" data-action="invite-owner" data-person="${esc(account.person_id || '')}" data-email="${esc(account.email || '')}">${account.state === 'invited' ? 'Invite again' : `Invite ${first}`}</button></div>${handOnRow(d, true)}<p class="context">Recorded as your admin override. It signs nothing.</p>`
     : '<p class="context">An administrator can invite them or hand this on.</p>';
-  return `<div class="context-box prediction"><span class="label">Nobody can sign this yet</span>${who} ${account.state === 'invited' ? 'has been invited but has not joined yet' : 'has no account yet'}, so this decision waits until they join.${actions}</div>`;
+  return `<div class="context-box prediction"><span class="label">${who} is not in Raven yet</span>${account.state === 'invited' ? 'They were invited but have not joined yet.' : 'Nobody can sign this until they join.'}${actions}</div>`;
+}
+
+// One row hands a decision on. Unchecked, the button assigns this request
+// only (/assign); checked, it also teaches Raven that the person decides
+// the chosen scope (/refer). An admin's override is a refer, so its row
+// starts checked.
+function handOnRow(d, override = false) {
+  const options = d.handon?.options || [];
+  const chosen = d.handon?.default || {};
+  return `<div class="modal-owner">${avatar(d.owner_name)}<select id="assign-owner" aria-label="Hand on to">${ownerOptions(d.owner_id)}</select><button class="button small" id="hand-on" data-action="${override ? 'refer' : 'assign'}" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}"${override ? ' data-override="1"' : ''}>Hand on</button></div>
+    <label class="refer-learn" for="refer-learn"><input type="checkbox" id="refer-learn"${override ? ' checked' : ''}> They decide this from now on</label>
+    <div class="refer-scope" id="refer-scope-row"${override ? '' : ' hidden'}>${options.length ? `<label for="refer-scope">What they decide</label><select id="refer-scope">${options.map(o => `<option value="${esc(o.scope_kind)}:${esc(o.scope)}" ${o.scope_kind === chosen.scope_kind && o.scope === chosen.scope ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select>` : ''}${d.handon?.why_none ? `<p class="field-help">${esc(d.handon.why_none)}; pick a scope to teach one.</p>` : ''}</div>`;
 }
 
 function readOnlyReason(d) {
-  const owner = d.owner_name ? `${esc(d.owner_name)} owns this decision` : 'This decision has no owner yet';
-  if (state.me?.role === 'viewer') return `Read-only access. ${owner}.`;
-  const how = state.me?.role === 'admin' ? 'record your authority' : 'ask an administrator to record your authority';
-  return `${owner}; you can add follow-up questions here and context on the task. To answer or sign it yourself, ${how} for its scope under People &amp; ownership.`;
+  const owner = d.owner_name ? `${esc(d.owner_name)} decides this.` : 'No owner yet.';
+  if (state.me?.role === 'viewer') return `Read-only. ${owner}`;
+  return `${owner} You can read it and add notes.`;
 }
 
 async function review(id) {
@@ -1098,19 +1119,17 @@ async function review(id) {
     if (requestVersion !== modalVersion) return;
     const canDecide = (d.allowed_actions || []).includes('answer');
     const canRoute = (d.allowed_actions || []).includes('assign');
-    if (!canDecide && !canRoute) {
-      openModal(d.question, `${d.agent} · ${d.run_title}`, `${decisionCurrentSummary(d)}${decisionReviewScope(d)}${d.consequences ? `<p class="context"><strong>Consequences:</strong> ${esc(typeof d.consequences === 'string' ? d.consequences : JSON.stringify(d.consequences))}</p>` : ''}${decisionInquiry(d)}${d.reusable ? '<p class="context">Recording a new or corrected answer retires the existing standing rule. A sign-off with unchanged answer and sources keeps it. Future automatic reuse needs a fresh explicit make-rule action.</p>' : ''}${ownerAccountNotice(d, true)}<p class="context">${readOnlyReason(d)}</p>${decisionBackground(d)}${d.routing_reason ? `<p class="context"><strong>Routing:</strong> ${esc(d.routing_reason)}</p>` : ''}${d.source_id ? `<button class="button small" data-action="source" data-id="${esc(d.source_id)}">Inspect source decision</button>` : ''}${followupControls(d)}<details class="history"><summary>Decision history · ${plural(d.events.length, 'event')}</summary>${d.events.map(e => `<div class="history-item"><strong>${esc(eventLabels[e.kind] || e.kind)}</strong>${esc(e.detail)}<br><small>${esc(new Date(e.created_at).toLocaleString())}</small></div>`).join('')}</details>`);
-      return;
-    }
+    const readOnly = !canDecide && !canRoute;
     const approved = d.status === 'approved';
     const settled = settledNow(d);
     // Signed or covered by a rule, but not a recorded answer: it began as evidence, a prediction or an
     // assumed default, a person stands behind it now, and what is left is to correct it or make it a rule.
     const signed = signedNow(d) && !approved;
-    // Three shapes: a node waiting for sign-off gets one block (sign off or correct); a follow-up,
+    // Three shapes: a node waiting for sign-off gets one block (sign or correct); a follow-up,
     // adopted or duplicate node takes no owner and no answer; everything else takes the answer form.
     const signoffWanted = canDecide && (d.signoff === 'required' || d.needs_review) && !approved && !['pending','suggested','adopted','duplicate'].includes(d.status);
     const inert = ['suggested','adopted','duplicate'].includes(d.status);
+    const answerForm = canDecide && !inert && !signoffWanted && !signed;
     // A node nobody was routed to is the one that most needs placing, so
     // a node waiting for sign-off is assignable too, not only an open question.
     const assignable = canRoute && (d.status === 'pending' || (d.signoff === 'required' && !inert));
@@ -1120,28 +1139,36 @@ async function review(id) {
     // Locally, a decision one approver signed is signed next as the one
     // it still waits on, not again as its owner.
     const signer = me || (halfSigned(d) && stillToSign(d)[0]) || d.owner_name || 'the local operator';
-    const suggestion = !approved && !signoffWanted && !signed ? (d.prediction || ((d.status === 'assumed' || d.status === 'proposed' || d.status === 'resolved' || d.status === 'partial') ? d.answer : '')) : '';
-    const canonical = d.canonical ? `<div class="context-box"><span class="label">Same decision as node ${esc(d.canonical.id)} · ${esc(statusLabels[d.canonical.status] || d.canonical.status)}${d.canonical.answered_by ? ` · ${esc(d.canonical.answered_by)}` : ''}</span>${esc(d.canonical.answer || 'Not answered yet.')}<br><button class="button text small" data-action="source" data-id="${esc(d.canonical.id)}">Open the canonical decision ↗</button></div>` : '';
+    const recordedAs = `<p class="context">${me ? `Recorded as ${esc(me)}.` : `Recorded by the local operator on behalf of ${esc(signer)}.`}</p>`;
+    const scope = typeof objectiveScope === 'function' ? objectiveScope(d) : null;
+    const stale = d.needs_review || d.source_refresh_required;
+    // What is on the table, as one box: absent once a person stands behind the answer,
+    // which the current-answer block above then carries.
+    const onTable = d.answer || d.prediction || '';
+    const box = (approved || signedNow(d)) && !stale ? '' : answerBox(d, `${predictionScope(d) ? `<p class="context"><strong>Scope:</strong> ${esc(predictionScope(d))}</p>` : ''}${answerForm && onTable ? `<button class="button text small" data-action="use-suggestion" data-text="${esc(onTable)}">Use this answer</button>` : ''}${d.source_id ? `<button class="button text small" data-action="source" data-id="${esc(d.source_id)}">Open the earlier decision</button>` : ''}`);
+    const canonical = d.canonical ? `<div class="context-box"><span class="label">Same decision as ${esc(d.canonical.id)} · ${esc(statusSentence(d.canonical).text)}${d.canonical.answered_by ? ` · ${esc(d.canonical.answered_by)}` : ''}</span>${esc(d.canonical.answer || 'Not answered yet.')}<br><button class="button text small" data-action="source" data-id="${esc(d.canonical.id)}">Open the earlier decision</button></div>` : '';
     // Two sources that disagree, and the records the question names with their status, stated up front rather
     // than left in the evidence. Measured live on 63eb671: the brief said no policy was given beside a conflict.
     const conflicts = (d.evidence || '').split(/;\s+(?=[a-z]+:\s)/).filter(p => p.startsWith('conflict:')).map(p => p.slice(9).trim());
-    const upfront = `${conflicts.length && !settled ? `<div class="context-box prediction"><span class="label">Conflict · a person decides which stands</span>${esc(conflicts.join(' '))}</div>` : ''}${d.records_named ? `<p class="context"><strong>Records it names:</strong> ${esc(d.records_named)}.</p>` : ''}`;
-    openModal(d.question, `${d.agent} · ${d.run_title}`, `${decisionCurrentSummary(d)}${decisionReviewScope(d)}${d.consequences ? `<p class="context"><strong>Consequences:</strong> ${esc(typeof d.consequences === 'string' ? d.consequences : JSON.stringify(d.consequences))}</p>` : ''}${decisionInquiry(d)}${d.reusable ? '<p class="context">Recording a new or corrected answer retires the existing standing rule. A sign-off with unchanged answer and sources keeps it. Future automatic reuse needs a fresh explicit make-rule action.</p>' : ''}${upfront}${d.source_notice ? `<p class="context">${esc(d.source_notice)}</p>` : ''}${settled ? decisionBackground(d) : `${workItemContext(d)}${sourceEvidence(d.sources, d.needs_review ? null : d.source_revalidation)}${decisionBackground({...d, sources:[], evidence:''})}`}${canonical}
-      ${canDecide && !inert && state.auth?.enabled && state.me?.id && ['session','token'].includes(state.me.kind) ? `<div class="context-box"><strong>Prefer to talk it through?</strong><p class="context">Use an attributed interview, with optional browser dictation. Review and confirm the exact decision before the agent can use it.</p><button class="button small" data-action="interview-start" data-task="${esc(d.run_id)}" data-id="${esc(d.id)}">Start or resume interview</button></div>` : ''}
-      ${d.needs_review ? `<div class="context-box prediction"><span class="label">Needs review</span>${esc(d.review_reason || 'An answer this decision leaned on was corrected.')} Confirm the answer below by signing it, or correct it.</div>` : ''}
-
-      ${(d.allowed_actions || []).includes('rule') && (approved || (signed && d.signoff === 'signed')) && !inert ? ruleBox(d) : ''}
-      ${d.evidence && !signoffWanted && !settled ? `<p class="context"><strong>Evidence:</strong> ${esc(d.evidence)}</p>` : ''}${d.owner_evidence ? `<details class="history"><summary>Why this owner</summary><p class="context">${esc(d.owner_evidence)}</p></details>` : ''}
-      ${suggestion ? `<div class="context-box prediction"><span class="label">${d.status === 'resolved' || d.status === 'partial' ? resolvedLabel(d) : d.status === 'assumed' ? 'Default assumed · not approved' : d.status === 'proposed' ? 'Prediction, unconfirmed · not a decision' : predictionLabel(d)}</span>${esc(suggestion)}${predictionScope(d) ? `<p class="context"><strong>Scope:</strong> ${esc(predictionScope(d))}</p>` : '<br>'}<button class="button text small" data-action="use-suggestion" data-text="${esc(suggestion)}">Use this text as the answer</button>${d.source_id ? `<button class="button text small" data-action="source" data-id="${esc(d.source_id)}">Inspect source decision ↗</button>` : ''}</div>` : ''}
-      ${signoffWanted ? `<div class="context-box prediction"><span class="label">${resolvedLabel(d)}${halfSigned(d) ? ' · every required approver signs' : ' · evidence, not sign-off · your signature is wanted'}</span>${esc(d.answer || d.prediction || '')}${d.evidence ? `<p class="context"><strong>Evidence:</strong> ${esc(d.evidence)}</p>` : ''}<p class="context">The agent prepares on this answer and cannot finish its task until you sign it or correct it.</p>${d.source_id ? `<button class="button text small" data-action="source" data-id="${esc(d.source_id)}">Inspect source decision ↗</button>` : ''}${sourceRevalidationFields(d, 'signoff')}<div class="modal-actions"><button class="button primary small" data-action="signoff" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}">Sign off as ${esc(signer)} ${icon('check')}</button></div></div>
-      <form id="correct-form" data-id="${esc(d.id)}"><input type="hidden" name="expected_updated_at" value="${esc(d.updated_at)}"><label for="correction">Or correct it</label><textarea id="correction" name="answer" placeholder="The answer the agent should act on instead." maxlength="12000" required></textarea><label for="correction-rationale">Why this correction?</label><textarea id="correction-rationale" name="rationale" placeholder="Capture the reasoning for future tasks." maxlength="12000" required></textarea>${applicabilityFields(d, 'correction')}${sourceRevalidationFields(d, 'correction')}${sourceReplacementField(d)}<p class="context">A correction is a signed answer ${me ? `recorded as ${esc(me)}` : `recorded on behalf of ${esc(signer)}`}; the agent reads it on the tree, and every decision that leaned on the old answer is marked for review.</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Close</button><button class="button primary" type="submit">Record correction ${icon('check')}</button></div></form>` : ''}
-      ${inert || settled ? '' : ownerAccountNotice(d, false)}
-      ${inert ? '' : `<div class="modal-owner">${avatar(d.owner_name)}<select id="assign-owner" aria-label="Decision owner" ${assignable ? '' : 'disabled'}>${ownerOptions(d.owner_id)}</select>${assignable ? `<button class="button small" data-action="assign" data-id="${esc(d.id)}">Assign this one</button><button class="button small soft" data-action="refer" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}">Hand on &amp; learn</button>` : ''}</div>${assignable && d.handon ? `<label class="refer-scope" for="refer-scope">Hand on teaches Raven that they decide <select id="refer-scope" aria-label="What handing on teaches">${d.handon.options.map(o => `<option value="${esc(o.scope_kind)}:${esc(o.scope)}" ${o.scope_kind === d.handon.default.scope_kind && o.scope === d.handon.default.scope ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select></label>${d.handon.why_none ? `<p class="field-help">${esc(d.handon.why_none)}; pick a scope to teach one.</p>` : ''}` : ''}<p class="context">${esc(d.routing_reason)}${d.routing_reason && !/[.!?]$/.test(d.routing_reason) ? '.' : ''}${assignable ? ' Assign moves this request only; Hand on also teaches Raven the scope above, once the person answers.' : ''}</p>`}
-      ${signed && canDecide ? `<form id="correct-form" data-id="${esc(d.id)}"><input type="hidden" name="expected_updated_at" value="${esc(d.updated_at)}"><label for="correction">Signed answer · edit to make a correction</label><textarea id="correction" name="answer" maxlength="12000" required>${esc(d.answer || '')}</textarea><label for="correction-rationale">Why this correction?</label><textarea id="correction-rationale" name="rationale" placeholder="Capture the reasoning for future tasks." maxlength="12000" required></textarea>${applicabilityFields(d, 'correction')}${sourceRevalidationFields(d, 'correction')}${sourceReplacementField(d)}<p class="context">A correction is a signed answer ${me ? `recorded as ${esc(me)}` : `recorded on behalf of ${esc(signer)}`}; the agent reads it on the tree, and every decision that leaned on the old answer is marked for review.</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Close</button><button class="button primary" type="submit">Record correction ${icon('check')}</button></div></form>` : ''}
-      ${!canDecide || inert || signoffWanted || signed ? '' : `<form id="answer-form" data-id="${esc(d.id)}"><input type="hidden" name="expected_updated_at" value="${esc(d.updated_at)}"><label for="answer">${approved ? 'Recorded answer · edit to make a correction' : 'Your answer'}</label><textarea id="answer" name="answer" placeholder="Give the agent a clear decision and any conditions." maxlength="12000" required>${esc(approved ? d.answer : '')}</textarea><label for="rationale">Why this decision?</label><textarea id="rationale" name="rationale" placeholder="Capture the reasoning for future tasks." maxlength="12000" required>${esc(d.rationale || '')}</textarea>${applicabilityFields(d, 'answer')}${sourceRevalidationFields(d, 'answer')}${sourceReplacementField(d)}<label for="supersedes">Supersedes decision (optional id)</label><input id="supersedes" name="supersedes" placeholder="Decision id this answer replaces" maxlength="100" value="${esc(d.supersedes || '')}"><p class="context">${me ? `Recorded as ${esc(me)}${d.owner_name && d.owner_name !== me ? `, on your own standing; ${esc(d.owner_name)} is its assigned owner` : ''}.` : `Recorded by the local operator on behalf of ${esc(d.owner_name || 'the assigned owner')}.`} ${approved ? 'The previous answer stays in the revision history.' : (state.executions || []).some(e => e.run_id === d.run_id) ? 'Saving queues delivery to the waiting agent. Follow delivery in Tasks.' : 'The agent can retrieve your answer after it is saved.'}</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Close</button><button class="button primary" type="submit" ${d.owner_id ? '' : 'disabled'}>${approved ? 'Save correction' : 'Record decision'} ${icon('check')}</button></div></form>`}
-      ${reframeControls(d)}
-      ${followupControls(d)}
-      <details class="history"><summary>Decision history · ${plural(d.events.length, 'event')}</summary>${d.events.map(e => `<div class="history-item"><strong>${esc(eventLabels[e.kind] || e.kind)}</strong>${esc(e.detail)}<br><small>${esc(new Date(e.created_at).toLocaleString())}</small></div>`).join('')}</details>`);
+    const upfront = `${conflicts.length && !settled ? `<div class="context-box prediction"><span class="label">Conflict · a person decides which stands</span>${esc(conflicts.join(' '))}</div>` : ''}${d.records_named ? `<p class="context"><strong>Records it names:</strong> ${esc(d.records_named)}.</p>` : ''}${d.source_notice && !stale ? `<p class="context">${esc(d.source_notice)}</p>` : ''}`;
+    const moreOptions = prefix => `<details class="history"><summary>More options</summary>${applicabilityFields(d, prefix)}${prefix === 'answer' ? `<label for="supersedes">Supersedes decision (optional id)</label><input id="supersedes" name="supersedes" maxlength="100" value="${esc(d.supersedes || '')}">` : ''}</details>`;
+    const correctForm = (prefilled, primary) => `<form id="correct-form" data-id="${esc(d.id)}"><input type="hidden" name="expected_updated_at" value="${esc(d.updated_at)}"><label for="correction">Correct it</label><textarea id="correction" name="answer" maxlength="12000" required>${esc(prefilled ? d.answer || '' : '')}</textarea><label for="correction-rationale">Why</label><textarea id="correction-rationale" name="rationale" maxlength="12000" required></textarea>${sourceRevalidationFields(d, 'correction')}${sourceReplacementField(d)}${moreOptions('correction')}<p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button class="button ${primary ? 'primary' : ''}" type="submit">Save correction</button></div>${primary ? recordedAs : ''}</form>`;
+    const form = readOnly || inert ? '' : signoffWanted
+      ? `<div class="signoff-block">${sourceRevalidationFields(d, 'signoff')}<div class="modal-actions"><button class="button primary" data-action="signoff" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}">Sign as ${esc(signer)}</button></div>${recordedAs}</div>${correctForm(false, false)}`
+      : signed && canDecide ? correctForm(true, true)
+      : answerForm ? `<form id="answer-form" data-id="${esc(d.id)}"><input type="hidden" name="expected_updated_at" value="${esc(d.updated_at)}"><label for="answer">Your answer</label><textarea id="answer" name="answer" placeholder="Give the agent a clear decision and any conditions." maxlength="12000" required>${esc(approved ? d.answer : '')}</textarea><label for="rationale">Why</label><textarea id="rationale" name="rationale" maxlength="12000" required>${esc(d.rationale || '')}</textarea>${sourceRevalidationFields(d, 'answer')}${sourceReplacementField(d)}${moreOptions('answer')}<p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button class="button primary" type="submit" ${d.owner_id ? '' : 'disabled'}>${approved ? 'Save correction' : 'Record my answer'}</button></div>${recordedAs}</form>` : '';
+    const details = `<details class="history" id="decision-details"><summary>Details</summary>${d.signed_by || d.answered_by ? `<p class="context">${d.signed_by ? `Recorded signer: ${esc(d.signed_by)}. ` : ''}${d.answered_by ? `Answer recorded by: ${esc(d.answered_by)}.` : ''}</p>` : ''}${decisionReviewScope(d)}${d.consequences ? `<p class="context"><strong>Consequences:</strong> ${esc(typeof d.consequences === 'string' ? d.consequences : JSON.stringify(d.consequences))}</p>` : ''}${d.routing_reason ? `<p class="context"><strong>Routing:</strong> ${esc(d.routing_reason)}</p>` : ''}${d.owner_evidence ? `<p class="context"><strong>Why this owner:</strong> ${esc(d.owner_evidence)}</p>` : ''}${workItemContext(d)}${sourceEvidence(d.sources, d.needs_review ? null : d.source_revalidation)}${decisionBackground({...d, sources: [], source_revalidation: null, evidence: '', context: scope ? '' : d.context})}${canonical}${d.evidence ? `<p class="context"><strong>Evidence:</strong> ${esc(d.evidence)}</p>` : ''}${d.source_id && !box ? `<button class="button text small" data-action="source" data-id="${esc(d.source_id)}">Open the earlier decision</button>` : ''}${(d.allowed_actions || []).includes('rule') && (approved || (signed && d.signoff === 'signed')) && !inert ? ruleBox(d) : ''}</details>`;
+    const more = [reframeControls(d), followupControls(d)].filter(Boolean).join('');
+    openModal(d.question, `${d.agent} · ${d.run_title}`, `<div class="decision-status">${statusPill(d)}${readOnly ? `<span class="context">${readOnlyReason(d)}</span>` : ''}</div>
+      ${readOnly ? ownerAccountNotice(d, true) : inert || settled ? '' : ownerAccountNotice(d, false)}
+      ${decisionCurrentSummary(d, !box)}${upfront}${box}
+      ${form}
+      ${assignable ? handOnRow(d) : ''}
+      ${details}
+      ${decisionInquiry(d)}
+      ${canDecide && !inert && state.auth?.enabled && state.me?.id && ['session','token'].includes(state.me.kind) ? `<button class="button text" data-action="interview-start" data-task="${esc(d.run_id)}" data-id="${esc(d.id)}">Talk it through instead</button>` : ''}
+      ${more ? `<details class="history"><summary>More</summary>${more}</details>` : ''}
+      <details class="history"><summary>History · ${plural(d.events.length, 'event')}</summary>${d.events.map(e => `<div class="history-item"><strong>${esc(eventLabels[e.kind] || e.kind)}</strong>${esc(e.detail)}<br><small>${esc(new Date(e.created_at).toLocaleString())}</small></div>`).join('')}</details>`);
   } catch (error) { notify(error.message); }
 }
 
@@ -1226,6 +1253,12 @@ document.addEventListener('click', async event => {
     if (action === 'task') newTask();
     if (action === 'retry') await refresh();
     if (action === 'tab') { tab = target.dataset.tab; tabChosen = true; render(); }
+    if (action === 'more') {
+      const key = target.dataset.key;
+      if (shown.has(key)) shown.delete(key); else shown.add(key);
+      target.previousElementSibling?.classList.toggle('is-clamped', !shown.has(key));
+      target.textContent = shown.has(key) ? 'Show less' : 'Show more';
+    }
     if (action === 'review' || action === 'source') await review(target.dataset.id);
     if (action === 'run') location.hash = ((state.browser_tasks || []).some(t => t.task_id === target.dataset.id) ? 'work/' : 'runs/') + encodeURIComponent(target.dataset.id);
     if (action === 'task-tab') { taskTab = target.dataset.tab; taskView().tab = taskTab; render(); }
@@ -1334,10 +1367,15 @@ document.addEventListener('click', async event => {
 });
 
 document.addEventListener('input', event => {
-  if (['inbox-search','memory-search'].includes(event.target.id)) { query = event.target.value; render(); }
+  if (event.target.id === 'inbox-search') { query = event.target.value; render(); }
 });
 document.addEventListener('change', async event => {
   if (event.target.id === 'owner-filter') { ownerFilter = event.target.value; render(); }
+  if (event.target.id === 'refer-learn') {
+    const button = $('#hand-on'), row = $('#refer-scope-row');
+    if (button) button.dataset.action = event.target.checked ? 'refer' : 'assign';
+    if (row) row.hidden = !event.target.checked;
+  }
   try {
     if (event.target.id === 'coordinator-select') {
       await api('/api/settings', {coordinator: event.target.value});

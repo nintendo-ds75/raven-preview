@@ -2012,3 +2012,26 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .task-row{grid-template-columns:minmax(0,1fr)}
   .task-row .pill{justify-self:start}
 }
+/* Decision card and dialog: text a person decides from folds after a few
+   lines behind Show more; the task link, the status line and the hand-on
+   row that keeps assigning and teaching distinct. */
+.decision-card .context{display:block;-webkit-line-clamp:unset;overflow:visible;margin-bottom:var(--space-2)}
+.decision-card .context.is-clamped,.modal-context.is-clamped{display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden}
+.decision-card .context.is-clamped{-webkit-line-clamp:3}
+.modal-context.is-clamped{-webkit-line-clamp:4}
+.button.text.more{padding:0 0 var(--space-3);min-height:0;font-size:12px}
+.card-task{display:block;font-size:12px;color:var(--muted);margin:var(--space-1) 0 0;text-decoration:none;overflow-wrap:anywhere}
+.card-task:hover,.card-task:focus-visible{text-decoration:underline}
+.decision-status{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;margin:0 0 var(--space-4)}
+.decision-status .context{margin:0;display:block;-webkit-line-clamp:unset;overflow:visible}
+.decision-current .modal-context{margin-top:0}
+.toolbar select{width:auto;max-width:200px;min-height:36px;padding:4px 8px;font-size:12px;margin-left:var(--space-2)}
+.signoff-block{margin:0 0 var(--space-4)}
+.refer-learn{display:flex;align-items:center;gap:var(--space-2);font-size:13px;min-height:40px;margin:0 0 var(--space-2)}
+.refer-learn input{margin:0}
+.refer-scope{display:grid;gap:var(--space-1);margin:0 0 var(--space-4)}
+.refer-scope label{font-size:12px;color:var(--muted)}
+.modal-body h3{font-size:14px;margin:var(--space-4) 0 var(--space-2)}
+@media(max-width:600px){
+  .toolbar select{flex-basis:100%;max-width:none;margin:0 0 var(--space-3)}
+}

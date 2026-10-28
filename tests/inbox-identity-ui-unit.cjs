@@ -1,4 +1,4 @@
-// The inbox badge and "Assigned to me" follow the server's per-decision
+// The inbox badge and "Needs me" follow the server's per-decision
 // standing (by person id), not the signed-in person's display name.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -8,7 +8,7 @@ const source = fs.readFileSync(path.join(__dirname, '../web/app.js'), 'utf8');
 const context = {state: {auth: {enabled: true}, me: {id: 'p2', name: 'Alex Morgan', role: 'member'}},
   esc: v => String(v), pill: t => t, icon: () => '', ago: () => 'just now', avatar: () => '', plural: (n, w) => `${n} ${w}`};
 vm.createContext(context);
-vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf('function activity()'))
+vm.runInContext(source.slice(source.indexOf('const signedNow'), source.indexOf('function activity()'))
   + '\n;globalThis.inbox = {assignedToMe, needsYou, personalInbox};', context);
 const {assignedToMe, needsYou, personalInbox} = context.inbox;
 const seeded = {id: 'd1', status: 'pending', owner_name: 'Alex Morgan', required_signers: '[]', can_act: false};
@@ -40,9 +40,9 @@ assert.match(form, /<option value="p1">Alex Morgan · billing — already on the
 assert.doesNotMatch(form, /Dana Lee|Gone Person|Git Hub/);
 assert.match(form, /a matching name is not enough/);
 assert.doesNotMatch(context.inviteForm([people[1]]), /person_id/);
-// A signed-in person records on their own standing; only the local operator
-// records on behalf of the named owner. The copy says so.
+// A signed-in person records as themselves; only the local operator
+// records on behalf of the named owner. The one line under the primary
+// button says so, and it is written once for every form in the dialog.
 assert.doesNotMatch(source, /, on behalf of \$\{esc\(d\.owner_name\)\}/);
-assert.match(source, /on your own standing; \$\{esc\(d\.owner_name\)\} is its assigned owner/);
-assert.equal((source.match(/\$\{me \? `recorded as \$\{esc\(me\)\}` : `recorded on behalf of \$\{esc\(signer\)\}`\}/g) || []).length, 2);
+assert.equal((source.match(/\$\{me \? `Recorded as \$\{esc\(me\)\}\.` : `Recorded by the local operator on behalf of \$\{esc\(signer\)\}\.`\}/g) || []).length, 1);
 console.log('inbox-identity-ui-unit: ok');

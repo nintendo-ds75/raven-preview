@@ -187,18 +187,23 @@ function harness() {
       approval_scope_labels:{repo:'Repository',facts:'Facts',applicability:'Applicability',path:'Path'},
       consequences:'Real customer traffic must remain billable.',events:[],sources:[],allowed_actions:[],...extra};
   }
-  await test('settled read-only decision shows current answer and signer before original request', async () => {
+  await test('settled read-only decision shows the current answer first, with signer and scope inside Details', async () => {
     const h=harness(), d=decisionFixture(), pending=h.click('review',d.id);h.requests[0].resolve(d);await pending;
     const html=h.get('#modal-content').innerHTML;
     assert(html.indexOf(d.answer)<html.indexOf('HISTORICAL:'));
-    assert(html.indexOf('Recorded signer: Policy Owner')<html.indexOf('HISTORICAL:'));
+    assert.match(html,/Signed by Policy Owner/,'one status pill names the signer');
+    const details=html.indexOf('id="decision-details"');
+    assert(details>0 && details<html.indexOf('Recorded signer: Policy Owner'),'the signer line is one level down');
+    assert(details<html.indexOf('Current recorded scope'));
     assert(html.indexOf('Current recorded scope')<html.indexOf('Original request & complete'));
     assert.match(html,/<details class="history decision-original-scope"><summary>Original request & complete recorded scope/);
     assert.match(html,/data-scope-field="facts"[\s\S]*?production/);
     assert.match(html,/data-scope-field="applicability"/);
     assert.match(html,/HISTORICAL: production is unresolved/,'full original context remains available');
     assert(html.indexOf('decision-current')<html.indexOf('decision-inquiry'));
-    assert.match(html,/Read-only clarification/);
+    assert(details<html.indexOf('decision-inquiry'),'Details precede Ask Raven');
+    assert.match(html,/<summary>Ask Raven<\/summary>/);
+    assert.doesNotMatch(html,/Read-only clarification|Context captured when this question was raised|No answer recorded yet/);
   });
   await test('approved editable decision has current answer above correction form', async () => {
     const h=harness(),d=decisionFixture({allowed_actions:['answer']});h.run("state.auth={enabled:false}");
@@ -206,23 +211,32 @@ function harness() {
     const html=h.get('#modal-content').innerHTML;
     assert(html.indexOf('decision-current-answer')<html.indexOf('id="answer-form"'));
     assert.match(html,/Save correction/);
+    assert.match(html,/<summary>More options<\/summary>[\s\S]*id="supersedes"/,'applicability and supersedes sit behind More options');
+    assert.match(html,/Recorded by the local operator on behalf of Policy Owner\./);
     assert.match(html,/<details class="history decision-background" ><summary>Recorded background & evidence/);
+    assert.doesNotMatch(html,/retires the existing standing rule|The agent prepares on this answer/);
   });
-  await test('required signoff keeps complete scope and consequences before its explicit button', async () => {
+  await test('required signoff keeps complete scope and consequences inside Details beside its explicit button', async () => {
     const h=harness(),d=decisionFixture({status:'resolved',signoff:'required',signed_by:'',allowed_actions:['answer']});h.run("state.auth={enabled:false}");
     const pending=h.click('review',d.id);h.requests[0].resolve(d);await pending;
     const html=h.get('#modal-content').innerHTML;
-    assert.match(html,/data-action="signoff"/);
-    assert(html.indexOf('data-scope-field="context"')<html.indexOf('data-action="signoff"'));
-    assert(html.indexOf(d.consequences)<html.indexOf('data-action="signoff"'));
+    assert.match(html,/data-action="signoff" data-id="decision-current" data-updated="[^"]*">Sign as Policy Owner</);
+    assert.match(html,/Sign-off wanted from Policy Owner/);
+    assert.match(html,/<span class="label">Found in evidence<\/span>/);
+    assert.equal((html.match(/class="context-box/g)||[]).length,1,'one answer box');
+    assert(html.indexOf('data-action="signoff"')<html.indexOf('id="decision-details"'),'the form comes before Details');
+    assert.match(html,/id="decision-details"[\s\S]*data-scope-field="context"/);
+    assert.match(html,/id="decision-details"[\s\S]*Real customer traffic must remain billable/);
+    assert.match(html,/id="correct-form"[\s\S]*<label for="correction">Correct it<\/label>/);
     assert.doesNotMatch(html,/decision-original-scope/);
   });
   await test('stale recorded signature cannot present the answer as currently signed', async () => {
     const h=harness(),d=decisionFixture({source_refresh_required:true,source_notice:'Evidence access needs refresh.'});
     const pending=h.click('review',d.id);h.requests[0].resolve(d);await pending;
     const html=h.get('#modal-content').innerHTML;
-    assert.match(html,/Recorded answer · review required/);assert.match(html,/Evidence access needs refresh/);
-    assert.doesNotMatch(html,/Current signed answer/);assert.doesNotMatch(html,/decision-original-scope/);
+    assert.match(html,/Needs a second look · Evidence access needs refresh\./);
+    assert.match(html,/>Needs a second look</,'the pill says so too');
+    assert.doesNotMatch(html,/Signed by Policy Owner|Current signed answer|decision-original-scope/);
   });
   await test('all ordinary dialog close callers use the synchronous helper', async () => {
     assert.equal((source.match(/\$\('#modal'\)\.close\(\)/g) || []).length, 1);
