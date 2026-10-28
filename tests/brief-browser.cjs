@@ -124,6 +124,12 @@ async function startWorld(temp, name) {
         covered.push(`${width}: ${name}`);
         console.log(`ok  ${width.padEnd(7)} ${name}`);
       }
+      // A section that opens on request (history, notes) is opened before
+      // the step reads from it.
+      const reveal = async (page, key) => {
+        const section = page.locator(`details[data-keep="${key}"]`);
+        if (!(await section.evaluate(el => el.open))) await section.locator('> summary').click();
+      };
       const toast = (page, re) => page.waitForFunction(source => {
         const t = document.querySelector('#toast');
         return t && !t.hidden && new RegExp(source).test(t.textContent);
@@ -222,6 +228,9 @@ async function startWorld(temp, name) {
         assert.equal(await menu.evaluate(el => el.open), false);
       }, cal);
       await step('"Show more" on a long quote shows the rest', async () => {
+        // What Raven checked opens on request; the quote is measured as it opens.
+        await cal.locator('#focus .brief-checked > summary').click();
+        assert.equal(await cal.locator('#focus .brief-checked').evaluate(el => el.open), true);
         const quote = cal.locator('#focus .brief-found blockquote');
         assert.equal(await quote.evaluate(el => el.classList.contains('is-clamped')), true);
         const before = await quote.evaluate(el => el.getBoundingClientRect().height);
@@ -246,6 +255,7 @@ async function startWorld(temp, name) {
         assert.deepEqual(offered, narrow ? {more: 1, hides: true} : {more: 0, hides: false});
       }, cal);
       await step('"Show earlier events" opens the whole history', async () => {
+        await reveal(cal, 'task-background');
         const more = cal.locator('[data-action="history-all"]');
         const hidden = Number((await more.innerText()).match(/Show (\d+) earlier/)[1]);
         const shown = await cal.locator('.brief-history > li').count();
@@ -256,6 +266,7 @@ async function startWorld(temp, name) {
       }, cal);
       const NOTE = `Tenant ids arrive as the X-Scope-OrgID header (${width}).`;
       await step('note form adds a note as the person, and the coding agent reads it', async () => {
+        await reveal(cal, 'notes');
         await cal.fill('#note-text', NOTE);
         await cal.locator('#note-form button[type=submit]').click();
         await toast(cal, /^Added\./);
@@ -302,6 +313,7 @@ async function startWorld(temp, name) {
         assert.equal(await val.locator('#answer-form').count(), 0);
         assert.equal(await val.locator('#handon-form').count(), 0);
         assert.equal(await val.locator('#note-form').count(), 0);
+        await reveal(val, 'notes');
         assert.match(await val.locator('.brief-chat').innerText(), /You have read-only access\./);
       }, val);
 
@@ -316,7 +328,7 @@ async function startWorld(temp, name) {
 
       // ---------------- Priya decides ----------------
       await brief(cal, L.priya);
-      await step('"Answer this" opens another decision on the task, keeping the address', async () => {
+      await step('"Answer" opens another decision on the task, keeping the address', async () => {
         await cal.locator(`#d-${N.handon} [data-action="focus"]`).click();
         await cal.waitForFunction(() => /token bucket/.test(document.querySelector('#focus-question')?.textContent || ''));
         assert.equal(await kicker(cal), 'Waiting on you');
@@ -347,7 +359,7 @@ async function startWorld(temp, name) {
       await step('answer form (waiting on you): records the decision as the person', async () => {
         await cal.locator(`.brief-option[data-value="${OPTION}"]`).click();
         await cal.fill('#answer-why', WHY);
-        await cal.getByRole('button', {name: 'Record my decision'}).click();
+        await cal.getByRole('button', {name: 'Answer and sign'}).click();
         await toast(cal, /^Recorded as Priya Raman's answer/);
         await cal.waitForFunction(() => document.querySelector('.brief-kicker')?.textContent === 'You decided this');
         assert.match(await cal.locator('#focus .brief-block.is-answer').innerText(), new RegExp(`Your answer[\\s\\S]*${OPTION}`));
@@ -358,10 +370,10 @@ async function startWorld(temp, name) {
         assert.notEqual(d.status, 'pending');
         assert(d.signatures.includes('Priya Raman'));
       }, cal);
-      await step('a prediction is labelled a guess; "Answer this" answers a decision without options; a stale answer is refused and the page catches up', async () => {
+      await step('a prediction is labelled a guess; "Answer" answers a decision without options; a stale answer is refused and the page catches up', async () => {
         await cal.locator(`#d-${N.remote2} [data-action="focus"]`).click();
         await cal.waitForFunction(() => /write handler/.test(document.querySelector('#focus-question')?.textContent || ''));
-        assert.match(await cal.locator('#focus .brief-block.is-guess').innerText(), /How you decided before · a guess, not approved[\s\S]*Retry-After/);
+        assert.match(await cal.locator('#focus .brief-block.is-guess').innerText(), /Your earlier answer · a guess[\s\S]*Retry-After/);
         assert.equal(await cal.locator('.brief-options').count(), 0);
         await cal.fill('#answer-text', 'No: drop at the queue instead.');
         // Meanwhile they answer it in another tab.
@@ -371,13 +383,13 @@ async function startWorld(temp, name) {
         await other.locator(`#d-${N.remote2} [data-action="focus"]`).click();
         await other.waitForFunction(() => /write handler/.test(document.querySelector('#focus-question')?.textContent || ''));
         await other.fill('#answer-text', 'Yes, 429 with Retry-After.');
-        await other.getByRole('button', {name: 'Record my decision'}).click();
+        await other.getByRole('button', {name: 'Answer and sign'}).click();
         await toast(other, /^Recorded as Priya Raman's answer/);
         await other.close();
         // The first tab's answer is refused as stale, and the page shows
         // the decision as it is now, keeping what they typed.
         await expecting(400, '/api/brief/answer', async () => {
-          await cal.getByRole('button', {name: 'Record my decision'}).click();
+          await cal.getByRole('button', {name: 'Answer and sign'}).click();
           await toast(cal, /^This decision changed while you were reading it/);
         });
         await cal.waitForFunction(() => document.querySelector('.brief-kicker')?.textContent === 'You decided this');
@@ -389,7 +401,7 @@ async function startWorld(temp, name) {
         await cal.locator('[data-action="focus-asked"]').click();
         await cal.waitForFunction(() => /exceeds its limit/.test(document.querySelector('#focus-question')?.textContent || ''));
       }, cal);
-      await step('"Correct your answer" saves a correction as the person', async () => {
+      await step('"Correct my answer" saves a correction as the person', async () => {
         assert.equal(await cal.locator('#answer-form').isVisible(), false);
         await cal.locator('.brief-correct > summary').click();
         await cal.fill('#answer-text', 'Drop excess, count it per tenant, and alert on it.');
@@ -411,11 +423,11 @@ async function startWorld(temp, name) {
         await button.click();
         await cal.waitForFunction(() => /write handler/.test(document.querySelector('#focus-question')?.textContent || ''));
         assert.equal(await kicker(cal), 'You decided this');
-        assert.equal(await cal.locator('.brief-correct > summary').innerText(), 'Correct your answer');
+        assert.equal(await cal.locator('.brief-correct > summary').innerText(), 'Correct my answer');
       }, cal);
-      await step('"Review & sign" opens what the agent settled, and "Sign off" signs it as the person', async () => {
+      await step('"Sign" opens what the agent settled, and "Sign" signs it as the person', async () => {
         const button = cal.locator(`#d-${N.settled} [data-action="focus"]`);
-        assert.equal(await button.innerText(), 'Review & sign');
+        assert.equal(await button.innerText(), 'Sign');
         await button.click();
         await cal.waitForFunction(() => /default to unlimited/.test(document.querySelector('#focus-question')?.textContent || ''));
         assert.equal(await kicker(cal), 'Sign-off wanted from you');
@@ -424,11 +436,11 @@ async function startWorld(temp, name) {
         await cal.fill('#answer-text', 'No.');
         assert.equal(await cal.locator('#answer-why').isVisible(), true);
         // The button says what it records.
-        assert.equal(await cal.locator('#answer-form button[type=submit]').innerText(), 'Correct and sign');
+        assert.equal(await cal.locator('#answer-form button[type=submit]').innerText(), 'Save correction');
         await cal.fill('#answer-text', '');
         assert.equal(await cal.locator('#answer-why').isVisible(), false);
-        assert.equal(await cal.locator('#answer-form button[type=submit]').innerText(), 'Sign off');
-        await cal.getByRole('button', {name: 'Sign off', exact: true}).click();
+        assert.equal(await cal.locator('#answer-form button[type=submit]').innerText(), 'Sign');
+        await cal.getByRole('button', {name: 'Sign', exact: true}).click();
         await toast(cal, /^Signed off by Priya Raman/);
         await cal.waitForFunction(() => document.querySelector('.brief-kicker')?.textContent === 'You decided this');
         const d = await W.ctl(`/decision?id=${N.settled}`);
@@ -479,6 +491,7 @@ async function startWorld(temp, name) {
       const jes = await open('Sam');
       await brief(jes, samToken);
       await step('account: one invitation per width (header link on a phone, side note on a desktop)', async () => {
+        if (!narrow) await reveal(jes, 'people');
         assert.equal(await visibleCount(jes, '[data-action="account"]'), 1);
         assert.equal(await jes.locator(narrow ? '.brief-top [data-action="account"]' : '.brief-join [data-action="account"]').isVisible(), true);
       }, jes);
@@ -523,6 +536,7 @@ async function startWorld(temp, name) {
       // ---------------- Priya makes an account and uses the app ----------------
       await brief(cal, L.priya);
       await step('account form: makes the login with the address Raven has, and lands on the task in the app', async () => {
+        if (!narrow) await reveal(cal, 'people');
         assert.equal(await visibleCount(cal, '[data-action="account"]'), 1);
         await cal.locator('[data-action="account"]:visible').click();
         await cal.waitForSelector('#brief-modal[open]');
@@ -599,7 +613,8 @@ async function startWorld(temp, name) {
         const ask = cal.locator('[data-action="task-brief"]');
         assert.equal(await ask.innerText(), 'Open task page');
         await Promise.all([cal.waitForURL(/\/brief#rvn_/), ask.click()]);
-        await cal.waitForSelector('#note-form');
+        // The note form is in the Notes section, which opens on request.
+        await cal.waitForSelector('#note-form', {state: 'attached'});
       }, cal);
 
       for (const context of contexts) await context.close();

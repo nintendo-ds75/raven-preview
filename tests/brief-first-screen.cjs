@@ -1,7 +1,7 @@
 /* The task page's reading order on a phone, from the shipped render
  * functions: the decision and its answer form come before the question
- * box, what Raven found and the recorded scope table; the agent's context
- * is shown once; the scope table is still on the page, below the form.
+ * box, what Raven checked and the recorded scope table; the agent's context
+ * is shown once; both open on request below the form.
  * Measured at 390px before this order: the scope table and the work-item
  * record sat between the question and the brief, and the form began a
  * screen and a half down. */
@@ -42,11 +42,17 @@ const form = at('id="answer-form"');
 assert(at('id="focus-question"') < at('class="brief-lead"'), 'the question comes first');
 assert(at('class="brief-lead"') < form && at('Context from the coding agent') < form, 'the brief and the context are read before the form');
 assert(at('brief-options') < at('id="answer-text"'), 'the options are the first thing in the form');
-for (const later of ['What Raven found', 'decision-scope', 'work-item-context', 'class="brief-where"', 'class="brief-reason"']) {
+for (const later of ['What Raven checked', 'decision-scope', 'work-item-context', 'class="brief-where"', 'class="brief-reason"']) {
   assert(at(later) > form, `${later} belongs below the form`);
 }
-assert.match(html, /<details class="brief-extra brief-scope"[^>]*>\s*<summary>Recorded scope of this decision<\/summary>/, 'the scope table opens on request');
+assert.match(html, /<details class="brief-why brief-checked"[^>]*>\s*<summary>What Raven checked<\/summary>/, 'what Raven checked opens on request');
+assert.doesNotMatch(html, /brief-checked"[^>]*\sopen/, 'what Raven checked starts closed');
+assert.match(html, /<details class="brief-extra brief-scope"[^>]*>\s*<summary>Details<\/summary>/, 'the scope table opens on request');
 assert.doesNotMatch(html, /brief-scope"[^>]*\sopen/, 'the scope table starts closed');
+assert(at('class="brief-reason"') > at('<summary>Details</summary>'), 'why it came to them is inside Details');
+for (const gone of ['Next:', 'Record my decision', 'Prefer to talk it through', 'Recorded scope of this decision', 'not approved'])
+  assert(!html.includes(gone), `${gone} is gone`);
+assert(html.includes('>Answer and sign<') && html.includes('Signed as Lina.') && html.includes('>Talk it through instead<'), 'the form ends with the button, the note and the interview link');
 assert.equal(html.split('Near the cap the jitter can exceed it.').length - 1, 1, 'the context is said once');
 
 // A brief that only repeats the context is shown once.

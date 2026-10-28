@@ -53,7 +53,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     const brief = () => page.goto(fixture.url + '/brief#' + fixture.token);
     await brief();
     await page.locator('#focus-question').waitFor();
-    assert.equal(await page.locator('.brief-hero h1').innerText(), 'Decision review · WORK-42');
+    assert.equal(await page.locator('.brief-hero h1').innerText(), 'WORK-42');
     assert.equal(await page.locator('#focus-question').innerText(), fixture.question);
     assert.equal(await page.locator('.brief-prompt p').textContent(), fixture.request);
     assert.equal(await page.locator('.scope-exact').getAttribute('open'), null);

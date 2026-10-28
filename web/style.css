@@ -1602,7 +1602,10 @@ h1,.task-heading h1 { font-size:1.6rem; line-height:1.3; letter-spacing:-.025em;
 .brief-quote { margin:.3rem 0 0; padding:0 0 0 .7rem; border-left:2px solid #2b2e27; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.55; }
 .brief-quote.is-clamped { display:-webkit-box; -webkit-line-clamp:5; -webkit-box-orient:vertical; overflow:hidden; }
 .brief-more { min-height:0; padding:.15rem 0; font-size:12px; text-decoration:underline; text-underline-offset:2px; }
-.brief-block .brief-found-note { margin:.25rem 0 0; color:var(--muted); font-size:12px; white-space:normal; }
+.brief-found-note { margin:.25rem 0 0; color:var(--muted); font-size:12px; white-space:normal; }
+/* What Raven checked opens on request below the paths. */
+.brief-checked { margin-top:.6rem; }
+.brief-checked[open] .brief-found { margin-top:.4rem; color:#f5f5f1; font-size:.85rem; }
 .brief-where { margin:.6rem 0 0; color:var(--muted); font-size:.8rem; overflow-wrap:anywhere; }
 .brief-where code { color:#f5f5f1; font-size:.78rem; }
 .brief-reason { margin:.5rem 0 0; font-size:.85rem; color:#f5f5f1; }
@@ -1629,7 +1632,6 @@ h1,.task-heading h1 { font-size:1.6rem; line-height:1.3; letter-spacing:-.025em;
 .brief-account input { min-height:var(--control-height); }
 /* The options are a choice: a radio circle in each, so none reads as an
    answer already filled in. Picking one puts its words in the box. */
-.brief-form-title { margin:0 0 .3rem; font-weight:600; }
 .brief-options { display:flex; flex-wrap:wrap; gap:.4rem; margin:0 0 .75rem; padding:0; border:0; min-width:0; }
 .brief-options > legend { padding:0; margin:0 0 .4rem; font-size:13px; color:var(--muted); }
 .brief-option { display:inline-flex; align-items:center; gap:.45rem; border:1px solid var(--line); background:#151614; color:#f5f5f1; border-radius:6px; padding:.3rem .65rem .3rem .5rem; min-height:32px; font-size:13px; line-height:1.4; cursor:pointer; }
@@ -1638,6 +1640,8 @@ h1,.task-heading h1 { font-size:1.6rem; line-height:1.3; letter-spacing:-.025em;
 .brief-option:focus-within { outline:2px solid #b9c4bb; outline-offset:1px; }
 .brief-answer-foot { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-top:.85rem; }
 .brief-answer-note { color:var(--muted); font-size:13px; }
+/* The interview is a text link beside the button, not a box of its own. */
+.brief-answer-foot .brief-interview { padding:0; font-size:13px; color:var(--green); text-decoration:underline; text-underline-offset:2px; }
 .brief-answer [hidden] { display:none; }
 .brief-cannot { margin:1rem 0 0; padding:.7rem .85rem; border:1px solid var(--line); border-radius:6px; color:var(--muted); }
 .brief-back { min-height:0; padding:0; margin:0 0 .5rem; font-size:12px; color:var(--muted); text-decoration:underline; text-underline-offset:2px; }
@@ -1664,7 +1668,6 @@ h1,.task-heading h1 { font-size:1.6rem; line-height:1.3; letter-spacing:-.025em;
 .brief-facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:.25rem 1rem; margin:0 0 .75rem; font-size:.85rem; }
 .brief-facts dt { color:var(--muted); }
 .brief-facts dd { margin:0; overflow-wrap:anywhere; }
-.brief-note { margin:0; font-size:.75rem; color:var(--muted); line-height:1.5; }
 
 .brief-decisions { list-style:none; margin:0; padding:0; }
 .brief-decisions > li { padding:.75rem 0; border-top:1px solid var(--line); }
@@ -1738,6 +1741,7 @@ h1,.task-heading h1 { font-size:1.6rem; line-height:1.3; letter-spacing:-.025em;
 .brief-chat-form textarea { min-height:4.25rem; }
 .brief-chat-form .button { justify-self:end; }
 .brief-chat-foot { display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
+.brief-chat-foot > .button:only-child { margin-left:auto; }
 .brief-audience { color:var(--muted); font-size:12px; }
 
 .brief-join { margin:.25rem 0 1rem; font-size:.8rem; color:var(--muted); line-height:1.55; }
@@ -1780,7 +1784,7 @@ h1,.task-heading h1 { font-size:1.6rem; line-height:1.3; letter-spacing:-.025em;
   .brief-chat-foot { flex-direction:column-reverse; align-items:stretch; gap:.4rem; }
   .brief-chat-foot .button { min-height:44px; }
   .brief-audience { text-align:center; }
-  .brief-why > summary, .brief-asks-toggle > summary { padding:.4rem 0; }
+  .brief-why > summary, .brief-asks-toggle > summary { padding:.65rem 0; }
   .brief-earlier, .brief-more { min-height:40px; }
   .brief-viewer-menu > summary { padding:.2rem; }
   /* On a phone the popover spans the bar, under it, not off its left edge. */
@@ -1885,7 +1889,6 @@ h1,.task-heading h1 { font-size:1.6rem; line-height:1.3; letter-spacing:-.025em;
 .brief-extra{margin:18px 0;color:#bebfb6}
 .brief-extra>summary{cursor:pointer;padding:12px 4px;font-size:13px;min-height:44px}
 .brief-extra .task-panel{margin-top:12px}
-.brief-next{font-size:13px;line-height:1.7;color:#83d97a;max-width:680px}
 .brief-inquiry textarea{width:100%;min-height:96px;resize:vertical;padding:12px;border:1px solid #2b2e27;border-radius:12px;font:inherit;line-height:1.6}
 .brief-inquiry-result{font-size:13px;line-height:1.8;overflow-wrap:anywhere;margin-top:22px;white-space:pre-wrap}
 .brief-inquiry-result small{color:#bebfb6}

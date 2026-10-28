@@ -107,7 +107,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     const guest = await browser.newContext();
     const linked = await guest.newPage();
     await linked.goto(`${world.url}/brief#${world.link}`);
-    await linked.getByRole('button', {name:'Start or resume interview',exact:true}).click();
+    await linked.getByRole('button', {name:'Talk it through instead',exact:true}).click();
     await linked.locator('#interview-modal[open]').waitFor();
     await linked.locator('#interview-answer').fill('Use five seconds for new clients only.');
     await linked.locator('#interview-rationale').fill('Old clients retain ten seconds.');
