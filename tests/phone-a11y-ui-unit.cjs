@@ -27,7 +27,7 @@ assert.match(css, /\.login \.context\{[^}]*-webkit-line-clamp:unset[^}]*\}/, 'th
 
 // 3. scrollable-region-focusable: a table wider than the screen can be scrolled from the keyboard.
 const wraps = [...app.matchAll(/<div class="table-wrap"[^>]*>/g)].map(m => m[0]);
-assert(wraps.length >= 4, `expected the tasks, ownership, authority and deliveries tables; found ${wraps.length}`);
+assert(wraps.length >= 2, `expected the ownership-signals and failed-deliveries tables in Settings; found ${wraps.length}`);
 for (const wrap of wraps) {
   assert.match(wrap, /tabindex="0"/, `keyboard-reachable: ${wrap}`);
   assert.match(wrap, /role="region"/, `a named region, so tabindex on a div is not a bare stop: ${wrap}`);
