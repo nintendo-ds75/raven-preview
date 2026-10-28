@@ -50,16 +50,45 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   assert.equal(statusLabel({...signedPrediction, needs_review: 1}), 'Needs review');
   assert.equal(signedAs({...signedPrediction, signoff: 'rule'}), 'Covered by a reusable rule');
   assert.match(source, /Signed answer · edit to make a correction/);
+  // Help is one dialog: a sentence, the link to the guide, Open Settings, Close.
   context.showHelp();
-  assert.equal(context.modal[0], 'Raven help');
-  assert.match(context.modal[2], /data-action="help-connect"/);
-  assert.match(context.modal[2], /check agent activity/);
+  assert.equal(context.modal[0], 'Help');
+  assert.match(context.modal[2], /The guide covers setup, tasks, answering and signing\./);
+  assert.match(context.modal[2], /<a href="https:\/\/github\.com\/nintendo-ds75\/raven-preview\/blob\/main\/docs\/help\.md"[^>]*>Read the guide ↗<\/a>/);
+  assert.match(context.modal[2], /<button[^>]+data-action="help-connect">Open Settings<\/button>/);
+  assert.match(context.modal[2], /data-action="close">Close</);
+  assert.doesNotMatch(context.modal[2], /Connections &amp; setup|check agent activity/);
+  assert.ok(fs.existsSync(require('node:path').join(__dirname, '../docs/help.md')), 'the guide the help dialog links to exists');
   const html = fs.readFileSync(require('node:path').join(__dirname, '../web/index.html'), 'utf8');
   assert.match(html, /<button[^>]+data-action="help"[^>]+aria-label="Setup and help"/);
   assert.match(html, /id="agent-connect-prompt"/);
   assert.match(html, /Connect an agent <span aria-hidden="true">↓<\/span>/);
   assert.doesNotMatch(html, /Connect an agent <span>↗<\/span>/);
-  assert.match(source, /MCP connections do not require the local launcher/);
+  // The sidebar is exactly four pages, one job each, in this order.
+  const nav = html.slice(html.indexOf('<nav aria-label="Workspace navigation">'), html.indexOf('</nav>'));
+  const links = [...nav.matchAll(/<a href="#(\w+)" data-view="(\w+)" aria-label="([^"]+)">[\s\S]*?<\/a>/g)].map(m => [m[1], m[2], m[3]]);
+  assert.deepEqual(links, [['inbox', 'inbox', 'Inbox'], ['runs', 'runs', 'Tasks'], ['owners', 'owners', 'People'], ['connect', 'connect', 'Settings']]);
+  for (const [, , label] of links) assert.match(nav, new RegExp(`<span class="nav-text">${label}</span>`), `${label} is the link's visible text`);
+  assert.match(nav, /id="inbox-count"/);
+  assert.match(nav, /<span class="nav-dot" id="settings-dot" hidden title="Setup incomplete"><\/span>/);
+  for (const gone of ['Workspace tools', 'New conversation', 'Today', 'today-count', 'work-recents', 'workspace-tools', 'class="workspace"', 'PREVIEW', 'online-dot',
+      'breadcrumb', 'id="eyebrow"', 'page-description', 'manual-actions', 'new-request', 'model-strip']) {
+    assert.ok(!html.includes(gone), `${gone} is gone from the frame`);
+  }
+  assert.match(html, /<section class="page-head"><h1 id="page-title">Inbox<\/h1><div class="page-actions" id="page-actions"><\/div><\/section>/);
+  assert.match(html, /<span class="connection" id="connection"><i><\/i><span id="workspace-name">Local workspace<\/span><\/span>/);
+  // The Settings dot: set when a notice, no Slack or a blocker needs the person; cleared otherwise.
+  const dot = {hidden: true};
+  const dotContext = {state: {auth: {enabled: false}}, $: key => key === '#settings-dot' ? dot : null};
+  vm.createContext(dotContext);
+  vm.runInContext(source.slice(source.indexOf('function settingsDotState()'), source.indexOf('function loadOwnership()')), dotContext);
+  dotContext.settingsDotState(); assert.equal(dot.hidden, true);
+  dotContext.state.model = {notice: 'Suggestions are off: no model key.'}; dotContext.settingsDotState(); assert.equal(dot.hidden, false);
+  dotContext.state.model = {}; dotContext.state.delivery = {enabled: false}; dotContext.settingsDotState(); assert.equal(dot.hidden, false);
+  dotContext.state.delivery = {enabled: true}; dotContext.state.readiness = [{level: 'warning'}]; dotContext.settingsDotState(); assert.equal(dot.hidden, true);
+  dotContext.state.readiness = [{level: 'blocker'}]; dotContext.settingsDotState(); assert.equal(dot.hidden, false);
+  dotContext.state.auth = null; dotContext.settingsDotState(); assert.equal(dot.hidden, true);
+  assert.ok(!source.includes('renderModelStrip'), 'the model strip is gone; Settings carries the notice');
   context.state.agent_connections = [];
   context.state.runs = [];
   context.updateAgentConnectPrompt();
@@ -74,6 +103,7 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   assert.equal(nodes['#agent-connect-prompt'].hidden, true);
   context.state.runs = [];
   assert.match(context.connections(), /Give it a task in your own words/);
+  // The top-bar pill names the workspace when sign-in is on, else 'Local workspace'.
   nodes['#workspace-name'] = {};
   context.state.workspace = {name: 'Actual team <workspace>'};
   context.updateWorkspaceName();
@@ -82,6 +112,9 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   context.state.workspace.name = 'Renamed workspace';
   context.updateWorkspaceName();
   assert.equal(nodes['#workspace-name'].textContent, 'Renamed workspace');
+  context.state.auth.enabled = false; context.updateWorkspaceName();
+  assert.equal(nodes['#workspace-name'].textContent, 'Local workspace');
+  context.state.auth.enabled = true;
   assert.match(context.agentStatus(), /No active agent credentials/);
   context.state.agent_connections = [{label: 'Codex', last_used_at: ''}];
   assert.match(context.agentStatus(), /Waiting for first use/);
@@ -142,13 +175,12 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   const newSections = existing.map(item => makeDisclosure({...item, open: false}, 0));
   const app = {innerHTML: '', dataset:{}, contains: () => false, querySelector: () => null};
   const renderContext = {workspaceError:'', state: {auth: {enabled: false}}, document: {body:{classList:{toggle(){}}},activeElement: {tagName: 'BODY'}, querySelectorAll: () => oldSections, getElementById: id => newSections.find(el => el.id === id)},
-    $: () => app, taskId: () => '', view: 'connect', inbox() {}, runs() {}, memory() {}, owners() {}, connections: () => 'updated'};
+    $: () => app, taskId: () => '', view: 'connect', settingsDotState() {}, inbox() {}, runs() {}, owners() {}, connections: () => 'updated'};
   vm.createContext(renderContext);
   vm.runInContext(source.slice(source.indexOf('function render() {'), source.indexOf('function openModal(')), renderContext);
   renderContext.state = {};
   renderContext.render();
   assert.match(app.innerHTML, /Loading workspace/);
-  assert.equal(app.hidden, true);
   renderContext.state = {auth: {enabled: false}};
   renderContext.render();
   assert.equal(newSections[0].open, true);

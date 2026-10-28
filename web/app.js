@@ -6,7 +6,7 @@ function restoreLoginRoute() {
     if (!raw) return;
     sessionStorage.removeItem('raven-return-decision');
     const saved = JSON.parse(raw);
-    if (!['', '#inbox'].includes(location.hash) || !/^#runs\/[a-f0-9]{12,32}\/[a-f0-9]{12,32}$/.test(saved.route || '') ||
+    if (!['', '#inbox', '#runs'].includes(location.hash) || !/^#runs\/[a-f0-9]{12,32}\/[a-f0-9]{12,32}$/.test(saved.route || '') ||
         !Number.isFinite(saved.savedAt) || Date.now() - saved.savedAt < 0 || Date.now() - saved.savedAt > 30 * 60 * 1000) return;
     history.replaceState(null, '', location.pathname + location.search + saved.route);
   } catch {} // Malformed/blocked storage never breaks workspace access.
@@ -53,15 +53,8 @@ const ago = value => {
   return minutes < 1 ? 'just now' : minutes < 60 ? `${minutes}m ago` : minutes < 1440 ? `${Math.floor(minutes / 60)}h ago` : `${Math.floor(minutes / 1440)}d ago`;
 };
 const pill = (text, color = '') => `<span class="pill ${color}"><span class="status-dot"></span>${esc(text)}</span>`;
-const titles = {
-  today: ['Today', '', 'Today', ''],
-  work: ['Raven', '', 'What should we work on?', ''],
-  inbox: ['Judgment inbox', '', 'Inbox', 'Decisions your coding agents need from a person. Answer, sign, or hand on.'],
-  runs: ['Tasks', '', 'Tasks', 'Every task your agents registered: what is settled, what is waiting, and on whom.'],
-  memory: ['Decision memory', '', 'Memory', 'Past answers and source evidence, with their owner, scope, and approval status.'],
-  owners: ['People & ownership', '', 'People', 'Questions go to whoever this map says decides; where it is silent, to repository history and the coordinator. Readiness says what is missing.'],
-  connect: ['Connections & setup', '', 'Set up Raven', 'Three steps: connect your coding agent, give Raven context, invite the people who decide.'],
-};
+// The one word each page is called, in the sidebar, the h1 and the window title.
+const titles = {inbox: ['Inbox'], runs: ['Tasks'], owners: ['People'], connect: ['Settings'], today: ['Outcomes'], work: ['Raven']};
 let state = {decisions: [], runs: [], owners: [], events: []};
 let workspaceError = '';
 // The ownership graph and the directory (people, teams, the authority map, the coordinator) are not in the
@@ -237,9 +230,12 @@ async function authorizeGitHub() {
   setTimeout(poll, flow.interval * 1000);
 }
 
+// The top-bar pill names the workspace: the workspace's own name when
+// sign-in is on, otherwise 'Local workspace'.
 function updateWorkspaceName() {
   const label = $('#workspace-name');
-  label.textContent = state.workspace?.name || 'Workspace';
+  if (!label) return;
+  label.textContent = state.auth?.enabled && state.workspace?.name ? state.workspace.name : 'Local workspace';
   label.title = label.textContent;
 }
 
@@ -250,11 +246,10 @@ async function refresh({quiet = false} = {}) {
     const changed = await fetchState();
     workspaceError = '';
     $('#connection').classList.remove('offline');
+    updateWorkspaceName();
     if (changed) {
-      updateWorkspaceName();
       updateAgentConnectPrompt();
       if ($('#agent-status')) $('#agent-status').innerHTML = agentStatus();
-      $('#connection').innerHTML = state.auth && state.auth.enabled ? '<i></i> Shared workspace' : '<i></i> Local workspace';
       if (state.me) {
         $('#profile-name').textContent = state.me.name;
         $('#profile-avatar').textContent = initials(state.me.name);
@@ -263,11 +258,8 @@ async function refresh({quiet = false} = {}) {
       if (personalInbox() && !tabChosen) tab = 'mine';
       $('#inbox-count').textContent = personalInbox() ? state.decisions.filter(assignedToMe).length
         : state.counts ? state.counts.needs_you : state.decisions.filter(needsYou).length;
-      // What Today wants from the person: open proposals and blocked objectives.
-      const today = typeof objectiveTodayCount === 'function' ? objectiveTodayCount(state.today) : 0;
-      if ($('#today-count')) { $('#today-count').textContent = today; $('#today-count').hidden = !today; }
     }
-    renderModelStrip();
+    settingsDotState();
     if (taskId()) await loadTask({quiet});
     if (view === 'work' && typeof loadWorkbench === 'function') await loadWorkbench();
     if (view === 'today' && typeof loadObjectives === 'function') await loadObjectives();
@@ -280,7 +272,7 @@ async function refresh({quiet = false} = {}) {
     if (!taskId() && !settled && (!quiet || (!$('#modal').open && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)))) render();
   } catch (error) {
     $('#connection').classList.add('offline');
-    $('#connection').innerHTML = '<i></i> Connection lost';
+    if ($('#workspace-name')) $('#workspace-name').textContent = 'Connection lost';
     if ([401,403].includes(error.status)) {
       if (typeof rememberTaskView === 'function') rememberTaskView();
       state.auth = null; workspaceError = error.message; taskDetail = null;
@@ -291,16 +283,15 @@ async function refresh({quiet = false} = {}) {
   } finally { fetching = false; }
 }
 
-// One line under the page head on Today, Inbox and Connect: what the
-// configured backend lets Raven do, and where questions wait when no Slack
-// is connected. Read from /api/state; nothing here probes a provider.
-function renderModelStrip() {
-  const strip = $('#model-strip');
-  if (!strip) return;
-  const lines = [state.model?.notice || '', state.delivery && !state.delivery.enabled ? 'No Slack connected: questions wait in the inbox.' : ''].filter(Boolean);
-  const shown = !!state.auth && ['today', 'inbox', 'connect'].includes(view) && lines.length > 0;
-  strip.textContent = shown ? lines.join(' ') : '';
-  strip.hidden = !shown;
+// Workspace-level notices live on the Settings page; everywhere else they
+// are one dot on the Settings nav item. Read from /api/state; nothing here
+// probes a provider.
+function settingsDotState() {
+  const dot = $('#settings-dot');
+  if (!dot) return;
+  const incomplete = !!state.auth && (!!state.model?.notice || state.delivery?.enabled === false
+    || (state.readiness || []).some(item => item && item.level === 'blocker'));
+  dot.hidden = !incomplete;
 }
 
 function loadOwnership() {
@@ -317,19 +308,19 @@ function loadDirectory() {
     .catch(error => notify(error.message)).finally(() => { directoryLoading = false; });
 }
 
+// Old bookmarks keep working: #memory is the inbox's Decided tab, and #work
+// without a task is the task list unless this server runs tasks in the browser.
 function navigate() {
   navigationVersion += 1;
-  const next = location.hash.slice(1).split('/')[0];
-  view = titles[next] ? next : 'work';
+  const parts = location.hash.slice(1).split('/');
+  let next = parts[0];
+  if (next === 'memory') { tab = 'decided'; tabChosen = true; next = 'inbox'; history.replaceState(null, '', location.pathname + location.search + '#inbox'); }
+  if (next === 'work' && !parts[1] && state.auth && !state.workbench?.ready) { next = 'runs'; history.replaceState(null, '', location.pathname + location.search + '#runs'); }
+  view = titles[next] ? next : 'inbox';
   query = ''; ownerFilter = ''; ownership = null; directory = null;
-  const [breadcrumb, eyebrow, title, description] = titles[view];
-  $('#breadcrumb').textContent = breadcrumb;
-  $('#eyebrow').textContent = eyebrow;
+  const [title] = titles[view];
   $('#page-title').textContent = title;
-  $('#page-description').textContent = description;
-  document.title = view === 'work' ? 'Raven' : `Raven · ${breadcrumb}`;
-  $('#new-request').hidden = view === 'today' || view === 'connect';
-  $('#new-request').innerHTML = `${icon('plus')}${view === 'owners' ? 'Add owner' : 'Ask Raven'}`;
+  document.title = view === 'work' ? 'Raven' : `Raven · ${title}`;
   document.querySelectorAll('nav a').forEach(link => {
     link.classList.toggle('active', link.dataset.view === view);
     if (link.dataset.view === view) link.setAttribute('aria-current', 'page');
@@ -666,27 +657,38 @@ async function agentCredential(target) {
 
 function render() {
   lastDraw = Date.now();
-  if (typeof renderModelStrip === 'function') renderModelStrip();
+  settingsDotState();
   if (!state.auth) {
-    $('#new-request').hidden = true;
-    $('#manual-actions').hidden = true;
     $('#app').innerHTML = workspaceError ? `<div class="empty" role="alert"><h2>Workspace access unavailable</h2><p>${esc(workspaceError)}</p><button class="button" data-action="retry">Try again</button></div>` : '<p class="context" role="status">Loading workspace…</p>';
     return;
   }
-  $('#new-request').hidden = view === 'today' || view === 'connect' || state.me?.role === 'viewer' || (view === 'owners' && !canAdminister());
-  $('#manual-actions').hidden = $('#new-request').hidden;
+  // #work with no task is the task list unless this server runs tasks in
+  // the browser; the state that says so arrives after the first navigate().
+  if (view === 'work' && !location.hash.slice(1).split('/')[1] && !state.workbench?.ready) {
+    history.replaceState(null, '', location.pathname + location.search + '#runs');
+    navigate();
+    return;
+  }
   if (typeof rememberTaskView === 'function') rememberTaskView();
+  // Each page draws its own buttons into the h1 row; a page without any
+  // must not inherit the previous page's. An open More menu stays open
+  // across the five-second redraw.
+  const actions = $('#page-actions');
+  const menuWasOpen = !!actions?.querySelector('details.more-menu[open]');
+  if (actions) actions.innerHTML = '';
   const noteDraft = $('#note-text')?.value;
   const active = document.activeElement;
   const focusWas = $('#app').contains(active) ? focusKey(active) : '';
   const selection = active.tagName === 'INPUT' ? active.selectionStart : null;
   const disclosures = [...document.querySelectorAll('#app details[id]')].map(el => ({id: el.id, open: el.open, scroll: el.querySelector('ul')?.scrollTop || 0}));
-  $('.page-head').hidden = !!taskId() || view === 'work' || view === 'today';
+  $('.page-head').hidden = !!taskId() || view === 'work';
   document.body.classList.toggle('work-view', view === 'work');
   if (view === 'today' && typeof renderObjectives === 'function') { $('#app').dataset.taskId = ''; renderObjectives(); return; }
   if (view === 'work' && typeof renderWorkbench === 'function') { $('#app').dataset.taskId = ''; renderWorkbench(); return; }
-  $('#app').innerHTML = taskId() ? taskOverview() : ({inbox, runs, memory, owners, connect: connections})[view]();
+  $('#app').innerHTML = taskId() ? taskOverview() : ({inbox, runs, owners, connect: connections})[view]();
   $('#app').dataset.taskId = taskId();
+  const menu = actions?.querySelector('details.more-menu');
+  if (menu && menuWasOpen) menu.open = true;
   if (taskId() && typeof restoreTaskView === 'function') { restoreTaskView(); return; }
   if (noteDraft && $('#note-text')) $('#note-text').value = noteDraft;
   for (const saved of disclosures) {
@@ -730,9 +732,10 @@ function keepFocus(root, key, fallback) {
 }
 
 function showHelp() {
-  openModal('Raven help', 'Set up once. Then answer the decisions that need you.',
-    '<h3>Set up</h3><p>Open Connections &amp; setup and follow the three steps: connect your coding agent over MCP, give Raven context (GitHub or a local clone), and invite the people who decide. The same page lets you check agent activity. MCP connections do not require the local launcher.</p><h3>Follow a task</h3><p>Tasks lists what each agent registered. Open one for the brief, what the agent learned, who was asked, and the full history.</p><h3>Answer a decision</h3><p>The inbox holds the decisions waiting on a person. Answer, sign, or hand on to someone better placed. A found answer still needs its owner’s signature unless an enabled standing rule covers it.</p><div class="modal-actions"><button class="button primary" data-action="help-connect">Open Connections &amp; setup</button><button class="button" data-action="close">Close</button></div>');
+  openModal('Help', '',
+    `<p>The guide covers setup, tasks, answering and signing. <a href="${HELP_URL}" target="_blank" rel="noopener">Read the guide ↗</a></p><div class="modal-actions"><button class="button primary" data-action="help-connect">Open Settings</button><button class="button" data-action="close">Close</button></div>`);
 }
+const HELP_URL = 'https://github.com/nintendo-ds75/raven-preview/blob/main/docs/help.md';
 function openModal(title, subtitle, body) {
   saveRequestDraft();
   modalVersion += 1;
@@ -1387,7 +1390,19 @@ document.addEventListener('submit', async event => {
     done();
   }
 });
-$('#new-request').addEventListener('click', () => view === 'owners' ? newOwner() : newRequest());
+// A page's More menu (details.more-menu) closes on Escape, giving focus
+// back to its summary, and when focus leaves it.
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  const menu = document.querySelector('details.more-menu[open]');
+  if (!menu) return;
+  menu.open = false;
+  menu.querySelector('summary')?.focus();
+});
+document.addEventListener('focusout', event => {
+  const menu = document.querySelector('details.more-menu[open]');
+  if (menu && event.relatedTarget && !menu.contains(event.relatedTarget)) menu.open = false;
+});
 $('#modal').addEventListener('cancel', event => { event.preventDefault(); closeModal(); });
 $('#modal').addEventListener('click', event => { if (event.target === $('#modal')) { const r = $('#modal').getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) closeModal(); } });
 window.addEventListener('hashchange', navigate);
