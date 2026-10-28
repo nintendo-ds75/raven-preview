@@ -1,8 +1,9 @@
-/* Add evidence by pasting. A member pastes a customer message, an email or a
+/* Paste a message or email. A member pastes a customer message, an email or a
    thread and it becomes an ordinary record (POST /api/records): workspace
    visible, author stamped by the server, eligible for research the moment it
-   is saved. The panel lives in the Today aside and the last ten pasted
-   records sit under the form, each with Withdraw for its author or an admin. */
+   is saved. The panel is drawn into #evidence-mount on Settings (Context) and
+   the last ten pasted records sit under the form, each with Withdraw for its
+   author or an admin. */
 'use strict';
 const EVIDENCE_LIMIT = 20000;
 const EVIDENCE_SPLIT = 'Split it, or import it as a meeting transcript.';
@@ -32,19 +33,19 @@ function evidenceForm() {
   return `<form id="evidence-form" aria-describedby="evidence-help">
     <label for="evidence-repo">Repository</label>
     <select id="evidence-repo" name="repo" required><option value="">Choose a repository</option>${repos.map(repo => `<option value="${esc(repo.id)}" ${repo.id === evidenceDraft.repo ? 'selected' : ''}>${esc(repo.name)}</option>`).join('')}</select>
-    <label for="evidence-kind">What is it</label>
+    <label for="evidence-kind">Type</label>
     <select id="evidence-kind" name="kind">${EVIDENCE_KINDS.map(([id, label]) => `<option value="${id}" ${id === evidenceDraft.kind ? 'selected' : ''}>${label}</option>`).join('')}</select>
     <label for="evidence-title">Title</label>
     <input id="evidence-title" name="title" type="text" maxlength="300" required value="${esc(evidenceDraft.title)}" autocomplete="off">
-    <label for="evidence-body">Paste the message, email or thread</label>
+    <label for="evidence-body">Text</label>
     <textarea id="evidence-body" name="body" rows="7" maxlength="${EVIDENCE_LIMIT}" required aria-describedby="evidence-count">${esc(evidenceDraft.body)}</textarea>
     <p class="objective-muted evidence-count" id="evidence-count" aria-live="polite">${count.toLocaleString()} / ${EVIDENCE_LIMIT.toLocaleString()} characters</p>
-    <label for="evidence-date">When it was written (optional)</label>
+    <label for="evidence-date">Written on (optional)</label>
     <input id="evidence-date" name="created_at" type="date" value="${esc(evidenceDraft.created_at)}">
-    <label for="evidence-url">Link to the original (optional)</label>
+    <label for="evidence-url">Link (optional)</label>
     <input id="evidence-url" name="url" type="url" maxlength="1000" value="${esc(evidenceDraft.url)}" placeholder="https://" autocomplete="off">
-    <p class="objective-muted" id="evidence-help">Saved as a workspace-visible record in your name. Evidence, never approval: it can be cited, and you can withdraw it.</p>
-    <button class="button small primary" type="submit" ${evidenceSaving ? 'disabled aria-busy="true"' : ''}>Save as evidence</button>
+    <p class="objective-muted" id="evidence-help">You can withdraw it later.</p>
+    <button class="button small primary" type="submit" ${evidenceSaving ? 'disabled aria-busy="true"' : ''}>Save</button>
   </form>`;
 }
 
@@ -69,7 +70,7 @@ function evidenceItem(item) {
 function evidencePanel() {
   const items = evidenceRecords?.records || [];
   return `<section class="objective-side-section evidence-panel" id="evidence-panel" aria-labelledby="evidence-heading">
-    <h2 id="evidence-heading">Add evidence</h2>
+    <h2 id="evidence-heading">Paste a message or email</h2>
     ${evidenceError ? `<p class="objective-error" role="alert">${esc(evidenceError)}</p>` : ''}
     ${evidenceNotice ? `<p class="objective-notice" role="status">${esc(evidenceNotice)}</p>` : ''}
     ${evidenceForm()}
@@ -82,18 +83,13 @@ function evidencePanel() {
 
 function evidenceStyle() {}
 
+// Settings renders <div id="evidence-mount"></div> under Context; the panel is drawn into
+// it after every render() of Settings (objectives.js hooks render for that) and after
+// every change of its own.
 function evidenceMount(force = false) {
-  if (view !== 'today' || !evidenceCanWrite()) return;
-  const app = document.getElementById('app');
-  if (!app) return;
-  let mount = document.getElementById('evidence-mount');
-  if (!mount) {
-    const aside = app.querySelector?.('.objective-layout > aside');
-    if (!aside) return;
-    mount = document.createElement('div');
-    mount.id = 'evidence-mount';
-    aside.appendChild(mount);
-  }
+  if (view !== 'connect' || !evidenceCanWrite()) return;
+  const mount = document.getElementById('evidence-mount');
+  if (!mount) return;
   const active = document.activeElement;
   if (!force && mount.querySelector?.('#evidence-panel') && active && mount.contains?.(active)) return;
   evidenceStyle();
@@ -154,7 +150,7 @@ document.addEventListener('paste', event => {
 
 document.addEventListener('click', event => {
   const button = event.target?.closest?.('[data-evidence-action]');
-  if (!button || view !== 'today' || button.disabled) return;
+  if (!button || view !== 'connect' || button.disabled) return;
   const action = button.dataset.evidenceAction;
   if (action === 'withdraw') { evidenceWithdrawing = button.dataset.id || ''; evidenceError = ''; evidenceMount(true); document.getElementById('evidence-reason')?.focus(); }
   if (action === 'cancel-withdraw') { evidenceWithdrawing = ''; evidenceMount(true); }
@@ -162,7 +158,7 @@ document.addEventListener('click', event => {
 
 document.addEventListener('submit', async event => {
   const form = event.target;
-  if (!form || view !== 'today' || !['evidence-form', 'evidence-withdraw-form'].includes(form.id)) return;
+  if (!form || view !== 'connect' || !['evidence-form', 'evidence-withdraw-form'].includes(form.id)) return;
   event.preventDefault();
   if (!evidenceCanWrite() || (form.reportValidity && !form.reportValidity())) return;
   const values = evidenceValues(form);
@@ -194,7 +190,7 @@ document.addEventListener('submit', async event => {
   evidenceSaving = true; evidenceError = ''; evidenceMount(true);
   try {
     const result = await api('/api/records', payload);
-    evidenceNotice = `Saved as evidence for ${result.repo || evidenceDraft.repo}, in your name.`;
+    evidenceNotice = `Saved for ${result.repo || evidenceDraft.repo}.`;
     Object.assign(evidenceDraft, {title: '', body: '', created_at: '', url: ''});
     evidenceSaving = false;
     await evidenceLoad();

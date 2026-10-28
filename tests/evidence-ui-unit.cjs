@@ -1,4 +1,4 @@
-/* Add evidence panel contracts with DOM/API doubles; not a browser test. */
+/* 'Paste a message or email' panel contracts with DOM/API doubles; not a browser test. */
 'use strict';
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 const LIMIT = 20000;
@@ -6,10 +6,10 @@ const LIMIT = 20000;
 function harness({role = 'member', me = {id: 'p1', name: 'Pat', role: 'member'}, records = []} = {}) {
   const handlers = {}, requests = [];
   const app = {innerHTML: '', dataset: {}, querySelectorAll: () => [], contains: () => false, querySelector: () => null};
-  // The Today aside carries <div id="evidence-mount"></div>; the panel renders into it.
+  // Settings carries <div id="evidence-mount"></div> under Context; the panel renders into it.
   const mount = {id: 'evidence-mount', innerHTML: '', querySelector: () => null, contains: () => false};
   const head = {appendChild() {}};
-  const c = {console, URL, crypto: require('node:crypto').webcrypto, view: 'today', location: {hash: '#today'},
+  const c = {console, URL, crypto: require('node:crypto').webcrypto, view: 'connect', location: {hash: '#connect'},
     state: {auth: {enabled: true}, me: {...me, role}, workbench: {hosts: [], repositories: []}, question_repositories: [{id: 'sample/repo', name: 'sample/repo'}, {id: 'other/repo', name: 'other/repo'}]},
     document: {activeElement: {}, head, createElement: () => ({}), getElementById: id => id === 'app' ? app : id === 'evidence-mount' ? mount : null,
       addEventListener: (type, fn) => (handlers[type] ||= []).push(fn)},
@@ -38,15 +38,25 @@ function harness({role = 'member', me = {id: 'p1', name: 'Pat', role: 'member'},
 }
 
 (async () => {
-  // The panel mounts into the Today aside for a member, with a label on every field.
+  // The panel mounts into Settings for a member, with a label on every field, and nowhere on Outcomes.
   let h = harness();
+  h.c.view = 'today'; h.c.location.hash = '#today';
   h.run('renderObjectives()');
   await h.settle();
-  assert.match(h.mount.innerHTML, /<h2 id="evidence-heading">Add evidence<\/h2>/);
-  for (const id of ['evidence-repo', 'evidence-kind', 'evidence-title', 'evidence-body', 'evidence-date', 'evidence-url']) {
-    assert.match(h.mount.innerHTML, new RegExp(`<label for="${id}">`), id);
+  assert.equal(h.mount.innerHTML, '');
+  assert.equal(h.requests.length, 0);
+  h.c.view = 'connect'; h.c.location.hash = '#connect';
+  h.run('renderObjectives()');
+  await h.settle();
+  assert.match(h.mount.innerHTML, /<h2 id="evidence-heading">Paste a message or email<\/h2>/);
+  for (const [id, label] of [['evidence-repo', 'Repository'], ['evidence-kind', 'Type'], ['evidence-title', 'Title'], ['evidence-body', 'Text'], ['evidence-date', 'Written on (optional)'], ['evidence-url', 'Link (optional)']]) {
+    assert.match(h.mount.innerHTML, new RegExp(`<label for="${id}">${label.replace(/[()]/g, '\\$&')}</label>`), id);
     assert.match(h.mount.innerHTML, new RegExp(`id="${id}"`), id);
   }
+  assert.match(h.mount.innerHTML, /<p class="objective-muted" id="evidence-help">You can withdraw it later\.<\/p>/);
+  assert.match(h.mount.innerHTML, /<button class="button small primary" type="submit" >Save<\/button>/);
+  assert.match(h.mount.innerHTML, /<h3>Recently pasted<\/h3>[\s\S]*Nothing pasted yet\./);
+  assert.doesNotMatch(h.mount.innerHTML, /Add evidence|Save as evidence|never approval|What is it|Paste the message/);
   assert.match(h.mount.innerHTML, /<option value="sample\/repo"/);
   assert.match(h.mount.innerHTML, /<option value="other\/repo"/);
   assert.match(h.mount.innerHTML, /maxlength="20000"/);
@@ -67,7 +77,7 @@ function harness({role = 'member', me = {id: 'p1', name: 'Pat', role: 'member'},
   assert.equal(post.data.namespace, 'raven:paste');
   assert.match(post.data.ref, /^paste:[0-9a-f-]{36}$/);
   assert.equal(post.data.author, undefined);
-  assert.match(h.mount.innerHTML, /Saved as evidence for sample\/repo/);
+  assert.match(h.mount.innerHTML, /Saved for sample\/repo\./);
   assert.equal(h.requests.filter(r => r.url.startsWith('/api/records?namespace')).length, 2, 'the list reloads after a save');
 
   // 20,001 characters are refused with the hint, and nothing is posted.
@@ -121,5 +131,5 @@ function harness({role = 'member', me = {id: 'p1', name: 'Pat', role: 'member'},
   await h.settle();
   assert.match(h.mount.innerHTML, /&lt;img/);
   assert.doesNotMatch(h.mount.innerHTML, /<img onerror|href="javascript:/);
-  console.log('Add evidence UI: 7 contract scenarios passed (DOM/API doubles).');
+  console.log('Paste a message or email UI: 8 contract scenarios passed (DOM/API doubles).');
 })().catch(error => { console.error(error); process.exitCode = 1; });
