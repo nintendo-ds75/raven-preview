@@ -55,7 +55,7 @@ The browser opens **Create your workspace**.
    first profile is the admin.
 
 Raven stays locked until both steps are done. Returning users sign in with email and
-password; admins invite teammates from **Connections & setup**. Details and the
+password; admins invite teammates from **Settings**. Details and the
 headless alternative (`./setup --workspace "Your team"`) are in
 [workspace accounts](user-onboarding.md).
 
@@ -79,7 +79,7 @@ remote; a checkout without one needs `BRIDGE_INGEST_REPO='owner/name'` in Raven'
 `.env` first, and until then setup writes nothing into the project and says so.
 Restart the agent and trust the project when it asks.
 
-Or do it from the browser: **Connections & setup → step 1 → Connect** shows the one
+Or do it from the browser: **Settings → Connect your coding agent → Connect** shows the one
 command for your client:
 
 <details><summary>Claude Code</summary>
@@ -127,7 +127,7 @@ Raven routes decisions using evidence, not a hand-built map. Give it at least on
 
 | Source | What it adds | How |
 | --- | --- | --- |
-| GitHub | Pull requests, reviews, CODEOWNERS; keeps syncing | **Connections & setup → Connect GitHub**, choose repositories |
+| GitHub | Pull requests, reviews, CODEOWNERS; keeps syncing | **Settings → Context → Connect GitHub**, choose repositories |
 | Local clone | Commit history, blame, CODEOWNERS | `./setup --repo /path/to/checkout --repo-name owner/name` |
 | Slack channels, Jira projects, docs sites | Evidence the agent can cite | `./dev shell`, then `python -m bridge.sources scan --repo owner/name` suggests them (the command runs inside the container, where the database is); an admin connects each one. See [context sources](context-sources.md) |
 
@@ -149,9 +149,9 @@ What happens:
 4. **Tasks** shows the whole run: questions, answers, who decided, and the review of
    the submitted diff.
 
-## Optional: Today and background investigation
+## Optional: Outcomes and background investigation
 
-**Today** is a preview. Raven reads evidence a person imported (meeting
+**Outcomes** (Tasks → More → Outcomes) is a preview. Raven reads evidence a person imported (meeting
 transcripts, notes, connected sources), proposes one bounded piece of work with
 its citations, and a person signs it in the inbox before any coding worker
 starts. Nothing here is needed for the task flow above. To turn it on:
@@ -159,26 +159,26 @@ starts. Nothing here is needed for the task flow above. To turn it on:
 1. A model backend: `BRIDGE_MODEL_API=anthropic` with `ANTHROPIC_API_KEY` (or
    `BRIDGE_MODEL_API=openai` with `OPENAI_API_KEY`) in Raven's `.env`, and
    `BRIDGE_MODEL`. `./setup --configure` saves the Anthropic key for you. The
-   `claude-cli` backend works for an explicit **Find opportunities** click but
+   `claude-cli` backend works for an explicit **Suggest next steps** click but
    not for background investigation, which needs an enforceable token bound.
 2. Browser execution: `BRIDGE_WORKBENCH=1`, the checkout variables and one
    harness credential from [work directly in Raven](browser-tasks.md#run-in-docker).
    Without it an objective can be saved and reviewed but not dispatched.
 3. Optionally, an admin opts a repository into an evidence watch
-   (`POST /api/objectives/watch`, or **Today → Find opportunities → Enable a
+   (`POST /api/objectives/watch`, or **Outcomes → Suggest next steps → Enable a
    repository watch**) so new evidence is investigated before any objective
    exists. With a model backend configured, the worker also re-reads each
    *active objective* on its own whenever its repository's evidence changes
    or a scheduled checkpoint comes due, within the automatic budget; without
    a backend, or with `BRIDGE_SEMANTIC=0`, investigation runs only when
-   someone clicks **Find opportunities**.
+   someone clicks **Suggest next steps**.
 
-Without a backend, **Today** shows objectives and says investigation is
+Without a backend, **Outcomes** shows objectives and says investigation is
 unavailable; it never fabricates a proposal. Meeting transcripts are imported
 by an admin; joining a meeting needs a separately configured Vexa server and
 per-occurrence consent ([meeting adapters](meeting-adapters.md)). The whole
 feature has been verified with scripted inference and synthetic repositories,
-not with a live provider or a real meeting: [Today](startup-os.md).
+not with a live provider or a real meeting: [Outcomes](startup-os.md).
 
 ## Operate
 
@@ -209,7 +209,7 @@ Raven was configured with. Open the URL `./setup` printed, or run
 it loads the hooks. `./dev logs` shows each hook call as a `POST /mcp`.
 
 **A decision is "unrouted".** Raven found no evidence naming an owner. Connect
-GitHub or ingest the repository, or set a coordinator in **People & ownership** who
+GitHub or ingest the repository, or set a fallback person in **Settings → Routing** who
 receives everything nobody is known to own.
 
 **Nothing arrives in Slack.** Slack is optional and needs a public HTTPS URL for
@@ -221,6 +221,6 @@ Still stuck: `./dev status` and `./dev logs`, then open an issue with the output
 
 - [Slack notifications](slack.md) · [GitHub connection](github-connection.md) · [context sources](context-sources.md)
 - [Work in the browser](browser-tasks.md): run Claude inside Raven without a separate agent
-- [Today](startup-os.md) (preview): from imported evidence to one signed piece of work
+- [Outcomes](startup-os.md) (preview): from imported evidence to one signed piece of work
 - [Host adapters](host-adapters.md): how the hooks register tasks and resume idle sessions
 - [Running a pilot with one team](../PILOT.md) · [Docker, hosting and backups](../DOCKER.md)

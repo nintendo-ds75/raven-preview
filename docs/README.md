@@ -17,7 +17,7 @@ reachable only by chance (`tests/test_docs_reachable.py` checks that).
 **Use Raven**
 
 - [Work directly in Raven](browser-tasks.md): run a coding harness inside Raven from the browser, with tests in a no-network sandbox.
-- [Today: persistent objectives](startup-os.md) (preview): Raven investigates imported evidence, proposes one bounded piece of work with its citations, and a person reviews and signs it before any coding worker runs.
+- [Outcomes: persistent objectives](startup-os.md) (preview): Raven investigates imported evidence, proposes one bounded piece of work with its citations, and a person reviews and signs it before any coding worker runs.
 - [Read-only objective research](objective-research.md): the bounded search/list/read loop behind a proposal, its reading budget, coverage report and the background request budget.
 - [Meeting adapters](meeting-adapters.md): transcript import, the Vexa participant adapter, per-occurrence consent, revocation and the consented background observer.
 - [Voice interviews](voice-interviews.md): spoken or typed answers from a decision.
@@ -66,7 +66,7 @@ reachable only by chance (`tests/test_docs_reachable.py` checks that).
 **Verification records**
 
 - [What we have tested](verification.md): the index of end-to-end runs, with their failures.
-- [Startup OS acceptance ledger](startup-os-acceptance.md): coverage per design case for Today, meetings, harnesses and verification; a ledger of historical checkpoints, not a live pass.
+- [Startup OS acceptance ledger](startup-os-acceptance.md): coverage per design case for Outcomes, meetings, harnesses and verification; a ledger of historical checkpoints, not a live pass.
 - [11 October customer loop](customer-loop-2026-10-11.md): fresh install, real Claude host, native connectors against synthetic services.
 - [5 October customer loop](customer-loop-2026-10-05.md): the first new-customer loop without a prepared ownership map.
 - [Live source revalidation](live-source-loop-2026-10-06.md): the source-change and approval loop with real Claude Code processes on urllib3.

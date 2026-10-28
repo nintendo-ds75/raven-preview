@@ -19,8 +19,7 @@ Tasks lists what each agent registered and who each task waits on. Open
 one for its goal, the questions waiting on a person, what was decided,
 the notes left for the agent and the full history.
 
-Task status records workflow state; it does not prove an external coding
-agent is running.
+Task status records workflow state; it does not prove an external coding agent is running.
 
 Requester is recorded task context, not proof of identity.
 
@@ -32,14 +31,11 @@ signature unless an enabled standing rule covers it.
 
 Evidence is context. Explicit sign-off authorizes a decision.
 
-Recording a new or corrected answer retires the existing standing rule. A
-sign-off with unchanged answer and sources keeps it.
+Recording a new or corrected answer retires the existing standing rule. A sign-off with unchanged answer and sources keeps it.
 
-A correction is a signed answer; every decision that leaned on the old
-answer is marked for review.
+A correction is a signed answer; every decision that leaned on the old answer is marked for review.
 
-Transcripts are context, never a participant's approval. Recording
-requires an explicit consent record.
+Transcripts are context, never a participant's approval. Recording requires an explicit consent record.
 
 ## Links from Slack
 

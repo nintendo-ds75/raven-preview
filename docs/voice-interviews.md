@@ -1,6 +1,6 @@
 # Attributed voice and text interviews
 
-Raven can interview an authorized decision-maker before recording a decision. Open a decision in the inbox, or the personal task page linked from its Slack message, and select **Start or resume interview**. Browser dictation and spoken prompts/readback are optional; typing works without them.
+Raven can interview an authorized decision-maker before recording a decision. Open a decision in the inbox, or the personal task page linked from its Slack message, and select **Talk it through instead**. Browser dictation and spoken prompts/readback are optional; typing works without them.
 
 ## What the workflow does
 

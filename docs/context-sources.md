@@ -188,7 +188,7 @@ of these are for administrators only; agents and members never see them.
 ## Pasted evidence and session records
 
 Not every piece of evidence lives behind a connector. A member can paste a
-customer message, an email or a thread into **Add evidence** on Today, pick the
+customer message, an email or a thread into **Paste a message or email** in Settings, pick the
 repository and what it is (note, Slack, email, document, ticket), and save it.
 It becomes an ordinary record, the same kind `POST /api/records` and
 `bridge_import_record` write: workspace-visible, citable by the ladder, read by

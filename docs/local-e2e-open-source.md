@@ -137,10 +137,10 @@ The browser opens <http://localhost:7333>.
 
 1. Run `./dev login` for the one-time setup credential. Use it on **Create your workspace**, then create your
    profile. You become admin.
-2. Open **Connections & setup**. GitHub reads "Token set", then "On" with `prometheus/prometheus` after the first sync.
+2. Open **Settings**. GitHub reads "Token set", then "On" with `prometheus/prometheus` after the first sync.
    The first sync starts with Raven and repeats every 15 minutes, and `./dev logs` shows it.
 
-### Stand-in owners (People & ownership)
+### Stand-in owners (People)
 
 Mirror the project's areas, never its people. For Prometheus:
 
@@ -174,7 +174,7 @@ returns for the rest of the task.
 ```
 
 Start `claude` in `~/oss/prometheus`, approve the project's `bridge` server when asked, and check `/mcp` shows it
-connected. If it does not, **Connections & setup → Connect an agent → Claude Code** gives a
+connected. If it does not, **Settings → Connect your coding agent → Claude Code** gives a
 `claude mcp add --transport http bridge …` command to run instead.
 
 ## 6. Run the tasks
@@ -239,7 +239,7 @@ settles nothing (`uncovered`). Then:
   the line of the diff behind each requirement, any counterexample it found and what it could not examine, and
   `verified` stays false. Check every counterexample yourself, and write an independent test for at least one
   signed rule: the reading is not a test;
-- check **Tasks** for the task tree, and **Decision memory** for the answers.
+- check **Tasks** for the task tree, and the inbox's **Decided** tab for the answers.
 
 ## 9. What to record
 

@@ -60,7 +60,7 @@ and the chronological record expand when you need them. Findings can be useful
 before they are approved; the page keeps those states separate. Work outside
 Raven is not automatically captured.
 
-On **New conversation**, choose **Ask a question** to read connected evidence and earlier
+On **Tasks → Start a task**, choose **Ask a question** to read connected evidence and earlier
 decisions. This mode does not start a coding host, create a task, contact people,
 or grant approval. It shows citations and what the sources leave open. Choose
 **Start a task** when you want implementation and the human decision loop.
@@ -73,9 +73,9 @@ for dependencies, execution limits, data flow, and the optional command sandbox.
 The older **Ask Raven** action in Tasks creates a decision run and may contact an
 owner. Its confirmation screen distinguishes that action from a read-only question.
 
-### Today: from evidence to one piece of work (preview)
+### Outcomes: from evidence to one piece of work (preview)
 
-**Today** turns the loop around: instead of waiting for an agent to ask, Raven
+**Outcomes** (Tasks → More → Outcomes) turns the loop around: instead of waiting for an agent to ask, Raven
 reads evidence a person imported (a meeting transcript, notes, the connected
 sources) and proposes one bounded piece of work with the quotes that justify it.
 The proposal is an ordinary judgment node in the same inbox: the owner reviews
@@ -84,7 +84,7 @@ the change in a private copy and nothing more. A completed run is not the
 business outcome; a person records that separately. It needs a configured model
 backend and browser execution, an admin opts each repository into background
 investigation, and it has not been exercised with a live provider or a real
-meeting yet. [Today and its limits](startup-os.md).
+meeting yet. [Outcomes and its limits](startup-os.md).
 
 At completion, `bridge_export_proof` returns a portable review bundle containing
 the exact submitted diff hash, decision revisions, recorded signers, scope,

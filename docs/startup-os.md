@@ -1,6 +1,6 @@
 # Persistent objectives in Raven
 
-**Today** adds an evidence-to-work head around the existing Raven task, judgment,
+**Outcomes** (Tasks → More → Outcomes) adds an evidence-to-work head around the existing Raven task, judgment,
 source, and execution core. It does not replace that core or infer permission
 from a transcript. For what Raven is as a whole, and what it is not, read
 [What Raven is](positioning.md).
@@ -8,30 +8,27 @@ from a transcript. For what Raven is as a whole, and what it is not, read
 ## The loop
 
 1. Import permission-scoped evidence (including [meeting transcripts](meeting-adapters.md))
-   or use the existing GitHub, Slack, Jira, documentation and context connectors. A member can also paste a customer message, an email or a thread with **Add evidence** on Today; it is saved as an ordinary record in their name ([pasted evidence and session records](context-sources.md#pasted-evidence-and-session-records)). For Vexa, explicitly authorize per-occurrence notice/transcription and workspace disclosure, then enable background sync. After a separate authorized Join, read-only polling imports the exact occurrence transcript; no recurring-room consent or automatic attendance is inferred.
-2. **Find opportunities** runs a bounded read-only search/read investigation through the configured Raven model
+   or use the existing GitHub, Slack, Jira, documentation and context connectors. A member can also paste a customer message, an email or a thread with **Paste a message or email** in Settings; it is saved as an ordinary record in their name ([pasted evidence and session records](context-sources.md#pasted-evidence-and-session-records)). For Vexa, explicitly authorize per-occurrence notice/transcription and workspace disclosure, then enable background sync. After a separate authorized Join, read-only polling imports the exact occurrence transcript; no recurring-room consent or automatic attendance is inferred.
+2. **Suggest next steps** runs a bounded read-only search/read investigation through the configured Raven model
    backend before proposing any judgment. It searches the whole eligible corpus, not only recent meeting chunks, preserves exact quotes and reports unread sources/partial meeting coverage. Retrievable factual answers return as progress rather than needless judgment requests. It can return no useful move. Exact quoted record/version citations
    are checked; inaccessible, changed or invented evidence rejects the result.
    No model backend means unavailable, not a fabricated recommendation: the
-   button is off, and Today, the inbox and Connections & setup each say so in
-   one line under the heading (`Suggestions and briefs are off: no model key.
+   button is off, and Settings says so under **Not set up yet** (`Suggestions and briefs are off: no model key.
    Routing, records, reminders and signed decisions still run. Add a key with
    ./setup --configure and restart.`; with the internal `claude-cli` backend,
    `Manual investigation only; automatic suggestions need an API key.`, and
-   the button stays on for that manual click; with a key, `Model: <model>.
-   Suggestions on for watched repositories.`). Today
+   the button stays on for that manual click). Outcomes
    then lists the **open loops** a person can still close without a model:
    follow-ups agents suggested that nobody adopted, answers a correction put in
-   doubt, checkpoints that came due, and evidence recorded since the last
-   investigation of each repository.
-3. **Review & take point** prepares an ordinary Raven judgment node. The proposed
+   doubt, and checkpoints that came due.
+3. **Review and accept** prepares an ordinary Raven judgment node. The proposed
    outcome, limits and positive/negative/boundary cases are inside that node's
    signed scope. The existing owner, required signers and source-review rules
    apply. The initial click is not approval.
    The signer never reads that scope as JSON: the inbox card, the decision
    dialog, the personal task page and the Slack message show the same short
    card instead (the outcome, the question, what the move will and won't do and
-   its edge cases, the bound, the cited evidence, and a link back to Today),
+   its edge cases, the bound, the cited evidence, and a link back to Outcomes),
    built from the stored scope without adding to it. The JSON stays the text
    the signature binds to.
 4. Only the exact current signed answer and scope activate the move. A signed
@@ -47,20 +44,20 @@ from a transcript. For what Raven is as a whole, and what it is not, read
 6. A completed coding run does **not** achieve the business outcome. Keep the
    thread, record a checkpoint/next check time, and observe the actual result.
    Marking achieved is explicitly a human attestation, not an independent test.
-7. Today groups all of this by what it waits on, from the status the server
+7. Outcomes groups all of this by what it waits on, from the status the server
    computes for each objective: **Needs your decision** (open proposals and
    blocked objectives), **In progress** (a running worker, or a scope out for
    signature, named `Awaiting signed review · <owner>`), **Ready to review**
    (waiting objectives whose worker finished in the last seven days), and a
-   folded **Closed** list. The sidebar's Today count adds up the open
-   proposals and blocked objectives `GET /api/state` reports (`today`): the
-   same proposals **Needs your decision** lists, so a scope out for signature
+   folded **Closed** list. `GET /api/state` reports (`today`) the open
+   proposals and blocked objectives, the same proposals **Needs your decision**
+   lists; nothing in the sidebar counts them, and a scope out for signature
    is counted by the inbox, not here. Next to it, `model` says what the
    configured backend allows (`proposals`, automatic suggestions;
-   `investigation`, an explicit **Find opportunities** click). Nothing on
-   Today posts to Slack; the inbox and its deliveries stay the only channel.
+   `investigation`, an explicit **Suggest next steps** click). Nothing on
+   Outcomes posts to Slack; the inbox and its deliveries stay the only channel.
 
-An explicit manual **Take point on an outcome** saves a person's outcome and
+An explicit manual **Track an outcome** saves a person's outcome and
 bounds; its explicit preparation checkbox starts the selected private coding worker. Uncheck it to save without dispatch. This path needs no
 fictional source citation. Source-originated proposals always need provenance
 and the ordinary judgment review.
@@ -133,17 +130,17 @@ describes. Nothing below needs a live provider until day 8.
 **Day 0.** `./setup`, with the Anthropic key left blank, prints `No model key: Raven routes,
 records, reminds and keeps signed decisions; it will not write briefs or
 propose work. Add a key later with ./setup --configure (or ANTHROPIC_API_KEY /
-OPENAI_API_KEY in .env) and restart.` Today, the inbox and Connections & setup
-each carry one line under the heading: `Suggestions and briefs are off: no
+OPENAI_API_KEY in .env) and restart.` Settings lists both under **Not set up
+yet**: `Suggestions and briefs are off: no
 model key. Routing, records, reminders and signed decisions still run. Add a
 key with ./setup --configure and restart.` and, until a Slack bot is
-connected, `No Slack connected: questions wait in the inbox.`
+connected, `Slack not connected: people answer in the inbox.`; every other
+page shows one dot on the Settings nav item.
 
-**Days 1 to 3.** Each person pastes what they already have into **Add
-evidence on Today**: the notes from a customer call, the pricing policy, the
+**Days 1 to 3.** Each person pastes what they already have into **Paste
+a message or email** in Settings: the notes from a customer call, the pricing policy, the
 paragraph of the contract that matters. Every paste becomes a versioned
-source record; Today's open loops show it under *New evidence since the last
-investigation*, counted per repository. Coding agents connected over MCP ask
+source record, listed under *Recently pasted*. Coding agents connected over MCP ask
 their questions as they work; each question is routed to the person whose
 area it touches and waits in the inbox, where the sidebar count says how many.
 Follow-ups an agent suggested and nobody adopted appear under *Follow-ups
@@ -153,25 +150,24 @@ nobody adopted*; an answer a later correction put in doubt appears under
 **Days 4 to 7.** The second time an agent asks what the first one asked, the
 signed answer is reused and the inbox shows where it came from; a person
 signs again only when a source changed. Someone takes point on an outcome by
-hand (**Take point on an outcome**, with preparation unchecked) and saves a
+hand (**Track an outcome**, with preparation unchecked) and saves a
 checkpoint with a next check date; when it comes due, the objective moves to
 **Needs your decision** and the open loops list it under *Checkpoints due*,
 both until someone records the next checkpoint.
-Nothing has been proposed, briefed or started by a model: the `Find
-opportunities` button is off, with the same sentence as its reason.
+Nothing has been proposed, briefed or started by a model: the `Suggest
+next steps` button is off, with the same sentence as its reason.
 
 **Day 8.** An administrator adds an Anthropic or OpenAI key with `./setup
---configure` (or in `.env`, see [getting started](getting-started.md#optional-today-and-background-investigation))
-and restarts. The line under each heading now reads `Model: <model>.
-Suggestions on for watched repositories.` and the open loops block leaves
-Today. The administrator enables an evidence watch on the repository
-(**Find opportunities → Enable a repository watch**).
+--configure` (or in `.env`, see [getting started](getting-started.md#optional-outcomes-and-background-investigation))
+and restarts. The model-key line leaves the Settings checklist and the open
+loops block leaves Outcomes. The administrator enables an evidence watch on the repository
+(**Suggest next steps → Enable a repository watch**).
 
 **Days 9 to 14.** The watch reads the evidence pasted in week one and
 proposes at most one bounded move per repository, with the exact quotes it
-rests on; it appears under **Needs your decision**. A person clicks **Review &
-take point**, which puts an ordinary judgment node in the inbox, routed by the
-authority map or by `objective_scope_fallback`; Today shows it under **In
+rests on; it appears under **Needs your decision**. A person clicks **Review and
+accept**, which puts an ordinary judgment node in the inbox, routed by the
+authority map or by `objective_scope_fallback`; Outcomes shows it under **In
 progress** as `Awaiting signed review · <owner>`. The owner signs the scope
 card in the inbox. The objective worker activates the move and, when a
 configured execution harness is ready, dispatches a private-copy worker; when

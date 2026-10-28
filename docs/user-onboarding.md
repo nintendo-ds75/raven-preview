@@ -62,13 +62,13 @@ The existing single-use, email-assigned invitation links remain available; this
 TODO covers the fuller sharing/code experience, not unrestricted public signup.
 
 Existing accounts and data are preserved. An existing admin can complete setup
-from Connections or People & ownership; their identity remains the same. The
+from Settings; their identity remains the same. The
 Docker development-login credential is revoked on completion and is not recreated
 on restart. Existing agent credentials are preserved. Keep an operator bootstrap
 credential in a secret store if you need a recovery path: password reset email is
 not implemented yet.
 
-Admins select **Invite teammate** from Connections or People & ownership. Choose
+Admins select **Invite teammate** from Settings (People access), or **Invite** on a person's card in People. Choose
 viewer or member access, then copy and privately share the link. Links expire in
 48 hours, can be redeemed once, and are replaced by creating another invitation
 for the same email. An invitation links to a person already on the map by exact

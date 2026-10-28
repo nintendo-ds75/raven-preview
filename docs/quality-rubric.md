@@ -105,12 +105,12 @@ One bounded move with verbatim citations and four cases; counted good only by wh
 ### 15. Attention budget
 Nothing reaches a person before a person asked for it; the one message a proposal produces reads like every other Raven decision; a default install costs nothing in the background.
 - **Measure:** messages per proposal before and after a human click; words and JSON before the options line; open proposals per repository; subprocess spawns per poll on a default install; scans per corpus change.
-- **Target:** 0 messages before "Review & take point"; exactly one deduped signoff message per proposal per person; ≤ 150 words and no JSON before the options; ≤ 1 open proposal per repository; 0 subprocess spawns across 20 polls; 1 scan per objective per corpus change.
+- **Target:** 0 messages before "Review and accept"; exactly one deduped signoff message per proposal per person; ≤ 150 words and no JSON before the options; ≤ 1 open proposal per repository; 0 subprocess spawns across 20 polls; 1 scan per objective per corpus change.
 - **Checks:** `tests/test_delivery.py`, `tests/test_background_cost.py`, `tests/test_objectives.py`, `tests/objective-decision-ui-unit.cjs`.
 
 ### 16. Learning
 Dismissals are honoured, carry a reason and shape the next investigation; signed decisions resurface as evidence, never as approval.
-- **Measure:** identical dismissed fingerprint re-shown; reasonless dismissals accepted; last five rationales present in the next model input and on Today; replay of signed decisions through the ladder.
+- **Measure:** identical dismissed fingerprint re-shown; reasonless dismissals accepted; last five rationales present in the next model input and on Outcomes; replay of signed decisions through the ladder.
 - **Target:** 0 re-pitches with an unchanged fingerprint; 0 reasonless dismissals; rationales reach the model input and the aside in every scripted run; ≥ 5 of 6 replayed decisions resurface with signoff still required.
 - **Checks:** `tests/test_objective_budget.py`, `tests/test_objectives.py`, `tests/test_decision_replay.py`, `tests/objectives-ui-unit.cjs`.
 

@@ -40,7 +40,7 @@ no override is configured.
    BRIDGE_GITHUB_APP_SLUG=your-bridge-app-slug
    ```
 
-7. Run `./setup`, or open **Connections & setup** in the running app.
+7. Run `./setup`, or open **Settings** in the running app.
 
 These two identifiers are public. Never distribute an app private key or client
 secret. Raven's device flow does not use either.

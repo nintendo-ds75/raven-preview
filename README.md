@@ -62,7 +62,7 @@ in your own words. The decisions it finds appear in your inbox. Full walkthrough
 
 <details><summary>Connect without the wizard</summary>
 
-In the browser, **Connections & setup → Connect** mints a limited credential and shows one command per client, for example:
+In the browser, **Settings → Connect your coding agent → Connect** mints a limited credential and shows one command per client, for example:
 
 ```sh
 claude mcp add --transport http bridge http://localhost:7333/mcp --header 'Authorization: Bearer brg_…'
@@ -81,7 +81,7 @@ Add the Raven rule it offers to `CLAUDE.md` or `AGENTS.md`, so the agent calls `
 - **Context the agent can cite.** GitHub sync plus opt-in Slack channels, Jira projects and documentation sites; Raven can scan a repository and suggest which to connect. [Context sources](docs/context-sources.md)
 - **Agents keep working.** A hook holds the agent while a person answers, or a local supervisor resumes the same session later. [Host adapters](docs/host-adapters.md)
 - **Or run the agent in Raven.** Start a task from the browser and Raven runs Claude in a private copy of the repository, with tests in a no-network sandbox. [Browser tasks](docs/browser-tasks.md)
-- **Today (preview).** Raven can investigate imported evidence (meeting transcripts, notes, connected sources) and suggest one bounded piece of work with the evidence behind it. A person reviews and signs it in the same inbox before any coding worker runs. Needs a model backend and the optional browser execution; not yet exercised with a live provider ([what this preview can promise](docs/overview.md#what-this-preview-can-promise-today)). [Today](docs/startup-os.md)
+- **Outcomes (preview, under Tasks → More).** Raven can investigate imported evidence (meeting transcripts, notes, connected sources) and suggest one bounded piece of work with the evidence behind it. A person reviews and signs it in the same inbox before any coding worker runs. Needs a model backend and the optional browser execution; not yet exercised with a live provider ([what this preview can promise](docs/overview.md#what-this-preview-can-promise-today)). [Outcomes](docs/startup-os.md)
 
 ## How it works
 
