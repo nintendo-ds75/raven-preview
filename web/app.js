@@ -547,28 +547,51 @@ function ownershipGraph() {
 }
 
 const roleLabels = {knows:'knows', decides:'decides', approves:'must approve'};
-const scopeLabels = {path:'path', category:'category', repo:'repository'};
+// Where an authority row came from, as a person reads it.
+const sourceLabels = {answer: 'an answer', referral: 'a hand-on'};
 
 const canAdminister = () => state.auth?.enabled === false || state.me?.role === 'admin';
+const sameName = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+// A row whose date has passed decides nothing; it read the same as a live
+// one, which is how a map can look set up and route nowhere.
+const authorityEnded = a => Boolean(a.effective_to) && a.effective_to.slice(0, 10) < new Date().toISOString().slice(0, 10);
+const authorityOf = (a, p) => a.person_id ? a.person_id === p.id : !a.is_team && sameName(a.who, p.name);
 
-function verifiedLayer() {
-  if (directory === null) {
-    loadDirectory();
-    return '<p class="context" role="status">Loading people and authority…</p>';
-  }
-  const dir = directory;
-  const settings = dir.settings || {};
-  const people = dir.people || [];
-  const coordinator = settings.coordinator;
-  const control = `<section class="setup-card routing-settings"><div><span class="label">ROUTING SETTINGS</span><h2>Coordinator &amp; pilot mode</h2><p>Optional overrides. Raven normally discovers contacts from connected sources and learns from answers in Raven.</p><label for="coordinator-select">Coordinator</label><select id="coordinator-select" aria-label="Coordinator"><option value="">No coordinator — use the Slack triage channel</option>${people.map(p => `<option value="${esc(p.id)}" ${coordinator && coordinator.id === p.id ? 'selected' : ''}>${esc(p.name)}${p.team ? ` · ${esc(p.team)}` : ''}</option>`).join('')}</select><p class="field-help">Optional fallback before the Slack triage channel.</p></div><div class="routing-options"><label class="routing-option" for="verified-only"><input type="checkbox" id="verified-only" ${settings.require_verified_route ? 'checked' : ''}><span><strong>Pilot mode: route only verified owners</strong><small>Route git-history-only matches to the coordinator, with the candidates named.</small></span></label><label class="routing-option" for="auto-rules"><input type="checkbox" id="auto-rules" ${settings.auto_rules ? 'checked' : ''}><span><strong>Automatic rules</strong><small>Matching reusable rules authorize without a fresh signature. Leave off to review every request.</small></span></label><label class="routing-option" for="brief-mode"><span><strong>Task page in messages</strong><small>Legacy conversation mode only: optional recipient-specific task links. Default notifications use authenticated Raven links.</small><select id="brief-mode" aria-label="Task page in messages">${[['off','Off: messages link to the inbox'],['static','Task page: the task’s context, the answer form and notes']].map(([v,l]) => `<option value="${v}" ${(settings.brief_mode || 'static') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></span></label></div></section>`;
-  const cards = people.length ? `<div class="people-grid">${people.map((p, i) => `<article class="person-card ${p.active ? '' : 'inactive'}">${avatar(p.name, i)}<h3>${esc(p.name)}</h3><p>${esc(p.team || '')}${p.teams && p.teams.length ? ` · ${esc(p.teams.join(', '))}` : ''}</p><small>${[p.email, p.github_login ? '@' + p.github_login : '', p.slack_id ? 'Slack ' + p.slack_id : ''].filter(Boolean).map(esc).join(' · ') || 'no identities recorded'}</small><small>${(p.authority || []).length ? (p.authority || []).map(a => `${roleLabels[a.role] || a.role} ${a.scope_kind === 'repo' ? 'everything' : esc(a.scope)}${a.repo ? ` in ${esc(a.repo)}` : ''}`).join('; ') : 'Contact discovered · routing follows available evidence'}</small>${p.active ? '' : '<small>inactive</small>'}</article>`).join('')}</div>` : '<p class="context">Raven discovers contacts from connected sources. Default notification links require the expert to sign in to Raven; discovering a contact does not create their account.</p>';
-  const rows = dir.authority || [];
-  // A row whose date has passed decides nothing; it read the same as a
-  // live one, which is how a map can look set up and route nowhere.
-  const expired = a => Boolean(a.effective_to) && a.effective_to.slice(0, 10) < new Date().toISOString().slice(0, 10);
-  const inForce = rows.filter(a => !expired(a)).length;
-  const table = rows.length ? `<div class="table-wrap" role="region" aria-label="Authority map" tabindex="0"><table><thead><tr><th>WHO</th><th>ROLE</th><th>SCOPE</th><th>REPOSITORY</th><th>SOURCE</th><th>UNTIL</th><th></th></tr></thead><tbody>${rows.map(a => `<tr class="${expired(a) ? 'inactive' : ''}"><td><strong>${esc(a.who)}</strong>${a.is_team ? ' <small>(team)</small>' : ''}</td><td>${esc(roleLabels[a.role] || a.role)}${a.accepted ? '' : ' <small>(not yet accepted)</small>'}</td><td><code>${esc(a.scope_kind === 'repo' ? 'everything' : a.scope)}</code> <small>${esc(scopeLabels[a.scope_kind] || a.scope_kind)}</small></td><td>${esc(a.repo || 'every repository')}</td><td>${esc(a.source)}${a.asserted_by ? `<br><small>asserted by ${esc(a.asserted_by)}</small>` : ''}${a.note ? `<br><small>${esc(a.note)}</small>` : ''}</td><td>${a.effective_to ? `${esc(a.effective_to.slice(0, 10))}${expired(a) ? ' <small>expired: decides nothing now</small>' : ''}` : 'open'}</td><td>${canAdminister() ? `<button class="button small soft" data-action="end-authority" data-id="${esc(a.id)}">End</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="context">No manual overrides. Raven infers contacts from connected sources and learns from replies.</p>';
-  return `${canAdminister() ? control : `<fieldset class="read-only-settings" disabled><legend>Workspace settings · managed by an administrator</legend>${control}</fieldset>`}<div class="wide-toolbar"><h2>People</h2><span class="muted">${plural(people.length, 'contact')}</span>${canAdminister() ? '<button class="button" data-action="person">Add person</button>' : ''}${canAdminister() ? '<button class="button soft" data-action="team">Add team</button>' : ''}</div>${cards}<div class="wide-toolbar"><h2>Authority map</h2><span class="muted">${inForce} in force${rows.length > inForce ? `, ${rows.length - inForce} expired` : ''}</span>${canAdminister() ? '<button class="button" data-action="authority">Add authority</button>' : ''}</div>${table}<div class="notice">Verified authority outranks what git suggests: a person the map says decides or approves a path pattern, a decision category (billing, pricing, security, auth, privacy, compat, rollout, data, infra, legal, customer, ux, ops) or a whole repository is the owner whatever blame says. A team named in CODEOWNERS becomes its members once the team is known here.</div>`;
+// One line per authority row: what they decide, where, and where the record
+// came from. Only a live row can be ended; an ended one stays, muted.
+function authorityRow(a, who = '') {
+  const ended = authorityEnded(a);
+  const parts = [`<strong>${esc(roleLabels[a.role] || a.role)} ${esc(a.scope_kind === 'repo' ? 'everything' : a.scope)}</strong>`,
+    esc(a.repo || 'every repository'), `from ${esc(sourceLabels[a.source] || a.source)}`];
+  if (a.asserted_by) parts.push(`asserted by ${esc(a.asserted_by)}`);
+  if (a.note) parts.push(esc(a.note));
+  if (!a.accepted) parts.push('(not yet accepted)');
+  if (ended) parts.push(`ended ${esc(a.effective_to.slice(0, 10))}`);
+  if (who) parts.unshift(esc(who));
+  const end = canAdminister() && !ended ? `<button class="button small soft" data-action="end-authority" data-id="${esc(a.id)}">End</button>` : '';
+  return `<div class="authority-row${ended ? ' ended' : ''}"><span>${parts.join(' · ')}</span>${end}</div>`;
+}
+
+function authorityRows(rows, who) {
+  if (!rows.length) return '<p class="muted">Nothing recorded yet</p>';
+  const live = rows.filter(a => !authorityEnded(a)), ended = rows.filter(authorityEnded);
+  return live.concat(ended).map(a => authorityRow(a, who ? `${a.who || 'Unknown'}${a.is_team ? ' (team)' : ''}` : '')).join('');
+}
+
+// A person, what the pending decisions wait on them for, and every authority
+// row recorded for them. Authority ids and data-action=end-authority are the
+// table's; only where they are shown changed.
+function personCard(p, index, rows = []) {
+  const team = `${esc(p.team || '')}${p.teams && p.teams.length ? `${p.team ? ' · ' : ''}${esc(p.teams.join(', '))}` : ''}`;
+  const identities = [p.email, p.github_login ? '@' + p.github_login : '', p.slack_id ? 'Slack ' + p.slack_id : ''].filter(Boolean).map(esc).join(' · ');
+  const waiting = state.decisions.filter(d => d.status === 'pending' && (d.owner_id === p.id || sameName(d.owner_name, p.name))).length;
+  return `<article class="person-card${p.active ? '' : ' inactive'}">${avatar(p.name, index)}<h3>${esc(p.name)}</h3>${team ? `<p>${team}</p>` : ''}${identities ? `<small>${identities}</small>` : ''}${p.active ? '' : '<small>inactive</small>'}${waiting ? `<p class="person-waiting">Waiting on them: ${waiting}</p>` : ''}<h4>Decides</h4>${authorityRows(rows)}${canAdminister() ? `<button class="button text" data-action="authority" data-person="${esc(p.id)}">Say what they decide</button>` : ''}</article>`;
+}
+
+// Rows the directory records for a team or a name no person card carries:
+// shown under one last card so no record disappears with the table.
+function otherCard(rows, index) {
+  return `<article class="person-card">${avatar('Other', index)}<h3>Other</h3><h4>Decides</h4>${authorityRows(rows, true)}</article>`;
 }
 
 function readiness() {
@@ -582,21 +605,38 @@ function readiness() {
 }
 
 function owners() {
-  return `<div class="owners-page">${workspaceAccountCard()}${savedStrip()}${readiness()}${verifiedLayer()}<details class="history" id="repository-signals"><summary>Repository history and routing signals</summary>${ownershipGraph()}</details><div class="wide-toolbar"><h2>Owners by path pattern</h2><span class="muted">${state.owners.length} people</span></div><div class="people-grid">${state.owners.map((owner, i) => `<article class="person-card">${avatar(owner.name, i)}<h3>${esc(owner.name)}</h3><p>${esc(owner.team)}</p><code>${esc(owner.patterns)}</code><small>${state.decisions.filter(d => d.owner_id === owner.id && d.status === 'pending').length} pending · ${plural(state.decisions.filter(d => d.owner_id === owner.id && d.status === 'approved').length, 'answer')} captured</small></article>`).join('')}</div>${state.owners.length ? '<div class="notice">A configured owner is a person with verified authority for their path patterns. The patterns also route by repository-relative file path when no graph exists: simple globs, separated by commas, the last matching owner wins. You can reassign pending requests from the inbox.</div>' : empty('Start with the people who know.', 'Add an owner and the paths they are responsible for.', 'owner', 'Add your first owner')}</div>`;
+  const actions = $('#page-actions');
+  if (directory === null) {
+    loadDirectory();
+    return '<p class="context" role="status">Loading…</p>';
+  }
+  const people = directory.people || [], rows = directory.authority || [];
+  if (actions) actions.innerHTML = `<span class="page-count muted">${plural(people.length, 'person', 'people')}</span>${canAdminister() ? '<button class="button primary" data-action="person">Add person</button><details class="more-menu"><summary aria-label="More actions">More</summary><div class="more-menu-items"><button class="button text" data-action="team">Add team</button></div></details>' : ''}`;
+  if (!people.length && !rows.length) return empty('Nobody yet.', 'Add the people who decide, or connect a repository in Settings and Raven finds them.', canAdminister() ? 'person' : '', 'Add person');
+  const shown = new Set();
+  const cards = people.map((p, i) => {
+    const mine = rows.filter(a => !shown.has(a.id) && authorityOf(a, p));
+    mine.forEach(a => shown.add(a.id));
+    return personCard(p, i, mine);
+  });
+  const other = rows.filter(a => !shown.has(a.id));
+  if (other.length) cards.push(otherCard(other, people.length));
+  return `<div class="people-grid">${cards.join('')}</div>`;
 }
 
 function newPerson() {
-  openModal('Add a person.', 'The identities the organization knows them by, so routing, Slack and sign-off agree on who they are.', `<form id="person-form"><label for="person-name">Name</label><input id="person-name" name="name" maxlength="100" placeholder="Marisol Vega" required><div class="form-row"><div><label for="person-email">Email</label><input id="person-email" name="email" maxlength="200" placeholder="marisol@acme.example"></div><div><label for="person-team">Team</label><input id="person-team" name="team" maxlength="100" placeholder="Pricing"></div></div><div class="form-row"><div><label for="person-github">GitHub login</label><input id="person-github" name="github_login" maxlength="100" placeholder="mvega"></div><div><label for="person-slack">Slack member id</label><input id="person-slack" name="slack_id" maxlength="100" placeholder="U0123ABC"></div></div><label for="person-aliases">Other names, emails or handles (comma separated)</label><input id="person-aliases" name="aliases" maxlength="1000" placeholder="M. Vega, marisol@old.example"><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Cancel</button><button class="button primary" type="submit">Add person</button></div></form>`);
+  openModal('Add a person', '', `<form id="person-form"><label for="person-name">Name</label><input id="person-name" name="name" maxlength="100" placeholder="Marisol Vega" required><div class="form-row"><div><label for="person-email">Email</label><input id="person-email" name="email" maxlength="200" placeholder="marisol@acme.example"></div><div><label for="person-team">Team</label><input id="person-team" name="team" maxlength="100" placeholder="Pricing"></div></div><div class="form-row"><div><label for="person-github">GitHub login</label><input id="person-github" name="github_login" maxlength="100" placeholder="mvega"></div><div><label for="person-slack">Slack member id</label><input id="person-slack" name="slack_id" maxlength="100" placeholder="U0123ABC"></div></div><label for="person-aliases">Other names, emails or handles (comma separated)</label><input id="person-aliases" name="aliases" maxlength="1000" placeholder="M. Vega, marisol@old.example"><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Cancel</button><button class="button primary" type="submit">Add person</button></div></form>`);
 }
 
 function newTeam() {
-  openModal('Add a team.', 'A team CODEOWNERS names becomes its members once it is known here.', `<form id="team-form"><label for="team-name">Name</label><input id="team-name" name="name" maxlength="100" placeholder="Payments" required><label for="team-handle">Handle as CODEOWNERS writes it</label><input id="team-handle" name="handle" maxlength="100" placeholder="acme/payments-team"><label for="team-members">Members (names, emails or logins, comma separated)</label><input id="team-members" name="members" maxlength="2000" placeholder="Marisol Vega, wes@acme.example"><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Cancel</button><button class="button primary" type="submit">Add team</button></div></form>`);
+  openModal('Add a team', '', `<form id="team-form"><label for="team-name">Name</label><input id="team-name" name="name" maxlength="100" placeholder="Payments" required><label for="team-handle">Handle as CODEOWNERS writes it</label><input id="team-handle" name="handle" maxlength="100" placeholder="acme/payments-team"><label for="team-members">Members (names, emails or logins, comma separated)</label><input id="team-members" name="members" maxlength="2000" placeholder="Marisol Vega, wes@acme.example"><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Cancel</button><button class="button primary" type="submit">Add team</button></div></form>`);
 }
 
-function newAuthority() {
+// The authority form, with the person whose card opened it already chosen.
+function newAuthority(personId = '') {
   const people = (directory && directory.people) || [];
   const teams = (directory && directory.teams) || [];
-  openModal('Record who decides.', 'Verified authority outranks anything git history suggests.', `<form id="authority-form"><label for="authority-who">Person or team</label><select id="authority-who" name="who" required>${people.map(p => `<option value="person:${esc(p.id)}">${esc(p.name)}</option>`).join('')}${teams.map(t => `<option value="team:${esc(t.id)}">Team · ${esc(t.name)}</option>`).join('')}</select><div class="form-row"><div><label for="authority-role">Role</label><select id="authority-role" name="role"><option value="decides">decides</option><option value="approves">must approve</option><option value="knows">knows the area</option></select></div><div><label for="authority-kind">Scope</label><select id="authority-kind" name="scope_kind"><option value="path">path pattern</option><option value="category">decision category</option><option value="repo">whole repository</option></select></div></div><label for="authority-scope">Path pattern or category</label><input id="authority-scope" name="scope" maxlength="300" placeholder="billing/* or pricing"><div class="form-row"><div><label for="authority-repo">Repository (blank for every repository)</label><input id="authority-repo" name="repo" maxlength="300" placeholder="acme/platform"></div><div><label for="authority-until">Until (optional date)</label><input id="authority-until" name="effective_to" maxlength="40" placeholder="2027-01-01"></div></div><label for="authority-note">Note</label><input id="authority-note" name="note" maxlength="500" placeholder="Owns commercial credit exceptions"><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Cancel</button><button class="button primary" type="submit">Record authority</button></div></form>`);
+  openModal('Say what they decide', '', `<form id="authority-form"><label for="authority-who">Person or team</label><select id="authority-who" name="who" required>${people.map(p => `<option value="person:${esc(p.id)}"${personId && p.id === personId ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}${teams.map(t => `<option value="team:${esc(t.id)}">Team · ${esc(t.name)}</option>`).join('')}</select><div class="form-row"><div><label for="authority-role">Role</label><select id="authority-role" name="role"><option value="decides">decides</option><option value="approves">must approve</option><option value="knows">knows the area</option></select></div><div><label for="authority-kind">Scope</label><select id="authority-kind" name="scope_kind"><option value="path">path pattern</option><option value="category">decision category</option><option value="repo">whole repository</option></select></div></div><label for="authority-scope">Path pattern or category</label><input id="authority-scope" name="scope" maxlength="300" placeholder="billing/* or pricing"><div class="form-row"><div><label for="authority-repo">Repository (blank for every repository)</label><input id="authority-repo" name="repo" maxlength="300" placeholder="acme/platform"></div><div><label for="authority-until">Until (optional date)</label><input id="authority-until" name="effective_to" maxlength="40" placeholder="2027-01-01"></div></div><label for="authority-note">Note</label><input id="authority-note" name="note" maxlength="500" placeholder="Owns commercial credit exceptions"><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Cancel</button><button class="button primary" type="submit">Save</button></div></form>`);
 }
 
 function deliveriesCard() {
@@ -917,10 +957,6 @@ function newIngest() {
   openModal('Ingest a repository.', 'Build the ownership map and record graph from a local git checkout.', `<form id="ingest-form"><label for="ingest-path">Absolute path to the checkout</label><input id="ingest-path" name="path" placeholder="/home/you/src/platform" maxlength="1000" required><div class="form-row"><div><label for="ingest-repo">Repository name (optional)</label><input id="ingest-repo" name="repo" placeholder="platform" maxlength="100"></div><div><label for="ingest-commits">History depth (0 = all)</label><input id="ingest-commits" name="max_commits" placeholder="2000" maxlength="8"></div></div><p class="context">Reads git log, blame shares, CODEOWNERS, and Reviewed-by trailers on this machine. Nothing leaves it. Re-running refreshes the map.</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Cancel</button><button class="button primary" type="submit">Ingest</button></div></form>`);
 }
 
-function newOwner() {
-  openModal('Add a decision owner.', 'Give questions a clear route to the person who decides.', `<form id="owner-form"><label for="name">Name</label><input id="name" name="name" maxlength="100" placeholder="Wes Chen" required><label for="team">Team</label><input id="team" name="team" maxlength="100" placeholder="Platform Data" required><label for="patterns">Path patterns</label><input id="patterns" name="patterns" maxlength="2000" placeholder="billing/*, metering/*" required><p class="context">Comma-separated globs, matched against the request’s file path. Use * for a fallback owner. Later matching owners take precedence.</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Cancel</button><button class="button primary" type="submit">Add owner</button></div></form>`);
-}
-
 function ruleBox(d) {
   if (d.reusable) {
     return `<div class="context-box"><span class="label">Reusable rule${d.rule_by ? ` · made by ${esc(d.rule_by)}` : ''}</span>Questions memory matches to this answer ${state.settings && state.settings.auto_rules ? 'resolve without a fresh signature' : 'are shown as covered by this rule (automatic rules are off, so a person still signs)'}${d.rule_conditions ? ` when they satisfy <strong>${esc(d.rule_conditions)}</strong>` : ''}${d.rule_scope === 'any' ? ', in any scope' : ', in this scope only'}${d.rule_expires ? `, until ${esc(d.rule_expires.slice(0, 10))}` : ''}. Ending it puts every outstanding node it authorized back in front of a person.<div class="modal-actions"><button class="button small" data-action="end-rule" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}">End the rule</button></div></div>`;
@@ -1194,10 +1230,9 @@ document.addEventListener('click', async event => {
     if (action === 'new' || action === 'request-status') newRequest();
     if (action === 'request-new') { requestDraft = null; newRequest(); }
     if (action === 'request-view-run') closeModal();
-    if (action === 'owner') newOwner();
     if (action === 'person') newPerson();
     if (action === 'team') newTeam();
-    if (action === 'authority') newAuthority();
+    if (action === 'authority') newAuthority(target.dataset.person || '');
     if (action === 'end-authority') {
       target.disabled = true;
       await api(`/api/authority/${target.dataset.id}/end`, {});
@@ -1359,7 +1394,7 @@ document.addEventListener('change', async event => {
 });
 document.addEventListener('submit', async event => {
   const form = event.target;
-  if (!['invite-form','request-form','owner-form','answer-form','correct-form','task-form','ingest-form','person-form','team-form','authority-form','rule-form','note-form','task-inquiry-form'].includes(form.id)) return;
+  if (!['invite-form','request-form','answer-form','correct-form','task-form','ingest-form','person-form','team-form','authority-form','rule-form','note-form','task-inquiry-form'].includes(form.id)) return;
   event.preventDefault();
   if (form.id === 'request-form') { await submitRequest(form); return; }
   if (form.id === 'note-form') { await submitTaskNote(form); return; }
@@ -1391,8 +1426,6 @@ document.addEventListener('submit', async event => {
       takeApplicability(data);
       await api(`/api/decisions/${form.dataset.id}/signoff`, {by: d?.owner_name || 'Local operator', ...data});
       notify('Correction signed. The agent sees it on the tree.');
-    } else if (form.id === 'owner-form') {
-      await api('/api/owners', data); notify('Owner added to your workspace.'); directory = null;
     } else if (form.id === 'person-form') {
       await api('/api/people', data); notify('Person added. Routing, Slack and sign-off now agree on who they are.'); directory = null;
     } else if (form.id === 'team-form') {
