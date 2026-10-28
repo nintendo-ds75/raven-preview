@@ -205,7 +205,8 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.fill('#authority-scope', 'payments/*');
     await page.locator('#authority-form').getByRole('button', {name:'Save',exact:true}).click();
     await page.waitForSelector('#modal:not([open])', {state:'attached'});
-    await page.waitForFunction(() => /decides payments\/\* · every repository · from config/.test(document.querySelector('#app')?.textContent || ''));
+    // The card's heading says 'Decides'; the row names only the scope, repository and source.
+    await page.waitForFunction(() => /Decides\s*payments\/\* · every repository · from config/.test(document.querySelector('#app')?.textContent || ''));
     assert.equal(await page.locator('#app table').count(), 0);
     await askAQuestion();
     await page.getByLabel('Question or prompt', {exact:true}).fill('Should payment retries stop after three attempts?');
