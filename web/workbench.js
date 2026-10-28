@@ -41,13 +41,6 @@ function workText(text) {
   }).join('');
 }
 
-function renderWorkRecents() {
-  const nav = document.getElementById('work-recents');
-  if (!nav) return;
-  const rows = (state.browser_tasks || []).slice(0,8);
-  nav.innerHTML = rows.length ? `<span class="work-nav-label">Recent</span>${rows.map(r => `<a href="#work/${encodeURIComponent(r.task_id)}" ${workId() === r.task_id ? 'aria-current="page"' : ''} title="${esc(r.prompt)}">${esc(r.prompt)}</a>`).join('')}` : '';
-}
-
 async function loadWorkbench() {
   const id = workId(), request = ++workRequest;
   if (!id || !state.auth) return;
@@ -64,10 +57,11 @@ async function loadWorkbench() {
   }
 }
 
+// The independent artifact checks, one level down on the result: a 'Checks' disclosure.
 function workVerificationPanel(task) {
   const id = task.task_id, saved = workVerifications.get(id), pending = workVerificationPending.has(id);
   const admin = !state.auth.enabled || state.me?.role === 'admin';
-  return `<section class="work-result"><h3>Independent artifact checks</h3><p>Operator-selected checks bind the actual candidate and current judgments. Passing repository-owned tests is not proof of every intended behavior.</p><button class="button small" data-work-action="verification-status" ${pending ? 'disabled' : ''}>${saved ? 'Refresh verification' : 'Inspect verification'}</button>${saved ? `<p>${esc((saved.config?.blockers || []).join('. '))}</p>${(saved.receipts || []).map(r => `<details><summary>${esc(r.profile_id)} · ${esc(r.usable_pass ? 'Current configured checks passed' : r.status + (r.current ? '' : ' · no longer current'))}</summary><p>${esc(r.coverage_basis)} · ${esc(r.coverage)}</p><p>${esc(r.reason)}</p><small>Candidate ${esc(r.binding?.candidate_tree_sha256 || '')}</small></details>`).join('') || '<p>No independent verification receipt.</p>'}${admin && saved.config?.ready ? (saved.config.profiles || []).filter(p=>p.repository === task.repository).map(p=>`<button class="button small" data-work-action="verify-profile" data-profile="${esc(p.id)}" ${pending ? 'disabled' : ''}>Run ${esc(p.label || p.id)}</button>`).join('') : ''}` : ''}</section>`;
+  return `<details class="work-checks" data-work-detail="checks"><summary>Checks</summary><p>Operator-selected checks bind the actual candidate and current judgments. Passing repository-owned tests is not proof of every intended behavior.</p><button class="button small" data-work-action="verification-status" ${pending ? 'disabled' : ''}>${saved ? 'Refresh verification' : 'Inspect verification'}</button>${saved ? `<p>${esc((saved.config?.blockers || []).join('. '))}</p>${(saved.receipts || []).map(r => `<details><summary>${esc(r.profile_id)} · ${esc(r.usable_pass ? 'Current configured checks passed' : r.status + (r.current ? '' : ' · no longer current'))}</summary><p>${esc(r.coverage_basis)} · ${esc(r.coverage)}</p><p>${esc(r.reason)}</p><small>Candidate ${esc(r.binding?.candidate_tree_sha256 || '')}</small></details>`).join('') || '<p>No independent verification receipt.</p>'}${admin && saved.config?.ready ? (saved.config.profiles || []).filter(p=>p.repository === task.repository).map(p=>`<button class="button small" data-work-action="verify-profile" data-profile="${esc(p.id)}" ${pending ? 'disabled' : ''}>Run ${esc(p.label || p.id)}</button>`).join('') : ''}` : ''}</details>`;
 }
 
 function workComposer(id, enabled) {
@@ -122,7 +116,6 @@ function workBirdseye(tree, trace, task = {}) {
     <section><h3>Resolved decisions</h3>${signed.length ? signed.map(workDecision).join('') : '<p class="work-muted">No authorized answers recorded yet.</p>'}</section>
     ${investigation ? `<details class="work-discovery" data-work-detail="investigation"><summary>What Raven found</summary><p>${esc(investigation.summary)}</p><small>Model observations, not authorization.</small></details>` : ''}
     ${people.length ? `<details class="work-discovery" data-work-detail="people"><summary>People involved · ${people.length}</summary><ul class="work-people">${people.map((p,i) => `<li>${avatar(p,i)}<span>${esc(p)}</span></li>`).join('')}</ul></details>` : ''}
-    <p class="work-footnote">Evidence is context. Explicit sign-off authorizes a decision.</p>
   </aside>`;
 }
 
@@ -143,14 +136,17 @@ function renderWorkbench() {
   app.dataset.workId = id;
   const allowed = !state.auth.enabled || ['admin','member'].includes(state.me?.role);
   if (!id) {
-    const ready = (workMode === 'ask' || state.workbench?.enabled && state.workbench?.ready) && workRepositories().length;
-    app.innerHTML = `<section class="work-home"><img src="/favicon.svg" alt="" width="38" height="38"><h1>${workMode === 'ask' ? 'What would you like to know?' : 'What should we work on?'}</h1><p>${workMode === 'ask' ? 'Read connected evidence and earlier decisions. No coding host is started.' : 'Ask a question or describe a task. Raven uses your context and brings the remaining decisions to the right people.'}</p><div class="work-modes" role="group" aria-label="Choose how to work"><button class="button small" data-work-mode="ask" aria-pressed="${workMode === 'ask'}">Ask a question</button><button class="button small" data-work-mode="task" aria-pressed="${workMode === 'task'}">Start a task</button></div>${workComposer('', ready && allowed)}
-      <div class="work-home-note">${!allowed ? 'Your account can view tasks. A workspace member can start one.' : ready ? (workMode === 'ask' ? 'Reads connected context. It does not edit code or grant approval.' : 'Runs in a separate copy of your repository. You review the result.') : '<strong>Context or execution is not set up yet.</strong> Connect a repository and configure inference. <a href="#connect">Connections & setup ↗</a>'}</div>
-      ${workMode === 'ask' && workAnswer ? `<article class="work-question-result" aria-live="polite"><p>${workText(workAnswer.answer)}</p><small>${esc(workAnswer.notice)}</small>${(workAnswer.open || []).map(s => `<p>${esc(s)}</p>`).join('')}<h2>Evidence</h2>${workAnswer.evidence.map(s => `<details><summary>${esc(s.title || s.id)} · ${esc(s.kind === 'prior_decision' ? 'Prior answer' : 'Source')}</summary><p>${workText(s.text)}</p><small>${esc(s.id)} · revision ${esc(s.version)}</small></details>`).join('') || '<p>No matching records. Connect context in setup, or start a task to investigate.</p>'}</article>` : ''}<a class="work-alternative" href="#runs">View all workspace tasks ${icon('arrow')}</a></section>`;
+    // The home is the composer, only where this server runs tasks in the browser;
+    // navigate() sends #work to the task list otherwise.
+    if (!state.workbench?.ready) { app.innerHTML = ''; return; }
+    const ready = (workMode === 'ask' || state.workbench?.enabled) && workRepositories().length;
+    app.innerHTML = `<section class="work-home"><img src="/favicon.svg" alt="" width="38" height="38"><h1>Start a task</h1><div class="work-modes" role="group" aria-label="Choose how to work"><button class="button small" data-work-mode="ask" aria-pressed="${workMode === 'ask'}">Ask a question</button><button class="button small" data-work-mode="task" aria-pressed="${workMode === 'task'}">Start a task</button></div>${workComposer('', ready && allowed)}
+      ${!allowed ? '<p class="work-home-note">Your account can view tasks. A workspace member can start one.</p>' : ready ? '' : '<p class="work-home-note"><strong>Context or execution is not set up yet.</strong> <a href="#connect">Open Settings</a></p>'}
+      ${workMode === 'ask' && workAnswer ? `<article class="work-question-result" aria-live="polite"><p>${workText(workAnswer.answer)}</p><small>${esc(workAnswer.notice)}</small>${(workAnswer.open || []).map(s => `<p>${esc(s)}</p>`).join('')}<h2>Evidence</h2>${workAnswer.evidence.map(s => `<details><summary>${esc(s.title || s.id)} · ${esc(s.kind === 'prior_decision' ? 'Prior answer' : 'Source')}</summary><p>${workText(s.text)}</p><small>${esc(s.id)} · revision ${esc(s.version)}</small></details>`).join('') || '<p>No matching records. Connect context in Settings, or start a task to investigate.</p>'}</article>` : ''}</section>`;
   } else if (!workData || workData.task.task_id !== id) {
-    app.innerHTML = `<div class="work-empty"><h1>${workError ? 'Could not open this task' : 'Opening your task…'}</h1>${workError ? `<p role="alert">${esc(workError)}</p><button class="button" data-work-action="refresh">Try again</button>` : '<span class="loading-dot"></span>'}</div>`;
+    app.innerHTML = workError ? `<div class="empty" role="alert"><h3>Couldn’t load your workspace.</h3><p>${esc(workError)}</p><button class="button" data-action="retry">Try again</button></div>` : '<p class="work-muted" role="status">Opening your task…</p>';
   } else if (workData.task.withheld || workData.tree.withheld) {
-    app.innerHTML = `<section class="work-empty"><h1>Access needs attention</h1><p>${esc(workData.task.notice || workData.tree.notice)}</p><a class="button" href="#connect">Connections</a><a href="#work">Back to tasks</a></section>`;
+    app.innerHTML = `<section class="work-empty"><h1>Access needs attention</h1><p>${esc(workData.task.notice || workData.tree.notice)}</p><a class="button" href="#connect">Open Settings</a><a href="#runs">Back to tasks</a></section>`;
   } else {
     const {task, tree, trace} = workData, running = ['queued','running','pausing'].includes(task.status);
     const incompleteReview = tree.review?.status === 'failed';
@@ -166,8 +162,7 @@ function renderWorkbench() {
     ${task.host?.provider && task.host.provider !== 'scripted' ? `<p class="work-footnote">${esc(({claude:'Claude Agent SDK',codex:'Codex app-server',pi:'Pi Agent SDK',opencode:'OpenCode'})[task.host.provider] || task.host.provider)} · ${esc(task.host.model)}${task.host.session_id ? ' · session saved' : ''}</p>` : ''}
     ${task.error ? `<p class="work-error" role="alert">${esc(task.error)}</p>` : ''}
     ${['paused','cancelled'].includes(task.status) ? (task.unresolved_operations || []).map(op => `<details class="work-activity" data-work-detail="intent-${esc(op.call_id)}"><summary>Check an uncertain operation: ${esc(op.operation || 'Saved operation')}</summary><p>Inspect the saved files and execution records before continuing. Raven will not repeat this operation automatically.</p><pre>${esc(JSON.stringify(op.arguments,null,2))}</pre>${state.me?.role === 'admin' ? `<form data-work-reconcile="${esc(op.call_id)}"><label>Observed outcome<select name="outcome" required><option value="">Choose after inspecting</option><option value="completed">The operation completed</option><option value="not_run">The operation did not run</option></select></label><label>What evidence did you check?<textarea name="note" maxlength="2000" required>${esc(inspections[op.call_id]?.note || '')}</textarea></label><button class="button" type="submit">Record inspection</button></form>` : '<p>A workspace admin must inspect and reconcile this operation.</p>'}</details>`).join('') : ''}
-    ${task.status === 'completed' ? workVerificationPanel(task) : ''}
-    ${task.status === 'completed' ? `<article class="work-result"><h2>${incompleteReview ? 'Patch ready for manual review' : 'Ready for your review'}</h2>${incompleteReview ? '<p class="work-error">The automatic code review is incomplete. Owner approvals and test results do not replace reviewing the patch.</p>' : ''}<div class="work-result-text">${workText(task.summary)}</div><div class="work-result-actions"><a class="button" href="/api/workbench/${encodeURIComponent(id)}/patch">Download patch</a><a class="button" href="#runs/${encodeURIComponent(id)}">Decisions & review</a></div><small>The original repository is unchanged. No commit, push or deployment was made.</small></article>` : ''}
+    ${task.status === 'completed' ? `<article class="work-result"><h2>${incompleteReview ? 'Patch ready for manual review' : 'Ready for your review'}</h2>${incompleteReview ? '<p class="work-error">The automatic code review is incomplete. Owner approvals and test results do not replace reviewing the patch.</p>' : ''}<div class="work-result-text">${workText(task.summary)}</div><div class="work-result-actions"><a class="button" href="/api/workbench/${encodeURIComponent(id)}/patch">Download patch</a><a class="button" href="#runs/${encodeURIComponent(id)}">Decisions & review</a></div>${workVerificationPanel(task)}<small>The original repository is unchanged. No commit, push or deployment was made.</small></article>` : ''}
     ${activities.length ? `<details class="work-activity" data-work-detail="activity"><summary>${running ? 'Working · ' : ''}${esc(latest ? workActivityLabel(latest) : 'Activity')}<span>${activities.length} steps</span></summary><ol>${activities.map(a => `<li><details data-work-detail="action-${esc(a.id)}"><summary>${esc(workActivityLabel(a))}</summary><pre>${esc(JSON.stringify(a.detail,null,2))}</pre></details></li>`).join('')}</ol></details>` : '<p class="work-muted" role="status">Preparing a private repository copy…</p>'}
     </div><div class="work-reply">${allowed ? workComposer(id, task.status !== 'pausing') : '<p class="work-muted">You have view access to this conversation.</p>'}</div></section>${workBirdseye(tree,trace,task)}</div>`;
   }
@@ -180,7 +175,6 @@ function renderWorkbench() {
     if (replacement.setSelectionRange && selection[0] !== null) replacement.setSelectionRange(...selection);
   }
   window.scrollTo({top:id && followLatest && !workError ? document.documentElement?.scrollHeight || scroll : scroll, behavior:'instant'});
-  renderWorkRecents();
 }
 
 document.addEventListener('input', event => {
