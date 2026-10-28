@@ -8,7 +8,7 @@ let workRequest = 0, workData = null, workError = '', workOverview = !window.mat
 const workId = () => view === 'work' ? location.hash.slice(1).split('/')[1] || '' : '';
 const workRepositories = () => workMode === 'ask' ? (state.question_repositories || state.workbench?.repositories || []) : (state.workbench?.repositories || []);
 const workDraft = (id = workId()) => {
-  if (!workViews.has(id)) workViews.set(id, {text:'', repository:'', host:'', key:crypto.randomUUID(), pending:false, payload:null, error:''});
+  if (!workViews.has(id)) workViews.set(id, {text:'', repository:'', host:'', key:(typeof ravenUuid === 'function' ? ravenUuid() : crypto.randomUUID()), pending:false, payload:null, error:''});
   return workViews.get(id);
 };
 const WORK_STATUS = {queued:'Getting ready', running:'Working', waiting:'Waiting for an update', input:'Your turn',

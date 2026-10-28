@@ -770,7 +770,7 @@ function ownerOptions(selected, auto = false) {
 }
 
 let requestDraft = null;
-const requestKey = () => 'ui-' + (globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
+const requestKey = () => 'ui-' + ((typeof ravenUuid === 'function' ? ravenUuid() : crypto.randomUUID()) || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
 
 function saveRequestDraft() {
   const form = $('#request-form');
@@ -878,7 +878,7 @@ async function submitRequest(form) {
 }
 
 function newTask() {
-  openModal('Start a task.', 'Describe the work. Raven will bring unresolved decisions to the inbox.', `<form id="task-form" data-submission-key="${esc(crypto.randomUUID())}"><label for="task">Task</label><textarea id="task" name="task" maxlength="12000" placeholder="Add usage-based pricing" required></textarea><label for="repository">Repository</label><select id="repository" name="repository">${(state.execution_config?.repositories || []).map(r => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select><p class="context">Runs in a disposable hosted workspace. Changes and test results appear in the run.</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Cancel</button><button class="button primary" type="submit">Start task</button></div></form>`);
+  openModal('Start a task.', 'Describe the work. Raven will bring unresolved decisions to the inbox.', `<form id="task-form" data-submission-key="${esc((typeof ravenUuid === 'function' ? ravenUuid() : crypto.randomUUID()))}"><label for="task">Task</label><textarea id="task" name="task" maxlength="12000" placeholder="Add usage-based pricing" required></textarea><label for="repository">Repository</label><select id="repository" name="repository">${(state.execution_config?.repositories || []).map(r => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select><p class="context">Runs in a disposable hosted workspace. Changes and test results appear in the run.</p><p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Cancel</button><button class="button primary" type="submit">Start task</button></div></form>`);
 }
 
 function newIngest() {

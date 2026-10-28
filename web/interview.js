@@ -103,7 +103,7 @@ async function openInterview(task, decision) {
   const existing = await interviewRequest(base);
   if (generation !== interviewGeneration) return;
   let row = existing.interviews.find(r => r.decision_id === decision && ['draft', 'failed'].includes(r.status));
-  if (!row) row = await interviewRequest(base, {decision_id: decision, client_key: crypto.randomUUID()});
+  if (!row) row = await interviewRequest(base, {decision_id: decision, client_key: (typeof ravenUuid === 'function' ? ravenUuid() : crypto.randomUUID())});
   if (generation !== interviewGeneration) return;
   if ($('#modal')?.open) closeModal();
   interviewSession = {row, base: `${base}/${row.id}`, writes: Promise.resolve(), captureMethod: row.capture_method, turns: row.turns, recognition: null, editVersion: 0};

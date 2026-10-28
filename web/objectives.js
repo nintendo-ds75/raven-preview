@@ -7,7 +7,7 @@ const objectiveDrafts = new Map();
 let objectivePanel = '', objectiveMeetings = null, objectiveNotice = '', objectiveMeetingRepo = '';
 const objectiveMeetingsURL = () => '/api/meetings?repo=' + encodeURIComponent(objectiveMeetingRepo);
 const objectiveKeys = new Map();
-const objectiveKey = key => { if (!objectiveKeys.has(key)) objectiveKeys.set(key, crypto.randomUUID()); return objectiveKeys.get(key); };
+const objectiveKey = key => { if (!objectiveKeys.has(key)) objectiveKeys.set(key, (typeof ravenUuid === 'function' ? ravenUuid() : crypto.randomUUID())); return objectiveKeys.get(key); };
 const objectiveRoute = () => location.hash.slice(1);
 const objectiveId = () => { try { return view === 'today' ? decodeURIComponent(location.hash.slice(1).split('/')[1] || '') : ''; } catch { return ''; } };
 const objectiveProposals = () => [...(objectiveData?.proposals || []), ...(objectiveData?.detail?.proposals || []), ...(objectiveData?.objectives || []).flatMap(item => item.proposals || [])];

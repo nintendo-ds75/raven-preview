@@ -37,3 +37,17 @@
 .objective-loop ul{list-style:none;margin:0 0 8px;padding:0}.objective-loop li{margin-bottom:10px;color:var(--text)}.objective-loop li a{color:var(--green)}.objective-loop li a:hover{text-decoration:underline}
 #objective-open-loops .objective-notice{border-top:0;padding-top:0}
 .objective-evidence blockquote{margin:10px 0;padding:8px 12px;border-left:2px solid var(--line);white-space:pre-wrap;color:var(--text)}
+
+/* Add evidence panel (Today aside) */
+.evidence-panel{min-width:0}
+.evidence-panel h3{font-size:13px;margin:22px 0 4px}
+.evidence-panel label{display:block;font-size:12px;margin:12px 0 6px}
+.evidence-panel input,.evidence-panel select,.evidence-panel textarea{display:block;width:100%;max-width:100%;box-sizing:border-box;font:inherit;font-size:16px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:inherit}
+.evidence-panel textarea{min-height:140px;resize:vertical}
+.evidence-count{margin:6px 0 0}
+.evidence-panel .button{margin-top:12px}
+.evidence-list{list-style:none;margin:8px 0 0;padding:0}
+.evidence-item{border-top:1px solid var(--line);padding:10px 0;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.evidence-item strong,.evidence-item span,.evidence-item a{display:block}
+.evidence-item[data-withdrawn]{opacity:.7}
+.evidence-withdraw{margin-top:8px}
