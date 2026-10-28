@@ -443,7 +443,6 @@ const halfSigned = d => d.signoff === 'required' && signersOf(d).length > 0;
 // Status is one sentence that names a person, never a count or a term:
 // the same words on the card, the task page and the dialog. Two names at
 // most, then "and N more"; an empty name is never rendered.
-const nameList = list => list.length <= 2 ? list.join(', ') : `${list.slice(0, 2).join(', ')} and ${list.length - 2} more`;
 function statusSentence(d) {
   if (d.needs_review || d.source_refresh_required) return {text: 'Needs a second look', tone: 'waiting'};
   if (d.status === 'suggested') return {text: 'Follow-up for the agent', tone: 'neutral'};
