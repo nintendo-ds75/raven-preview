@@ -127,7 +127,7 @@ function objectiveScopeCard(card, key = 'objective-scope') {
   return `<section class="objective-scope" aria-label="Proposed scope">
     ${card.outcome ? `<p class="objective-scope-outcome"><strong>Outcome:</strong> ${esc(card.outcome)}</p>` : ''}
     <p class="objective-scope-question"><strong>${esc(card.question || 'Should Raven take point on this?')}</strong> <span class="muted">${(card.options || OBJECTIVE_OPTIONS).map(esc).join(' · ')}</span></p>
-    ${cases.map(([k, label]) => `<h4>${label}</h4><ul>${card.cases[k].map(item => `<li>${esc(item)}</li>`).join('')}</ul>`).join('')}
+    ${cases.map(([k, label]) => `<h3>${label}</h3><ul>${card.cases[k].map(item => `<li>${esc(item)}</li>`).join('')}</ul>`).join('')}
     ${card.guardrails ? `<p><strong>Within:</strong> ${esc(card.guardrails)}</p>` : ''}
     ${card.stop_criteria ? `<p><strong>Stop when:</strong> ${esc(card.stop_criteria)}</p>` : ''}
     ${evidence.length ? `<details class="objective-scope-evidence" id="${esc(key)}-evidence" ${long ? '' : 'open'}><summary>Evidence (${evidence.length})</summary><ul>${evidence.map(e => `<li><blockquote>${esc(e.quote)}</blockquote>${e.title ? `<cite>${esc(e.title)}</cite>` : ''}</li>`).join('')}</ul></details>` : ''}

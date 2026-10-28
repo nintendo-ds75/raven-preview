@@ -214,6 +214,20 @@ function harness() {
     assert.match(h.get('#modal-content').innerHTML, /Signed question/);
   });
 
+  await test('a route change and a search are announced through one small status element, not by re-reading the page', async () => {
+    const h = harness(), live = h.get('#announce');
+    assert.equal(live.textContent, 'Inbox', 'the landing page is announced once');
+    h.run("location.hash = '#owners'; navigate()");
+    assert.equal(live.textContent, 'People');
+    h.run("location.hash = '#inbox'; navigate(); state.decisions = [{id:'a', status:'pending', question:'Tokens', context:'', owner_name:'Wes', agent:'Demo', repo:'r', created_at:new Date().toISOString(), run_title:'t', run_id:'t1', path:'p'}, {id:'b', status:'pending', question:'Other', context:'', owner_name:'Wes', agent:'Demo', repo:'r', created_at:new Date().toISOString(), run_title:'t', run_id:'t1', path:'p'}]");
+    await h.document.dispatch('input', {target: {id: 'inbox-search', value: 'tok'}});
+    assert.equal(live.textContent, '1 decision match');
+    await h.document.dispatch('input', {target: {id: 'inbox-search', value: 'zzz'}});
+    assert.equal(live.textContent, '0 decisions match');
+    await h.document.dispatch('input', {target: {id: 'inbox-search', value: ''}});
+    assert.equal(live.textContent, '', 'clearing the search says nothing; the list is back');
+  });
+
   await test('the hand-on checkbox switches assign and refer, except on an admin override row', async () => {
     const h = harness(), button = h.get('#hand-on'), row = h.get('#refer-scope-row');
     button.dataset = {action: 'refer', id: 'd1'};
@@ -240,6 +254,10 @@ function harness() {
     for (const label of ['Needs me', 'All open', 'Decided']) assert.match(pending, new RegExp(`data-tab="[a-z]+" aria-pressed="(true|false)">${label}<span>`));
     assert.doesNotMatch(pending, /Overdue|Suggested|From evidence|All decisions|Needs review|Assigned to me/);
     assert.match(pending, /Waiting on Wes/);
+    // Headings in order under the page's h1: the question is the card's h2; the button names it for a screen reader.
+    assert.match(pending, /<h2>Q<\/h2>/);
+    assert.doesNotMatch(pending, /<h3>|<h4>/);
+    assert.match(pending, /data-action="review" data-id="a" aria-label="Answer: Q">Answer<\/button>/);
     // The bottom line is the avatar and one pill that names the owner; the name is not written beside it.
     assert.match(pending, /<div class="card-bottom"><span class="owner" title="Wes"><span class="avatar [a-z]+">W<\/span><\/span><span class="pill waiting">/);
     assert.doesNotMatch(pending, /<\/span>Wes<span class="pill/);

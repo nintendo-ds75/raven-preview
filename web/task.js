@@ -207,7 +207,7 @@ function taskDecision(n, prefix = 'question', primary = false) {
     ${n.answer ? `<p class="task-answer">${esc(n.answer)}</p>` : ''}${n.partial ? '<p class="context">This answer is partial.</p>' : ''}
     ${n.rationale ? `<p class="task-why">Why: ${esc(n.rationale)}</p>` : ''}
     ${n.needs_review || n.source_refresh_required ? `<p class="task-warning">${esc(n.review_reason || 'Review current evidence and applicability before using this answer.')}</p>` : ''}
-    <button id="${esc(id)}-review" class="button small${primary ? ' primary' : ''}" data-action="review" data-id="${esc(n.node_id)}">${taskAction(n)}</button>
+    <button id="${esc(id)}-review" class="button small${primary ? ' primary' : ''}" data-action="review" data-id="${esc(n.node_id)}" aria-label="${taskAction(n)}: ${esc(n.question)}">${taskAction(n)}</button>
     <details class="task-details" id="${esc(id)}-details"><summary id="${esc(id)}-details-summary">Details</summary>
     ${n.depth ? `<p class="context">Level ${esc(n.depth)}${n.origin === 'human' ? ' · added by a person' : ''}</p>` : ''}
     ${n.next ? `<details id="${esc(id)}-next"><summary>Recorded next action</summary><p class="task-verbatim">${esc(n.next)}</p></details>` : ''}

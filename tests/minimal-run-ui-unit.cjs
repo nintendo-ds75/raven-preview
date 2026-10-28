@@ -509,7 +509,7 @@ function harness() {
       const status=h.run('taskStatusSentence(syntheticDetail.tree.nodes.find(x=>x.node_id==='+JSON.stringify(n.node_id)+'))');
       assert.equal(status.text,text,n.node_id);assert(['waiting','done','neutral'].includes(status.tone));
       const row=h.run('taskDecision(syntheticDetail.tree.nodes.find(x=>x.node_id==='+JSON.stringify(n.node_id)+'),"finding")');
-      assert.equal((row.match(/class="pill /g)||[]).length,1,'one pill');assert.match(row,new RegExp('data-action="review" data-id="'+n.node_id+'">'+button+'<'));
+      assert.equal((row.match(/class="pill /g)||[]).length,1,'one pill');assert.match(row,new RegExp('data-action="review" data-id="'+n.node_id+'" aria-label="'+button+': Synthetic question '+n.node_id+'">'+button+'<'),'the button names its question for a screen reader; its visible text leads');
       assert.match(row,new RegExp('<details class="task-details" id="finding-'+n.node_id+'-details"><summary id="finding-'+n.node_id+'-details-summary">Details</summary>'));
       assert.doesNotMatch(row,/Not authorized|Open decision|Evidence refresh needed|Review needed|Context only|Authorized by/);
     }
@@ -581,7 +581,7 @@ function harness() {
     assert.match(h.get('#page-actions').innerHTML,/<span class="page-count">1 task<\/span><button class="button primary" data-action="task">Start a task<\/button><details class="more-menu">[\s\S]*Ask a question[\s\S]*<a href="#today">Outcomes<\/a>/);
     h.run("state.execution_config={};state.workbench={ready:true}");h.run('runs()');assert.match(h.get('#page-actions').innerHTML,/<a class="button primary" href="#work">Start a task<\/a>/);
     h.run("state.auth={enabled:true};state.me={role:'viewer'}");h.run('runs()');assert.doesNotMatch(h.get('#page-actions').innerHTML,/Start a task|Ask a question/);
-    h.run("state.runs=[]");html=h.run('runs()');assert.match(html,/<h3>No tasks yet\.<\/h3><p>Connect a coding agent in Settings and give it a task\.<\/p><button class="button soft" data-action="help-connect">Open Settings<\/button>/);
+    h.run("state.runs=[]");html=h.run('runs()');assert.match(html,/<h2>No tasks yet\.<\/h2><p>Connect a coding agent in Settings and give it a task\.<\/p><button class="button soft" data-action="help-connect">Open Settings<\/button>/);
   });
   if(failures.length)throw new Error(`${failures.length} failed; ${passed} passed:\n${failures.join('\n\n')}`);
   console.log(`Fresh minimal run UI: ${passed} checks passed (queued DOM/API doubles, not Chromium).`);

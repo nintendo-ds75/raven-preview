@@ -21,7 +21,7 @@ function harness({admin = true, people, authority, decisions = []} = {}) {
     esc: v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch])),
     avatar: (name, i) => `<span class="avatar">${name[0]}${i}</span>`,
     plural: (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`,
-    empty: (title, text, action = '', button = '') => `<div class="empty"><h3>${title}</h3><p>${text}</p>${action ? `<button data-action="${action}">${button}</button>` : ''}</div>`,
+    empty: (title, text, action = '', button = '') => `<div class="empty"><h2>${title}</h2><p>${text}</p>${action ? `<button data-action="${action}">${button}</button>` : ''}</div>`,
     openModal: (title, subtitle, body) => { c.modal = {title, subtitle, body}; },
   };
   if (!admin) c.state.auth.enabled = true;
@@ -68,11 +68,16 @@ const authority = [
   assert.match(marisol, /decides pricing\/\* · every repository · from config · ended 2020-01-01 Say what they decide$/);
   assert.match(cards[1], /<div class="authority-row ended"><span><strong>decides pricing\/\*<\/strong>/);
   assert.doesNotMatch(cards[1], /ended"><span>(?:(?!<\/div>).)*data-action="end-authority"/);
-  assert.match(cards[0], /<button class="button small soft" data-action="end-authority" data-id="a1">End<\/button>/);
+  // The End button names the row it retires (a destructive action among identical buttons); its visible text leads the name.
+  assert.match(cards[0], /<button class="button small soft" data-action="end-authority" data-id="a1" aria-label="End: Alex Morgan decides auth\/\* in every repository">End<\/button>/);
+  assert.match(cards[1], /data-id="a2" aria-label="End: Marisol Vega knows billing in acme\/platform">End</);
   assert.match(cards[1], /data-action="end-authority" data-id="a2"/);
   assert.doesNotMatch(cards[1], /data-id="a3"/);
-  assert.match(cards[0], /<h4>Decides<\/h4>/);
-  assert.match(cards[1], /<button class="button text" data-action="authority" data-person="p2">Say what they decide<\/button>/);
+  // Headings in order under the page's h1: the name is an h2, Decides an h3.
+  assert.match(cards[0], /<h2>Alex Morgan<\/h2>/);
+  assert.match(cards[0], /<h3>Decides<\/h3>/);
+  assert.doesNotMatch(html, /<h4>/);
+  assert.match(cards[1], /<button class="button text" data-action="authority" data-person="p2" aria-label="Say what they decide: Marisol Vega">Say what they decide<\/button>/);
   // No identities line when there are none.
   assert.doesNotMatch(cards[1], /<small>/);
   // 'Say what they decide' opens the authority form with the person chosen and a Save button.
@@ -109,6 +114,7 @@ const authority = [
   const html = h.owners();
   const cards = cardsOf(html);
   assert.equal(cards.length, 3);
+  assert.match(cards[2], /<h2>Other<\/h2><h3>Decides<\/h3>/);
   assert.match(text(cards[2]), /^O2 Other Decides Payments \(team\) · must approve everything · acme\/platform · from config End Gone Person · decides legacy\/\* · every repository · from config · \(not yet accepted\) End$/);
   for (const id of ['a1', 'a2', 'a4', 'a5']) assert.match(html, new RegExp(`data-id="${id}"`));
   assert.equal((html.match(/<div class="authority-row/g) || []).length, extra.length, 'every authority row is on a card');
@@ -121,7 +127,7 @@ const authority = [
 {
   const h = harness({people: [], authority: []});
   const html = h.owners();
-  assert.match(html, /<h3>Nobody yet\.<\/h3><p>Add the people who decide, or connect a repository in Settings and Raven finds them\.<\/p><button data-action="person">Add person<\/button>/);
+  assert.match(html, /<h2>Nobody yet\.<\/h2><p>Add the people who decide, or connect a repository in Settings and Raven finds them\.<\/p><button data-action="person">Add person<\/button>/);
   assert.match(h.actions.innerHTML, /0 people/);
   assert.doesNotMatch(harness({admin: false, people: [], authority: []}).owners(), /data-action="person"/);
   const loading = harness();

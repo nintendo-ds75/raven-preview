@@ -602,7 +602,7 @@ h1+p{
   color:#bebfb6;
   white-space:nowrap}
 
-.decision-card h3{
+.decision-card h2{
   margin:0;
   font-size:15px;
   line-height:1.5;
@@ -769,7 +769,7 @@ h1+p{
   font-size:12px;
   line-height:1.8}
 
-.empty h3{
+.empty h2,.empty h3{
   color:#83d97a;
   font-size:15px;
   font-weight:500}
@@ -857,7 +857,7 @@ td small{
   height:37px;
   font-size:12px}
 
-.person-card h3{
+.person-card h2{
   font-size:14px;
   font-weight:500;
   margin:var(--space-4) 0 var(--space-1);
@@ -1330,6 +1330,7 @@ dialog::backdrop{
   .topbar-right{gap:var(--space-2)}
   main{padding-top:var(--space-6)}
   .button.small{min-height:40px;font-size:12px}
+  .button.text.more{min-height:40px;padding:0;margin-bottom:var(--space-3)}
   .decision-card{padding:var(--space-4) var(--space-4) 0}
   .right-rail,.people-grid{grid-template-columns:minmax(0,1fr)}
   .filter-row input{flex-basis:100%;max-width:none}
@@ -1912,7 +1913,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 /* An objective's proposed scope, read as a card in the inbox, the decision dialog and the task page. */
 .objective-scope { font-size:13px; line-height:1.6; color:#bebfb6; margin:var(--space-2) 0 var(--space-3); min-width:0; overflow-wrap:anywhere; }
 .objective-scope p { margin:0 0 var(--space-2); white-space:normal; }
-.objective-scope h4 { margin:var(--space-2) 0 2px; font-size:11px; letter-spacing:.6px; text-transform:uppercase; color:#83d97a; }
+.objective-scope h3 { margin:var(--space-2) 0 2px; font-size:11px; letter-spacing:.6px; text-transform:uppercase; color:#83d97a; }
 .objective-scope ul { margin:0 0 var(--space-2); padding-left:1.1em; }
 .objective-scope li { margin:0; }
 .objective-scope blockquote { margin:4px 0; padding:0 0 0 12px; border-left:2px solid var(--line); white-space:pre-wrap; }
@@ -1950,8 +1951,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .authority-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-1) var(--space-2);padding:var(--space-2) 0;border-top:1px solid var(--line);font-size:12px;line-height:1.5;color:var(--text);overflow-wrap:anywhere}
 .authority-row strong{color:var(--ink);font-weight:550}
 .authority-row.ended{color:var(--muted)}
-.authority-row .button{margin-left:auto;min-height:32px;font-size:11px;padding:4px 10px}
-.person-card h4{font-size:11px;font-weight:550;letter-spacing:.3px;text-transform:uppercase;color:var(--muted);margin:var(--space-4) 0 var(--space-1)}
+.authority-row .button{margin-left:auto;padding:4px 10px}
+.person-card h3{font-size:11px;font-weight:550;letter-spacing:.3px;text-transform:uppercase;color:var(--muted);margin:var(--space-4) 0 var(--space-1)}
 .person-card .person-waiting{margin:var(--space-3) 0 0;color:var(--amber)}
 .person-card .muted{margin:0;font-size:12px}
 .person-card .authority-row:last-of-type{border-bottom:1px solid var(--line)}

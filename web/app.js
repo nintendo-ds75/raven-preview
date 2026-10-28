@@ -60,7 +60,7 @@ let workspaceError = '';
 let ownership = null, ownershipLoading = false;
 let savings = null, savingsLoading = false, savingsAt = 0;
 let directory = null, directoryLoading = false;
-let view = 'inbox', tab = 'pending', tabChosen = false, query = '', ownerFilter = '', fetching = false;
+let view = 'inbox', tab = 'pending', tabChosen = false, query = '', ownerFilter = '', fetching = false, inboxShown = 0;
 // The ETag of the state on screen, sent back with each poll; and when the
 // list was last drawn, so relative times still move while nothing changes.
 let stateTag = '', lastDraw = 0, lastFetchedAt = 0;
@@ -321,6 +321,9 @@ function settingsDotState() {
   const incomplete = !!state.auth && ((state.model?.proposals === false && !!state.model.notice) || state.delivery?.enabled === false
     || (state.readiness || []).some(item => item && item.level === 'blocker'));
   dot.hidden = !incomplete;
+  // The link's name says it too: a colour and a hover title reach nobody using a screen reader or a keyboard.
+  const link = dot.closest?.('a');
+  if (link) link.setAttribute('aria-label', incomplete ? 'Settings, setup incomplete' : 'Settings');
 }
 
 function loadOwnership() {
@@ -350,6 +353,7 @@ function navigate() {
   const [title] = titles[view];
   $('#page-title').textContent = title;
   document.title = view === 'work' ? 'Raven' : `Raven · ${title}`;
+  announce(view === 'work' ? 'Start a task' : title);
   document.querySelectorAll('nav a').forEach(link => {
     link.classList.toggle('active', link.dataset.view === view);
     if (link.dataset.view === view) link.setAttribute('aria-current', 'page');
@@ -365,6 +369,10 @@ function navigate() {
   if (resetScrollOnNavigation && typeof window.scrollTo === 'function') window.scrollTo(0, 0);
   resetScrollOnNavigation = false;
 }
+// What changed, said once through one small live region. The page body is
+// not one: with #app live, every redraw (each search keystroke, each
+// changed poll) re-read the whole page and drowned the status lines.
+const announce = text => { const live = $('#announce'); if (live) live.textContent = text; };
 
 function metrics() {
   const pending = state.decisions.filter(needsYou);
@@ -418,10 +426,10 @@ function decisionCard(d, index) {
   const taskHref = `#${(state.browser_tasks || []).some(t => t.task_id === d.run_id) ? 'work' : 'runs'}/${encodeURIComponent(d.run_id || '')}`;
   return `<article class="decision-card">
     <div class="card-top"><span class="agent-symbol">${(d.agent || '').includes('Claude') ? '✳' : (d.agent || '').includes('Codex') ? '⌘' : '◇'}</span><span>${esc(d.agent)}</span><span>·</span><span class="repo">${esc(d.repo)}</span><time datetime="${esc(d.created_at)}">${ago(d.created_at)}</time>${open}</div>
-    <h3>${esc(d.question)}</h3>${d.run_title ? `<a class="card-task" href="${esc(taskHref)}" data-action="run" data-id="${esc(d.run_id)}">${esc(d.run_title)}</a>` : ''}
+    <h2>${esc(d.question)}</h2>${d.run_title ? `<a class="card-task" href="${esc(taskHref)}" data-action="run" data-id="${esc(d.run_id)}">${esc(d.run_title)}</a>` : ''}
     ${scope ? objectiveScopeCard(scope, `scope-${d.id}`) : clamped(d.context, 'context', `card-${d.id}`)}
     ${answerBox(d)}
-    <div class="card-bottom"><span class="owner" title="${esc(d.owner_name || 'No owner yet')}">${avatar(d.owner_name, index)}</span>${statusPill(d)}<button class="button small ${settled ? '' : 'soft'}" data-action="review" data-id="${esc(d.id)}">${button}</button></div>
+    <div class="card-bottom"><span class="owner" title="${esc(d.owner_name || 'No owner yet')}">${avatar(d.owner_name, index)}</span>${statusPill(d)}<button class="button small ${settled ? '' : 'soft'}" data-action="review" data-id="${esc(d.id)}" aria-label="${button}: ${esc(d.question)}">${button}</button></div>
   </article>`;
 }
 
@@ -490,7 +498,7 @@ function activity() {
 }
 
 function empty(title, description = '', action = '', button = '') {
-  return `<div class="empty">${icon('inbox')}<h3>${esc(title)}</h3>${description ? `<p>${esc(description)}</p>` : ''}${action ? `<button class="button soft" data-action="${action}">${esc(button)}</button>` : ''}</div>`;
+  return `<div class="empty">${icon('inbox')}<h2>${esc(title)}</h2>${description ? `<p>${esc(description)}</p>` : ''}${action ? `<button class="button soft" data-action="${action}">${esc(button)}</button>` : ''}</div>`;
 }
 
 // An empty tab says what it would hold. Measured in Chromium: an empty
@@ -514,6 +522,7 @@ function inbox() {
     ? state.decisions.filter(d => decidedNow(d) && (!ownerFilter || d.owner_id === ownerFilter) && `${d.question} ${d.answer} ${d.rationale} ${d.owner_name} ${d.evidence}`.toLowerCase().includes(q))
       .sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')))
     : state.decisions.filter(d => (tab === 'mine' ? assignedToMe(d) : needsYou(d)) && `${d.question} ${d.context} ${d.owner_name}`.toLowerCase().includes(q));
+  inboxShown = rows.length;
   return `<div class="toolbar">${tabs.map(([key, label, count]) => `<button class="tab ${tab === key ? 'active' : ''}" data-action="tab" data-tab="${key}" aria-pressed="${tab === key}">${label}<span>${count}</span></button>`).join('')}<label class="search" aria-label="Search decisions">${icon('search')}<input id="inbox-search" type="search" placeholder="Search" value="${esc(query)}"></label>${tab === 'decided' ? `<select id="owner-filter" aria-label="Filter by owner"><option value="">All owners</option>${state.owners.map(o => `<option value="${esc(o.id)}" ${ownerFilter === o.id ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select>` : ''}</div>
     <div class="decision-list">${rows.length ? rows.map(decisionCard).join('') : emptyInbox(query, tab)}</div>`;
 }
@@ -623,7 +632,8 @@ function authorityRow(a, who = '') {
   if (!a.accepted) parts.push('(not yet accepted)');
   if (ended) parts.push(`ended ${esc(a.effective_to.slice(0, 10))}`);
   if (who) parts.unshift(esc(who));
-  const end = canAdminister() && !ended ? `<button class="button small soft" data-action="end-authority" data-id="${esc(a.id)}">End</button>` : '';
+  const what = `${roleLabels[a.role] || a.role} ${a.scope_kind === 'repo' ? 'everything' : a.scope}`;
+  const end = canAdminister() && !ended ? `<button class="button small soft" data-action="end-authority" data-id="${esc(a.id)}" aria-label="End: ${esc(a.who || 'this record')} ${esc(what)} in ${esc(a.repo || 'every repository')}">End</button>` : '';
   return `<div class="authority-row${ended ? ' ended' : ''}"><span>${parts.join(' · ')}</span>${end}</div>`;
 }
 
@@ -640,13 +650,13 @@ function personCard(p, index, rows = []) {
   const team = `${esc(p.team || '')}${p.teams && p.teams.length ? `${p.team ? ' · ' : ''}${esc(p.teams.join(', '))}` : ''}`;
   const identities = [p.email, p.github_login ? '@' + p.github_login : '', p.slack_id ? 'Slack ' + p.slack_id : ''].filter(Boolean).map(esc).join(' · ');
   const waiting = state.decisions.filter(d => d.status === 'pending' && (d.owner_id === p.id || sameName(d.owner_name, p.name))).length;
-  return `<article class="person-card${p.active ? '' : ' inactive'}">${avatar(p.name, index)}<h3>${esc(p.name)}</h3>${team ? `<p>${team}</p>` : ''}${identities ? `<small>${identities}</small>` : ''}${p.active ? '' : '<small>inactive</small>'}${waiting ? `<p class="person-waiting">Waiting on them: ${waiting}</p>` : ''}<h4>Decides</h4>${authorityRows(rows)}${canAdminister() ? `<button class="button text" data-action="authority" data-person="${esc(p.id)}">Say what they decide</button>` : ''}</article>`;
+  return `<article class="person-card${p.active ? '' : ' inactive'}">${avatar(p.name, index)}<h2>${esc(p.name)}</h2>${team ? `<p>${team}</p>` : ''}${identities ? `<small>${identities}</small>` : ''}${p.active ? '' : '<small>inactive</small>'}${waiting ? `<p class="person-waiting">Waiting on them: ${waiting}</p>` : ''}<h3>Decides</h3>${authorityRows(rows)}${canAdminister() ? `<button class="button text" data-action="authority" data-person="${esc(p.id)}" aria-label="Say what they decide: ${esc(p.name)}">Say what they decide</button>` : ''}</article>`;
 }
 
 // Rows the directory records for a team or a name no person card carries:
 // shown under one last card so no record disappears with the table.
 function otherCard(rows, index) {
-  return `<article class="person-card">${avatar('Other', index)}<h3>Other</h3><h4>Decides</h4>${authorityRows(rows, true)}</article>`;
+  return `<article class="person-card">${avatar('Other', index)}<h2>Other</h2><h3>Decides</h3>${authorityRows(rows, true)}</article>`;
 }
 
 function owners() {
@@ -1486,7 +1496,7 @@ document.addEventListener('click', async event => {
 });
 
 document.addEventListener('input', event => {
-  if (event.target.id === 'inbox-search') { query = event.target.value; render(); }
+  if (event.target.id === 'inbox-search') { query = event.target.value; render(); announce(query ? `${plural(inboxShown, 'decision')} match` : ''); }
 });
 document.addEventListener('change', async event => {
   if (event.target.id === 'owner-filter') { ownerFilter = event.target.value; render(); }
