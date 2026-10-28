@@ -326,14 +326,14 @@ function settingsDotState() {
 function loadOwnership() {
   if (ownershipLoading) return;
   ownershipLoading = true;
-  api('/api/ownership').then(result => { ownership = result.ownership; if (view === 'owners') render(); })
+  api('/api/ownership').then(result => { ownership = result.ownership; if (view === 'connect') render(); })
     .catch(error => notify(error.message)).finally(() => { ownershipLoading = false; });
 }
 
 function loadDirectory() {
   if (directoryLoading) return;
   directoryLoading = true;
-  api('/api/people').then(result => { directory = result; if (view === 'owners') render(); })
+  api('/api/people').then(result => { directory = result; if (['owners', 'connect'].includes(view)) render(); })
     .catch(error => notify(error.message)).finally(() => { directoryLoading = false; });
 }
 
@@ -501,9 +501,9 @@ function durationLabel(seconds) {
 function loadSavings() {
   if (savingsLoading) return;
   savingsLoading = true;
-  api('/api/metrics?days=30').then(result => { savings = result; savingsAt = Date.now(); if (['runs','owners'].includes(view)) render(); })
+  api('/api/metrics?days=30').then(result => { savings = result; savingsAt = Date.now(); if (view === 'connect') render(); })
     // The numbers are a member's to read; a viewer gets no strip and no error.
-    .catch(error => { if (error.status === 403) { savings = false; savingsAt = Date.now(); if (['runs','owners'].includes(view)) render(); } else notify(error.message); })
+    .catch(error => { if (error.status === 403) { savings = false; savingsAt = Date.now(); if (view === 'connect') render(); } else notify(error.message); })
     .finally(() => { savingsLoading = false; });
 }
 
@@ -540,10 +540,10 @@ function ownershipGraph() {
   if (ownership === null) loadOwnership();
   const rows = ownership || [];
   const repos = [...new Set(rows.map(r => r.repo))];
-  const table = rows.length ? `<div class="table-wrap" role="region" aria-label="Ownership signals" tabindex="0"><table><thead><tr><th>REPO</th><th>PATH</th><th>ENGINEER</th><th>SIGNAL</th><th>WEIGHT</th><th>EVIDENCE</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.repo)}</td><td><code>${esc(r.path_prefix || '(repo-wide)')}</code></td><td>${esc(r.engineer)}</td><td>${esc(r.source)}</td><td>${Number(r.weight).toFixed(2)}</td><td><small>${esc(r.evidence)}</small></td></tr>`).join('')}</tbody></table></div>` : ownership === null ? '<p class="context">Loading the ownership graph…</p>' : '<p class="context">No repository ingested yet. Ingest a local git checkout to build the map from git history, blame shares, CODEOWNERS, and Reviewed-by trailers.</p>';
+  const table = rows.length ? `<p class="muted">${plural(repos.length, 'repository', 'repositories')} · ${plural(rows.length, 'signal')}</p><div class="table-wrap" role="region" aria-label="Ownership signals" tabindex="0"><table><thead><tr><th>REPO</th><th>PATH</th><th>ENGINEER</th><th>SIGNAL</th><th>WEIGHT</th><th>EVIDENCE</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.repo)}</td><td><code>${esc(r.path_prefix || '(repo-wide)')}</code></td><td>${esc(r.engineer)}</td><td>${esc(r.source)}</td><td>${Number(r.weight).toFixed(2)}</td><td><small>${esc(r.evidence)}</small></td></tr>`).join('')}</tbody></table></div>` : ownership === null ? '<p class="context">Loading…</p>' : '<p class="context">No repositories yet.</p>';
   const syncRepos = (state.sync && state.sync.repos) || [];
   const synced = syncRepos.map(s => `<li><strong>${esc(s.repo)}</strong><span>${s.last_error ? esc(s.last_error) : s.last_success_at ? 'Synced ' + ago(s.last_success_at) : 'Sync pending'}</span></li>`).join('');
-  return `<div class="wide-toolbar"><h2>Ownership graph</h2><span class="muted">${plural(repos.length, 'repository', 'repositories')} · ${plural(rows.length, 'signal')}</span>${canAdminister() ? '<button class="button" data-action="ingest">Ingest a repository</button>' : ''}</div>${synced ? `<details class="sync-details"><summary>GitHub sync status · ${plural(syncRepos.length, 'repository', 'repositories')}</summary><ul>${synced}</ul></details>` : ''}${table}`;
+  return `${synced ? `<details class="sync-details" id="github-sync-status"><summary>GitHub sync status · ${plural(syncRepos.length, 'repository', 'repositories')}</summary><ul>${synced}</ul></details>` : ''}${table}`;
 }
 
 const roleLabels = {knows:'knows', decides:'decides', approves:'must approve'};
@@ -594,16 +594,6 @@ function otherCard(rows, index) {
   return `<article class="person-card">${avatar('Other', index)}<h3>Other</h3><h4>Decides</h4>${authorityRows(rows, true)}</article>`;
 }
 
-function readiness() {
-  // What is not set up yet, in the order it bites. A pilot that ingests a
-  // repository and stops finds every question landing on the coordinator,
-  // and nothing said so.
-  const items = state.readiness || [];
-  if (!items.length) return '';
-  const label = {blocker: 'Set this up first', warning: 'Worth fixing', note: 'Note'};
-  return `<div class="readiness">${items.map(r => `<div class="readiness-row ${esc(r.level)}"><strong>${esc(label[r.level] || r.level)}</strong><span>${esc(r.what)}</span><em>${esc(r.do)}</em></div>`).join('')}</div>`;
-}
-
 function owners() {
   const actions = $('#page-actions');
   if (directory === null) {
@@ -640,28 +630,33 @@ function newAuthority(personId = '') {
 }
 
 function deliveriesCard() {
+  // Card 3: Slack. The inbox works without it, so the card says so in one line.
   const d = state.delivery || {};
+  const head = '<h2><span class="step">3</span>Slack</h2>';
+  const line = '<p>People can answer in the inbox without it.</p>';
+  if (!d.enabled) return `<section class="setup-card" id="settings-slack">${head}<p>${pill('Not connected', 'gray')}</p>${line}<p><a href="https://github.com/nintendo-ds75/raven-preview/blob/main/docs/slack.md" target="_blank" rel="noopener">How to connect ↗</a></p><details class="history" id="slack-bot"><summary>Server bot (optional)</summary><p>An operator can configure a bot for notification-only delivery. Workspace app policies may require approval.</p><a href="https://github.com/nintendo-ds75/raven-preview/blob/main/docs/slack.md" target="_blank" rel="noopener">Bot setup</a></details></section>`;
+  const failed = (d.failed || 0);
+  const contacts = d.directory?.synced_at ? ` · ${plural(d.directory.people || 0, 'contact')} synced` : '';
+  return `<section class="setup-card" id="settings-slack">${head}<p>${pill('Connected' + contacts, 'green')}</p>${line}${d.directory?.error ? `<p class="error">${esc(d.directory.error)}</p>` : ''}<button class="button soft" data-action="slack-sync">Refresh Slack contacts</button><p>${d.sent || 0} sent · ${d.queued || 0} queued · ${failed} failed${d.signing_secret ? '' : ' · signed source-change callbacks are not configured'}</p><div class="form-row"><div><label for="fallback-channel">Triage channel (when no contact can be reached)</label><input id="fallback-channel" maxlength="100" placeholder="C0123ABC" value="${esc(d.fallback_channel || '')}"></div><div><button class="button" data-action="fallback">Save</button></div></div>${failed ? `<button class="button soft" data-action="deliveries">Show failed deliveries</button><div id="deliveries"></div>` : ''}</section>`;
+}
+
+function githubCard() {
   const github = state.github_app || {};
   const repos = github.repositories || [];
   const canConnect = !!state.github_app && state.me && state.me.role === 'admin';
   const githubOn = !!github.configured && repos.length > 0 && (github.mode !== 'device' || !!github.authorized);
-  // A server GITHUB_TOKEN syncs without the GitHub App. The card said Off while that sync worked;
-  // it now reads the sync itself: which repositories, when each last synced, and what failed.
+  // A server GITHUB_TOKEN syncs without the GitHub App. The row reads the
+  // sync itself: which repositories, when each last synced, and what failed.
   const synced = (state.sync && state.sync.repos) || [];
   const tokenSync = !!(state.sync && state.sync.github) && !githubOn;
   const tokenOk = tokenSync && synced.some(r => r.last_success_at);
   const on = githubOn || tokenOk;
   const failing = synced.filter(r => r.last_error);
-  const summary = githubOn ? 'Pull requests and ownership evidence sync into Raven.'
-    : tokenOk ? 'Syncing with the server’s GITHUB_TOKEN: pull requests, reviews and ownership evidence come into Raven.'
-    : tokenSync ? 'The server has a GITHUB_TOKEN; no repository has synced yet.'
-    : 'Choose repositories and authorize Raven through GitHub.';
+  const status = tokenOk ? '<p>Syncing with the server’s GITHUB_TOKEN: pull requests, reviews and ownership evidence come into Raven.</p>'
+    : tokenSync ? '<p>The server has a GITHUB_TOKEN; no repository has synced yet.</p>' : '';
   const appList = repos.length ? `<details class="github-repositories" id="github-repositories"><summary><strong>${repos.length}</strong> ${githubOn ? 'connected' : 'selected'} ${repos.length === 1 ? 'repository' : 'repositories'}<span>View repositories</span></summary><ul>${repos.map(repo => `<li><span class="repo-owner">${esc(repo.split('/')[0])} /</span> <strong>${esc(repo.split('/').slice(1).join('/') || repo)}</strong></li>`).join('')}</ul></details>` : '';
   const syncList = !repos.length && synced.length ? `<details class="github-repositories" id="github-repositories"><summary><strong>${synced.length}</strong> synced ${synced.length === 1 ? 'repository' : 'repositories'}<span>View repositories</span></summary><ul>${synced.map(r => `<li><span class="repo-owner">${esc(r.repo.split('/')[0])} /</span> <strong>${esc(r.repo.split('/').slice(1).join('/') || r.repo)}</strong> <small>${r.last_error ? `failing: ${esc(r.last_error)}` : r.last_success_at ? `synced ${esc(ago(r.last_success_at))}` : 'not synced yet'}</small></li>`).join('')}</ul></details>` : '';
-  const githubCard = `<section class="setup-card github-card"><div class="github-heading"><div><span class="label">SOURCE CONNECTION</span><h2>GitHub</h2></div>${pill(on ? 'On' : tokenSync ? 'Token set' : 'Off', on ? 'green' : 'gray')}</div><p>${summary}</p>${appList || syncList || '<p class="context">No repositories connected yet.</p>'}${failing.length ? `<p class="error">${failing.length} ${failing.length === 1 ? 'repository is' : 'repositories are'} failing to sync: ${esc(failing[0].repo)}: ${esc(failing[0].last_error)}</p>` : ''}${!github.configured && !tokenSync ? '<p>GitHub connection is awaiting setup by the Raven operator.</p>' : ''}${canConnect && github.configured ? `<button class="button ${githubOn ? 'soft' : 'primary'}" data-action="github-connect">${repos.length ? 'Manage repositories' : 'Connect GitHub'}</button>` : ''}</section>`;
-  if (!d.enabled) return githubCard + `<div class="setup-card"><h2>Optional notifications</h2><p>The Raven inbox works without Slack. Your coding host can send a short task link through your existing authorized employee Slack MCP, after verifying the recipient and permission. No new Raven bot or copied credentials are needed.</p><p>Experts review context, ask questions, answer and sign in Raven. Default links require a Raven account; contact discovery does not grant access.</p><a href="https://github.com/nintendo-ds75/raven-preview/blob/main/docs/host-notifications.md" target="_blank" rel="noopener">Existing Slack MCP setup</a><details><summary>Optional server bot</summary><p>An operator can configure a bot for notification-only delivery. Workspace app policies may require approval.</p><a href="https://github.com/nintendo-ds75/raven-preview/blob/main/docs/slack.md" target="_blank" rel="noopener">Bot setup</a></details></div>`;
-  const failed = (d.failed || 0);
-  return githubCard + `<div class="setup-card"><h2>Slack delivery</h2><p>Contacts are discovered automatically. Slack carries a short notification; people review, clarify and answer in Raven.</p><p>${esc(d.directory?.error || (d.directory?.synced_at ? `${d.directory.people} contacts synced` : 'Directory sync starting…'))}</p><button class="button soft" data-action="slack-sync">Refresh Slack contacts</button><p>${d.sent || 0} sent · ${d.queued || 0} queued · ${failed} failed${d.signing_secret ? '' : ' · signed source-change callbacks are not configured'}</p><div class="form-row"><div><label for="fallback-channel">Triage channel (when no contact can be reached)</label><input id="fallback-channel" maxlength="100" placeholder="C0123ABC" value="${esc(d.fallback_channel || '')}"></div><div><button class="button" data-action="fallback">Save</button></div></div>${failed ? `<button class="button soft" data-action="deliveries">Show failed deliveries</button><div id="deliveries"></div>` : ''}</div>`;
+  return `<div class="github-heading"><h3>GitHub</h3>${pill(on ? 'Connected' : 'Not connected', on ? 'green' : 'gray')}</div>${status}${appList || syncList || '<p>No repositories yet.</p>'}${failing.length ? `<p class="error">${failing.length} ${failing.length === 1 ? 'repository is' : 'repositories are'} failing to sync: ${esc(failing[0].repo)}: ${esc(failing[0].last_error)}</p>` : ''}${!github.configured && !tokenSync ? '<p>GitHub connection is awaiting setup by the Raven operator.</p>' : ''}${canConnect && github.configured ? `<button class="button${githubOn ? ' soft' : ''}" data-action="github-connect">${repos.length ? 'Manage repositories' : 'Connect GitHub'}</button>` : ''}`;
 }
 
 function agentStatus() {
@@ -669,43 +664,78 @@ function agentStatus() {
   return tokens.length ? tokens.map(t => `<p>${esc(t.label)} · ${pill(t.last_used_at ? 'Activity detected' : 'Waiting for first use', t.last_used_at ? 'green' : 'gray')}${t.last_used_at ? ` · Last seen ${esc(ago(t.last_used_at))}` : ''}</p>`).join('') : '<p>No active agent credentials yet.</p>';
 }
 
+// What is not set up yet, one line each with its fix. The server's notices
+// are shown as it wrote them; the level is a word, not a colour.
+function setupChecklist() {
+  const item = (level, text) => `<li><strong>${esc(level)}</strong><span>${esc(text)}</span></li>`;
+  const slackLine = state.delivery?.enabled === false;
+  const items = [
+    state.model?.notice ? item('Worth fixing', state.model.notice) : '',
+    slackLine ? item('Note', 'Slack not connected: people answer in the inbox.') : '',
+    readiness(slackLine ? ['no_slack'] : []),
+  ].join('');
+  return items ? `<h2 id="setup-checklist-title">Not set up yet</h2><ul class="setup-list" aria-labelledby="setup-checklist-title">${items}</ul>` : '';
+}
+
+function readiness(skip = []) {
+  // The server's readiness findings, in the order they bite, as checklist
+  // rows: the level word, what is missing, what to do.
+  const label = {blocker: 'Set this up first', warning: 'Worth fixing', warn: 'Worth fixing', note: 'Note', info: 'Note'};
+  return (state.readiness || []).filter(r => r && !skip.includes(r.key))
+    .map(r => `<li><strong>${esc(label[r.level] || r.level)}</strong><span>${esc([r.what, r.do].filter(Boolean).join(' '))}</span></li>`).join('');
+}
+
 function connections() {
   const shared = !!state.auth?.enabled;
   const step = (n, title) => `<h2><span class="step">${n}</span>${title}</h2>`;
   let agentStep;
   if (shared) {
-    agentStep = `<section class="setup-card">${step(1, 'Connect your coding agent')}<p>Pick your client below. Give it a task in your own words: it finds the files and brings the decisions here.</p>${agentCards()}<h3>Your agent connections</h3><div id="agent-status" aria-live="polite">${agentStatus()}</div><p class="context">Refreshes every five seconds while this tab is visible. Last seen confirms the credential was used, not that a session is running.</p><button class="button" data-action="agent-status">Refresh status</button><details class="history" id="manual-agent-setup"><summary>Other MCP clients</summary><p>Create a limited credential and add the endpoint and header in that client’s MCP settings.</p><label for="agent-client">Agent client</label><select id="agent-client"><option>Claude Code</option><option>Cursor</option><option>Codex</option><option>Other MCP client</option></select><button class="button primary" data-action="agent-setup">Create connection details</button><p class="context">The client must support HTTP MCP with an authorization header.</p></details></section>`;
+    agentStep = `<section class="setup-card">${step(1, 'Connect your coding agent')}<p>Pick your client.</p>${agentCards()}<h3>Your agent connections</h3><div id="agent-status" aria-live="polite">${agentStatus()}</div><p class="context">Refreshes every five seconds while this tab is visible. Last seen confirms the credential was used, not that a session is running.</p><button class="button" data-action="agent-status">Refresh status</button><details class="history" id="manual-agent-setup"><summary>Other MCP clients</summary><p>Create a limited credential and add the endpoint and header in that client’s MCP settings.</p><label for="agent-client">Agent client</label><select id="agent-client"><option>Claude Code</option><option>Cursor</option><option>Codex</option><option>Other MCP client</option></select><button class="button primary" data-action="agent-setup">Create connection details</button><p class="context">The client must support HTTP MCP with an authorization header.</p></details>${workbenchSetupCard()}</section>`;
   } else {
     const {remote, notice, ...config} = state.mcp_config || {};
-    agentStep = `<section class="setup-card">${step(1, 'Local agent connection')}<p>Authentication is off on this server, so no credential is needed. Add this to your client’s MCP settings, then give it a task in your own words.</p><pre id="mcp-config">${esc(JSON.stringify(config, null, 2))}</pre><button class="button" data-action="copy">Copy configuration</button><p class="context">Then add the Raven rule to the repository’s <code>CLAUDE.md</code> or <code>AGENTS.md</code>, so the agent starts every task in Raven:</p><pre id="agent-rule">${esc(AGENT_RULE)}</pre><button class="button" data-action="copy" data-target="#agent-rule">Copy instruction</button></section>`;
+    agentStep = `<section class="setup-card">${step(1, 'Connect your coding agent')}<p>Add this to your agent’s MCP settings.</p><pre id="mcp-config">${esc(JSON.stringify(config, null, 2))}</pre><button class="button primary" data-action="copy">Copy configuration</button><p>Then add this to <code>CLAUDE.md</code> or <code>AGENTS.md</code>.</p><pre id="agent-rule">${esc(AGENT_RULE)}</pre><button class="button" data-action="copy" data-target="#agent-rule">Copy instruction</button>${workbenchSetupCard()}</section>`;
   }
-  // A repository ingested at startup (./setup --repo) is step 2 already done.
-  // Measured on a fresh install: the card still read "ingest a local clone"
-  // under "No repositories connected yet", so the person could not tell.
+  // A repository ingested at startup (./setup --repo) is context already
+  // there; the card names it so the person can tell.
   const graph = state.graph || {};
   const indexed = [...new Set((graph.repos || []).filter(r => typeof r === 'string' && r))];
   const indexedLine = indexed.length ? `<p class="context"><strong>Already indexed:</strong> ${indexed.map(esc).join(', ')} · ${plural(graph.engineers || 0, 'person', 'people')} from its history${graph.intents ? `, ${plural(graph.intents, 'record')}` : ''}. Raven can name them now.</p>` : '';
-  const contextStep = `<section class="setup-card">${step(2, 'Give Raven context')}<p>Repository history tells Raven who owns what; connected sources give it evidence to cite.</p>${indexedLine}<p>Connect GitHub below${indexed.length ? ' to keep it current' : ''}, or ingest a local clone with <code>./setup --repo /path/to/checkout</code>.</p></section>${deliveriesCard()}${contextSourcesCard()}`;
+  const contextStep = `<section class="setup-card" id="settings-context">${step(2, 'Context')}${githubCard()}${indexedLine}${contextSourcesCard()}${canAdminister() ? '<p><button class="button text" data-action="ingest">Add a local clone</button></p>' : ''}<details class="history" id="settings-evidence"><summary>Paste a message or email</summary><div id="evidence-mount"></div></details>${canAdminister() ? '<details class="history" id="settings-meetings"><summary>Meetings</summary><div id="meetings-mount"></div></details>' : ''}</section>`;
   const peopleStep = shared
-    ? `<section class="setup-card">${step(3, 'Invite the people who decide')}<p>Raven routes each decision to the person its evidence names. They answer and sign here; Slack is optional.</p></section>${workspaceAccountCard()}`
-    : `<section class="setup-card">${step(3, 'Invite the people who decide')}<p>With authentication off this is a single-operator workspace. Enable authentication before exposing it to a team.</p></section>`;
-  return `<div class="setup-grid mcp-setup"><section>${agentStep}${contextStep}</section><section>${peopleStep}${workbenchSetupCard()}</section></div>`;
+    ? (canAdminister() ? `<section class="setup-card" id="settings-people">${step(4, 'People access')}${workspaceAccountCard()}</section>` : '')
+    : `<section class="setup-card" id="settings-people">${step(4, 'People access')}<p>Sign-in is off: single-operator workspace. Turn it on before sharing this server.</p></section>`;
+  const advanced = `<details class="history settings-advanced" id="repository-signals"><summary>Advanced</summary>${savedStrip()}<h3>Who git thinks owns what</h3>${ownershipGraph()}<p><button class="button" data-action="export">Export history</button></p></details>`;
+  return `${setupChecklist()}<div class="settings-page">${agentStep}${contextStep}${deliveriesCard()}${peopleStep}${routingCard()}${advanced}</div>`;
+}
+
+// The monthly routing knobs, with the ids and PUTs the change handler
+// below listens for. Non-admins read them inside a disabled fieldset.
+function routingCard() {
+  const head = '<h2>Routing</h2>';
+  if (directory === null) {
+    loadDirectory();
+    return `<section class="setup-card" id="settings-routing">${head}<p class="context" role="status">Loading…</p></section>`;
+  }
+  const settings = directory.settings || {};
+  const people = directory.people || [];
+  const coordinator = settings.coordinator;
+  const control = `<section class="setup-card" id="settings-routing">${head}<label for="coordinator-select">Fallback person</label><select id="coordinator-select"><option value="">Nobody</option>${people.map(p => `<option value="${esc(p.id)}" ${coordinator && coordinator.id === p.id ? 'selected' : ''}>${esc(p.name)}${p.team ? ` · ${esc(p.team)}` : ''}</option>`).join('')}</select><p class="field-help">Gets questions nobody is known to own.</p><div class="routing-options"><label class="routing-option" for="verified-only"><input type="checkbox" id="verified-only" ${settings.require_verified_route ? 'checked' : ''}><span>Only ask verified owners</span></label><label class="routing-option" for="auto-rules"><input type="checkbox" id="auto-rules" ${settings.auto_rules ? 'checked' : ''}><span>Reuse signed answers automatically</span></label></div><label for="brief-mode">Slack links open</label><select id="brief-mode">${[['off', 'The inbox'], ['static', 'The task page']].map(([v, l]) => `<option value="${v}" ${(settings.brief_mode || 'static') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></section>`;
+  return canAdminister() ? control : `<fieldset class="read-only-settings" disabled><legend>Managed by an administrator</legend>${control}</fieldset>`;
 }
 
 function contextSourcesCard() {
-  const report = state.context_sources;
-  if (!report) return '';
+  const report = state.context_sources || {};
   const rows = (report.sources || []).map(s => {
     const refused = Object.entries(s.refused || {}).map(([k, n]) => `${esc(k.replace(/_/g, ' '))}: ${n}`).join(', ');
     return `<li><strong>${esc(s.kind)}</strong> ${esc(s.label || s.target)} → ${esc(s.repo)} · <span class="status-${esc(s.state)}">${esc(s.state.replace(/_/g, ' '))}</span> · ${s.records} records${s.last_success_at ? ' · synced ' + esc(new Date(s.last_success_at).toLocaleString()) : ''}${refused ? `<br><small>Not imported — ${refused}</small>` : ''}${s.do ? `<br><small>${esc(s.do)}</small>` : ''}</li>`;
   }).join('');
   const missing = (report.not_configured || []).map(s => `<li><strong>${esc(s.kind)}</strong> not configured${s.credentials_present ? '' : ' (credentials not set)'}<br><code>${esc(s.enable)}</code></li>`).join('');
-  return `<section class="setup-card" id="context-sources"><h2>Context sources</h2><p>Slack public channels, Jira projects and documentation sites that an administrator attested are shared with every reader. Records are evidence, never approval.</p>${rows ? `<ul>${rows}</ul>` : '<p>No native context source yet.</p>'}${missing ? `<details class="history"><summary>Available to add</summary><ul>${missing}</ul></details>` : ''}</section>`;
+  return `<div class="github-heading" id="context-sources"><h3>Other sources</h3>${rows ? '' : '<span class="muted">none yet</span>'}</div>${rows ? `<ul>${rows}</ul>` : ''}${missing ? `<details class="history" id="context-sources-available"><summary>Available to add</summary><ul>${missing}</ul></details>` : ''}`;
 }
 
 function workspaceAccountCard() {
   if (!state.auth?.enabled || state.me?.role !== 'admin') return '';
-  return `<section class="setup-card"><h2>${esc(state.workspace?.name || 'Set up your workspace')}</h2>${state.workspace?.needs_setup ? '<p>Create your owner login and name this workspace.</p><a class="button primary" href="/auth/setup">Create workspace</a>' : ''}<p>Invite teammates to review context, ask questions and sign off on decisions in Raven. Default notification links require a Raven account. Invite links are private and expire after 48 hours.</p><button class="button" data-action="invite-person">Invite teammate</button></section>`;
+  return `${state.workspace?.needs_setup ? '<p>Create your owner login and name this workspace.</p><a class="button" href="/auth/setup">Create workspace</a>' : ''}<p>Invite teammates to review context, ask questions and sign off on decisions in Raven. Default notification links require a Raven account. Invite links are private and expire after 48 hours.</p><button class="button" data-action="invite-person">Invite teammate</button>`;
 }
 
 async function setupAgent() {
@@ -1485,9 +1515,15 @@ setInterval(() => { if (!document.hidden) refresh({quiet:true}); }, 5000);
 // rather than showing stale rows for up to five more seconds.
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh({quiet:true}); });
 
+// Under step 1: the hosts that can run a task from the browser, and what
+// the server needs for that. objectiveCapabilities() (objectives.js) is the
+// source of the host rows when it returns them as data.
 function workbenchSetupCard() {
   const config = state.workbench || {};
-  return `<section class="setup-card"><h2>Work in this browser</h2><p>${config.ready ? 'Raven runs tasks here. No separate coding agent is needed.' : 'An operator connects a repository and configures the server’s inference key once. Then anyone with member access can start here.'}</p>${config.ready ? `<a class="button" href="#work">New task</a><p>${config.tests_enabled ? 'Isolated test commands are enabled.' : 'Test execution is not configured. Raven can read and draft changes; testing requires a sandbox.'}</p>` : '<pre>python -m bridge serve --workbench \\\n  --managed-repo your-org/project=/path/to/checkout</pre><p>Set ANTHROPIC_API_KEY and BRIDGE_MODEL_API=anthropic in the server environment. Keep credentials out of task messages.</p>'}<a href="https://github.com/nintendo-ds75/raven-preview/blob/main/docs/browser-tasks.md" target="_blank" rel="noopener">Browser setup and isolated tests ↗</a></section>`;
+  const reported = typeof objectiveCapabilities === 'function' ? objectiveCapabilities() : null;
+  const hosts = Array.isArray(reported) ? reported : (config.hosts || []);
+  const rows = hosts.map(host => `<p class="host-row">${esc(host.name || host.id)} · ${host.ready ? 'Ready' : 'Set up'}</p>`).join('');
+  return `<details class="history" id="browser-tasks"><summary>Run tasks from the browser</summary>${rows}${config.ready ? '<p><a class="button" href="#work">Start a task</a></p>' : '<pre>python -m bridge serve --workbench \\\n  --managed-repo your-org/project=/path/to/checkout</pre><p>Set ANTHROPIC_API_KEY and BRIDGE_MODEL_API=anthropic on the server.</p>'}<p><a href="https://github.com/nintendo-ds75/raven-preview/blob/main/docs/browser-tasks.md" target="_blank" rel="noopener">Browser setup and isolated tests ↗</a></p></details>`;
 }
 
 document.addEventListener('submit', async event => {

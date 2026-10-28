@@ -10,8 +10,9 @@ const context = {
   state: {auth: {enabled: true}, mcp_config: {mcpServers: {bridge: {type: 'http', url: 'http://localhost:7333/mcp'}}}},
   $: key => nodes[key], esc: value => String(value), structuredClone,
   pill: (text, color) => `<span class="${color}">${text}</span>`,
-  ago: () => 'just now',
-  agentCards: () => '<div>Agent cards</div>',
+  ago: () => 'just now', plural: (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`,
+  agentCards: () => '<div>Agent cards</div>', canAdminister: () => true,
+  savedStrip: () => '', ownershipGraph: () => '', directory: null, loadDirectory: () => {},
   openModal: (...args) => { context.modal = args; },
   api: async (path, data) => { request = {path, data}; return {token: 'test-only-credential'}; },
 };
@@ -102,7 +103,7 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   context.updateAgentConnectPrompt();
   assert.equal(nodes['#agent-connect-prompt'].hidden, true);
   context.state.runs = [];
-  assert.match(context.connections(), /Give it a task in your own words/);
+  assert.match(context.connections(), /Pick your client\./);
   // The top-bar pill names the workspace when sign-in is on, else 'Local workspace'.
   nodes['#workspace-name'] = {};
   context.state.workspace = {name: 'Actual team <workspace>'};
@@ -138,36 +139,48 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   });
   assert.equal(inviteField.value, 'test-invitation');
   assert.match(context.connections(), /GitHub/);
-  assert.match(context.deliveriesCard(), /class="gray">Off/);
+  assert.match(context.githubCard(), /class="gray">Not connected/);
   // Sync through the server's GITHUB_TOKEN, no GitHub App: the card said Off while it worked.
   context.state.sync = {github: true, repos: [{repo: 'urllib3/urllib3', last_success_at: '', last_error: ''}]};
-  assert.match(context.deliveriesCard(), /class="gray">Token set/);
-  assert.match(context.deliveriesCard(), /no repository has synced yet/);
+  assert.match(context.githubCard(), /class="gray">Not connected/);
+  assert.match(context.githubCard(), /no repository has synced yet/);
   context.state.sync.repos[0].last_success_at = '2026-09-29T08:00:00Z';
-  assert.match(context.deliveriesCard(), /class="green">On/);
-  assert.match(context.deliveriesCard(), /GITHUB_TOKEN/);
-  assert.match(context.deliveriesCard(), /<strong>1<\/strong> synced repository/);
-  assert.match(context.deliveriesCard(), /synced just now/);
-  assert.doesNotMatch(context.deliveriesCard(), /awaiting setup/);
+  assert.match(context.githubCard(), /class="green">Connected/);
+  assert.match(context.githubCard(), /GITHUB_TOKEN/);
+  assert.match(context.githubCard(), /<strong>1<\/strong> synced repository/);
+  assert.match(context.githubCard(), /synced just now/);
+  assert.doesNotMatch(context.githubCard(), /awaiting setup/);
   context.state.sync.repos.push({repo: 'acme/app', last_success_at: '', last_error: 'GitHub 401: Bad credentials'});
-  assert.match(context.deliveriesCard(), /failing to sync: acme\/app: GitHub 401: Bad credentials/);
+  assert.match(context.githubCard(), /failing to sync: acme\/app: GitHub 401: Bad credentials/);
   context.state.sync = {github: false, repos: []};
-  assert.match(context.deliveriesCard(), /class="gray">Off/);
-  assert.match(context.deliveriesCard(), /awaiting setup/);
+  assert.match(context.githubCard(), /class="gray">Not connected/);
+  assert.match(context.githubCard(), /awaiting setup/);
   delete context.state.sync;
   context.state.github_app = {configured: true, mode: 'device', authorized: true, repositories: ['acme/app']};
-  assert.match(context.deliveriesCard(), /class="green">On/);
+  assert.match(context.githubCard(), /class="green">Connected/);
   context.state.github_app.authorized = false;
-  assert.match(context.deliveriesCard(), /class="gray">Off/);
+  assert.match(context.githubCard(), /class="gray">Not connected/);
   context.state.github_app = {configured: true, repositories: []};
-  assert.match(context.deliveriesCard(), /class="gray">Off/);
+  assert.match(context.githubCard(), /class="gray">Not connected/);
   context.state.github_app.repositories = ['acme/app'];
-  assert.match(context.deliveriesCard(), /class="green">On/);
-  assert.match(context.deliveriesCard(), /connected repository/);
+  assert.match(context.githubCard(), /class="green">Connected/);
+  assert.match(context.githubCard(), /connected repository/);
   context.state.github_app.repositories = Array.from({length: 29}, (_, i) => `acme/repository-${i}`);
-  assert.match(context.deliveriesCard(), /<strong>29<\/strong> connected repositories/);
-  assert.match(context.deliveriesCard(), /id="github-repositories"/);
-  assert.doesNotMatch(context.deliveriesCard(), /Connected: acme/);
+  assert.match(context.githubCard(), /<strong>29<\/strong> connected repositories/);
+  assert.match(context.githubCard(), /id="github-repositories"/);
+  assert.doesNotMatch(context.githubCard(), /Connected: acme/);
+  // Slack is card 3: a pill, one line, the link; connected keeps its controls.
+  context.state.delivery = {enabled: false};
+  assert.match(context.deliveriesCard(), /<span class="step">3<\/span>Slack/);
+  assert.match(context.deliveriesCard(), /class="gray">Not connected/);
+  assert.match(context.deliveriesCard(), /People can answer in the inbox without it\./);
+  assert.match(context.deliveriesCard(), /How to connect ↗/);
+  assert.doesNotMatch(context.deliveriesCard(), /Optional notifications|Existing Slack MCP setup|GitHub/);
+  context.state.delivery = {enabled: true, directory: {synced_at: '2026-09-29T08:00:00Z', people: 12}, sent: 3, queued: 0, failed: 1, signing_secret: true};
+  assert.match(context.deliveriesCard(), /class="green">Connected · 12 contacts synced/);
+  assert.match(context.deliveriesCard(), /id="fallback-channel"/);
+  assert.match(context.deliveriesCard(), /data-action="deliveries"/);
+  delete context.state.delivery;
   // Polling must preserve expanded sections and the repository list position.
   const existing = [{id: 'local-launcher-help', open: true}, {id: 'manual-agent-setup', open: false}, {id: 'github-repositories', open: true}];
   const makeDisclosure = (item, scroll) => ({...item, list: {scrollTop: scroll}, querySelector() { return this.list; }});
@@ -213,7 +226,8 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   assert.match(context.modal[2], /AGENTS\.md/);
   assert.equal(context.state.mcp_config.mcpServers.bridge.headers, undefined);
   context.state.auth.enabled = false;
-  assert.match(context.connections(), /Local agent connection/);
+  assert.match(context.connections(), /Connect your coding agent/);
+  assert.match(context.connections(), /<button class="button primary" data-action="copy">Copy configuration<\/button>/);
   await assert.rejects(context.setupAgent(), /Enable server authentication/);
   // Task orientation and progressive disclosure are rendered from saved data.
   const taskSource = fs.readFileSync(require('node:path').join(__dirname, '../web/task.js'), 'utf8');

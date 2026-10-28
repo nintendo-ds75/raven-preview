@@ -106,8 +106,8 @@ class StateBudgetTests(OfflineCase):
             self.assertGreater(len(response.read()), 1024)
 
     def test_state_says_what_the_backend_allows_and_what_today_wants(self):
-        """Every page says what Raven can do with the configured backend, and
-        the sidebar badge adds up what Today wants from the person."""
+        """Settings says what Raven can do with the configured backend, as the
+        server wrote it, and the state adds up what Today wants from the person."""
         from bridge import objectives as obj
         from bridge.auth import Identity
         with patch.dict(os.environ, {'BRIDGE_MODEL_API': 'none'}):
@@ -118,6 +118,15 @@ class StateBudgetTests(OfflineCase):
         self.assertFalse(state['model']['proposals'])
         self.assertEqual(state['model']['notice'],
                          'Suggestions and briefs are off: no model key. Routing, records, reminders and signed decisions still run. Add a key with ./setup --configure and restart.')
+        # The notice is rendered once, unchanged, at the top of Settings: the
+        # checklist draws state.model.notice as written, connections() opens
+        # with that checklist, and no other page carries a model strip.
+        app = self.get('/app.js')[2].decode()
+        checklist = app[app.index('function setupChecklist()'):app.index('function readiness(')]
+        self.assertIn("state.model?.notice ? item('Worth fixing', state.model.notice) : ''", checklist)
+        settings_render = app[app.index('function connections()'):app.index('function routingCard()')]
+        self.assertIn('return `${setupChecklist()}<div class="settings-page">', settings_render)
+        self.assertNotIn('renderModelStrip', app)
         before = state['today']
         actor = Identity('', 'Local operator', 'admin', 'operator')
         source = self.store.add_record({'repo': 'sample/project', 'kind': 'note', 'ref': 'pilot-call',

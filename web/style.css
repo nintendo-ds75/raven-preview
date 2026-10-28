@@ -303,33 +303,6 @@ main{
   min-width:0;
   overflow-x:clip}
 
-.readiness{
-  display:grid;
-  gap:8px;
-  margin-bottom:var(--space-4)}
-
-.readiness-row{
-  display:grid;
-  gap:2px;
-  padding:10px 12px;
-  border-radius:9px;
-  border:1px solid var(--line);
-  background:#151614;
-  overflow-wrap:anywhere}
-
-.readiness-row strong{
-  font-size:10px;
-  letter-spacing:.06em;
-  text-transform:uppercase;
-  color:#83d97a}
-
-.readiness-row em{
-  font-style:normal;
-  color:#bebfb6}
-
-.readiness-row.blocker{border-left:3px solid #2b2e27}
-.readiness-row.warning{border-left:3px solid #2b2e27}
-.readiness-row.note{border-left:3px solid var(--line)}
 
 .page-head{
   display:flex;
@@ -908,9 +881,6 @@ td small{
 
 .people-grid > *{min-width:0}
 
-.routing-settings{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:32px;align-items:start}
-.routing-settings .label{display:block;margin-bottom:10px}
-.routing-settings .field-help{font-size:12px;margin-bottom:0}
 .routing-options{display:grid;gap:12px}
 .setup-card .routing-option{display:flex;align-items:flex-start;gap:12px;padding:16px;margin:0;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:#1b261a}
 .routing-option input[type="checkbox"]{margin:3px 0 0;flex:0 0 16px}
@@ -921,7 +891,7 @@ td small{
 .sync-details ul{list-style:none;padding:0;margin:12px 0 0;max-height:280px;overflow:auto}
 .sync-details li{display:flex;justify-content:space-between;gap:16px;padding:10px 0;border-top:1px solid var(--line);overflow-wrap:anywhere}
 .sync-details li span{color:#bebfb6}
-@media(max-width:800px){.routing-settings{grid-template-columns:minmax(0,1fr);gap:20px}.sync-details li{flex-direction:column;gap:4px}}
+@media(max-width:800px){.sync-details li{flex-direction:column;gap:4px}}
 
 .setup-grid{
   display:grid;
@@ -949,6 +919,19 @@ td small{
   margin:0 0 12px}
 
 .setup-card h2 .step{display:inline-grid;place-items:center;width:26px;height:26px;margin-right:10px;border-radius:50%;background:#1b261a;color:#83d97a;font-size:13px;font-weight:600;vertical-align:middle}
+
+.settings-page{
+  display:flex;
+  flex-direction:column;
+  gap:var(--space-6);
+  max-width:820px;
+  min-width:0}
+
+.settings-page .setup-card h3,.settings-advanced h3{font-size:14px;font-weight:500;margin:var(--space-4) 0 var(--space-2)}
+.settings-page .github-heading h3{margin:0}
+.settings-page .button.text{padding-left:0}
+.settings-page .field-help{font-size:12px;margin:var(--space-2) 0 0}
+.settings-page .routing-options{margin-top:var(--space-4)}
 
 .setup-grid > section{
   display:flex;

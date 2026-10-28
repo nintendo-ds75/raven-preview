@@ -594,7 +594,7 @@ async function startWorld(temp, name) {
       // ---------------- the admin turns the link off, then back to static ----------------
       const admin = await open('admin', [{name: W.cookie_name, value: W.admin_cookie, domain: '127.0.0.1', path: '/'}]);
       await step('app: "Task page in messages" off hides the app\'s button; static brings back "Open task page"', async () => {
-        await admin.goto(`${W.base}/#owners`);
+        await admin.goto(`${W.base}/#connect`);
         await admin.waitForSelector('#brief-mode');
         assert.equal(await admin.inputValue('#brief-mode'), 'static');
         assert.deepEqual(await admin.locator('#brief-mode option').evaluateAll(options => options.map(o => o.value)), ['off', 'static']);
