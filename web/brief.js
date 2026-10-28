@@ -266,9 +266,9 @@ function focusCard(f) {
     ${f.prediction ? `<div class="brief-block is-guess"><span class="label">Your earlier answer · a guess</span><p>${prose(f.prediction)}</p></div>` : ''}
     ${form}
     ${f.consequences ? `<div class="brief-block"><span class="label">Consequences</span><p>${prose(typeof f.consequences === 'string' ? f.consequences : JSON.stringify(f.consequences))}</p></div>` : ''}
-    ${paths.length ? `<p class="brief-where">Touches ${paths.map(p => `<code>${esc(p)}</code>`).join(', ')}</p>` : ''}
     ${found.length ? `<details class="brief-why brief-checked" data-keep="found-${esc(f.node_id)}"><summary>What Raven checked</summary>${foundList(found)}</details>` : ''}
     <details class="brief-extra brief-scope" data-keep="recorded-scope-${esc(f.node_id)}"><summary>Details</summary>
+    ${paths.length ? `<p class="brief-where">Touches ${paths.map(p => `<code>${esc(p)}</code>`).join(', ')}</p>` : ''}
     ${reasonBlock(f.why, f.node_id)}
     ${approvalScope(f)}
     ${workItemContext(f)}
@@ -302,6 +302,8 @@ function decisionsCard(nodes) {
     return n.owner ? you(n.owner) : 'No owner yet';
   };
   const focus = data.focus?.node_id;
+  // The one decision on this task is the card above; a list that only pointed back to it says nothing.
+  if (shown.length === 1 && shown[0].node_id === focus) return '';
   return `<section class="task-panel" aria-labelledby="decisions-title"><h2 id="decisions-title">Decisions on this task</h2>
     ${shown.length ? `<ol class="brief-decisions">${shown.map(n => n.node_id === focus
       // The decision the card above is about, said once.
@@ -590,12 +592,15 @@ function render() {
   $('#brief-account').innerHTML = `${viewerMenu(kept.menu)}${accountCta()}`;
   const standing = f ? focusStanding(f) : 'read';
   const box = inquiryCard() + `<details class="brief-extra" data-keep="notes"><summary>Notes</summary>${noteCard()}</details>`;
+  const people = `<details class="brief-extra" data-keep="people"><summary>People involved</summary>${peopleCard(data.contacts)}${joinNote()}</details>`;
+  const background = `<details class="brief-extra" data-keep="task-background"><summary>Background and history</summary>${requesterCard(t, data.requester)}${historyCard(data.history)}</details>`;
   // On a phone the decision and its form come first: with the question
-  // box above them, the form began below the first screen.
+  // box above them, the form began below the first screen. People
+  // involved is its own disclosure at both widths.
   const body = narrow.matches
-    ? `<div class="brief-stack">${focusCard(f)}${box}${decisionsCard(data.nodes)}<details class="brief-extra" data-keep="task-background"><summary>Background and history</summary>${requesterCard(t, data.requester)}${peopleCard(data.contacts)}${historyCard(data.history)}</details></div>`
-    : `<div class="brief-columns"><div class="brief-main">${focusCard(f)}${decisionsCard(data.nodes)}<details class="brief-extra" data-keep="task-background"><summary>Background and history</summary>${requesterCard(t, data.requester)}${historyCard(data.history)}</details></div>
-       <aside class="brief-side" aria-label="Context and people">${box}<details class="brief-extra" data-keep="people"><summary>People involved</summary>${peopleCard(data.contacts)}${joinNote()}</details></aside></div>`;
+    ? `<div class="brief-stack">${focusCard(f)}${box}${decisionsCard(data.nodes)}${people}${background}</div>`
+    : `<div class="brief-columns"><div class="brief-main">${focusCard(f)}${decisionsCard(data.nodes)}${background}</div>
+       <aside class="brief-side" aria-label="Context and people">${box}${people}</aside></div>`;
   // The heading is the task's title; one too long for a heading gives way
   // to its work item (taskDisplayLabel). One task-wide count beside the
   // personal line: a pill and a meta count beside "needs one decision from
