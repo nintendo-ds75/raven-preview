@@ -1279,7 +1279,7 @@ class Store:
                         "do": "Use the inbox for this workspace, or connect Slack for direct-message notifications. See docs/slack.md."})
         if directory.get("error") and self.delivery.channel == 'slack':
             out.append({"key": "slack_directory", "level": "blocker", "what": directory["error"],
-                        "do": "Check the bot's users:read and users:read.email scopes, then refresh Slack contacts in Connections & setup."})
+                        "do": "Check the bot's users:read and users:read.email scopes, then refresh Slack contacts in Settings."})
         if self.delivery.enabled and self.delivery.channel == "slack" and not fallback:
             out.append({"key": "no_triage_channel", "level": "warning", "what": "No Slack channel is configured for questions with no reachable contact.",
                         "do": "Set SLACK_FALLBACK_CHANNEL to a channel containing the bot. People can refer questions there without creating accounts."})
@@ -1348,7 +1348,7 @@ class Store:
             out.append({"key": "falling_through", "level": "warning",
                         "what": f"{fell_through} of the last {len(recent)} decisions reached the coordinator "
                                 "because no verified owner covered them.",
-                        "do": "Record who decides for those areas; a hand-on in the inbox teaches it too."})
+                        "do": "Say what they decide on a person's card in People; a hand-on in the inbox teaches it too."})
         for repo in repos[:5]:
             note = graph.get_setting(f"sync:{repo}")
             if not graph.db.execute("SELECT 1 FROM sync_state WHERE repo=?", (repo,)).fetchone() and not note:

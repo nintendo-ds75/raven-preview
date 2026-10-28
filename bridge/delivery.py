@@ -1004,7 +1004,7 @@ class Delivery:
         person = self.slack_person(user_id)
         if person is None:
             return ("I could not verify you as an active member of the connected Slack workspace. "
-                    "The operator can check Slack permissions in Connections & setup; no Raven account is needed.")
+                    "The operator can check Slack permissions in Settings; no Raven account is needed.")
         from . import readback
         order_error = readback.begin(graph, self.channel, channel, thread_ts, person["id"], occurrence, event_id)
         if order_error:

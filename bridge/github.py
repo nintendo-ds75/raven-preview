@@ -178,7 +178,7 @@ def register(store: Graph, repo: str) -> None:
         _set_state(store, repo)
 
 
-SYNC_HOW = "connect GitHub under Connections & setup, or run `bridge sync <repo>`, or set GITHUB_TOKEN with BRIDGE_GITHUB_REPOS on the server"
+SYNC_HOW = "connect GitHub under Settings, or run `bridge sync <repo>`, or set GITHUB_TOKEN with BRIDGE_GITHUB_REPOS on the server"
 
 
 def sync_note(store: Graph, repo: str, now: float | None = None, operator: bool = False) -> str:

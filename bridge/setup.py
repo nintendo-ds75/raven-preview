@@ -301,7 +301,7 @@ def configure(args, path: Path, interactive: bool) -> None:
                     updates[key] = value
             return True
 
-        print("GitHub: connect it in the browser after startup (Connections & setup).")
+        print("GitHub: connect it in the browser after startup (Settings).")
         if ask("an Anthropic API key (model-written briefs, proposals and diff review)", [("ANTHROPIC_API_KEY", "Anthropic API key", True),
             ("ANTHROPIC_WORKSPACE_ID", "Anthropic workspace ID (optional, for multi-workspace keys; Enter to keep/skip)", False)]):
             if updates.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY"):
