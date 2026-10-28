@@ -158,15 +158,24 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.equal(learned.authority.filter(a => a.source === 'referral').length, 0);
     await page.keyboard.press('Escape');
 
-    // Add a real owner and a routed request using the web UI.
-    await page.getByRole('link', {name:'People and ownership',exact:true}).click();
-    await openMore();
-    await page.getByRole('button', {name:'Add owner',exact:true}).click();
+    // Add a person, say what they decide, and route a request to them using the web UI.
+    await page.getByRole('link', {name:'People',exact:true}).click();
+    await page.getByRole('button', {name:'Add person',exact:true}).click();
     await page.getByLabel('Name', {exact:true}).fill('Jamie Test');
     await page.getByLabel('Team', {exact:true}).fill('Payments');
-    await page.getByLabel('Path patterns').fill('payments/*');
-    await page.locator('#owner-form').getByRole('button', {name:'Add owner',exact:true}).click();
+    await page.locator('#person-form').getByRole('button', {name:'Add person',exact:true}).click();
     await page.waitForSelector('#modal:not([open])', {state:'attached'});
+    const jamie = page.locator('.person-card').filter({hasText:'Jamie Test'});
+    await jamie.waitFor();
+    assert.match(await jamie.textContent(), /Nothing recorded yet/);
+    await jamie.getByRole('button', {name:'Say what they decide',exact:true}).click();
+    assert.match(await page.locator('#authority-who option:checked').textContent(), /Jamie Test/);
+    await page.selectOption('#authority-kind', 'path');
+    await page.fill('#authority-scope', 'payments/*');
+    await page.locator('#authority-form').getByRole('button', {name:'Save',exact:true}).click();
+    await page.waitForSelector('#modal:not([open])', {state:'attached'});
+    await page.waitForFunction(() => /decides payments\/\* · every repository · from config/.test(document.querySelector('#app')?.textContent || ''));
+    assert.equal(await page.locator('#app table').count(), 0);
     await page.getByRole('link', {name:'Judgment inbox',exact:true}).click();
     await openMore();
     await page.getByRole('button', {name:'Ask Raven',exact:true}).click();
@@ -251,7 +260,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     });
     await page.reload();
     await page.waitForSelector('.decision-card');
-    await page.getByRole('link', {name:'People and ownership',exact:true}).click();
+    await page.getByRole('link', {name:'People',exact:true}).click();
     assert.equal(await page.locator('.person-card img').count(), 0);
     assert.match(await page.locator('#app').textContent(), /<img src=x onerror=alert\(1\)>/);
 
@@ -269,9 +278,9 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     });
     await page.reload();
     await page.waitForFunction(() => document.querySelector('#app').textContent.includes('Robin Past'));
-    const authorityText = await page.locator('#app').textContent();
-    assert.match(authorityText, /expired: decides nothing now/);
-    assert.match(authorityText, /1 expired/);
+    const robin = page.locator('.person-card').filter({hasText:'Robin Past'});
+    assert.match(await robin.textContent(), /decides payments\/\* · every repository · from config · ended 2020-01-01/);
+    assert.equal(await robin.locator('.authority-row.ended button').count(), 0);
 
     // A reviewer the map says must approve a path signs every decision
     // about it, even one that only inherits the path from its task, and
