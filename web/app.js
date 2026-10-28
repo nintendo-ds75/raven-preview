@@ -65,7 +65,7 @@ let directory = null, directoryLoading = false;
 let view = 'inbox', tab = 'pending', tabChosen = false, query = '', ownerFilter = '', fetching = false;
 // The ETag of the state on screen, sent back with each poll; and when the
 // list was last drawn, so relative times still move while nothing changes.
-let stateTag = '', lastDraw = 0;
+let stateTag = '', lastDraw = 0, lastFetchedAt = 0;
 const STALE_DRAW_MS = 60000, MODEL_WAIT_MS = 45000;
 let toastTimer;
 let modalVersion = 0, navigationVersion = 0;
@@ -185,15 +185,25 @@ async function fetchState() {
 async function api(path, data, {signal, conditional} = {}) {
   const headers = data === undefined ? {} : {'Content-Type': 'application/json', 'X-Bridge-CSRF': state.csrf_token};
   if (conditional) headers['If-None-Match'] = conditional;
-  const response = await fetch(path, data === undefined ? {headers, signal, ...(conditional ? {cache: 'no-store'} : {})} : {
-    method: 'POST', headers, body: JSON.stringify(data), signal,
-  });
-  if (conditional && response.status === 304) return null;
-  const body = await response.json();
+  // Everything that fails between here and a parsed body is a connection
+  // problem, marked so the poll can tell it from an error while drawing.
+  let response, body;
+  try {
+    response = await fetch(path, data === undefined ? {headers, signal, ...(conditional ? {cache: 'no-store'} : {})} : {
+      method: 'POST', headers, body: JSON.stringify(data), signal,
+    });
+    if (conditional && response.status === 304) return null;
+    body = await response.json();
+  } catch (error) {
+    const failure = error && typeof error === 'object' ? error : new Error(String(error));
+    failure.fetchFailed = true;
+    if (response) failure.status = response.status;
+    throw failure;
+  }
   if (conditional !== undefined && response.ok && body && typeof body === 'object') {
     Object.defineProperty(body, 'etag', {value: (response.headers && response.headers.get && response.headers.get('ETag')) || ''});
   }
-  if (!response.ok) { const error = new Error(body.error || 'Request failed. Please try again.'); error.status = response.status; throw error; }
+  if (!response.ok) { const error = new Error(body.error || 'Request failed. Please try again.'); error.status = response.status; error.fetchFailed = true; throw error; }
   return body;
 }
 
@@ -231,12 +241,30 @@ async function authorizeGitHub() {
 }
 
 // The top-bar pill names the workspace: the workspace's own name when
-// sign-in is on, otherwise 'Local workspace'.
+// sign-in is on, otherwise 'Local workspace'. After a failed fetch the same
+// pill says how old the data on screen is, until the next poll succeeds.
 function updateWorkspaceName() {
   const label = $('#workspace-name');
   if (!label) return;
   label.textContent = state.auth?.enabled && state.workspace?.name ? state.workspace.name : 'Local workspace';
   label.title = label.textContent;
+}
+
+function connectionLost() {
+  const at = lastFetchedAt ? new Date(lastFetchedAt) : null;
+  const clock = at ? `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : '';
+  $('#connection').classList.add('offline');
+  if ($('#workspace-name')) $('#workspace-name').textContent = clock ? `Connection lost · showing data from ${clock}` : 'Connection lost';
+}
+
+// A fetch failure is one api() marked (a network error, a non-2xx status or
+// an unreadable body); anything else thrown while drawing is a render error.
+// Not `instanceof TypeError`: 'x.map is not a function' from a draw is one too.
+const fetchFailed = error => !!(error && (error.fetchFailed || error.status));
+
+function renderError(error) {
+  console.error(error);
+  $('#app').innerHTML = `<div class="empty" role="alert"><h3>Something went wrong drawing this page.</h3><p>${esc(error && error.message)}</p><button class="button" data-action="retry">Try again</button></div>`;
 }
 
 async function refresh({quiet = false} = {}) {
@@ -245,6 +273,7 @@ async function refresh({quiet = false} = {}) {
   try {
     const changed = await fetchState();
     workspaceError = '';
+    lastFetchedAt = Date.now();
     $('#connection').classList.remove('offline');
     updateWorkspaceName();
     if (changed) {
@@ -271,15 +300,15 @@ async function refresh({quiet = false} = {}) {
     const settled = quiet && !changed && Date.now() - lastDraw < STALE_DRAW_MS;
     if (!taskId() && !settled && (!quiet || (!$('#modal').open && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)))) render();
   } catch (error) {
-    $('#connection').classList.add('offline');
-    if ($('#workspace-name')) $('#workspace-name').textContent = 'Connection lost';
+    if (!fetchFailed(error)) { renderError(error); return; }
+    connectionLost();
     if ([401,403].includes(error.status)) {
       if (typeof rememberTaskView === 'function') rememberTaskView();
       state.auth = null; workspaceError = error.message; taskDetail = null;
       if ($('#modal').open) closeModal();
       render();
     } else if (taskId()) { taskError = error.message; render(); }
-    else if (!quiet) $('#app').innerHTML = `<div class="empty"><h3>We couldn’t reach your workspace.</h3><p>${esc(error.message)}</p><button class="button" data-action="retry">Try again</button></div>`;
+    else if (!quiet) $('#app').innerHTML = `<div class="empty"><h3>Couldn’t load your workspace.</h3><p>${esc(error.message)}</p><button class="button" data-action="retry">Try again</button></div>`;
   } finally { fetching = false; }
 }
 
