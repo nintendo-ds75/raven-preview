@@ -165,8 +165,7 @@ function handonForm(f) {
   // People the listings name whom Raven cannot message: shown, so the
   // list does not read as everyone there is, and explained when picked.
   const unknown = f.handon_unknown || [];
-  const keeps = f.handon_keeps ? `Who Raven asks first about ${esc(f.handon_keeps)} stays the same.` : 'Raven’s routing stays as it is.';
-  return `<details class="brief-why brief-handon" id="handon" data-keep="handon-${esc(f.node_id)}"><summary>Not mine, hand it on</summary>
+  return `<details class="brief-why brief-handon" id="handon" data-keep="handon-${esc(f.node_id)}"><summary>Not mine · hand it on</summary>
     <form id="handon-form" class="brief-handon-form" data-id="${esc(f.node_id)}" data-rev="${esc(f.updated_at)}">
       <label for="handon-person">Hand it to</label>
       <select id="handon-person" required aria-describedby="handon-help"><option value="">Choose a person</option>
@@ -181,7 +180,7 @@ function handonForm(f) {
       <label for="handon-note">Why them <span class="muted">(shown to them)</span></label>
       <textarea id="handon-note" class="brief-grow" rows="2" maxlength="300" placeholder="They own this part of the code this quarter."></textarea>
       <p class="error" id="handon-error" role="alert" hidden></p>
-      <div class="brief-answer-foot"><button class="button" type="submit">Hand it on</button><span class="brief-answer-note brief-handon-scope" id="handon-scope">For this question only. ${keeps}</span></div>
+      <div class="brief-answer-foot"><button class="button" type="submit">Hand it on</button><span class="brief-answer-note brief-handon-scope" id="handon-scope">For this question only.</span></div>
     </form></details>`;
 }
 
@@ -217,7 +216,7 @@ function workItemContext(f) {
     ? '<p>Historical declaration on a closed task. Preserve its recorded history; start a new task for a new association.</p>'
     : a?.status === 'unlinked' ? '<p>This declared ID has no explicit work-item link. Historical links are not reconstructed from text.</p>'
     : a?.status === 'ambiguous' ? '<p>Multiple linked records match this ID. Inspect the canonical identities below.</p>' : '';
-  return `<details class="brief-why work-item-context" open><summary>Work-item context${a?.declared ? ` · ${esc(a.declared)} · ${a.historical ? 'Historical ' : ''}${esc(a.status)}` : ''}</summary><p>Context associations only, never supporting evidence or approval.</p>${warning}${sources.map(s => `<p data-work-item-origin="${esc(s.origin)}">${s.origin === 'decision' ? 'Decision association' : 'Task association'} · ${esc(s.ref)} · ${esc(s.role)} · ${s.current ? 'current observed version' : 'historical or unavailable version'}<br>${esc(s.provider)} / ${esc(s.namespace)} / ${esc(s.kind)} / ${esc(s.external_id)}<br>Record ID: ${esc(s.record_id)}<br>Recorded source version: ${esc(s.source_version_id)}</p>`).join('')}</details>`;
+  return `<details class="brief-why work-item-context" open><summary>Work-item context${a?.declared ? ` · ${esc(a.declared)} · ${a.historical ? 'Historical ' : ''}${esc(a.status)}` : ''}</summary>${warning}${sources.map(s => `<p data-work-item-origin="${esc(s.origin)}">${s.origin === 'decision' ? 'Decision association' : 'Task association'} · ${esc(s.ref)} · ${esc(s.role)} · ${s.current ? 'current observed version' : 'historical or unavailable version'}<br>${esc(s.provider)} / ${esc(s.namespace)} / ${esc(s.kind)} / ${esc(s.external_id)}<br>Record ID: ${esc(s.record_id)}<br>Recorded source version: ${esc(s.source_version_id)}</p>`).join('')}</details>`;
 }
 
 function focusCard(f) {
@@ -230,29 +229,33 @@ function focusCard(f) {
   // is for a correction and opens with it: a reason typed next to a plain
   // sign-off was dropped without a word.
   const why = open || mine ? '' : ' data-correction hidden';
+  // The interview is another way to the same answer, beside the button.
+  const interview = !['read','handed'].includes(standing) && f.owner && (!data.viewer.interview_decision_id || data.viewer.interview_decision_id === f.node_id)
+    ? `<button type="button" class="button text brief-interview" data-action="interview-start" data-task="${esc(data.task.id)}" data-id="${esc(f.node_id)}">Talk it through instead</button>` : '';
   const fields = `<form id="answer-form" class="brief-answer" data-id="${esc(f.node_id)}" data-rev="${esc(f.updated_at)}">
-      ${open && options ? `<p class="brief-form-title">Your decision</p>${options}` : ''}
-      <label for="answer-text">${open ? (options ? 'Your words <span class="muted">(edit the option, or write your own)</span>' : 'Your decision') : mine ? 'Corrected answer' : 'Correct the answer <span class="muted">(leave empty to sign it as it stands)</span>'}</label>
+      ${open ? options : ''}
+      <label for="answer-text">${open ? (options ? 'Your answer <span class="muted">(edit the option, or write your own)</span>' : 'Your answer') : mine ? 'Corrected answer' : 'Correct the answer <span class="muted">(leave empty to sign it as it stands)</span>'}</label>
       <textarea id="answer-text" class="brief-grow" maxlength="12000" ${open || mine ? 'required' : ''} placeholder="${open ? 'State the decision the agent should follow.' : mine ? 'The answer the agent should follow instead.' : 'Only if the answer above is wrong.'}"></textarea>
-      <label for="answer-why"${why}>Why <span class="muted">(shown to the next person asked something similar)</span></label>
+      <label for="answer-why"${why}>Why <span class="muted">(saved for next time)</span></label>
       <textarea id="answer-why" class="short brief-grow" maxlength="4000" placeholder="The reason, constraint or policy behind it."${why}></textarea>
       ${sourceReview(f)}
       <p class="error" id="answer-error" role="alert" hidden></p>
-      <div class="brief-answer-foot"><button class="button ${open || standing === 'sign' ? 'primary' : ''}" type="submit"${open || mine ? '' : ` data-plain="${cosign ? 'Add my signature' : 'Sign off'}"`}>${open ? 'Record my decision' : mine ? 'Save correction' : cosign ? 'Add my signature' : 'Sign off'}</button><span class="brief-answer-note">Recorded as ${esc(data.viewer.name)}. The agent picks it up on its own.</span></div>
+      <div class="brief-answer-foot"><button class="button ${open || standing === 'sign' ? 'primary' : ''}" type="submit"${open || mine ? '' : ` data-plain="${cosign ? 'Add my signature' : 'Sign'}"`}>${open ? 'Answer and sign' : mine ? 'Save correction' : cosign ? 'Add my signature' : 'Sign'}</button><span class="brief-answer-note">Signed as ${esc(data.viewer.name)}.</span>${interview}</div>
     </form>`;
   const form = standing === 'handed' ? `<p class="brief-cannot">You handed this on to ${esc(f.handed_to)}. It now waits on them.</p>`
     : standing === 'read' ? `<p class="brief-cannot">${esc(f.why_not ? 'You can read this, but not answer it: ' + f.why_not + '.' : 'You can read this decision.')}</p>`
-    : mine ? `<details class="brief-why brief-correct" data-keep="correct-${esc(f.node_id)}"><summary>Correct your answer</summary>${fields}</details>` : fields + handonForm(f);
+    : mine ? `<details class="brief-why brief-correct" data-keep="correct-${esc(f.node_id)}"><summary>Correct my answer</summary>${fields}</details>` : fields + handonForm(f);
   const kicker = {answer: 'Waiting on you', sign: 'Sign-off wanted from you', cosign: 'You were asked about', mine: 'You decided this', read: f.asked ? 'You were asked about' : 'On this task', handed: 'You handed this on'}[standing];
   const paths = (f.paths || []).filter(p => p && p !== 'unknown');
   const found = f.found || [];
   const back = !f.asked && data.asked_focus ? '<button type="button" class="button text brief-back" data-action="focus-asked">Back to the decision you were asked about</button>' : '';
   // Reading order, measured at 390px: the question, the brief (or the
   // agent's context), the answer on the table, then the form, all on the
-  // first screen; what Raven found and why it came to them follow the
-  // form, and the recorded scope table opens on request below. Before,
-  // the scope table and the work-item record sat between the question
-  // and the brief, and the form began a screen and a half down.
+  // first screen; the consequences and the paths follow the form, and
+  // what Raven checked, why it came to them and the recorded scope open
+  // on request below. Before, the scope table and the work-item record
+  // sat between the question and the brief, and the form began a screen
+  // and a half down.
   const sameAsBrief = f.brief && f.context && f.brief.trim().toLowerCase() === f.context.trim().toLowerCase();
   return `<section class="task-panel brief-focus is-${standing}" id="focus" aria-labelledby="focus-question">
     ${back}<p class="brief-kicker">${kicker}</p>
@@ -260,18 +263,16 @@ function focusCard(f) {
     ${f.brief ? `<p class="brief-lead">${prose(f.brief)}</p>` : ''}
     ${f.objective && typeof objectiveScopeCard === 'function' ? `<div class="brief-block"><span class="label">Proposed scope</span>${objectiveScopeCard({...f.objective, link_to_today: ''}, `brief-${f.node_id}`)}</div>` : f.context && !sameAsBrief ? `<div class="brief-block"><span class="label">Context from the coding agent</span><p>${prose(f.context)}</p></div>` : ''}
     ${f.answer ? `<div class="brief-block is-answer"><span class="label">${mine ? 'Your answer' : (['signed', 'rule'].includes(f.signoff) ? 'Signed answer' : 'Answer on the table') + (f.answered_by ? ' · ' + esc(f.answered_by) : '')}</span><p>${prose(f.answer)}</p>${f.rationale ? `<p class="brief-why-line">Why: ${prose(f.rationale)}</p>` : ''}</div>` : ''}
-    ${f.prediction ? `<div class="brief-block is-guess"><span class="label">How you decided before · a guess, not approved</span><p>${prose(f.prediction)}</p></div>` : ''}
-    ${f.replacement_ends_rule ? '<p class="context">Recording a new or corrected answer retires the existing standing rule. An unchanged-answer sign-off keeps it. Future automatic reuse needs a fresh explicit make-rule action.</p>' : ''}
+    ${f.prediction ? `<div class="brief-block is-guess"><span class="label">Your earlier answer · a guess</span><p>${prose(f.prediction)}</p></div>` : ''}
     ${form}
-    ${found.length ? `<div class="brief-block"><span class="label">What Raven found</span>${foundList(found)}</div>` : ''}
-    ${f.consequences ? `<div class="brief-block"><span class="label">Consequences of this decision</span><p>${prose(typeof f.consequences === 'string' ? f.consequences : JSON.stringify(f.consequences))}</p></div>` : ''}
+    ${f.consequences ? `<div class="brief-block"><span class="label">Consequences</span><p>${prose(typeof f.consequences === 'string' ? f.consequences : JSON.stringify(f.consequences))}</p></div>` : ''}
     ${paths.length ? `<p class="brief-where">Touches ${paths.map(p => `<code>${esc(p)}</code>`).join(', ')}</p>` : ''}
+    ${found.length ? `<details class="brief-why brief-checked" data-keep="found-${esc(f.node_id)}"><summary>What Raven checked</summary>${foundList(found)}</details>` : ''}
+    <details class="brief-extra brief-scope" data-keep="recorded-scope-${esc(f.node_id)}"><summary>Details</summary>
     ${reasonBlock(f.why, f.node_id)}
-    <details class="brief-extra brief-scope" data-keep="recorded-scope-${esc(f.node_id)}"><summary>Recorded scope of this decision</summary>
     ${approvalScope(f)}
     ${workItemContext(f)}
     </details>
-    ${!['read','handed'].includes(standing) && f.owner && (!data.viewer.interview_decision_id || data.viewer.interview_decision_id === f.node_id) ? `<div class="context-box"><strong>Prefer to talk it through?</strong><p class="context">An interview can use browser dictation and spoken readback. You review and confirm the exact decision. It stays on this personal task link.</p><button class="button small" data-action="interview-start" data-task="${esc(data.task.id)}" data-id="${esc(f.node_id)}">Start or resume interview</button></div>` : ''}
   </section>`;
 }
 
@@ -285,7 +286,6 @@ function requesterCard(t, r) {
     <div class="brief-requester">${avatar(r.name || '?', 1)}<div><strong>${esc(r.name || 'Requester not recorded')}</strong>${about.length ? `<span>${about.map(esc).join(' · ')}</span>` : ''}</div></div>
     <blockquote class="brief-prompt"><p>${esc(t.goal || t.title)}</p></blockquote>
     ${facts.length ? `<dl class="brief-facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
-    <p class="brief-note">${r.name ? `${esc(r.name)} is the requester the coding agent reported; Raven doesn’t verify it.` : 'The coding agent reported no requester.'}</p>
   </section>`;
 }
 
@@ -302,7 +302,7 @@ function decisionsCard(nodes) {
     return n.owner ? you(n.owner) : 'No owner yet';
   };
   const focus = data.focus?.node_id;
-  return `<section class="task-panel" aria-labelledby="decisions-title"><h2 id="decisions-title">Decisions</h2><p class="brief-intro">Decisions and follow-ups recorded on this task. Only authorized answers count as approval.</p>
+  return `<section class="task-panel" aria-labelledby="decisions-title"><h2 id="decisions-title">Decisions on this task</h2>
     ${shown.length ? `<ol class="brief-decisions">${shown.map(n => n.node_id === focus
       // The decision the card above is about, said once.
       // A button, not a #fragment link: the fragment holds the token, and
@@ -313,8 +313,8 @@ function decisionsCard(nodes) {
       <strong>${esc(n.question)}</strong>
       ${n.answer ? `<p>${prose(n.answer)}</p>` : ''}${n.rationale && n.answer ? `<p class="brief-why-line">Why: ${prose(n.rationale)}</p>` : ''}
       ${n.needs_review ? `<p class="task-warning">${esc(n.review_reason || 'An answer this relied on changed.')}</p>` : ''}
-      ${n.can_act && !n.handed_to ? `<button class="button small" data-action="focus" data-id="${esc(n.node_id)}">${n.action === 'answer' ? 'Answer this' : n.signatures.some(x => same(x, me)) ? 'Correct my answer' : 'Review & sign'}</button>` : ''}
-    </li>`).join('')}</ol>` : '<p class="task-empty">The agent has not recorded a decision yet.</p>'}
+      ${n.can_act && !n.handed_to ? `<button class="button small" data-action="focus" data-id="${esc(n.node_id)}">${n.action === 'answer' ? 'Answer' : n.signatures.some(x => same(x, me)) ? 'Correct my answer' : 'Sign'}</button>` : ''}
+    </li>`).join('')}</ol>` : '<p class="task-empty">No decisions yet.</p>'}
   </section>`;
 }
 
@@ -401,28 +401,23 @@ function notesList(notes) {
   return `<ul class="brief-notes">${notes.map(n => `<li class="${n.withdrawn ? 'is-withdrawn' : ''}"><div class="brief-turn-head"><strong>${esc(n.by || 'Someone')}</strong><time datetime="${esc(n.at)}">${esc(when(n.at))}</time></div><p>${prose(n.text)}</p>${n.withdrawn ? '<p class="brief-note-state">Withdrawn by its author.</p>' : n.mine ? `<button type="button" class="button text brief-note-withdraw" data-action="withdraw-note" data-id="${esc(n.id)}">Withdraw</button>` : ''}</li>`).join('')}</ul>`;
 }
 
-// Who can read a note, in one sentence, next to the button that sends
-// it. The app shows notes to every member of the workspace.
-const audience = () => `Visible to people on this task and members of ${data.workspace ? 'the ' + data.workspace + ' workspace' : 'this Raven workspace'}.`;
-
 function inquiryCard() {
   const inquiry = inquiryView();
-  return `<section class="task-panel brief-inquiry" aria-labelledby="inquiry-title"><h2 id="inquiry-title">Ask Raven</h2><p class="brief-intro">Ask about the context, alternatives or consequences before deciding.</p>
-    <form id="inquiry-form" data-focus="${esc(data.focus?.node_id || '')}"><label class="sr-only" for="inquiry-text">Your question about this decision</label><textarea id="inquiry-text" maxlength="2000" required placeholder="Why is this decision needed?" ${inquiry.pending ? 'readonly' : ''}>${esc(inquiry.question)}</textarea><div class="brief-chat-foot"><span class="brief-audience">Read-only clarification. This does not answer or sign off.</span><button class="button" type="submit" ${inquiry.pending ? 'disabled' : ''}>${inquiry.pending ? 'Reading…' : 'Ask'}</button></div></form>
+  return `<section class="task-panel brief-inquiry" aria-labelledby="inquiry-title"><h2 id="inquiry-title">Ask Raven</h2>
+    <form id="inquiry-form" data-focus="${esc(data.focus?.node_id || '')}"><label class="sr-only" for="inquiry-text">Your question about this decision</label><textarea id="inquiry-text" maxlength="2000" required placeholder="What would change if we chose the other option?" ${inquiry.pending ? 'readonly' : ''}>${esc(inquiry.question)}</textarea><div class="brief-chat-foot"><button class="button" type="submit" ${inquiry.pending ? 'disabled' : ''}>${inquiry.pending ? 'Reading…' : 'Ask'}</button></div></form>
     ${inquiry.error ? `<p role="alert" class="error">${esc(inquiry.error)}</p>` : ''}
-    ${inquiry.answer ? `<div class="brief-inquiry-result" role="status"><p>${prose(inquiry.answer.answer)}</p><small>${esc(inquiry.answer.notice || 'Clarification is not approval. Use the decision form to record your answer.')}</small>${inquiryCitations(inquiry.answer, 'brief-inquiry-citations')}${(inquiry.answer.evidence || []).length ? `<details data-keep="inquiry-evidence"><summary>Evidence used · ${inquiry.answer.evidence.length}</summary>${inquiry.answer.evidence.map(e => `<h3>${esc(e.title || e.id || 'Recorded evidence')}</h3><p>${prose(e.text)}</p>`).join('')}</details>` : ''}</div>` : ''}</section>`;
+    ${inquiry.answer ? `<div class="brief-inquiry-result" role="status"><p>${prose(inquiry.answer.answer)}</p>${inquiry.answer.notice ? `<small>${esc(inquiry.answer.notice)}</small>` : ''}${inquiryCitations(inquiry.answer, 'brief-inquiry-citations')}${(inquiry.answer.evidence || []).length ? `<details data-keep="inquiry-evidence"><summary>Evidence used · ${inquiry.answer.evidence.length}</summary>${inquiry.answer.evidence.map(e => `<h3>${esc(e.title || e.id || 'Recorded evidence')}</h3><p>${prose(e.text)}</p>`).join('')}</details>` : ''}</div>` : ''}</section>`;
 }
 
 function noteCard() {
   // The record and one place to add to it. The coding agent reads notes
   // on its tree; nothing here calls a model.
   const notes = data.notes || [];
-  return `<section class="task-panel brief-chat" aria-labelledby="note-title"><h2 id="note-title">Context &amp; discussion</h2>
-    <p class="brief-intro">Notes are saved as yours, and the coding agent reads them. A note is not your decision.</p>
-    ${notes.length ? notesList(notes) : ''}
-    ${data.viewer.role === 'viewer' ? '<p class="brief-intro">You have read-only access.</p>' : `<form id="note-form" class="brief-chat-form"><label for="note-text">Add context for the agent</label>
+  return `<section class="task-panel brief-chat" aria-label="Notes">
+    ${notes.length ? notesList(notes) : '<p class="brief-intro">No notes yet.</p>'}
+    ${data.viewer.role === 'viewer' ? '<p class="brief-intro">You have read-only access.</p>' : `<form id="note-form" class="brief-chat-form"><label class="sr-only" for="note-text">Your note</label>
       <textarea id="note-text" maxlength="4000" placeholder="A constraint, a person to ask, a link to an earlier discussion." required aria-describedby="note-audience"></textarea>
-      <div class="brief-chat-foot"><span class="brief-audience" id="note-audience">${esc(audience())}</span><button class="button" type="submit">Add note</button></div></form>`}
+      <div class="brief-chat-foot"><span class="brief-audience" id="note-audience">Visible to the workspace.</span><button class="button" type="submit">Add note</button></div></form>`}
   </section>`;
 }
 
@@ -511,7 +506,7 @@ function syncOptions() {
   document.querySelectorAll('#answer-form [data-correction]').forEach(el => { if (el.hidden === !value) return; el.hidden = !value; grow(el); });
   // With a correction typed, the button says what it records.
   const send = $('#answer-form button[data-plain]');
-  if (send) send.textContent = value ? 'Correct and sign' : send.dataset.plain;
+  if (send) send.textContent = value ? 'Save correction' : send.dataset.plain;
 }
 
 // "Show more" only where the clamp hides something: at 1440px a quote of
@@ -594,21 +589,24 @@ function render() {
   $('#brief-workspace').textContent = data.workspace || '';
   $('#brief-account').innerHTML = `${viewerMenu(kept.menu)}${accountCta()}`;
   const standing = f ? focusStanding(f) : 'read';
-  const box = inquiryCard() + `<details class="brief-extra" data-keep="notes"><summary>Add context for the agent</summary>${noteCard()}</details>`;
+  const box = inquiryCard() + `<details class="brief-extra" data-keep="notes"><summary>Notes</summary>${noteCard()}</details>`;
   // On a phone the decision and its form come first: with the question
   // box above them, the form began below the first screen.
   const body = narrow.matches
-    ? `<div class="brief-stack">${focusCard(f)}${box}${decisionsCard(data.nodes)}<details class="brief-extra" data-keep="task-background"><summary>Task background & history</summary>${requesterCard(t, data.requester)}${peopleCard(data.contacts)}${historyCard(data.history)}</details></div>`
-    : `<div class="brief-columns"><div class="brief-main">${focusCard(f)}${decisionsCard(data.nodes)}<details class="brief-extra" data-keep="task-background"><summary>Task background & history</summary>${requesterCard(t, data.requester)}${historyCard(data.history)}</details></div>
+    ? `<div class="brief-stack">${focusCard(f)}${box}${decisionsCard(data.nodes)}<details class="brief-extra" data-keep="task-background"><summary>Background and history</summary>${requesterCard(t, data.requester)}${peopleCard(data.contacts)}${historyCard(data.history)}</details></div>`
+    : `<div class="brief-columns"><div class="brief-main">${focusCard(f)}${decisionsCard(data.nodes)}<details class="brief-extra" data-keep="task-background"><summary>Background and history</summary>${requesterCard(t, data.requester)}${historyCard(data.history)}</details></div>
        <aside class="brief-side" aria-label="Context and people">${box}<details class="brief-extra" data-keep="people"><summary>People involved</summary>${peopleCard(data.contacts)}${joinNote()}</details></aside></div>`;
-  // One task-wide count beside the personal line: a pill and a meta count
-  // beside "needs one decision from you" read as two more owed by them.
+  // The heading is the task's title; one too long for a heading gives way
+  // to its work item (taskDisplayLabel). One task-wide count beside the
+  // personal line: a pill and a meta count beside "needs one decision from
+  // you" read as two more owed by them.
+  const title = taskDisplayLabel(t, f, '').replace(/^ · /, '') || t.title;
   root.innerHTML = `
     ${error ? `<p class="task-warning" role="alert">Refresh failed: ${esc(error)}. Showing the last successful read.</p>` : ''}
     <section class="brief-hero">
-      <h1>${esc(taskDisplayLabel(t, f, f ? 'Decision review' : 'Task overview'))}</h1>
-      <p class="brief-ask" role="status">${heroLine(standing)}</p><p class="brief-next"><strong>Next:</strong> ${standing === 'answer' ? 'Review the context, ask any questions, then record your decision.' : ['sign','cosign'].includes(standing) ? 'Review the answer and exact evidence, then explicitly sign off.' : 'Inspect the decisions below for the latest task state.'}</p>
-      <div class="metadata"><span>Requested by ${esc(data.requester.name || 'unknown')}</span><span>${esc(t.repo)}</span><span>${p.signed} of ${p.total} signed</span>${t.status === 'completed' ? '<span>Agent reported complete</span>' : ''}</div>
+      <h1>${esc(title)}</h1>
+      <p class="brief-ask" role="status">${heroLine(standing)}</p>
+      <div class="metadata">${data.requester.name ? `<span>${esc(data.requester.name)}</span>` : ''}<span>${esc(t.repo)}</span><span>${p.signed} of ${p.total} signed</span>${t.status === 'completed' ? '<span>Agent reported complete</span>' : ''}</div>
     </section>
     ${body}`;
   restoreDrafts(kept);

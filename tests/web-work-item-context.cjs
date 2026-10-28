@@ -31,8 +31,9 @@ for (const [text, end] of [[app, 'function sourceRevalidationFields('], [brief, 
   const linked = context.workItemContext({source_anchors:[source],
     work_item_association:{declared:'CASE-1',status:'linked'},
     work_item_history:[{created_at:'2026-01-01T00:00:00Z',detail:'Explicit association <script>'}]});
-  for (const value of ['stored-record','exact-version','installation-a','object-1','current observed version',
-    'supporting evidence or approval']) assert(linked.includes(value), value);
+  for (const value of ['stored-record','exact-version','installation-a','object-1','current observed version'])
+    assert(linked.includes(value), value);
+  if (text === brief) assert(!linked.includes('Context associations only'), 'the task page has no sentence explaining the record');
   for (const control of ['<form', '<input', 'source-pins', 'source-confirm']) assert(!linked.includes(control), control);
   assert(!linked.includes('<script>'));
   const ambiguous = context.workItemContext({source_anchors:[source],work_item_association:{declared:'CASE-1',status:'ambiguous'}});
