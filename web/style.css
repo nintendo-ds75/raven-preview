@@ -214,17 +214,9 @@ nav a:hover{
   background:#1b261a;
   color:#83d97a}
 
-.avatar.sage{
-  background:#1b261a;
-  color:#83d97a}
-
-.avatar.lilac{
-  background:#151614;
-  color:#bebfb6}
-
-.avatar.sand{
-  background:#282218;
-  color:#e4ba6a}
+.avatar.empty{
+  background:transparent;
+  border:1px solid var(--line)}
 
 .profile strong{
   font-size:10px;
@@ -608,7 +600,7 @@ h1+p{
   line-height:1.5;
   letter-spacing:-.25px;
   font-weight:550;
-  color:#83d97a}
+  color:var(--ink)}
 
 .context{
   font-size:13px;

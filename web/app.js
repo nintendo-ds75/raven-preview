@@ -45,7 +45,8 @@ const clientName = id => CLIENT_NAMES[id] || id;
 const RUN_STATUS = {completed: 'Done', failed: 'Failed', cancelled: 'Closed', abandoned: 'Closed'};
 const runStatusLabel = status => RUN_STATUS[status] || 'In progress';
 const initials = name => (name || '?').split(/\s+/).map(word => word[0]).slice(0, 2).join('');
-const avatar = (name, index = 0) => `<span class="avatar ${['sage','lilac','sand'][index % 3]}">${esc(initials(name))}</span>`;
+// One avatar everywhere: a circle with initials, or an empty circle when nobody is named yet.
+const avatar = name => name ? `<span class="avatar">${esc(initials(name))}</span>` : '<span class="avatar empty" aria-hidden="true"></span>';
 const ago = value => {
   const minutes = Math.max(0, Math.floor((Date.now() - new Date(value)) / 60000));
   return minutes < 1 ? 'just now' : minutes < 60 ? `${minutes}m ago` : minutes < 1440 ? `${Math.floor(minutes / 60)}h ago` : `${Math.floor(minutes / 1440)}d ago`;
@@ -414,7 +415,7 @@ function answerBox(d, actions = '') {
   return `<div class="context-box ${tone}"><span class="label">${esc(label)}</span>${esc(body)}${actions}</div>`;
 }
 
-function decisionCard(d, index) {
+function decisionCard(d) {
   // An objective's proposed scope is stored as JSON; the card reads it as a scope, never as JSON.
   const scope = typeof objectiveScope === 'function' ? objectiveScope(d) : null;
   const settled = settledNow(d);
@@ -429,7 +430,7 @@ function decisionCard(d, index) {
     <h2>${esc(d.question)}</h2>${d.run_title ? `<a class="card-task" href="${esc(taskHref)}" data-action="run" data-id="${esc(d.run_id)}">${esc(d.run_title)}</a>` : ''}
     ${scope ? objectiveScopeCard(scope, `scope-${d.id}`) : clamped(d.context, 'context', `card-${d.id}`)}
     ${answerBox(d)}
-    <div class="card-bottom"><span class="owner" title="${esc(d.owner_name || 'No owner yet')}">${avatar(d.owner_name, index)}</span>${statusPill(d)}<button class="button small ${settled ? '' : 'soft'}" data-action="review" data-id="${esc(d.id)}" aria-label="${button}: ${esc(d.question)}">${button}</button></div>
+    <div class="card-bottom"><span class="owner" title="${esc(d.owner_name || 'No owner yet')}">${avatar(d.owner_name)}</span>${statusPill(d)}<button class="button small ${settled ? '' : 'soft'}" data-action="review" data-id="${esc(d.id)}" aria-label="${button}: ${esc(d.question)}">${button}</button></div>
   </article>`;
 }
 

@@ -18,7 +18,7 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;'
 const prose = value => esc(value).replace(/\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+){2,}\b/g,
   name => `<code class="brief-ident">${name.replace(/_/g, '_<wbr>')}</code>`);
 const initials = name => (name || '?').split(/\s+/).map(word => word[0]).slice(0, 2).join('');
-const avatar = (name, index = 0) => `<span class="avatar ${['sage','lilac','sand'][index % 3]}">${esc(initials(name))}</span>`;
+const avatar = name => name ? `<span class="avatar">${esc(initials(name))}</span>` : '<span class="avatar empty" aria-hidden="true"></span>';
 const pill = (text, color = '') => `<span class="pill ${color}"><span class="status-dot"></span>${esc(text)}</span>`;
 const when = at => at ? new Date(at).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : '';
 const day = at => at ? new Date(at).toLocaleDateString([], {month:'long', day:'numeric'}) : '';
@@ -283,7 +283,7 @@ function requesterCard(t, r) {
   const about = [r.teams?.join(', ') || r.team, r.github ? '@' + r.github : '', r.known === false && r.name ? 'not in this workspace’s people list' : ''].filter(Boolean);
   const facts = [...(t.agent ? [['Agent', t.agent]] : []), ...Object.entries(t.facts || {})];
   return `<section class="task-panel brief-request" aria-labelledby="request-title"><h2 id="request-title">The request</h2>
-    <div class="brief-requester">${avatar(r.name || '?', 1)}<div><strong>${esc(r.name || 'Requester not recorded')}</strong>${about.length ? `<span>${about.map(esc).join(' · ')}</span>` : ''}</div></div>
+    <div class="brief-requester">${avatar(r.name)}<div><strong>${esc(r.name || 'Requester not recorded')}</strong>${about.length ? `<span>${about.map(esc).join(' · ')}</span>` : ''}</div></div>
     <blockquote class="brief-prompt"><p>${esc(t.goal || t.title)}</p></blockquote>
     ${facts.length ? `<dl class="brief-facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
   </section>`;
@@ -351,7 +351,7 @@ function peopleCard(contacts) {
       const qs = personQuestions(c);
       const counts = [];
       for (const q of qs) { const hit = counts.find(x => x.state === q.state); if (hit) hit.n++; else counts.push({state: q.state, tone: q.tone, n: 1}); }
-      return `<li class="brief-person">${avatar(c.name, i)}<div>
+      return `<li class="brief-person">${avatar(c.name)}<div>
       <div class="brief-person-head"><strong>${esc(c.name)}${same(c.name, me) ? ' <span class="muted">(you)</span>' : ''}</strong><small class="${c.delivery_failed ? 'is-failed' : ''}">${c.messages ? plural(c.messages, 'message') + ' sent' : 'Not messaged'}${c.delivery_failed ? ' · a delivery failed' : ''}</small></div>
       ${qs.length ? `<details class="brief-asks-toggle" data-keep="person-${esc(keyOf(c.name))}"><summary>${counts.map(x => `<span class="brief-state ${x.tone}">${esc(x.state)} ${x.n}</span>`).join('<span class="brief-dot" aria-hidden="true">·</span>')}</summary>
         <ul class="brief-asks">${qs.map(q => `<li class="${q.tone}"><p class="brief-ask-q"><span class="brief-state">${esc(q.state)}${q.detail ? ' ' + esc(q.detail) : ''}${q.question ? ':' : ''}</span>${q.question ? ' ' + prose(q.question) : ''}</p>${q.answer ? `<p class="brief-ask-a">${prose(q.answer)}</p>` : ''}</li>`).join('')}</ul></details>` : ''}
