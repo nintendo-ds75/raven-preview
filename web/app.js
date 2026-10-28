@@ -830,13 +830,16 @@ function render() {
   if (typeof rememberTaskView === 'function') rememberTaskView();
   // Each page draws its own buttons into the h1 row; a page without any
   // must not inherit the previous page's. An open More menu stays open
-  // across the five-second redraw.
+  // across the five-second redraw. Where focus is is read before the row
+  // is cleared: clearing it drops focus to <body>, and a keyboard user on
+  // More, Start a task or a menu item lost their place every five seconds.
   const actions = $('#page-actions');
   const menuWasOpen = !!actions?.querySelector('details.more-menu[open]');
+  const active = document.activeElement;
+  const focusRoot = $('#app').contains(active) ? $('#app') : actions?.contains(active) ? actions : null;
+  const focusWas = focusRoot ? focusKey(active) : '';
   if (actions) actions.innerHTML = '';
   const noteDraft = $('#note-text')?.value;
-  const active = document.activeElement;
-  const focusWas = $('#app').contains(active) ? focusKey(active) : '';
   const selection = active.tagName === 'INPUT' ? active.selectionStart : null;
   const disclosures = [...document.querySelectorAll('#app details[id]')].map(el => ({id: el.id, open: el.open, scroll: el.querySelector('ul')?.scrollTop || 0}));
   $('.page-head').hidden = !!taskId() || view === 'work';
@@ -860,20 +863,22 @@ function render() {
   // person moving through it by keyboard keeps their place; when the
   // control they were on is gone (the decision they answered left the
   // tab), focus goes to the tab above the list, not to the top of the page.
-  const replacement = keepFocus($('#app'), focusWas, () => $('#app .toolbar .tab.active') || $('#main'));
+  const replacement = keepFocus(focusRoot || $('#app'), focusWas, () => (focusRoot === actions ? null : $('#app .toolbar .tab.active')) || $('#main'));
   if (replacement && selection !== null && ['search','text'].includes(replacement.type)) replacement.setSelectionRange(selection, selection);
 }
 
-// Where focus is, as a selector that survives a redraw: an id, or the
-// action a control performs on the thing it names. Measured in Chromium:
-// a Review button a keyboard user had reached was dropped to <body> by
-// the next poll, every five seconds, on every list in the app.
+// Where focus is, as a selector that survives a redraw: an id, the
+// action a control performs on the thing it names, a page's More summary,
+// or a link by where it goes (a task row, a menu item). Measured in
+// Chromium: a Review button a keyboard user had reached was dropped to
+// <body> by the next poll, every five seconds, on every list in the app.
 function focusKey(el) {
   if (!el || el === document.body) return '';
   const quote = value => `"${String(value).replace(/["\\]/g, '\\$&')}"`;
   if (el.id) return `[id=${quote(el.id)}]`;
+  if (el.tagName === 'SUMMARY' && el.closest?.('details.more-menu')) return 'details.more-menu > summary';
   const data = el.dataset || {};
-  if (!data.action) return '';
+  if (!data.action) return el.tagName === 'A' && el.getAttribute?.('href') ? `a[href=${quote(el.getAttribute('href'))}]` : '';
   return `${el.tagName.toLowerCase()}[data-action=${quote(data.action)}]`
     + ['id', 'tab', 'client', 'mode', 'key'].filter(k => data[k] !== undefined).map(k => `[data-${k}=${quote(data[k])}]`).join('');
 }
@@ -1316,9 +1321,15 @@ document.addEventListener('click', async event => {
     const hash = link.getAttribute('href');
     if (hash && hash !== location.hash) resetScrollOnNavigation = true;
   }
+  // A More menu item that is a link (Outcomes, Open conversation) closes the menu as a button does.
+  const linkMenu = link?.closest?.('details.more-menu');
+  if (linkMenu) linkMenu.open = false;
   const target = event.target.closest('[data-action]');
   if (!target || target.disabled) return;
   const action = target.dataset.action;
+  // An item used closes its More menu before the redraw, which would otherwise keep it open.
+  const itemMenu = target.closest?.('details.more-menu');
+  if (itemMenu) itemMenu.open = false;
   // The dialog as it was when the action began: a response that lands
   // after the person closed it redraws nothing.
   const version = modalVersion;
@@ -1564,7 +1575,13 @@ document.addEventListener('submit', async event => {
   }
 });
 // A page's More menu (details.more-menu) closes on Escape, giving focus
-// back to its summary, and when focus leaves it.
+// back to its summary, when focus leaves it, and on a press anywhere
+// outside it: on a phone it is a sheet over the bottom of the page, and a
+// tap on plain text moves no focus, so focusout alone left it open.
+document.addEventListener('pointerdown', event => {
+  const menu = document.querySelector('details.more-menu[open]');
+  if (menu && !menu.contains(event.target)) menu.open = false;
+});
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape') return;
   const menu = document.querySelector('details.more-menu[open]');

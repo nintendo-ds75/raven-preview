@@ -84,6 +84,51 @@ function harness() {
     assert.equal(key(h.element('x', {tagName: 'BUTTON', dataset: {action: 'tab', tab: 'all'}})), 'button[data-action="tab"][data-tab="all"]');
     assert.equal(key(h.element('x', {tagName: 'SPAN'})), '', 'a plain element has no key');
     assert.equal(key(h.document.body), '');
+    // The page head's keyless controls: a More summary, and a link by where it goes (a menu item, a task row).
+    assert.equal(key(h.element('x', {tagName: 'SUMMARY', closest: s => s === 'details.more-menu' ? {} : null})), 'details.more-menu > summary');
+    assert.equal(key(h.element('x', {tagName: 'SUMMARY', closest: () => null})), '', 'a summary outside a More menu is not one');
+    assert.equal(key(h.element('x', {tagName: 'A', getAttribute: name => name === 'href' ? '#runs/r"1' : null})), 'a[href="#runs/r\\"1"]');
+    assert.equal(key(h.element('x', {tagName: 'A', getAttribute: () => null})), '');
+  });
+
+  await test('render keeps focus on a page-head control (More, a menu item) and falls back to main when it is gone', () => {
+    const h = harness(), actions = h.get('#page-actions');
+    const summary = h.element('old summary', {tagName: 'SUMMARY', closest: s => s === 'details.more-menu' ? {} : null});
+    const newSummary = h.element('new summary');
+    actions.children.push(summary);
+    actions.found.set('details.more-menu > summary', newSummary);
+    h.document.activeElement = summary;
+    h.run('render()');
+    assert.deepEqual(h.focused, ['new summary']);
+    const item = h.element('old item', {tagName: 'A', getAttribute: name => name === 'href' ? '#today' : null});
+    const newItem = h.element('new item');
+    actions.children.push(item);
+    actions.found.set('a[href="#today"]', newItem);
+    h.document.activeElement = item;
+    h.run('render()');
+    assert.deepEqual(h.focused, ['new summary', 'new item']);
+    actions.found.delete('a[href="#today"]');
+    h.document.activeElement = item;
+    h.run('render()');
+    assert.deepEqual(h.focused, ['new summary', 'new item', '#main'], 'a page-head control that is gone sends focus to main, not to an inbox tab');
+  });
+
+  await test('the More menu closes on a press outside it and after one of its items is used', async () => {
+    const h = harness(), menu = h.get('details.more-menu[open]');
+    const inside = h.element('item');
+    menu.children.push(inside); menu.open = true;
+    await h.document.dispatch('pointerdown', {target: inside});
+    assert.equal(menu.open, true, 'a press inside the menu leaves it open');
+    await h.document.dispatch('pointerdown', {target: h.element('page text')});
+    assert.equal(menu.open, false, 'a press on plain page text closes it, with no focus change needed');
+    menu.open = true;
+    const button = {dataset: {action: 'close'}, closest: s => s === 'details.more-menu' ? menu : null};
+    await h.document.dispatch('click', {target: {closest: s => s === '[data-action]' ? button : null}});
+    assert.equal(menu.open, false, 'an item used closes the menu');
+    menu.open = true;
+    const link = {closest: s => s === 'details.more-menu' ? menu : null, getAttribute: () => '#today'};
+    await h.document.dispatch('click', {target: {closest: s => s === 'a[href^="#"]' ? link : null}});
+    assert.equal(menu.open, false, 'a menu item that is a link closes it too');
   });
 
   await test('render keeps focus on the Review button a keyboard user had reached', () => {
