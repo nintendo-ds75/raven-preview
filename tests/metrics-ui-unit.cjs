@@ -1,10 +1,9 @@
-// Dependency-free checks of the "What Raven saved" strip and the per-task line, with DOM/API doubles.
+// Dependency-free checks of the "What Raven saved" strip, with DOM/API doubles.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../web/app.js'), 'utf8');
-const taskSource = fs.readFileSync(path.join(__dirname, '../web/task.js'), 'utf8');
 const style = fs.readFileSync(path.join(__dirname, '../web/style.css'), 'utf8');
 
 const summary = {
@@ -63,32 +62,9 @@ vm.runInContext('let savings = null, savingsLoading = false, savingsAt = 0; cons
   assert.equal(context.savedStrip(), '');
   assert.equal(notified, 0);
   assert.equal(requests.length, 2, 'the refusal is not asked again');
-  // The strip opens Tasks and People & ownership.
-  assert.match(source, /function runs\(\) \{\n  return savedStrip\(\) \+ `<div class="wide-toolbar"><h2>Tasks in this workspace<\/h2>/);
+  // The strip opens People & ownership (Settings > Advanced takes it over).
   assert.match(source, /function owners\(\) \{\n  return `<div class="owners-page">\$\{workspaceAccountCard\(\)\}\$\{savedStrip\(\)\}/);
   assert.match(style, /\.saved-strip\{/);
 
-  // Per task: what came from memory or a rule, what a person signed as proposed, and how long people took.
-  const taskContext = {esc: v => String(v), durationLabel, taskList: v => Array.isArray(v) ? v : []};
-  vm.createContext(taskContext);
-  vm.runInContext(taskSource.slice(taskSource.indexOf('function taskSaved('), taskSource.indexOf('function taskQuestions(')), taskContext);
-  const nodes = [
-    {node_id: 'a', status: 'approved', source: 'human', signoff: 'signed', created_at: '2026-10-01T08:00:00+00:00'},
-    {node_id: 'b', status: 'resolved', source: 'memory', signoff: 'required', created_at: '2026-10-01T08:00:00+00:00'},
-    {node_id: 'c', status: 'resolved', source: 'record', signoff: 'rule', created_at: '2026-10-01T08:00:00+00:00'},
-    {node_id: 'd', status: 'duplicate', source: '', signoff: '', created_at: '2026-10-01T08:00:00+00:00'},
-    {node_id: 'e', status: 'resolved', source: 'agent', signoff: 'signed', created_at: '2026-10-01T08:00:00+00:00'},
-    {node_id: 'f', status: 'suggested', source: 'memory', signoff: '', created_at: '2026-10-01T08:00:00+00:00'},
-  ];
-  const trace = {events: [
-    {kind: 'owner_approved', decision_id: 'a', at: '2026-10-01T10:00:00+00:00', detail: {answer: 'x'}},
-    {kind: 'signoff', decision_id: 'e', at: '2026-10-01T08:30:00+00:00', detail: {corrected: false}},
-    {kind: 'owner_approved', decision_id: 'e', at: '2026-10-01T09:30:00+00:00', detail: {answer: 'later correction'}},
-  ]};
-  const line = taskContext.taskSaved(nodes, trace);
-  assert.equal(line, '<p class="task-saved">Raven saved: 3 answered from memory · 1 signed unchanged · 2.5h waited on people</p>');
-  assert.equal(taskContext.taskSaved([{node_id: 'z', status: 'pending', source: '', signoff: '', created_at: '2026-10-01T08:00:00+00:00'}], {events: []}), '');
-  assert.equal(taskContext.taskSaved([], null), '');
-  assert.match(taskSource, /recorded questions<\/p>\$\{taskSaved\(nodes, trace\)\}<p class="task-next">/);
   console.log('Metrics UI checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

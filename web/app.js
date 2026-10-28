@@ -38,14 +38,12 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;'
 const plural = (count, word, words = word + 's') => `${count} ${count === 1 ? word : words}`;
 const CLIENT_NAMES = {claude: 'Claude Code', codex: 'Codex', cursor: 'Cursor'};
 const clientName = id => CLIENT_NAMES[id] || id;
-// A task's status as the page says it; the raw value ("working") stays in the API.
-// A finished task reads "Completed", the word a viewer looks for; the task
-// page keeps the caveat that the agent reported it and nobody verified it.
-const RUN_STATUS = {working: 'In progress', needs_judgment: 'Waiting for decisions', pending: 'Starting',
-  completed: 'Completed', abandoned: 'Closed', result_ready: 'Result ready for inspection',
-  failed: 'Failed', cancelled: 'Cancelled', review_required: 'Review needed', delivery_pending: 'Delivering answers',
-  environment_pending: 'Preparing the environment', duplicate: 'Duplicate'};
-const runStatusLabel = status => RUN_STATUS[status] || String(status || '').replaceAll('_', ' ');
+// A task's status as a row or the task page says it; the raw value
+// ("working") stays in the API. Four words cover every lifecycle: a task
+// is done, failed, closed or still in progress; who it waits on comes from
+// its decisions (runStatusSentence), never from the lifecycle.
+const RUN_STATUS = {completed: 'Done', failed: 'Failed', cancelled: 'Closed', abandoned: 'Closed'};
+const runStatusLabel = status => RUN_STATUS[status] || 'In progress';
 const initials = name => (name || '?').split(/\s+/).map(word => word[0]).slice(0, 2).join('');
 const avatar = (name, index = 0) => `<span class="avatar ${['sage','lilac','sand'][index % 3]}">${esc(initials(name))}</span>`;
 const ago = value => {
@@ -523,12 +521,47 @@ function savedStrip() {
   return `<p class="saved-strip" role="status"><strong>What Raven saved</strong> · last ${m.window_days} days · ${parts.join(' · ')}</p>`;
 }
 
+// At most two names, then how many more: 'Alex Morgan, Wes Chen and 1 more'.
+function nameList(names) {
+  const unique = [...new Set(names.filter(Boolean))];
+  return unique.length > 2 ? `${unique[0]}, ${unique[1]} and ${unique.length - 2} more` : unique.join(', ');
+}
+
+// The one sentence a task row carries: who it waits on, else its lifecycle.
+function runStatusSentence(run, decisions) {
+  const pending = decisions.filter(needsYou);
+  if (pending.length) {
+    const names = nameList(pending.map(d => d.owner_name));
+    return {text: names ? `Waiting on ${names}` : 'No owner yet', tone: 'waiting'};
+  }
+  const text = runStatusLabel(run.status);
+  return {text, tone: text === 'Done' ? 'done' : 'neutral'};
+}
+
+// One row per task: the whole row is the link, with one pill and no inner buttons.
+function taskRow(run, href = `#runs/${encodeURIComponent(run.id)}`) {
+  const status = runStatusSentence(run, state.decisions.filter(d => d.run_id === run.id));
+  const repos = new Set(state.runs.map(r => r.repo));
+  const meta = [repos.size > 1 ? run.repo : '', run.agent, ago(run.updated_at)].filter(Boolean).map(esc).join(' · ');
+  return `<a class="task-row" href="${href}"><div><strong>${esc(run.title)}</strong><span class="muted">${meta}</span></div>${pill(status.text, status.tone)}</a>`;
+}
+
 function runs() {
-  return savedStrip() + `<div class="wide-toolbar"><h2>Tasks in this workspace</h2>${!state.auth?.enabled || ['admin','member'].includes(state.me?.role) ? '<button class="button primary" data-action="new">Ask Raven</button>' : ''}${state.execution_config?.enabled && state.me?.role !== 'viewer' ? '<button class="button" data-action="task">Start hosted execution</button>' : ''}<span class="muted">${plural(state.runs.length, 'task')}</span></div>${state.runs.length ? `<div class="table-wrap" role="region" aria-label="Tasks" tabindex="0"><table><thead><tr><th>TASK / REPOSITORY</th><th>AGENT</th><th>STATUS</th><th>DECISIONS</th><th>UPDATED</th><th></th></tr></thead><tbody>${state.runs.map(run => {
-    const decisions = state.decisions.filter(d => d.run_id === run.id);
-    const pending = decisions.filter(needsYou);
-    return `<tr><td><strong>${esc(run.title)}</strong><small>${esc(run.repo)}</small></td><td>${esc(run.agent)}</td><td>${pill(pending.length ? 'Waiting for decisions' : runStatusLabel(run.status), pending.length ? '' : 'gray')}</td><td>${decisions.length} total${pending.length ? ` · ${pending.length} need a person` : ''}</td><td>${ago(run.updated_at)}</td><td><button class="button small" data-action="run" data-id="${esc(run.id)}">View run</button></td></tr>`;
-  }).join('')}</tbody></table></div>` : empty('No tasks yet.', 'Connect your coding agent, then give it a task. It appears here with its decisions.', 'help-connect', 'Connect an agent')}`;
+  const browser = new Map((state.browser_tasks || []).map(t => [t.task_id, t]));
+  const rows = state.runs.map(run => taskRow(run, browser.has(run.id) ? `#work/${encodeURIComponent(run.id)}` : undefined));
+  for (const t of browser.values()) {
+    if (state.runs.some(run => run.id === t.task_id)) continue;
+    rows.push(taskRow({id: t.task_id, title: t.prompt, repo: t.repository, agent: 'Browser', status: t.status, updated_at: t.updated_at}, `#work/${encodeURIComponent(t.task_id)}`));
+  }
+  const viewer = state.auth?.enabled && state.me?.role === 'viewer';
+  const member = !state.auth?.enabled || ['admin', 'member'].includes(state.me?.role);
+  const start = viewer ? '' : state.execution_config?.enabled ? '<button class="button primary" data-action="task">Start a task</button>'
+    : state.workbench?.ready ? '<a class="button primary" href="#work">Start a task</a>' : '';
+  const outcomes = state.model?.proposals !== false || (typeof objectiveTodayCount === 'function' ? objectiveTodayCount(state.today) : 0) > 0;
+  const items = [member ? '<button class="button text" data-action="new">Ask a question</button>' : '', outcomes ? '<a href="#today">Outcomes</a>' : ''].filter(Boolean);
+  const actions = $('#page-actions');
+  if (actions) actions.innerHTML = `<span class="page-count">${plural(rows.length, 'task')}</span>${start}${items.length ? `<details class="more-menu"><summary aria-label="More actions">More</summary><div class="more-menu-items">${items.join('')}</div></details>` : ''}`;
+  return rows.length ? `<div class="task-list">${rows.join('')}</div>` : empty('No tasks yet.', 'Connect a coding agent in Settings and give it a task.', 'help-connect', 'Open Settings');
 }
 
 function memory() {
