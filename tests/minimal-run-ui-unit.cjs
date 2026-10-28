@@ -300,7 +300,8 @@ function harness() {
     const unjoined=fixture.node('waiting',{owner:'Dana Okafor',required_signers:['Dana Okafor'],owner_account:{state:'none',person_id:'p9',email:'',name:'Dana Okafor'}});
     const h=harness();h.selectTask(fixture.tree('unjoined-run',{nodes:[unjoined]}));
     const html=h.run('taskOverview()');
-    assert.match(html,/Waiting on Dana Okafor · not in Raven yet/,'the status pill says who has not joined');
+    assert.doesNotMatch(html,/task-status-line/,'with one question its row carries the pill; the header does not repeat it');
+    assert.match(html,/<summary id="finding-waiting-summary">[\s\S]*?Waiting on Dana Okafor</,'the row pill names who it waits on');
     assert.match(html,/Dana Okafor has not joined yet, so nobody can sign this\./);
     assert.match(html,/data-action="invite-owner" data-person="p9"[^>]*>Invite Dana</);
     assert.match(html,/data-action="review" data-id="waiting">Hand on</);
@@ -310,6 +311,9 @@ function harness() {
     const joined=harness();joined.selectTask(fixture.tree('joined-run',{nodes:[fixture.node('waiting',{owner:'Dana Okafor',required_signers:['Dana Okafor']})]}));
     assert.doesNotMatch(joined.run('taskOverview()'),/not in Raven yet|has not joined|Invite Dana/);
     assert.match(joined.run('taskOverview()'),/Waiting on Dana Okafor</);
+    // Two questions: the header names who the task waits on, above the rows.
+    const two=harness();two.selectTask(fixture.tree('two-run',{nodes:[fixture.node('waiting',{owner:'Dana Okafor',required_signers:['Dana Okafor']}),fixture.node('other',{owner:'Dana Okafor',required_signers:['Dana Okafor']})]}));
+    assert.match(two.run('taskOverview()'),/<p class="task-status-line" role="status"><span class="pill waiting">(?:<span class="status-dot"><\/span>)?Waiting on Dana Okafor<\/span><\/p>/);
   });
   await test('a finished task reads Done, with its signed answer under Decided',()=>{
     const h=harness();h.selectTask(fixture.tree('finished-run',{status:'completed',counts:{blocking:0,total:1},
@@ -318,6 +322,7 @@ function harness() {
     assert.match(html,/<p class="task-status-line" role="status"><span class="pill done">(?:<span class="status-dot"><\/span>)?Done<\/span><\/p>/);
     assert.doesNotMatch(html,/Completed|Reported complete|not verified|Next:|Workflow details|Observed|blocker|authorized answers|recorded questions/);
     assert.match(html,/id="resolved-settled"/);assert.match(html,/Signed by Synthetic Reviewer/);assert.match(html,/No open questions\./);
+    assert.doesNotMatch(html,/Nothing decided yet/);
     assert.equal(h.run("runStatusLabel('completed')"),'Done','the Tasks list pill says the same word');
   });
   await test('a closed, failed or finished task says so in its pill once nobody is waited on; a person owed comes first, as on the row',()=>{
@@ -332,7 +337,7 @@ function harness() {
       assert.doesNotMatch(html,/blocker|authorized answers|Waiting for decisions|Review needed|Cancelled/);
       // A question still owed (a late co-signer, a correction upstream): the page says who, as the Tasks row does for the same run.
       for(const stale of [false,true]) {const h=harness();h.selectTask(fixture.tree('lifecycle-run',{status,
-        nodes:[fixture.node('unfinished',{needs_review:stale,authorized:stale,signoff:stale?'signed':'required'})]}));
+        nodes:[fixture.node('unfinished',{needs_review:stale,authorized:stale,signoff:stale?'signed':'required'}),fixture.node('second',{needs_review:stale,authorized:stale,signoff:stale?'signed':'required'})]}));
         const open=h.run('taskOverview()').match(/<p class="task-status-line"[^>]*>([\s\S]*?)<\/p>/)[1];
         assert.match(open,stale?/>Needs a second look</:/>Waiting on Synthetic Reviewer</,status+' with a person owed names them');
         assert.doesNotMatch(open,new RegExp('>'+label+'</span>'),'not Done beside a question under Waiting');
@@ -531,7 +536,8 @@ function harness() {
     assert.match(html,/<a class="task-back" href="#runs">← Tasks<\/a><details class="more-menu" id="task-more"><summary aria-label="More actions">More<\/summary><div class="more-menu-items"><button id="task-share" class="button text" data-action="task-share">Copy link<\/button><\/div><\/details>/);
     assert.match(html,/<p class="task-goal is-clamped" id="task-brief">A long brief line/);
     assert.match(html,/<button id="task-brief-summary" class="button text task-brief-toggle" data-action="task-brief-toggle" aria-expanded="false" aria-controls="task-brief">Show more<\/button>/);
-    assert.match(html,/<p class="task-meta">Requester not recorded · synthetic\/minimal-ui · Cursor<\/p>/);
+    assert.match(html,/<p class="task-meta">synthetic\/minimal-ui · Cursor<\/p>/,'an unknown requester is left out, not announced');
+    assert.doesNotMatch(html,/Requester not recorded|Nothing decided yet|No notes yet|id="task-decided"/,'empty Decided is omitted; Notes shows only the form');
     assert.match(html,/<button id="task-tab-decisions" class="tab active"[^>]*>Decisions \(1\)<\/button><button id="task-tab-history" class="tab "[^>]*>History<\/button><\/nav>/);
     assert.match(html,/<details class="task-panel task-context" id="task-context"><summary id="task-context-summary">Details<\/summary>/);
     assert.match(html,/<p id="task-kickoff"><strong>Kickoff verdict · pass<\/strong> Scoped\.<\/p>/);

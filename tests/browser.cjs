@@ -76,7 +76,9 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.waitForSelector('.task-summary');
     assert.match(await page.locator('#app').textContent(), /Requested by Priya Natarajan/);
     assert.equal(await page.locator('#task-waiting h2').innerText(), 'Waiting');
-    assert.equal(await page.locator('#task-decided h2').innerText(), 'Decided');
+    // Nothing is decided yet on this task: the Decided section is omitted rather than saying so.
+    assert.equal(await page.locator('#task-decided').count(), 0);
+    assert.doesNotMatch(await page.locator('#app').textContent(), /Nothing decided yet|No notes yet|Requester not recorded/);
     assert.doesNotMatch(await page.locator('#app').textContent(), /Not authorized|Workflow details|Recorded finding|Local workspace/);
     const taskUrl = page.url();
     // A deep link may return the tree before the account. Never interpret

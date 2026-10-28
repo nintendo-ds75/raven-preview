@@ -1792,6 +1792,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 #app .task-heading h1{margin:.35rem 0 .4rem}
 #app .task-summary{margin-bottom:.8rem;padding:.65rem 0}
 #app .task-summary h2{margin:0 0 .25rem}
+/* A one-question task carries its pill on the row; the status section then has nothing and takes no room. */
+#app .task-summary:empty{display:none}
 #app .task-summary p{margin:.3rem 0}
 #app .task-summary details{font-size:.8rem;color:var(--muted)}
 #app .task-inquiry{margin:.7rem 0 1rem}
