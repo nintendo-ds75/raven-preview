@@ -694,7 +694,7 @@ function newAuthority(personId = '') {
 function deliveriesCard() {
   // Card 3: Slack. The inbox works without it, so the card says so in one line.
   const d = state.delivery || {};
-  const head = '<h2><span class="step">3</span>Slack</h2>';
+  const head = '<h2>Slack</h2>';
   const line = '<p>People can answer in the inbox without it.</p>';
   if (!d.enabled) return `<section class="setup-card" id="settings-slack">${head}<p>${pill('Not connected', 'gray')}</p>${line}<p><a href="https://github.com/nintendo-ds75/raven-preview/blob/main/docs/slack.md" target="_blank" rel="noopener">How to connect ↗</a></p><details class="history" id="slack-bot"><summary>Server bot (optional)</summary><p>An operator can configure a bot for notification-only delivery. Workspace app policies may require approval.</p><a href="https://github.com/nintendo-ds75/raven-preview/blob/main/docs/slack.md" target="_blank" rel="noopener">Bot setup</a></details></section>`;
   const failed = (d.failed || 0);
@@ -702,7 +702,7 @@ function deliveriesCard() {
   return `<section class="setup-card" id="settings-slack">${head}<p>${pill('Connected' + contacts, 'green')}</p>${line}${d.directory?.error ? `<p class="error">${esc(d.directory.error)}</p>` : ''}<button class="button soft" data-action="slack-sync">Refresh Slack contacts</button><p>${d.sent || 0} sent · ${d.queued || 0} queued · ${failed} failed${d.signing_secret ? '' : ' · signed source-change callbacks are not configured'}</p><div class="form-row"><div><label for="fallback-channel">Triage channel (when no contact can be reached)</label><input id="fallback-channel" maxlength="100" placeholder="C0123ABC" value="${esc(d.fallback_channel || '')}"></div><div><button class="button" data-action="fallback">Save</button></div></div>${failed ? `<button class="button soft" data-action="deliveries">Show failed deliveries</button><div id="deliveries"></div>` : ''}</section>`;
 }
 
-function githubCard() {
+function githubCard(extra = '') {
   const github = state.github_app || {};
   const repos = github.repositories || [];
   const canConnect = !!state.github_app && state.me && state.me.role === 'admin';
@@ -718,46 +718,50 @@ function githubCard() {
     : tokenSync ? '<p>The server has a GITHUB_TOKEN; no repository has synced yet.</p>' : '';
   const appList = repos.length ? `<details class="github-repositories" id="github-repositories"><summary><strong>${repos.length}</strong> ${githubOn ? 'connected' : 'selected'} ${repos.length === 1 ? 'repository' : 'repositories'}<span>View repositories</span></summary><ul>${repos.map(repo => `<li><span class="repo-owner">${esc(repo.split('/')[0])} /</span> <strong>${esc(repo.split('/').slice(1).join('/') || repo)}</strong></li>`).join('')}</ul></details>` : '';
   const syncList = !repos.length && synced.length ? `<details class="github-repositories" id="github-repositories"><summary><strong>${synced.length}</strong> synced ${synced.length === 1 ? 'repository' : 'repositories'}<span>View repositories</span></summary><ul>${synced.map(r => `<li><span class="repo-owner">${esc(r.repo.split('/')[0])} /</span> <strong>${esc(r.repo.split('/').slice(1).join('/') || r.repo)}</strong> <small>${r.last_error ? `failing: ${esc(r.last_error)}` : r.last_success_at ? `synced ${esc(ago(r.last_success_at))}` : 'not synced yet'}</small></li>`).join('')}</ul></details>` : '';
-  return `<div class="github-heading"><h3>GitHub</h3>${pill(on ? 'Connected' : 'Not connected', on ? 'green' : 'gray')}</div>${status}${appList || syncList || '<p>No repositories yet.</p>'}${failing.length ? `<p class="error">${failing.length} ${failing.length === 1 ? 'repository is' : 'repositories are'} failing to sync: ${esc(failing[0].repo)}: ${esc(failing[0].last_error)}</p>` : ''}${!github.configured && !tokenSync ? '<p>GitHub connection is awaiting setup by the Raven operator.</p>' : ''}${canConnect && github.configured ? `<button class="button${githubOn ? ' soft' : ''}" data-action="github-connect">${repos.length ? 'Manage repositories' : 'Connect GitHub'}</button>` : ''}`;
+  return `<div class="github-heading"><h3>GitHub</h3>${pill(on ? 'Connected' : 'Not connected', on ? 'green' : 'gray')}</div>${status}${appList || syncList || '<p>No repositories yet.</p>'}${failing.length ? `<p class="error">${failing.length} ${failing.length === 1 ? 'repository is' : 'repositories are'} failing to sync: ${esc(failing[0].repo)}: ${esc(failing[0].last_error)}</p>` : ''}${!github.configured && !tokenSync ? '<p>GitHub connection is awaiting setup by the Raven operator.</p>' : ''}${buttonRow(canConnect && github.configured ? `<button class="button${githubOn ? ' soft' : ''}" data-action="github-connect">${repos.length ? 'Manage repositories' : 'Connect GitHub'}</button>` : '', extra)}`;
 }
+const buttonRow = (...buttons) => { const row = buttons.filter(Boolean).join(''); return row ? `<div class="button-row">${row}</div>` : ''; };
 
 function agentStatus() {
   const tokens = state.agent_connections || [];
   return tokens.length ? tokens.map(t => `<p>${esc(t.label)} · ${pill(t.last_used_at ? 'Activity detected' : 'Waiting for first use', t.last_used_at ? 'green' : 'gray')}${t.last_used_at ? ` · Last seen ${esc(ago(t.last_used_at))}` : ''}</p>`).join('') : '<p>No active agent credentials yet.</p>';
 }
 
-// What is not set up yet, one line each with its fix. The server's notices
-// are shown as it wrote them; the level is a word, not a colour. A model
-// notice is a gap only without a backend that can make suggestions; with a
-// key configured it is information, and not something to fix.
+// What is not set up yet, grouped under its level word ('Set this up
+// first', 'Worth fixing', 'Note'), one sentence per row; the rest of the
+// server's text, the why and the fix, opens behind 'Why'. A model notice
+// is a gap only without a backend that can make suggestions; with a key
+// configured it is information, and not something to fix.
 function setupChecklist() {
-  const item = (level, text) => `<li><strong>${esc(level)}</strong><span>${esc(text)}</span></li>`;
+  const firstSentence = text => { const m = /^(.*?[.!?])(?:\s+(.*))?$/s.exec(String(text || '').trim()); return m ? [m[1], m[2] || ''] : [String(text || ''), '']; };
+  const item = (level, text) => { const [lead, rest] = firstSentence(text); return {level, html: `<li><span>${esc(lead)}</span>${rest ? `<details class="setup-why"><summary>Why</summary><p>${esc(rest)}</p></details>` : ''}</li>`}; };
   const slackLine = state.delivery?.enabled === false;
-  const items = [
+  const rows = [
     state.model?.proposals === false && state.model.notice ? item('Worth fixing', state.model.notice) : '',
     slackLine ? item('Note', 'Slack not connected: people answer in the inbox.') : '',
-    readiness(slackLine ? ['no_slack'] : []),
-  ].join('');
-  return items ? `<h2 id="setup-checklist-title">Not set up yet</h2><ul class="setup-list" aria-labelledby="setup-checklist-title">${items}</ul>` : '';
+    ...readiness(slackLine ? ['no_slack'] : []).map(([level, text]) => item(level, text)),
+  ].filter(Boolean);
+  const groups = ['Set this up first', 'Worth fixing', 'Note'].map(level => { const g = rows.filter(r => r.level === level); return g.length ? `<h3>${level}</h3><ul>${g.map(r => r.html).join('')}</ul>` : ''; }).join('');
+  return groups ? `<h2 id="setup-checklist-title">Not set up yet</h2><section class="setup-list" aria-labelledby="setup-checklist-title">${groups}</section>` : '';
 }
 
 function readiness(skip = []) {
-  // The server's readiness findings, in the order they bite, as checklist
-  // rows: the level word, what is missing, what to do.
+  // The server's readiness findings, in the order they bite, as [level
+  // word, text] pairs for the checklist.
   const label = {blocker: 'Set this up first', warning: 'Worth fixing', warn: 'Worth fixing', note: 'Note', info: 'Note'};
   return (state.readiness || []).filter(r => r && !skip.includes(r.key))
-    .map(r => `<li><strong>${esc(label[r.level] || r.level)}</strong><span>${esc([r.what, r.do].filter(Boolean).join(' '))}</span></li>`).join('');
+    .map(r => [label[r.level] || 'Note', [r.what, r.do].filter(Boolean).join(' ')]);
 }
 
 function connections() {
   const shared = !!state.auth?.enabled;
-  const step = (n, title) => `<h2><span class="step">${n}</span>${title}</h2>`;
+  const step = title => `<h2>${title}</h2>`;
   let agentStep;
   if (shared) {
-    agentStep = `<section class="setup-card">${step(1, 'Connect your coding agent')}<p>Pick your client.</p>${agentCards()}<h3>Your agent connections</h3><div id="agent-status" aria-live="polite">${agentStatus()}</div><p class="context">Refreshes every five seconds while this tab is visible. Last seen confirms the credential was used, not that a session is running.</p><button class="button" data-action="agent-status">Refresh status</button><details class="history" id="manual-agent-setup"><summary>Other MCP clients</summary><p>Create a limited credential and add the endpoint and header in that client’s MCP settings.</p><label for="agent-client">Agent client</label><select id="agent-client"><option>Claude Code</option><option>Cursor</option><option>Codex</option><option>Other MCP client</option></select><button class="button primary" data-action="agent-setup">Create connection details</button><p class="context">The client must support HTTP MCP with an authorization header.</p></details>${workbenchSetupCard()}</section>`;
+    agentStep = `<section class="setup-card">${step('Connect your coding agent')}<p>Pick your client.</p>${agentCards()}<h3>Your agent connections</h3><div id="agent-status" aria-live="polite">${agentStatus()}</div><p class="context">Refreshes every five seconds while this tab is visible. Last seen confirms the credential was used, not that a session is running.</p><button class="button" data-action="agent-status">Refresh status</button><details class="history" id="manual-agent-setup"><summary>Other MCP clients</summary><p>Create a limited credential and add the endpoint and header in that client’s MCP settings.</p><label for="agent-client">Agent client</label><select id="agent-client"><option>Claude Code</option><option>Cursor</option><option>Codex</option><option>Other MCP client</option></select><button class="button primary" data-action="agent-setup">Create connection details</button><p class="context">The client must support HTTP MCP with an authorization header.</p></details>${workbenchSetupCard()}</section>`;
   } else {
     const {remote, notice, ...config} = state.mcp_config || {};
-    agentStep = `<section class="setup-card">${step(1, 'Connect your coding agent')}<p>Add this to your agent’s MCP settings.</p><pre id="mcp-config">${esc(JSON.stringify(config, null, 2))}</pre><button class="button primary" data-action="copy">Copy configuration</button><p>Then add this to <code>CLAUDE.md</code> or <code>AGENTS.md</code>.</p><pre id="agent-rule">${esc(AGENT_RULE)}</pre><button class="button" data-action="copy" data-target="#agent-rule">Copy instruction</button>${workbenchSetupCard()}</section>`;
+    agentStep = `<section class="setup-card">${step('Connect your coding agent')}<p>Add this to your agent’s MCP settings.</p><pre id="mcp-config">${esc(JSON.stringify(config, null, 2))}</pre><button class="button primary" data-action="copy">Copy configuration</button><p>Then add this to <code>CLAUDE.md</code> or <code>AGENTS.md</code>.</p><pre id="agent-rule">${esc(AGENT_RULE)}</pre><button class="button" data-action="copy" data-target="#agent-rule">Copy instruction</button>${workbenchSetupCard()}</section>`;
   }
   // A repository ingested at startup (./setup --repo) is context already
   // there; the card names it so the person can tell.
@@ -766,10 +770,15 @@ function connections() {
   const indexedLine = indexed.length ? `<p class="context"><strong>Already indexed:</strong> ${indexed.map(esc).join(', ')} · ${plural(graph.engineers || 0, 'person', 'people')} from its history${graph.intents ? `, ${plural(graph.intents, 'record')}` : ''}. Raven can name them now.</p>` : '';
   // The evidence panel (evidence.js) draws for members and admins only; a viewer gets no empty disclosure.
   const member = !shared || ['admin', 'member'].includes(state.me?.role);
-  const contextStep = `<section class="setup-card" id="settings-context">${step(2, 'Context')}${githubCard()}${indexedLine}${contextSourcesCard()}${canAdminister() ? '<p><button class="button text" data-action="ingest">Add a local clone</button></p>' : ''}${member ? '<details class="history" id="settings-evidence"><summary>Paste a message or email</summary><div id="evidence-mount"></div></details>' : ''}${canAdminister() ? '<details class="history" id="settings-meetings"><summary>Meetings</summary><div id="meetings-mount"></div></details>' : ''}</section>`;
+  // 'Add a local clone' sits in a row with the GitHub button; the ways to
+  // add more context are one short list under 'Add context'.
+  const addContext = [contextAvailable(),
+    member ? '<details class="history" id="settings-evidence"><summary>Paste a message or email</summary><div id="evidence-mount"></div></details>' : '',
+    canAdminister() ? '<details class="history" id="settings-meetings"><summary>Meetings</summary><div id="meetings-mount"></div></details>' : ''].filter(Boolean).join('');
+  const contextStep = `<section class="setup-card" id="settings-context">${step('Context')}${githubCard(canAdminister() ? '<button class="button text" data-action="ingest">Add a local clone</button>' : '')}${indexedLine}${contextSourcesCard()}${addContext ? `<h3>Add context</h3>${addContext}` : ''}</section>`;
   const peopleStep = shared
-    ? (canAdminister() ? `<section class="setup-card" id="settings-people">${step(4, 'People access')}${workspaceAccountCard()}</section>` : '')
-    : `<section class="setup-card" id="settings-people">${step(4, 'People access')}<p>Sign-in is off: single-operator workspace. Turn it on before sharing this server.</p></section>`;
+    ? (canAdminister() ? `<section class="setup-card" id="settings-people">${step('People access')}${workspaceAccountCard()}</section>` : '')
+    : `<section class="setup-card" id="settings-people">${step('People access')}<p>Sign-in is off: single-operator workspace. Turn it on before sharing this server.</p></section>`;
   const advanced = `<details class="history settings-advanced" id="repository-signals"><summary>Advanced</summary>${savedStrip()}<h3>Who git thinks owns what</h3>${ownershipGraph()}<p><button class="button" data-action="export">Export history</button></p></details>`;
   return `${setupChecklist()}<div class="settings-page">${agentStep}${contextStep}${deliveriesCard()}${peopleStep}${routingCard()}${advanced}</div>`;
 }
@@ -789,14 +798,20 @@ function routingCard() {
   return canAdminister() ? control : `<fieldset class="read-only-settings" disabled><legend>Managed by an administrator</legend>${control}</fieldset>`;
 }
 
+// The context sources already connected, as rows; nothing when there are none.
 function contextSourcesCard() {
   const report = state.context_sources || {};
   const rows = (report.sources || []).map(s => {
     const refused = Object.entries(s.refused || {}).map(([k, n]) => `${esc(k.replace(/_/g, ' '))}: ${n}`).join(', ');
     return `<li><strong>${esc(s.kind)}</strong> ${esc(s.label || s.target)} → ${esc(s.repo)} · <span class="status-${esc(s.state)}">${esc(s.state.replace(/_/g, ' '))}</span> · ${s.records} records${s.last_success_at ? ' · synced ' + esc(new Date(s.last_success_at).toLocaleString()) : ''}${refused ? `<br><small>Not imported — ${refused}</small>` : ''}${s.do ? `<br><small>${esc(s.do)}</small>` : ''}</li>`;
   }).join('');
-  const missing = (report.not_configured || []).map(s => `<li><strong>${esc(s.kind)}</strong> not configured${s.credentials_present ? '' : ' (credentials not set)'}<br><code>${esc(s.enable)}</code></li>`).join('');
-  return `<div class="github-heading" id="context-sources"><h3>Other sources</h3>${rows ? '' : '<span class="muted">none yet</span>'}</div>${rows ? `<ul>${rows}</ul>` : ''}${missing ? `<details class="history" id="context-sources-available"><summary>Available to add</summary><ul>${missing}</ul></details>` : ''}`;
+  return rows ? `<div class="github-heading" id="context-sources"><h3>Other sources</h3></div><ul>${rows}</ul>` : '';
+}
+
+// The source kinds the server could read but has no credentials for.
+function contextAvailable() {
+  const missing = ((state.context_sources || {}).not_configured || []).map(s => `<li><strong>${esc(s.kind)}</strong> not configured${s.credentials_present ? '' : ' (credentials not set)'}<br><code>${esc(s.enable)}</code></li>`).join('');
+  return missing ? `<details class="history" id="context-sources-available"><summary>From a site, Jira or Slack</summary><ul>${missing}</ul></details>` : '';
 }
 
 function workspaceAccountCard() {

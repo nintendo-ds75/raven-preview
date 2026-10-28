@@ -824,8 +824,6 @@ td small{
   font-weight:500;
   margin:0 0 12px}
 
-.setup-card h2 .step{display:inline-grid;place-items:center;width:26px;height:26px;margin-right:10px;border-radius:50%;background:#1b261a;color:#83d97a;font-size:13px;font-weight:600;vertical-align:middle}
-
 .settings-page{
   display:flex;
   flex-direction:column;
@@ -919,6 +917,7 @@ td small{
 .github-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .github-heading h2{margin:6px 0 0;font-size:22px}
 .github-heading .pill{flex-shrink:0}
+.button-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2) var(--space-3);margin-top:var(--space-3)}
 .github-repositories{margin:20px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
 .github-repositories summary{cursor:pointer;padding:16px;font-size:13px;line-height:1.6}
 .github-repositories summary strong{font-size:16px}
@@ -1871,10 +1870,14 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .person-card .authority-row:last-of-type{border-bottom:1px solid var(--line)}
 .person-card .authority-row>span{flex:1 1 12rem;min-width:0}
 .person-card>.button.small{margin-top:var(--space-3)}
-.setup-list{list-style:none;margin:0 0 var(--space-6);padding:var(--space-3) var(--space-4);display:grid;gap:var(--space-2);border:1px solid var(--line);border-radius:8px;background:var(--card);font-size:13px;line-height:1.6}
-.setup-list li{display:flex;flex-wrap:wrap;gap:var(--space-1) var(--space-2);align-items:baseline;overflow-wrap:anywhere}
-.setup-list strong{color:var(--amber);font-size:11px;letter-spacing:.3px;white-space:nowrap}
-.setup-list code{font-size:12px;background:var(--pale);padding:1px 5px;border-radius:4px}
+.setup-list{margin:0 0 var(--space-6);padding:var(--space-2) var(--space-4) var(--space-3);border:1px solid var(--line);border-radius:8px;background:var(--card);font-size:13px;line-height:1.6}
+.setup-list h3{color:var(--amber);font-size:11px;font-weight:550;letter-spacing:.3px;text-transform:uppercase;margin:var(--space-3) 0 var(--space-1)}
+.setup-list ul{list-style:none;margin:0;padding:0}
+.setup-list li{overflow-wrap:anywhere}
+.setup-why{display:inline}
+.setup-why>summary{display:inline-flex;align-items:center;min-height:40px;padding:0 var(--space-2);color:#83d97a;cursor:pointer;list-style:none;font-size:12px}
+.setup-why>summary::-webkit-details-marker{display:none}
+.setup-why p{margin:0 0 var(--space-2);color:var(--muted)}
 @media(max-width:600px){
   .page-head{align-items:stretch}
   .page-actions{margin-left:0;width:100%}

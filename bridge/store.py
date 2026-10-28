@@ -1266,9 +1266,11 @@ class Store:
         from .config import backend_status
         inference = backend_status()
         if not inference['semantic_enabled']:
+            # One plain sentence first, for the Settings checklist; the fix follows
+            # without naming a tool, since the agent reads this from the tool itself.
             out.append({'key': 'no_inference', 'level': 'warning', 'what': inference['notice'],
                         'do': 'Set up Anthropic or the Claude CLI on the server with ./setup --configure. '
-                              'Do not send API keys in chat. Recheck bridge_connection_status afterward.'})
+                              'Do not send API keys in chat. Afterward, ask your agent to check its connection again.'})
         people = graph.db.execute("SELECT count(*) c FROM people WHERE active=1").fetchone()["c"]
         coordinator = graph.coordinator()
         automatic = graph.get_setting("slack_discovery") == "1"

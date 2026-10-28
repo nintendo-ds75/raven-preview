@@ -184,7 +184,8 @@ vm.runInContext(source.slice(source.indexOf('const signedNow'), source.indexOf('
   assert.doesNotMatch(context.githubCard(), /Connected: acme/);
   // Slack is card 3: a pill, one line, the link; connected keeps its controls.
   context.state.delivery = {enabled: false};
-  assert.match(context.deliveriesCard(), /<span class="step">3<\/span>Slack/);
+  assert.match(context.deliveriesCard(), /<h2>Slack<\/h2>/);
+  assert.doesNotMatch(context.deliveriesCard(), /class="step"/);
   assert.match(context.deliveriesCard(), /class="gray">Not connected/);
   assert.match(context.deliveriesCard(), /People can answer in the inbox without it\./);
   assert.match(context.deliveriesCard(), /How to connect ↗/);
