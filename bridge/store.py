@@ -17,6 +17,8 @@ class Invalid(ValueError):
 
 
 BRIEF_MODES = ("off", "static")
+# New questions Raven sends one person in a rolling week; 0 turns the limit off.
+WEEKLY_QUESTION_LIMIT = 10
 
 
 def brief_mode(graph):
@@ -443,6 +445,7 @@ class Store:
         return {"coordinator": coordinator, "require_verified_route": graph.get_setting("require_verified_route") == "1",
                 "slack_fallback_channel": graph.get_setting("slack_fallback_channel"),
                 "overdue_hours": self.overdue_hours(),
+                "weekly_question_limit": self.weekly_question_limit(),
                 "slack_capture_repo": graph.get_setting("slack_capture_repo"),
                 "auto_rules": graph.get_setting("auto_rules") == "1",
                 "notify_requester": graph.get_setting("notify_requester") == "1",
@@ -473,6 +476,15 @@ class Store:
                 if not 1 <= hours <= 24 * 90:
                     raise Invalid("overdue_hours must be between 1 and 2160")
                 graph.set_setting("overdue_hours", str(hours))
+            if "weekly_question_limit" in data:
+                try:
+                    limit = int(data["weekly_question_limit"])
+                except (TypeError, ValueError):
+                    raise Invalid("weekly_question_limit must be a whole number of questions")
+                if not 0 <= limit <= 1000:
+                    raise Invalid("weekly_question_limit must be between 0 (off) and 1000")
+                graph.set_setting("weekly_question_limit", str(limit))
+                graph.append_event("setting_changed", {"key": "weekly_question_limit", "value": str(limit)})
             if "slack_capture_repo" in data:
                 graph.set_setting("slack_capture_repo", repo_key(str(data["slack_capture_repo"] or "")))
             if "brief_mode" in data:
@@ -1418,6 +1430,12 @@ class Store:
             return max(1, int(self.graph.get_setting("overdue_hours") or 72))
         except ValueError:
             return 72
+
+    def weekly_question_limit(self) -> int:
+        try:
+            return max(0, int(self.graph.get_setting("weekly_question_limit") or WEEKLY_QUESTION_LIMIT))
+        except ValueError:
+            return WEEKLY_QUESTION_LIMIT
 
     def inbox(self, page=1, size=50, owner_id="", overdue=False):
         """The needs-you queue, paginated on the server: every decision that
