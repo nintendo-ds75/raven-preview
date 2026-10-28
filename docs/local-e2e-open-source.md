@@ -144,7 +144,7 @@ The browser opens <http://localhost:7333>.
 
 Mirror the project's areas, never its people. For Prometheus:
 
-| Stand-in (made up) | Email | Add under "Record who decides" |
+| Stand-in (made up) | Email | Add under "Say what they decide" |
 |---|---|---|
 | Tess Tsdb | tess@example.invalid | decides, path, `tsdb/*` |
 | Remy Remote | remy@example.invalid | decides, path, `storage/remote/*` |

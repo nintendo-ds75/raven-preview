@@ -898,19 +898,6 @@ td small{
 
 .person-card{min-width:0;overflow-wrap:anywhere}
 
-.person-card code{
-  display:block;
-  overflow-wrap:anywhere;
-  word-break:break-all;
-  white-space:pre-wrap;
-  max-width:100%;
-  font-size:10px;
-  line-height:1.8;
-  background:#1b261a;
-  padding:10px;
-  border-radius:4px;
-  color:#83d97a}
-
 .person-card small{
   display:block;
   color:#bebfb6;
@@ -921,11 +908,6 @@ td small{
 
 .people-grid > *{min-width:0}
 
-.owners-page{display:flex;flex-direction:column;gap:20px;min-width:0}
-.owners-page .wide-toolbar{margin:12px 0 0;flex-wrap:wrap;gap:12px}
-.owners-page .notice{margin:0;line-height:1.65}
-.owners-page .person-card small{display:block;margin-top:8px;line-height:1.5;overflow-wrap:anywhere}
-.owners-page .person-card{padding:22px}
 .routing-settings{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:32px;align-items:start}
 .routing-settings .label{display:block;margin-bottom:10px}
 .routing-settings .field-help{font-size:12px;margin-bottom:0}
@@ -1513,7 +1495,6 @@ h1,h2,h3 { letter-spacing:-.025em; }
 .task-warning .button { margin:.5rem 0 0; display:block; }
 .read-only-settings { border:0; padding:0; margin:0; min-width:0; }
 .read-only-settings legend { padding:0 0 .75rem; font-size:.85rem; color:var(--muted); }
-.owners-page table { min-width:52rem; }
 /* A table wider than a phone scrolls inside its wrapper; the wrapper takes
    focus so the keyboard can scroll it, and shows that it has. */
 .table-wrap:focus-visible { outline:2px solid var(--green); outline-offset:2px; border-radius:6px; }
@@ -2003,6 +1984,12 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .authority-row strong{color:var(--ink);font-weight:550}
 .authority-row.ended{color:var(--muted)}
 .authority-row .button{margin-left:auto;min-height:32px;font-size:11px;padding:4px 10px}
+.person-card h4{font-size:11px;font-weight:550;letter-spacing:.3px;text-transform:uppercase;color:var(--muted);margin:var(--space-4) 0 var(--space-1)}
+.person-card .person-waiting{margin:var(--space-3) 0 0;color:var(--amber)}
+.person-card .muted{margin:0;font-size:12px}
+.person-card .authority-row:last-of-type{border-bottom:1px solid var(--line)}
+.person-card .authority-row>span{flex:1 1 12rem;min-width:0}
+.person-card .button.text{margin-top:var(--space-3);padding-left:0}
 .setup-list{list-style:none;margin:0 0 var(--space-6);padding:var(--space-3) var(--space-4);display:grid;gap:var(--space-2);border:1px solid var(--line);border-radius:8px;background:var(--card);font-size:13px;line-height:1.6}
 .setup-list li{display:flex;flex-wrap:wrap;gap:var(--space-1) var(--space-2);align-items:baseline;overflow-wrap:anywhere}
 .setup-list strong{color:var(--amber);font-size:11px;letter-spacing:.3px;white-space:nowrap}

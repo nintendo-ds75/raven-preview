@@ -63,9 +63,8 @@ vm.runInContext('let savings = null, savingsLoading = false, savingsAt = 0; cons
   assert.equal(context.savedStrip(), '');
   assert.equal(notified, 0);
   assert.equal(requests.length, 2, 'the refusal is not asked again');
-  // The strip opens Tasks and People & ownership.
+  // The strip opens Tasks.
   assert.match(source, /function runs\(\) \{\n  return savedStrip\(\) \+ `<div class="wide-toolbar"><h2>Tasks in this workspace<\/h2>/);
-  assert.match(source, /function owners\(\) \{\n  return `<div class="owners-page">\$\{workspaceAccountCard\(\)\}\$\{savedStrip\(\)\}/);
   assert.match(style, /\.saved-strip\{/);
 
   // Per task: what came from memory or a rule, what a person signed as proposed, and how long people took.
