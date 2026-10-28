@@ -92,7 +92,8 @@ vm.runInContext(source.slice(source.indexOf('const signedNow'), source.indexOf('
   vm.createContext(dotContext);
   vm.runInContext(source.slice(source.indexOf('function settingsDotState()'), source.indexOf('function loadOwnership()')), dotContext);
   dotContext.settingsDotState(); assert.equal(dot.hidden, true);
-  dotContext.state.model = {notice: 'Suggestions are off: no model key.'}; dotContext.settingsDotState(); assert.equal(dot.hidden, false);
+  dotContext.state.model = {proposals: false, notice: 'Suggestions are off: no model key.'}; dotContext.settingsDotState(); assert.equal(dot.hidden, false);
+  dotContext.state.model = {proposals: true, notice: 'Model: claude-x. Suggestions on for watched repositories.'}; dotContext.settingsDotState(); assert.equal(dot.hidden, true, 'a configured backend is not a gap');
   dotContext.state.model = {}; dotContext.state.delivery = {enabled: false}; dotContext.settingsDotState(); assert.equal(dot.hidden, false);
   dotContext.state.delivery = {enabled: true}; dotContext.state.readiness = [{level: 'warning'}]; dotContext.settingsDotState(); assert.equal(dot.hidden, true);
   dotContext.state.readiness = [{level: 'blocker'}]; dotContext.settingsDotState(); assert.equal(dot.hidden, false);

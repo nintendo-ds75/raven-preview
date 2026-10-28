@@ -169,6 +169,19 @@ function harness() {
     assert.match(h.get('#modal-content').innerHTML, /Signed question/);
   });
 
+  await test('the hand-on checkbox switches assign and refer, except on an admin override row', async () => {
+    const h = harness(), button = h.get('#hand-on'), row = h.get('#refer-scope-row');
+    button.dataset = {action: 'refer', id: 'd1'};
+    await h.document.dispatch('change', {target: {id: 'refer-learn', checked: false}});
+    assert.equal(button.dataset.action, 'assign');
+    assert.equal(row.hidden, true);
+    await h.document.dispatch('change', {target: {id: 'refer-learn', checked: true}});
+    assert.equal(button.dataset.action, 'refer');
+    button.dataset = {action: 'refer', id: 'd1', override: '1'};
+    await h.document.dispatch('change', {target: {id: 'refer-learn', checked: false}});
+    assert.equal(button.dataset.action, 'refer', 'an override is recorded as a refer; /assign would be refused');
+  });
+
   await test('every action that redraws the decision goes through the guarded path', () => {
     assert.equal((source.match(/await refresh\(\); await review\(target\.dataset\.id\)/g) || []).length, 0);
     assert.equal((source.match(/await rereview\(target\.dataset\.id, version\)/g) || []).length, 6);

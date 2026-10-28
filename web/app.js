@@ -312,11 +312,13 @@ async function refresh({quiet = false} = {}) {
 
 // Workspace-level notices live on the Settings page; everywhere else they
 // are one dot on the Settings nav item. Read from /api/state; nothing here
-// probes a provider.
+// probes a provider. The server writes a model notice for every backend;
+// it names a gap only when no backend can make suggestions
+// (state.model.proposals false: no key, or the claude-cli backend).
 function settingsDotState() {
   const dot = $('#settings-dot');
   if (!dot) return;
-  const incomplete = !!state.auth && (!!state.model?.notice || state.delivery?.enabled === false
+  const incomplete = !!state.auth && ((state.model?.proposals === false && !!state.model.notice) || state.delivery?.enabled === false
     || (state.readiness || []).some(item => item && item.level === 'blocker'));
   dot.hidden = !incomplete;
 }
@@ -440,6 +442,12 @@ const listOf = raw => { try { const v = Array.isArray(raw) ? raw : JSON.parse(ra
 const signersOf = d => listOf(d.signatures).map(s => String(s?.by || '')).filter(Boolean);
 const stillToSign = d => { const done = signersOf(d).map(n => n.toLowerCase()); return listOf(d.required_signers).map(String).filter(n => !done.includes(n.toLowerCase())); };
 const halfSigned = d => d.signoff === 'required' && signersOf(d).length > 0;
+// At most two names, then how many more: 'Alex Morgan, Wes Chen and 1 more'.
+function nameList(names) {
+  const unique = [...new Set(names.filter(Boolean))];
+  return unique.length > 2 ? `${unique[0]}, ${unique[1]} and ${unique.length - 2} more` : unique.join(', ');
+}
+
 // Status is one sentence that names a person, never a count or a term:
 // the same words on the card, the task page and the dialog. Two names at
 // most, then "and N more"; an empty name is never rendered.
@@ -544,12 +552,6 @@ function savedStrip() {
   return `<p class="saved-strip" role="status"><strong>What Raven saved</strong> · last ${m.window_days} days · ${parts.join(' · ')}</p>`;
 }
 
-// At most two names, then how many more: 'Alex Morgan, Wes Chen and 1 more'.
-function nameList(names) {
-  const unique = [...new Set(names.filter(Boolean))];
-  return unique.length > 2 ? `${unique[0]}, ${unique[1]} and ${unique.length - 2} more` : unique.join(', ');
-}
-
 // The one sentence a task row carries: who it waits on, else its lifecycle.
 function runStatusSentence(run, decisions) {
   const pending = decisions.filter(needsYou);
@@ -580,7 +582,9 @@ function runs() {
   const member = !state.auth?.enabled || ['admin', 'member'].includes(state.me?.role);
   const start = viewer ? '' : state.execution_config?.enabled ? '<button class="button primary" data-action="task">Start a task</button>'
     : state.workbench?.ready ? '<a class="button primary" href="#work">Start a task</a>' : '';
-  const outcomes = state.model?.proposals !== false || (typeof objectiveTodayCount === 'function' ? objectiveTodayCount(state.today) : 0) > 0;
+  // Outcomes stays reachable without a model backend while something there waits on a person.
+  const todayCount = (state.today?.proposals_open || 0) + (state.today?.objectives_needing_you || 0);
+  const outcomes = state.model?.proposals !== false || todayCount > 0;
   const items = [member ? '<button class="button text" data-action="new">Ask a question</button>' : '', outcomes ? '<a href="#today">Outcomes</a>' : ''].filter(Boolean);
   const actions = $('#page-actions');
   if (actions) actions.innerHTML = `<span class="page-count">${plural(rows.length, 'task')}</span>${start}${items.length ? `<details class="more-menu"><summary aria-label="More actions">More</summary><div class="more-menu-items">${items.join('')}</div></details>` : ''}`;
@@ -716,12 +720,14 @@ function agentStatus() {
 }
 
 // What is not set up yet, one line each with its fix. The server's notices
-// are shown as it wrote them; the level is a word, not a colour.
+// are shown as it wrote them; the level is a word, not a colour. A model
+// notice is a gap only without a backend that can make suggestions; with a
+// key configured it is information, and not something to fix.
 function setupChecklist() {
   const item = (level, text) => `<li><strong>${esc(level)}</strong><span>${esc(text)}</span></li>`;
   const slackLine = state.delivery?.enabled === false;
   const items = [
-    state.model?.notice ? item('Worth fixing', state.model.notice) : '',
+    state.model?.proposals === false && state.model.notice ? item('Worth fixing', state.model.notice) : '',
     slackLine ? item('Note', 'Slack not connected: people answer in the inbox.') : '',
     readiness(slackLine ? ['no_slack'] : []),
   ].join('');
@@ -751,7 +757,9 @@ function connections() {
   const graph = state.graph || {};
   const indexed = [...new Set((graph.repos || []).filter(r => typeof r === 'string' && r))];
   const indexedLine = indexed.length ? `<p class="context"><strong>Already indexed:</strong> ${indexed.map(esc).join(', ')} · ${plural(graph.engineers || 0, 'person', 'people')} from its history${graph.intents ? `, ${plural(graph.intents, 'record')}` : ''}. Raven can name them now.</p>` : '';
-  const contextStep = `<section class="setup-card" id="settings-context">${step(2, 'Context')}${githubCard()}${indexedLine}${contextSourcesCard()}${canAdminister() ? '<p><button class="button text" data-action="ingest">Add a local clone</button></p>' : ''}<details class="history" id="settings-evidence"><summary>Paste a message or email</summary><div id="evidence-mount"></div></details>${canAdminister() ? '<details class="history" id="settings-meetings"><summary>Meetings</summary><div id="meetings-mount"></div></details>' : ''}</section>`;
+  // The evidence panel (evidence.js) draws for members and admins only; a viewer gets no empty disclosure.
+  const member = !shared || ['admin', 'member'].includes(state.me?.role);
+  const contextStep = `<section class="setup-card" id="settings-context">${step(2, 'Context')}${githubCard()}${indexedLine}${contextSourcesCard()}${canAdminister() ? '<p><button class="button text" data-action="ingest">Add a local clone</button></p>' : ''}${member ? '<details class="history" id="settings-evidence"><summary>Paste a message or email</summary><div id="evidence-mount"></div></details>' : ''}${canAdminister() ? '<details class="history" id="settings-meetings"><summary>Meetings</summary><div id="meetings-mount"></div></details>' : ''}</section>`;
   const peopleStep = shared
     ? (canAdminister() ? `<section class="setup-card" id="settings-people">${step(4, 'People access')}${workspaceAccountCard()}</section>` : '')
     : `<section class="setup-card" id="settings-people">${step(4, 'People access')}<p>Sign-in is off: single-operator workspace. Turn it on before sharing this server.</p></section>`;
@@ -1194,13 +1202,14 @@ function ownerAccountNotice(d, withActions) {
 
 // One row hands a decision on. Unchecked, the button assigns this request
 // only (/assign); checked, it also teaches Raven that the person decides
-// the chosen scope (/refer). An admin's override is a refer, so its row
-// starts checked.
+// the chosen scope (/refer). An admin's override is a refer and nothing
+// else: a plain assign without standing is refused by the server, so the
+// override row keeps the checkbox on and locked.
 function handOnRow(d, override = false) {
   const options = d.handon?.options || [];
   const chosen = d.handon?.default || {};
   return `<div class="modal-owner">${avatar(d.owner_name)}<select id="assign-owner" aria-label="Hand on to">${ownerOptions(d.owner_id)}</select><button class="button small" id="hand-on" data-action="${override ? 'refer' : 'assign'}" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}"${override ? ' data-override="1"' : ''}>Hand on</button></div>
-    <label class="refer-learn" for="refer-learn"><input type="checkbox" id="refer-learn"${override ? ' checked' : ''}> They decide this from now on</label>
+    <label class="refer-learn" for="refer-learn"><input type="checkbox" id="refer-learn"${override ? ' checked disabled' : ''}> They decide this from now on</label>
     <div class="refer-scope" id="refer-scope-row"${override ? '' : ' hidden'}>${options.length ? `<label for="refer-scope">What they decide</label><select id="refer-scope">${options.map(o => `<option value="${esc(o.scope_kind)}:${esc(o.scope)}" ${o.scope_kind === chosen.scope_kind && o.scope === chosen.scope ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select>` : ''}${d.handon?.why_none ? `<p class="field-help">${esc(d.handon.why_none)}; pick a scope to teach one.</p>` : ''}</div>`;
 }
 
@@ -1472,7 +1481,7 @@ document.addEventListener('change', async event => {
   if (event.target.id === 'owner-filter') { ownerFilter = event.target.value; render(); }
   if (event.target.id === 'refer-learn') {
     const button = $('#hand-on'), row = $('#refer-scope-row');
-    if (button) button.dataset.action = event.target.checked ? 'refer' : 'assign';
+    if (button && !button.dataset.override) button.dataset.action = event.target.checked ? 'refer' : 'assign';
     if (row) row.hidden = !event.target.checked;
   }
   try {

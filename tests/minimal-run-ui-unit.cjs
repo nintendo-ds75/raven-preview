@@ -320,16 +320,24 @@ function harness() {
     assert.match(html,/id="resolved-settled"/);assert.match(html,/Signed by Synthetic Reviewer/);assert.match(html,/No open questions\./);
     assert.equal(h.run("runStatusLabel('completed')"),'Done','the Tasks list pill says the same word');
   });
-  await test('a closed, failed or finished task says so in its pill; the row keeps its own state',()=>{
+  await test('a closed, failed or finished task says so in its pill once nobody is waited on; a person owed comes first, as on the row',()=>{
     for(const [status,label] of [['failed','Failed'],['cancelled','Closed'],['abandoned','Closed'],['completed','Done']]) {
+      // Nothing waits on a person: the lifecycle word, with the failure pointer only for a failed run.
+      const settled=harness();settled.selectTask(fixture.tree('lifecycle-run',{status,
+        nodes:[fixture.node('settled',{blocking:false,authorized:true,answer:'Keep it.',signoff:'signed',signatures:['Synthetic Reviewer']})]}));
+      const html=settled.run('taskOverview()');const line=html.match(/<p class="task-status-line"[^>]*>([\s\S]*?)<\/p>/)[1];
+      assert.match(line,new RegExp('>'+label+'</span>'),status+' lifecycle shows when nothing waits');
+      assert.equal((line.match(/class="pill /g)||[]).length,1,'one pill');
+      if(status==='failed')assert.match(line,/See History for the failure\./);else assert.doesNotMatch(line,/See History/);
+      assert.doesNotMatch(html,/blocker|authorized answers|Waiting for decisions|Review needed|Cancelled/);
+      // A question still owed (a late co-signer, a correction upstream): the page says who, as the Tasks row does for the same run.
       for(const stale of [false,true]) {const h=harness();h.selectTask(fixture.tree('lifecycle-run',{status,
         nodes:[fixture.node('unfinished',{needs_review:stale,authorized:stale,signoff:stale?'signed':'required'})]}));
-        const html=h.run('taskOverview()');const line=html.match(/<p class="task-status-line"[^>]*>([\s\S]*?)<\/p>/)[1];
-        assert.match(line,new RegExp('>'+label+'</span>'),status+' lifecycle must remain visible');
-        assert.equal((line.match(/class="pill /g)||[]).length,1,'one pill');
-        if(status==='failed')assert.match(line,/See History for the failure\./);else assert.doesNotMatch(line,/See History/);
-        assert.match(html,stale?/Needs a second look/:/Waiting on Synthetic Reviewer/);
-        assert.doesNotMatch(html,/blocker|authorized answers|Waiting for decisions|Review needed|Cancelled/);
+        const open=h.run('taskOverview()').match(/<p class="task-status-line"[^>]*>([\s\S]*?)<\/p>/)[1];
+        assert.match(open,stale?/>Needs a second look</:/>Waiting on Synthetic Reviewer</,status+' with a person owed names them');
+        assert.doesNotMatch(open,new RegExp('>'+label+'</span>'),'not Done beside a question under Waiting');
+        h.run("state.runs=[{id:'lifecycle-run',status:"+JSON.stringify(status)+"}];state.decisions=[{id:'unfinished',run_id:'lifecycle-run',status:"+JSON.stringify(stale?'approved':'pending')+",needs_review:"+stale+",owner_name:'Synthetic Reviewer'}]");
+        assert.equal(h.run('runStatusSentence(state.runs[0],state.decisions).text'),'Waiting on Synthetic Reviewer','the row waits on the same person');
       }
     }
   });
@@ -563,6 +571,11 @@ function harness() {
     assert.match(html,/Orphan[\s\S]*?>No owner yet</,'never Waiting on undefined');assert.doesNotMatch(html,/undefined/);
     assert.match(html,/<a class="task-row" href="#work\/b1"><div><strong>Browser job<\/strong><span class="muted">acme\/web · Browser · just now<\/span><\/div><span class="pill neutral">(?:<span class="status-dot"><\/span>)?In progress</);
     assert.match(head,/^<span class="page-count">6 tasks<\/span><details class="more-menu"><summary aria-label="More actions">More<\/summary><div class="more-menu-items"><button class="button text" data-action="new">Ask a question<\/button><\/div><\/details>$/);
+    // Without a model backend, Outcomes stays reachable while something there waits on a person.
+    h.run("state.today={proposals_open:1,objectives_needing_you:0}");h.run('runs()');assert.match(h.get('#page-actions').innerHTML,/<a href="#today">Outcomes<\/a>/);
+    h.run("state.today={proposals_open:0,objectives_needing_you:2}");h.run('runs()');assert.match(h.get('#page-actions').innerHTML,/<a href="#today">Outcomes<\/a>/);
+    h.run("state.today={proposals_open:0,objectives_needing_you:0}");h.run('runs()');assert.doesNotMatch(h.get('#page-actions').innerHTML,/#today/);
+    h.run("delete state.today");
     h.run("state.runs=state.runs.slice(0,1);state.browser_tasks=[];state.execution_config={enabled:true};state.model={proposals:true}");html=h.run('runs()');
     assert.match(html,/<span class="muted">Cursor · just now<\/span>/,'the repository is named only when there is more than one');
     assert.match(h.get('#page-actions').innerHTML,/<span class="page-count">1 task<\/span><button class="button primary" data-action="task">Start a task<\/button><details class="more-menu">[\s\S]*Ask a question[\s\S]*<a href="#today">Outcomes<\/a>/);

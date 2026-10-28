@@ -281,18 +281,22 @@ const taskGoalLong = text => Array.from(text).length > 240 || (text.match(/\n/g)
 
 // The one sentence the task page carries, as {text, tone, line}: the people a
 // task waits on (saying who has not joined yet), else what state it is in.
+// People come before the lifecycle, as on the Tasks row (runStatusSentence):
+// a run the agent reported complete can still hold a question a person owes.
 function taskStatus(t, nodes, scopes, reading) {
   const blockers = nodes.filter(n => n.blocking);
-  const needsReview = t.needs_review || t.review?.status === 'stale' || nodes.some(n => n.needs_review || n.source_refresh_required);
+  const doubted = nodes.some(n => n.needs_review || n.source_refresh_required);
   const unjoined = new Set(blockers.filter(taskNoAccount).map(n => n.owner));
   const me = state.me?.name || '', mine = name => !!me && state.auth?.enabled && taskSame(name, me);
   const waiting = [...new Set(blockers.flatMap(n => taskWaiting(n).concat(n.owner && !taskList(n.signatures).some(s => taskSame(s,n.owner)) ? [n.owner] : [])))].filter(Boolean);
   const names = taskNames(waiting.map(name => mine(name) ? 'you' : unjoined.has(name) ? `${name} · not in Raven yet` : name));
+  if (scopes.length) return {text:'Needs task facts', tone:'waiting'};
+  if (doubted) return {text:'Needs a second look', tone:'waiting'};
+  if (blockers.length) return {text: names ? `Waiting on ${names}` : 'Needs a contact', tone:'waiting'};
   const lifecycle = runStatusLabel(t.status);
   if (lifecycle !== 'In progress') return {text: lifecycle, tone: lifecycle === 'Done' ? 'done' : 'neutral', line: lifecycle === 'Failed' ? 'See History for the failure.' : ''};
-  if (scopes.length) return {text:'Needs task facts', tone:'waiting'};
-  if (needsReview) return {text:'Needs a second look', tone:'waiting'};
-  if (blockers.length) return {text: names ? `Waiting on ${names}` : 'Needs a contact', tone:'waiting'};
+  // A stale code review is a line under a finished task's pill, not a person owed; it leads only while the task runs.
+  if (t.needs_review || t.review?.status === 'stale') return {text:'Needs a second look', tone:'waiting'};
   if (!nodes.length && reading) return {text:'Reading context…', tone:'neutral'};
   return {text:'In progress', tone:'neutral'};
 }

@@ -90,9 +90,11 @@ function workActivityLabel(a) {
 
 function workDecision(n) {
   const authorized = taskAuthorized(n);
-  const status = typeof taskNodeStatus === 'function' ? taskNodeStatus(n) : authorized ? 'Authorized' : n.status === 'suggested' ? (n.blocking ? 'Required follow-up' : 'Suggested follow-up') : n.blocking ? 'Waiting for an answer' : 'Answer recorded';
+  // The same sentence as the task page row (task.js); the owner is added only when the sentence does not name them.
+  const status = taskStatusSentence(n).text;
+  const who = n.owner && !status.includes(n.owner) ? ` · ${esc(n.owner)}` : '';
   const origin = ({record:'Source context',memory:'Earlier decision',human:'Human answer',agent:'Agent proposal'})[n.source] || 'Recorded finding';
-  return `<details class="work-decision" data-work-detail="decision-${esc(n.node_id)}"><summary><span class="work-decision-state ${authorized ? 'is-signed' : ''}">${esc(status)} · ${esc(n.owner || 'Unassigned')}</span><span>${esc(n.question)}</span>${n.answer ? `<span class="work-answer-preview">${esc(n.answer)}</span>` : ''}</summary>
+  return `<details class="work-decision" data-work-detail="decision-${esc(n.node_id)}"><summary><span class="work-decision-state ${authorized ? 'is-signed' : ''}">${esc(status)}${who}</span><span>${esc(n.question)}</span>${n.answer ? `<span class="work-answer-preview">${esc(n.answer)}</span>` : ''}</summary>
     <p class="work-muted">${esc(origin)}${n.signed_by ? ' · Signed by ' + esc(n.signed_by) : ''}</p>
     ${n.rationale ? `<p><strong>Rationale:</strong> ${esc(n.rationale)}</p>` : ''}
     ${n.alternatives ? `<p><strong>Alternatives:</strong> ${esc(typeof n.alternatives === 'string' ? n.alternatives : JSON.stringify(n.alternatives))}</p>` : ''}

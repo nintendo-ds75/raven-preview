@@ -123,7 +123,7 @@ class StateBudgetTests(OfflineCase):
         # with that checklist, and no other page carries a model strip.
         app = self.get('/app.js')[2].decode()
         checklist = app[app.index('function setupChecklist()'):app.index('function readiness(')]
-        self.assertIn("state.model?.notice ? item('Worth fixing', state.model.notice) : ''", checklist)
+        self.assertIn("state.model?.proposals === false && state.model.notice ? item('Worth fixing', state.model.notice) : ''", checklist)
         settings_render = app[app.index('function connections()'):app.index('function routingCard()')]
         self.assertIn('return `${setupChecklist()}<div class="settings-page">', settings_render)
         self.assertNotIn('renderModelStrip', app)

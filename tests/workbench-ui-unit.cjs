@@ -15,7 +15,7 @@ function harness(id='task') {
     esc:x=>String(x??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'),
     icon:()=>'',avatar:()=>'',flattenTask:n=>n,taskAuthorized:n=>!!n.authorized,refresh:async()=>{}};
   c.api=async(url,data)=>{requests.push({url,data});if(data)return {task_id:'created'};return url.endsWith('/tree')?tree:url.endsWith('/trace')?{}:task;};
-  vm.createContext(c);vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../web/workbench.js'),'utf8'),c);
+  vm.createContext(c);for(const file of ['task.js','workbench.js'])vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../web/'+file),'utf8'),c);
   const run=s=>vm.runInContext(s,c);c.fixture={task,tree,trace:{}};run('workData=fixture');
   const submit=()=>handlers.submit({target:{id:'work-compose',dataset:{task:id},reportValidity:()=>true},preventDefault(){}});
   const draft=text=>{elements['work-prompt'].value=text;run('workDraft().text='+JSON.stringify(text));};
@@ -47,7 +47,20 @@ function harness(id='task') {
   h.c.navigationVersion=2;finish({task_id:'late'});await pending;assert.equal(h.c.location.hash,'#work/');
   h=harness();h.task.conversation=[{role:'user',actor:'Other member',text:'A shared request'}];h.run('renderWorkbench()');assert.match(h.elements.app.innerHTML,/Other member/);assert.doesNotMatch(h.elements.app.innerHTML,/>You<|Evidence is context/);
   h.tree.nodes=[{node_id:'one',status:'suggested',question:'Optional idea',owner:'Mira',blocking:false}];
-  h.run('renderWorkbench()');assert.match(h.elements.app.innerHTML,/Suggested follow-up/);assert.doesNotMatch(h.elements.app.innerHTML,/Required follow-up/);assert.match(h.elements.app.innerHTML,/data-work-detail="decision-one"/);
+  h.run('renderWorkbench()');assert.match(h.elements.app.innerHTML,/Follow-up for the agent · Mira/);assert.doesNotMatch(h.elements.app.innerHTML,/Required follow-up|Suggested follow-up/);assert.match(h.elements.app.innerHTML,/data-work-detail="decision-one"/);
+  // 'At a glance' rows carry the task page's sentence: an answer awaiting sign-off is not 'Waiting for an answer',
+  // an unanswered non-blocking node is not 'Answer recorded', and a name is never written twice.
+  h.tree.nodes=[{node_id:'two',status:'proposed',question:'Backup retention?',owner:'Alex Morgan',blocking:true,answer:'Keep 30 days.',signoff:'required'},
+    {node_id:'three',status:'pending',question:'Open one',owner:'Alex Morgan',blocking:false},
+    {node_id:'four',status:'resolved',question:'Signed one',owner:'Alex Morgan',blocking:false,authorized:true,signoff:'signed',signatures:['Marisol Vega'],answer:'Yes.'},
+    {node_id:'five',status:'pending',question:'Nobody yet',owner:'',blocking:true}];
+  h.run('renderWorkbench()');const glance=h.elements.app.innerHTML;
+  assert.match(glance,/Waiting for sign-off · Alex Morgan<\/span><span>Backup retention\?/);
+  assert.match(glance,/Waiting on Alex Morgan<\/span><span>Open one/);
+  assert.match(glance,/is-signed">Signed by Marisol Vega · Alex Morgan<\/span><span>Signed one/);
+  assert.match(glance,/Needs a contact<\/span><span>Nobody yet/);
+  assert.doesNotMatch(glance,/Waiting for an answer|Answer recorded|Authorized ·|Unassigned|Waiting on Alex Morgan · Alex Morgan/);
+  h.tree.nodes=[];
   h.c.fixture.trace.notifications=[{person_name:'Earlier contact'}];h.run('renderWorkbench()');assert.match(h.elements.app.innerHTML,/Earlier contact/);
   h.task.status='completed';h.task.summary='Agent claims done';h.tree.review={status:'failed'};h.run('renderWorkbench()');
   assert.match(h.elements.app.innerHTML,/Patch ready for manual review/);assert.match(h.elements.app.innerHTML,/automatic code review is incomplete/);

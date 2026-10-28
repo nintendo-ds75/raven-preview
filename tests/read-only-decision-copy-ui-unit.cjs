@@ -81,9 +81,10 @@ async function open(role) {
   const adminUnjoined = await openAs('admin', unjoined);
   assert.match(adminUnjoined, /<span class="label">Dana Okafor is not in Raven yet<\/span>Nobody can sign this until they join\./);
   assert.match(adminUnjoined, /data-action="invite-owner" data-person="p9"[^>]*>Invite Dana</);
-  // The override hand-on is a refer, so its row starts with the checkbox on; unchecking it assigns instead.
+  // The override hand-on is a refer and nothing else: a plain assign without standing is refused by the
+  // server, so the checkbox is on and locked rather than offering a dead end.
   assert.match(adminUnjoined, /id="hand-on" data-action="refer" data-id="d1" data-updated="u1" data-override="1">Hand on</);
-  assert.match(adminUnjoined, /id="refer-learn" checked> They decide this from now on/);
+  assert.match(adminUnjoined, /id="refer-learn" checked disabled> They decide this from now on/);
   assert.match(adminUnjoined, /aria-label="Hand on to"/);
   assert.match(adminUnjoined, /Recorded as your admin override\. It signs nothing\./);
   assert.doesNotMatch(adminUnjoined, /id="answer-form"|data-action="signoff"/, 'who may sign is unchanged');
