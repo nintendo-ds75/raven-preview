@@ -131,6 +131,6 @@ function objectiveScopeCard(card, key = 'objective-scope') {
     ${card.guardrails ? `<p><strong>Within:</strong> ${esc(card.guardrails)}</p>` : ''}
     ${card.stop_criteria ? `<p><strong>Stop when:</strong> ${esc(card.stop_criteria)}</p>` : ''}
     ${evidence.length ? `<details class="objective-scope-evidence" id="${esc(key)}-evidence" ${long ? '' : 'open'}><summary>Evidence (${evidence.length})</summary><ul>${evidence.map(e => `<li><blockquote>${esc(e.quote)}</blockquote>${e.title ? `<cite>${esc(e.title)}</cite>` : ''}</li>`).join('')}</ul></details>` : ''}
-    ${card.link_to_today ? `<a class="objective-scope-link" href="${esc(card.link_to_today)}">Open in Today</a>` : ''}
+    ${card.link_to_today ? `<a class="objective-scope-link" href="${esc(card.link_to_today)}">Open the outcome</a>` : ''}
   </section>`;
 }

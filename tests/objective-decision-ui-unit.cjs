@@ -1,9 +1,9 @@
-/* An objective-scope decision (Review & take point on Today) stores its
+/* An objective-scope decision (Review and accept on Outcomes) stores its
  * proposed scope as JSON in the node's context. Measured with customers:
  * the inbox card and the decision dialog showed that JSON, up to 12,000
  * characters of it. The shipped decisionCard and decisionBackground show
  * a card instead: the question, what the move will and won't do, the
- * bound, the evidence and a link to Today; an ordinary decision renders
+ * bound, the evidence and a link to the outcome; an ordinary decision renders
  * exactly as before. Exercises the shipped functions with DOM doubles. */
 'use strict';
 const assert = require('node:assert/strict');
@@ -56,7 +56,7 @@ assert.match(card, /<h4>Does not imply<\/h4><ul><li>Does not mean the price &lt;
 assert.match(card, /<strong>Within:<\/strong> Private preparation only; no sending, no pricing changes\./);
 assert.match(card, /<strong>Stop when:<\/strong> Any pricing change or an unanswered legal question\./);
 assert.match(card, /<details class="objective-scope-evidence" id="scope-d1-evidence" open><summary>Evidence \(1\)<\/summary><ul><li><blockquote>We want to renew by the 30th at the usage tier\.<\/blockquote><\/li><\/ul><\/details>/);
-assert.match(card, /<a class="objective-scope-link" href="#today\/p1">Open in Today<\/a>/);
+assert.match(card, /<a class="objective-scope-link" href="#today\/p1">Open the outcome<\/a>/);
 assert.doesNotMatch(card, /[{}]/, 'no JSON on the card');
 assert.doesNotMatch(card, /research_digest|source_version_id/, 'digests and ids are not for a person');
 assert.match(card, /data-action="review" data-id="d1"/, 'the review control is unchanged');
@@ -87,5 +87,5 @@ assert.match(run('decisionCard({...decision, context: "{\\"outcome\\": "}, 0)'),
 const bare = run('decisionCard({...decision, context: "{}"}, 0)');
 assert.match(bare, /<strong>Should Raven take point on this\?<\/strong>/);
 assert.doesNotMatch(bare, /Outcome:|Within:|Stop when:|<h4>|Evidence/);
-assert.match(bare, /href="#today\/p1"/, 'the proposal id in the client_ref still links to Today');
-console.log('Objective decision card: question, cases, bound, evidence and Today link without JSON; ordinary decisions unchanged.');
+assert.match(bare, /href="#today\/p1"/, 'the proposal id in the client_ref still links to the outcome');
+console.log('Objective decision card: question, cases, bound, evidence and outcome link without JSON; ordinary decisions unchanged.');
