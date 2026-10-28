@@ -37,9 +37,9 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
     assert.match(await page.locator('[data-group="progress"]').innerText(),/Awaiting signed review · Fixture operator/i);
     // One step further: the owner signs the scope in the inbox through the UI and
     // the objective worker turns the proposal into an accepted objective.
-    await page.goto(base+'/#inbox');await page.getByRole('button',{name:/All decisions/}).click();
+    await page.goto(base+'/#inbox');await page.getByRole('button',{name:/All open/}).click();
     const scopeCard=page.locator('.decision-card').filter({hasText:'Should Raven take point on: Close the onboarding question from the call?'});
-    await scopeCard.getByRole('button',{name:/Review/}).click();
+    await scopeCard.getByRole('button',{name:'Review and accept',exact:true}).click();
     await page.locator('#modal [data-action="signoff"]').click();
     await page.locator('#modal [data-action="signoff"]').waitFor({state:'detached'});
     const accepted=await (async()=>{for(let attempt=0;attempt<40;attempt++){const current=await (await fetch(base+'/api/objectives')).json();const signed=current.objectives.flatMap(item=>item.proposals||[]).find(item=>item.id===fixture.proposal_id);if(signed&&signed.status==='accepted')return current;await new Promise(resolve=>setTimeout(resolve,500));}throw Error('The signed proposal was not accepted by the objective worker');})();
@@ -56,11 +56,16 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
     await page.getByRole('link',{name:'← Outcomes',exact:true}).click();await page.getByRole('heading',{name:'Outcomes',exact:true}).waitFor();
     await page.goBack();await page.getByRole('heading',{name:'Make the billing release dependable',exact:true}).waitFor();
     await page.goForward();await page.getByRole('heading',{name:'Outcomes',exact:true}).waitFor();
-    // Meetings live on Settings, behind 'Manage meeting evidence' in the #meetings-mount Settings renders under Context.
-    // Until Settings renders that div on this branch, the test places it beside #app, where a redraw cannot remove it.
+    // Meetings live on Settings, inside the collapsed 'Meetings' disclosure under Context (#meetings-mount).
     await page.goto(base+'/#connect');await page.getByRole('heading',{name:'Settings',exact:true}).waitFor();await page.waitForFunction(()=>typeof state!=='undefined'&&!!state.auth);
-    await page.evaluate(()=>{if(!document.getElementById('meetings-mount')){const mount=document.createElement('div');mount.id='meetings-mount';document.getElementById('app').after(mount);renderObjectives();}});
-    await page.getByRole('button',{name:'Manage meeting evidence'}).click();await page.getByRole('heading',{name:'Synthetic onboarding call'}).waitFor();
+    const meetingsButton=page.getByRole('button',{name:'Manage meeting evidence'});
+    await page.locator('#meetings-mount #objective-meetings-open').waitFor({state:'attached'});
+    for(let attempt=0;attempt<20&&!(await meetingsButton.isVisible());attempt++){
+      const meetings=page.locator('#settings-meetings');
+      if(!(await meetings.evaluate(el=>el.open)))await meetings.locator(':scope > summary').click();
+      await page.waitForTimeout(250);
+    }
+    await meetingsButton.click();await page.getByRole('heading',{name:'Synthetic onboarding call'}).waitFor();
     assert.match(await page.locator('.objective-editor').innerText(),/every workspace reader/i);
     const capture=page.locator('.objective-card').filter({has:page.getByRole('heading',{name:'Synthetic consent-only attendance plan',exact:true})});
     const openCaptureControls=async()=>{

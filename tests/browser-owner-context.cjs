@@ -56,6 +56,8 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.equal(await page.locator('.brief-hero h1').innerText(), 'WORK-42');
     assert.equal(await page.locator('#focus-question').innerText(), fixture.question);
     assert.equal(await page.locator('.brief-prompt p').textContent(), fixture.request);
+    // The recorded scope sits one level down, behind the focus card's Details; it stays open across redraws.
+    await page.locator('details.brief-scope > summary').click();
     assert.equal(await page.locator('.scope-exact').getAttribute('open'), null);
     for (const value of ['Cedar','preview','WORK-42']) {
       assert((await page.locator('[data-scope-field="facts"]').innerText()).includes(value));
@@ -108,15 +110,19 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.equal(await page.locator('#task-brief-summary').innerText(), 'Show more');
     await page.locator('#task-brief-summary').click();
     assert.equal(await page.locator('#task-brief-summary').innerText(), 'Show less');
-    await page.evaluate(id => review(id), fixture.node_id);
-    await page.locator('#modal[open] .decision-scope').waitFor();
+    // The recorded scope lives inside the dialog's collapsed Details.
+    const openScope = async () => {
+      await page.evaluate(id => review(id), fixture.node_id);
+      await page.locator('#modal[open] #decision-details > summary').click();
+      await page.locator('#modal[open] .decision-scope').waitFor();
+    };
+    await openScope();
     await page.locator('#modal .scope-exact > summary').click();
     assert.deepEqual(JSON.parse(await page.locator('#modal .scope-json').textContent()), initial.approval_scope);
-    await page.getByRole('button', {name:'Close',exact:true}).last().click();
-    await page.evaluate(id => review(id), fixture.node_id);
-    await page.locator('#modal[open] .decision-scope').waitFor();
+    await page.locator('#modal .modal-head [data-action="close"]').click();
+    await openScope();
     assert.equal(await page.locator('#modal .scope-exact').getAttribute('open'), null);
-    await page.getByRole('button', {name:'Close',exact:true}).last().click();
+    await page.locator('#modal .modal-head [data-action="close"]').click();
     await page.goBack();
     await page.locator('#focus-question').waitFor();
     assert.equal(await page.locator('.brief-prompt p').textContent(), fixture.request);

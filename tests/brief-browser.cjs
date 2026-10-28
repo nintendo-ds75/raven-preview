@@ -554,9 +554,11 @@ async function startWorld(temp, name) {
         await cal.waitForSelector('.task-heading h1');
         assert.equal((await W.ctl('/account?person=priya')).claimed, true);
       }, cal);
-      await step('app: "Open task page" opens the task page as the signed-in person', async () => {
+      await step('app: "Open my personal page" opens the task page as the signed-in person', async () => {
+        // The button sits in the task page's one More menu.
+        await cal.locator('#task-more > summary').click();
         const ask = cal.locator('[data-action="task-brief"]');
-        assert.equal(await ask.innerText(), 'Open task page');
+        assert.equal(await ask.innerText(), 'Open my personal page');
         const before = (await W.ctl('/links?person=priya')).length;
         await Promise.all([cal.waitForURL(/\/brief#rvn_/), ask.click()]);
         await cal.waitForSelector('.brief-hero');
@@ -593,7 +595,7 @@ async function startWorld(temp, name) {
 
       // ---------------- the admin turns the link off, then back to static ----------------
       const admin = await open('admin', [{name: W.cookie_name, value: W.admin_cookie, domain: '127.0.0.1', path: '/'}]);
-      await step('app: "Task page in messages" off hides the app\'s button; static brings back "Open task page"', async () => {
+      await step('app: "Task page in messages" off hides the app\'s button; static brings back "Open my personal page"', async () => {
         await admin.goto(`${W.base}/#connect`);
         await admin.waitForSelector('#brief-mode');
         assert.equal(await admin.inputValue('#brief-mode'), 'static');
@@ -610,8 +612,9 @@ async function startWorld(temp, name) {
         assert.equal((await W.ctl('/setting?key=brief_mode')).mode, 'static');
         await cal.reload();
         await cal.waitForSelector('.task-heading h1');
+        await cal.locator('#task-more > summary').click();
         const ask = cal.locator('[data-action="task-brief"]');
-        assert.equal(await ask.innerText(), 'Open task page');
+        assert.equal(await ask.innerText(), 'Open my personal page');
         await Promise.all([cal.waitForURL(/\/brief#rvn_/), ask.click()]);
         // The note form is in the Notes section, which opens on request.
         await cal.waitForSelector('#note-form', {state: 'attached'});

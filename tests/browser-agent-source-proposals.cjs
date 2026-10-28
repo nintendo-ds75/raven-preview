@@ -143,6 +143,8 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     // A real source update followed by the ordinary note-form refresh must
     // show its new version and require a fresh source acknowledgment.
     const changed=await update(fixture.records[3],'A new exact source revision requires a fresh review.');
+    // The note form sits inside the collapsed Notes disclosure.
+    await owner.locator('details[data-keep="notes"] > summary').click();
     await owner.locator('#note-text').fill('Synthetic context-only note to refresh this task.');
     const noteResponse=owner.waitForResponse(r=>r.url().endsWith('/api/brief/note')&&r.request().method()==='POST');
     await owner.getByRole('button',{name:'Add note',exact:true}).click();

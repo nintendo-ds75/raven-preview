@@ -60,8 +60,11 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
       if (!(await context.evaluate(el => el.open))) await context.locator(':scope > summary').click();
       await page.locator('#task-context .work-item-context').waitFor();
     };
+    // Work-item context is rendered once, inside the dialog's collapsed Details.
     const openOwner = async (nodeId = fixture.node_id) => {
       await page.evaluate(id => review(id), nodeId);
+      await page.locator('#modal[open]').waitFor();
+      await page.locator('#modal #decision-details').evaluate(el => { el.open = true; });
       await page.locator('#modal[open] .work-item-context').waitFor();
     };
     const noContextControls = async () => {
@@ -74,7 +77,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await openOwner();
     assert.match(await page.locator('#modal .work-item-context').innerText(), /no explicit work-item link/);
     await noContextControls();
-    await page.getByRole('button', {name:'Close',exact:true}).last().click();
+    await page.locator('#modal .modal-head [data-action="close"]').click();
     assert.deepEqual(decisionState(await decision()), initial);
 
     // Read-only lookup and exact read preserve the unlinked state.
@@ -112,7 +115,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     const ownerContext = await page.locator('#modal .work-item-context').innerText();
     for (const text of [s.record_id, s.source_version_id, 'Explicit task association']) assert(ownerContext.includes(text), text);
     await screenshot('work-item-linked-owner-history.png');
-    await page.getByRole('button', {name:'Close',exact:true}).last().click();
+    await page.locator('#modal .modal-head [data-action="close"]').click();
     await page.locator('#task-tab-history').click();
     const timeline = page.locator('.task-timeline');
     assert.equal(await timeline.getByText('work item linked', {exact:true}).count(), 1);
@@ -136,7 +139,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await openOwner();
     await noContextControls();
     assert((await page.locator('#modal .work-item-context').innerText()).includes('historical or unavailable version'));
-    await page.getByRole('button', {name:'Close',exact:true}).last().click();
+    await page.locator('#modal .modal-head [data-action="close"]').click();
     assert.deepEqual(decisionState(await decision()), initial);
     // Existing decision-level work-item pins stay distinctly labeled and
     // expose identities even though their task has no anchor.
@@ -149,7 +152,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert(ownContext.includes(s.record_id));
     assert(ownContext.includes(s.source_version_id));
     await screenshot('work-item-decision-only-owner.png');
-    await page.getByRole('button', {name:'Close',exact:true}).last().click();
+    await page.locator('#modal .modal-head [data-action="close"]').click();
     assert.equal((await read('/api/decisions/' + fixture.decision_node)).authorized, false);
     // Tree nodes carry both canonical identities even without a duplicate
     // source_anchors field on the node payload.

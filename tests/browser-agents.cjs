@@ -32,12 +32,12 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.waitForSelector('#modal:not([open])', {state:'attached'});
     await page.waitForFunction(async () => (await (await fetch('/api/state')).json()).decisions.some(d => d.status === 'pending'));
     await page.goto(url);
-    await page.getByRole('button', {name:'Review',exact:true}).click();
+    await page.getByRole('button', {name:'Answer',exact:true}).click();
     await page.waitForSelector('#modal[open] #answer');
     assert.match(await page.locator('#modal').textContent(), /Evidence:/);
     await page.getByLabel('Your answer').fill('Exclude this fixture spike only.');
-    await page.getByLabel('Why this decision?').fill('Browser validation policy.');
-    await page.getByRole('button', {name:/Record decision/}).click();
+    await page.locator('#answer-form').getByLabel('Why', {exact:true}).fill('Browser validation policy.');
+    await page.getByRole('button', {name:/Record my answer/}).click();
     await page.waitForSelector('#modal:not([open])', {state:'attached'});
     // Delivery and continuation happen with the browser closed.
     await page.close();

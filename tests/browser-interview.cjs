@@ -42,8 +42,10 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     });
     await page.goto(`${world.url}/#runs/${world.task}`);
     await page.getByRole('button', {name:'Decisions (1)',exact:true}).click();
+    // The question row keeps its node id whether it sits under Waiting or Decided; the Answer/Sign/View button is in its body.
     const open = async () => {
-      const question = page.locator('.task-question').first();
+      const question = page.locator(`.task-question[data-node-id="${world.node}"]`);
+      await question.waitFor();
       if (!(await question.evaluate(el => el.open))) await question.locator(':scope > summary').click();
       await question.locator('[data-action="review"]').first().click();
       await page.locator('#modal[open]').waitFor();
@@ -86,6 +88,8 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.equal(decision.signed_by, 'Ada Owner');
     assert.match(decision.rationale, /test both/);
     assert.equal(decision.events.filter(e => e.kind === 'interview_confirmed').length, 1);
+    // The task page moves the signed question under Decided on its next poll; open it once it has.
+    await page.locator(`#task-decided .task-question[data-node-id="${world.node}"]`).waitFor();
     // Escape saves and stops all audio; navigation never reopens a dismissed dialog.
     await open();
     await page.getByRole('button', {name:'Start microphone',exact:true}).click();
@@ -108,6 +112,8 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     const guest = await browser.newContext();
     const linked = await guest.newPage();
     await linked.goto(`${world.url}/brief#${world.link}`);
+    // The person already decided this one, so the form and its interview link sit under 'Correct my answer'.
+    await linked.locator('details.brief-correct > summary').click();
     await linked.getByRole('button', {name:'Talk it through instead',exact:true}).click();
     await linked.locator('#interview-modal[open]').waitFor();
     await linked.locator('#interview-answer').fill('Use five seconds for new clients only.');

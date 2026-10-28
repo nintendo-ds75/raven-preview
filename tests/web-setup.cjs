@@ -23,6 +23,8 @@ vm.runInContext(source.slice(source.indexOf('function showHelp()'), source.index
 vm.runInContext(source.slice(source.indexOf('function updateAgentConnectPrompt()'), source.indexOf('async function quickAgent(')), context);
 vm.runInContext(source.slice(source.indexOf('function updateWorkspaceName()'), source.indexOf('async function refresh(')), context);
 vm.runInContext(source.slice(source.indexOf('function deliveriesCard() {'), source.indexOf('function render() {')), context);
+// statusSentence names people through nameList, which lives with the task-row helpers.
+vm.runInContext(source.slice(source.indexOf('function nameList('), source.indexOf('function runStatusSentence(')), context);
 // The decision labels are constants; expose them to the checks below.
 vm.runInContext(source.slice(source.indexOf('const signedNow'), source.indexOf('function activity()'))
   + '\n;globalThis.labels = {statusSentence, signedNow, settledNow, needsYou, beganAs};', context);
