@@ -76,4 +76,9 @@ const sources=c.contextSourcesCard();
 assert.match(sources,/<h3>Other sources<\/h3><\/div><ul><li><strong>slack<\/strong> #eng → acme\/app/);
 assert.match(sources,/<details class="history" id="context-sources-available"><summary>Available to add<\/summary><ul><li><strong>jira<\/strong> not configured \(credentials not set\)<br><code>JIRA_BASE_URL=…<\/code><\/li><\/ul><\/details>/);
 assert.doesNotMatch(sources,/Records are evidence|attested/);
+// The confirmations and the Ask dialog use the words on the controls and the page names; the old ones are gone.
+assert.match(source,/notify\(event\.target\.value \? 'Fallback person set\. Questions nobody is known to own go to them\.' : 'Fallback person cleared\.'\)/);
+assert.match(source,/notify\(event\.target\.checked \? 'Only verified owners are asked now\.' : 'Git history can suggest owners again\.'\)/);
+assert.match(source,/Connect or ingest a repository in Settings\./);
+assert.doesNotMatch(source,/Coordinator set|Coordinator cleared|Pilot mode|Connections & setup/);
 console.log('Settings: checklist, four cards, Routing ids and Advanced render in order with the spec copy.');

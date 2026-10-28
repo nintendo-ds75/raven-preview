@@ -170,7 +170,7 @@ function handonForm(f) {
       <label for="handon-person">Hand it to</label>
       <select id="handon-person" required aria-describedby="handon-help"><option value="">Choose a person</option>
         ${near.length ? `<optgroup label="${esc(where ? 'Named for ' + where : 'Named for this question')}">${near.map(opt).join('')}</optgroup>` : ''}
-        ${far.length ? `<optgroup label="Others in the authority map">${far.map(opt).join('')}</optgroup>` : ''}
+        ${far.length ? `<optgroup label="Other people">${far.map(opt).join('')}</optgroup>` : ''}
         ${back.length ? `<optgroup label="Handed it to you">${back.map(opt).join('')}</optgroup>` : ''}
         ${unknown.length ? `<optgroup label="Listed for this code, not in Raven yet">${unknown.map((x, i) => `<option value="unknown:${i}">${esc(x.name)} · not in Raven yet</option>`).join('')}</optgroup>` : ''}
         <option value="other">Someone else…</option></select>

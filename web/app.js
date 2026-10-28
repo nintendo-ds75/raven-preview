@@ -417,11 +417,11 @@ function decisionCard(d, index) {
   const button = scope ? 'Review and accept' : wantsSign ? 'Sign' : settled ? 'View' : 'Answer';
   const taskHref = `#${(state.browser_tasks || []).some(t => t.task_id === d.run_id) ? 'work' : 'runs'}/${encodeURIComponent(d.run_id || '')}`;
   return `<article class="decision-card">
-    <div class="card-top"><span class="agent-symbol">${d.agent.includes('Claude') ? '✳' : d.agent.includes('Codex') ? '⌘' : '◇'}</span><span>${esc(d.agent)}</span><span>·</span><span class="repo">${esc(d.repo)}</span><time datetime="${esc(d.created_at)}">${ago(d.created_at)}</time>${open}</div>
+    <div class="card-top"><span class="agent-symbol">${(d.agent || '').includes('Claude') ? '✳' : (d.agent || '').includes('Codex') ? '⌘' : '◇'}</span><span>${esc(d.agent)}</span><span>·</span><span class="repo">${esc(d.repo)}</span><time datetime="${esc(d.created_at)}">${ago(d.created_at)}</time>${open}</div>
     <h3>${esc(d.question)}</h3>${d.run_title ? `<a class="card-task" href="${esc(taskHref)}" data-action="run" data-id="${esc(d.run_id)}">${esc(d.run_title)}</a>` : ''}
     ${scope ? objectiveScopeCard(scope, `scope-${d.id}`) : clamped(d.context, 'context', `card-${d.id}`)}
     ${answerBox(d)}
-    <div class="card-bottom"><span class="owner">${avatar(d.owner_name, index)}${esc(d.owner_name || 'No owner yet')}</span>${statusPill(d)}<button class="button small ${settled ? '' : 'soft'}" data-action="review" data-id="${esc(d.id)}">${button}</button></div>
+    <div class="card-bottom"><span class="owner" title="${esc(d.owner_name || 'No owner yet')}">${avatar(d.owner_name, index)}</span>${statusPill(d)}<button class="button small ${settled ? '' : 'soft'}" data-action="review" data-id="${esc(d.id)}">${button}</button></div>
   </article>`;
 }
 
@@ -962,7 +962,7 @@ function newRequest() {
     <label for="question">Question or prompt</label><textarea id="question" name="question" maxlength="2000" rows="4" placeholder="What do you need to know or decide?" ${locked ? 'readonly' : ''} required>${esc(v.question || '')}</textarea>
     <label for="repo">Repository scope</label><select id="repo" name="repo" ${locked ? 'disabled' : ''} required><option value="">Choose a repository</option>${repos.map(r => `<option value="${esc(r)}" ${selected === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}${v.repo && !repos.includes(v.repo) ? `<option value="${esc(v.repo)}" selected>${esc(v.repo)}</option>` : ''}</select>
     <details id="request-context" ${v.context || v.path ? 'open' : ''}><summary>Extra context (optional)</summary><label for="context">Context & evidence</label><textarea id="context" name="context" maxlength="12000" ${locked ? 'readonly' : ''}>${esc(v.context || '')}</textarea><label for="path">Relevant file path</label><input id="path" name="path" maxlength="1000" placeholder="src/example.py" value="${esc(v.path || '')}" ${locked ? 'readonly' : ''}></details>
-    ${!canAsk ? `<p class="context">${state.auth ? 'You have read-only access to this workspace.' : 'Loading workspace access…'}</p>` : !repos.length && !locked ? '<p class="context">No repository scope is available yet. Connect or ingest a repository in Connections & setup.</p>' : ''}
+    ${!canAsk ? `<p class="context">${state.auth ? 'You have read-only access to this workspace.' : 'Loading workspace access…'}</p>` : !repos.length && !locked ? '<p class="context">No repository scope is available yet. Connect or ingest a repository in Settings.</p>' : ''}
     <p class="context">${locked ? 'Retry uses this same question and scope to avoid duplicate tasks or questions.' : 'Ask one question, up to 2,000 characters. Add details in Extra context.'}</p>
     <div id="request-scope-area">${requestScopeFields(d)}</div>
     <p class="error" id="form-error" role="alert" ${d.error ? '' : 'hidden'}>${esc(d.error)}</p><p id="request-progress" role="status">${d.pending ? 'Recording your question…' : d.complete ? 'Your question is recorded.' : d.scope ? d.scopeEditable ? 'Scope is still needed. No question was added or sent by the last attempt.' : 'The latest question result is unconfirmed. Retry uses the same facts.' : d.taskId ? 'The task is recorded. Retry to finish adding its question.' : ''} ${d.taskId ? `<a id="request-run-link" href="#runs/${encodeURIComponent(d.taskId)}" data-action="request-view-run">Open recorded run</a>` : ''}</p>
@@ -1487,11 +1487,11 @@ document.addEventListener('change', async event => {
   try {
     if (event.target.id === 'coordinator-select') {
       await api('/api/settings', {coordinator: event.target.value});
-      directory = null; render(); notify(event.target.value ? 'Coordinator set. Unrouted questions go to them.' : 'Coordinator cleared.');
+      directory = null; render(); notify(event.target.value ? 'Fallback person set. Questions nobody is known to own go to them.' : 'Fallback person cleared.');
     }
     if (event.target.id === 'verified-only') {
       await api('/api/settings', {require_verified_route: event.target.checked});
-      directory = null; render(); notify(event.target.checked ? 'Pilot mode on: only verified owners are routed to.' : 'Pilot mode off: git history routes again.');
+      directory = null; render(); notify(event.target.checked ? 'Only verified owners are asked now.' : 'Git history can suggest owners again.');
     }
     if (event.target.id === 'brief-mode') {
       await api('/api/settings', {brief_mode: event.target.value});

@@ -36,4 +36,7 @@ assert.equal(cards[0].link_to_today, '', 'the page passes the card without the T
 assert.equal(cards[0].outcome, 'Draft the renewal note', 'everything else on the card is kept');
 assert.doesNotMatch(html, /href="#today\//, 'no link on the page can replace the link token in the fragment');
 assert.match(html, /class="objective-scope"/, 'the proposed scope is still shown');
+// The hand-on select groups people in plain words; no internal noun reaches the page.
+assert.match(source, /<optgroup label="Other people">/);
+assert.doesNotMatch(source, /authority map/i);
 console.log('brief scope link: ok');

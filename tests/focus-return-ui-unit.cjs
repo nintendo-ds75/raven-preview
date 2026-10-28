@@ -195,12 +195,18 @@ function harness() {
     for (const label of ['Needs me', 'All open', 'Decided']) assert.match(pending, new RegExp(`data-tab="[a-z]+" aria-pressed="(true|false)">${label}<span>`));
     assert.doesNotMatch(pending, /Overdue|Suggested|From evidence|All decisions|Needs review|Assigned to me/);
     assert.match(pending, /Waiting on Wes/);
+    // The bottom line is the avatar and one pill that names the owner; the name is not written beside it.
+    assert.match(pending, /<div class="card-bottom"><span class="owner" title="Wes"><span class="avatar [a-z]+">W<\/span><\/span><span class="pill waiting">/);
+    assert.doesNotMatch(pending, /<\/span>Wes<span class="pill/);
     assert.doesNotMatch(pending, /id="owner-filter"/, 'the owner filter is for the Decided tab');
     assert.match(text('mine'), /Nothing waits on you\./);
     assert.doesNotMatch(text('mine'), /all caught up|elsewhere in the workspace/);
     assert.match(text('decided'), /No decisions recorded yet\./);
     assert.match(text('decided'), /id="owner-filter"/);
-    h.run("query = 'zzz'");
+    h.run("state.decisions[0].owner_name = ''");
+    assert.equal((text('pending').match(/No owner yet/g) || []).length, 2, 'the avatar title and the pill; no third mention');
+    assert.match(text('pending'), /title="No owner yet"><span class="avatar [a-z]+">[^<]*<\/span><\/span><span class="pill waiting">(?:<span class="status-dot"><\/span>)?No owner yet</);
+    h.run("state.decisions[0].owner_name = 'Wes'; query = 'zzz'");
     assert.match(text('mine'), /No matching decisions\./);
     assert.match(text('mine'), /Try a different search\./);
     h.run("query = ''; state.decisions = [{id:'b', status:'approved', signoff:'signed', signed_by:'Wes', question:'Q', context:'', answer:'A', owner_name:'Wes', agent:'Demo', repo:'r', created_at:new Date().toISOString(), updated_at:'u', run_title:'t', run_id:'t1', path:'p'}]");
