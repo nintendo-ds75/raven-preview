@@ -60,7 +60,9 @@ vm.runInContext(source.slice(source.indexOf('const signedNow'), source.indexOf('
   assert.equal(statusSentence({status: 'resolved', signoff: 'required', signatures: '[{"by":"Marisol Vega"}]', required_signers: '["Marisol Vega","Wes Chen","Alex Morgan","Dana Lee"]'}).text, 'Signed by Marisol Vega, waiting on Wes Chen, Alex Morgan and 1 more');
   assert.deepEqual(statusSentence({status: 'suggested'}), {text: 'Follow-up for the agent', tone: 'neutral'});
   assert.doesNotMatch(source, /New judgment|Needs judgment|Not authorized|Sign-off wanted'/);
-  assert.match(source, /<label for="correction">Correct it<\/label>/);
+  // The correction label is 'Correct it' as the primary form and 'Corrected answer' inside the 'Correct it' disclosure beside a Sign button.
+  assert.match(source, /<label for="correction">\$\{primary \? 'Correct it' : 'Corrected answer'\}<\/label>/);
+  assert.match(source, /<details class="history" id="decision-correct"><summary>Correct it<\/summary>\$\{correctForm\(false, false\)\}<\/details>/);
   // Help is one dialog: a sentence, the link to the guide, Open Settings, Close.
   context.showHelp();
   assert.equal(context.modal[0], 'Help');

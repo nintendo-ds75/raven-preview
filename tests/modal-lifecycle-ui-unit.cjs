@@ -211,7 +211,9 @@ function harness() {
     const html=h.get('#modal-content').innerHTML;
     assert(html.indexOf('decision-current-answer')<html.indexOf('id="answer-form"'));
     assert.match(html,/Save correction/);
-    assert.match(html,/<summary>More options<\/summary>[\s\S]*id="supersedes"/,'applicability and supersedes sit behind More options');
+    assert.match(html,/<summary>Where this applies<\/summary>[\s\S]*id="supersedes"/,'applicability and supersedes sit behind Where this applies');
+    assert.doesNotMatch(html,/<summary>More options<\/summary>|<summary>More<\/summary>/,'at most Details and History below the form');
+    assert.match(html,/<p class="recorded-as">Recorded by the local operator on behalf of Policy Owner\.<\/p>/);
     assert.match(html,/Recorded by the local operator on behalf of Policy Owner\./);
     assert.match(html,/<details class="history decision-background" ><summary>Recorded background & evidence/);
     assert.doesNotMatch(html,/retires the existing standing rule|The agent prepares on this answer/);
@@ -227,7 +229,10 @@ function harness() {
     assert(html.indexOf('data-action="signoff"')<html.indexOf('id="decision-details"'),'the form comes before Details');
     assert.match(html,/id="decision-details"[\s\S]*data-scope-field="context"/);
     assert.match(html,/id="decision-details"[\s\S]*Real customer traffic must remain billable/);
-    assert.match(html,/id="correct-form"[\s\S]*<label for="correction">Correct it<\/label>/);
+    // One primary button: the correction folds behind 'Correct it' with a text button, under the sign line.
+    assert.match(html,/<\/button><\/div><p class="recorded-as">Recorded by the local operator on behalf of Policy Owner\.<\/p><\/div><details class="history" id="decision-correct"><summary>Correct it<\/summary><form id="correct-form"[\s\S]*<label for="correction">Corrected answer<\/label>/);
+    assert.match(html,/<button class="button text" type="submit">Save correction<\/button>/);
+    assert.equal((html.match(/class="button primary"/g)||[]).length,1,'one primary button');
     assert.doesNotMatch(html,/decision-original-scope/);
   });
   await test('stale recorded signature cannot present the answer as currently signed', async () => {

@@ -1018,10 +1018,17 @@ dialog::backdrop{
   margin:0;
   overflow-wrap:anywhere}
 
+.modal-head>div{
+  min-width:0;
+  flex:1}
+
 .modal-head p{
   margin:var(--space-2) 0 0;
   font-size:12px;
-  color:#bebfb6}
+  color:#bebfb6;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis}
 
 .modal-body{
   padding:var(--space-6)}
@@ -1926,6 +1933,10 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .decision-current .modal-context{margin-top:0}
 .toolbar select{width:auto;max-width:200px;min-height:36px;padding:4px 8px;font-size:12px;margin-left:var(--space-2)}
 .signoff-block{margin:0 0 var(--space-4)}
+.recorded-as{margin:var(--space-2) 0 var(--space-4);font-size:12px;color:var(--muted);text-align:right}
+.signoff-block .recorded-as{margin-bottom:0}
+#decision-correct .modal-actions{justify-content:flex-start}
+#decision-correct .button.text{padding-left:0}
 .refer-learn{display:flex;align-items:center;gap:var(--space-2);font-size:13px;min-height:40px;margin:0 0 var(--space-2)}
 .refer-learn input{margin:0}
 .refer-scope{display:grid;gap:var(--space-1);margin:0 0 var(--space-4)}

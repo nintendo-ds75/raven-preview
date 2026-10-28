@@ -123,7 +123,11 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.match(await settled.textContent(), /The agent decided/);
     assert.match(await settled.textContent(), /Sign-off wanted from Alex Morgan/);
     await settled.getByRole('button', {name:/^Sign\b/}).click();
-    await page.waitForSelector('#modal[open] #correct-form');
+    // The correction folds behind 'Correct it' beside the one primary button, Sign.
+    await page.waitForSelector('#modal[open] #correct-form', {state:'attached'});
+    assert.equal(await page.locator('#modal #correct-form').isVisible(), false);
+    assert.equal(await page.locator('#modal #decision-correct > summary').innerText(), 'Correct it');
+    assert.equal(await page.locator('#modal .button.primary').count(), 1, 'one primary button');
     assert.equal(await page.locator('#modal #answer-form').count(), 0);
     // The retrieval string is kept one level down, behind Details.
     assert.equal(await page.locator('#decision-details').evaluate(d => d.open), false);
@@ -355,7 +359,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.waitForFunction(() => /Signed by Lee Ledger, Zoe Reviewer/.test(document.querySelector('#modal').textContent));
     // A follow-up the owner marks required holds the task until the agent
     // takes it up. Measured live: one left unadopted let the task finish.
-    await page.locator('#modal details.history > summary', {hasText:/^More$/}).click();
+    await page.locator('#modal #decision-details > summary').click();
     await page.fill('#followups', 'Which imports may still arrive after the close?');
     await page.check('#followups-required');
     await page.getByRole('button', {name:/Add follow-up questions/}).click();
