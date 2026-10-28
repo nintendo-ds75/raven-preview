@@ -46,8 +46,8 @@ async function responseCases(browser,fixture,screenshot,errors) {
   }
   await scenario({tree:synthetic.tree('synthetic-empty',{nodes:[],notes:[],counts:{blocking:0,total:0},next:''})},async page=>{
     await page.locator('.task-summary').waitFor();assert.equal(await page.locator('details.task-question').count(),0);
-    assert.match(await page.locator('#app').innerText(),/No questions or findings recorded yet/);
-    assert.match(await page.locator('.task-summary').innerText(),/0 blocker/);await screenshot('synthetic-empty',page);
+    assert.match(await page.locator('#app').innerText(),/No open questions\./);
+    assert.match(await page.locator('.task-summary').innerText(),/In progress/);await screenshot('synthetic-empty',page);
   });
   await scenario({treeStatus:503},async page=>{
     await page.getByRole('heading',{name:'Could not open this task'}).waitFor();
@@ -64,14 +64,14 @@ async function responseCases(browser,fixture,screenshot,errors) {
   });
   await scenario({stateData:synthetic.state({auth:{enabled:true},me:{name:'Synthetic Viewer',role:'viewer'}})},async page=>{
     await page.locator('.task-summary').waitFor();assert.equal(await page.locator('#note-form').count(),0);
-    assert.match(await page.locator('#app').innerText(),/read-only access/);
+    assert.doesNotMatch(await page.locator('#app').innerText(),/Add note|read-only/i);
   });
   await scenario({tree:synthetic.tree('synthetic-observed-source',{nodes:[synthetic.node('observed',{
     source:'record',sources:[{ref:'Synthetic source',current:true,url:'javascript:bad()'}]})]})},async page=>{
     await page.locator('.task-question > summary').waitFor();await page.locator('.task-question > summary').click();
-    await page.locator('.task-evidence > summary').click();
+    await page.locator('.task-details > summary').click();await page.locator('.task-evidence > summary').click();
     assert.match(await page.locator('.task-evidence').innerText(),/Current observed version/);
-    assert.match(await page.locator('.task-evidence').innerText(),/not live verification/);
+    assert.doesNotMatch(await page.locator('.task-evidence').innerText(),/not live verification/);
     assert.equal(await page.locator('a[href^="javascript:"]').count(),0);
   });
   await scenario({tree:synthetic.tree('synthetic-stale',{nodes:[synthetic.node('stale-answer',{
@@ -79,11 +79,12 @@ async function responseCases(browser,fixture,screenshot,errors) {
     historical_signatures:['Synthetic Prior Reviewer'],review_reason:'The source changed after the earlier signature.',
     sources:[{record_id:'synthetic-old-policy',ref:'Earlier policy',current:false,stale:true}]})]})},async page=>{
     await page.locator('details.task-question').first().waitFor();
-    assert.match(await page.locator('.task-question > summary').innerText(),/Approval needs review/);
-    assert.match(await page.locator('.task-summary').innerText(),/0 authorized answers/);
+    assert.match(await page.locator('.task-question > summary').innerText(),/Needs a second look/);
+    assert.match(await page.locator('.task-summary').innerText(),/Needs a second look/);
+    assert.doesNotMatch(await page.locator('#app').innerText(),/authorized answers|Approval needs review|Not authorized/);
     await page.locator('.task-question > summary').click();
-    assert.match(await page.locator('.task-authority').innerText(),/does not authorize use/);
-    await page.locator('.task-evidence > summary').click();
+    assert.match(await page.locator('.task-question .task-warning').innerText(),/The source changed after the earlier signature\./);
+    await page.locator('.task-details > summary').click();await page.locator('.task-evidence > summary').click();
     assert.match(await page.locator('.task-evidence').innerText(),/Historical or unavailable version/);
     await screenshot('synthetic-stale-history',page);
   });
@@ -162,13 +163,16 @@ async function responseCases(browser,fixture,screenshot,errors) {
     assert.equal(await page.locator('.task-question:not(.task-scope)').count(),4);
     assert.equal(await page.locator('.task-scope').count(),1);
     const summaries=await page.locator('.task-question:not(.task-scope) > summary').allInnerTexts();
-    assert(summaries.some(text=>/Source record/.test(text)&&/Not authorized/.test(text)));
-    assert(summaries.some(text=>/Earlier decision/.test(text)&&/Not authorized/.test(text)));
-    assert(summaries.some(text=>/Recorded human answer/.test(text)&&/Human sign-off recorded/.test(text)));
+    assert(summaries.some(text=>/documented preview limit/.test(text)&&/Waiting for sign-off/.test(text)));
+    assert(summaries.some(text=>/earlier answer allowed seven days/.test(text)&&/Waiting for sign-off/.test(text)));
+    assert(summaries.some(text=>/Omit internal diagnostic labels/.test(text)&&/Signed by Synthetic Export Reviewer/.test(text)));
+    assert(summaries.some(text=>/Needs a contact/.test(text)));
+    assert(!summaries.some(text=>/Source record|Earlier decision|Not authorized|Human sign-off recorded/.test(text)),'origin and approval terms stay out of row summaries');
     await screenshot('design-review-desktop',page);await page.setViewportSize({width:390,height:844});
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Design-review mobile overflow');
     await screenshot('design-review-mobile',page);await page.setViewportSize({width:1280,height:900});
     await page.locator('#finding-earlier-finding > summary').click();
+    await page.locator('#finding-earlier-finding-details > summary').click();
     await page.locator('#finding-earlier-finding-evidence > summary').click();
     assert.equal(await page.locator('#finding-earlier-finding-earlier-decision').getAttribute('data-action'),'source');
     assert.equal(await page.locator('#finding-earlier-finding-earlier-decision').getAttribute('data-id'),fixture.earlier_decision_id);
@@ -234,14 +238,15 @@ async function responseCases(browser,fixture,screenshot,errors) {
     await page.goto(fixture.url+'/#runs/'+a.task_id);await page.locator('details.task-question').first().waitFor();
     assert.equal(await page.locator('details.task-question').count(),12);
     assert.equal(await page.locator('details.task-question[open]').count(),0);
-    assert.match(await page.locator('.task-summary').innerText(),/28 blocker/);
+    assert.match(await page.locator('.task-summary').innerText(),/^Waiting on /);
+    assert.doesNotMatch(await page.locator('.task-summary').innerText(),/blocker/);
     assert.equal(await page.locator('.task-note').count(),12);
     await page.locator('#task-more-finding').click();assert.equal(await page.locator('details.task-question').count(),24);
     const question=page.locator('details.task-question').first();await question.locator(':scope > summary').click();
-    await question.locator('.task-contact > summary').click();
+    await question.locator('.task-details > summary').click();await question.locator('.task-contact > summary').click();
     assert.match(await question.innerText(),/Recorded synthetic CODEOWNERS/);
     assert.match(await question.innerText(),/Synthetic recorded referral/);
-    await page.locator('#task-note-compose > summary').click();await page.locator('#note-text').fill('Unsubmitted run A draft');
+    await page.locator('#note-text').fill('Unsubmitted run A draft');
     await page.locator('#note-text').evaluate(el=>{el.focus();el.setSelectionRange(3,8);});
     await page.evaluate(()=>loadTask({quiet:true}));
     assert.equal(await page.locator('#note-text').inputValue(),'Unsubmitted run A draft');
@@ -249,7 +254,7 @@ async function responseCases(browser,fixture,screenshot,errors) {
     assert.equal(await page.locator('details.task-question[open]').count(),1);
     await screenshot('desktop-draft');
     await page.evaluate(id=>location.hash='runs/'+id,b.task_id);await page.waitForFunction(id=>taskDetail?.tree.task_id===id,b.task_id);
-    await page.locator('#task-note-compose > summary').click();assert.equal(await page.locator('#note-text').inputValue(),'');
+    assert.equal(await page.locator('#note-text').inputValue(),'');
     await page.locator('#note-text').fill('Unsubmitted run B draft');
     await page.goBack();await page.waitForFunction(id=>taskDetail?.tree.task_id===id,a.task_id);
     assert.equal(await page.locator('#note-text').inputValue(),'Unsubmitted run A draft');
@@ -257,7 +262,7 @@ async function responseCases(browser,fixture,screenshot,errors) {
     assert.equal(await page.locator('details.task-question[open]').count(),1);
     await page.locator('#task-tab-history').click();assert.equal(await page.locator('.task-timeline > li').count(),25);
     await page.locator('#task-more-history').click();assert((await page.locator('.task-timeline > li').count())>25);
-    await page.locator('#task-tab-overview').click();
+    await page.locator('#task-tab-decisions').click();
     await page.setViewportSize({width:390,height:844});
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Mobile horizontal overflow');
     await screenshot('mobile-overview');

@@ -1,7 +1,7 @@
 'use strict';
 
 // These reads use normal workspace authentication. Copying a task URL grants no access.
-let taskDetail = null, taskError = '', taskTab = 'overview', taskRequest = 0;
+let taskDetail = null, taskError = '', taskTab = 'decisions', taskRequest = 0;
 // What the task page last drew, so a poll that finds the same tree and
 // trace does not rebuild it; observed_at is the read's own clock, not a change.
 let taskDrawn = '', taskDrawnAt = 0;
@@ -10,7 +10,7 @@ const taskViews = new Map();
 const taskId = () => view === 'runs' ? location.hash.slice(1).split('/')[1] || '' : '';
 const taskList = value => Array.isArray(value) ? value : [];
 const taskText = value => typeof value === 'string' ? value : value === undefined ? '' : JSON.stringify(value, null, 2);
-const taskExcerpt = value => { const text = Array.from(taskText(value)); return text.slice(0,240).join('') + (text.length > 240 ? '…' : ''); };
+const taskExcerpt = (value, limit = 240) => { const text = Array.from(taskText(value)); return text.slice(0,limit).join('') + (text.length > limit ? '…' : ''); };
 const flattenTask = nodes => taskList(nodes).flatMap(n => [n, ...flattenTask(n.children)]);
 const taskSame = (a,b) => String(a || '').toLowerCase() === String(b || '').toLowerCase();
 const taskTime = at => at && !Number.isNaN(Date.parse(at)) ? new Date(at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : taskText(at);
@@ -21,7 +21,7 @@ const taskWaiting = n => taskList(n.required_signers).filter(name => !taskList(n
 // The routed owner cannot sign in yet (the people's tree says so; the agent's does not).
 const taskNoAccount = n => !!(n.owner && n.owner_account && n.owner_account.state !== 'account');
 const taskView = (id = taskId()) => {
-  if (!taskViews.has(id)) taskViews.set(id, {tab:'overview', limits:{}, disclosures:{}, note:'', notePending:false, noteError:'', inquiry:'', inquiryPending:false, inquiryError:'', inquiryResult:null, focus:null});
+  if (!taskViews.has(id)) taskViews.set(id, {tab:'decisions', briefOpen:false, limits:{}, disclosures:{}, note:'', notePending:false, noteError:'', inquiry:'', inquiryPending:false, inquiryError:'', inquiryResult:null, focus:null});
   return taskViews.get(id);
 };
 
@@ -131,45 +131,42 @@ async function submitTaskNote(form) {
   }
 }
 
-function taskNodeStatus(n) {
-  if (n.source_refresh_required) return 'Evidence refresh needed';
-  if (n.needs_review) return 'Review needed';
-  if (n.status === 'duplicate') return 'Duplicate question';
-  if (taskAuthorized(n)) return n.signoff === 'rule' ? 'Standing rule' : n.signoff === 'signed' ? 'Signed answer' : 'Authorized answer';
-  if (n.status === 'suggested') return n.followup_required ? 'Required follow-up' : 'Suggested follow-up';
-  if (n.blocking) return !n.owner ? 'Needs a contact' : n.answer || taskList(n.signatures).length ? 'Waiting for sign-off' : 'Waiting for an answer';
-  return n.answer ? 'Answer recorded' : 'Context only';
+// At most two names, then how many more; never an empty name.
+const taskNames = names => { const unique = [...new Set(taskList(names).filter(Boolean))]; return unique.length > 2 ? `${unique[0]}, ${unique[1]} and ${unique.length - 2} more` : unique.join(', '); };
+
+// The one sentence a question row carries, as {text, tone}: a person's name
+// when someone is waited on, the state otherwise.
+function taskStatusSentence(n) {
+  if (n.source_refresh_required) return {text:'Needs fresh evidence', tone:'waiting'};
+  if (n.needs_review) return {text:'Needs a second look', tone:'waiting'};
+  if (n.status === 'duplicate') return {text:'Duplicate', tone:'neutral'};
+  if (taskAuthorized(n)) {
+    if (n.signoff === 'rule') return {text:'Covered by a rule', tone:'done'};
+    const signers = taskNames(taskList(n.signatures).length ? n.signatures : [n.signed_by]);
+    return {text: n.signoff === 'signed' && signers ? `Signed by ${signers}` : 'Answered', tone:'done'};
+  }
+  if (n.status === 'suggested') return {text:'Follow-up for the agent', tone:'neutral'};
+  if (n.answer || taskList(n.signatures).length) return {text:'Waiting for sign-off', tone:'waiting'};
+  return {text: n.owner ? `Waiting on ${n.owner}` : 'Needs a contact', tone:'waiting'};
 }
 
-function taskApproval(n) {
-  if (n.needs_review || n.source_refresh_required) return 'Approval needs review';
-  if (!taskAuthorized(n)) return 'Not authorized';
-  return n.signoff === 'rule' ? 'Authorized by standing rule' : n.signoff === 'signed' ? 'Human sign-off recorded' : 'Authorized';
-}
-
-function taskAuthority(n) {
-  if (n.needs_review || n.source_refresh_required) return 'Earlier sign-off does not authorize use while this answer needs review.';
-  if (taskAuthorized(n) && n.signoff === 'rule') return 'Authorized by an enabled standing rule. No fresh human signature is implied.';
-  if (taskAuthorized(n) && n.signoff === 'signed') return `Signed by ${taskList(n.signatures).join(', ') || n.signed_by || 'the recorded signer'}.`;
-  if (taskAuthorized(n)) return 'Authorized in the recorded task state.';
-  const waiting = taskWaiting(n);
-  return waiting.length ? 'Still needs ' + waiting.join(', ') + '.' : 'Not authorized for use.';
-}
+// What the button on a row does: answer an open question, sign a recorded one, read a settled one.
+const taskAction = n => taskAuthorized(n) || ['duplicate','suggested','adopted'].includes(n.status) ? 'View' : n.answer || taskList(n.signatures).length || n.needs_review || n.source_refresh_required ? 'Sign' : 'Answer';
 
 function taskSources(n, prefix) {
   const sources = taskList(n.sources).filter(s => s && typeof s === 'object');
   const pins = taskList(n.related).filter(link => link && link.source_decision_id && link.source_version_id);
-  if (!sources.length && !pins.length && !n.source && !n.source_id && !n.source_notice && !n.evidence && !n.prediction) return '';
+  if (!sources.length && !pins.length && !n.source && !n.source_id && !n.source_notice && !n.prediction) return '';
   return `<details class="task-evidence" id="${esc(prefix)}-evidence"><summary id="${esc(prefix)}-evidence-summary">Evidence & answer origin${sources.length ? ` · ${sources.length} sources` : ''}</summary>
     ${n.source || n.source_id ? `<p><strong>Recorded answer source:</strong> ${esc(taskSourceLabel(n.source))}${n.source_id ? ` · ${esc(n.source_id)}` : ''}${n.source_revision != null && n.source_revision !== '' ? ` · revision ${esc(n.source_revision)}` : ''}</p>` : ''}
     ${n.source === 'memory' && typeof n.source_id === 'string' && n.source_id ? `<button id="${esc(prefix)}-earlier-decision" class="button small" data-action="source" data-id="${esc(n.source_id)}">Earlier decision</button><p class="context">Opens that decision’s current record. Exact recorded versions below preserve the pinned relationship.</p>` : ''}
     ${pins.map((link,i) => `<details id="${esc(prefix)}-related-${i}"><summary>Recorded ${esc(link.kind || 'decision')} link · ${esc(link.source_decision_id)}</summary><dl class="task-facts"><dt>Source decision</dt><dd>${esc(link.source_decision_id)}</dd><dt>Source version</dt><dd>${esc(link.source_version_id)}</dd><dt>Dependent decision</dt><dd>${esc(link.decision_id || 'Not recorded')}</dd><dt>Dependent version</dt><dd>${esc(link.decision_version_id || 'Not recorded')}</dd></dl><pre>${esc(taskText(link))}</pre></details>`).join('')}
-    ${n.source_notice ? `<p>${esc(n.source_notice)}</p>` : ''}${n.evidence ? `<p class="task-verbatim">${esc(taskText(n.evidence))}</p>` : ''}${n.prediction ? `<p><strong>Unconfirmed suggestion:</strong> ${esc(n.prediction)}</p>` : ''}
+    ${n.source_notice ? `<p>${esc(n.source_notice)}</p>` : ''}${n.prediction ? `<p><strong>Unconfirmed suggestion:</strong> ${esc(n.prediction)}</p>` : ''}
     ${sources.map((s,i) => {
       const url = /^https?:\/\//i.test(s.url || '') ? s.url : '', label = s.ref || s.record_id || 'Recorded source';
       return `<div class="task-source"><p>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>` : esc(label)} · ${esc(s.role || 'Evidence')}<br><small>${s.current === true ? 'Current observed version' : s.current === false ? 'Historical or unavailable version' : 'Version freshness not recorded'}${s.stale ? ' · Needs review for reuse' : ''}</small></p><details id="${esc(prefix)}-source-${i}"><summary>Recorded source fields</summary><pre>${esc(taskText(s))}</pre></details></div>`;
     }).join('')}
-    <p class="context">${n.source ? `Source code: ${esc(taskText(n.source))}. ` : ''}Answer origin does not imply a new interaction in this run; see History. Recorded versions are observations, not live verification. Source authors and statuses do not grant approval. Open the decision for full source review and approval controls.</p></details>`;
+    </details>`;
 }
 
 function taskEntries(trace = {}) {
@@ -201,48 +198,31 @@ function taskTimeline(trace, nodes, key = 'history', step = 25) {
   }).join('')}</ol>`;
 }
 
-function taskDecision(n, prefix = 'question') {
+function taskDecision(n, prefix = 'question', primary = false) {
   const id = `${prefix}-${n.node_id}`, trace = taskDetail?.trace || {};
   const events = taskList(trace.events).filter(e => e && e.decision_id === n.node_id && ['owner_changed','ask_drafted','route_unknown','route_learned','ownership_invalidated'].includes(e.kind));
   const notifications = taskList(trace.notifications).filter(e => e && e.decision_id === n.node_id);
-  const finding = n.answer || n.prediction || n.evidence;
-  const excerpt = finding ? `${taskSourceLabel(n.source)}${!n.answer && n.prediction ? ' · unconfirmed suggestion' : ''}: ${taskExcerpt(finding)}` : 'No answer or finding recorded yet.';
-  return `<details class="task-question tree-node" id="${esc(id)}" data-node-id="${esc(n.node_id)}"><summary id="${esc(id)}-summary"><span class="task-question-title">${esc(n.question)}</span><span class="task-question-meta"><span class="task-status">${esc(taskApproval(n))}</span>${n.blocking || ['duplicate','suggested'].includes(n.status) ? `<span>${esc(taskNodeStatus(n))}</span>` : ''}<span>${esc(n.owner || 'No selected contact')}${taskNoAccount(n) ? ' · no account yet' : ''}</span>${n.model_pending ? '<span class="task-reading">Reading context…</span>' : ''}</span><span class="task-finding-excerpt">${esc(excerpt)}</span></summary><div class="task-question-body">
-    ${n.depth ? `<p class="context">Level ${esc(n.depth)}${n.origin === 'human' ? ' · added by a person' : ''}</p>` : ''}
-    ${n.answer ? `<p class="task-answer">${esc(n.answer)}</p>` : '<p class="context">No answer recorded yet.</p>'}<p class="task-authority">${esc(taskAuthority(n))}${n.partial ? ' This answer is partial.' : ''}</p>
+  const excerpt = n.answer ? taskExcerpt(n.answer, 140) : n.prediction ? 'Suggested: ' + taskExcerpt(n.prediction, 140) : '';
+  return `<details class="task-question tree-node" id="${esc(id)}" data-node-id="${esc(n.node_id)}"><summary id="${esc(id)}-summary"><span class="task-question-title">${esc(n.question)}</span><span class="task-question-meta">${pill(taskStatusSentence(n).text, taskStatusSentence(n).tone)}${n.model_pending ? '<span class="task-reading">Reading context…</span>' : ''}</span>${excerpt ? `<span class="task-finding-excerpt">${esc(excerpt)}</span>` : ''}</summary><div class="task-question-body">
+    ${n.answer ? `<p class="task-answer">${esc(n.answer)}</p>` : ''}${n.partial ? '<p class="context">This answer is partial.</p>' : ''}
+    ${n.rationale ? `<p class="task-why">Why: ${esc(n.rationale)}</p>` : ''}
     ${n.needs_review || n.source_refresh_required ? `<p class="task-warning">${esc(n.review_reason || 'Review current evidence and applicability before using this answer.')}</p>` : ''}
-    ${n.rationale ? `<p><strong>Rationale:</strong> ${esc(n.rationale)}</p>` : ''}${n.next ? `<details id="${esc(id)}-next"><summary>Recorded next action</summary><p class="task-verbatim">${esc(n.next)}</p></details>` : ''}
+    <button id="${esc(id)}-review" class="button small${primary ? ' primary' : ''}" data-action="review" data-id="${esc(n.node_id)}">${taskAction(n)}</button>
+    <details class="task-details" id="${esc(id)}-details"><summary id="${esc(id)}-details-summary">Details</summary>
+    ${n.depth ? `<p class="context">Level ${esc(n.depth)}${n.origin === 'human' ? ' · added by a person' : ''}</p>` : ''}
+    ${n.next ? `<details id="${esc(id)}-next"><summary>Recorded next action</summary><p class="task-verbatim">${esc(n.next)}</p></details>` : ''}
     ${n.duplicate_of ? `<p>Repeats decision ${esc(n.duplicate_of)}. Its answer and authorization read through to that decision.</p>` : ''}
-    <dl class="task-facts"><dt>Selected contact</dt><dd>${esc(n.owner || 'Not assigned')}${taskNoAccount(n) ? ' · no account yet, so nobody can sign this until they join; an administrator can invite them or hand it on' : ''}</dd>${n.answered_by ? `<dt>${n.source === 'memory' ? 'Earlier answer respondent' : 'Recorded answer respondent'}</dt><dd>${esc(n.answered_by)}</dd>` : ''}${taskList(n.required_signers).length ? `<dt>Required sign-off</dt><dd>${esc(n.required_signers.join(', '))}</dd>` : ''}${taskList(n.signatures).length ? `<dt>Recorded signatures</dt><dd>${esc(n.signatures.join(', '))}</dd>` : ''}${taskList(n.historical_signatures).length ? `<dt>Historical sign-off</dt><dd>${esc(n.historical_signatures.join(', '))}. Current applicability needs review.</dd>` : ''}${n.path ? `<dt>Recorded path</dt><dd>${esc(n.path)}</dd>` : ''}</dl>
+    <dl class="task-facts"><dt>Selected contact</dt><dd>${esc(n.owner || 'Not assigned')}${taskNoAccount(n) ? ' · not in Raven yet' : ''}</dd>${n.answered_by ? `<dt>${n.source === 'memory' ? 'Earlier answer respondent' : 'Recorded answer respondent'}</dt><dd>${esc(n.answered_by)}</dd>` : ''}${taskList(n.required_signers).length ? `<dt>Required sign-off</dt><dd>${esc(n.required_signers.join(', '))}</dd>` : ''}${taskList(n.signatures).length ? `<dt>Recorded signatures</dt><dd>${esc(n.signatures.join(', '))}</dd>` : ''}${taskList(n.historical_signatures).length ? `<dt>Historical sign-off</dt><dd>${esc(n.historical_signatures.join(', '))}. Current applicability needs review.</dd>` : ''}${n.path ? `<dt>Recorded path</dt><dd>${esc(n.path)}</dd>` : ''}</dl>
     ${taskSources(n,id)}${taskDetails(workItemContext(n),id+'-work-item')}
-    <details class="task-contact" id="${esc(id)}-contact"><summary id="${esc(id)}-contact-summary">Contact, routing & referrals</summary>${n.routing_reason ? `<p><strong>Recorded routing reason:</strong> ${esc(n.routing_reason)}</p>` : ''}${n.owner_evidence ? `<p><strong>Recorded routing evidence:</strong> ${esc(taskText(n.owner_evidence))}</p><p class="context">This evidence can predate a reassignment. Events below show the recorded assignment and referral trail.</p>` : ''}${taskTimeline({events,notifications},[],id+'-contact',8)}</details>
-    ${taskList(n.depends_on).length ? `<p class="context">Depends on: ${esc(n.depends_on.join(', '))}</p>` : ''}<button id="${esc(id)}-review" class="button small" data-action="review" data-id="${esc(n.node_id)}">Open decision ${icon('arrow')}</button>
+    <details class="task-contact" id="${esc(id)}-contact"><summary id="${esc(id)}-contact-summary">Contact, routing and referrals</summary>${n.routing_reason ? `<p><strong>Routing reason:</strong> ${esc(n.routing_reason)}</p>` : ''}${n.owner_evidence ? `<p><strong>Routing evidence:</strong> ${esc(taskText(n.owner_evidence))}</p><p class="context">This evidence can predate a reassignment. Events below show the recorded assignment and referral trail.</p>` : ''}${taskTimeline({events,notifications},[],id+'-contact',8)}</details>
+    ${taskList(n.depends_on).length ? `<p class="context">Depends on: ${esc(n.depends_on.join(', '))}</p>` : ''}${n.evidence ? `<p class="task-checked">What Raven checked: ${esc(taskText(n.evidence))}</p>` : ''}
+    </details>
   </div></details>`;
-}
-
-function taskSaved(nodes, trace) {
-  // Per task, one line: what came from memory or a rule, what a person signed as proposed, how long people took.
-  const events = taskList(trace && trace.events);
-  const human = ['owner_approved','answer_corrected','signoff','signature'];
-  const live = nodes.filter(n => !['duplicate','suggested','adopted','withdrawn'].includes(n.status));
-  const memory = live.filter(n => n.source === 'memory' || n.signoff === 'rule').length + nodes.filter(n => n.status === 'duplicate').length;
-  const unchanged = live.filter(n => events.some(e => e && e.decision_id === n.node_id && e.kind === 'signoff' && e.detail && e.detail.corrected === false)).length;
-  let waited = 0, waits = 0;
-  for (const n of live) {
-    const first = events.find(e => e && e.decision_id === n.node_id && human.includes(e.kind));
-    const seconds = first && n.created_at ? (Date.parse(first.at) - Date.parse(n.created_at)) / 1000 : NaN;
-    if (seconds >= 0) { waited += seconds; waits++; }
-  }
-  const parts = [];
-  if (memory) parts.push(`${memory} answered from memory`);
-  if (unchanged) parts.push(`${unchanged} signed unchanged`);
-  if (waits) parts.push(`${durationLabel(waited)} waited on people`);
-  return parts.length ? `<p class="task-saved">Raven saved: ${esc(parts.join(' · '))}</p>` : '';
 }
 
 function taskQuestions(nodes, key, emptyText) {
   const shown = nodes.slice(0,taskView().limits[key] || 12);
-  return nodes.length ? shown.map(n => taskDecision(n,key)).join('') + (nodes.length > shown.length ? `<button id="task-more-${esc(key)}" class="button small task-more" data-action="task-more" data-key="${esc(key)}" data-step="12">Show ${Math.min(12,nodes.length-shown.length)} more questions (${nodes.length-shown.length} remaining)</button>` : '') : `<p class="task-empty">${esc(emptyText)}</p>`;
+  return nodes.length ? shown.map((n,i) => taskDecision(n,key,key === 'finding' && i === 0)).join('') + (nodes.length > shown.length ? `<button id="task-more-${esc(key)}" class="button small task-more" data-action="task-more" data-key="${esc(key)}" data-step="12">Show ${Math.min(12,nodes.length-shown.length)} more questions (${nodes.length-shown.length} remaining)</button>` : '') : `<p class="task-empty">${esc(emptyText)}</p>`;
 }
 
 function taskScopes(scopes) {
@@ -261,18 +241,17 @@ function taskBriefDecision() {
 }
 
 function taskReview(review, nodes) {
-  if (!review) return '<section class="task-panel"><h2>No code review yet</h2><p>A coding agent can submit its diff for review. Owner approval and code review are separate.</p></section>';
-  return `<section class="task-panel"><h2>Code review against decisions</h2>${pill(review.status)}${review.seconds != null ? `<span class="context"> ${esc(review.seconds)} seconds</span>` : ''}<p class="context">This model review covers the recorded decisions. It does not replace tests or verify the whole change.</p>${taskList(review.follows).map(r => `<article class="task-review-item"><div>${pill(r.verdict)} <strong>${esc(nodes.find(n => n.node_id === r.node_id)?.question || r.node_id)}</strong></div><p>${esc(r.why || r.reason || '')}</p><details class="review-requirements" id="requirements-${esc(r.node_id)}"><summary>Inspect requirements (${taskList(r.requirements).length})</summary>${taskList(r.requirements).map((q,i) => `<details id="requirement-${esc(r.node_id)}-${i}"><summary>${esc(q.state || q.status || q.verdict || '')} · ${esc(q.needs || q.requirement || q.text || '')}</summary><pre>${esc(taskText(q))}</pre></details>`).join('')}</details></article>`).join('')}<details id="task-review-record"><summary>Full review record</summary><pre>${esc(taskText(review))}</pre></details></section>`;
+  return `<section class="task-panel" id="task-review"><h2 tabindex="-1">Code review</h2>${pill(review.status)}${taskList(review.follows).map(r => `<article class="task-review-item"><div>${pill(r.verdict)} <strong>${esc(nodes.find(n => n.node_id === r.node_id)?.question || r.node_id)}</strong></div><p>${esc(r.why || r.reason || '')}</p><details class="review-requirements" id="requirements-${esc(r.node_id)}"><summary>Inspect requirements (${taskList(r.requirements).length})</summary>${taskList(r.requirements).map((q,i) => `<details id="requirement-${esc(r.node_id)}-${i}"><summary>${esc(q.state || q.status || q.verdict || '')} · ${esc(q.needs || q.requirement || q.text || '')}</summary><pre>${esc(taskText(q))}</pre></details>`).join('')}</details></article>`).join('')}<details id="task-review-record"><summary>Full review record</summary><pre>${esc(taskText(review))}</pre></details></section>`;
 }
 
 function taskNotes(t, canWrite) {
   const saved = taskView(), notes = taskList(t.notes), shown = notes.slice(-(saved.limits.notes || 12));
-  return `<section class="task-panel"><h2>Context & discussion</h2><p class="context">Notes are visible when the agent reads this task. Use a decision’s follow-up action for a question that must block completion.</p>${shown.map(n => `<article class="task-note"><div><strong>${esc(n.by || 'Unattributed note')}</strong><time>${esc(taskTime(n.at))}</time></div><p>${esc(n.text)}</p></article>`).join('') || '<p class="context">No notes yet.</p>'}${notes.length > shown.length ? '<button id="task-more-notes" class="button small" data-action="task-more" data-key="notes" data-step="12">Show earlier notes</button>' : ''}${canWrite ? `<details id="task-note-compose"><summary id="task-note-compose-summary">Add context for the agent</summary><form id="note-form" data-id="${esc(t.task_id)}"><label for="note-text">A note the agent reads on its tree</label><textarea id="note-text" name="text" maxlength="4000" required></textarea><p class="error" id="form-error" role="alert" ${saved.noteError ? '' : 'hidden'}>${esc(saved.noteError)}</p><button id="task-note-submit" class="button primary" type="submit" ${saved.notePending ? 'disabled' : ''}>${saved.notePending ? 'Adding note…' : 'Add note'}</button></form></details>` : '<p class="context">You have read-only access to this workspace.</p>'}</section>`;
+  return `<section class="task-panel" id="task-notes"><h2>Notes</h2>${shown.map(n => `<article class="task-note"><div><strong>${esc(n.by || 'Unattributed note')}</strong><time>${esc(taskTime(n.at))}</time></div><p>${esc(n.text)}</p></article>`).join('') || '<p class="task-empty">No notes yet.</p>'}${notes.length > shown.length ? '<button id="task-more-notes" class="button small" data-action="task-more" data-key="notes" data-step="12">Show earlier notes</button>' : ''}${canWrite ? `<div id="task-note-compose"><form id="note-form" data-id="${esc(t.task_id)}"><label for="note-text">Note for the agent</label><textarea id="note-text" name="text" maxlength="4000" required placeholder="A constraint, a person to ask, a link."></textarea><p class="error" id="form-error" role="alert" ${saved.noteError ? '' : 'hidden'}>${esc(saved.noteError)}</p><button id="task-note-submit" class="button" type="submit" ${saved.notePending ? 'disabled' : ''}>${saved.notePending ? 'Adding note…' : 'Add note'}</button></form></div>` : ''}</section>`;
 }
 
 function taskInquiry(id) {
   const saved = taskView(id), result = saved.inquiryResult;
-  return `<section class="task-panel task-inquiry" aria-label="Ask about this task"><form id="task-inquiry-form" data-id="${esc(id)}"><label for="task-inquiry-text">Ask about this task</label><textarea id="task-inquiry-text" name="question" rows="2" maxlength="2000" required placeholder="What is still waiting on a decision?">${esc(saved.inquiry)}</textarea><p class="context">Read-only. Answers do not change decisions or grant signoff.</p><button id="task-inquiry-submit" class="button" type="submit" aria-disabled="${saved.inquiryPending ? 'true' : 'false'}">${saved.inquiryPending ? 'Reading…' : 'Ask'}</button><p class="error" role="alert" ${saved.inquiryError ? '' : 'hidden'}>${esc(saved.inquiryError)}</p></form><div class="task-inquiry-result" role="status" aria-live="polite">${saved.inquiryPending ? '<p>Reading task context…</p>' : ''}${result ? `<p class="task-verbatim">${esc(result.answer)}</p><small>${esc(result.notice || 'Clarification does not authorize work.')}</small>${inquiryCitations(result, 'task-inquiry-citations')}${taskList(result.evidence).length ? `<details id="task-inquiry-evidence"><summary>Evidence used</summary>${taskList(result.evidence).map(e => `<h4>${esc(e.title || e.id)}</h4><p class="task-verbatim">${esc(e.text)}</p>`).join('')}</details>` : ''}` : ''}</div></section>`;
+  return `<details class="task-panel task-inquiry" id="task-inquiry"><summary id="task-inquiry-summary">Ask Raven about this task</summary><form id="task-inquiry-form" data-id="${esc(id)}"><textarea id="task-inquiry-text" name="question" rows="2" maxlength="2000" required aria-label="Ask Raven about this task" placeholder="What is still waiting?">${esc(saved.inquiry)}</textarea><button id="task-inquiry-submit" class="button" type="submit" aria-disabled="${saved.inquiryPending ? 'true' : 'false'}">${saved.inquiryPending ? 'Reading…' : 'Ask'}</button><p class="error" role="alert" ${saved.inquiryError ? '' : 'hidden'}>${esc(saved.inquiryError)}</p></form><div class="task-inquiry-result" role="status" aria-live="polite">${saved.inquiryPending ? '<p>Reading task context…</p>' : ''}${result ? `<p class="task-verbatim">${esc(result.answer)}</p><small>${esc(result.notice || 'Clarification does not authorize work.')}</small>${inquiryCitations(result, 'task-inquiry-citations')}${taskList(result.evidence).length ? `<details id="task-inquiry-evidence"><summary>Evidence used</summary>${taskList(result.evidence).map(e => `<h4>${esc(e.title || e.id)}</h4><p class="task-verbatim">${esc(e.text)}</p>`).join('')}</details>` : ''}` : ''}</div></details>`;
 }
 
 async function submitTaskInquiry(form) {
@@ -297,29 +276,58 @@ async function submitTaskInquiry(form) {
   }
 }
 
-function taskOverview() {
-  if (!state.auth) return '<div class="empty" role="status">Loading workspace access…</div>';
-  if (!taskDetail || taskDetail.tree.task_id !== taskId()) return `<a class="task-back" href="#runs">← All tasks</a>${taskError ? `<div class="empty" role="alert"><h2>Could not open this task</h2><p>${esc(taskError)}</p><button class="button" data-action="task-refresh">Try again</button></div>` : '<div class="empty" role="status">Loading task history…</div>'}`;
-  const {tree:t,trace} = taskDetail, all = flattenTask(t.nodes), nodes = all.filter(n => n.status !== 'adopted');
-  const blockers = nodes.filter(n => n.blocking), scopes = taskList(t.scope_clarifications), count = blockers.length + scopes.length;
-  const authorized = nodes.filter(n => taskAuthorized(n) && n.status !== 'duplicate');
+// Whether a goal is long enough to clamp to three lines and offer 'Show more'.
+const taskGoalLong = text => Array.from(text).length > 240 || (text.match(/\n/g) || []).length >= 3;
+
+// The one sentence the task page carries, as {text, tone, line}: the people a
+// task waits on (saying who has not joined yet), else what state it is in.
+function taskStatus(t, nodes, scopes, reading) {
+  const blockers = nodes.filter(n => n.blocking);
   const needsReview = t.needs_review || t.review?.status === 'stale' || nodes.some(n => n.needs_review || n.source_refresh_required);
   const unjoined = new Set(blockers.filter(taskNoAccount).map(n => n.owner));
-  const waiting = [...new Set(blockers.flatMap(n => taskWaiting(n).concat(n.owner && !taskList(n.signatures).some(s => taskSame(s,n.owner)) ? [n.owner] : [])))].map(name => unjoined.has(name) ? `${name} (no account yet)` : name);
-  const canWrite = !state.auth.enabled || ['admin','member'].includes(state.me?.role);
+  const me = state.me?.name || '', mine = name => !!me && state.auth?.enabled && taskSame(name, me);
+  const waiting = [...new Set(blockers.flatMap(n => taskWaiting(n).concat(n.owner && !taskList(n.signatures).some(s => taskSame(s,n.owner)) ? [n.owner] : [])))].filter(Boolean);
+  const names = taskNames(waiting.map(name => mine(name) ? 'you' : unjoined.has(name) ? `${name} · not in Raven yet` : name));
+  const lifecycle = runStatusLabel(t.status);
+  if (lifecycle !== 'In progress') return {text: lifecycle, tone: lifecycle === 'Done' ? 'done' : 'neutral', line: lifecycle === 'Failed' ? 'See History for the failure.' : ''};
+  if (scopes.length) return {text:'Needs task facts', tone:'waiting'};
+  if (needsReview) return {text:'Needs a second look', tone:'waiting'};
+  if (blockers.length) return {text: names ? `Waiting on ${names}` : 'Needs a contact', tone:'waiting'};
+  if (!nodes.length && reading) return {text:'Reading context…', tone:'neutral'};
+  return {text:'In progress', tone:'neutral'};
+}
+
+function taskOverview() {
+  if (!state.auth) return '<div class="empty" role="status">Loading workspace access…</div>';
+  if (!taskDetail || taskDetail.tree.task_id !== taskId()) return `<a class="task-back" href="#runs">← Tasks</a>${taskError ? `<div class="empty" role="alert"><h2>Could not open this task</h2><p>${esc(taskError)}</p><button class="button" data-action="task-refresh">Try again</button></div>` : '<div class="empty" role="status">Loading task history…</div>'}`;
+  const {tree:t,trace} = taskDetail, saved = taskView(), all = flattenTask(t.nodes), nodes = all.filter(n => n.status !== 'adopted');
+  const scopes = taskList(t.scope_clarifications), canWrite = !state.auth.enabled || ['admin','member'].includes(state.me?.role);
   const reading = !!t.model_pending || nodes.some(n => n.model_pending);
-  const lifecycle = runStatusLabel(t.status) || 'In progress';
-  const decisionState = needsReview ? 'Review needed' : scopes.length ? 'Waiting for task scope' : count ? 'Waiting for decisions' : 'No recorded blockers';
-  const status = ['failed','cancelled','abandoned','completed'].includes(t.status) ? lifecycle : count || needsReview ? decisionState : lifecycle;
-  const next = ['cancelled','abandoned'].includes(t.status) ? 'This run is closed. Unresolved questions below are retained as history.' : t.status === 'failed' ? 'Inspect failure details in History and the remaining decisions before retrying the originating workflow.' : scopes.length ? 'Confirm the missing task facts below, then retry the same question with confirmed scope.' : needsReview ? 'Review the affected answers and evidence before using them.' : blockers.length ? waiting.length ? `Waiting on ${waiting.join(', ')}. ${unjoined.size ? 'Nobody can sign for an owner who has not joined; an administrator can invite them or hand it on. ' : ''}Open a question for its sign-off and contact history.` : 'Assign a contact or resolve the required follow-up below.' : t.status === 'completed' ? 'Completed as reported by the agent, not verified: inspect the reported result and checks.' : !nodes.length ? reading ? 'Wait for context reading to finish; refresh to see the next recorded findings.' : 'No question is recorded yet.' : 'No recorded decision blocks this task. Continue the work in the originating workflow.';
+  const status = taskStatus(t, nodes, scopes, reading);
   const uncertain = taskList(t.review?.follows).filter(r => r.verdict !== 'follows').length;
-  const progress = `${(state.browser_tasks || []).some(r => r.task_id === t.task_id) ? `<a class="button" href="#work/${encodeURIComponent(t.task_id)}">Open conversation</a>` : ''}<section class="task-summary" aria-label="Current task status"><div><h2>${esc(status)}</h2><p class="task-progress-facts">${plural(count,'blocker')} · ${authorized.length} authorized ${authorized.length === 1 ? 'answer' : 'answers'} · ${nodes.filter(n => !['duplicate','suggested'].includes(n.status)).length} recorded questions</p>${taskSaved(nodes, trace)}<p class="task-next"><strong>Next:</strong> ${esc(next)}</p>${reading ? '<p class="task-reading" role="status">Reading available context… Findings below reflect the latest recorded state.</p>' : ''}<details id="task-recorded-next"><summary>Workflow details</summary><p class="task-lifecycle"><strong>Recorded lifecycle:</strong> ${esc(lifecycle)} · <strong>Decision state:</strong> ${esc(decisionState)}</p>${t.next ? `<p class="task-verbatim">${esc(t.next)}</p>` : ''}</details>${t.review?.status === 'running' || uncertain ? `<p class="task-warning">${t.review?.status === 'running' ? 'The code review is still running.' : `${uncertain} decisions need inspection after the model review.`}<button class="button small" data-action="task-tab" data-tab="review">Open code review</button></p>` : ''}${t.review?.status === 'stale' ? '<p class="task-warning">The code review needs refreshing for the current questions and answers. Submit the current diff again.</p>' : ''}</div></section>`;
-  const context = `<details class="task-panel task-context" id="task-context"><summary id="task-context-summary">Task context</summary>${taskDetails(workItemContext(t),'task-work-item')}<dl class="task-facts"><dt>Requested by</dt><dd>${esc(t.requester || 'Not recorded')}</dd><dt>Repository</dt><dd>${esc(t.repo)}</dd>${Object.entries(t.facts || {}).map(([k,v]) => `<dt>${esc(k)}</dt><dd>${esc(taskText(v))}</dd>`).join('')}</dl><details id="task-kickoff"><summary>Kickoff verdict · ${esc(t.verdict || 'not recorded')}</summary><p>${esc(t.verdict_why)}</p></details><p class="context">Requester is recorded task context, not proof of identity. Signatures and notes keep their acting person.</p></details>`;
+  // Only when a waited-on owner cannot sign in yet: who, and what an administrator can do.
+  const unjoined = nodes.filter(n => n.blocking && taskNoAccount(n) && n.owner);
+  const first = unjoined[0], unjoinedNames = [...new Set(unjoined.map(n => n.owner))];
+  const account = first ? `<p class="task-unjoined">${esc(unjoinedNames.length > 1 ? `${unjoinedNames.join(' and ')} have not joined yet, so nobody can sign this.` : `${first.owner} has not joined yet, so nobody can sign this.`)}${state.me?.role === 'admin' ? `<span class="task-status-actions"><button class="button small" data-action="invite-owner" data-person="${esc(first.owner_account.person_id || '')}" data-email="${esc(first.owner_account.email || '')}">Invite ${esc(first.owner.split(/\s+/)[0])}</button><button class="button small" data-action="review" data-id="${esc(first.node_id)}">Hand on</button></span>` : ''}</p>` : '';
+  const warnings = `${t.review?.status === 'running' || uncertain ? `<p class="task-warning">${t.review?.status === 'running' ? 'The code review is still running.' : `${uncertain} decisions need inspection after the model review.`}<button class="button small" data-action="task-review">Open code review</button></p>` : ''}${t.review?.status === 'stale' ? '<p class="task-warning">The code review needs refreshing for the current questions and answers. Submit the current diff again.</p>' : ''}`;
+  const summary = `<section class="task-summary" aria-label="Task status"><p class="task-status-line" role="status">${pill(status.text, status.tone)}${status.line ? `<span class="muted">${esc(status.line)}</span>` : ''}</p>${account}${warnings}</section>`;
+  const facts = Object.entries(t.facts || {}), workItem = taskDetails(workItemContext(t),'task-work-item');
+  const context = facts.length || workItem || t.verdict ? `<details class="task-panel task-context" id="task-context"><summary id="task-context-summary">Details</summary><dl class="task-facts"><dt>Requested by</dt><dd>${esc(t.requester || 'Not recorded')}</dd><dt>Repository</dt><dd>${esc(t.repo)}</dd>${facts.map(([k,v]) => `<dt>${esc(k)}</dt><dd>${esc(taskText(v))}</dd>`).join('')}</dl>${workItem}${t.verdict ? `<p id="task-kickoff"><strong>Kickoff verdict · ${esc(t.verdict)}</strong>${t.verdict_why ? ` ${esc(t.verdict_why)}` : ''}</p>` : ''}</details>` : '';
   const findings = [...nodes].sort((a,b) => Number(!!(b.blocking || b.needs_review || b.source_refresh_required)) - Number(!!(a.blocking || a.needs_review || a.source_refresh_required)));
-  const overview = `<div class="task-overview">${scopes.length ? `<section class="task-panel"><h2>Scope needed · ${scopes.length}</h2>${taskScopes(scopes)}</section>` : ''}<section class="task-panel"><h2>Questions & findings</h2><p class="context">Unresolved questions appear first. Findings can be unapproved. Each row keeps its current approval status separate from its recorded answer or evidence.</p><h3>Remaining questions</h3>${taskQuestions(findings.filter(n => !taskAuthorized(n)),'finding',reading ? 'No findings recorded yet; context reading is still pending.' : 'No open questions recorded.')}<h3>Resolved decisions</h3>${taskQuestions(findings.filter(taskAuthorized),'resolved','No authorized answers recorded yet.')}</section>${context}${taskNotes(t,canWrite)}</div>`;
-  return `<div class="task-heading"><a class="task-back" href="#runs">← All tasks</a><div class="task-heading-actions"><button id="task-refresh" class="button small" data-action="task-refresh">Refresh</button><button id="task-share" class="button small" data-action="task-share">Copy app link</button>${state.auth.enabled && state.me?.id && state.me.role !== 'viewer' && state.settings?.brief_mode !== 'off' ? '<button class="button small" data-action="task-brief">Open task page</button>' : ''}</div><h1>${esc(taskDisplayLabel(t))}</h1><details class="task-brief" id="task-brief"><summary id="task-brief-summary">Read the task brief</summary><p class="task-goal">${esc(t.goal || t.title)}</p></details><div class="metadata"><span>Requested by ${esc(t.requester || 'unknown')}</span><span>${esc(t.repo)}</span></div></div>
-    ${taskError ? `<p class="task-warning" role="alert">Refresh failed: ${esc(taskError)}. Showing the last successful read.</p>` : ''}${progress}${taskInquiry(t.task_id)}
-    <nav class="task-tabs" aria-label="Task sections">${[['overview','Overview'],['decisions',`Decisions (${nodes.length})`],['history','History'],['review',`Code review${uncertain ? ' ('+uncertain+' to inspect)' : ''}`]].map(([key,label]) => `<button id="task-tab-${key}" class="tab ${taskTab === key ? 'active' : ''}" data-action="task-tab" data-tab="${key}" aria-pressed="${taskTab === key}">${label}</button>`).join('')}<span>Observed ${esc(taskTime(t.observed_at))}</span></nav>
-    ${taskTab === 'overview' ? overview : taskTab === 'decisions' ? `<section class="task-panel task-decisions"><h2>Questions & answers</h2>${taskScopes(scopes)}${taskQuestions(nodes,'question','No decisions recorded yet.')}</section>` : taskTab === 'review' ? taskReview(t.review,nodes) : `<section class="task-panel"><h2>What happened, in order</h2><p class="context">Recorded assignments, messages, answers, corrections, and notes. Work outside Raven is not captured here.</p>${taskTimeline(trace,all)}</section>`}
-    ${taskList(state.executions).some(e => e.run_id === t.task_id) ? `<button class="button" data-action="execution-details" data-id="${esc(t.task_id)}">Execution output & files</button>` : ''}<p class="task-access">${icon('shield')}${state.auth.enabled ? 'Visible to signed-in workspace members and viewers. A link does not grant access.' : 'Local workspace. Enable shared authentication before exposing this instance to a network.'} Task status records workflow state; it does not prove an external coding agent is running.</p>`;
+  const decisions = `<div class="task-overview">${scopes.length ? `<section class="task-panel"><h2>Scope needed · ${scopes.length}</h2>${taskScopes(scopes)}</section>` : ''}<section class="task-panel" id="task-waiting"><h2>Waiting</h2>${taskQuestions(findings.filter(n => !taskAuthorized(n)),'finding',reading ? 'Reading context…' : 'No open questions.')}</section><section class="task-panel" id="task-decided"><h2>Decided</h2>${taskQuestions(findings.filter(taskAuthorized),'resolved','Nothing decided yet.')}</section>${t.review ? taskReview(t.review,nodes) : ''}${taskNotes(t,canWrite)}${state.model?.investigation === false ? '' : taskInquiry(t.task_id)}${context}</div>`;
+  const history = `<section class="task-panel"><h2>What happened</h2>${taskTimeline(trace,all)}</section>`;
+  const run = taskList(state.runs).find(r => r.id === t.task_id);
+  const meta = [t.requester ? `Requested by ${t.requester}` : 'Requester not recorded', t.repo, run?.agent].filter(Boolean).map(esc).join(' · ');
+  // The goal is the brief; when the agent gave none, the title already says it.
+  const goal = t.goal && t.goal.trim() !== String(t.title || '').trim() ? t.goal : '', long = taskGoalLong(goal);
+  const more = [
+    `<button id="task-share" class="button text" data-action="task-share">Copy link</button>`,
+    state.auth.enabled && state.me?.id && state.me.role !== 'viewer' && state.settings?.brief_mode !== 'off' ? '<button class="button text" data-action="task-brief">Open my personal page</button>' : '',
+    (state.browser_tasks || []).some(r => r.task_id === t.task_id) ? `<a href="#work/${encodeURIComponent(t.task_id)}">Open conversation</a>` : '',
+    taskList(state.executions).some(e => e.run_id === t.task_id) ? `<button class="button text" data-action="execution-details" data-id="${esc(t.task_id)}">Execution output and files</button>` : '',
+  ].filter(Boolean);
+  return `<div class="task-heading"><div class="task-heading-row"><a class="task-back" href="#runs">← Tasks</a><details class="more-menu" id="task-more"><summary aria-label="More actions">More</summary><div class="more-menu-items">${more.join('')}</div></details></div><h1>${esc(taskDisplayLabel(t))}</h1>${goal ? `<p class="task-goal${long && !saved.briefOpen ? ' is-clamped' : ''}" id="task-brief">${esc(goal)}</p>` : ''}${long ? `<button id="task-brief-summary" class="button text task-brief-toggle" data-action="task-brief-toggle" aria-expanded="${saved.briefOpen ? 'true' : 'false'}" aria-controls="task-brief">${saved.briefOpen ? 'Show less' : 'Show more'}</button>` : ''}<p class="task-meta">${meta}</p></div>
+    ${taskError ? `<p class="task-warning" role="alert">Refresh failed: ${esc(taskError)}. Showing the last successful read.</p>` : ''}${summary}
+    <nav class="task-tabs" aria-label="Task sections">${[['decisions',`Decisions (${nodes.length})`],['history','History']].map(([key,label]) => `<button id="task-tab-${key}" class="tab ${(taskTab === 'history') === (key === 'history') ? 'active' : ''}" data-action="task-tab" data-tab="${key}" aria-pressed="${(taskTab === 'history') === (key === 'history')}">${label}</button>`).join('')}</nav>
+    ${taskTab === 'history' ? history : decisions}`;
 }
