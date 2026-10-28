@@ -192,7 +192,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     const jamie = page.locator('.person-card').filter({hasText:'Jamie Test'});
     await jamie.waitFor();
     assert.match(await jamie.textContent(), /Nothing recorded yet/);
-    await jamie.getByRole('button', {name:'Say what they decide',exact:true}).click();
+    await jamie.getByRole('button', {name:/^Say what they decide/}).click();
     assert.match(await page.locator('#authority-who option:checked').textContent(), /Jamie Test/);
     await page.selectOption('#authority-kind', 'path');
     await page.fill('#authority-scope', 'payments/*');
