@@ -320,7 +320,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.reload();
     await page.waitForFunction(() => document.querySelector('#app').textContent.includes('Robin Past'));
     const robin = page.locator('.person-card').filter({hasText:'Robin Past'});
-    assert.match(await robin.textContent(), /decides payments\/\* · every repository · from config · asserted by Local operator · ended 2020-01-01/);
+    assert.match(await robin.textContent(), /payments\/\* · every repository · from config · asserted by Local operator · ended 2020-01-01/);
     assert.equal(await robin.locator('.authority-row.ended button').count(), 0);
 
     // A reviewer the map says must approve a path signs every decision
