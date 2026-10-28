@@ -59,7 +59,7 @@ const fixtures = [result,
       assert.doesNotMatch(html,/Fabricated title|UNKNOWN QUOTE|javascript:|href=|<script>|<img|onerror="bad"/);
     }
   }
-  assert.match(vm.runInContext("taskInquiry('task')",c),/Read-only/);
+  assert.match(vm.runInContext("taskInquiry('task')",c),/Ask Raven about this task/);
   assert.match(vm.runInContext('inquiryCard()',c),/does not answer or sign off/);
   console.log('Citation UI: task, expert modal and brief render exact escaped quotes with evidence identity; unknown, ambiguous and empty targets withheld; no links; collapsed by default.');
 })().catch(error=>{console.error(error);process.exitCode=1});

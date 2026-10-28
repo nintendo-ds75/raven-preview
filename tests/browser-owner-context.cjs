@@ -102,10 +102,12 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     // The main task page and owner modal consume the same presentation helper.
     await page.setViewportSize({width:1280,height:900});
     await page.goto(fixture.url + '/#runs/' + fixture.task_id);
-    await page.locator('#task-tab-overview').waitFor();
+    await page.locator('#task-tab-decisions').waitFor();
     assert.equal(await page.locator('.task-heading h1').innerText(), 'Task overview · WORK-42');
-    await page.locator('#task-brief summary').click();
     assert.equal(await page.locator('.task-goal').textContent(), fixture.request);
+    assert.equal(await page.locator('#task-brief-summary').innerText(), 'Show more');
+    await page.locator('#task-brief-summary').click();
+    assert.equal(await page.locator('#task-brief-summary').innerText(), 'Show less');
     await page.evaluate(id => review(id), fixture.node_id);
     await page.locator('#modal[open] .decision-scope').waitFor();
     await page.locator('#modal .scope-exact > summary').click();

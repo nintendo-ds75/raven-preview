@@ -65,7 +65,7 @@ function harness() {
       setFacts:entries=>{form.factInputs=entries.map(([key,value],i)=>Object.assign(element('request-fact-'+i),{dataset:{factKey:key},value}));}};
   }
   function selectTask(tree,trace=fixture.trace()) { context.syntheticDetail={tree,trace};
-    context.location.hash='#runs/'+tree.task_id;run("view='runs'; taskDetail=syntheticDetail; taskError=''; taskTab='overview';"); }
+    context.location.hash='#runs/'+tree.task_id;run("view='runs'; taskDetail=syntheticDetail; taskError=''; taskTab='decisions';"); }
   return {run,context,get,document,requests,notices,form,selectTask,
     detach:selector=>{const el=elements.get(selector);if(el)el.isConnected=false;elements.delete(selector);},
     submit:form=>document.dispatch('submit',{target:form}),
@@ -275,7 +275,7 @@ function harness() {
   await test('unknown access, viewer, read failure, and revoked access are explicit',()=>{
     const h=harness();h.selectTask(fixture.tree());h.run('state.auth=null');assert.match(h.run('taskOverview()'),/Loading workspace access/);
     h.run("state.auth={enabled:true};state.me={role:'viewer'}");let html=h.run('taskOverview()');
-    assert.doesNotMatch(html,/id="note-form"/);assert.match(html,/read.only/i);
+    assert.doesNotMatch(html,/id="note-form"|Add note|read-only/i,'a viewer sees the notes, not a form or a sentence about access');
     h.run("taskDetail=null;taskError='Access revoked'");html=h.run('taskOverview()');
     assert.match(html,/Access revoked/);assert.doesNotMatch(html,/Synthetic question/);
   });
@@ -283,8 +283,8 @@ function harness() {
     const h=harness();h.selectTask(fixture.tree('scope-run',{nodes:[],counts:{blocking:1},
       scope_clarifications:[{question:'Confirm synthetic customer scope',missing_keys:['customer'],client_ref:'scope-only'}],
       next:'Confirm the missing customer scope before asking a person.'}));const html=h.run('taskOverview()');
-    assert.match(html,/scope/i);assert.match(html,/customer/);assert.match(html,/block|waiting|needs clarification/i);
-    assert.doesNotMatch(html,/No recorded decision is blocking/);
+    assert.match(html,/Scope needed · 1/);assert.match(html,/customer/);assert.match(html,/Needs task facts/);
+    assert.doesNotMatch(html,/No recorded decision is blocking|In progress/);
   });
   await test('overview renders compact disclosures and distinguishes rule, human, stale authority',()=>{
     const h=harness();h.selectTask(fixture.tree('authority-run',{nodes:[
@@ -292,35 +292,44 @@ function harness() {
       fixture.node('human',{authorized:true,blocking:false,signoff:'signed',signed_by:'Human Reviewer',signatures:['Human Reviewer'],answer:'Human answer'}),
       fixture.node('stale',{authorized:true,needs_review:true,blocking:true,signoff:'signed',signed_by:'Historical Reviewer',answer:'Stale answer'})]}));
     const html=h.run('taskOverview()');assert.match(html,/<details[^>]+class="[^"]*task-question/);
-    assert.match(html,/standing rule/i);assert.match(html,/Human Reviewer/);assert.match(html,/Needs (?:another look|review)|Review needed/i);
+    assert.match(html,/Covered by a rule/);assert.match(html,/Signed by Human Reviewer/);assert.match(html,/Needs a second look/);
+    assert.doesNotMatch(html,/Standing rule|Signed answer|Authorized|Not authorized|Review needed/,'row status is one sentence, never a term');
     const stale=h.run('taskDecision(syntheticDetail.tree.nodes[2])');assert.doesNotMatch(stale,/is-signed/);
   });
   await test('an owner who has not joined is said so on the task page, and only there',()=>{
     const unjoined=fixture.node('waiting',{owner:'Dana Okafor',required_signers:['Dana Okafor'],owner_account:{state:'none',person_id:'p9',email:'',name:'Dana Okafor'}});
     const h=harness();h.selectTask(fixture.tree('unjoined-run',{nodes:[unjoined]}));
     const html=h.run('taskOverview()');
-    assert.match(html,/Waiting on Dana Okafor \(no account yet\)\. Nobody can sign for an owner who has not joined; an administrator can invite them or hand it on\./);
-    assert.match(h.run('taskDecision(syntheticDetail.tree.nodes[0])'),/Dana Okafor · no account yet/);
+    assert.match(html,/Waiting on Dana Okafor · not in Raven yet/,'the status pill says who has not joined');
+    assert.match(html,/Dana Okafor has not joined yet, so nobody can sign this\./);
+    assert.match(html,/data-action="invite-owner" data-person="p9"[^>]*>Invite Dana</);
+    assert.match(html,/data-action="review" data-id="waiting">Hand on</);
+    assert.match(h.run('taskDecision(syntheticDetail.tree.nodes[0])'),/Dana Okafor · not in Raven yet/);
+    h.run("state.me={name:'Member',role:'member'}");const member=h.run('taskOverview()');
+    assert.match(member,/has not joined yet/);assert.doesNotMatch(member,/Invite Dana|>Hand on</,'only an administrator can invite or hand on');
     const joined=harness();joined.selectTask(fixture.tree('joined-run',{nodes:[fixture.node('waiting',{owner:'Dana Okafor',required_signers:['Dana Okafor']})]}));
-    assert.doesNotMatch(joined.run('taskOverview()'),/no account yet/);
-    assert.match(joined.run('taskOverview()'),/Waiting on Dana Okafor\. Open a question/);
+    assert.doesNotMatch(joined.run('taskOverview()'),/not in Raven yet|has not joined|Invite Dana/);
+    assert.match(joined.run('taskOverview()'),/Waiting on Dana Okafor</);
   });
-  await test('a finished task reads Completed and keeps the reported-not-verified caveat',()=>{
+  await test('a finished task reads Done, with its signed answer under Decided',()=>{
     const h=harness();h.selectTask(fixture.tree('finished-run',{status:'completed',counts:{blocking:0,total:1},
       nodes:[fixture.node('settled',{blocking:false,authorized:true,answer:'Keep the default.',signoff:'signed',signatures:['Synthetic Reviewer']})]}));
     const html=h.run('taskOverview()');
-    assert.match(html,/<h2>Completed<\/h2>/);assert.doesNotMatch(html,/Reported complete/);
-    assert.match(html,/Completed as reported by the agent, not verified: inspect the reported result and checks\./);
-    assert.match(h.run("runStatusLabel('completed')"),/^Completed$/,'the Tasks list pill says the same word');
+    assert.match(html,/<p class="task-status-line" role="status"><span class="pill done">(?:<span class="status-dot"><\/span>)?Done<\/span><\/p>/);
+    assert.doesNotMatch(html,/Completed|Reported complete|not verified|Next:|Workflow details|Observed|blocker|authorized answers|recorded questions/);
+    assert.match(html,/id="resolved-settled"/);assert.match(html,/Signed by Synthetic Reviewer/);assert.match(html,/No open questions\./);
+    assert.equal(h.run("runStatusLabel('completed')"),'Done','the Tasks list pill says the same word');
   });
-  await test('terminal lifecycle remains visible alongside blocking or stale decision state',()=>{
-    for(const [status,label] of [['failed',/Failed/i],['cancelled',/Cancelled/i],['abandoned',/Closed/i],['completed',/Completed/]]) {
+  await test('a closed, failed or finished task says so in its pill; the row keeps its own state',()=>{
+    for(const [status,label] of [['failed','Failed'],['cancelled','Closed'],['abandoned','Closed'],['completed','Done']]) {
       for(const stale of [false,true]) {const h=harness();h.selectTask(fixture.tree('lifecycle-run',{status,
         nodes:[fixture.node('unfinished',{needs_review:stale,authorized:stale,signoff:stale?'signed':'required'})]}));
-        const html=h.run('taskOverview()');assert.match(html,label,status+' lifecycle must remain visible');
-        if(status==='completed')assert.match(html,/<h2>Completed<\/h2>/,'a finished task reads Completed, the word a viewer looks for');
-        assert.match(html,/1 blocker/);assert.match(html,stale?/Review needed/:/Waiting for decisions/);
-        assert.match(html,/0 authorized answers/);
+        const html=h.run('taskOverview()');const line=html.match(/<p class="task-status-line"[^>]*>([\s\S]*?)<\/p>/)[1];
+        assert.match(line,new RegExp('>'+label+'</span>'),status+' lifecycle must remain visible');
+        assert.equal((line.match(/class="pill /g)||[]).length,1,'one pill');
+        if(status==='failed')assert.match(line,/See History for the failure\./);else assert.doesNotMatch(line,/See History/);
+        assert.match(html,stale?/Needs a second look/:/Waiting on Synthetic Reviewer/);
+        assert.doesNotMatch(html,/blocker|authorized answers|Waiting for decisions|Review needed|Cancelled/);
       }
     }
   });
@@ -328,10 +337,12 @@ function harness() {
     for(const [source,label] of [['record','Source record'],['memory','Earlier decision'],['human','Recorded human answer'],['agent','Agent proposal']]) {
       const h=harness();h.selectTask(fixture.tree('origins-run',{nodes:[fixture.node('reused',{
         source,source_id:'synthetic-source-node',answered_by:'Historical Author',answer:'Earlier answer'})]}));
-      const html=h.run('taskOverview()');assert(html.includes(label));assert.match(html,source==='memory'?/Earlier answer respondent/:/Recorded answer respondent/);
-      assert.match(html,/Not authorized/);
-      assert.doesNotMatch(html,/Message sent to Historical Author|Signed by Historical Author|Answered by Historical Author/);
-      assert.match(html,/does not imply a new interaction in this run/);
+      const html=h.run('taskOverview()');assert(html.includes('Recorded answer source:</strong> '+label),label+' is named inside Details');
+      assert.match(html,source==='memory'?/Earlier answer respondent/:/Recorded answer respondent/);
+      const summary=html.match(/<summary id="finding-reused-summary">([\s\S]*?)<\/summary>/)[1];
+      assert.match(summary,/Waiting for sign-off/);assert.doesNotMatch(summary,new RegExp(label),'the source label stays out of the row summary');
+      assert.doesNotMatch(html,/Not authorized|Message sent to Historical Author|Signed by Historical Author|Answered by Historical Author/);
+      assert.doesNotMatch(html,/does not imply a new interaction|not live verification|do not grant approval|approval controls/,'the source disclaimer is gone');
     }
   });
   await test('memory source links expose exact recorded pins and a current-record action',()=>{
@@ -349,9 +360,10 @@ function harness() {
     const h=harness();h.selectTask(fixture.tree('freshness-run',{nodes:[
       fixture.node('refresh',{authorized:true,source_refresh_required:true,signoff:'signed',answer:'Earlier answer'}),
       fixture.node('review',{authorized:true,needs_review:true,signoff:'rule',answer:'Earlier rule answer'})]}));
-    const html=h.run('taskOverview()');assert.match(html,/Evidence refresh needed/);assert.match(html,/Review needed/);
-    assert.match(html,/0 authorized answers/);assert.match(html,/Earlier sign-off does not authorize use/);
-    assert.doesNotMatch(html,/id="learned-(?:refresh|review)"/);
+    const html=h.run('taskOverview()');assert.match(html,/Needs fresh evidence/);assert.match(html,/Needs a second look/);
+    assert.match(html,/id="finding-refresh"/);assert.match(html,/id="finding-review"/);assert.doesNotMatch(html,/id="resolved-/,'neither answer is listed as decided');
+    assert.match(html,/Review current evidence and applicability before using this answer\./);
+    assert.doesNotMatch(html,/Evidence refresh needed|Review needed|does not authorize use|id="learned-(?:refresh|review)"/);
   });
   await test('one overview list exposes unapproved findings once with separate approval and source origin',()=>{
     const h=harness();const long='A'.repeat(600)+' exact answer tail';
@@ -360,15 +372,18 @@ function harness() {
       fixture.node('signed',{source:'human',answer:'Signed answer',authorized:true,blocking:false,signoff:'signed',signatures:['Synthetic Reviewer']}),
       fixture.node('long',{source:'record',answer:long,blocking:true})];
     h.selectTask(fixture.tree('all-findings',{nodes}));const html=h.run('taskOverview()');
-    assert.match(html,/Questions &amp; findings|Questions & findings/);
+    assert.match(html,/<h2>Waiting<\/h2>/);assert.match(html,/<h2>Decided<\/h2>/);assert.doesNotMatch(html,/Questions &amp; findings|Questions & findings|Remaining questions|Resolved decisions/);
     for(const n of nodes)assert.equal((html.match(new RegExp('data-node-id="'+n.node_id+'"','g'))||[]).length,1,n.node_id+' appears once');
     for(const [id,label,answer] of [['record','Source record','Unapproved source finding'],['memory','Earlier decision','Unapproved prior answer']]) {
       const summary=html.match(new RegExp('<summary id="finding-'+id+'-summary">([\\s\\S]*?)</summary>'))?.[1];
-      assert(summary);assert(summary.includes(label));assert(summary.includes(answer));assert.match(summary,/Not authorized/);
+      assert(summary);assert(!summary.includes(label),'origin lives inside Details');assert(summary.includes(answer));assert.match(summary,/Waiting for sign-off/);
+      assert.doesNotMatch(summary,/Not authorized/);
+      assert(html.includes('<details class="task-details" id="finding-'+id+'-details">'),'one Details disclosure per question');
     }
     const summary=html.match(/<summary id="finding-long-summary">([\s\S]*?)<\/summary>/)[1];
     assert.doesNotMatch(summary,/exact answer tail/);assert.match(summary,/…/);assert(html.includes(long),'expanded detail retains full answer');
-    assert.match(html,/1 authorized answer/);
+    assert.match(html,/id="resolved-signed"/);assert.match(html,/Signed by Synthetic Reviewer/);
+    assert.doesNotMatch(html,/authorized answer/);
   });
   await test('a late blocker remains visible ahead of older approved findings with stable row order',()=>{
     const h=harness();const older=Array.from({length:100},(_,i)=>fixture.node('older-'+i,{
@@ -390,7 +405,7 @@ function harness() {
     const h=harness();const raw='<img src=x onerror=bad()>',nested={zero:0,false:false,null:null,deep:{value:raw}};
     h.selectTask(fixture.tree('unusual-run',{facts:nested,notes:[{at:null,by:raw,text:raw}],nodes:[fixture.node('odd',{context:nested,owner_evidence:nested})]}),
       fixture.trace({events:[null,{id:1,kind:'task_note',at:null,detail:null},{id:2,kind:'custom',at:'',detail:nested}],notifications:[null]}));
-    for(const tab of ['overview','history']) {h.run('taskTab='+JSON.stringify(tab));const html=h.run('taskOverview()');
+    for(const tab of ['decisions','history']) {h.run('taskTab='+JSON.stringify(tab));const html=h.run('taskOverview()');
       assert.doesNotMatch(html,/<img src=x/);assert.match(html,/&lt;img/);assert.doesNotMatch(html,/\[object Object\]/);}
   });
   await test('late task reads cannot overwrite a newer selected run',async()=>{
@@ -404,7 +419,7 @@ function harness() {
     const h=harness();h.selectTask(fixture.tree('sources-run',{nodes:[fixture.node('source',{sources:[
       {record_id:'current-doc',current:true,ref:'Observed synthetic source',url:'javascript:bad()'},
       {record_id:'stale-doc',current:false,stale:true,ref:'Historical source'}]})]}));
-    const html=h.run('taskOverview()');assert.match(html,/Current observed version/);assert.match(html,/not live verification/);
+    const html=h.run('taskOverview()');assert.match(html,/Current observed version/);assert.doesNotMatch(html,/not live verification/);
     assert.doesNotMatch(html,/<a[^>]+href="javascript:/);assert.match(html,/Historical or unavailable version/);
   });
   await test('questions, notes, and history are bounded with explicit expansion',()=>{
@@ -459,12 +474,101 @@ function harness() {
   });
   await test('supplied model-pending flags keep context reading distinct from final empty or approved findings',()=>{
     const h=harness();h.selectTask(fixture.tree('reading-empty',{model_pending:true,nodes:[],scope_clarifications:[]}));
-    let html=h.run('taskOverview()');assert.match(html,/Reading available context/);assert.match(html,/context reading is still pending/);
-    assert.match(html,/role="status"/);assert.doesNotMatch(html,/No questions or findings recorded yet/);
+    let html=h.run('taskOverview()');assert.match(html,/<p class="task-status-line" role="status">[^]*?Reading context…/);
+    assert.match(html,/<p class="task-empty">Reading context…<\/p>/);assert.doesNotMatch(html,/No open questions|In progress|No questions or findings/);
     h.selectTask(fixture.tree('reading-node',{model_pending:false,nodes:[fixture.node('reading',{
       model_pending:true,source:'record',evidence:'An observed source finding remains visible',authorized:false})]}));
-    html=h.run('taskOverview()');assert.match(html,/Reading available context/);assert.match(html,/An observed source finding remains visible/);
-    assert.match(html,/Not authorized/);assert.doesNotMatch(html,/Human sign-off recorded/);
+    html=h.run('taskOverview()');assert.match(html,/<span class="task-reading">Reading context…<\/span>/);
+    const summary=html.match(/<summary id="finding-reading-summary">([\s\S]*?)<\/summary>/)[1];
+    assert.doesNotMatch(summary,/An observed source finding/,'the retrieval string never sits in a row summary');
+    assert.match(html,/<p class="task-checked">What Raven checked: An observed source finding remains visible<\/p>/);
+    assert.match(summary,/Waiting on Synthetic Reviewer/);assert.doesNotMatch(html,/Not authorized|Signed by/);
+  });
+  await test('a question row is one sentence with a name, one button, and its diagnostics behind Details',()=>{
+    const h=harness();const cases=[
+      [fixture.node('open'),'Waiting on Synthetic Reviewer','Answer'],
+      [fixture.node('nobody',{owner:'',required_signers:[]}),'Needs a contact','Answer'],
+      [fixture.node('answered',{answer:'A recorded answer'}),'Waiting for sign-off','Sign'],
+      [fixture.node('signed',{authorized:true,blocking:false,signoff:'signed',answer:'Yes',signatures:['Ana Lima','Ben Ode','Cy Dao']}),'Signed by Ana Lima, Ben Ode and 1 more','View'],
+      [fixture.node('rule',{authorized:true,blocking:false,signoff:'rule',answer:'Yes'}),'Covered by a rule','View'],
+      [fixture.node('plain',{authorized:true,blocking:false,signoff:'',answer:'Yes'}),'Answered','View'],
+      [fixture.node('review',{authorized:true,needs_review:true,signoff:'signed',answer:'Old'}),'Needs a second look','Sign'],
+      [fixture.node('fresh',{authorized:true,source_refresh_required:true,signoff:'signed',answer:'Old'}),'Needs fresh evidence','Sign'],
+      [fixture.node('dup',{status:'duplicate',blocking:false,duplicate_of:'other'}),'Duplicate','View'],
+      [fixture.node('follow',{status:'suggested',blocking:false}),'Follow-up for the agent','View']];
+    h.selectTask(fixture.tree('sentence-run',{nodes:cases.map(([n])=>n)}));
+    for(const [n,text,button] of cases) {
+      const status=h.run('taskStatusSentence(syntheticDetail.tree.nodes.find(x=>x.node_id==='+JSON.stringify(n.node_id)+'))');
+      assert.equal(status.text,text,n.node_id);assert(['waiting','done','neutral'].includes(status.tone));
+      const row=h.run('taskDecision(syntheticDetail.tree.nodes.find(x=>x.node_id==='+JSON.stringify(n.node_id)+'),"finding")');
+      assert.equal((row.match(/class="pill /g)||[]).length,1,'one pill');assert.match(row,new RegExp('data-action="review" data-id="'+n.node_id+'">'+button+'<'));
+      assert.match(row,new RegExp('<details class="task-details" id="finding-'+n.node_id+'-details"><summary id="finding-'+n.node_id+'-details-summary">Details</summary>'));
+      assert.doesNotMatch(row,/Not authorized|Open decision|Evidence refresh needed|Review needed|Context only|Authorized by/);
+    }
+    h.context.richNode=fixture.node('rich',{rationale:'Because policy',depth:1,origin:'human',next:'Retry after sign-off',routing_reason:'CODEOWNERS',evidence:'memory: nothing similar; records: none',prediction:'Keep seven days',answer:''});
+    const rich=h.run('taskDecision(richNode,"finding")');
+    const [,summary,body]=rich.match(/<summary[^>]*>([\s\S]*?)<\/summary>([\s\S]*)$/);
+    assert.match(summary,/Suggested: Keep seven days/);assert.doesNotMatch(summary,/memory: nothing similar|CODEOWNERS|Level 1/);
+    const details=body.slice(body.indexOf('<details class="task-details"'));
+    for(const text of ['Level 1 · added by a person','Recorded next action','Retry after sign-off','Selected contact','Contact, routing and referrals','CODEOWNERS','What Raven checked: memory: nothing similar; records: none'])assert(details.includes(text),text+' is inside Details');
+    assert(body.slice(0,body.indexOf('<details class="task-details"')).includes('Why: Because policy'),'the rationale sits above the button');
+    h.context.pair=[fixture.node('a'),fixture.node('b')];const first=h.run('taskQuestions(pair,"finding","none")');
+    assert.match(first,/id="finding-a-review" class="button small primary"/);assert.match(first,/id="finding-b-review" class="button small"/);
+  });
+  await test('the page head is title, goal, meta line, one pill, two tabs and a More menu; nothing explains the product',()=>{
+    const h=harness();const long=('A long brief line that keeps going. ').repeat(12);
+    h.selectTask(fixture.tree('head-run',{goal:long,requester:'',verdict:'pass',verdict_why:'Scoped.'}));
+    h.run("state.runs=[{id:'head-run',agent:'Cursor',repo:'synthetic/minimal-ui',status:'needs_judgment',updated_at:'2026-10-09T00:00:00Z'}]");
+    let html=h.run('taskOverview()');
+    assert.match(html,/<a class="task-back" href="#runs">← Tasks<\/a><details class="more-menu" id="task-more"><summary aria-label="More actions">More<\/summary><div class="more-menu-items"><button id="task-share" class="button text" data-action="task-share">Copy link<\/button><\/div><\/details>/);
+    assert.match(html,/<p class="task-goal is-clamped" id="task-brief">A long brief line/);
+    assert.match(html,/<button id="task-brief-summary" class="button text task-brief-toggle" data-action="task-brief-toggle" aria-expanded="false" aria-controls="task-brief">Show more<\/button>/);
+    assert.match(html,/<p class="task-meta">Requester not recorded · synthetic\/minimal-ui · Cursor<\/p>/);
+    assert.match(html,/<button id="task-tab-decisions" class="tab active"[^>]*>Decisions \(1\)<\/button><button id="task-tab-history" class="tab "[^>]*>History<\/button><\/nav>/);
+    assert.match(html,/<details class="task-panel task-context" id="task-context"><summary id="task-context-summary">Details<\/summary>/);
+    assert.match(html,/<p id="task-kickoff"><strong>Kickoff verdict · pass<\/strong> Scoped\.<\/p>/);
+    assert.match(html,/<details class="task-panel task-inquiry" id="task-inquiry"><summary id="task-inquiry-summary">Ask Raven about this task<\/summary>/);
+    assert.match(html,/<h2>Notes<\/h2>[\s\S]*<div id="task-note-compose"><form id="note-form"[^>]*><label for="note-text">Note for the agent<\/label><textarea id="note-text"[^>]*placeholder="A constraint, a person to ask, a link\."/);
+    for(const gone of ['Refresh','Copy app link','Open task page','Read the task brief','Workflow details','Next:','Observed','task-tab-overview','task-tab-review','Questions &amp; findings','Not authorized','Read-only','Context &amp; discussion','Add context for the agent','task-access','A link does not grant access','workflow state','Code review'])assert(!html.includes(gone),gone+' is gone');
+    h.run('taskView().briefOpen=true');html=h.run('taskOverview()');
+    assert.match(html,/<p class="task-goal" id="task-brief">/);assert.match(html,/aria-expanded="true"[^>]*>Show less</);
+    h.selectTask(fixture.tree('same-run',{goal:'Synthetic run overview',facts:{},verdict:''}));html=h.run('taskOverview()');
+    assert.doesNotMatch(html,/task-goal|task-brief|id="task-context"/,'a goal that repeats the title is not shown twice; no Details without facts');
+    assert.match(html,/<p class="task-meta">Requested by Synthetic Requester · synthetic\/minimal-ui<\/p>/);
+    h.run("state.model={investigation:false}");assert.doesNotMatch(h.run('taskOverview()'),/task-inquiry/);
+    h.run("state.model={};state.auth={enabled:true};state.me={id:'u1',name:'Me',role:'member'};state.settings={brief_mode:'inbox'};state.executions=[{run_id:'same-run'}];state.browser_tasks=[{task_id:'same-run'}]");
+    html=h.run('taskOverview()');const menu=html.match(/<div class="more-menu-items">([\s\S]*?)<\/div><\/details>/)[1];
+    assert.match(menu,/Copy link.*Open my personal page.*href="#work\/same-run">Open conversation.*data-action="execution-details" data-id="same-run">Execution output and files/);
+    h.run("state.settings={brief_mode:'off'}");assert.doesNotMatch(h.run('taskOverview()'),/Open my personal page/);
+  });
+  await test('a task with a code review keeps it as a section the warning jumps to',()=>{
+    const h=harness();h.selectTask(fixture.tree('review-run',{review:{status:'done',follows:[{node_id:'pending-a',verdict:'unclear',why:'Outside the diff.',requirements:[]}]}}));
+    const html=h.run('taskOverview()');
+    assert.match(html,/<p class="task-warning">1 decisions need inspection after the model review\.<button class="button small" data-action="task-review">Open code review<\/button><\/p>/);
+    assert.match(html,/<section class="task-panel" id="task-review"><h2 tabindex="-1">Code review<\/h2>/);assert.match(html,/Outside the diff\./);
+    assert.doesNotMatch(html,/does not replace tests|No code review yet|Code review against decisions/);
+    assert.doesNotMatch(h.run('taskOverview()').replace(/<section class="task-panel" id="task-review">[\s\S]*?<\/section>/,''),/Outside the diff/);
+    h.selectTask(fixture.tree('no-review-run'));assert.doesNotMatch(h.run('taskOverview()'),/Code review/);
+  });
+  await test('the Tasks list is rows with one pill and no table; its buttons sit in the page head',()=>{
+    const h=harness();const now=new Date().toISOString();
+    h.run("state.runs=[{id:'r1',title:'Tighten tokens',repo:'acme/platform',agent:'Cursor',status:'needs_judgment',updated_at:"+JSON.stringify(now)+"},{id:'r2',title:'Old job',repo:'acme/platform',agent:'Codex',status:'completed',updated_at:"+JSON.stringify(now)+"},{id:'r3',title:'Lost job',repo:'acme/platform',agent:'Codex',status:'failed',updated_at:"+JSON.stringify(now)+"},{id:'r4',title:'Stopped',repo:'acme/platform',agent:'Codex',status:'cancelled',updated_at:"+JSON.stringify(now)+"},{id:'r5',title:'Orphan',repo:'acme/billing',agent:'Codex',status:'needs_judgment',updated_at:"+JSON.stringify(now)+"}];"
+      +"state.decisions=[{id:'d1',run_id:'r1',status:'pending',owner_name:'Alex Morgan'},{id:'d2',run_id:'r1',status:'pending',owner_name:'Wes Chen'},{id:'d3',run_id:'r1',status:'pending',owner_name:'Marisol Vega'},{id:'d4',run_id:'r5',status:'pending',owner_name:''}];state.browser_tasks=[{task_id:'r2'},{task_id:'b1',prompt:'Browser job',repository:'acme/web',status:'running',updated_at:"+JSON.stringify(now)+"}];state.model={proposals:false};");
+    let html=h.run('runs()');const head=h.get('#page-actions').innerHTML;
+    assert.doesNotMatch(html,/<table|View run|What Raven saved|Tasks in this workspace/);
+    assert.equal((html.match(/<a class="task-row"/g)||[]).length,6);assert.equal((html.match(/class="pill /g)||[]).length,6,'one pill per row');
+    assert.match(html,/<a class="task-row" href="#runs\/r1"><div><strong>Tighten tokens<\/strong><span class="muted">acme\/platform · Cursor · just now<\/span><\/div><span class="pill waiting">(?:<span class="status-dot"><\/span>)?Waiting on Alex Morgan, Wes Chen and 1 more<\/span><\/a>/);
+    assert.match(html,/href="#work\/r2"><div><strong>Old job[\s\S]*?pill done">(?:<span class="status-dot"><\/span>)?Done</);
+    assert.match(html,/Lost job[\s\S]*?pill neutral">(?:<span class="status-dot"><\/span>)?Failed</);assert.match(html,/Stopped[\s\S]*?>Closed</);
+    assert.match(html,/Orphan[\s\S]*?>No owner yet</,'never Waiting on undefined');assert.doesNotMatch(html,/undefined/);
+    assert.match(html,/<a class="task-row" href="#work\/b1"><div><strong>Browser job<\/strong><span class="muted">acme\/web · Browser · just now<\/span><\/div><span class="pill neutral">(?:<span class="status-dot"><\/span>)?In progress</);
+    assert.match(head,/^<span class="page-count">6 tasks<\/span><details class="more-menu"><summary aria-label="More actions">More<\/summary><div class="more-menu-items"><button class="button text" data-action="new">Ask a question<\/button><\/div><\/details>$/);
+    h.run("state.runs=state.runs.slice(0,1);state.browser_tasks=[];state.execution_config={enabled:true};state.model={proposals:true}");html=h.run('runs()');
+    assert.match(html,/<span class="muted">Cursor · just now<\/span>/,'the repository is named only when there is more than one');
+    assert.match(h.get('#page-actions').innerHTML,/<span class="page-count">1 task<\/span><button class="button primary" data-action="task">Start a task<\/button><details class="more-menu">[\s\S]*Ask a question[\s\S]*<a href="#today">Outcomes<\/a>/);
+    h.run("state.execution_config={};state.workbench={ready:true}");h.run('runs()');assert.match(h.get('#page-actions').innerHTML,/<a class="button primary" href="#work">Start a task<\/a>/);
+    h.run("state.auth={enabled:true};state.me={role:'viewer'}");h.run('runs()');assert.doesNotMatch(h.get('#page-actions').innerHTML,/Start a task|Ask a question/);
+    h.run("state.runs=[]");html=h.run('runs()');assert.match(html,/<h3>No tasks yet\.<\/h3><p>Connect a coding agent in Settings and give it a task\.<\/p><button class="button soft" data-action="help-connect">Open Settings<\/button>/);
   });
   if(failures.length)throw new Error(`${failures.length} failed; ${passed} passed:\n${failures.join('\n\n')}`);
   console.log(`Fresh minimal run UI: ${passed} checks passed (queued DOM/API doubles, not Chromium).`);

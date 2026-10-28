@@ -237,7 +237,7 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   vm.runInContext(source.slice(source.indexOf('function sourceEvidence('), source.indexOf('function sourceRevalidationFields(')), taskContext);
   vm.runInContext(taskSource + ';taskDetail=fixture;',taskContext);
   let overview = vm.runInContext('taskOverview()',taskContext);
-  assert.match(overview, /Read the task brief/);
+  assert.match(overview, /<p class="task-goal" id="task-brief">The complete original brief\.<\/p>/);
   assert.match(overview, /Open code review/);
   assert.match(overview, /Signed by Wes/);
   assert.match(overview, /Evidence & answer origin/);
@@ -245,7 +245,7 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
   assert.match(overview, /"sequence": 2/);
   assert.match(overview, /"namespace": "fixture-site"/);
   assert.match(overview, /"source_version_id": "version-2"/);
-  assert.doesNotMatch(overview, /Existing code is outside the diff/);
+  assert.match(overview, /<h2 tabindex="-1">Code review<\/h2>/);
   assert.doesNotMatch(overview, /id="note-form"/);
   // Stale reviews can reflect changed answers, reframed questions, or legacy
   // input metadata that was never recorded. Do not invent a specific cause.
@@ -256,14 +256,15 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
     fixture.tree.review = {...keptReview, status:'stale', read_status:'done',
       stale:[{node_id:'n1',why:reason}]};
     const staleOverview = vm.runInContext('taskOverview()',taskContext);
-    assert.match(staleOverview, /Review needed/);
+    assert.match(staleOverview, /class="done">Done</, 'a finished task stays Done; the stale review is one line under it');
+    assert.doesNotMatch(staleOverview, /Review needed/);
     assert.match(staleOverview, /needs refreshing for the current questions and answers/);
     assert.match(staleOverview, /Submit the current diff again/);
     assert.doesNotMatch(staleOverview, /An answer changed after the code review/);
     assert.equal(reads,0,'Rendering stale review guidance must not issue requests');
   }
   fixture.tree.review = keptReview;
-  const review = vm.runInContext("taskTab='review';taskOverview()",taskContext);
+  const review = vm.runInContext("taskTab='decisions';taskOverview()",taskContext);
   assert.match(review, /Existing code is outside the diff/);
   assert.match(review, /Inspect requirements/);
   const timeline = vm.runInContext('taskTimeline(fixture.trace,fixture.tree.nodes)',taskContext);

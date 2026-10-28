@@ -1262,6 +1262,8 @@ document.addEventListener('click', async event => {
     if (action === 'review' || action === 'source') await review(target.dataset.id);
     if (action === 'run') location.hash = ((state.browser_tasks || []).some(t => t.task_id === target.dataset.id) ? 'work/' : 'runs/') + encodeURIComponent(target.dataset.id);
     if (action === 'task-tab') { taskTab = target.dataset.tab; taskView().tab = taskTab; render(); }
+    if (action === 'task-brief-toggle') { taskView().briefOpen = !taskView().briefOpen; render(); }
+    if (action === 'task-review') { taskTab = 'decisions'; taskView().tab = taskTab; render(); const heading = $('#task-review h2'); if (heading) { heading.focus(); heading.scrollIntoView({block: 'start'}); } }
     if (action === 'task-more') taskMore(target.dataset.key, Number(target.dataset.step) || 12);
     if (action === 'task-refresh') await loadTask();
     if (action === 'task-brief') { const r = await api(`/api/tasks/${encodeURIComponent(taskId())}/link`, {decision_id: taskBriefDecision()}); location.assign(r.url); }
