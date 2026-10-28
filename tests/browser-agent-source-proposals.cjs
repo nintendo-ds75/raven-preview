@@ -33,7 +33,8 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     page.on('pageerror',error=>errors.push(error.message));
     await page.goto(fixture.url);
     await page.waitForFunction(()=>typeof review==='function' && state?.decisions?.length);
-    const open=async id=>{await page.evaluate(id=>review(id),id);await page.locator('#modal[open]').waitFor();};
+    // Source snapshots live one level down, behind the dialog's Details disclosure.
+    const open=async id=>{await page.evaluate(id=>review(id),id);await page.locator('#modal[open]').waitFor();await page.locator('#decision-details').evaluate(el=>{el.open=true;});};
     const sign=async (id,status=200)=>{
       const pending=page.waitForResponse(r=>r.url().endsWith('/api/decisions/'+id+'/signoff')&&r.request().method()==='POST');
       await page.locator('[data-action="signoff"]').click();
@@ -62,7 +63,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.equal(await page.locator('.source-evidence-review img').count(),0);
     assert.equal(await page.evaluate(()=>Boolean(window.sourceExecuted)),false);
     await page.screenshot({path:path.join(artifacts,'fresh-agent-sources-desktop.png'),fullPage:true});
-    await page.getByRole('button',{name:'Close',exact:true}).last().click();
+    await page.locator('#modal .modal-head [data-action="close"]').click();
     assert.equal((await read(fixture.support)).authorized,false);
     await open(fixture.support);
     assert.equal(await page.locator('.source-evidence-review .source-snapshot').count(),2);

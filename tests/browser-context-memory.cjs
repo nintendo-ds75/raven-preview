@@ -38,8 +38,8 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
       await page.locator('[data-action="signoff"]').click();
       const result = await response;
       assert.equal(result.status(), 200, await result.text());
-      // The shipped signedAs() label uses a middle dot, not "Signed by".
-      await page.waitForFunction(() => document.querySelector('#modal')?.textContent.includes('Signed · Ada Example'));
+      // The status pill names the signer in one sentence.
+      await page.waitForFunction(() => document.querySelector('#modal')?.textContent.includes('Signed by Ada Example'));
     };
     await page.goto(fixture.url);
     await page.waitForFunction(() => typeof review === 'function' && state?.decisions?.length);
@@ -49,7 +49,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.match(await page.locator('.source-revalidation').first().textContent(), /Revision B: keep records for thirty days after migration/);
     assert.equal((await read()).authorized,false);
     // Closing the displayed snapshots is not approval.
-    await page.getByRole('button',{name:'Close',exact:true}).last().click();
+    await page.locator('#modal .modal-head [data-action="close"]').click();
     assert.equal((await read()).authorized,false);
     await page.evaluate(id => review(id), fixture.decision_id);
     await page.locator('#source-review-signoff').check();
