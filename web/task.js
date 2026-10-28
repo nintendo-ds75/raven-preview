@@ -207,7 +207,7 @@ function taskDecision(n, prefix = 'question', primary = false) {
     ${n.answer ? `<p class="task-answer">${esc(n.answer)}</p>` : ''}${n.partial ? '<p class="context">This answer is partial.</p>' : ''}
     ${n.rationale ? `<p class="task-why">Why: ${esc(n.rationale)}</p>` : ''}
     ${n.needs_review || n.source_refresh_required ? `<p class="task-warning">${esc(n.review_reason || 'Review current evidence and applicability before using this answer.')}</p>` : ''}
-    <button id="${esc(id)}-review" class="button small${primary ? ' primary' : ''}" data-action="review" data-id="${esc(n.node_id)}">${taskAction(n)}</button>
+    <button id="${esc(id)}-review" class="button small${primary ? ' primary' : ''}" data-action="review" data-id="${esc(n.node_id)}" aria-label="${taskAction(n)}: ${esc(n.question)}">${taskAction(n)}</button>
     <details class="task-details" id="${esc(id)}-details"><summary id="${esc(id)}-details-summary">Details</summary>
     ${n.depth ? `<p class="context">Level ${esc(n.depth)}${n.origin === 'human' ? ' · added by a person' : ''}</p>` : ''}
     ${n.next ? `<details id="${esc(id)}-next"><summary>Recorded next action</summary><p class="task-verbatim">${esc(n.next)}</p></details>` : ''}
@@ -281,18 +281,22 @@ const taskGoalLong = text => Array.from(text).length > 240 || (text.match(/\n/g)
 
 // The one sentence the task page carries, as {text, tone, line}: the people a
 // task waits on (saying who has not joined yet), else what state it is in.
+// People come before the lifecycle, as on the Tasks row (runStatusSentence):
+// a run the agent reported complete can still hold a question a person owes.
 function taskStatus(t, nodes, scopes, reading) {
   const blockers = nodes.filter(n => n.blocking);
-  const needsReview = t.needs_review || t.review?.status === 'stale' || nodes.some(n => n.needs_review || n.source_refresh_required);
+  const doubted = nodes.some(n => n.needs_review || n.source_refresh_required);
   const unjoined = new Set(blockers.filter(taskNoAccount).map(n => n.owner));
   const me = state.me?.name || '', mine = name => !!me && state.auth?.enabled && taskSame(name, me);
   const waiting = [...new Set(blockers.flatMap(n => taskWaiting(n).concat(n.owner && !taskList(n.signatures).some(s => taskSame(s,n.owner)) ? [n.owner] : [])))].filter(Boolean);
   const names = taskNames(waiting.map(name => mine(name) ? 'you' : unjoined.has(name) ? `${name} · not in Raven yet` : name));
+  if (scopes.length) return {text:'Needs task facts', tone:'waiting'};
+  if (doubted) return {text:'Needs a second look', tone:'waiting'};
+  if (blockers.length) return {text: names ? `Waiting on ${names}` : 'Needs a contact', tone:'waiting'};
   const lifecycle = runStatusLabel(t.status);
   if (lifecycle !== 'In progress') return {text: lifecycle, tone: lifecycle === 'Done' ? 'done' : 'neutral', line: lifecycle === 'Failed' ? 'See History for the failure.' : ''};
-  if (scopes.length) return {text:'Needs task facts', tone:'waiting'};
-  if (needsReview) return {text:'Needs a second look', tone:'waiting'};
-  if (blockers.length) return {text: names ? `Waiting on ${names}` : 'Needs a contact', tone:'waiting'};
+  // A stale code review is a line under a finished task's pill, not a person owed; it leads only while the task runs.
+  if (t.needs_review || t.review?.status === 'stale') return {text:'Needs a second look', tone:'waiting'};
   if (!nodes.length && reading) return {text:'Reading context…', tone:'neutral'};
   return {text:'In progress', tone:'neutral'};
 }

@@ -37,7 +37,7 @@ assert.match(html,/<fieldset class="read-only-settings" disabled><legend>Managed
 assert.doesNotMatch(html,/data-action="ingest"|settings-meetings|People access/);
 c.canAdminister=()=>true;
 // The checklist: the server's notices as written, Slack as one line, readiness as level words; omitted when empty.
-c.state.model={notice:'Suggestions and briefs are off: no model key. Add a key with ./setup --configure and restart.'};
+c.state.model={backend:'none',proposals:false,notice:'Suggestions and briefs are off: no model key. Add a key with ./setup --configure and restart.'};
 c.state.delivery={enabled:false};
 c.state.readiness=[{key:'no_slack',level:'info',what:'Slack is optional.',do:'Use the inbox.'},{key:'no_triage_channel',level:'warning',what:'No Slack channel is configured.',do:'Set SLACK_FALLBACK_CHANNEL.'},{key:'ingest_failed',level:'blocker',what:'Raven could not read the repository.',do:'Fix the path, then restart Raven.'}];
 const list=c.setupChecklist();
@@ -51,6 +51,17 @@ assert.doesNotMatch(list,/readiness-row|class="blocker"|class="warning"/,'the le
 assert.ok(c.connections().startsWith('<h2 id="setup-checklist-title">Not set up yet</h2>'),'the checklist is first');
 c.state.model={};c.state.delivery={enabled:true};c.state.readiness=[];
 assert.equal(c.setupChecklist(),'');
+// A configured backend's notice is information, not a gap: no checklist row, nothing to fix.
+c.state.model={backend:'anthropic',proposals:true,notice:'Model: claude-x. Suggestions on for watched repositories.'};
+assert.equal(c.setupChecklist(),'','a configured server has nothing to set up');
+c.state.model={backend:'claude-cli',proposals:false,investigation:true,notice:'Manual investigation only; automatic suggestions need an API key.'};
+assert.match(c.setupChecklist(),/<li><strong>Worth fixing<\/strong><span>Manual investigation only; automatic suggestions need an API key\.<\/span><\/li>/);
+c.state.model={};
+// A viewer cannot paste evidence, so Settings draws no empty disclosure for them.
+c.state.me={role:'viewer'};c.canAdminister=()=>false;
+assert.doesNotMatch(c.connections(),/settings-evidence|evidence-mount/,'no empty evidence disclosure for a viewer');
+c.state.me={role:'member'};assert.match(c.connections(),/id="settings-evidence"/);
+c.state.me={role:'admin'};c.canAdminister=()=>true;
 // Card 2 keeps the indexed line only when a repository is indexed; local mode names the single-operator state.
 c.state.graph={repos:[],engineers:0,intents:0};assert.doesNotMatch(c.connections(),/Already indexed/);
 delete c.state.graph;assert.doesNotMatch(c.connections(),/Already indexed/);
@@ -65,4 +76,9 @@ const sources=c.contextSourcesCard();
 assert.match(sources,/<h3>Other sources<\/h3><\/div><ul><li><strong>slack<\/strong> #eng → acme\/app/);
 assert.match(sources,/<details class="history" id="context-sources-available"><summary>Available to add<\/summary><ul><li><strong>jira<\/strong> not configured \(credentials not set\)<br><code>JIRA_BASE_URL=…<\/code><\/li><\/ul><\/details>/);
 assert.doesNotMatch(sources,/Records are evidence|attested/);
+// The confirmations and the Ask dialog use the words on the controls and the page names; the old ones are gone.
+assert.match(source,/notify\(event\.target\.value \? 'Fallback person set\. Questions nobody is known to own go to them\.' : 'Fallback person cleared\.'\)/);
+assert.match(source,/notify\(event\.target\.checked \? 'Only verified owners are asked now\.' : 'Git history can suggest owners again\.'\)/);
+assert.match(source,/Connect or ingest a repository in Settings\./);
+assert.doesNotMatch(source,/Coordinator set|Coordinator cleared|Pilot mode|Connections & setup/);
 console.log('Settings: checklist, four cards, Routing ids and Advanced render in order with the spec copy.');

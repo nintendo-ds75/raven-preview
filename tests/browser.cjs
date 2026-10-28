@@ -161,7 +161,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.waitForSelector('.decision-card');
     await tab('All open').click();
     const openQuestion = page.locator('#app .decision-card').filter({hasNotText:'prepaid credits'}).first();
-    const handedQuestion = (await openQuestion.locator('h3').textContent()).trim();
+    const handedQuestion = (await openQuestion.locator('h2').textContent()).trim();
     await openQuestion.getByRole('button', {name:/^(Answer|Sign)$/}).click();
     await page.waitForSelector('#modal[open] #refer-learn');
     assert.equal(await page.locator('#hand-on').getAttribute('data-action'), 'assign');

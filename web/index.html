@@ -37,11 +37,12 @@
     <header class="topbar"><div class="topbar-right"><span class="connection" id="connection"><i></i><span id="workspace-name">Local workspace</span></span><button type="button" data-action="help" class="icon-button" aria-label="Setup and help" title="Setup and help"><span data-icon="help"></span></button></div></header>
     <main id="main" tabindex="-1">
       <section class="page-head"><h1 id="page-title">Inbox</h1><div class="page-actions" id="page-actions"></div></section>
-      <div id="app" aria-live="polite"><div class="empty"><span class="loading-dot"></span>Connecting to your workspace…</div></div>
+      <div id="app"><div class="empty" role="status"><span class="loading-dot"></span>Connecting to your workspace…</div></div>
 
     </main>
   </div>
   <dialog id="modal" aria-labelledby="modal-title"><div id="modal-content"></div></dialog>
+  <div id="announce" class="sr-only" role="status" aria-live="polite"></div>
   <div id="toast" class="toast" role="status" hidden></div>
 </body>
 </html>

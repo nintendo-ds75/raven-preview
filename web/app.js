@@ -60,7 +60,7 @@ let workspaceError = '';
 let ownership = null, ownershipLoading = false;
 let savings = null, savingsLoading = false, savingsAt = 0;
 let directory = null, directoryLoading = false;
-let view = 'inbox', tab = 'pending', tabChosen = false, query = '', ownerFilter = '', fetching = false;
+let view = 'inbox', tab = 'pending', tabChosen = false, query = '', ownerFilter = '', fetching = false, inboxShown = 0;
 // The ETag of the state on screen, sent back with each poll; and when the
 // list was last drawn, so relative times still move while nothing changes.
 let stateTag = '', lastDraw = 0, lastFetchedAt = 0;
@@ -312,13 +312,18 @@ async function refresh({quiet = false} = {}) {
 
 // Workspace-level notices live on the Settings page; everywhere else they
 // are one dot on the Settings nav item. Read from /api/state; nothing here
-// probes a provider.
+// probes a provider. The server writes a model notice for every backend;
+// it names a gap only when no backend can make suggestions
+// (state.model.proposals false: no key, or the claude-cli backend).
 function settingsDotState() {
   const dot = $('#settings-dot');
   if (!dot) return;
-  const incomplete = !!state.auth && (!!state.model?.notice || state.delivery?.enabled === false
+  const incomplete = !!state.auth && ((state.model?.proposals === false && !!state.model.notice) || state.delivery?.enabled === false
     || (state.readiness || []).some(item => item && item.level === 'blocker'));
   dot.hidden = !incomplete;
+  // The link's name says it too: a colour and a hover title reach nobody using a screen reader or a keyboard.
+  const link = dot.closest?.('a');
+  if (link) link.setAttribute('aria-label', incomplete ? 'Settings, setup incomplete' : 'Settings');
 }
 
 function loadOwnership() {
@@ -348,6 +353,7 @@ function navigate() {
   const [title] = titles[view];
   $('#page-title').textContent = title;
   document.title = view === 'work' ? 'Raven' : `Raven · ${title}`;
+  announce(view === 'work' ? 'Start a task' : title);
   document.querySelectorAll('nav a').forEach(link => {
     link.classList.toggle('active', link.dataset.view === view);
     if (link.dataset.view === view) link.setAttribute('aria-current', 'page');
@@ -363,6 +369,10 @@ function navigate() {
   if (resetScrollOnNavigation && typeof window.scrollTo === 'function') window.scrollTo(0, 0);
   resetScrollOnNavigation = false;
 }
+// What changed, said once through one small live region. The page body is
+// not one: with #app live, every redraw (each search keystroke, each
+// changed poll) re-read the whole page and drowned the status lines.
+const announce = text => { const live = $('#announce'); if (live) live.textContent = text; };
 
 function metrics() {
   const pending = state.decisions.filter(needsYou);
@@ -416,10 +426,10 @@ function decisionCard(d, index) {
   const taskHref = `#${(state.browser_tasks || []).some(t => t.task_id === d.run_id) ? 'work' : 'runs'}/${encodeURIComponent(d.run_id || '')}`;
   return `<article class="decision-card">
     <div class="card-top"><span class="agent-symbol">${(d.agent || '').includes('Claude') ? '✳' : (d.agent || '').includes('Codex') ? '⌘' : '◇'}</span><span>${esc(d.agent)}</span><span>·</span><span class="repo">${esc(d.repo)}</span><time datetime="${esc(d.created_at)}">${ago(d.created_at)}</time>${open}</div>
-    <h3>${esc(d.question)}</h3>${d.run_title ? `<a class="card-task" href="${esc(taskHref)}" data-action="run" data-id="${esc(d.run_id)}">${esc(d.run_title)}</a>` : ''}
+    <h2>${esc(d.question)}</h2>${d.run_title ? `<a class="card-task" href="${esc(taskHref)}" data-action="run" data-id="${esc(d.run_id)}">${esc(d.run_title)}</a>` : ''}
     ${scope ? objectiveScopeCard(scope, `scope-${d.id}`) : clamped(d.context, 'context', `card-${d.id}`)}
     ${answerBox(d)}
-    <div class="card-bottom"><span class="owner">${avatar(d.owner_name, index)}${esc(d.owner_name || 'No owner yet')}</span>${statusPill(d)}<button class="button small ${settled ? '' : 'soft'}" data-action="review" data-id="${esc(d.id)}">${button}</button></div>
+    <div class="card-bottom"><span class="owner" title="${esc(d.owner_name || 'No owner yet')}">${avatar(d.owner_name, index)}</span>${statusPill(d)}<button class="button small ${settled ? '' : 'soft'}" data-action="review" data-id="${esc(d.id)}" aria-label="${button}: ${esc(d.question)}">${button}</button></div>
   </article>`;
 }
 
@@ -440,6 +450,12 @@ const listOf = raw => { try { const v = Array.isArray(raw) ? raw : JSON.parse(ra
 const signersOf = d => listOf(d.signatures).map(s => String(s?.by || '')).filter(Boolean);
 const stillToSign = d => { const done = signersOf(d).map(n => n.toLowerCase()); return listOf(d.required_signers).map(String).filter(n => !done.includes(n.toLowerCase())); };
 const halfSigned = d => d.signoff === 'required' && signersOf(d).length > 0;
+// At most two names, then how many more: 'Alex Morgan, Wes Chen and 1 more'.
+function nameList(names) {
+  const unique = [...new Set(names.filter(Boolean))];
+  return unique.length > 2 ? `${unique[0]}, ${unique[1]} and ${unique.length - 2} more` : unique.join(', ');
+}
+
 // Status is one sentence that names a person, never a count or a term:
 // the same words on the card, the task page and the dialog. Two names at
 // most, then "and N more"; an empty name is never rendered.
@@ -482,7 +498,7 @@ function activity() {
 }
 
 function empty(title, description = '', action = '', button = '') {
-  return `<div class="empty">${icon('inbox')}<h3>${esc(title)}</h3>${description ? `<p>${esc(description)}</p>` : ''}${action ? `<button class="button soft" data-action="${action}">${esc(button)}</button>` : ''}</div>`;
+  return `<div class="empty">${icon('inbox')}<h2>${esc(title)}</h2>${description ? `<p>${esc(description)}</p>` : ''}${action ? `<button class="button soft" data-action="${action}">${esc(button)}</button>` : ''}</div>`;
 }
 
 // An empty tab says what it would hold. Measured in Chromium: an empty
@@ -506,6 +522,7 @@ function inbox() {
     ? state.decisions.filter(d => decidedNow(d) && (!ownerFilter || d.owner_id === ownerFilter) && `${d.question} ${d.answer} ${d.rationale} ${d.owner_name} ${d.evidence}`.toLowerCase().includes(q))
       .sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')))
     : state.decisions.filter(d => (tab === 'mine' ? assignedToMe(d) : needsYou(d)) && `${d.question} ${d.context} ${d.owner_name}`.toLowerCase().includes(q));
+  inboxShown = rows.length;
   return `<div class="toolbar">${tabs.map(([key, label, count]) => `<button class="tab ${tab === key ? 'active' : ''}" data-action="tab" data-tab="${key}" aria-pressed="${tab === key}">${label}<span>${count}</span></button>`).join('')}<label class="search" aria-label="Search decisions">${icon('search')}<input id="inbox-search" type="search" placeholder="Search" value="${esc(query)}"></label>${tab === 'decided' ? `<select id="owner-filter" aria-label="Filter by owner"><option value="">All owners</option>${state.owners.map(o => `<option value="${esc(o.id)}" ${ownerFilter === o.id ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select>` : ''}</div>
     <div class="decision-list">${rows.length ? rows.map(decisionCard).join('') : emptyInbox(query, tab)}</div>`;
 }
@@ -544,12 +561,6 @@ function savedStrip() {
   return `<p class="saved-strip" role="status"><strong>What Raven saved</strong> · last ${m.window_days} days · ${parts.join(' · ')}</p>`;
 }
 
-// At most two names, then how many more: 'Alex Morgan, Wes Chen and 1 more'.
-function nameList(names) {
-  const unique = [...new Set(names.filter(Boolean))];
-  return unique.length > 2 ? `${unique[0]}, ${unique[1]} and ${unique.length - 2} more` : unique.join(', ');
-}
-
 // The one sentence a task row carries: who it waits on, else its lifecycle.
 function runStatusSentence(run, decisions) {
   const pending = decisions.filter(needsYou);
@@ -580,7 +591,9 @@ function runs() {
   const member = !state.auth?.enabled || ['admin', 'member'].includes(state.me?.role);
   const start = viewer ? '' : state.execution_config?.enabled ? '<button class="button primary" data-action="task">Start a task</button>'
     : state.workbench?.ready ? '<a class="button primary" href="#work">Start a task</a>' : '';
-  const outcomes = state.model?.proposals !== false || (typeof objectiveTodayCount === 'function' ? objectiveTodayCount(state.today) : 0) > 0;
+  // Outcomes stays reachable without a model backend while something there waits on a person.
+  const todayCount = (state.today?.proposals_open || 0) + (state.today?.objectives_needing_you || 0);
+  const outcomes = state.model?.proposals !== false || todayCount > 0;
   const items = [member ? '<button class="button text" data-action="new">Ask a question</button>' : '', outcomes ? '<a href="#today">Outcomes</a>' : ''].filter(Boolean);
   const actions = $('#page-actions');
   if (actions) actions.innerHTML = `<span class="page-count">${plural(rows.length, 'task')}</span>${start}${items.length ? `<details class="more-menu"><summary aria-label="More actions">More</summary><div class="more-menu-items">${items.join('')}</div></details>` : ''}`;
@@ -619,7 +632,8 @@ function authorityRow(a, who = '') {
   if (!a.accepted) parts.push('(not yet accepted)');
   if (ended) parts.push(`ended ${esc(a.effective_to.slice(0, 10))}`);
   if (who) parts.unshift(esc(who));
-  const end = canAdminister() && !ended ? `<button class="button small soft" data-action="end-authority" data-id="${esc(a.id)}">End</button>` : '';
+  const what = `${roleLabels[a.role] || a.role} ${a.scope_kind === 'repo' ? 'everything' : a.scope}`;
+  const end = canAdminister() && !ended ? `<button class="button small soft" data-action="end-authority" data-id="${esc(a.id)}" aria-label="End: ${esc(a.who || 'this record')} ${esc(what)} in ${esc(a.repo || 'every repository')}">End</button>` : '';
   return `<div class="authority-row${ended ? ' ended' : ''}"><span>${parts.join(' · ')}</span>${end}</div>`;
 }
 
@@ -636,13 +650,13 @@ function personCard(p, index, rows = []) {
   const team = `${esc(p.team || '')}${p.teams && p.teams.length ? `${p.team ? ' · ' : ''}${esc(p.teams.join(', '))}` : ''}`;
   const identities = [p.email, p.github_login ? '@' + p.github_login : '', p.slack_id ? 'Slack ' + p.slack_id : ''].filter(Boolean).map(esc).join(' · ');
   const waiting = state.decisions.filter(d => d.status === 'pending' && (d.owner_id === p.id || sameName(d.owner_name, p.name))).length;
-  return `<article class="person-card${p.active ? '' : ' inactive'}">${avatar(p.name, index)}<h3>${esc(p.name)}</h3>${team ? `<p>${team}</p>` : ''}${identities ? `<small>${identities}</small>` : ''}${p.active ? '' : '<small>inactive</small>'}${waiting ? `<p class="person-waiting">Waiting on them: ${waiting}</p>` : ''}<h4>Decides</h4>${authorityRows(rows)}${canAdminister() ? `<button class="button text" data-action="authority" data-person="${esc(p.id)}">Say what they decide</button>` : ''}</article>`;
+  return `<article class="person-card${p.active ? '' : ' inactive'}">${avatar(p.name, index)}<h2>${esc(p.name)}</h2>${team ? `<p>${team}</p>` : ''}${identities ? `<small>${identities}</small>` : ''}${p.active ? '' : '<small>inactive</small>'}${waiting ? `<p class="person-waiting">Waiting on them: ${waiting}</p>` : ''}<h3>Decides</h3>${authorityRows(rows)}${canAdminister() ? `<button class="button text" data-action="authority" data-person="${esc(p.id)}" aria-label="Say what they decide: ${esc(p.name)}">Say what they decide</button>` : ''}</article>`;
 }
 
 // Rows the directory records for a team or a name no person card carries:
 // shown under one last card so no record disappears with the table.
 function otherCard(rows, index) {
-  return `<article class="person-card">${avatar('Other', index)}<h3>Other</h3><h4>Decides</h4>${authorityRows(rows, true)}</article>`;
+  return `<article class="person-card">${avatar('Other', index)}<h2>Other</h2><h3>Decides</h3>${authorityRows(rows, true)}</article>`;
 }
 
 function owners() {
@@ -716,12 +730,14 @@ function agentStatus() {
 }
 
 // What is not set up yet, one line each with its fix. The server's notices
-// are shown as it wrote them; the level is a word, not a colour.
+// are shown as it wrote them; the level is a word, not a colour. A model
+// notice is a gap only without a backend that can make suggestions; with a
+// key configured it is information, and not something to fix.
 function setupChecklist() {
   const item = (level, text) => `<li><strong>${esc(level)}</strong><span>${esc(text)}</span></li>`;
   const slackLine = state.delivery?.enabled === false;
   const items = [
-    state.model?.notice ? item('Worth fixing', state.model.notice) : '',
+    state.model?.proposals === false && state.model.notice ? item('Worth fixing', state.model.notice) : '',
     slackLine ? item('Note', 'Slack not connected: people answer in the inbox.') : '',
     readiness(slackLine ? ['no_slack'] : []),
   ].join('');
@@ -751,7 +767,9 @@ function connections() {
   const graph = state.graph || {};
   const indexed = [...new Set((graph.repos || []).filter(r => typeof r === 'string' && r))];
   const indexedLine = indexed.length ? `<p class="context"><strong>Already indexed:</strong> ${indexed.map(esc).join(', ')} · ${plural(graph.engineers || 0, 'person', 'people')} from its history${graph.intents ? `, ${plural(graph.intents, 'record')}` : ''}. Raven can name them now.</p>` : '';
-  const contextStep = `<section class="setup-card" id="settings-context">${step(2, 'Context')}${githubCard()}${indexedLine}${contextSourcesCard()}${canAdminister() ? '<p><button class="button text" data-action="ingest">Add a local clone</button></p>' : ''}<details class="history" id="settings-evidence"><summary>Paste a message or email</summary><div id="evidence-mount"></div></details>${canAdminister() ? '<details class="history" id="settings-meetings"><summary>Meetings</summary><div id="meetings-mount"></div></details>' : ''}</section>`;
+  // The evidence panel (evidence.js) draws for members and admins only; a viewer gets no empty disclosure.
+  const member = !shared || ['admin', 'member'].includes(state.me?.role);
+  const contextStep = `<section class="setup-card" id="settings-context">${step(2, 'Context')}${githubCard()}${indexedLine}${contextSourcesCard()}${canAdminister() ? '<p><button class="button text" data-action="ingest">Add a local clone</button></p>' : ''}${member ? '<details class="history" id="settings-evidence"><summary>Paste a message or email</summary><div id="evidence-mount"></div></details>' : ''}${canAdminister() ? '<details class="history" id="settings-meetings"><summary>Meetings</summary><div id="meetings-mount"></div></details>' : ''}</section>`;
   const peopleStep = shared
     ? (canAdminister() ? `<section class="setup-card" id="settings-people">${step(4, 'People access')}${workspaceAccountCard()}</section>` : '')
     : `<section class="setup-card" id="settings-people">${step(4, 'People access')}<p>Sign-in is off: single-operator workspace. Turn it on before sharing this server.</p></section>`;
@@ -822,13 +840,16 @@ function render() {
   if (typeof rememberTaskView === 'function') rememberTaskView();
   // Each page draws its own buttons into the h1 row; a page without any
   // must not inherit the previous page's. An open More menu stays open
-  // across the five-second redraw.
+  // across the five-second redraw. Where focus is is read before the row
+  // is cleared: clearing it drops focus to <body>, and a keyboard user on
+  // More, Start a task or a menu item lost their place every five seconds.
   const actions = $('#page-actions');
   const menuWasOpen = !!actions?.querySelector('details.more-menu[open]');
+  const active = document.activeElement;
+  const focusRoot = $('#app').contains(active) ? $('#app') : actions?.contains(active) ? actions : null;
+  const focusWas = focusRoot ? focusKey(active) : '';
   if (actions) actions.innerHTML = '';
   const noteDraft = $('#note-text')?.value;
-  const active = document.activeElement;
-  const focusWas = $('#app').contains(active) ? focusKey(active) : '';
   const selection = active.tagName === 'INPUT' ? active.selectionStart : null;
   const disclosures = [...document.querySelectorAll('#app details[id]')].map(el => ({id: el.id, open: el.open, scroll: el.querySelector('ul')?.scrollTop || 0}));
   $('.page-head').hidden = !!taskId() || view === 'work';
@@ -852,20 +873,22 @@ function render() {
   // person moving through it by keyboard keeps their place; when the
   // control they were on is gone (the decision they answered left the
   // tab), focus goes to the tab above the list, not to the top of the page.
-  const replacement = keepFocus($('#app'), focusWas, () => $('#app .toolbar .tab.active') || $('#main'));
+  const replacement = keepFocus(focusRoot || $('#app'), focusWas, () => (focusRoot === actions ? null : $('#app .toolbar .tab.active')) || $('#main'));
   if (replacement && selection !== null && ['search','text'].includes(replacement.type)) replacement.setSelectionRange(selection, selection);
 }
 
-// Where focus is, as a selector that survives a redraw: an id, or the
-// action a control performs on the thing it names. Measured in Chromium:
-// a Review button a keyboard user had reached was dropped to <body> by
-// the next poll, every five seconds, on every list in the app.
+// Where focus is, as a selector that survives a redraw: an id, the
+// action a control performs on the thing it names, a page's More summary,
+// or a link by where it goes (a task row, a menu item). Measured in
+// Chromium: a Review button a keyboard user had reached was dropped to
+// <body> by the next poll, every five seconds, on every list in the app.
 function focusKey(el) {
   if (!el || el === document.body) return '';
   const quote = value => `"${String(value).replace(/["\\]/g, '\\$&')}"`;
   if (el.id) return `[id=${quote(el.id)}]`;
+  if (el.tagName === 'SUMMARY' && el.closest?.('details.more-menu')) return 'details.more-menu > summary';
   const data = el.dataset || {};
-  if (!data.action) return '';
+  if (!data.action) return el.tagName === 'A' && el.getAttribute?.('href') ? `a[href=${quote(el.getAttribute('href'))}]` : '';
   return `${el.tagName.toLowerCase()}[data-action=${quote(data.action)}]`
     + ['id', 'tab', 'client', 'mode', 'key'].filter(k => data[k] !== undefined).map(k => `[data-${k}=${quote(data[k])}]`).join('');
 }
@@ -954,7 +977,7 @@ function newRequest() {
     <label for="question">Question or prompt</label><textarea id="question" name="question" maxlength="2000" rows="4" placeholder="What do you need to know or decide?" ${locked ? 'readonly' : ''} required>${esc(v.question || '')}</textarea>
     <label for="repo">Repository scope</label><select id="repo" name="repo" ${locked ? 'disabled' : ''} required><option value="">Choose a repository</option>${repos.map(r => `<option value="${esc(r)}" ${selected === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}${v.repo && !repos.includes(v.repo) ? `<option value="${esc(v.repo)}" selected>${esc(v.repo)}</option>` : ''}</select>
     <details id="request-context" ${v.context || v.path ? 'open' : ''}><summary>Extra context (optional)</summary><label for="context">Context & evidence</label><textarea id="context" name="context" maxlength="12000" ${locked ? 'readonly' : ''}>${esc(v.context || '')}</textarea><label for="path">Relevant file path</label><input id="path" name="path" maxlength="1000" placeholder="src/example.py" value="${esc(v.path || '')}" ${locked ? 'readonly' : ''}></details>
-    ${!canAsk ? `<p class="context">${state.auth ? 'You have read-only access to this workspace.' : 'Loading workspace access…'}</p>` : !repos.length && !locked ? '<p class="context">No repository scope is available yet. Connect or ingest a repository in Connections & setup.</p>' : ''}
+    ${!canAsk ? `<p class="context">${state.auth ? 'You have read-only access to this workspace.' : 'Loading workspace access…'}</p>` : !repos.length && !locked ? '<p class="context">No repository scope is available yet. Connect or ingest a repository in Settings.</p>' : ''}
     <p class="context">${locked ? 'Retry uses this same question and scope to avoid duplicate tasks or questions.' : 'Ask one question, up to 2,000 characters. Add details in Extra context.'}</p>
     <div id="request-scope-area">${requestScopeFields(d)}</div>
     <p class="error" id="form-error" role="alert" ${d.error ? '' : 'hidden'}>${esc(d.error)}</p><p id="request-progress" role="status">${d.pending ? 'Recording your question…' : d.complete ? 'Your question is recorded.' : d.scope ? d.scopeEditable ? 'Scope is still needed. No question was added or sent by the last attempt.' : 'The latest question result is unconfirmed. Retry uses the same facts.' : d.taskId ? 'The task is recorded. Retry to finish adding its question.' : ''} ${d.taskId ? `<a id="request-run-link" href="#runs/${encodeURIComponent(d.taskId)}" data-action="request-view-run">Open recorded run</a>` : ''}</p>
@@ -1194,13 +1217,14 @@ function ownerAccountNotice(d, withActions) {
 
 // One row hands a decision on. Unchecked, the button assigns this request
 // only (/assign); checked, it also teaches Raven that the person decides
-// the chosen scope (/refer). An admin's override is a refer, so its row
-// starts checked.
+// the chosen scope (/refer). An admin's override is a refer and nothing
+// else: a plain assign without standing is refused by the server, so the
+// override row keeps the checkbox on and locked.
 function handOnRow(d, override = false) {
   const options = d.handon?.options || [];
   const chosen = d.handon?.default || {};
   return `<div class="modal-owner">${avatar(d.owner_name)}<select id="assign-owner" aria-label="Hand on to">${ownerOptions(d.owner_id)}</select><button class="button small" id="hand-on" data-action="${override ? 'refer' : 'assign'}" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}"${override ? ' data-override="1"' : ''}>Hand on</button></div>
-    <label class="refer-learn" for="refer-learn"><input type="checkbox" id="refer-learn"${override ? ' checked' : ''}> They decide this from now on</label>
+    <label class="refer-learn" for="refer-learn"><input type="checkbox" id="refer-learn"${override ? ' checked disabled' : ''}> They decide this from now on</label>
     <div class="refer-scope" id="refer-scope-row"${override ? '' : ' hidden'}>${options.length ? `<label for="refer-scope">What they decide</label><select id="refer-scope">${options.map(o => `<option value="${esc(o.scope_kind)}:${esc(o.scope)}" ${o.scope_kind === chosen.scope_kind && o.scope === chosen.scope ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select>` : ''}${d.handon?.why_none ? `<p class="field-help">${esc(d.handon.why_none)}; pick a scope to teach one.</p>` : ''}</div>`;
 }
 
@@ -1307,9 +1331,15 @@ document.addEventListener('click', async event => {
     const hash = link.getAttribute('href');
     if (hash && hash !== location.hash) resetScrollOnNavigation = true;
   }
+  // A More menu item that is a link (Outcomes, Open conversation) closes the menu as a button does.
+  const linkMenu = link?.closest?.('details.more-menu');
+  if (linkMenu) linkMenu.open = false;
   const target = event.target.closest('[data-action]');
   if (!target || target.disabled) return;
   const action = target.dataset.action;
+  // An item used closes its More menu before the redraw, which would otherwise keep it open.
+  const itemMenu = target.closest?.('details.more-menu');
+  if (itemMenu) itemMenu.open = false;
   // The dialog as it was when the action began: a response that lands
   // after the person closed it redraws nothing.
   const version = modalVersion;
@@ -1466,23 +1496,23 @@ document.addEventListener('click', async event => {
 });
 
 document.addEventListener('input', event => {
-  if (event.target.id === 'inbox-search') { query = event.target.value; render(); }
+  if (event.target.id === 'inbox-search') { query = event.target.value; render(); announce(query ? `${plural(inboxShown, 'decision')} match` : ''); }
 });
 document.addEventListener('change', async event => {
   if (event.target.id === 'owner-filter') { ownerFilter = event.target.value; render(); }
   if (event.target.id === 'refer-learn') {
     const button = $('#hand-on'), row = $('#refer-scope-row');
-    if (button) button.dataset.action = event.target.checked ? 'refer' : 'assign';
+    if (button && !button.dataset.override) button.dataset.action = event.target.checked ? 'refer' : 'assign';
     if (row) row.hidden = !event.target.checked;
   }
   try {
     if (event.target.id === 'coordinator-select') {
       await api('/api/settings', {coordinator: event.target.value});
-      directory = null; render(); notify(event.target.value ? 'Coordinator set. Unrouted questions go to them.' : 'Coordinator cleared.');
+      directory = null; render(); notify(event.target.value ? 'Fallback person set. Questions nobody is known to own go to them.' : 'Fallback person cleared.');
     }
     if (event.target.id === 'verified-only') {
       await api('/api/settings', {require_verified_route: event.target.checked});
-      directory = null; render(); notify(event.target.checked ? 'Pilot mode on: only verified owners are routed to.' : 'Pilot mode off: git history routes again.');
+      directory = null; render(); notify(event.target.checked ? 'Only verified owners are asked now.' : 'Git history can suggest owners again.');
     }
     if (event.target.id === 'brief-mode') {
       await api('/api/settings', {brief_mode: event.target.value});
@@ -1555,7 +1585,13 @@ document.addEventListener('submit', async event => {
   }
 });
 // A page's More menu (details.more-menu) closes on Escape, giving focus
-// back to its summary, and when focus leaves it.
+// back to its summary, when focus leaves it, and on a press anywhere
+// outside it: on a phone it is a sheet over the bottom of the page, and a
+// tap on plain text moves no focus, so focusout alone left it open.
+document.addEventListener('pointerdown', event => {
+  const menu = document.querySelector('details.more-menu[open]');
+  if (menu && !menu.contains(event.target)) menu.open = false;
+});
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape') return;
   const menu = document.querySelector('details.more-menu[open]');
