@@ -1,6 +1,7 @@
 'use strict';
 
-// Today is a durable work projection, not a second authorization inbox.
+// Outcomes (#today, reached from Tasks > More) is a durable work projection, not a second
+// authorization inbox. Settings mounts the meetings panel through objectiveMeetingsMount().
 let objectiveData = null, objectiveError = '', objectiveRequest = 0;
 const objectivePending = new Set();
 const objectiveDrafts = new Map();
@@ -12,11 +13,16 @@ const objectiveRoute = () => location.hash.slice(1);
 const objectiveId = () => { try { return view === 'today' ? decodeURIComponent(location.hash.slice(1).split('/')[1] || '') : ''; } catch { return ''; } };
 const objectiveProposals = () => [...(objectiveData?.proposals || []), ...(objectiveData?.detail?.proposals || []), ...(objectiveData?.objectives || []).flatMap(item => item.proposals || [])];
 const objectiveCanWrite = () => !!state.auth && (!state.auth.enabled || ['admin', 'member'].includes(state.me?.role));
-// What the sidebar badge shows: the counts /api/state carries, added up.
-const objectiveTodayCount = today => (today?.proposals_open || 0) + (today?.objectives_needing_you || 0);
 const OPEN_PROPOSAL = ['proposed', 'review_error', 'reconcile'];
 const objectiveModelOff = () => state.model?.proposals === false;  // no automatic suggestions
-const objectiveScanOff = () => state.model?.investigation === false;  // no Find opportunities click either
+const objectiveScanOff = () => state.model?.investigation === false;  // no 'Suggest next steps' either
+// Outcomes draws the page; Settings draws only the meetings panel (and evidence.js its paste panel).
+const objectiveView = () => view === 'today' || view === 'connect';
+// Repositories for the meeting panel: Outcomes' own list when it was loaded, else what /api/state carries.
+const objectiveRepositoryList = () => objectiveData?.repositories || state.question_repositories || state.workbench?.repositories || [];
+// Whether the page's More menu is open; render() empties #page-actions before every draw, so the state lives here.
+let objectiveMenuOpen = false;
+document.addEventListener('toggle', event => { if (event.target?.id === 'objective-more') objectiveMenuOpen = !!event.target.open; }, true);
 const objectiveCanAdmin = () => !!state.auth && (!state.auth.enabled || state.me?.role === 'admin');
 const OBJECTIVE_STATUS = {proposed:'Suggested', accepted:'Accepted', active:'In progress', running:'Working', queued:'Queued',
   waiting:'Waiting', blocked:'Needs attention', paused:'Paused', cancelled:'Cancelled', completed:'Completed', achieved:'Achieved · human attested', stopped:'Stopped', needs_you:'Needs you', moving:'In progress', review:'Awaiting signed review', needs_judgment:'Needs judgment', ready:'Ready to start',
@@ -63,7 +69,7 @@ function objectiveCard(item, proposal = false) {
     ${item.cases && Object.keys(item.cases).length ? `<details class="objective-evidence"><summary>Behavior and boundaries in the signed scope</summary>${Object.entries(item.cases).map(([name,text])=>`<p><strong>${esc(name.replaceAll('_',' '))}</strong> ${esc(text)}</p>`).join('')}</details>` : ''}
     ${objectiveResearch(item.research)}
     ${objectiveEvidence(item.evidence || item.sources)}
-    <div class="objective-actions">${proposal && OPEN_PROPOSAL.includes(status) && objectiveCanWrite() ? objectivePanel === 'dismiss:' + id ? `<form id="objective-dismiss-form" class="objective-dismiss" data-id="${esc(id)}">${objectiveField('rationale', 'Why not now? The reason shapes the next investigation.', {rows:2, max:200, id:'objective-dismiss-rationale'})}<button type="submit" class="button small" ${objectivePending.has(id) ? 'disabled aria-busy="true"' : ''}>Dismiss with this reason</button>${objectiveButton('close-panel', '', 'Keep it')}</form>` : (status === 'reconcile' || item.evidence_stale ? '' : objectiveButton('review-accept', id, status === 'review_error' ? 'Retry judgment review' : 'Review & take point')) + objectiveButton('dismiss', id, 'Not now', false, `id="objective-dismiss-${esc(id)}"`) : proposal && status === 'review' ? `<a class="objective-text-link" href="#runs/${encodeURIComponent(item.task_id || item.governance_run_id || '')}">Open judgment review ↗</a>` : !proposal ? `<a class="objective-text-link" href="#today/${encodeURIComponent(id)}">Open objective <span aria-hidden="true">↗</span></a>` : ''}</div></article>`;
+    <div class="objective-actions">${proposal && OPEN_PROPOSAL.includes(status) && objectiveCanWrite() ? objectivePanel === 'dismiss:' + id ? `<form id="objective-dismiss-form" class="objective-dismiss" data-id="${esc(id)}">${objectiveField('rationale', 'Why not now? The reason shapes the next investigation.', {rows:2, max:200, id:'objective-dismiss-rationale'})}<button type="submit" class="button small" ${objectivePending.has(id) ? 'disabled aria-busy="true"' : ''}>Dismiss with this reason</button>${objectiveButton('close-panel', '', 'Keep it')}</form>` : (status === 'reconcile' || item.evidence_stale ? '' : objectiveButton('review-accept', id, status === 'review_error' ? 'Retry judgment review' : 'Review and accept')) + objectiveButton('dismiss', id, 'Not now', false, `id="objective-dismiss-${esc(id)}"`) : proposal && status === 'review' ? `<a class="objective-text-link" href="#runs/${encodeURIComponent(item.task_id || item.governance_run_id || '')}">Open judgment review ↗</a>` : !proposal ? `<a class="objective-text-link" href="#today/${encodeURIComponent(id)}">Open the outcome <span aria-hidden="true">↗</span></a>` : ''}</div></article>`;
 }
 // One line from GET /api/metrics: what became of the proposals in the window, read from the ledger, never from a proposal's own claims.
 // Nothing is said until a proposal was judged in the window, and nothing where no model can propose one.
@@ -82,7 +88,8 @@ function objectiveResearchLimits() {
   const precision = objectiveProposalPrecision(), declined = objectiveData.metrics?.work_proposals?.declined_recent;
   // The reasons the next investigation of each repository reads, so the lesson store can be inspected.
   const declinedList = Array.isArray(declined) && declined.length ? `<h3>Declined recently</h3><ul class="objective-declined">${declined.map(item => `<li><strong>${esc(item.title || 'Proposal')}</strong>${item.rationale ? ' · ' + esc(item.rationale) : ''}<small>${esc(item.repository || '')} · ${esc(objectiveTime(item.updated_at))}</small></li>`).join('')}</ul><p class="objective-muted">The next investigation of each repository reads its last five reasons before proposing.</p>` : '';
-  return limits.length || statuses.length || unavailable || precision || declinedList ? `<section class="objective-side-section"><h2>Background investigation</h2>${unavailable ? `<p role="status">${esc(unavailable)}</p>` : ''}${statuses.map(item=>`<p role="status"><strong>${esc(item.repository)}</strong>: ${esc(item.state)} · ${esc(item.attempts)} attempts. ${item.state === 'blocked' ? 'Automatic retries stopped. Repair setup, then use Find opportunities → explicit retry; or re-enable the watch.' : item.state === 'failed' ? 'Investigation was inconclusive; bounded retry may follow.' : 'Investigation in progress.'}</p>`).join('')}${limits.map(limit=>`<p><strong>${esc(limit.repository)}</strong> · ${esc(limit.used)}/${esc(limit.limit)} attempts in the rolling hour.</p>${limit.status === 'throttled' ? `<p role="status">Waiting for the research budget. Next eligible check: ${esc(objectiveTime(limit.next_retry_at))}. Evidence remains queued; this is not a completed investigation.</p>` : ''}`).join('')}${precision}${declinedList}<p class="objective-muted">Automatic reads are debounced and bounded. Manual investigation is a separate explicit request.</p></section>` : '';
+  // Diagnostics, one level down: a disclosure at the foot of the page.
+  return limits.length || statuses.length || unavailable || precision || declinedList ? `<details class="objective-evidence" id="objective-research-limits"><summary>Background investigation</summary>${unavailable ? `<p role="status">${esc(unavailable)}</p>` : ''}${statuses.map(item=>`<p role="status"><strong>${esc(item.repository)}</strong>: ${esc(item.state)} · ${esc(item.attempts)} attempts. ${item.state === 'blocked' ? 'Automatic retries stopped. Repair setup, then use Suggest next steps → explicit retry; or re-enable the watch.' : item.state === 'failed' ? 'Investigation was inconclusive; bounded retry may follow.' : 'Investigation in progress.'}</p>`).join('')}${limits.map(limit=>`<p><strong>${esc(limit.repository)}</strong> · ${esc(limit.used)}/${esc(limit.limit)} attempts in the rolling hour.</p>${limit.status === 'throttled' ? `<p role="status">Waiting for the research budget. Next eligible check: ${esc(objectiveTime(limit.next_retry_at))}. Evidence remains queued; this is not a completed investigation.</p>` : ''}`).join('')}${precision}${declinedList}<p class="objective-muted">Automatic reads are debounced and bounded. Manual investigation is a separate explicit request.</p></details>` : '';
 }
 function objectiveResearch(packet) {
   if (!packet) return '';
@@ -90,25 +97,28 @@ function objectiveResearch(packet) {
   return `<details class="objective-evidence"><summary>What Raven investigated · ${esc(packet.disposition || 'bounded reading')}</summary>${packet.reason ? `<p>${esc(packet.reason)}</p>` : ''}<p>${esc(coverage.read_sources ?? 0)} of ${esc(coverage.eligible_sources ?? '?')} eligible source versions read; ${esc(coverage.unread_sources ?? '?')} unread. ${coverage.limit_reached ? 'Research budget reached; incomplete.' : ''}</p>${(packet.observations || []).map(finding=>`<p>${esc(finding.statement)}</p>${(finding.citations || []).map(c=>`<blockquote>${esc(c.quote)}<small>Source ${esc(c.record_id)} · version ${esc(c.source_version_id)}</small></blockquote>`).join('')}`).join('')}${(coverage.meetings || []).map(meeting=>`<p>Meeting coverage: ${esc(meeting.read_chunks)}/${esc(meeting.active_chunks)} chunks. ${meeting.full_meeting_read ? 'Whole imported transcript read.' : 'Partial reading, not a whole-meeting conclusion.'}</p>`).join('')}<p class="objective-muted">${esc(coverage.notice || 'Findings are evidence, never permission.')}</p></details>`;
 }
 
+// The execution host rows Settings shows under 'Run tasks from the browser': one
+// disclosure per host, '<name> · Ready' or '· Set up', with its blockers inside.
 function objectiveCapabilities() {
   const hosts = objectiveData?.capabilities || state.workbench?.hosts || [];
-  return `<section class="objective-side-section"><h2>Execution hosts</h2><p class="objective-muted">Harnesses run tasks. Model access alone is not an execution connection.</p>${hosts.length ? hosts.map(host => `<details class="objective-capability"><summary><strong>${esc(host.name || host.id)}</strong><span>${host.ready ? 'Configured' : 'Setup needed'}</span></summary><p>${esc(host.execution || '')}</p><p>${esc(host.containment || '')}</p>${(host.blockers || []).map(message => `<p class="objective-muted">${esc(message)}</p>`).join('')}<small>${host.live_verified ? 'Live verification reported by the server' : 'Live acceptance not verified'}${host.version ? ' · ' + esc(host.version) : ''}</small></details>`).join('') : '<p class="objective-muted">No execution hosts reported.</p>'}<a class="objective-text-link" href="#connect">Connections & setup ↗</a></section>`;
+  if (!hosts.length) return '<p class="objective-muted">No execution hosts reported.</p>';
+  return hosts.map(host => `<details class="objective-capability"><summary><strong>${esc(host.name || host.id)}</strong><span>${host.ready ? 'Ready' : 'Set up'}</span></summary><p>${esc(host.execution || '')}</p><p>${esc(host.containment || '')}</p>${(host.blockers || []).map(message => `<p class="objective-muted">${esc(message)}</p>`).join('')}<small>${host.live_verified ? 'Live verification reported by the server' : 'Live acceptance not verified'}${host.version ? ' · ' + esc(host.version) : ''}</small></details>`).join('');
 }
 function objectiveAcceptance(item) {
-  return `<section class="objective-editor" aria-labelledby="objective-accept-title"><div class="objective-section-head"><h2 id="objective-accept-title">Review & take point</h2>${objectiveButton('close-panel', '', 'Cancel')}</div><h3>${esc(item.title)}</h3><p>${esc(item.outcome || item.summary || item.reason || '')}</p>${objectiveEvidence(item.evidence || item.sources)}<p class="objective-notice">This creates a judgment request in the existing inbox. It does not activate the objective or approve unresolved decisions. Review and sign the exact scope there before work can start.</p><form id="objective-accept-form" data-id="${esc(item.id)}"><button type="submit" class="button" ${objectivePending.has(item.id) ? 'disabled aria-busy="true"' : ''}>Send to judgment inbox</button></form></section>`;
+  return `<section class="objective-editor" aria-labelledby="objective-accept-title"><div class="objective-section-head"><h2 id="objective-accept-title">Review and accept</h2>${objectiveButton('close-panel', '', 'Cancel')}</div><h3>${esc(item.title)}</h3><p>${esc(item.outcome || item.summary || item.reason || '')}</p>${objectiveEvidence(item.evidence || item.sources)}<p class="objective-notice">This creates a judgment request in the existing inbox. It does not activate the objective or approve unresolved decisions. Review and sign the exact scope there before work can start.</p><form id="objective-accept-form" data-id="${esc(item.id)}"><button type="submit" class="button" ${objectivePending.has(item.id) ? 'disabled aria-busy="true"' : ''}>Send to the inbox</button></form></section>`;
 }
 function objectiveDetail(item) {
   const id = item.id, terminal = ['completed','cancelled','achieved','stopped'].includes(item.lifecycle || item.status);
   if (item.withheld) return '<p class="objective-notice">Source access changed. This objective is withheld.</p>';
   const checkpoints = item.checkpoints || item.events || [];
   const tasks = item.runs || [];
-  return `<a class="objective-text-link" href="#today">← Today</a><header class="objective-detail-heading"><p class="objective-label">${esc(objectiveStatus(item.status))} · ${esc(item.repo || item.repository || '')}</p><h1>${esc(item.title)}</h1><p>${esc(item.outcome || item.summary || item.description || '')}</p></header>
+  return `<a class="objective-text-link" href="#today">← Outcomes</a><header class="objective-detail-heading"><p class="objective-label">${esc(objectiveStatus(item.status))} · ${esc(item.repo || item.repository || '')}</p><h1>${esc(item.title)}</h1><p>${esc(item.outcome || item.summary || item.description || '')}</p></header>
     <div class="objective-layout"><section><article class="objective-card"><h2>Next step</h2><p>${esc(item.next_action || item.blocked_reason || item.waiting_on || item.waiting_reason || (terminal ? 'This objective is closed.' : 'No next action has been recorded.'))}</p>${item.next_check_at ? `<p class="objective-muted">Scheduled check · ${esc(objectiveTime(item.next_check_at))}</p>` : ''}<div class="objective-actions">${objectiveCanWrite() && !terminal ? objectiveButton((item.lifecycle || item.status) === 'paused' ? 'resume' : 'pause',id,(item.lifecycle || item.status) === 'paused' ? 'Resume' : 'Pause') + objectiveButton('checkpoint',id,'Save checkpoint') + objectiveButton('dispatch',id,'Start execution') + objectiveButton('review-achieve',id,'Attest outcome') + objectiveButton('review-cancel',id,'Cancel objective') : ''}</div></article>
     <article class="objective-card"><h2>Execution harness</h2><p>${esc(item.provider || 'Not selected')}</p><h2>Success criteria</h2><p class="objective-preserve">${esc(item.success_criteria || 'No success criteria recorded.')}</p><h2>Stop criteria</h2><p class="objective-preserve">${esc(item.stop_criteria || 'Not recorded')}</p><h2>Guardrails</h2><p class="objective-preserve">${esc(item.guardrails || 'Not recorded')}</p><p class="objective-notice">A host saying “done” is not independent verification. Review the delivered artifact and recorded checks.</p>${item.verification ? `<pre>${esc(typeof item.verification === 'string' ? item.verification : JSON.stringify(item.verification,null,2))}</pre>` : '<p class="objective-muted">No independent verification recorded.</p>'}</article>
     <section class="objective-section"><h2>Next-step proposals</h2>${(item.proposals || []).filter(proposal => ['proposed','review','review_error','reconcile','preparing'].includes(proposal.status || proposal.state)).map(proposal => objectiveCard(proposal,true)).join('') || '<p class="objective-muted">No next-step proposal awaiting review.</p>'}</section><section class="objective-section"><h2>Linked work</h2>${tasks.length ? tasks.map(task => `<a class="objective-task-link" href="#${task.browser_task ? 'work' : 'runs'}/${encodeURIComponent(task.task_id || task.id)}"><strong>${esc(task.title || task.prompt || task.task_id)}</strong><span>${esc(objectiveStatus(task.status))}</span></a>`).join('') : '<p class="objective-muted">No execution task linked yet.</p>'}</section>
-    <section class="objective-section"><h2>Saved progress</h2>${checkpoints.length ? `<ol class="objective-timeline">${checkpoints.map(point => `<li><strong>${esc(point.summary || point.label || point.kind || 'Checkpoint')}</strong><p>${esc(point.detail && typeof point.detail === 'string' ? point.detail : point.note || '')}</p><time>${esc(objectiveTime(point.created_at || point.at))}</time></li>`).join('')}</ol>` : '<p class="objective-muted">No checkpoints yet. Progress stays attached to this objective across sessions.</p>'}</section></section><aside>${objectiveEvidence(item.evidence || item.sources)}${objectiveCapabilities()}<p class="objective-muted">Evidence, acceptance, judgment, execution and verification are separate records.</p></aside></div>`;
+    <section class="objective-section"><h2>Saved progress</h2>${checkpoints.length ? `<ol class="objective-timeline">${checkpoints.map(point => `<li><strong>${esc(point.summary || point.label || point.kind || 'Checkpoint')}</strong><p>${esc(point.detail && typeof point.detail === 'string' ? point.detail : point.note || '')}</p><time>${esc(objectiveTime(point.created_at || point.at))}</time></li>`).join('')}</ol>` : '<p class="objective-muted">No checkpoints yet. Progress stays attached to this objective across sessions.</p>'}</section></section><aside>${objectiveEvidence(item.evidence || item.sources)}</aside></div>`;
 }
-// Today groups work by what it waits on, from the status fields the server
+// Outcomes groups work by what it waits on, from the status fields the server
 // computes: a person's decision, a worker, or a look at a finished run.
 function objectiveGroups(data) {
   const proposals = data.proposals || [], objectives = data.objectives || [];
@@ -127,9 +137,9 @@ function objectiveGroup(key, title, entries, empty) {
 function objectiveClosed(items) {
   return items.length ? `<details class="objective-evidence objective-closed"><summary>Closed · ${items.length}</summary>${items.map(item => objectiveCard(item)).join('')}</details>` : '';
 }
-// Without a model key nothing is proposed, so Today lists what a person can
-// still close: follow-ups nobody adopted, answers put in doubt, checkpoints
-// that came due, and evidence recorded since the last investigation.
+// Without a model key nothing is proposed, so Outcomes lists what a person can
+// still close: follow-ups nobody adopted, answers put in doubt and checkpoints
+// that came due. The model notice itself is on Settings.
 function objectiveOpenLoops() {
   const loops = objectiveData?.without_model;
   if (!loops || !objectiveModelOff()) return '';
@@ -138,26 +148,85 @@ function objectiveOpenLoops() {
     const items = loops[key] || [], total = totals[key] ?? items.length;
     return `<div class="objective-loop"><h3>${esc(title)} <span>${total}</span></h3>${items.length ? `<ul>${items.map(item => `<li>${line(item)}</li>`).join('')}</ul>${total > items.length ? `<p class="objective-muted">${total - items.length} more.</p>` : ''}` : '<p class="objective-muted">None.</p>'}</div>`;
   };
-  return `<section class="objective-section" id="objective-open-loops"><div class="objective-section-head"><h2>Open loops (no model key)</h2></div><p class="objective-notice" role="status">${esc(state.model.notice)}</p>
+  return `<section class="objective-section" id="objective-open-loops"><div class="objective-section-head"><h2>Open loops</h2></div>
     ${list('followups', 'Follow-ups nobody adopted', item => `<a href="#runs/${encodeURIComponent(item.run_id || '')}">${esc(item.task_title || 'Task')}</a> · ${esc(item.question)}`)}
     ${list('needs_review', 'Answers that need a second look', item => `<a href="#runs/${encodeURIComponent(item.run_id || '')}">${esc(item.task_title || 'Task')}</a> · ${esc(item.question)}${item.review_reason ? ` · ${esc(item.review_reason)}` : ''}`)}
     ${list('checkpoints_due', 'Checkpoints due', item => `<a href="#today/${encodeURIComponent(item.id)}">${esc(item.title)}</a>${item.next_check_at ? ` · due ${esc(objectiveTime(item.next_check_at))}` : ' · due now'}${item.waiting_on ? ` · waiting on ${esc(item.waiting_on)}` : ''}`)}
-    ${list('new_records', 'New evidence since the last investigation', item => `<strong>${esc(item.repository)}</strong> · ${esc(item.count)} record${item.count === 1 ? '' : 's'}`)}
   </section>`;
 }
 function objectiveProposalPage(item) {
-  return `<a class="objective-text-link" href="#today">← Today</a><header class="objective-detail-heading"><p class="objective-label">Suggested next step · ${esc(item.repo || item.repository || '')}</p><h1>${esc(item.title || 'Proposal')}</h1></header><div class="objective-layout"><section>${objectiveCard(item, true)}</section><aside>${objectiveCapabilities()}<p class="objective-muted">A suggestion becomes work only after its scope is signed in the inbox.</p></aside></div>`;
+  return `<a class="objective-text-link" href="#today">← Outcomes</a><header class="objective-detail-heading"><p class="objective-label">Suggested next step · ${esc(item.repo || item.repository || '')}</p><h1>${esc(item.title || 'Proposal')}</h1></header>${objectiveCard(item, true)}`;
 }
+// The h1 row: the primary 'Track an outcome' and one More menu with 'Suggest next steps'.
+function objectiveActions() {
+  if (!objectiveCanWrite()) return '';
+  const off = objectiveScanOff();
+  return `<button class="button primary" type="button" data-objective-action="new" data-id="">Track an outcome</button><details class="more-menu" id="objective-more"><summary aria-label="More actions">More</summary><div class="more-menu-items"><button class="button text" type="button" data-objective-action="scan-panel" data-id="" ${off ? 'disabled title="Needs a model key"' : ''}>Suggest next steps</button></div></details>`;
+}
+// The page head (h1 'Outcomes' from app.js titles) carries the actions on the overview only; an
+// outcome's own page hides it, as the task page does, and keeps its title as the h1. The buttons
+// are redrawn only when they change, so an open More menu survives a redraw.
+function objectivePageHead(id) {
+  const head = document.querySelector?.('.page-head');
+  if (head) head.hidden = !!id;
+  const actions = document.getElementById('page-actions');
+  if (!actions) return;
+  const html = id ? '' : objectiveActions();
+  if (actions.dataset.objectiveActions === html && (actions.innerHTML || !html)) return;
+  actions.innerHTML = html; actions.dataset.objectiveActions = html;
+  const menu = actions.querySelector?.('#objective-more');
+  if (menu) menu.open = objectiveMenuOpen;
+}
+// Settings: the meetings panel behind its button, drawn into the div Settings renders.
+function objectiveMeetingsMount() {
+  const mount = document.getElementById('meetings-mount');
+  if (!mount || !state.auth) return;
+  const active = document.activeElement, focus = active?.id, selection = [active?.selectionStart, active?.selectionEnd];
+  // A form someone is filling in is left alone until something about the panel changes.
+  if (mount.innerHTML && mount.dataset.objectivePanel === objectivePanel && mount.dataset.objectiveError === objectiveError && mount.dataset.objectiveNotice === objectiveNotice && active?.closest?.('form') && mount.contains?.(active) && !objectivePending.size) return;
+  mount.dataset.objectivePanel = objectivePanel; mount.dataset.objectiveError = objectiveError; mount.dataset.objectiveNotice = objectiveNotice;
+  mount.innerHTML = objectivePanel === 'meetings' ? objectiveMeetingPanel() : objectiveButton('meetings', '', 'Manage meeting evidence', false, 'id="objective-meetings-open"');
+  const replacement = focus && document.getElementById(focus);
+  if (replacement && mount.contains?.(replacement)) {
+    replacement.focus({preventScroll:true});
+    if (replacement.setSelectionRange && selection[0] != null) replacement.setSelectionRange(...selection);
+  }
+}
+// app.js loads after this file and draws Settings itself; once it has, every render() of
+// Settings is followed by the meetings panel (and, through evidence.js, the paste panel),
+// with focus and caret kept when they were inside one of those panels.
+function objectiveHookRender() {
+  if (typeof render !== 'function' || render.objectiveHooked) return;
+  const base = render;
+  render = function objectiveRender() {
+    const active = document.activeElement, focus = active?.id, selection = [active?.selectionStart, active?.selectionEnd];
+    const result = base.apply(this, arguments);
+    if (view === 'connect') {
+      try { renderObjectives(); } catch (error) { console.error(error); }
+      const replacement = focus && document.getElementById(focus);
+      if (replacement && replacement !== active && replacement.closest?.('#evidence-mount, #meetings-mount')) {
+        replacement.focus({preventScroll:true});
+        if (replacement.setSelectionRange && selection[0] != null) replacement.setSelectionRange(...selection);
+      }
+    }
+    return result;
+  };
+  render.objectiveHooked = true;
+}
+objectiveHookRender();
+document.addEventListener('DOMContentLoaded', objectiveHookRender);
 function renderObjectives() {
+  if (view === 'connect') return objectiveMeetingsMount();
   if (view !== 'today' || !state.auth) return;
   const app = document.getElementById('app'), id = objectiveId();
+  objectivePageHead(id);
   const active = document.activeElement;
   if (app.dataset.objectivePanel === objectivePanel && app.dataset.objectiveRoute === objectiveRoute() && app.dataset.objectiveError === objectiveError && app.dataset.objectiveNotice === objectiveNotice && active?.closest?.('form') && app.contains(active) && !objectivePending.size) return;
   app.dataset.objectivePanel = objectivePanel; app.dataset.objectiveRoute = objectiveRoute(); app.dataset.objectiveError = objectiveError; app.dataset.objectiveNotice = objectiveNotice;
   const focus = active?.id, selection = [active?.selectionStart, active?.selectionEnd];
   const opened = new Set([...app.querySelectorAll('details')].map((el,index) => el.open ? index : -1));
   if (!objectiveData) {
-    app.innerHTML = `<section class="objective-empty"><h1>${objectiveError ? 'Could not open Today' : 'Opening Today…'}</h1>${objectiveError ? `<p role="alert">${esc(objectiveError)}</p>${objectiveButton('refresh','','Try again')}` : '<span class="loading-dot"></span>'}</section>`;
+    app.innerHTML = objectiveError ? `<div class="empty" role="alert"><h3>Couldn’t load your workspace.</h3><p>${esc(objectiveError)}</p>${objectiveButton('refresh','','Try again')}</div>` : '<p class="objective-muted" role="status">Loading…</p>';
     return;
   }
   const objectives = objectiveData.objectives || [], closed = objectiveData.closed || [];
@@ -166,21 +235,22 @@ function renderObjectives() {
     const item = objectiveData.detail?.id === id ? objectiveData.detail : [...objectives, ...closed].find(item => item.id === id);
     // The inbox card links a scope review to #today/<proposal id>.
     const proposal = item ? null : objectiveProposals().find(item => item.id === id);
-    content = item ? objectiveDetail(item) : proposal ? objectiveProposalPage(proposal) : '<section class="objective-empty"><h1>Objective unavailable</h1><p>It may have been removed or your access may have changed.</p><a href="#today">Back to Today</a></section>';
+    content = item ? objectiveDetail(item) : proposal ? objectiveProposalPage(proposal) : '<div class="empty"><h3>This outcome is unavailable.</h3><p>It may have been removed or your access may have changed.</p><a class="button" href="#today">Back to Outcomes</a></div>';
   } else {
-    const groups = objectiveGroups(objectiveData), off = objectiveScanOff();
-    content = `<header class="objective-heading"><div><p class="objective-label">YOUR WORK, WITH CONTINUITY</p><h1>Today</h1><p>What waits on you, what is moving, and what is ready to look at.</p></div>${objectiveCanWrite() ? `<div class="objective-actions">${objectiveButton('new','','Take point on an outcome')}${objectiveButton('scan-panel','','Find opportunities', off, off ? `title="${esc(state.model.notice)}"` : '')}</div>` : ''}</header><div class="objective-layout"><section>
-    ${objectiveGroup('decide', 'Needs your decision', groups.decide, 'Nothing waits on you. Suggestions and blocked objectives appear here; nothing starts just because a source says to do it.')}
-    ${objectiveGroup('progress', 'In progress', groups.progress, 'No worker is running and no scope is out for signature.')}
-    ${objectiveGroup('review', 'Ready to review', groups.review, 'No objective finished a run in the last seven days.')}
-    ${groups.waiting.length ? objectiveGroup('waiting', 'Waiting on something else', groups.waiting, '') : ''}
-    ${(objectiveData.research || []).map(packet=>objectiveResearch(packet)).join('')}${objectiveClosed(closed)}${objectiveOpenLoops()}${!objectives.length && !closed.length ? '<div class="objective-empty-card"><h3>Keep the outcome in view</h3><p>Accept a suggestion to track its next step, blockers and verification across agent sessions.</p><a class="objective-text-link" href="#work">Start a task instead ↗</a></div>' : ''}</section><aside><div id="evidence-mount"></div>${objectiveCapabilities()}${objectiveResearchLimits()}<section class="objective-side-section"><h2>Meeting evidence</h2><p class="objective-muted">Transcripts are context, never a participant’s approval. Recording requires an explicit consent record.</p>${objectiveButton('meetings','','Manage meeting evidence')}</section><p class="objective-muted">Accepted objectives do not bypass the judgment inbox. <a href="#inbox">Review decisions ↗</a></p></aside></div>`;
+    // One column: the three groups (or the page's empty state), then what is closed, the open
+    // loops without a model key and the investigation diagnostics. Hosts, pasted evidence and
+    // meetings are on Settings.
+    const groups = objectiveGroups(objectiveData), listed = objectives.length || closed.length || (objectiveData.proposals || []).length;
+    content = `${listed ? `${objectiveGroup('decide', 'Needs your decision', groups.decide, 'Nothing waits on you.')}
+    ${objectiveGroup('progress', 'In progress', groups.progress, 'Nothing is running.')}
+    ${objectiveGroup('review', 'Ready to review', groups.review, 'Nothing finished in the last seven days.')}
+    ${groups.waiting.length ? objectiveGroup('waiting', 'Waiting on something else', groups.waiting, '') : ''}` : '<div class="empty" id="objective-empty" tabindex="-1"><h3>No outcomes yet.</h3><p>Track one, or let Raven suggest next steps.</p></div>'}
+    ${(objectiveData.research || []).map(packet=>objectiveResearch(packet)).join('')}${objectiveClosed(closed)}${objectiveOpenLoops()}${objectiveResearchLimits()}`;
   }
   const accepted = objectivePanel.startsWith('accept:') ? objectiveProposals().find(item => 'accept:' + item.id === objectivePanel) : null;
   if (accepted) content = objectiveAcceptance(accepted) + content;
   if (objectivePanel === 'new') content = objectiveNewForm() + content;
   if (objectivePanel === 'scan') content = objectiveScanForm() + content;
-  if (objectivePanel === 'meetings') content = objectiveMeetingPanel() + content;
   if (objectivePanel.startsWith('checkpoint:') || objectivePanel.startsWith('achieve:')) content = objectiveProgressForm(objectivePanel) + content;
   if (objectivePanel.startsWith('cancel:')) {
     const cancelId = objectivePanel.slice(7);
@@ -214,7 +284,7 @@ async function loadObjectives() {
     if (id && !proposal) result.detail = await api('/api/objectives/' + encodeURIComponent(id));
     if (view !== 'today' || route !== objectiveRoute() || request !== objectiveRequest) return;
     objectiveData = result; objectiveError = ''; renderObjectives();
-    // The ledger's proposal numbers, read once with Today itself; a missing metrics read never hides Today.
+    // The ledger’s proposal numbers, read once with the page itself; a missing metrics read never hides it.
     if (!id) { try { result.metrics = await api('/api/metrics'); } catch (_) { result.metrics = null; } if (objectiveData === result) renderObjectives(); }
   } catch (error) {
     if (view !== 'today' || route !== objectiveRoute() || request !== objectiveRequest) return;
@@ -239,16 +309,18 @@ async function objectiveMutate(key, url, payload) {
 }
 document.addEventListener('click', async event => {
   const button = event.target.closest?.('[data-objective-action]');
-  if (!button || view !== 'today' || button.disabled) return;
+  if (!button || !objectiveView() || button.disabled) return;
   const action = button.dataset.objectiveAction, id = button.dataset.id || '';
   if (action === 'refresh') return loadObjectives();
-  if (action === 'close-panel') { const was = objectivePanel; objectivePanel = ''; objectiveError = ''; renderObjectives(); if (was.startsWith('dismiss:')) objectiveFocus('objective-dismiss-' + was.slice(8), 'objective-group-decide'); return; }
+  if (action === 'close-panel') { const was = objectivePanel; objectivePanel = ''; objectiveError = ''; renderObjectives(); if (was.startsWith('dismiss:')) objectiveFocus('objective-dismiss-' + was.slice(8), 'objective-group-decide', 'objective-empty'); if (was === 'meetings') objectiveFocus('objective-meetings-open'); return; }
   if (action === 'scan-panel' && objectiveScanOff()) return;  // Nothing to find without a model backend.
+  const menu = button.closest?.('details.more-menu');
+  if (menu) menu.open = false;
   if (action === 'new' || action === 'scan-panel') { objectivePanel = action === 'new' ? 'new' : 'scan'; renderObjectives(); return; }
   if (action === 'checkpoint' || action === 'review-achieve') { objectivePanel = (action === 'checkpoint' ? 'checkpoint:' : 'achieve:') + id; renderObjectives(); return; }
   if (action === 'review-accept') { objectivePanel = 'accept:' + id; renderObjectives(); return; }
   if (action === 'review-cancel') { objectivePanel = 'cancel:' + id; renderObjectives(); return; }
-  if (action === 'meetings') { objectivePanel = 'meetings'; const repos = objectiveData?.repositories || []; objectiveMeetingRepo ||= objectiveData?.detail?.repository || repos[0]?.id || repos[0] || ''; renderObjectives(); try { objectiveMeetings = objectiveMeetingRepo ? await api(objectiveMeetingsURL()) : {meetings:[]}; } catch(error) { objectiveError = error.message; } renderObjectives(); return; }
+  if (action === 'meetings') { objectivePanel = 'meetings'; const repos = objectiveRepositoryList(); objectiveMeetingRepo ||= objectiveData?.detail?.repository || repos[0]?.id || repos[0] || ''; renderObjectives(); try { objectiveMeetings = objectiveMeetingRepo ? await api(objectiveMeetingsURL()) : {meetings:[]}; } catch(error) { objectiveError = error.message; } renderObjectives(); return; }
   const item = [...objectiveProposals(), ...(objectiveData?.objectives || []), objectiveData?.detail].filter(Boolean).find(item => item.id === id);
 
   if (!item) return;
@@ -278,10 +350,10 @@ function objectiveRepositories() {
 function objectiveNewForm() {
   const hosts = objectiveData?.capabilities || state.workbench?.hosts || [];
   const selected = objectiveDrafts.get(objectivePanel)?.provider || '';
-  return `<section class="objective-editor"><div class="objective-section-head"><h2>Take point on an outcome</h2>${objectiveButton('close-panel','','Cancel')}</div><p class="objective-notice">Choose the outcome and bounds. You can start one bounded private preparation run now. This never authorizes external actions.</p><form id="objective-create-form">${objectiveField('title','Short title',{max:300})}${objectiveField('outcome','Outcome to own',{rows:3,max:2000})}${objectiveRepositories()}<label>Execution harness<select name="provider" required><option value="">Choose explicitly</option>${hosts.map(host => `<option value="${esc(host.id)}" ${host.id === selected ? 'selected' : ''}>${esc(host.name || host.id)}${host.ready ? '' : ' · setup needed'}</option>`).join('')}</select></label>${objectiveField('success_criteria','Evidence that will establish success',{rows:2,max:2000})}${objectiveField('stop_criteria','When should Raven stop or ask you?',{rows:2,max:2000})}${objectiveField('guardrails','Scope and limits',{rows:2,max:2000})}<label class="objective-check"><input type="checkbox" name="start_preparation" ${(objectiveDrafts.get(objectivePanel)?.start_preparation ?? true) ? 'checked' : ''}>Start bounded private preparation with the selected configured harness</label><button class="button" type="submit" ${objectivePending.has('new') ? 'disabled aria-busy="true"' : ''}>Create objective</button></form></section>`;
+  return `<section class="objective-editor"><div class="objective-section-head"><h2>Track an outcome</h2>${objectiveButton('close-panel','','Cancel')}</div><p class="objective-notice">Choose the outcome and bounds. You can start one bounded private preparation run now. This never authorizes external actions.</p><form id="objective-create-form">${objectiveField('title','Short title',{max:300})}${objectiveField('outcome','Outcome to own',{rows:3,max:2000})}${objectiveRepositories()}<label>Execution harness<select name="provider" required><option value="">Choose explicitly</option>${hosts.map(host => `<option value="${esc(host.id)}" ${host.id === selected ? 'selected' : ''}>${esc(host.name || host.id)}${host.ready ? '' : ' · setup needed'}</option>`).join('')}</select></label>${objectiveField('success_criteria','Evidence that will establish success',{rows:2,max:2000})}${objectiveField('stop_criteria','When should Raven stop or ask you?',{rows:2,max:2000})}${objectiveField('guardrails','Scope and limits',{rows:2,max:2000})}<label class="objective-check"><input type="checkbox" name="start_preparation" ${(objectiveDrafts.get(objectivePanel)?.start_preparation ?? true) ? 'checked' : ''}>Start bounded private preparation with the selected configured harness</label><button class="button" type="submit" ${objectivePending.has('new') ? 'disabled aria-busy="true"' : ''}>Create objective</button></form></section>`;
 }
 function objectiveScanForm() {
-  return `<section class="objective-editor"><div class="objective-section-head"><h2>Find useful next steps</h2>${objectiveButton('close-panel','','Cancel')}</div><p>Inspect connected, permission-scoped evidence for this repository. Suggestions remain proposals until reviewed.</p><form id="objective-scan-form">${objectiveRepositories()}<label class="objective-check"><input type="checkbox" name="retry_failed">Explicitly retry identical inputs after fixing a blocked investigation (authorizes another bounded attempt set)</label><button class="button" type="submit" ${objectivePending.has('scan') ? 'disabled aria-busy="true"' : ''}>Inspect evidence</button></form>${objectiveCanAdmin() ? `<form id="objective-watch-form"><h3>Investigate new evidence automatically</h3>${objectiveRepositories()}<label class="objective-check"><input type="checkbox" name="enabled" ${objectiveDrafts.get(objectivePanel)?.enabled === true ? 'checked' : ''}>Enable a repository watch</label><p>New accessible evidence is read with your configured model; it can propose work but cannot approve or start it. Uncheck to disable.</p><button class="button" type="submit">Save evidence watch</button></form>` : ''}</section>`;
+  return `<section class="objective-editor"><div class="objective-section-head"><h2>Suggest next steps</h2>${objectiveButton('close-panel','','Cancel')}</div><p>Inspect connected, permission-scoped evidence for this repository. Suggestions remain proposals until reviewed.</p><form id="objective-scan-form">${objectiveRepositories()}<label class="objective-check"><input type="checkbox" name="retry_failed">Explicitly retry identical inputs after fixing a blocked investigation (authorizes another bounded attempt set)</label><button class="button" type="submit" ${objectivePending.has('scan') ? 'disabled aria-busy="true"' : ''}>Inspect evidence</button></form>${objectiveCanAdmin() ? `<form id="objective-watch-form"><h3>Investigate new evidence automatically</h3>${objectiveRepositories()}<label class="objective-check"><input type="checkbox" name="enabled" ${objectiveDrafts.get(objectivePanel)?.enabled === true ? 'checked' : ''}>Enable a repository watch</label><p>New accessible evidence is read with your configured model; it can propose work but cannot approve or start it. Uncheck to disable.</p><button class="button" type="submit">Save evidence watch</button></form>` : ''}</section>`;
 }
 function objectiveProgressForm(panel) {
   const [action,id] = panel.split(':');
@@ -289,7 +361,7 @@ function objectiveProgressForm(panel) {
 }
 function objectiveMeetingPanel() {
   const meetings = Array.isArray(objectiveMeetings) ? objectiveMeetings : objectiveMeetings?.meetings || [];
-  const repos = objectiveData?.repositories || [];
+  const repos = objectiveRepositoryList();
   return `<section class="objective-editor"><div class="objective-section-head"><h2>Meeting evidence</h2>${objectiveButton('close-panel','','Close')}</div><label>Repository scope<select id="objective-meeting-repository"><option value="">Choose a repository</option>${repos.map(repo => `<option value="${esc(repo.id || repo)}" ${(repo.id || repo) === objectiveMeetingRepo ? 'selected' : ''}>${esc(repo.name || repo.id || repo)}</option>`).join('')}</select></label><p class="objective-notice">Only share transcripts that every workspace reader is permitted to access. Participant statements are evidence, not authorization. Vexa is a self-hosted attendance adapter; transcript import does not join meetings.</p>${objectiveCanAdmin() ? `<details><summary>Add a meeting or transcript</summary><form id="objective-meeting-create">${objectiveField('title','Meeting title',{max:300})}${objectiveRepositories()}<label>Source<select name="provider" required><option value="import">Transcript import (no attendance)</option><option value="vexa">Vexa (requires server configuration)</option></select></label>${objectiveField('namespace','Source namespace (your configured installation)',{max:200})}<label>Meeting platform<select name="platform"><option value="google_meet">Google Meet</option><option value="teams">Microsoft Teams</option><option value="zoom">Zoom</option></select></label>${objectiveField('native_meeting_id','Native meeting ID',{max:300})}<button class="button" type="submit" ${objectivePending.has('meeting-new') ? 'disabled' : ''}>Create record only</button></form></details>` : '<p class="objective-muted">A workspace administrator manages meeting evidence.</p>'}${objectiveMeetings === null ? '<p role="status">Loading meeting records…</p>' : !meetings.length ? '<p class="objective-muted">No meeting records.</p>' : meetings.map(meeting => meeting.withheld ? '<article class="objective-card"><h3>Meeting evidence withheld</h3><p>Local disclosure was revoked. This does not establish that a remote bot stopped; an administrator must inspect the capture status.</p></article>' : `<article class="objective-card"><h3>${esc(meeting.title)}</h3><p class="objective-label">${esc(meeting.state || 'Unknown state')} · ${esc(meeting.provider)}</p><p class="objective-muted">Remote status: ${esc(meeting.remote_state || 'Not established')}. Local revocation does not prove a remote bot stopped.</p>${meeting.last_error ? `<p class="objective-error">${esc(meeting.last_error)}</p>` : ''}${objectiveCanAdmin() ? `<details><summary>Consent and controls</summary><form class="objective-meeting-consent" data-id="${esc(meeting.id)}"><label class="objective-check"><input type="checkbox" name="notice_confirmed" required> I have confirmed the required participant notice and consent for this meeting.</label><label class="objective-check"><input type="checkbox" name="join" required> Allow a visible bot to join this meeting.</label><label class="objective-check"><input type="checkbox" name="transcribe" required> Allow transcription for this meeting.</label><p class="objective-muted">Audio/video recording is not requested. Consent is separate from joining.</p><button class="button" type="submit" ${objectivePending.has(meeting.id) ? 'disabled' : ''}>Record consent</button></form><form class="objective-meeting-import" data-id="${esc(meeting.id)}">${objectiveField('source_version','Export version or revision',{max:200})}${objectiveField('body','Transcript text (up to 1,000,000 characters; stored in versioned chunks)',{rows:4,max:1000000})}<label class="objective-check"><input type="checkbox" name="workspace_shared" required> Every workspace reader is permitted to access this transcript.</label><button class="button" type="submit" ${objectivePending.has(meeting.id) ? 'disabled' : ''}>Import transcript</button></form>${meeting.provider === 'vexa' ? `<p class="objective-muted">Background transcript sync: ${esc(meeting.background_sync?.status || 'disabled')}. Capture ${meeting.transcript_complete ? 'complete' : 'not established complete'}.</p><form class="objective-meeting-background" data-id="${esc(meeting.id)}"><label class="objective-check"><input type="checkbox" name="enabled" ${meeting.background_sync?.enabled ? 'checked' : ''}> Automatically observe this consented meeting and import its transcript after joining.</label><label class="objective-check"><input type="checkbox" name="workspace_shared"> Every workspace reader may access this transcript. I authorize periodic background status and transcript reads.</label><p class="objective-muted">No automatic join or recording. Disable sync to stop further reads; use Stop remote bot separately to leave the meeting.</p><button class="button" type="submit" ${objectivePending.has(meeting.id) ? 'disabled' : ''}>Save background sync</button></form><form class="objective-meeting-sync" data-id="${esc(meeting.id)}"><label class="objective-check"><input type="checkbox" name="workspace_shared" required> Every workspace reader may access the provider transcript.</label><button class="button" type="submit" ${objectivePending.has(meeting.id) ? 'disabled' : ''}>Fetch shared transcript</button></form><form class="objective-meeting-join" data-id="${esc(meeting.id)}"><label>Meeting URL (sent only for this request)<input name="meeting_url" type="url" required autocomplete="off"></label><label>Meeting passcode, if required<input name="passcode" type="password" autocomplete="off"></label><p class="objective-notice">Join starts a real, visible meeting bot. Only proceed with valid participant consent.</p><button class="button" type="submit" ${objectivePending.has(meeting.id) ? 'disabled' : ''}>Join with recorded consent</button></form>` : ''}<div class="objective-actions">${meeting.provider === 'vexa' ? objectiveButton('meeting-stop',meeting.id,'Stop remote bot') : ''}${objectiveButton('meeting-revoke',meeting.id,'Revoke local access')}${meeting.provider === 'vexa' ? objectiveButton('meeting-reconcile',meeting.id,'Refresh remote status') : ''}${meeting.provider === 'vexa' ? objectiveButton('meeting-confirm-delete',meeting.id,'Delete remote data', !['completed','failed'].includes(meeting.state)) : ''}</div></details>` : ''}</article>`).join('')}</section>`;
 }
 function objectiveFormValues(form) {
@@ -300,13 +372,13 @@ function objectiveFormValues(form) {
   return data;
 }
 document.addEventListener('input', event => {
-  if (view !== 'today' || !objectivePanel) return;
+  if (!objectiveView() || !objectivePanel) return;
   const form = event.target.closest?.('form');
   // Never preserve meeting credentials or consent checkboxes across navigation.
   if (form && !form.className?.startsWith('objective-meeting') && form.id?.startsWith('objective-')) objectiveDrafts.set(objectivePanel,objectiveFormValues(form));
 });
 document.addEventListener('change', event => {
-  if (view !== 'today' || !objectivePanel) return;
+  if (!objectiveView() || !objectivePanel) return;
   const form = event.target.closest?.('form');
   if (form && !form.className?.startsWith('objective-meeting') && form.id?.startsWith('objective-')) objectiveDrafts.set(objectivePanel,objectiveFormValues(form));
 });
@@ -324,7 +396,7 @@ async function objectiveMeetingMutate(id, action, data) {
 }
 document.addEventListener('submit', async event => {
   const form = event.target;
-  if (view !== 'today' || !(form.id?.startsWith('objective-') || form.className?.startsWith('objective-meeting')) || form.id === 'objective-accept-form') return;
+  if (!objectiveView() || !(form.id?.startsWith('objective-') || form.className?.startsWith('objective-meeting')) || form.id === 'objective-accept-form') return;
   event.preventDefault();
   if (!form.reportValidity() || !objectiveCanWrite()) return;
   const data = objectiveFormValues(form), id = form.dataset.id;
@@ -337,7 +409,7 @@ document.addEventListener('submit', async event => {
     if (rationale.length < 3) { objectiveError = 'A reason of at least 3 characters is required; it shapes the next investigation'; renderObjectives(); objectiveFocus('objective-dismiss-rationale'); return; }
     await objectiveMutate(id,'/api/proposals/' + encodeURIComponent(id) + '/dismiss',{rationale,expected_revision:item.revision,request_key:objectiveKey('dismiss:' + id)});
     // The form stays open only when the server refused; otherwise the card's button, or the group when the card is gone.
-    if (objectivePanel === 'dismiss:' + id) objectiveFocus('objective-dismiss-rationale'); else objectiveFocus('objective-dismiss-' + id, 'objective-group-decide');
+    if (objectivePanel === 'dismiss:' + id) objectiveFocus('objective-dismiss-rationale'); else objectiveFocus('objective-dismiss-' + id, 'objective-group-decide', 'objective-empty');
     return;
   }
   if (form.id === 'objective-progress-form') {
@@ -355,7 +427,7 @@ document.addEventListener('submit', async event => {
 });
 document.addEventListener('click', async event => {
   const button = event.target.closest?.('[data-objective-action]');
-  if (!button || view !== 'today' || button.disabled) return;
+  if (!button || !objectiveView() || button.disabled) return;
   const action = button.dataset.objectiveAction;
   if (action === 'meeting-confirm-delete') {
     const meeting = (Array.isArray(objectiveMeetings) ? objectiveMeetings : objectiveMeetings?.meetings || []).find(item => item.id === button.dataset.id);
@@ -369,7 +441,7 @@ document.addEventListener('click', async event => {
 });
 
 document.addEventListener('change', async event => {
-  if (view !== 'today' || event.target.id !== 'objective-meeting-repository') return;
+  if (!objectiveView() || event.target.id !== 'objective-meeting-repository') return;
   const repo = event.target.value; objectiveMeetingRepo = repo; objectiveMeetings = null; renderObjectives();
   try { const result = repo ? await api(objectiveMeetingsURL()) : {meetings:[]}; if (objectiveMeetingRepo === repo) objectiveMeetings = result; } catch(error) { if (objectiveMeetingRepo === repo) objectiveError = error.message; }
   renderObjectives();

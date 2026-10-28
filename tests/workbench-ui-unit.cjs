@@ -4,7 +4,7 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), vm = requ
 function harness(id='task') {
   const handlers={}, requests=[], elements={};
   const el=()=>({value:'',innerHTML:'',dataset:{},querySelectorAll:()=>[],querySelector:()=>null});
-  for(const id of ['app','work-prompt','work-repository','work-recents']) elements[id]=el();
+  for(const id of ['app','work-prompt','work-repository']) elements[id]=el();
   elements.app.dataset.workId=id; elements['work-repository'].value='sample/repo';
   const task={task_id:id,requester:'Original author',prompt:'Task',repository:'sample/repo',status:'input',conversation:[],pending_messages:[],activity:[]};
   const tree={task_id:id,nodes:[]};
@@ -28,14 +28,24 @@ function harness(id='task') {
   assert.match(h.run("workText('| A | B |\\n|---|---|\\n| `<script>` | value |')"), /<table>.*<code>&lt;script&gt;<\/code>/);
   assert.match(h.run("workText('```\\n## literal heading\\n```')"), /<pre><code>## literal heading/);
   assert.match(h.elements.app.innerHTML,/&lt;img/);assert.doesNotMatch(h.elements.app.innerHTML,/<img src=x/);
+  // The home is the composer under 'Start a task', with nothing else to read; no recents list exists.
+  assert.match(h.elements.app.innerHTML,/<h1>Start a task<\/h1><div class="work-modes"/);assert.match(h.elements.app.innerHTML,/aria-label="Start task" >/);
+  assert.doesNotMatch(h.elements.app.innerHTML,/What should we work on|View all workspace tasks|Raven uses your context|separate copy of your repository|work-home-note/);
+  assert.equal(h.run('typeof renderWorkRecents'),'undefined');
+  h.run('workMode="ask";renderWorkbench()');assert.match(h.elements.app.innerHTML,/<h1>Start a task<\/h1>/);assert.doesNotMatch(h.elements.app.innerHTML,/What would you like to know\?<\/h1>|No coding host is started/);h.run('workMode="task"');
   h.c.state.me={role:'viewer'};h.c.state.auth.enabled=true;h.run('renderWorkbench()');
-  assert.match(h.elements.app.innerHTML,/Your account can view tasks/);assert.match(h.elements.app.innerHTML,/aria-label="Start task" disabled/);
+  assert.match(h.elements.app.innerHTML,/<p class="work-home-note">Your account can view tasks\. A workspace member can start one\.<\/p>/);assert.match(h.elements.app.innerHTML,/aria-label="Start task" disabled/);
+  // Without a ready workbench the home draws nothing: navigate() sends #work to the task list.
+  h=harness('');h.c.state.workbench.ready=false;h.run('renderWorkbench()');assert.equal(h.elements.app.innerHTML,'');
+  // The error card and its retry.
+  h=harness();h.run("workData=null;workError='Synthetic failure';renderWorkbench()");assert.match(h.elements.app.innerHTML,/^<div class="empty" role="alert"><h3>Couldn’t load your workspace\.<\/h3><p>Synthetic failure<\/p><button class="button" data-action="retry">Try again<\/button><\/div>$/);
+  h.run("workError='';renderWorkbench()");assert.match(h.elements.app.innerHTML,/role="status">Opening your task…/);
   h=harness();h.draft('A follow-up');await h.submit();assert.equal(h.elements['work-prompt'].value,'');assert.equal(h.run('workDraft().text'),'');
   h=harness();h.draft('Retry this exactly');let payload;h.c.api=async(url,data)=>{if(data){if(!payload){payload=data;throw Error('Network interrupted');}assert.deepEqual(data,payload);return {saved:true};}return url.endsWith('/tree')?h.tree:url.endsWith('/trace')?{}:h.task;};
   await h.submit();assert.equal(h.run('workDraft().error'),'Network interrupted');await h.submit();assert.equal(h.run('workDraft().text'),'');
   h=harness('');h.draft('Original task');let finish;h.c.api=()=>new Promise(resolve=>finish=resolve);const pending=h.submit();
   h.c.navigationVersion=2;finish({task_id:'late'});await pending;assert.equal(h.c.location.hash,'#work/');
-  h=harness();h.task.conversation=[{role:'user',actor:'Other member',text:'A shared request'}];h.run('renderWorkbench()');assert.match(h.elements.app.innerHTML,/Other member/);assert.doesNotMatch(h.elements.app.innerHTML,/>You</);
+  h=harness();h.task.conversation=[{role:'user',actor:'Other member',text:'A shared request'}];h.run('renderWorkbench()');assert.match(h.elements.app.innerHTML,/Other member/);assert.doesNotMatch(h.elements.app.innerHTML,/>You<|Evidence is context/);
   h.tree.nodes=[{node_id:'one',status:'suggested',question:'Optional idea',owner:'Mira',blocking:false}];
   h.run('renderWorkbench()');assert.match(h.elements.app.innerHTML,/Suggested follow-up/);assert.doesNotMatch(h.elements.app.innerHTML,/Required follow-up/);assert.match(h.elements.app.innerHTML,/data-work-detail="decision-one"/);
   h.c.fixture.trace.notifications=[{person_name:'Earlier contact'}];h.run('renderWorkbench()');assert.match(h.elements.app.innerHTML,/Earlier contact/);
@@ -43,7 +53,9 @@ function harness(id='task') {
   assert.match(h.elements.app.innerHTML,/Patch ready for manual review/);assert.match(h.elements.app.innerHTML,/automatic code review is incomplete/);
   h.run("workVerifications.set('task',{config:{ready:true,profiles:[{id:'heldout',repository:'sample/repo',label:'Behavior cases'}]},receipts:[{profile_id:'heldout',status:'passed',current:false,usable_pass:false,coverage:'<script>bad</script>',coverage_basis:'operator-held-fixtures',binding:{candidate_tree_sha256:'abc'}}]})");
   h.run('renderWorkbench()');assert.match(h.elements.app.innerHTML,/no longer current/);assert.match(h.elements.app.innerHTML,/&lt;script&gt;/);assert.doesNotMatch(h.elements.app.innerHTML,/Current configured checks passed/);
+  // The checks sit behind one 'Checks' disclosure on the result, after its actions.
+  assert.match(h.elements.app.innerHTML,/Decisions & review<\/a><\/div><details class="work-checks" data-work-detail="checks"><summary>Checks<\/summary>[\s\S]*data-work-action="verify-profile"[\s\S]*<\/details><small>The original repository is unchanged/);assert.doesNotMatch(h.elements.app.innerHTML,/Independent artifact checks/);
   h.c.state.auth.enabled=true;h.c.state.me={role:'viewer'};h.run('renderWorkbench()');assert.doesNotMatch(h.elements.app.innerHTML,/data-work-action="verify-profile"/);
   h.task.withheld=true;h.run('renderWorkbench()');assert.match(h.elements.app.innerHTML,/Access needs attention/);assert.doesNotMatch(h.elements.app.innerHTML,/Behavior cases|operator-held-fixtures/);
-  console.log('Browser task UI: 12 scenario checks passed (DOM/API doubles).');
+  console.log('Browser task UI: 18 scenario checks passed (DOM/API doubles).');
 })().catch(e=>{console.error(e);process.exitCode=1;});

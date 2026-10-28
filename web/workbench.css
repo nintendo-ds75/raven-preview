@@ -3,8 +3,7 @@
 .work-view main{max-width:none;padding-top:12px}
 .work-home{max-width:700px;min-height:70vh;margin:0 auto;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;padding:38px 0 100px}
 .work-home>img{margin-bottom:26px}
-.work-home h1{font-size:32px;font-weight:520;letter-spacing:-1.1px;margin:0 0 13px;color:#f5f5f1;line-height:1.2}
-.work-home>p{font-size:15px;line-height:1.65;color:#bebfb6;max-width:540px;margin:0 0 30px}
+.work-home h1{font-size:32px;font-weight:520;letter-spacing:-1.1px;margin:0 0 22px;color:#f5f5f1;line-height:1.2}
 .work-compose{width:100%;border:1px solid #2b2e27;border-radius:18px;background:#151614;padding:16px 18px 12px;box-shadow:0 3px 12px #20301906;transition:border-color .12s,box-shadow .12s}
 .work-compose:focus-within{border-color:#2b2e27;box-shadow:0 0 0 3px #96a38e15}
 .work-compose textarea{border:0;outline:none;box-shadow:none!important;background:transparent;resize:vertical;min-height:56px;max-height:250px;width:100%;padding:0;font:inherit;font-size:15px;line-height:1.7;color:#83d97a;border-radius:0}
@@ -19,8 +18,7 @@
 .work-send:focus-visible{outline:3px solid #a2b790;outline-offset:3px}
 .work-home-note{font-size:12px;line-height:1.7;color:#bebfb6;margin-top:14px;max-width:560px}
 .work-home-note strong{font-weight:500;color:#83d97a}
-.work-alternative{display:flex;align-items:center;gap:10px;margin-top:34px;color:#83d97a;font-size:12px;text-decoration:none}
-.work-alternative svg{width:16px;height:16px}
+.work-home-note a{color:#83d97a}
 .work-task-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0 22px;border-bottom:1px solid #2b2e27}
 .work-task-header h1{font-weight:550;font-size:17px;margin:8px 0 5px;letter-spacing:-.3px}
 .work-back{font-size:12px;color:#bebfb6;text-decoration:none}
@@ -67,6 +65,10 @@
 .work-result p,.work-result-text{white-space:pre-wrap;font-size:14px;line-height:1.8;overflow-wrap:anywhere}
 .work-result-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}
 .work-result small{display:block;color:#bebfb6;margin-top:12px;font-size:11px}
+.work-checks{margin-top:20px;font-size:12px;color:#bebfb6}
+.work-checks>summary{cursor:pointer;display:flex;align-items:center;min-height:40px;color:#f5f5f1}
+.work-checks p{font-size:12px;line-height:1.65}
+.work-checks .button{margin:4px 8px 4px 0}
 .work-activity{font-size:12px;color:#bebfb6;margin-top:30px}
 .work-activity>summary{cursor:pointer;display:flex;align-items:center;gap:10px}
 .work-activity>summary>span{margin-left:auto;font-size:10px;color:#bebfb6}
@@ -74,6 +76,7 @@
 .work-empty{padding:80px 0;text-align:center}
 @media(max-width:1150px){.work-layout{gap:24px;grid-template-columns:minmax(0,1fr) 255px}.work-overview{padding-left:18px}.work-counts{gap:12px}}
 @media(max-width:900px){.work-layout{display:block}.work-overview{display:none;position:static;max-height:none;border-left:0;border-top:1px solid #2b2e27;padding:24px 0}.work-overview.is-open{display:block}.work-thread{max-width:none}.work-home h1{font-size:28px}.work-message.user{margin-left:20px}}
+.work-home .work-home-note{margin-top:14px}
 @media(max-width:760px){.work-task-header{align-items:flex-start}.work-task-actions .button{min-height:40px}.work-view main{padding-top:0}.work-home{min-height:60vh;padding-top:45px;padding-bottom:45px}.work-compose{padding:14px}.work-compose-bottom>span{font-size:10px}.work-task-header h1{font-size:15px}.work-task-actions{gap:5px}}
 @media(prefers-reduced-motion:reduce){.work-send,.work-compose{transition:none}.work-send:active{transform:none}}
 
@@ -107,8 +110,8 @@
 }
 
 /* Match the verified Raven site palette without adding visual chrome. */
-.work-home h1,.work-next strong,.work-task-header h1{color:var(--ink)}
-.work-home>p,.work-next,.work-answer-preview,.work-discovery{color:var(--text)}
+.work-home h1,.work-next strong,.work-task-header h1,.work-checks>summary{color:var(--ink)}
+.work-next,.work-answer-preview,.work-discovery{color:var(--text)}
 .work-compose,.work-task-header{background:var(--card);border-color:var(--line);color:var(--ink)}
 .work-compose textarea{color:var(--ink)}
 .work-compose:focus-within{border-color:var(--green);box-shadow:0 0 0 2px #83d97a20}
