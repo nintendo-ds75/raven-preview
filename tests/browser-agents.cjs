@@ -32,7 +32,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.waitForSelector('#modal:not([open])', {state:'attached'});
     await page.waitForFunction(async () => (await (await fetch('/api/state')).json()).decisions.some(d => d.status === 'pending'));
     await page.goto(url);
-    await page.getByRole('button', {name:'Answer',exact:true}).click();
+    await page.getByRole('button', {name:/^Answer\b/}).click();
     await page.waitForSelector('#modal[open] #answer');
     assert.match(await page.locator('#modal').textContent(), /Evidence:/);
     await page.getByLabel('Your answer').fill('Exclude this fixture spike only.');

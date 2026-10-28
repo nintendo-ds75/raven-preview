@@ -47,7 +47,8 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
       await page.locator('#page-actions details.more-menu > summary').click();
       await page.getByRole('button', {name:'Ask a question',exact:true}).click();
     };
-    const nav = name => page.getByRole('link', {name, exact:true});
+    // The Settings link says "Settings, setup incomplete" while setup has gaps.
+    const nav = name => page.getByRole('link', {name:new RegExp(`^${name}(,|$)`)});
     const tab = name => page.getByRole('button', {name:new RegExp(`^${name}`)});
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
@@ -63,7 +64,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     for (const card of await page.locator('.decision-card').all()) {
       assert.equal(await card.locator('.pill').count(), 1);
       assert.match(await card.locator('.pill').innerText(), /^(Waiting on .+|Sign-off wanted from .+|No owner yet|Needs a second look)$/);
-      assert.equal(await card.getByRole('button', {name:/^(Answer|Sign|View)$/}).count(), 1);
+      assert.equal(await card.getByRole('button', {name:/^(Answer|Sign|View)\b/}).count(), 1);
     }
     assert.doesNotMatch(await page.locator('#app').textContent(), /Waiting on undefined|New judgment|Across your workspace|Sample workspace/);
     await page.screenshot({path:path.join(artifacts,'desktop.png'),fullPage:true});
@@ -121,7 +122,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await settled.waitFor();
     assert.match(await settled.textContent(), /The agent decided/);
     assert.match(await settled.textContent(), /Sign-off wanted from Alex Morgan/);
-    await settled.getByRole('button', {name:'Sign',exact:true}).click();
+    await settled.getByRole('button', {name:/^Sign\b/}).click();
     await page.waitForSelector('#modal[open] #correct-form');
     assert.equal(await page.locator('#modal #answer-form').count(), 0);
     // The retrieval string is kept one level down, behind Details.
@@ -138,7 +139,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     // Suggestions can be inspected, but remain unapproved until a human records an answer.
     const credits = page.locator('#app .decision-card').filter({hasText:'Should unused prepaid credits expire at the end of the month?'});
     assert.equal((await credits.locator('.context-box .label').textContent()).trim(), 'Suggested answer · from an earlier decision');
-    await credits.getByRole('button', {name:'Answer',exact:true}).click();
+    await credits.getByRole('button', {name:/^Answer\b/}).click();
     await page.waitForFunction(() => document.querySelector('#modal-title').textContent === 'Should unused prepaid credits expire at the end of the month?');
     // The suggestion sits beside the answer box, never inside it: a person
     // must choose to use it.
@@ -162,7 +163,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await tab('All open').click();
     const openQuestion = page.locator('#app .decision-card').filter({hasNotText:'prepaid credits'}).first();
     const handedQuestion = (await openQuestion.locator('h2').textContent()).trim();
-    await openQuestion.getByRole('button', {name:/^(Answer|Sign)$/}).click();
+    await openQuestion.getByRole('button', {name:/^(Answer|Sign)\b/}).click();
     await page.waitForSelector('#modal[open] #refer-learn');
     assert.equal(await page.locator('#hand-on').getAttribute('data-action'), 'assign');
     assert.equal(await page.locator('#refer-scope').isVisible(), false);
@@ -223,7 +224,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     const tree = await (await fetch(`${url}/api/tasks/${task.id}/tree`)).json();
     assert.equal(tree.nodes[0].question, 'Should payment retries stop after three attempts?');
     assert.equal(tree.nodes[0].owner, 'Jamie Test');
-    await card.getByRole('button', {name:'Answer',exact:true}).click();
+    await card.getByRole('button', {name:/^Answer\b/}).click();
     await page.getByLabel('Your answer').fill('Stop after three attempts and notify the customer.');
     await page.locator('#answer-form').getByLabel('Why', {exact:true}).fill('Avoid duplicate charges and make the failure visible.');
     assert.match(await page.locator('#answer-form').innerText(), /Recorded by the local operator on behalf of Jamie Test\./);
@@ -248,7 +249,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.locator('#inbox-search').fill('payment retries');
     assert.equal(await page.locator('.decision-card').count(), 1);
     assert.equal(await page.locator('#owner-filter option').first().innerText(), 'All owners');
-    await page.getByRole('button', {name:'View',exact:true}).click();
+    await page.getByRole('button', {name:/^View\b/}).click();
     await page.waitForSelector('#modal[open] #answer-form');
     assert.equal(await page.getByLabel('Your answer').inputValue(), 'Stop after three attempts and notify the customer.');
     await page.getByLabel('Your answer').fill('Stop after two attempts and notify the customer.');
@@ -273,7 +274,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     // The owner makes the answer a reusable rule from its card. Measured on
     // the hard end-to-end run: the form reloaded the page and made nothing.
     await page.locator('#inbox-search').fill('payment retries');
-    await page.getByRole('button', {name:'View',exact:true}).click();
+    await page.getByRole('button', {name:/^View\b/}).click();
     await page.locator('#decision-details > summary').click();
     await page.locator('#modal summary', {hasText:'Make this a rule'}).click();
     await page.fill('#rule-conditions', 'card payments');
@@ -337,7 +338,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await tab('All open').click();
     const closing = page.locator('#app .decision-card').filter({hasText:'May the month-end close run'});
     assert.match(await closing.locator('.pill').innerText(), /^Waiting on Lee Ledger$/);
-    await closing.getByRole('button', {name:'Answer',exact:true}).click();
+    await closing.getByRole('button', {name:/^Answer\b/}).click();
     await page.getByLabel('Your answer').fill('No. Wait for every import, then close.');
     await page.locator('#answer-form').getByLabel('Why', {exact:true}).fill('A partial close has to be reopened by hand.');
     await page.getByRole('button', {name:'Record my answer',exact:true}).click();
@@ -348,7 +349,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     const early = await (await fetch(`${url}/mcp`, {method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(finishCall)})).json();
     assert.match(JSON.stringify(early), /sign-off wanted from Zoe Reviewer/);
-    await closing.getByRole('button', {name:'Sign',exact:true}).click();
+    await closing.getByRole('button', {name:/^Sign\b/}).click();
     await page.waitForFunction(() => /Signed by Lee Ledger, waiting on Zoe Reviewer/.test(document.querySelector('#modal').textContent));
     await page.getByRole('button', {name:/^Sign as Zoe Reviewer$/}).click();
     await page.waitForFunction(() => /Signed by Lee Ledger, Zoe Reviewer/.test(document.querySelector('#modal').textContent));
