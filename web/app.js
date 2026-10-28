@@ -434,7 +434,6 @@ function decisionCard(d, index) {
 }
 
 const eventLabels = {signed_in:'Person signed in', conformance_read:'Code review saved', task_note:'Context added', expand:'Decision explored', run_complete:'Evidence search finished', memory_reranked:'Prior answers compared', brief_withheld:'Unreliable brief withheld',task_started:'Task kicked off', node_added:'Node written to the tree', node_settled:'Settled by the agent', followup_added:'Follow-up question added', signoff:'Signed off', run_started:'Task registered', judgment_requested:'Judgment requested', prediction_suggested:'Prior answer suggested', owner_approved:'Decision recorded', answer_corrected:'Answer corrected', previous_answer:'Previous answer retained', owner_changed:'Owner reassigned', run_updated:'Run status updated', resolve:'Resolved from evidence', assume:'Default assumed', proposed:'Unratified proposal found', dedup_open:'Duplicate of an open question', twin_closed:'Twin question settled', route_unknown:'No owner in the graph', ask_drafted:'Routed from the ownership graph', index:'Repository ingested', conflict_resolved:'Newest answer won a conflict', memory_record_conflict:'Memory and record disagree', superseded:'Superseded', superseded_record:'Stale record replaced by newer', ownership_invalidated:'Ownership changed', followup_context:'Follow-up context resolved', route_learned:'Owner learned', overturn:'Answer overturned', answer:'Answer recorded'};
-const quietEvents = new Set(['probe','expand','decompose','run_complete','previous_answer','memory_noop','memory_updated']);
 // A signature, or a rule a person made, is what authorizes an answer; where the answer came from
 // (evidence, a prediction, an assumed default) stays visible, and never reads as unconfirmed once signed.
 const signedNow = d => ['signed','rule'].includes(d.signoff) && !d.needs_review;
@@ -488,15 +487,6 @@ const assignedToMe = d => needsYou(d) && d.can_act === true;
 // someone else's decision with a Review button. Admins and viewers keep
 // the workspace view.
 const personalInbox = () => Boolean(state?.auth?.enabled && state.me?.id && state.me.role === 'member');
-function activity() {
-  const items = state.events.filter(e => !quietEvents.has(e.kind)).slice(0, 5);
-  return `<div class="side-section"><div class="side-section-head">Across your workspace <a href="#runs">View runs ↗</a></div><div class="activity-list">${items.length ? items.map(event => {
-    const decision = state.decisions.find(d => d.id === event.decision_id);
-    const run = state.runs.find(r => r.id === event.run_id);
-    return `<div class="activity-item"><span class="activity-symbol">${icon(event.kind.includes('approved') ? 'check' : event.kind.includes('prediction') ? 'spark' : 'activity')}</span><div class="activity-text"><strong>${esc(eventLabels[event.kind] || event.kind)}</strong>${esc(decision ? (decision.owner_name || decision.question.slice(0, 60)) : run?.title || 'Workspace updated')}<small>${ago(event.created_at)}</small></div></div>`;
-  }).join('') : '<p class="context">Activity appears as your agents start working.</p>'}</div></div>`;
-}
-
 function empty(title, description = '', action = '', button = '') {
   return `<div class="empty">${icon('inbox')}<h2>${esc(title)}</h2>${description ? `<p>${esc(description)}</p>` : ''}${action ? `<button class="button soft" data-action="${action}">${esc(button)}</button>` : ''}</div>`;
 }

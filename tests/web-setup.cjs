@@ -26,7 +26,7 @@ vm.runInContext(source.slice(source.indexOf('function deliveriesCard() {'), sour
 // statusSentence names people through nameList, which lives with the task-row helpers.
 vm.runInContext(source.slice(source.indexOf('function nameList('), source.indexOf('function statusSentence(')), context);
 // The decision labels are constants; expose them to the checks below.
-vm.runInContext(source.slice(source.indexOf('const signedNow'), source.indexOf('function activity()'))
+vm.runInContext(source.slice(source.indexOf('const signedNow'), source.indexOf('function empty('))
   + '\n;globalThis.labels = {statusSentence, signedNow, settledNow, needsYou, beganAs};', context);
 (async () => {
   // Explicit independence is available for human-only and unknown legacy

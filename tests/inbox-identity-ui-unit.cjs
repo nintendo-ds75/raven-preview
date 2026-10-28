@@ -8,7 +8,7 @@ const source = fs.readFileSync(path.join(__dirname, '../web/app.js'), 'utf8');
 const context = {state: {auth: {enabled: true}, me: {id: 'p2', name: 'Alex Morgan', role: 'member'}},
   esc: v => String(v), pill: t => t, icon: () => '', ago: () => 'just now', avatar: () => '', plural: (n, w) => `${n} ${w}`};
 vm.createContext(context);
-vm.runInContext(source.slice(source.indexOf('const signedNow'), source.indexOf('function activity()'))
+vm.runInContext(source.slice(source.indexOf('const signedNow'), source.indexOf('function empty('))
   + '\n;globalThis.inbox = {assignedToMe, needsYou, personalInbox};', context);
 const {assignedToMe, needsYou, personalInbox} = context.inbox;
 const seeded = {id: 'd1', status: 'pending', owner_name: 'Alex Morgan', required_signers: '[]', can_act: false};
