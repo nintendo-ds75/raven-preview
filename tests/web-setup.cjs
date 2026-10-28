@@ -24,8 +24,8 @@ vm.runInContext(source.slice(source.indexOf('function updateAgentConnectPrompt()
 vm.runInContext(source.slice(source.indexOf('function updateWorkspaceName()'), source.indexOf('async function refresh(')), context);
 vm.runInContext(source.slice(source.indexOf('function deliveriesCard() {'), source.indexOf('function render() {')), context);
 // The decision labels are constants; expose them to the checks below.
-vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf('function activity()'))
-  + '\n;globalThis.labels = {statusLabel, signedNow, settledNow, needsYou, beganAs, signedAs};', context);
+vm.runInContext(source.slice(source.indexOf('const signedNow'), source.indexOf('function activity()'))
+  + '\n;globalThis.labels = {statusSentence, signedNow, settledNow, needsYou, beganAs};', context);
 (async () => {
   // Explicit independence is available for human-only and unknown legacy
   // chains too; source content is never required just to retire reliance.
@@ -34,23 +34,31 @@ vm.runInContext(source.slice(source.indexOf('const kindLabels'), source.indexOf(
     assert.match(context.sourceReplacementField(d), /name="evidence_mode" value="independent"/);
   }
   assert.equal(context.sourceReplacementField({sources:[],source_revalidation:{has_reliance:false},source_reuse_state:'human'}), '');
-  // A signed prediction is signed: settled, out of Needs you, labelled by its signature, with where it began kept.
-  const {statusLabel, signedNow, settledNow, needsYou, beganAs, signedAs} = context.labels;
-  const prediction = {status: 'proposed', kind: 'prediction', signoff: 'required', signed_by: '', needs_review: 0};
-  assert.equal(statusLabel(prediction), 'Prediction, unconfirmed');
+  // A signed prediction is signed: settled, out of Needs you, named by its signer in one sentence, with where it began kept.
+  const {signedNow, settledNow, needsYou, beganAs} = context.labels;
+  // Copied out of the vm realm so deep equality compares values, not prototypes.
+  const statusSentence = d => ({...context.labels.statusSentence(d)});
+  const prediction = {status: 'proposed', kind: 'prediction', signoff: 'required', signed_by: '', needs_review: 0, owner_name: 'Library Owner', required_signers: '[]'};
+  assert.deepEqual(statusSentence(prediction), {text: 'Sign-off wanted from Library Owner', tone: 'waiting'});
   assert.equal(needsYou(prediction), true);
   const signedPrediction = {...prediction, signoff: 'signed', signed_by: 'Library Owner'};
   assert.equal(signedNow(signedPrediction), true);
-  assert.equal(statusLabel(signedPrediction), 'Signed prediction');
+  assert.deepEqual(statusSentence(signedPrediction), {text: 'Signed by Library Owner', tone: 'done'});
   assert.equal(needsYou(signedPrediction), false);
   assert.equal(settledNow(signedPrediction), true);
-  assert.equal(signedAs(signedPrediction), 'Signed · Library Owner');
   assert.equal(beganAs(signedPrediction), 'a prediction from an earlier answer');
-  assert.equal(statusLabel({...signedPrediction, status: 'assumed'}), 'Signed default');
+  assert.equal(statusSentence({...signedPrediction, status: 'assumed'}).text, 'Signed by Library Owner');
   assert.equal(signedNow({...signedPrediction, needs_review: 1}), false);
-  assert.equal(statusLabel({...signedPrediction, needs_review: 1}), 'Needs review');
-  assert.equal(signedAs({...signedPrediction, signoff: 'rule'}), 'Covered by a reusable rule');
-  assert.match(source, /Signed answer · edit to make a correction/);
+  assert.deepEqual(statusSentence({...signedPrediction, needs_review: 1}), {text: 'Needs a second look', tone: 'waiting'});
+  assert.deepEqual(statusSentence({...signedPrediction, signoff: 'rule'}), {text: 'Covered by a rule', tone: 'done'});
+  // Names, never counts or terms: an open question names its owner or says there is none;
+  // a half-signed decision names who signed and who is still to sign, two names then a count.
+  assert.deepEqual(statusSentence({status: 'pending', owner_name: 'Alex Morgan'}), {text: 'Waiting on Alex Morgan', tone: 'waiting'});
+  assert.deepEqual(statusSentence({status: 'pending', owner_name: ''}), {text: 'No owner yet', tone: 'waiting'});
+  assert.equal(statusSentence({status: 'resolved', signoff: 'required', signatures: '[{"by":"Marisol Vega"}]', required_signers: '["Marisol Vega","Wes Chen","Alex Morgan","Dana Lee"]'}).text, 'Signed by Marisol Vega, waiting on Wes Chen, Alex Morgan and 1 more');
+  assert.deepEqual(statusSentence({status: 'suggested'}), {text: 'Follow-up for the agent', tone: 'neutral'});
+  assert.doesNotMatch(source, /New judgment|Needs judgment|Not authorized|Sign-off wanted'/);
+  assert.match(source, /<label for="correction">Correct it<\/label>/);
   // Help is one dialog: a sentence, the link to the guide, Open Settings, Close.
   context.showHelp();
   assert.equal(context.modal[0], 'Help');

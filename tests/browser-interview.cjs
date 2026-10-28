@@ -45,8 +45,9 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     const open = async () => {
       const question = page.locator('.task-question').first();
       if (!(await question.evaluate(el => el.open))) await question.locator(':scope > summary').click();
-      await question.getByRole('button', {name:/Open decision/}).click();
-      await page.getByRole('button', {name:'Start or resume interview',exact:true}).click();
+      await question.locator('[data-action="review"]').first().click();
+      await page.locator('#modal[open]').waitFor();
+      await page.getByRole('button', {name:/^(Talk it through instead|Start or resume interview)$/}).click();
       await page.locator('#interview-modal[open]').waitFor();
     };
     await open();

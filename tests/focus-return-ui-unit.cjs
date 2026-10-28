@@ -174,20 +174,34 @@ function harness() {
     assert.equal((source.match(/await rereview\(target\.dataset\.id, version\)/g) || []).length, 6);
   });
 
-  await test('an empty inbox tab says what it holds and where the open work is', () => {
+  await test('an empty inbox tab says what it holds, and the tabs are Needs me, All open, Decided', () => {
     const h = harness();
-    h.run("state.decisions = [{id:'a', status:'pending', question:'Q', context:'', owner_name:'Wes', agent:'Demo', repo:'r', created_at:new Date().toISOString(), run_title:'t', path:'p'}]; state.auth = {enabled:true}; state.me = {name:'Ada', role:'member', id:'p1'}");
+    h.run("state.decisions = [{id:'a', status:'pending', question:'Q', context:'', owner_name:'Wes', agent:'Demo', repo:'r', created_at:new Date().toISOString(), run_title:'t', run_id:'t1', path:'p'}]; state.auth = {enabled:true}; state.me = {name:'Ada', role:'member', id:'p1'}");
     const text = (tabName) => { h.run(`tab = '${tabName}'`); return h.run('inbox()'); };
-    assert.match(text('overdue'), /Nothing is overdue\./);
-    assert.match(text('overdue'), /open longer than 3 days/);
-    assert.match(text('overdue'), /1 decision elsewhere in the workspace needs a person: see Needs review\./);
+    const pending = text('pending');
+    for (const label of ['Needs me', 'All open', 'Decided']) assert.match(pending, new RegExp(`data-tab="[a-z]+" aria-pressed="(true|false)">${label}<span>`));
+    assert.doesNotMatch(pending, /Overdue|Suggested|From evidence|All decisions|Needs review|Assigned to me/);
+    assert.match(pending, /Waiting on Wes/);
+    assert.doesNotMatch(pending, /id="owner-filter"/, 'the owner filter is for the Decided tab');
     assert.match(text('mine'), /Nothing waits on you\./);
-    assert.doesNotMatch(text('mine'), /all caught up/);
-    assert.match(text('evidence'), /Nothing resolved from evidence\./);
+    assert.doesNotMatch(text('mine'), /all caught up|elsewhere in the workspace/);
+    assert.match(text('decided'), /No decisions recorded yet\./);
+    assert.match(text('decided'), /id="owner-filter"/);
     h.run("query = 'zzz'");
     assert.match(text('mine'), /No matching decisions\./);
-    h.run("query = ''; state.decisions = []");
-    assert.match(text('pending'), /Connect an agent/);
+    assert.match(text('mine'), /Try a different search\./);
+    h.run("query = ''; state.decisions = [{id:'b', status:'approved', signoff:'signed', signed_by:'Wes', question:'Q', context:'', answer:'A', owner_name:'Wes', agent:'Demo', repo:'r', created_at:new Date().toISOString(), updated_at:'u', run_title:'t', run_id:'t1', path:'p'}]");
+    assert.match(text('pending'), /Nothing needs a person\./);
+    assert.match(text('pending'), /When an agent needs a person, it appears here\./);
+    assert.doesNotMatch(text('pending'), /Open Settings/, 'a workspace with decisions is set up');
+    assert.match(text('decided'), /Signed by Wes/);
+    h.run("state.decisions = []");
+    assert.match(text('pending'), /data-action="help-connect">Open Settings</);
+    // An old tab key (a bookmark, a stale redraw) falls back to the default tab instead of an empty list:
+    // a member's own tab, the workspace's open tab for everyone else.
+    assert.match(text('overdue'), /data-tab="mine" aria-pressed="true"/);
+    h.run("state.me = {name:'Ada', role:'admin', id:'p1'}");
+    assert.match(text('overdue'), /data-tab="pending" aria-pressed="true"/);
   });
 
   if (failures.length) throw new Error(`${failures.length} failed; ${passed} passed:\n${failures.join('\n')}`);

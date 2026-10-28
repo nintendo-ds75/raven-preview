@@ -96,7 +96,7 @@ async function harness() {
   await test('a sign-off says it is signing before its request leaves, and comes back on failure', async () => {
     const h = await harness();
     h.run("state = Object.assign(state, {auth: {enabled: false}, decisions: [{id: 'd1', owner_name: 'Wes Chen', updated_at: 'u1'}]})");
-    const button = h.element('signoff', {tagName: 'BUTTON', dataset: {action: 'signoff', id: 'd1', updated: 'u1'}, innerHTML: 'Sign off as Wes Chen <svg></svg>', textContent: 'Sign off as Wes Chen'});
+    const button = h.element('signoff', {tagName: 'BUTTON', dataset: {action: 'signoff', id: 'd1', updated: 'u1'}, innerHTML: 'Sign as Wes Chen <svg></svg>', textContent: 'Sign as Wes Chen'});
     const pending = h.click(button);
     assert.equal(h.requests.length, 1, 'the request left');
     assert.equal(button.disabled, true);
@@ -105,7 +105,7 @@ async function harness() {
     h.requests[0].fail('The decision changed under you.');
     await pending;
     assert.equal(button.disabled, false, 'usable again after the failure');
-    assert.equal(button.innerHTML, 'Sign off as Wes Chen <svg></svg>', 'its label is back, icon and all');
+    assert.equal(button.innerHTML, 'Sign as Wes Chen <svg></svg>', 'its label is back, icon and all');
     assert.equal(button.getAttribute('aria-busy'), null);
     assert.match(h.get('#toast').textContent, /changed under you/);
   });
@@ -116,12 +116,12 @@ async function harness() {
       h.run("state = Object.assign(state, {auth: {enabled: false}, owners: [{id: 'o1', name: 'Marisol Vega'}], decisions: [{id: 'd1'}]})");
       h.get('#assign-owner').value = 'o1';
       h.get('#followups').value = 'Should credits expire?';
-      const button = h.element(action, {tagName: 'BUTTON', dataset: {action, id: 'd1', updated: 'u1'}, textContent: 'Go', innerHTML: 'Go'});
+      const button = h.element(action, {tagName: 'BUTTON', dataset: {action, id: 'd1', updated: 'u1'}, textContent: 'Hand on', innerHTML: 'Hand on'});
       const pending = h.click(button);
       assert.equal(button.textContent, label);
       assert.equal(button.disabled, true);
       h.requests[0].fail('no'); await pending;
-      assert.equal(button.innerHTML, 'Go');
+      assert.equal(button.innerHTML, 'Hand on');
       assert.equal(button.disabled, false);
     });
   }
@@ -129,7 +129,7 @@ async function harness() {
   await test('recording an answer says so before the request leaves', async () => {
     const h = await harness();
     h.run("state = Object.assign(state, {auth: {enabled: false}, decisions: [{id: 'd1', owner_name: 'Wes Chen'}]})");
-    const button = h.element('submit', {tagName: 'BUTTON', textContent: 'Record decision', innerHTML: 'Record decision'});
+    const button = h.element('submit', {tagName: 'BUTTON', textContent: 'Record my answer', innerHTML: 'Record my answer'});
     const errorEl = h.element('error', {hidden: true});
     const form = h.element('form', {id: 'answer-form', dataset: {id: 'd1'}, values: {answer: 'Yes', rationale: 'Because', expected_updated_at: 'u1'}});
     form.found.set('[type="submit"]', button); form.found.set('#form-error', errorEl);
@@ -139,7 +139,7 @@ async function harness() {
     assert.equal(button.textContent, 'Recording…');
     assert.equal(button.disabled, true);
     h.requests[0].fail('Stale form.'); await pending;
-    assert.equal(button.innerHTML, 'Record decision');
+    assert.equal(button.innerHTML, 'Record my answer');
     assert.equal(button.disabled, false);
     assert.equal(errorEl.textContent, 'Stale form.');
   });
