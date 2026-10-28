@@ -234,7 +234,7 @@ nav a:hover{
   margin-left:var(--sidebar-width)}
 
 .topbar{
-  height:64px;
+  height:40px;
   border-bottom:1px solid var(--line);
   display:flex;
   align-items:center;
@@ -1239,7 +1239,7 @@ dialog::backdrop{
   nav a svg{width:20px;height:20px}
   nav a>.nav-count{position:absolute;top:2px;right:4px;margin:0;min-width:16px;padding:1px 4px;font-size:9px}
   nav a>.nav-dot{position:absolute;top:6px;right:10px;margin:0}
-  .topbar{height:64px}
+  .topbar{height:40px}
   .topbar-right{gap:var(--space-2)}
   main{padding-top:var(--space-6)}
   .button.small{min-height:40px;font-size:12px}
@@ -1936,4 +1936,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .modal-body h3{font-size:14px;margin:var(--space-4) 0 var(--space-2)}
 @media(max-width:600px){
   .toolbar select{flex-basis:100%;max-width:none;margin:0 0 var(--space-3)}
+  /* The top bar is only the help icon, aligned right: no empty bar. */
+  .topbar{height:auto;border:0;background:transparent;padding:var(--space-1) var(--page-gutter) 0;justify-content:flex-end}
+  main{padding-top:var(--space-3)}
 }
