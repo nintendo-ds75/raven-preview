@@ -27,12 +27,24 @@ const check=async(name,fn)=>{try{await fn();checks.push(name);console.log('PASS 
   await check('Returning password login restores the exact task and decision deep link',async()=>{await visitor.locator('input[name=email]').fill(A.expert.email);await visitor.locator('input[name=password]').fill(A.password);await visitor.locator('form[action="/auth/password"] button').click();await visitor.waitForURL(deep);await visitor.locator('#modal[open]').waitFor();assert((await visitor.locator('#modal').innerText()).includes('SYNTHETIC_TASK_CONTEXT'));assert(await visitor.getByRole('button',{name:/Sign as Synthetic Expert/}).isVisible());await visitor.screenshot({path:path.join(artifacts,'expert-deep-link.png'),fullPage:true});});
   await check('Decision inquiry reads only current task evidence without changing authority',async()=>{
     const before=await ctl('decision'),counts=await ctl('counts');
-    await visitor.locator('#modal details.decision-inquiry > summary').click();
-    await visitor.locator('#decision-inquiry-text').fill('What context and production constraints apply?');
-    const response=visitor.waitForResponse(r=>r.url().endsWith('/api/tasks/'+A.task+'/inquiry')&&r.request().method()==='POST');
-    await visitor.locator('#modal details.decision-inquiry button[type=submit]').click();
-    const inquiryResponse=await response;assert.equal(inquiryResponse.status(),200);
-    const inquiry=await inquiryResponse.json();
+    // Ask Raven is shown only when the server has a model to read with; this fixture has none,
+    // so the same read-only inquiry goes through the API the dialog would call.
+    const asked=await visitor.locator('#modal details.decision-inquiry').count();
+    let inquiry;
+    if(asked){
+      await visitor.locator('#modal details.decision-inquiry > summary').click();
+      await visitor.locator('#decision-inquiry-text').fill('What context and production constraints apply?');
+      const response=visitor.waitForResponse(r=>r.url().endsWith('/api/tasks/'+A.task+'/inquiry')&&r.request().method()==='POST');
+      await visitor.locator('#modal details.decision-inquiry button[type=submit]').click();
+      const inquiryResponse=await response;assert.equal(inquiryResponse.status(),200);
+      inquiry=await inquiryResponse.json();
+    }else{
+      assert.equal(await visitor.evaluate(()=>state.model?.investigation),false,'Ask Raven is absent only without a model');
+      const r=await api(visitor,'/api/tasks/'+A.task+'/inquiry',{question:'What context and production constraints apply?',focus_id:A.node});
+      assert.equal(r.status,200);inquiry=r.body;
+      assert(JSON.stringify(inquiry).includes('SYNTHETIC_TASK_CONTEXT'));
+    }
+    if(asked){
     await visitor.locator('.decision-inquiry-result summary').filter({hasText:/^Evidence used$/}).click();
     await visitor.locator('.decision-inquiry-result').filter({hasText:/SYNTHETIC_TASK_CONTEXT/}).waitFor();
     const citations=Array.isArray(inquiry.citations)?inquiry.citations:[];
@@ -56,7 +68,8 @@ const check=async(name,fn)=>{try{await fn();checks.push(name);console.log('PASS 
       assert.equal(await visitor.locator('#decision-inquiry-citations').count(),0);
       console.log('INFO Real inquiry response has no citations; exact-quote browser branch not exercised.');
     }
-    const text=await visitor.locator('.decision-inquiry-result').innerText();
+    }
+    const text=asked?await visitor.locator('.decision-inquiry-result').innerText():JSON.stringify(inquiry);
     assert(!text.includes('UNRELATED_DECISION_CANARY'));assert(!text.includes('UNRELATED_TASK_CANARY'));
     const after=await ctl('decision');assert.equal(after.authorized,false);assert.equal(after.updated_at,before.updated_at);
     assert.deepEqual(await ctl('counts'),counts);
