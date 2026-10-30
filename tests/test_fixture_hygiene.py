@@ -17,27 +17,51 @@ from fixtures import MAINTAINERS, NODE_PEOPLE, PEOPLE, ROOT, OfflineCase, run_gi
 
 from evals import pseudonyms  # noqa: E402
 
-_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![A-Za-z0-9])")
+# A local part has a letter or digit: "+@pytest.fixture" in a stored diff is not an address.
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]*[A-Za-z0-9][A-Za-z0-9._%+-]*@([A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![A-Za-z0-9])")
 _BINARY = (".jpg", ".jpeg", ".png", ".gif", ".svg", ".ico", ".woff", ".woff2", ".pdf")
 
 
+def _strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            yield key
+            yield from _strings(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _strings(item)
+
+
+def _sqlite_strings(path):
+    """A SQLite fixture's pages run values together; scan each stored
+    value instead, decoding the ones that hold JSON."""
+    import sqlite3
+    db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        for (table,) in db.execute("SELECT name FROM sqlite_master WHERE type='table'"):
+            for row in db.execute(f'SELECT * FROM "{table}"'):
+                for value in row:
+                    if not isinstance(value, str):
+                        continue
+                    try:
+                        yield from _strings(json.loads(value))
+                    except ValueError:
+                        yield value
+    finally:
+        db.close()
+
+
 def _scan_text(path):
+    if path.suffix == '.db':
+        return '\n'.join(_sqlite_strings(path))
     text = path.read_text(errors='replace')
     if path.suffix not in ('.json', '.jsonl'):
         return text
-    def strings(value):
-        if isinstance(value, str):
-            yield value
-        elif isinstance(value, dict):
-            for key, item in value.items():
-                yield key
-                yield from strings(item)
-        elif isinstance(value, list):
-            for item in value:
-                yield from strings(item)
     try:
         values = [json.loads(line) for line in text.splitlines() if line.strip()] if path.suffix == '.jsonl' else [json.loads(text)]
-        return '\n'.join(strings(values))
+        return '\n'.join(_strings(values))
     except ValueError:
         return text
 
