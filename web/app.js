@@ -6,7 +6,7 @@ function restoreLoginRoute() {
     if (!raw) return;
     sessionStorage.removeItem('raven-return-decision');
     const saved = JSON.parse(raw);
-    if (!['', '#inbox', '#runs'].includes(location.hash) || !/^#runs\/[a-f0-9]{12,32}\/[a-f0-9]{12,32}$/.test(saved.route || '') ||
+    if (!['', '#ask', '#inbox', '#runs'].includes(location.hash) || !/^#runs\/[a-f0-9]{12,32}\/[a-f0-9]{12,32}$/.test(saved.route || '') ||
         !Number.isFinite(saved.savedAt) || Date.now() - saved.savedAt < 0 || Date.now() - saved.savedAt > 30 * 60 * 1000) return;
     history.replaceState(null, '', location.pathname + location.search + saved.route);
   } catch {} // Malformed/blocked storage never breaks workspace access.
@@ -56,7 +56,7 @@ const ago = value => {
 };
 const pill = (text, color = '') => `<span class="pill ${color}"><span class="status-dot"></span>${esc(text)}</span>`;
 // The one word each page is called, in the sidebar, the h1 and the window title.
-const titles = {inbox: ['Inbox'], runs: ['Tasks'], owners: ['People'], connect: ['Settings'], today: ['Outcomes'], work: ['Raven'], intro: ['Intro chats']};
+const titles = {ask: ['Ask Raven'], map: ['Map'], inbox: ['Inbox'], runs: ['Tasks'], owners: ['People'], connect: ['Settings'], today: ['Outcomes'], work: ['Raven'], intro: ['Voice intros']};
 let state = {decisions: [], runs: [], owners: [], events: []};
 let workspaceError = '';
 // The ownership graph and the directory (people, teams, the authority map, the coordinator) are not in the
@@ -64,7 +64,7 @@ let workspaceError = '';
 let ownership = null, ownershipLoading = false;
 let savings = null, savingsLoading = false, savingsAt = 0;
 let directory = null, directoryLoading = false;
-let view = 'inbox', tab = 'pending', tabChosen = false, query = '', ownerFilter = '', fetching = false, inboxShown = 0;
+let view = 'ask', tab = 'pending', tabChosen = false, query = '', ownerFilter = '', fetching = false, inboxShown = 0;
 // The ETag of the state on screen, sent back with each poll; and when the
 // list was last drawn, so relative times still move while nothing changes.
 let stateTag = '', lastDraw = 0, lastFetchedAt = 0;
@@ -352,7 +352,7 @@ function navigate() {
   let next = parts[0];
   if (next === 'memory') { tab = 'decided'; tabChosen = true; next = 'inbox'; history.replaceState(null, '', location.pathname + location.search + '#inbox'); }
   if (next === 'work' && !parts[1] && state.auth && !state.workbench?.ready) { next = 'runs'; history.replaceState(null, '', location.pathname + location.search + '#runs'); }
-  view = titles[next] ? next : 'inbox';
+  view = titles[next] ? next : 'ask';
   query = ''; ownerFilter = ''; ownership = null; directory = null;
   const [title] = titles[view];
   $('#page-title').textContent = title;
@@ -798,7 +798,7 @@ function routingCard() {
   const settings = directory.settings || {};
   const people = directory.people || [];
   const coordinator = settings.coordinator;
-  const control = `<section class="setup-card" id="settings-routing">${head}<label for="coordinator-select">Fallback person</label><select id="coordinator-select"><option value="">Nobody</option>${people.map(p => `<option value="${esc(p.id)}" ${coordinator && coordinator.id === p.id ? 'selected' : ''}>${esc(p.name)}${p.team ? ` · ${esc(p.team)}` : ''}</option>`).join('')}</select><p class="field-help">Gets questions nobody is known to own.</p><div class="routing-options"><label class="routing-option" for="verified-only"><input type="checkbox" id="verified-only" ${settings.require_verified_route ? 'checked' : ''}><span>Only ask verified owners</span></label><label class="routing-option" for="auto-rules"><input type="checkbox" id="auto-rules" ${settings.auto_rules ? 'checked' : ''}><span>Reuse signed answers automatically</span></label></div><label for="brief-mode">Slack links open</label><select id="brief-mode">${[['off', 'The inbox'], ['static', 'The task page']].map(([v, l]) => `<option value="${v}" ${(settings.brief_mode || 'static') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></section>`;
+  const control = `<section class="setup-card" id="settings-routing">${head}<label for="coordinator-select">Fallback person</label><select id="coordinator-select"><option value="">Nobody</option>${people.map(p => `<option value="${esc(p.id)}" ${coordinator && coordinator.id === p.id ? 'selected' : ''}>${esc(p.name)}${p.team ? ` · ${esc(p.team)}` : ''}</option>`).join('')}</select><p class="field-help">Gets questions nobody is known to own.</p><div class="routing-options"><label class="routing-option" for="background-mode"><input type="checkbox" id="background-mode" ${settings.background ? 'checked' : ''}><span>Work in the background: reuse what people already said without asking anyone to sign</span></label><label class="routing-option" for="verified-only"><input type="checkbox" id="verified-only" ${settings.require_verified_route ? 'checked' : ''}><span>Only ask verified owners</span></label><label class="routing-option" for="auto-rules"><input type="checkbox" id="auto-rules" ${settings.auto_rules ? 'checked' : ''}><span>Reuse signed answers automatically</span></label></div><label for="brief-mode">Slack links open</label><select id="brief-mode">${[['off', 'The inbox'], ['static', 'The task page']].map(([v, l]) => `<option value="${v}" ${(settings.brief_mode || 'static') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></section>`;
   return canAdminister() ? control : `<fieldset class="read-only-settings" disabled><legend>Managed by an administrator</legend>${control}</fieldset>`;
 }
 
@@ -871,6 +871,10 @@ function render() {
   $('.page-head').hidden = !!taskId() || view === 'work';
   document.body.classList.toggle('work-view', view === 'work');
   if (view === 'today' && typeof renderObjectives === 'function') { $('#app').dataset.taskId = ''; renderObjectives(); return; }
+  if (view !== 'intro') document.body.classList.toggle('voice-view', false);
+  document.body.classList.toggle('home-view', view === 'ask' || view === 'map');
+  if (view === 'ask' && typeof renderHome === 'function') { $('#app').dataset.taskId = ''; renderHome(); return; }
+  if (view === 'map' && typeof renderMap === 'function') { $('#app').dataset.taskId = ''; renderMap(); return; }
   if (view === 'intro' && typeof renderIntro === 'function') { $('#app').dataset.taskId = ''; renderIntro(); return; }
   if (view === 'work' && typeof renderWorkbench === 'function') { $('#app').dataset.taskId = ''; renderWorkbench(); return; }
   $('#app').innerHTML = taskId() ? taskOverview() : ({inbox, runs, owners, connect: connections})[view]();
@@ -1536,6 +1540,10 @@ document.addEventListener('change', async event => {
     if (event.target.id === 'brief-mode') {
       await api('/api/settings', {brief_mode: event.target.value});
       directory = null; render(); notify({off:'Task links are off: messages link to the inbox.', static:'Messages link to the static task page.'}[event.target.value]);
+    }
+    if (event.target.id === 'background-mode') {
+      await api('/api/settings', {background: event.target.checked});
+      directory = null; render(); notify(event.target.checked ? 'Raven works in the background: answers people give are reused without a fresh signature.' : 'Raven asks a person to sign each reused answer.');
     }
     if (event.target.id === 'auto-rules') {
       await api('/api/settings', {auto_rules: event.target.checked});

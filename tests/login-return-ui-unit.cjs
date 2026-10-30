@@ -15,20 +15,21 @@ h=harness();h.run(onboard);h.c.location.hash='#runs';h.run(app);assert.equal(h.c
 h=harness('');h.saved.set('raven-return-decision',JSON.stringify({route,savedAt:Date.now()-31*60*1000}));h.run(app);assert.equal(h.c.url,undefined);
 h=harness('');h.saved.set('raven-return-decision','not JSON');h.run(app);assert.equal(h.c.url,undefined);
 h=harness();h.c.sessionStorage.setItem=()=>{throw Error('blocked')};h.run(onboard);h.run(app);
-// The app lands on the inbox: an empty or unknown hash is #inbox, #memory is the inbox's Decided tab,
+// The app lands on Ask Raven: an empty or unknown hash is #ask, #memory is the inbox's Decided tab,
 // and #work without a task goes to #runs unless this server runs tasks in the browser.
 const full=fs.readFileSync(path.join(root,'app.js'),'utf8');
 const navSource=full.slice(full.indexOf('function navigate()'),full.indexOf('\nfunction ',full.indexOf('function navigate()')+10));
 function landing(hash,state={auth:{enabled:false}}) {
- const title={}, c={titles:{inbox:['Inbox'],runs:['Tasks'],owners:['People'],connect:['Settings'],today:['Outcomes'],work:['Raven']},
+ const title={}, c={titles:{ask:['Ask Raven'],map:['Map'],inbox:['Inbox'],runs:['Tasks'],owners:['People'],connect:['Settings'],today:['Outcomes'],work:['Raven']},
   state,view:'',tab:'pending',tabChosen:false,query:'',ownerFilter:'',ownership:null,directory:null,navigationVersion:0,taskTab:'',taskDetail:null,taskError:'',resetScrollOnNavigation:false,
   location:{hash,pathname:'/',search:''},history:{replaceState:(_,__,url)=>c.replaced=url},document:{title:'',querySelectorAll:()=>[]},
   $:()=>title,taskId:()=>'',render(){},window:{}};
  vm.createContext(c);vm.runInContext(navSource+';navigate();',c);return c;
 }
-let c=landing('');assert.equal(c.view,'inbox');assert.equal(c.document.title,'Raven · Inbox');assert.equal(c.replaced,undefined);
+let c=landing('');assert.equal(c.view,'ask');assert.equal(c.document.title,'Raven · Ask Raven');assert.equal(c.replaced,undefined);
 c=landing('#inbox');assert.equal(c.view,'inbox');
-c=landing('#nonsense');assert.equal(c.view,'inbox');
+c=landing('#nonsense');assert.equal(c.view,'ask');
+c=landing('#map');assert.equal(c.view,'map');
 c=landing('#memory');assert.equal(c.view,'inbox');assert.equal(c.tab,'decided');assert.equal(c.tabChosen,true);assert.equal(c.replaced,'/#inbox');
 c=landing('#work');assert.equal(c.view,'runs');assert.equal(c.replaced,'/#runs');assert.equal(c.document.title,'Raven · Tasks');
 c=landing('#work',{auth:{enabled:false},workbench:{ready:true}});assert.equal(c.view,'work');assert.equal(c.replaced,undefined);assert.equal(c.document.title,'Raven');

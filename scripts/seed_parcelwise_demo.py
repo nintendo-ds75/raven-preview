@@ -185,8 +185,12 @@ def seed_decisions(store):
         person = people[who]
         actor = Actor.person(person, kind="session")
         actor.override = person.get("role") == "admin"
-        store.answer(decision["id"], {"answer": answer, "rationale": rationale,
-                                      "expected_updated_at": decision["updated_at"]}, actor=actor)
+        answered = store.answer(decision["id"], {"answer": answer, "rationale": rationale,
+                                                 "expected_updated_at": decision["updated_at"]}, actor=actor)
+        # These are standing company rules: Raven applies them in the
+        # background wherever they fit, with nobody signing again.
+        if not answered.get("reusable") or answered.get("rule_scope") != "any":
+            store.make_rule(decision["id"], {"scope": "any", "expected_updated_at": answered["updated_at"]}, actor=actor)
         with store.connect() as db:
             db.execute("UPDATE decisions SET created_at=?, updated_at=? WHERE id=?", (when, when, decision["id"]))
             db.execute("UPDATE runs SET status='completed', updated_at=? WHERE id=?", (when, task["task_id"]))
@@ -216,6 +220,9 @@ def seed(db_path: str, repo: Path):
             Path(db_path + suffix).unlink(missing_ok=True)
     store = Store(db_path)
     store.graph.set_setting("workspace_name", COMPANY)
+    # Raven works in the background: answers become rules for their scope
+    # and apply without a fresh signature.
+    store.update_settings({"background": True})
     for name, email, login, team, role in PEOPLE:
         store.add_person({"name": name, "email": email, "github_login": login, "team": team, "role": role})
     for name, handle, members in TEAMS:

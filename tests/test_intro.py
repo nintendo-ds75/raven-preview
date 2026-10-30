@@ -54,9 +54,9 @@ class IntroTests(OfflineCase):
         self.assertIn('`app/labels/*`', text)
         self.assertEqual({c['name'] for c in d['roster']}, {'Lena Park', 'Sam Rivera'})
 
-    def test_guided_chat_follows_the_arc_and_ends_in_review(self):
+    def test_guided_chat_follows_the_arc_and_saves_on_its_own(self):
         row = self.run_chat(answers=[f'Answer number {i}. With detail.' for i in range(12)])
-        self.assertEqual(row['status'], 'review')
+        self.assertEqual(row['status'], 'saved')
         stages = [t['stage'] for t in row['turns']]
         order = [intro.STAGE_KEYS.index(s) for s in stages]
         self.assertEqual(order, sorted(order))
@@ -65,6 +65,9 @@ class IntroTests(OfflineCase):
         # Without a model every note is the person's own words.
         for note in row['summary']['notes']:
             self.assertIn(note['quote'], row['turns'][note['turn']]['answer'])
+        # Nobody reviews the notes: they are on the profile when the call ends.
+        self.assertEqual([c['text'] for c in intro.context_for(self.store, self.jordan)],
+                         [n['text'] for n in row['summary']['notes']])
 
     def test_only_the_person_takes_their_chat(self):
         other = Actor(id=self.lena, name='Lena Park', kind='session')
@@ -102,7 +105,7 @@ class IntroTests(OfflineCase):
         self.assertEqual([n['text'] for n in row['summary']['notes']], ['Was at Shippo.'])
         self.assertEqual(row['summary']['dropped'], 1)
 
-    def test_save_keeps_only_reviewed_notes_with_their_quotes(self):
+    def test_save_rewords_and_drops_notes_after_the_call(self):
         row = self.run_chat(answers=[f'Answer {i}. Detail.' for i in range(12)])
         first, second = row['summary']['notes'][:2]
         saved = intro.save(self.store, row['id'], {'expected_version': row['version'],
@@ -114,7 +117,7 @@ class IntroTests(OfflineCase):
         self.assertEqual(context[0]['quote'], first['quote'])
         self.assertNotIn(second['text'], [c['text'] for c in context])
         with self.assertRaises(Invalid):
-            intro.save(self.store, row['id'], {'expected_version': saved['version'], 'notes': []}, self.me)
+            intro.save(self.store, row['id'], {'expected_version': saved['version'] - 1, 'notes': []}, self.me)
 
 
 if __name__ == '__main__':

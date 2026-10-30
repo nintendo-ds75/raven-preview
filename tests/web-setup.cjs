@@ -77,10 +77,10 @@ vm.runInContext(source.slice(source.indexOf('const signedNow'), source.indexOf('
   assert.match(html, /id="agent-connect-prompt"/);
   assert.match(html, /Connect an agent <span aria-hidden="true">↓<\/span>/);
   assert.doesNotMatch(html, /Connect an agent <span>↗<\/span>/);
-  // The sidebar is exactly four pages, one job each, in this order.
+  // The sidebar is three pages: ask, the map of who holds context, and settings.
   const nav = html.slice(html.indexOf('<nav aria-label="Workspace navigation">'), html.indexOf('</nav>'));
   const links = [...nav.matchAll(/<a href="#(\w+)" data-view="(\w+)" aria-label="([^"]+)">[\s\S]*?<\/a>/g)].map(m => [m[1], m[2], m[3]]);
-  assert.deepEqual(links, [['inbox', 'inbox', 'Inbox'], ['runs', 'runs', 'Tasks'], ['owners', 'owners', 'People'], ['intro', 'intro', 'Intro chats'], ['connect', 'connect', 'Settings']]);
+  assert.deepEqual(links, [['ask', 'ask', 'Ask Raven'], ['map', 'map', 'Map'], ['connect', 'connect', 'Settings']]);
   for (const [, , label] of links) assert.match(nav, new RegExp(`<span class="nav-text">${label}</span>`), `${label} is the link's visible text`);
   assert.match(nav, /id="inbox-count"/);
   assert.match(nav, /<span class="nav-dot" id="settings-dot" hidden title="Setup incomplete"><\/span>/);
@@ -88,7 +88,7 @@ vm.runInContext(source.slice(source.indexOf('const signedNow'), source.indexOf('
       'breadcrumb', 'id="eyebrow"', 'page-description', 'manual-actions', 'new-request', 'model-strip']) {
     assert.ok(!html.includes(gone), `${gone} is gone from the frame`);
   }
-  assert.match(html, /<section class="page-head"><h1 id="page-title">Inbox<\/h1><div class="page-actions" id="page-actions"><\/div><\/section>/);
+  assert.match(html, /<section class="page-head"><h1 id="page-title">Ask Raven<\/h1><div class="page-actions" id="page-actions"><\/div><\/section>/);
   assert.match(html, /<span class="connection" id="connection"><i><\/i><span id="workspace-name">Local workspace<\/span><\/span>/);
   // The Settings dot: set when a notice, no Slack or a blocker needs the person; cleared otherwise.
   const dot = {hidden: true};

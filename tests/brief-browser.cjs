@@ -359,7 +359,7 @@ async function startWorld(temp, name) {
       await step('answer form (waiting on you): records the decision as the person', async () => {
         await cal.locator(`.brief-option[data-value="${OPTION}"]`).click();
         await cal.fill('#answer-why', WHY);
-        await cal.getByRole('button', {name: 'Answer and sign'}).click();
+        await cal.getByRole('button', {name: 'Send answer'}).click();
         await toast(cal, /^Recorded as Priya Raman's answer/);
         await cal.waitForFunction(() => document.querySelector('.brief-kicker')?.textContent === 'You decided this');
         assert.match(await cal.locator('#focus .brief-block.is-answer').innerText(), new RegExp(`Your answer[\\s\\S]*${OPTION}`));
@@ -383,13 +383,13 @@ async function startWorld(temp, name) {
         await other.locator(`#d-${N.remote2} [data-action="focus"]`).click();
         await other.waitForFunction(() => /write handler/.test(document.querySelector('#focus-question')?.textContent || ''));
         await other.fill('#answer-text', 'Yes, 429 with Retry-After.');
-        await other.getByRole('button', {name: 'Answer and sign'}).click();
+        await other.getByRole('button', {name: 'Send answer'}).click();
         await toast(other, /^Recorded as Priya Raman's answer/);
         await other.close();
         // The first tab's answer is refused as stale, and the page shows
         // the decision as it is now, keeping what they typed.
         await expecting(400, '/api/brief/answer', async () => {
-          await cal.getByRole('button', {name: 'Answer and sign'}).click();
+          await cal.getByRole('button', {name: 'Send answer'}).click();
           await toast(cal, /^This decision changed while you were reading it/);
         });
         await cal.waitForFunction(() => document.querySelector('.brief-kicker')?.textContent === 'You decided this');
@@ -430,7 +430,7 @@ async function startWorld(temp, name) {
         assert.equal(await button.innerText(), 'Sign');
         await button.click();
         await cal.waitForFunction(() => /default to unlimited/.test(document.querySelector('#focus-question')?.textContent || ''));
-        assert.equal(await kicker(cal), 'Sign-off wanted from you');
+        assert.equal(await kicker(cal), 'Raven would like you to confirm');
         // A reason goes with a correction: a plain sign-off keeps none.
         assert.equal(await cal.locator('#answer-why').isVisible(), false);
         await cal.fill('#answer-text', 'No.');

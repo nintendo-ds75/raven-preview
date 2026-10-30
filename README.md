@@ -73,6 +73,9 @@ Add the Raven rule it offers to `CLAUDE.md` or `AGENTS.md`, so the agent calls `
 
 ## What you get
 
+- **Chat first.** The app opens on **Ask Raven**: ask who knows something or why it was decided, and get the answer with quotes and the people who hold the context. Beside it, the tasks your coding agents are running, with what Raven settled from past context and who it asked.
+- **A map of who holds context.** People and the areas they decide, know about or wrote the code for, drawn as one graph. Select anyone to see what they hold, in their own words.
+- **Works in the background.** With *Work in the background* on (Settings → Routing), an answer a person gives is reused the next time it fits, with no one asked to sign again. A short **voice intro** with each person gives Raven a head start; its notes are kept as soon as the call ends. [Voice intros](docs/intro-chats.md)
 - **Decisions, not tickets.** The agent writes each judgment call as a node on the task's tree: the question, its context, the options and what each leads to. [How a task unfolds](docs/overview.md#the-decisions-inside-a-task)
 - **Routing from evidence.** CODEOWNERS, commit and review history, imported records and earlier answers decide who is asked, and every message says why. No ownership spreadsheet to maintain. [Who does Raven ask?](docs/overview.md#who-does-raven-ask)
 - **Answers from memory, signed by people.** When the records or a past decision already answer the question, Raven proposes that answer with its citation. The owner still signs; a cache hit is not approval. [How answers are reused](docs/overview.md#less-coordination-more-useful-autonomy)
