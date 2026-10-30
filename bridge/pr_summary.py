@@ -40,8 +40,11 @@ def _whole(text):
 
 def _lead(text):
     """(first sentence, the rest): the first is bolded so the list stays scannable."""
-    head, _, rest = re.sub(r"\s+", " ", text).partition(". ")
-    return (head + ".", rest) if rest else (head, "")
+    parts = re.split(r"(?<=[.!?])\s+", re.sub(r"\s+", " ", text).strip())
+    # A bare "Yes." or "No, not yet." says nothing on its own: bold it with
+    # the sentence that carries the decision.
+    take = 2 if len(parts) > 1 and len(parts[0].split()) <= 3 else 1
+    return " ".join(parts[:take]), " ".join(parts[take:])
 
 
 def _day(iso):

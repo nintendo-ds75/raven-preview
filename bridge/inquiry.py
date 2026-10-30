@@ -1,5 +1,6 @@
 """Question-only evidence reading. No coding host and no approval side effects."""
 import json
+import re
 
 from . import context_connectors, llm
 from .config import load
@@ -59,6 +60,22 @@ def repositories(store):
     return [{'id': r['repo'], 'name': r['repo']} for r in store.graph.db.execute(
         "SELECT repo FROM source_records WHERE repo<>'' UNION SELECT repo FROM runs WHERE repo<>'' "
         "UNION SELECT repo FROM ownership WHERE repo<>'' ORDER BY repo")]
+
+
+_QUESTION = re.compile(r"^\s*(?:why|what|how|who|whom|whose|where|when|which|is|are|was|were|does|do|did|can|could|"
+                       r"should|would|will|has|have|explain|tell me|walk me through|describe)\b", re.I)
+_CHANGE = re.compile(r"\b(?:add|fix|implement|change|build|make|write|update|remove|delete|refactor|rename|ship|"
+                     r"create|migrate|move|replace|support|wire|hook up|bump|upgrade|patch|port|rewrite)\b", re.I)
+
+
+def is_question(text):
+    """A prompt that asks about the code or the team rather than asking for a
+    change: "why does the job runner retry twice?". Raven answers these; it
+    starts no task, so nobody is pinged about a question nothing will build on."""
+    text = str(text or "").strip()
+    if not text or len(text) > 600 or not _QUESTION.match(text):
+        return False
+    return not _CHANGE.search(_QUESTION.sub("", text, count=1))
 
 
 def ask(store, data, actor, *, cfg=None):

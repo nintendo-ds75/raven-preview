@@ -9,6 +9,7 @@ against questions already pending.
 """
 
 import json
+import re
 import sys
 
 from . import canvas, metrics
@@ -490,6 +491,14 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None, principal
             args = {**args, "requester": who.name}
         elif principal is not None and principal.name:
             args = {**args, "requester": principal.name}
+    if name == "bridge_start_task":
+        from .inquiry import is_question
+        # Decision questions ("Should refunds...?") are real tasks; a request
+        # to explain the code is not.
+        title = str(args.get("title") or "")
+        if re.match(r"\s*(?:explain|describe|walk me through|tell me)\b", title, re.I) and is_question(title):
+            raise Invalid("This reads as a question, not a change, so it needs no task. Ask Raven with "
+                          "bridge_ask_raven, or start a task once there is something to build")
     if name == 'bridge_host_notification':
         from .host_notifications import handle
         result = handle(store, args, principal=principal)

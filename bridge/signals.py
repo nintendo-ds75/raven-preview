@@ -642,6 +642,13 @@ def _specificity(scope: str) -> tuple[int, int]:
     return (scope.count("/"), len(scope))
 
 
+def _area_of(scope: str) -> str:
+    """The top-level area a rule for a whole directory names: "infra/*" is
+    infra. A rule for one file or a deeper directory names no area."""
+    m = re.fullmatch(r"/?([\w.-]+)/?\**", (scope or "").strip())
+    return m.group(1).lower() if m else ""
+
+
 def _authority_matches(store: Graph, repo: str, hits: list[PathHit], question: str, context: str,
                        category: str, path: str = "", also_paths: list[str] | None = None) -> list[dict]:
     """The verified authority rows that cover this decision: repo-wide
@@ -661,6 +668,19 @@ def _authority_matches(store: Graph, repo: str, hits: list[PathHit], question: s
     # that is. Measured live: a security question that said "docs" went to
     # whoever decides docs.
     about = set(primary_scopes(question, category))
+    # The agent's category gives way when the question's own words name
+    # another area someone decides, and not the agent's. Measured live: a
+    # "we have no job runner, where should the background job run?"
+    # question filed as ops went to whoever decides carrier incidents,
+    # past the person who decides infra.
+    worded = decision_scopes(question, "", "", include_context=False)
+    if category and category.strip().lower() not in worded:
+        # Only an area of the code someone decides: a word that merely
+        # names another category grants no standing.
+        decided = {_area_of(r["scope"]) for r in rows if r["scope_kind"] == "path" and r["role"] in ("decides", "approves")}
+        held = [w for w in worded if w and w in decided]
+        if held:
+            about = set(held)
     probes = [(h.path, h.is_dir) for h in hits]
     # Every path the decision names, not only the first: measured live on
     # eb9d22d, a decision about connectionpool.py and util/retry.py went
@@ -698,9 +718,12 @@ def _authority_matches(store: Graph, repo: str, hits: list[PathHit], question: s
             key = (p, row["role"])
             narrowest[key] = max(narrowest.get(key, (0, 0)), _specificity(row["scope"]))
 
+    # A rule for the file itself outranks a worded area.
+    path_decided = any(hit_paths.get(r["id"]) for r in rows
+                       if r["scope_kind"] == "path" and r["role"] in ("decides", "approves"))
     out: list[dict] = []
     for r in rows:
-        why, outranked = "", False
+        why, outranked, area = "", False, ""
         if r["scope_kind"] == "repo":
             why = "repository-wide"
         elif r["scope_kind"] == "path":
@@ -708,6 +731,12 @@ def _authority_matches(store: Graph, repo: str, hits: list[PathHit], question: s
             own = [p for p in matched if _specificity(r["scope"]) >= narrowest[(p, r["role"])]]
             if own:
                 why = f"for {r['scope']} (matches {own[0]})"
+            elif not matched and not path_decided and _area_of(r["scope"]) in about - {""} and not any(
+                    x["scope_kind"] == "category" and x["scope"] == _area_of(r["scope"]) for x in rows):
+                # No category row for what this is about, and a path rule
+                # named for it ("infra/*" for an infra question): that rule.
+                area = _area_of(r["scope"])
+                why = f"for {r['scope']} (this one speaks of {area})"
             elif matched:
                 # A rule for the directory above. The person knows the
                 # area, and does not outrank whoever the narrower rule
@@ -751,7 +780,7 @@ def _authority_matches(store: Graph, repo: str, hits: list[PathHit], question: s
             out.append({"key": _norm_person(person["name"]), "name": person["name"], "role": r["role"],
                         "person_id": person.get("id", ""),
                         "weight": weight, "line": line, "strong": strong, "id": r["id"], "path": where,
-                        "topic": r["scope_kind"] == "category" and r["scope"] in about and r["scope"],
+                        "topic": (r["scope_kind"] == "category" and r["scope"] in about and r["scope"]) or area,
                         "primary": r["scope_kind"] == "path" and any(
                             p.rstrip("/") == (path or "").strip().strip("/")
                             and _specificity(r["scope"]) >= narrowest[(p, r["role"])]

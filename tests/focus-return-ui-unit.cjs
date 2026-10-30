@@ -259,7 +259,7 @@ function harness() {
     assert.doesNotMatch(pending, /<h3>|<h4>/);
     assert.match(pending, /data-action="review" data-id="a" aria-label="Answer: Q">Answer<\/button>/);
     // The bottom line is the avatar and one pill that names the owner; the name is not written beside it.
-    assert.match(pending, /<div class="card-bottom"><span class="owner" title="Wes"><span class="avatar">W<\/span><\/span><span class="pill waiting">/);
+    assert.match(pending, /<div class="card-bottom"><span class="owner" title="Wes"><span class="avatar" aria-hidden="true">W<\/span><\/span><span class="pill waiting">/);
     assert.doesNotMatch(pending, /<\/span>Wes<span class="pill/);
     assert.doesNotMatch(pending, /id="owner-filter"/, 'the owner filter is for the Decided tab');
     assert.match(text('mine'), /Nothing waits on you\./);

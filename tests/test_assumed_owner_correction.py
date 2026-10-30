@@ -175,9 +175,10 @@ class AssumedOwnerCorrectionTests(BriefCase, Http):
                 self.assertIn(text, block['text'])
             metadata = {key: value for key, value in source['snapshot'].items() if key != 'body'}
             self.assertIn(json.dumps(metadata, indent=2, ensure_ascii=False), block['text'])
-        checkbox = next(node for node in parsed.nodes if node['attrs'].get('id') == 'brief-source-confirm')
-        self.assertIn('required', checkbox['attrs'])
-        self.assertIn('Bind my answer to these exact revisions.', observed['html'])
+        # No checkbox before Send: the evidence is shown and the answer is tied to its exact versions.
+        self.assertFalse(any(node['attrs'].get('id') == 'brief-source-confirm' for node in parsed.nodes))
+        self.assertIn('Sending ties your answer to these exact versions.' if page['focus']['source_revalidation']['available']
+                      else 'Current evidence is unavailable.', observed['html'])
         if observed['requests']:
             self.assertEqual(observed['requests'], [{
                 'decision_id': self.did, 'expected_updated_at': page['focus']['updated_at'],
@@ -198,11 +199,12 @@ class AssumedOwnerCorrectionTests(BriefCase, Http):
                     'SELECT * FROM decision_source_edges WHERE decision_id=? ORDER BY id', (self.did,))],
             }
 
-    def test_no_source_acknowledgment_refuses_without_submitting_or_signing(self):
+    def test_unavailable_evidence_refuses_without_submitting_or_signing(self):
         page = self.review()
+        page['focus']['source_revalidation']['available'] = False
         before = self.persisted()
-        result = self.submit(page, acknowledge=False)
-        self.assertIn('Review the complete current evidence before signing', result['error'])
+        result = self.submit(page)
+        self.assertIn('evidence for this answer is unavailable', result['error'])
         self.assertEqual(result['requests'], [])
         self.assertEqual(result['responses'], [])
         self.assertFalse(result['loaded'])

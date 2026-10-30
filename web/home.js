@@ -32,7 +32,7 @@ function askTaskCard(run) {
   return `<a class="ask-task" href="#runs/${encodeURIComponent(run.id)}">
     <div class="ask-task-top"><span class="ask-live ${live ? 'on' : ''}">${live ? 'Live' : 'Done'}</span><span class="ask-agent">${esc(run.agent || 'Coding agent')}${run.requester ? ' · for ' + esc(askFirst(run.requester)) : ''}</span><span class="ask-when">${esc(ago(run.updated_at))}</span></div>
     <strong>${esc(run.title)}</strong>
-    <div class="ask-meter" aria-label="${ds.length} decisions">${settled.map(() => '<i class="past"></i>').join('')}${answered.map(() => '<i class="person"></i>').join('')}${asked.map(() => '<i class="open"></i>').join('')}</div>
+    <div class="ask-meter" aria-label="${plural(ds.length, 'decision')}">${settled.map(() => '<i class="past"></i>').join('')}${answered.map(() => '<i class="person"></i>').join('')}${asked.map(() => '<i class="open"></i>').join('')}</div>
     <p>${plural(ds.length, 'decision')} · <b>${settled.length}</b> settled from what ${cited.length ? esc(cited.map(askFirst).join(' and ')) + ' already said' : 'the team already said'}${answered.length ? ` · <b>${answered.length}</b> answered` : ''}${asked.length ? ` · <b>${asked.length}</b> with people` : ''}</p>
     ${people.length ? `<div class="ask-task-people">${people.map(p => `<span class="${p.done ? 'done' : ''}">${avatar(p.name)}${esc(askFirst(p.name))} ${p.done ? 'answered' : 'asked'}</span>`).join('')}</div>` : ''}
   </a>`;

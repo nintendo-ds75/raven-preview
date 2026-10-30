@@ -19,7 +19,7 @@ CATEGORIES: dict[str, str] = {
     "compat": r"\b(backwards?[- ]compatib\w*|compatibility|breaking change|breaks?\b|deprecat\w*|public api|migrat\w*|semver|preserv\w* (?:existing|current)|existing behaviou?r)",
     "rollout": r"\b(roll ?out|release(?:s|d)?\b|deploy\w*|launch\w*|feature flag|canary|stag(?:e|ed|ing)|cutover|ga\b)",
     "data": r"\b(schema|migration|database|table(?:s)?\b|column(?:s)?\b|index(?:es)?\b|backup(?:s)?|restore|retention)",
-    "infra": r"\b(infra\w*|cluster|kubernetes|k8s|terraform|scheduler|cron|capacity|scaling|region(?:s)?|cost(?:s)?\b)",
+    "infra": r"\b(infra\w*|cluster|kubernetes|k8s|terraform|scheduler|cron|capacity|scaling|region(?:s)?|cost(?:s)?\b|background (?:job|worker|task)s?|job (?:runner|queue|table)s?|worker (?:service|process)(?:es|s)?|redis|celery|sidekiq)",
     "legal": r"\b(licen[cs]\w*|contract(?:s|ual)?|terms of service|tos\b|legal|compliance|audit\w*)",
     "customer": r"\b(customer(?:s)?|account(?:s)?|enterprise|tenant(?:s)?|cohort|partner(?:s)?|sla\b)",
     "ux": r"\b(ux|ui\b|user[- ]facing|screen(?:s)?|button(?:s)?|flow(?:s)?|copy\b|wording|onboarding)",

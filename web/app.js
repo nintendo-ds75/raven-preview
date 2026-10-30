@@ -49,7 +49,7 @@ const RUN_STATUS = {completed: 'Done', failed: 'Failed', cancelled: 'Closed', ab
 const runStatusLabel = status => RUN_STATUS[status] || 'In progress';
 const initials = name => (name || '?').split(/\s+/).map(word => word[0]).slice(0, 2).join('');
 // One avatar everywhere: a circle with initials, or an empty circle when nobody is named yet.
-const avatar = name => name ? `<span class="avatar">${esc(initials(name))}</span>` : '<span class="avatar empty" aria-hidden="true"></span>';
+const avatar = name => name ? `<span class="avatar" aria-hidden="true">${esc(initials(name))}</span>` : '<span class="avatar empty" aria-hidden="true"></span>';
 const ago = value => {
   const minutes = Math.max(0, Math.floor((Date.now() - new Date(value)) / 60000));
   return minutes < 1 ? 'just now' : minutes < 60 ? `${minutes}m ago` : minutes < 1440 ? `${Math.floor(minutes / 60)}h ago` : `${Math.floor(minutes / 1440)}d ago`;
@@ -341,7 +341,7 @@ function loadOwnership() {
 function loadDirectory() {
   if (directoryLoading) return;
   directoryLoading = true;
-  api('/api/people').then(result => { directory = result; if (['owners', 'connect'].includes(view)) render(); })
+  api('/api/people').then(result => { directory = result; if (['owners', 'connect', 'intro'].includes(view)) render(); })
     .catch(error => notify(error.message)).finally(() => { directoryLoading = false; });
 }
 
