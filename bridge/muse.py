@@ -188,6 +188,14 @@ def _valid(raw, items, files, people):
     return out
 
 
+def _same_finding(a, b):
+    """Two findings are one when they rest on the same thing someone said
+    or decided, or point at the same files for the same person."""
+    if a["ids"] & b["ids"] and (a["kind"] == b["kind"] or a["paths"] & b["paths"]):
+        return True
+    return bool(a["paths"] and a["paths"] & b["paths"] and a["person"] == b["person"])
+
+
 def run(store, cfg=None, repo=""):
     """One pass. Returns {"pass_id", "added": [...], "kept": n, "read": {...}}."""
     from .config import load
@@ -220,10 +228,19 @@ def run(store, cfg=None, repo=""):
         findings = _valid(raw, said + decided, set(files), people)
         pass_id, stamp, added = secrets.token_hex(6), now(), []
         with store.graph.transaction() as db:
+            seen = [{"kind": r["kind"], "ids": {e.get("id") for e in json.loads(r["evidence"])},
+                     "paths": set(json.loads(r["paths"])), "person": r["person_id"]}
+                    for r in db.execute("SELECT kind, evidence, paths, person_id FROM muse_insights "
+                                        "WHERE status IN ('open','asked')").fetchall()]
             for f in findings:
                 fp = hashlib.sha1(_norm(f["title"]).encode()).hexdigest()[:16]
                 if db.execute("SELECT 1 FROM muse_insights WHERE fingerprint=? AND status IN ('open','asked')", (fp,)).fetchone():
                     continue
+                mine = {"kind": f["kind"], "ids": {e["id"] for e in f["evidence"]}, "paths": set(f["paths"]),
+                        "person": f["person_id"]}
+                if any(_same_finding(mine, other) for other in seen):
+                    continue  # the same finding in new words: keep the one already shown
+                seen.append(mine)
                 iid = "ins_" + secrets.token_hex(6)
                 db.execute("INSERT INTO muse_insights(id, kind, title, body, evidence, paths, person_id, question, agent_prompt, "
                            "repo, fingerprint, pass_id, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -296,7 +313,16 @@ def listing(store, status="open", limit=20):
         (*statuses, int(limit))).fetchall()
     last = store.graph.db.execute("SELECT created_at, detail FROM events WHERE kind='muse_pass' ORDER BY id DESC LIMIT 1").fetchone()
     read = json.loads(last["detail"]).get("read", {}) if last else {}
-    return {"insights": [_view(store, r) for r in rows], "running": _running.locked(),
+    shown, keys = [], []
+    for r in rows:
+        view = _view(store, r)
+        key = {"kind": view["kind"], "ids": {e.get("id") for e in view["evidence"]}, "paths": set(view["paths"]),
+               "person": view["person_id"]}
+        if any(_same_finding(key, k) for k in keys):
+            continue  # an older pass said the same thing in other words
+        keys.append(key)
+        shown.append(view)
+    return {"insights": shown, "running": _running.locked(),
             "last_pass": {"at": last["created_at"], "said": read.get("said", 0), "decided": read.get("decided", 0),
                           "files": read.get("files", 0)} if last else None}
 

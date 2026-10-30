@@ -147,6 +147,12 @@ class Muse(unittest.TestCase):
         kept = muse._valid({'findings': [one, two, idea]}, items, set(), {})
         self.assertEqual([k['kind'] for k in kept], ['connect', 'idea'])
 
+    def test_the_same_finding_in_new_words_is_one(self):
+        a = {'kind': 'bug', 'ids': {'d1'}, 'paths': {'app/orders/fulfil.py'}, 'person': 'p'}
+        self.assertTrue(muse._same_finding({**a, 'ids': {'d1', 'n2'}}, a))
+        self.assertTrue(muse._same_finding({**a, 'ids': {'n9'}}, a))
+        self.assertFalse(muse._same_finding({**a, 'ids': {'n9'}, 'paths': {'app/labels/print.py'}}, a))
+
     def test_nudges_are_spaced(self):
         with patch.object(muse, 'run_in_background') as ran:
             muse._last_nudge[0] = float('-inf')
