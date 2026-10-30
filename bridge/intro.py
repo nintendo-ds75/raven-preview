@@ -121,6 +121,19 @@ def _join(names):
     return ", ".join(names[:-1]) + ", and " + names[-1]
 
 
+def _roster(store, person_id):
+    """Everyone else, so Raven never asks "who is Sam?" about a colleague
+    the workspace already lists."""
+    teams = store.graph.teams()
+    out = []
+    for p in store.graph.people():
+        if p["id"] == person_id:
+            continue
+        names = [t["name"] for t in teams if p["id"] in t["members"]] or ([p["team"]] if p.get("team") else [])
+        out.append({"name": p["name"], "teams": names})
+    return out
+
+
 def dossier(store, person_id):
     """What the workspace already records about one person, as plain
     sentences Raven can show and build questions from, plus the gaps."""
@@ -145,7 +158,8 @@ def dossier(store, person_id):
     decides = []
     for row in store.authority():
         if row["person_id"] == person_id or (row["team_id"] and row["team_id"] in team_ids):
-            scope = row["scope"] or ("all of " + row["repo"] if row["repo"] else "everything")
+            scope = f"`{row['scope']}`" if row["scope"] and row["scope_kind"] == "path" else row["scope"] or (
+                "all of " + row["repo"] if row["repo"] else "everything")
             verb = {"decides": "Decides", "approves": "Must approve", "knows": "Knows"}.get(row["role"], row["role"])
             via = f" (through {row['who']})" if row["team_id"] else ""
             decides.append(f"{verb} {scope}{via}")
@@ -163,7 +177,11 @@ def dossier(store, person_id):
     if codeowned:
         facts.append({"kind": "codeowners", "text": "Listed in CODEOWNERS for " + _join([f"`{p}`" for p in codeowned[:5]]) + "."})
     listed = {p.strip("/") for p in codeowned}
-    top = [kv for kv in sorted(owned.items(), key=lambda kv: -kv[1]) if kv[0][1].strip("/") not in listed][:4]
+    # A bare top-level folder adds nothing when a deeper path under it is listed.
+    paths = {p.strip("/") for _, p in owned}
+    top = [kv for kv in sorted(owned.items(), key=lambda kv: -kv[1])
+           if kv[0][1].strip("/") not in listed
+           and not any(other != kv[0][1].strip("/") and other.startswith(kv[0][1].strip("/") + "/") for other in paths)][:4]
     if top:
         facts.append({"kind": "ownership", "text": "Git history points to them for " + _join([f"`{path}`" for (_, path), _ in top]) + "."})
 
@@ -218,6 +236,8 @@ def dossier(store, person_id):
              "What a new teammate would get wrong"]
     return {"person": {"id": person["id"], "name": person["name"], "first_name": person["name"].split()[0],
                        "team": _join(team_names), "teammates": mates},
+            "company": graph.get_setting("workspace_name", "") or "",
+            "roster": _roster(store, person_id),
             "facts": facts, "gaps": gaps,
             "sources": sorted({f["kind"] for f in facts})}
 
@@ -236,8 +256,11 @@ Write 7 to 9 questions in that stage order, one or two per stage, exactly one in
 Each question is one plain, conversational sentence or two, under 45 words, asked the way a
 thoughtful new colleague would ask it. Name concrete things from the record (a path, a commit,
 a teammate) where it helps. No flattery, no jargon about "signals" or "decisions", no compound
-lists of sub-questions. "why" says in one short sentence what Raven already knows and what it
-hopes to learn, in plain words.
+lists of sub-questions. "colleagues" lists everyone else; never ask who a listed colleague is.
+Refer to the company by the given "company" name, never by a repository
+slug; if no name is given, say "here". "why" says in one short sentence what Raven already knows and what it
+hopes to learn, in Raven's own voice and plain words, e.g. "The commits show what changed, not
+what it's for."
 
 Stage guidance:
 - background: them as a person. What they did before, what drew them here. Not their files.
@@ -331,7 +354,8 @@ def _model_on(cfg):
 def plan(cfg, d):
     from .llm import LLMError
     if _model_on(cfg):
-        payload = {"person": d["person"], "already_known": [f["text"] for f in d["facts"]], "gaps": d["gaps"]}
+        payload = {"company": d.get("company") or "", "person": d["person"], "colleagues": d.get("roster", []),
+                   "already_known": [f["text"] for f in d["facts"]], "gaps": d["gaps"]}
         for _ in range(2):
             try:
                 raw = _client(cfg).complete_json("intro_plan", _PLAN_SYSTEM, json.dumps(payload, ensure_ascii=False), max_tokens=2000)
@@ -360,13 +384,17 @@ Decide what to say next:
 - "next": move to the next planned question. You may reword it so it connects naturally to what
   they just said, keeping its intent and stage.
 - "wrap": only when told time is up or the wrap question has been answered.
+"colleagues" lists everyone else in the workspace and their teams. Never ask who a listed colleague
+is or what team they're on; ask about how the person works with them instead.
 "ack" is an optional short reply to what they just said (under 25 words) that shows you listened:
-restate one concrete detail. No praise ("Great answer!"), no therapy talk, no exclamation marks.
+restate one concrete detail in the second person ("So you're the one carriers page when..."), and
+leave it empty when a restatement would sound stilted. No praise ("Great answer!"), no therapy talk, no exclamation marks.
 The question must be one or two plain sentences, under 45 words, with no list of sub-questions.
 Write in clean, correct English with standard punctuation. Do not use dashes as sentence
 separators; use a comma or a period instead.
 Return ONLY JSON: {"action": "follow_up"|"next"|"wrap", "ack": string, "question": string,
-"why": string (one short sentence: why you're asking)}"""
+"why": string (one short sentence in Raven's voice saying what the record can't tell it, e.g.
+"The org chart shows your team, not who you actually lean on.")}"""
 
 
 def _elapsed(row, at=None):
@@ -415,7 +443,8 @@ def _decide(cfg, row, d, plan_rows, turns):
                 "why": q["why"], "plan_index": wrap_index, "ack": ""}
     may_follow = trailing < MAX_FOLLOWUPS and last["stage"] != "wrap" and left > 3
     if _model_on(cfg):
-        payload = {"person": d["person"], "already_known": [f["text"] for f in d["facts"]],
+        payload = {"company": d.get("company") or "", "person": d["person"], "colleagues": d.get("roster", []),
+                   "already_known": [f["text"] for f in d["facts"]],
                    "conversation": [{"stage": t["stage"], "raven": t["question"], "person": t["answer"]} for t in turns],
                    "next_planned": planned, "minutes_left": round(left, 1),
                    "follow_up_allowed": may_follow}

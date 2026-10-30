@@ -39,6 +39,8 @@ AUTHORITY = [
     ("Jordan Okafor", "path", "app/labels/*", "decides", "Label purchasing and carrier APIs"),
     ("Lena Park", "path", "web/*", "decides", "Merchant dashboard"),
     ("Theo Grant", "path", "app/shopify/*", "decides", ""),
+    ("Priya Shah", "category", "customer", "decides", "Which customers and requests the company builds for"),
+    ("Priya Shah", "category", "ux", "decides", "Product shape and positioning"),
     ("Sam Rivera", "category", "customer", "knows", "Merchant relationships, including Bloom & Co"),
 ]
 CODEOWNERS = """# Parcelwise code owners
@@ -143,10 +145,57 @@ def build_repo(repo: Path):
         git(repo, "commit", "-q", "-m", subject, env=env)
 
 
+# The same judgment as signed answers on past tasks, so the ladder can settle
+# new questions from them: date, who, title, question, paths, category, answer, rationale.
+DECISIONS = [
+    ("2026-03-14T16:05:00+00:00", "Priya Shah", "Custom export for one merchant",
+     "A single merchant asked for a custom feature. Do we build it now?", "", "customer",
+     "We don't build for one customer. Three paying accounts asking, or it waits.",
+     "Building for one account pulls the roadmap toward whoever is loudest. Slack #founders, Mar 14."),
+    ("2026-06-02T18:40:00+00:00", "Marcus Lee", "Stale-rate incident follow-up",
+     "Can a label be bought before the merchant has seen its current price?", "app/labels/", "",
+     "Never buy a label before the merchant sees the price.",
+     "We bought $4,100 of labels at a stale rate. Incident postmortem, Jun 2."),
+    ("2026-08-20T17:10:00+00:00", "Priya Shah", "Positioning after the August sync",
+     "Should new workflows get their own top-level pages or enterprise-style controls?", "web/", "ux",
+     "We win on the fastest morning for 1 to 5 person shops. No enterprise features, no new top-level pages.",
+     "Founders' sync, Aug 20."),
+    ("2026-09-09T15:20:00+00:00", "Jordan Okafor", "Idempotent label purchase",
+     "May any code path other than purchase_label() buy a label?", "app/labels/", "",
+     "Every label purchase goes through purchase_label() with an idempotency key.",
+     "Retries without the key double-bought labels. PR #212, Sep 9."),
+]
+
+
+def seed_decisions(store):
+    from bridge.authz import Actor
+    from bridge.mcp import call_tool
+    people = {p["name"]: p for p in store.graph.people()}
+    for when, who, title, question, paths, category, answer, rationale in DECISIONS:
+        task = call_tool(store, "bridge_start_task", {"title": title, "goal": question, "repo": REPO,
+                                                       "client_key": "seed-" + when, **({"paths": paths} if paths else {})})
+        node = {"task_id": task["task_id"], "question": question, "client_ref": "seed-" + when}
+        if paths:
+            node["paths"] = paths
+        if category:
+            node["category"] = category
+        added = call_tool(store, "bridge_add_node", node)
+        decision = store.get_decision(added["node_id"])
+        person = people[who]
+        actor = Actor.person(person, kind="session")
+        actor.override = person.get("role") == "admin"
+        store.answer(decision["id"], {"answer": answer, "rationale": rationale,
+                                      "expected_updated_at": decision["updated_at"]}, actor=actor)
+        with store.connect() as db:
+            db.execute("UPDATE decisions SET created_at=?, updated_at=? WHERE id=?", (when, when, decision["id"]))
+            db.execute("UPDATE runs SET updated_at=? WHERE id=?", (when, task["task_id"]))
+
+
 def rename(company: str):
     """Swap the company name everywhere the seed writes it: emails, team
     handles, CODEOWNERS and the repository name."""
-    global PEOPLE, TEAMS, AUTHORITY, CODEOWNERS, REPO
+    global PEOPLE, TEAMS, AUTHORITY, CODEOWNERS, REPO, COMPANY
+    COMPANY = company
     slug = "".join(ch for ch in company.lower() if ch.isalnum()) or "parcelwise"
     PEOPLE = [(n, e.replace("parcelwise", slug), lg, t, r) for n, e, lg, t, r in PEOPLE]
     TEAMS = [(n, h.replace("parcelwise", slug), m) for n, h, m in TEAMS]
@@ -155,6 +204,7 @@ def rename(company: str):
 
 
 REPO = "parcelwise/app"
+COMPANY = "Parcelwise"
 
 
 def seed(db_path: str, repo: Path):
@@ -164,6 +214,7 @@ def seed(db_path: str, repo: Path):
         for suffix in ("", "-wal", "-shm"):
             Path(db_path + suffix).unlink(missing_ok=True)
     store = Store(db_path)
+    store.graph.set_setting("workspace_name", COMPANY)
     for name, email, login, team, role in PEOPLE:
         store.add_person({"name": name, "email": email, "github_login": login, "team": team, "role": role})
     for name, handle, members in TEAMS:
@@ -174,7 +225,8 @@ def seed(db_path: str, repo: Path):
     stats = index_repo(store.graph, repo, repo_name=REPO, max_commits=0)
     for kind, ref, created, author, title, body, paths in RECORDS:
         store.add_record({"repo": REPO, "kind": kind, "ref": ref, "created_at": created, "author": author,
-                          "title": title, "body": body, "paths": paths, "status": "decided"})
+                          "title": title, "body": body, "paths": paths, "status": "decided", "resolved": True})
+    seed_decisions(store)
     return stats
 
 

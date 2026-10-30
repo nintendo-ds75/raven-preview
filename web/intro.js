@@ -128,6 +128,7 @@ function renderIntro() {
   introKey = key;
   const actions = $('#page-actions');
   if (actions && !person) actions.innerHTML = '';
+  $('.page-head').hidden = !!person;
   $('#app').innerHTML = (introError ? `<p class="intro-error" role="alert">${esc(introError)}</p>` : '') + (person ? introPersonView() : introListView());
   const thread = $('#intro-thread');
   if (thread) thread.scrollTop = thread.scrollHeight;
