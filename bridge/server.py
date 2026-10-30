@@ -487,16 +487,18 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     if url.path == "/api/runs":
                         return self.send(200, store.list_runs(page, size, one("status")))
                     return self.send(200, store.list_decisions(page, size, one("status"), one("owner_id"), one("run_id"), one("q")))
-                if parts[:2] == ["api", "intro"] or (len(parts) == 4 and parts[:2] == ["api", "people"] and parts[3] == "context"):
+                if len(parts) == 4 and parts[:2] == ["api", "people"] and parts[3] == "context":
+                    from . import intro
+                    self.require("member")
+                    intro._person(store, parts[2])
+                    return self.send(200, {"context": intro.context_for(store, parts[2])})
+                if parts[:2] == ["api", "intro"]:
                     from . import intro
                     self.require("member")
                     if parts == ["api", "intro"]:
                         return self.send(200, intro.overview(store, self.actor()))
                     if len(parts) == 4 and parts[2] == "people":
                         return self.send(200, intro.latest(store, parts[3], self.actor()))
-                    if parts[1] == "people":
-                        intro._person(store, parts[2])
-                        return self.send(200, {"context": intro.context_for(store, parts[2])})
                     return self.send(404, {"error": "Unknown intro chat route"})
                 if len(parts) in (4, 5) and parts[:2] == ["api", "tasks"] and parts[3] == "interviews":
                     from . import interview
