@@ -253,7 +253,7 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(removed.exception.code, 404)
         removed.exception.close()
         with urlopen(self.url) as response:
-            self.assertIn(b'<h1 id="page-title">Inbox</h1>', response.read())
+            self.assertIn(b'<h1 id="page-title">Ask Raven</h1>', response.read())
             self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
             self.assertIn("connect-src 'self' http://127.0.0.1:7334;", response.headers["Content-Security-Policy"])
             self.assertNotIn("127.0.0.1:*", response.headers["Content-Security-Policy"])
