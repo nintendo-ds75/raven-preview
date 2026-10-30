@@ -287,6 +287,10 @@ class Client:
 
     def complete_json(self, purpose: str, system: str, prompt: str,
                       max_tokens: int = JSON_MAX_TOKENS, *, bounded: bool = False) -> object:
+        if self.cfg.model_api == "claude-cli":
+            # Headless Claude Code tends to answer a JSON-shaped system prompt in prose,
+            # and a bounded reading gets no second try, so ask for the JSON up front.
+            prompt += "\n\nReturn ONLY the raw JSON, no prose, no fences."
         text = self.complete(purpose, system, prompt, max_tokens=max_tokens,
                              **({'bounded': True} if bounded else {}))
         try:
