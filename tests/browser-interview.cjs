@@ -49,7 +49,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
       if (!(await question.evaluate(el => el.open))) await question.locator(':scope > summary').click();
       await question.locator('[data-action="review"]').first().click();
       await page.locator('#modal[open]').waitFor();
-      await page.getByRole('button', {name:/^(Talk it through instead|Start or resume interview)$/}).click();
+      await page.getByRole('button', {name:/^(Take a quick call instead|Start or resume interview)$/}).click();
       await page.locator('#interview-modal[open]').waitFor();
     };
     await open();
@@ -114,7 +114,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await linked.goto(`${world.url}/brief#${world.link}`);
     // The person already decided this one, so the form and its interview link sit under 'Correct my answer'.
     await linked.locator('details.brief-correct > summary').click();
-    await linked.getByRole('button', {name:'Talk it through instead',exact:true}).click();
+    await linked.getByRole('button', {name:'Take a quick call instead',exact:true}).click();
     await linked.locator('#interview-modal[open]').waitFor();
     await linked.locator('#interview-answer').fill('Use five seconds for new clients only.');
     await linked.locator('#interview-rationale').fill('Old clients retain ten seconds.');

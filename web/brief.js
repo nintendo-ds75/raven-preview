@@ -27,7 +27,7 @@ const same = (a, b) => (a || '').toLowerCase() === (b || '').toLowerCase();
 const unique = names => names.filter(Boolean).filter((v, i, a) => a.findIndex(x => same(x, v)) === i);
 const listed = names => names.length < 3 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 // The app's words for the same states, so the page and the app agree.
-const stateLabels = {signed:['Signed answer','green'], waiting:['Waiting for a person',''], needs_review:['Needs another look',''],
+const stateLabels = {signed:['Decided','green'], waiting:['Waiting for a person',''], needs_review:['Needs another look',''],
   resolved:['Resolved from evidence, not signed','gray'], proposed:['Prediction, not signed','gray'], assumed:['Default assumed, not signed','gray'],
   suggested:['Follow-up suggested','lilac'], adopted:['Adopted by the agent','gray'], duplicate:['Same as another decision','gray'],
   pending:['Waiting for a person',''], answered:['Answered','green']};
@@ -231,7 +231,7 @@ function focusCard(f) {
   const why = open || mine ? '' : ' data-correction hidden';
   // The interview is another way to the same answer, beside the button.
   const interview = !['read','handed'].includes(standing) && f.owner && (!data.viewer.interview_decision_id || data.viewer.interview_decision_id === f.node_id)
-    ? `<button type="button" class="button text brief-interview" data-action="interview-start" data-task="${esc(data.task.id)}" data-id="${esc(f.node_id)}">Talk it through instead</button>` : '';
+    ? `<button type="button" class="button text brief-interview" data-action="interview-start" data-task="${esc(data.task.id)}" data-id="${esc(f.node_id)}">Take a quick call instead</button>` : '';
   const fields = `<form id="answer-form" class="brief-answer" data-id="${esc(f.node_id)}" data-rev="${esc(f.updated_at)}">
       ${open ? options : ''}
       <label for="answer-text">${open ? (options ? 'Your answer <span class="muted">(edit the option, or write your own)</span>' : 'Your answer') : mine ? 'Corrected answer' : 'Correct the answer <span class="muted">(leave empty to sign it as it stands)</span>'}</label>
@@ -611,7 +611,7 @@ function render() {
     <section class="brief-hero">
       <h1>${esc(title)}</h1>
       <p class="brief-ask" role="status">${heroLine(standing)}</p>
-      <div class="metadata">${data.requester.name ? `<span>${esc(data.requester.name)}</span>` : ''}<span>${esc(t.repo)}</span><span>${p.signed} of ${p.total} signed</span>${t.status === 'completed' ? '<span>Agent reported complete</span>' : ''}</div>
+      <div class="metadata">${data.requester.name ? `<span>${esc(data.requester.name)}</span>` : ''}<span>${esc(t.repo)}</span><span>${p.signed} of ${p.total} settled</span>${t.status === 'completed' ? '<span>Agent reported complete</span>' : ''}</div>
     </section>
     ${body}`;
   restoreDrafts(kept);
