@@ -127,7 +127,7 @@ function interviewBody(session, reviewing = false) {
       </div>
       ${note ? `<p class="context voice-fine">${note}</p>` : ''}
       <p class="context voice-fine">${interviewCanListen() ? (RavenVoice.usesServer().stt ? 'Your voice is transcribed by this Raven server and the audio is not kept. ' : 'Browser dictation may send audio to your browser provider. ') : 'Speech recognition is unavailable here, so type your answers. '}Raven stores only the text. Adaptive follow-ups send the task context and your answers to the configured model provider.</p>
-      ${row.failure ? `<p class="task-warning">Last capture stopped: ${esc(row.failure)}. Your saved text is preserved; type or try again.</p>` : ''}
+      ${row.failure && session.failedNow ? `<p class="task-warning">Last capture stopped: ${esc(row.failure)}. Your saved text is preserved; type or try again.</p>` : ''}
       ${scopeBox}
       <details class="voice-scope"><summary>Write the answer yourself</summary><form id="interview-form"><label for="interview-transcript">Transcript</label><textarea id="interview-transcript" name="transcript" maxlength="12000">${esc(row.transcript)}</textarea><label for="interview-answer">Answer the agent should follow</label><textarea id="interview-answer" name="answer" maxlength="12000" required>${esc(row.answer)}</textarea><label for="interview-rationale">Reasoning, constraints and exceptions</label><textarea id="interview-rationale" name="rationale" maxlength="12000" required>${esc(row.rationale)}</textarea>${interviewScopeFields(row.applicability)}<div class="modal-actions"><button type="button" class="button" data-interview-action="save">Save draft</button><button type="submit" class="button primary">Read it back to me</button></div></form><button class="button text small" data-interview-action="cancel">Discard this call</button></details>
     </div>`;
@@ -158,14 +158,19 @@ function interviewVoice(session) {
 }
 // End of the call: the readback is the model's proposal when there is one,
 // otherwise the person's own first answer with the rest as the reasoning.
+// "No, that's everything" said out loud ends the call the way the button does.
+const interviewDone = text => String(text || '').trim().length < 80 && /^(?:no[,.!]?\s*|nope[,.!]?\s*|i think\s+)?(?:that'?s (?:it|all|everything)|nothing (?:else|more)|that covers it|we'?re (?:done|good)|i'?m (?:done|good)|all good)(?: for now| from me)?[.!]?$/i.test(String(text || '').trim());
 async function interviewWrap(session) {
   const box = interviewDialog.querySelector('#interview-response');
   if (box && box.value?.trim() && session.turns.length < session.row.prompts.length) await interviewNext(session, false);
   if (interviewSession !== session) return;
   const g = session.row.guidance || {};
-  const said = session.turns.map(t => t.response).filter(Boolean);
+  const said = session.turns.map(t => t.response).filter(t => t && !interviewDone(t));
   const answer = g.proposed_answer || said[0] || session.row.answer;
-  const rationale = g.proposed_answer ? g.proposed_rationale : (said.slice(1).join(' ') || session.row.rationale || 'Said on a call with Raven.');
+  // Confirming needs a reason. When nobody asked "why", say so plainly
+  // rather than leave it empty or pad it with "that's everything".
+  const rationale = (g.proposed_answer && g.proposed_rationale) || said.slice(1).join(' ') || session.row.rationale
+    || 'Stated on a call with Raven; no separate reason was given.';
   const saved = await interviewWrite('draft', {answer, rationale});
   if (interviewSession !== session || !saved) return;
   interviewBody(session, true);
@@ -181,12 +186,17 @@ async function interviewNext(session, advance = true) {
   session.turns = saved.turns;
   session.heard = '';
   if (interviewSession !== session || !advance) return;
+  if (interviewDone(response)) return interviewWrap(session);
   session.thinking = true;
   interviewBody(session);
   let advanced = false;
   try { advanced = await advanceInterview(session); } finally { session.thinking = false; }
   if (interviewSession !== session) return;
-  if (session.turns.length >= session.row.prompts.length) return interviewWrap(session);
+  const g = session.row.guidance || {};
+  // The model has a readback and nothing left to ask: read it back now
+  // instead of running through the remaining standard questions.
+  const settled = g.mode === 'model-assisted' && !String(g.question || '').trim() && String(g.proposed_answer || '').trim();
+  if (settled || session.turns.length >= session.row.prompts.length) return interviewWrap(session);
   if (advanced !== false) interviewBody(session);
 }
 async function openInterview(task, decision) {
@@ -258,6 +268,7 @@ function startInterviewSpeech() {
       if (interviewSession !== session || session.recognition !== marker) return;
       session.recognition = null;
       session.typing = true;
+      session.failedNow = true;
       interviewWrite('failed', {failure: 'recognition-failed'}).then(() => interviewBody(session)).catch(interviewError);
       interviewError(error);
     },

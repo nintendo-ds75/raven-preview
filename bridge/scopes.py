@@ -12,7 +12,7 @@ import re
 
 CATEGORIES: dict[str, str] = {
     "billing": r"\b(bill(?:ing|ed|s)?|invoic\w*|charg(?:e|es|ed|ing)|meter(?:ing|ed)?|usage[- ]based|overage|refund\w*|credit(?:s)?\b|prepaid)",
-    "pricing": r"\b(pric(?:e|es|ed|ing)|discount\w*|tier(?:s|ed)?|plan(?:s)?\b|sku(?:s)?|rate card|minimums?|per[- ]seat)",
+    "pricing": r"\b(pric(?:e|es|ed|ing)|discount\w*|tier(?:s|ed)?|plan(?:s)?\b|sku(?:s)?|rate card|minimums?|per[- ]seat|negotiat\w* (?:rate|price|discount)s?|(?:negotiated|contracted|custom|list|standard|special) rates?)",
     "security": r"\b(securit\w*|vulnerab\w*|secret(?:s)?|token(?:s)?|credential\w*|encrypt\w*|cve[- ]?\d*|hardening)",
     "auth": r"\b(auth[nz]?|authentication|authoriz\w*|login|sso|oauth|permission(?:s)?|access control|rbac|roles?\b)",
     "privacy": r"\b(privac\w*|pii|gdpr|ccpa|personal data|consent|retention|data deletion|anonymi[sz]\w*)",

@@ -183,5 +183,18 @@ class Noticed(OfflineCase):
         self.assertEqual(muse.listing(self.store)['insights'], [])
 
 
+
+class CallWording(unittest.TestCase):
+    def test_a_negotiated_rate_is_a_pricing_call(self):
+        from bridge.scopes import decision_scopes
+        self.assertIn('pricing', decision_scopes("Should bulk purchases use Bloom's negotiated rate?"))
+        self.assertNotIn('pricing', decision_scopes('Should we raise the API rate limit?'))
+
+    def test_spoken_questions_do_not_read_out_paths(self):
+        from bridge.interview import _prompts
+        prompts = _prompts({'question': 'Which rate?', 'repo': 'acme/app', 'paths': ['app/labels/purchase.py'], 'path': ''})
+        self.assertFalse(any('/' in p for p in prompts[1:]))
+
+
 if __name__ == '__main__':
     unittest.main()

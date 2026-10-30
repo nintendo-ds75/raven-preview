@@ -164,5 +164,18 @@ function harness(link = false) {
     assert.equal(h.run('interviewSession.row.id'),'new-active');
     assert(h.dialog.open);
   }
+  // Saying "that's everything" ends the call; it never becomes the reason,
+  // and a call with no "why" still reads back a reason that can be confirmed.
+  {
+    const h = harness(); await h.run("openInterview('task','decision')");
+    assert.equal(h.run("interviewDone('No, that\\'s everything.')"), true);
+    assert.equal(h.run("interviewDone('No, use the negotiated rate.')"), false);
+    h.run("interviewSession.turns = [{prompt_id:0,response:'Use the negotiated rate.'},{prompt_id:1,response:'No, that\\'s everything.'}]; interviewSession.row.rationale = ''");
+    await h.run('interviewWrap(interviewSession)');
+    const draft = h.calls.filter(c => c.url.endsWith('/draft')).pop().body;
+    assert.equal(draft.answer, 'Use the negotiated rate.');
+    assert.match(draft.rationale, /no separate reason/);
+    assert.doesNotMatch(draft.rationale, /everything/);
+  }
   console.log('Interview UI logic checks passed (DOM/audio stubs, not browser verification).');
 })().catch(e=>{console.error(e);process.exitCode=1;});
