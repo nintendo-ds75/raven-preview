@@ -5,7 +5,7 @@
 // as a header, and nothing is stored in the browser.
 
 const token = location.hash.slice(1);
-if (window.RavenVoice) RavenVoice.configure({link: token});
+if (typeof RavenVoice !== 'undefined') RavenVoice.configure({link: token});
 // A link pasted into a tab that already shows a task page only moves the
 // fragment, and the page went on as the person the old link named: every
 // action carried their link. A new link is a new page.
