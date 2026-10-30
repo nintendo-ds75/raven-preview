@@ -277,7 +277,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                                        and self.me.id == link.person["id"])
                     view["viewer"]["interview_decision_id"] = link.decision_id
                     return self.send(200, view)
-                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js", "/presentation.js", "/workbench.js", "/workbench.css", "/objectives.js", "/objectives.css", "/evidence.js"):
+                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js", "/presentation.js", "/workbench.js", "/workbench.css", "/objectives.js", "/objectives.css", "/evidence.js", "/intro.js", "/intro.css"):
                     if url.path == "/" and auth.enabled and self.me is None:
                         if parse_qs(url.query).get("github_connect") == ["1"]:
                             cookie = "bridge_github_connect=1; Max-Age=600; Path=/; HttpOnly; SameSite=Lax"
@@ -295,6 +295,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     files['/objectives.js'] = 'objectives.js'
                     files['/objectives.css'] = 'objectives.css'
                     files['/evidence.js'] = 'evidence.js'
+                    files['/intro.js'] = 'intro.js'
+                    files['/intro.css'] = 'intro.css'
                     file = WEB / files[url.path]
                     return self.send(200, file.read_bytes(), (mimetypes.guess_type(str(file))[0] or "text/plain") + "; charset=utf-8",
                                      etag=True, cache="no-cache")
@@ -485,6 +487,17 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     if url.path == "/api/runs":
                         return self.send(200, store.list_runs(page, size, one("status")))
                     return self.send(200, store.list_decisions(page, size, one("status"), one("owner_id"), one("run_id"), one("q")))
+                if parts[:2] == ["api", "intro"] or (len(parts) == 4 and parts[:2] == ["api", "people"] and parts[3] == "context"):
+                    from . import intro
+                    self.require("member")
+                    if parts == ["api", "intro"]:
+                        return self.send(200, intro.overview(store, self.actor()))
+                    if len(parts) == 4 and parts[2] == "people":
+                        return self.send(200, intro.latest(store, parts[3], self.actor()))
+                    if parts[1] == "people":
+                        intro._person(store, parts[2])
+                        return self.send(200, {"context": intro.context_for(store, parts[2])})
+                    return self.send(404, {"error": "Unknown intro chat route"})
                 if len(parts) in (4, 5) and parts[:2] == ["api", "tasks"] and parts[3] == "interviews":
                     from . import interview
                     self.require("member")
@@ -1164,7 +1177,16 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         raise Invalid(str(error))
                 else:
                     parts = path.strip("/").split("/")
-                    if len(parts) in (4, 6) and parts[:2] == ["api", "tasks"] and parts[3] == "interviews":
+                    if parts[:2] == ["api", "intro"]:
+                        from . import intro
+                        self.require("member")
+                        if len(parts) == 5 and parts[2] == "people" and parts[4] == "prepare":
+                            result = intro.prepare(store, parts[3], self.actor())
+                        elif len(parts) == 4 and parts[3] in ("start", "answer", "skip", "finish", "save", "cancel"):
+                            result = getattr(intro, parts[3])(store, parts[2], data, self.actor())
+                        else:
+                            return self.send(404, {"error": "Unknown intro chat action"})
+                    elif len(parts) in (4, 6) and parts[:2] == ["api", "tasks"] and parts[3] == "interviews":
                         from . import interview
                         if len(parts) == 4:
                             result = interview.create(store, parts[2], data, self.actor())
