@@ -66,7 +66,7 @@ function askAnswer(entry) {
   const lead = r.model_used ? esc(r.answer)
     : evidence.length ? 'Here is what your team has already said about this.'
     : (r.people || []).length ? `Nobody has written this down yet. ${esc(r.people.slice(0, 2).map(p => p.name).join(' and '))} ${r.people.length > 1 ? 'are' : 'is'} who to ask.` : 'Nothing your team has said covers this yet.';
-  const people = (r.people || []).length ? `<div class="ask-people"><span class="ask-label">People with context</span>${r.people.map(p => `<a class="ask-person" href="#map/${encodeURIComponent(p.id || '')}">${avatar(p.name)}<span><b>${esc(p.name)}</b><small>${esc(p.why)}</small></span></a>`).join('')}</div>` : '';
+  const people = (r.people || []).length ? `<div class="ask-people"><span class="ask-label">People with context</span>${r.people.map(p => `<a class="ask-person" href="#people/${encodeURIComponent(p.id || '')}">${avatar(p.name)}<span><b>${esc(p.name)}</b><small>${esc(p.why)}</small></span></a>`).join('')}</div>` : '';
   const open = (r.open || []).length ? `<p class="ask-muted">Still open: ${esc(r.open.join('; '))}</p>` : '';
   return `<div class="ask-raven"><span class="ask-orb" aria-hidden="true"></span><div class="ask-body"><p class="ask-lead">${lead}</p>${quotes}${people}${open}</div></div>`;
 }
@@ -94,11 +94,40 @@ function askWaiting() {
   return `<a class="ask-waiting" href="#runs/${encodeURIComponent(d.run_id)}/${encodeURIComponent(d.id)}"><span class="ask-orb small" aria-hidden="true"></span><span><b>Raven has ${plural(mine.length, 'question')} only you can answer.</b><small>${esc(d.question)}</small></span><span aria-hidden="true">→</span></a>`;
 }
 
+// Raven noticed: what the background pass found when it read what people
+// said next to the code. Each finding quotes who said it and offers one
+// next step: route the question to the right person, or hand it to Claude.
+let noticed = null, noticedAt = 0, noticedBusy = '';
+function loadNoticed(force) {
+  if (!force && Date.now() - noticedAt < 8000) return;
+  noticedAt = Date.now();
+  api('/api/muse').then(r => { const before = JSON.stringify(noticed); noticed = r; if (JSON.stringify(r) !== before) { askKey = ''; if (view === 'ask') render(); } })
+    .catch(() => { noticed = noticed || {insights: []}; });
+}
+function noticedCard(x) {
+  const cites = x.evidence.slice(0, 2).map(e => `<p class="noticed-cite">“${esc(e.quote)}” <small>${esc(e.who)}, ${esc(e.kind === 'decided' ? 'answering an agent' : (e.where === 'intro chat' ? 'voice intro' : e.where))} · ${esc(askDate(e.at))}</small></p>`).join('');
+  const who = x.person ? askFirst(x.person.name) : '';
+  return `<article class="noticed-card"><span class="noticed-kind">${esc(x.kind_label)}</span><h3>${esc(x.title)}</h3><p>${esc(x.body)}</p>${cites}
+    ${x.paths.length ? `<p class="noticed-paths">Raven read ${x.paths.slice(0, 3).map(p => `<code>${esc(p)}</code>`).join(' ')}</p>` : ''}
+    <div class="noticed-actions">${x.task_id ? `<a class="button small" href="#runs/${encodeURIComponent(x.task_id)}">Asked${who ? ' · see ' + esc(who) + "'s answer" : ''}</a>`
+      : `<button type="button" class="button small primary" data-noticed="ask" data-id="${esc(x.id)}" ${noticedBusy ? 'disabled' : ''}>${who ? 'Ask ' + esc(who) : 'Ask the right person'}</button>`}
+      ${x.agent_prompt ? `<button type="button" class="button small" data-noticed="claude" data-id="${esc(x.id)}">Hand to Claude</button>` : ''}
+      <button type="button" class="button small text" data-noticed="dismiss" data-id="${esc(x.id)}">Dismiss</button></div></article>`;
+}
+function noticedView() {
+  const items = (noticed?.insights || []).slice(0, 2);
+  const looking = noticedBusy === 'run' || noticed?.running;
+  return `<section class="noticed"><div class="noticed-head"><span class="ask-orb small ${looking ? 'thinking' : ''}" aria-hidden="true"></span><h2 class="ask-label">Raven noticed</h2>
+    <button type="button" class="button small text" data-noticed="run" ${looking ? 'disabled' : ''}>${looking ? 'Looking…' : 'Look again'}</button></div>
+    ${items.length ? items.map(noticedCard).join('') : `<p class="ask-muted">${looking ? 'Reading what people said next to the code…' : 'When people tell Raven something the product doesn\'t do yet, it shows up here.'}</p>`}</section>`;
+}
+
 function renderHome() {
+  loadNoticed();
   if (directory === null && typeof loadDirectory === 'function') loadDirectory();
   const live = run => !['completed', 'failed', 'cancelled', 'abandoned'].includes(run.status);
   const runs = (state.runs || []).filter(r => taskStory(r).ds.length > 1 || (live(r) && taskStory(r).ds.length)).slice(0, 3);
-  const key = JSON.stringify([askThread, askBusy, runs.map(r => [r.id, r.updated_at]), (state.decisions || []).length, !!directory, (state.agent_connections || []).length]);
+  const key = JSON.stringify([noticed, noticedBusy, askThread, askBusy, runs.map(r => [r.id, r.updated_at]), (state.decisions || []).length, !!directory, (state.agent_connections || []).length]);
   $('.page-head').hidden = true;
   if (key === askKey && $('#app .ask')) return;
   const typed = $('#ask-input')?.value || '';
@@ -116,6 +145,7 @@ function renderHome() {
       <div class="ask-chips" ${empty ? '' : 'hidden'}>${askSuggestions().map(s => `<button type="button" class="ask-chip" data-ask="${esc(s)}">${esc(s)}</button>`).join('')}</div>
     </div>
     <aside class="ask-side">
+      ${noticedView()}
       <section><h2>Working in the background</h2>${runs.length ? runs.map(askTaskCard).join('') : '<p class="ask-muted">When Claude Code, Codex or Cursor starts a task, it shows up here: what Raven settled from past context, and who it asked.</p>'}</section>
       ${askAgentUses()}
     </aside>
@@ -154,5 +184,29 @@ document.addEventListener('click', event => {
   if (!chip || view !== 'ask') return;
   event.preventDefault();
   askRaven(chip.dataset.ask);
+});
+document.addEventListener('click', async event => {
+  const button = event.target.closest('[data-noticed]');
+  if (!button || view !== 'ask') return;
+  event.preventDefault();
+  const action = button.dataset.noticed, id = button.dataset.id;
+  const item = (noticed?.insights || []).find(x => x.id === id);
+  if (action === 'claude') {
+    const text = `${item.agent_prompt}\n\n(Raven noticed ${id}; bridge_raven_noticed has the quotes.)`;
+    try { await navigator.clipboard.writeText(text); notify('Copied for Claude Code. Paste it, or ask Claude "what did Raven notice?"'); }
+    catch { notify(item.agent_prompt); }
+    return;
+  }
+  noticedBusy = action; askKey = ''; render();
+  try {
+    if (action === 'run') {
+      const result = await api('/api/muse/run', {});
+      notify(result.added.length ? `Raven noticed ${plural(result.added.length, 'thing')} worth a look.` : 'Nothing new since the last look.');
+    } else {
+      const result = await api(`/api/muse/${encodeURIComponent(id)}/${action}`, {});
+      if (action === 'ask' && result.task_id) notify(`Raven asked ${result.node?.owner || 'the right person'}.`);
+    }
+  } catch (error) { notify(error.message); }
+  finally { noticedBusy = ''; loadNoticed(true); askKey = ''; render(); }
 });
 window.addEventListener('hashchange', () => { askKey = ''; });

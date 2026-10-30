@@ -42,14 +42,12 @@ function interviewStatus(text) {
   if (box) box.textContent = text;
 }
 function stopInterviewSpeech() {
-  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  RavenVoice.stopSpeaking();
   const session = interviewSession;
-  if (session) { clearTimeout(session.silence); session.speaking = false; }
+  if (session) session.speaking = false;
   if (!session?.recognition) return;
-  const recognition = session.recognition;
   session.recognition = null; // Late events from an aborted capture are ignored.
-  recognition.onresult = recognition.onerror = recognition.onend = null;
-  recognition.abort();
+  RavenVoice.stopListening();
 }
 function interviewPayload(session) {
   const form = interviewDialog.querySelector('#interview-form');
@@ -75,10 +73,10 @@ async function interviewWrite(action = 'draft', extra = {}) {
 // The call, drawn the way the voice intro is: one orb, Raven's question as
 // a caption, the person's words as they say them, and a readback at the
 // end that they confirm in one tap. The form underneath is the same draft.
-const interviewCanListen = () => !!(window.SpeechRecognition || window.webkitSpeechRecognition) && window.isSecureContext;
-const interviewCanSpeak = () => !!window.speechSynthesis && !!window.SpeechSynthesisUtterance;
+const interviewCanListen = () => RavenVoice.canListen();
+const interviewCanSpeak = () => RavenVoice.canSpeak();
 function interviewOrb(mode) {
-  return `<div class="voice-orb ${mode}" aria-hidden="true"><span></span><i></i><i></i><i></i></div><div class="voice-wave ${mode}" aria-hidden="true">${'<b></b>'.repeat(9)}</div>`;
+  return RavenVoice.orb((mode === 'speaking' && !RavenVoice.usesServer().tts ? 'speaking pulse' : mode) + ' small');
 }
 function interviewMode(session) {
   return session.thinking ? 'thinking' : session.speaking ? 'speaking' : session.recognition ? 'listening' : 'idle';
@@ -113,7 +111,7 @@ function interviewBody(session, reviewing = false) {
     const typing = session.typing || !interviewCanListen();
     const heard = session.heard || row.pending_response || '';
     const guidance = row.guidance || {};
-    const note = guidance.reason ? (guidance.reason === 'model_unavailable' ? 'No model interviewer is configured, so Raven asks its standard questions.' : 'The model did not return a usable follow-up, so Raven asks its standard questions.') : '';
+    const note = guidance.reason ? (guidance.reason === 'model_unavailable' ? 'No model interviewer is configured, so Raven asks its standard questions.' : guidance.reason === 'model_slow' ? 'The model took too long, so Raven asked its standard question instead of keeping you waiting.' : 'The model did not return a usable follow-up, so Raven asks its standard questions.') : '';
     body = `<div class="voice-stage call">
       <div class="voice-top"><span class="voice-dot ${mode}"></span><span>${mode === 'speaking' ? 'Raven is speaking' : mode === 'listening' ? 'Listening' : mode === 'thinking' ? 'Raven is thinking' : 'Your turn'}</span><span class="voice-clock">${index < row.prompts.length ? `${index + 1} of ${row.prompts.length}` : 'Wrapping up'}</span></div>
       <p class="voice-topic">${esc(scope.question)}</p>
@@ -128,7 +126,7 @@ function interviewBody(session, reviewing = false) {
         <button type="button" class="voice-btn end" data-interview-action="close">End call</button>
       </div>
       ${note ? `<p class="context voice-fine">${note}</p>` : ''}
-      <p class="context voice-fine">${interviewCanListen() ? 'Browser dictation may send audio to your browser provider. ' : 'Browser dictation is unavailable here, so type your answers. '}Raven stores only the text. Adaptive follow-ups send the task context and your answers to the configured model provider.</p>
+      <p class="context voice-fine">${interviewCanListen() ? (RavenVoice.usesServer().stt ? 'Your voice is transcribed by this Raven server and the audio is not kept. ' : 'Browser dictation may send audio to your browser provider. ') : 'Speech recognition is unavailable here, so type your answers. '}Raven stores only the text. Adaptive follow-ups send the task context and your answers to the configured model provider.</p>
       ${row.failure ? `<p class="task-warning">Last capture stopped: ${esc(row.failure)}. Your saved text is preserved; type or try again.</p>` : ''}
       ${scopeBox}
       <details class="voice-scope"><summary>Write the answer yourself</summary><form id="interview-form"><label for="interview-transcript">Transcript</label><textarea id="interview-transcript" name="transcript" maxlength="12000">${esc(row.transcript)}</textarea><label for="interview-answer">Answer the agent should follow</label><textarea id="interview-answer" name="answer" maxlength="12000" required>${esc(row.answer)}</textarea><label for="interview-rationale">Reasoning, constraints and exceptions</label><textarea id="interview-rationale" name="rationale" maxlength="12000" required>${esc(row.rationale)}</textarea>${interviewScopeFields(row.applicability)}<div class="modal-actions"><button type="button" class="button" data-interview-action="save">Save draft</button><button type="submit" class="button primary">Read it back to me</button></div></form><button class="button text small" data-interview-action="cancel">Discard this call</button></details>
@@ -147,23 +145,16 @@ function interviewVoice(session) {
   const row = session.row;
   const text = session.reviewing ? `Here's what I'll tell the agent. ${row.answer}` : session.turns.length < row.prompts.length ? row.prompts[session.turns.length] : '';
   const listen = () => {
-    if (interviewSession !== session) return;
+    if (interviewSession !== session || session.spokenFor !== key) return;
     session.speaking = false;
     if (!session.reviewing && !session.typing && !session.muted && interviewCanListen() && !session.recognition) {
       try { startInterviewSpeech(); } catch {}
     }
     interviewBody(session, session.reviewing);
   };
-  if (!text || !interviewCanSpeak()) return text && Promise.resolve().then(listen);
-  try {
-    window.speechSynthesis.cancel();
-    const say = new SpeechSynthesisUtterance(text);
-    const voices = window.speechSynthesis.getVoices?.() || [];
-    say.voice = voices.find(v => /Samantha|Google US English|Jenny|Aria|Natural/i.test(v.name)) || voices.find(v => /^en/i.test(v.lang)) || null;
-    say.onend = say.onerror = listen;
-    session.speaking = true;
-    window.speechSynthesis.speak(say);
-  } catch { session.speaking = false; }
+  if (!text) return;
+  session.speaking = true;
+  RavenVoice.speak(text).finally(listen);
 }
 // End of the call: the readback is the model's proposal when there is one,
 // otherwise the person's own first answer with the rest as the reasoning.
@@ -235,61 +226,49 @@ async function closeInterview() {
   ++interviewGeneration;
   interviewDialog.close();
 }
+// The microphone stays open until the person stops talking; a short
+// pause after a finished sentence sends the answer (see voice.js).
 function startInterviewSpeech() {
   const session = interviewSession;
   if (!session || session.recognition) return;
-  const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Speech || !window.isSecureContext) throw new Error('Browser dictation is unavailable. You can type instead.');
-  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  if (!interviewCanListen()) throw new Error('Speech recognition is unavailable. You can type instead.');
+  RavenVoice.stopSpeaking();
   session.speaking = false;
-  const recognition = new Speech();
-  recognition.lang = document.documentElement.lang || 'en-US';
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  session.recognition = recognition;
-  let spoken = '';
-  recognition.onresult = event => {
-    if (interviewSession !== session || session.recognition !== recognition) return;
-    const input = interviewDialog.querySelector('#interview-response') || interviewDialog.querySelector('#interview-transcript');
-    if (!input) return;
-    let interim = '';
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      if (event.results[i].isFinal) spoken = [spoken, event.results[i][0].transcript.trim()].filter(Boolean).join(' ');
-      else interim += ' ' + event.results[i][0].transcript;
-    }
-    const joined = [input.value && !spoken ? input.value : '', spoken].filter(Boolean).join(' ');
-    if (joined.length > input.maxLength) { stopInterviewSpeech(); interviewError(new Error('Transcript limit reached. Save this draft before continuing.')); return; }
-    if (spoken) input.value = joined;
-    session.heard = (joined + interim).trim();
+  const marker = {};
+  session.recognition = marker;
+  const show = text => {
+    if (interviewSession !== session || session.recognition !== marker) return;
+    const input = interviewDialog.querySelector('#interview-response');
+    if (input) input.value = text.slice(0, input.maxLength > 0 ? input.maxLength : 2000);
+    session.heard = text;
     session.editVersion++;
-    session.captureMethod = 'browser-speech';
     const heard = interviewDialog.querySelector('[data-interview-heard]');
-    if (heard) { heard.classList?.remove?.('quiet'); heard.innerHTML = `<b>${esc(String(interviewUser()?.name || 'You').split(' ')[0])}</b> ${esc(session.heard)}`; }
-    clearTimeout(session.silence);
-    // A pause of about two seconds after something was said sends it.
-    if (spoken) session.silence = setTimeout(() => { if (interviewSession === session && session.recognition === recognition) interviewNext(session).catch(interviewError); }, 2200);
+    if (heard) { heard.classList?.remove?.('quiet'); heard.innerHTML = `<b>${esc(String(interviewUser()?.name || 'You').split(' ')[0])}</b> ${esc(text)}`; }
   };
-  recognition.onerror = event => {
-    if (interviewSession !== session || session.recognition !== recognition) return;
-    stopInterviewSpeech();
-    const allowed = ['not-allowed','service-not-allowed','audio-capture','network','no-speech','aborted','language-not-supported'];
-    const failure = allowed.includes(event.error) ? event.error : 'recognition-failed';
-    if (failure === 'no-speech') return interviewBody(session);
-    session.typing = true;
-    interviewWrite('failed', {failure}).then(() => interviewBody(session)).catch(interviewError);
-  };
-  recognition.onend = () => {
-    if (interviewSession !== session || session.recognition !== recognition) return;
-    try { recognition.start(); } catch { stopInterviewSpeech(); interviewBody(session); }
-  };
-  try { recognition.start(); }
-  catch (error) { stopInterviewSpeech(); throw error; }
+  RavenVoice.listen({
+    onheard: show,
+    onturn: (text, method) => {
+      if (interviewSession !== session || session.recognition !== marker) return;
+      show(text);
+      session.recognition = null;
+      session.captureMethod = method;
+      interviewNext(session).catch(interviewError);
+    },
+    onerror: error => {
+      if (interviewSession !== session || session.recognition !== marker) return;
+      session.recognition = null;
+      session.typing = true;
+      interviewWrite('failed', {failure: 'recognition-failed'}).then(() => interviewBody(session)).catch(interviewError);
+      interviewError(error);
+    },
+  });
   interviewStatus('Listening.');
 }
 document.addEventListener('click', async event => {
   const start = event.target.closest('[data-action="interview-start"]');
   if (!start || start.disabled) return;
   start.disabled = true;
+  RavenVoice.unlock();
   try { await openInterview(start.dataset.task, start.dataset.id); }
   catch (error) { interviewNotify(error.message); }
   finally { start.disabled = false; }
@@ -313,7 +292,7 @@ interviewDialog.addEventListener('click', async event => {
       stopInterviewSpeech();
       const row = interviewSession.row;
       const text = action === 'speak' ? row.prompts[interviewSession.turns.length] : `Here's what I'll tell the agent. ${row.answer}. ${row.scope.decision_scope_text || "No bound structured scope is available."} Your decision: ${row.answer}. Your reasoning and constraints: ${row.rationale}. Reuse boundaries: ${JSON.stringify(row.applicability)}. ${row.scope.decision_scope?.reusable ? "Confirming this answer retires the existing standing rule. Future automatic reuse needs an explicit make-rule action." : ""} This has not been confirmed yet.`;
-      window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+      RavenVoice.speak(text);
     }
     else if (action === 'next') await interviewNext(interviewSession);
     else if (action === 'adapt') {

@@ -20,7 +20,7 @@ h=harness();h.c.sessionStorage.setItem=()=>{throw Error('blocked')};h.run(onboar
 const full=fs.readFileSync(path.join(root,'app.js'),'utf8');
 const navSource=full.slice(full.indexOf('function navigate()'),full.indexOf('\nfunction ',full.indexOf('function navigate()')+10));
 function landing(hash,state={auth:{enabled:false}}) {
- const title={}, c={titles:{ask:['Ask Raven'],map:['Map'],inbox:['Inbox'],runs:['Tasks'],owners:['People'],connect:['Settings'],today:['Outcomes'],work:['Raven']},
+ const title={}, c={titles:{ask:['Ask Raven'],people:['People'],inbox:['Inbox'],runs:['Tasks'],owners:['People'],connect:['Settings'],today:['Outcomes'],work:['Raven']},
   state,view:'',tab:'pending',tabChosen:false,query:'',ownerFilter:'',ownership:null,directory:null,navigationVersion:0,taskTab:'',taskDetail:null,taskError:'',resetScrollOnNavigation:false,
   location:{hash,pathname:'/',search:''},history:{replaceState:(_,__,url)=>c.replaced=url},document:{title:'',querySelectorAll:()=>[]},
   $:()=>title,taskId:()=>'',render(){},window:{}};
@@ -29,7 +29,8 @@ function landing(hash,state={auth:{enabled:false}}) {
 let c=landing('');assert.equal(c.view,'ask');assert.equal(c.document.title,'Raven · Ask Raven');assert.equal(c.replaced,undefined);
 c=landing('#inbox');assert.equal(c.view,'inbox');
 c=landing('#nonsense');assert.equal(c.view,'ask');
-c=landing('#map');assert.equal(c.view,'map');
+c=landing('#map');assert.equal(c.view,'people');assert.equal(c.replaced,'/#people');
+c=landing('#people');assert.equal(c.view,'people');
 c=landing('#memory');assert.equal(c.view,'inbox');assert.equal(c.tab,'decided');assert.equal(c.tabChosen,true);assert.equal(c.replaced,'/#inbox');
 c=landing('#work');assert.equal(c.view,'runs');assert.equal(c.replaced,'/#runs');assert.equal(c.document.title,'Raven · Tasks');
 c=landing('#work',{auth:{enabled:false},workbench:{ready:true}});assert.equal(c.view,'work');assert.equal(c.replaced,undefined);assert.equal(c.document.title,'Raven');

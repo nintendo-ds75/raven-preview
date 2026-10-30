@@ -24,7 +24,7 @@ def sync_banner(graph, app_repos: set[str], has_token: bool) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="Raven: human judgment for coding agents")
-    parser.add_argument("command", nargs="?", choices=["serve", "mcp", "ingest", "ask", "sync", "backup", "dev-login"], default="serve")
+    parser.add_argument("command", nargs="?", choices=["serve", "mcp", "ingest", "ask", "muse", "sync", "backup", "dev-login"], default="serve")
     parser.add_argument("target", nargs="?", help="ingest: path to a git checkout; ask: the question; sync: owner/name on GitHub; "
                                                   "backup: the file to write")
     parser.add_argument("--db", default=os.environ.get("DATABASE_URL") or str(Path(__file__).resolve().parent.parent / ".bridge" / "bridge.db"),
@@ -93,6 +93,12 @@ def main():
                                                    "owner_name", "owner_evidence", "note")}, indent=1))
         if not cfg.semantic_retrieval:
             print("(deterministic rungs only: no ANTHROPIC_API_KEY or claude CLI, or BRIDGE_SEMANTIC=0)")
+        return
+    if args.command == "muse":
+        # One "Raven noticed" pass on the real model: what people said
+        # against the indexed code. Findings show on the Ask Raven home.
+        from .muse import run
+        print(json.dumps(run(store, repo=args.repo), indent=1))
         return
     executions, client, webhook, workbench = None, None, None, None
     if args.workbench or os.environ.get('BRIDGE_WORKBENCH') == '1':

@@ -3,8 +3,9 @@
 // Voice intros (#intro, #intro/<person id>): a short spoken call per person.
 // Raven prepares from what the workspace already records, says each
 // question out loud, listens, follows up, and keeps what it heard the
-// moment the call ends. Speech in and out is the browser's; Raven stores
-// only the text.
+// moment the call ends. Speech in and out goes through voice.js (the
+// server's voice and transcripts when set up, else the browser's); Raven
+// stores only the text.
 let introList = null, introData = null, introPerson = '', introBusy = '', introError = '', introKey = '';
 let introRecognition = null, introTimer = null, introDraft = '';
 const introStatusLabel = {not_started: 'Not started', ready: 'Prepared', active: 'In progress', review: 'Waiting for their review', saved: 'Done', cancelled: 'Not started'};
@@ -29,12 +30,12 @@ function loadIntro() {
 
 // Raven talks; the person talks back. One orb, one caption, the words
 // they are saying as they say them, and an End call button. No bubbles.
-let introSpokenFor = -1, introSpeaking = false, introHeard = '', introTyping = false, introMuted = false, introSilence = null;
-const introSpeech = () => !!(window.SpeechRecognition || window.webkitSpeechRecognition) && window.isSecureContext;
-const introVoiceOut = () => typeof window.speechSynthesis !== 'undefined' && typeof window.SpeechSynthesisUtterance !== 'undefined';
+let introSpokenFor = -1, introSpeaking = false, introHeard = '', introTyping = false, introMuted = false;
+const introSpeech = () => RavenVoice.canListen();
+const introVoiceOut = () => RavenVoice.canSpeak();
 
 function introOrb(mode) {
-  return `<div class="voice-orb ${mode}" aria-hidden="true"><span></span><i></i><i></i><i></i></div><div class="voice-wave ${mode}" aria-hidden="true">${'<b></b>'.repeat(9)}</div>`;
+  return RavenVoice.orb(mode === 'speaking' && !RavenVoice.usesServer().tts ? 'speaking pulse' : mode);
 }
 
 function introKnownStrip(d) {
@@ -44,7 +45,7 @@ function introKnownStrip(d) {
 
 function introNotes(context) {
   if (!context.length) return '';
-  return `<div class="voice-notes"><span class="ask-label">What Raven heard</span>${context.slice(0, 6).map(mapQuote).join('')}</div>`;
+  return `<div class="voice-notes"><span class="ask-label">What Raven heard</span>${context.slice(0, 6).map(saidQuote).join('')}</div>`;
 }
 
 function introListView() {
@@ -62,13 +63,13 @@ function introPersonView() {
   const row = introData.interview, person = (directory?.people || []).find(p => p.id === introPersonId());
   const name = row?.dossier.person.name || person?.name || 'This person';
   const first = name.split(' ')[0];
-  const back = `<a class="intro-back" href="#map/${encodeURIComponent(introPersonId())}">← Map</a>`;
+  const back = `<a class="intro-back" href="#people/${encodeURIComponent(introPersonId())}">← ${esc(first)}'s context</a>`;
   if (introBusy === 'prepare' || introBusy === 'start') {
     return `<div class="voice">${back}<div class="voice-stage">${introOrb('thinking')}<p class="voice-caption">Reading up on ${esc(first)}…</p><p class="voice-sub">Teams, ownership and recent commits, so the call skips the basics.</p>${introData.dossier ? introKnownStrip(introData.dossier) : ''}</div></div>`;
   }
   if (!row || ['saved', 'cancelled', 'ready'].includes(row.status)) {
     const saved = row?.status === 'saved' || introData.context.length;
-    return `<div class="voice">${back}<div class="voice-stage">${introOrb('idle')}<h2>${saved ? `Raven has talked with ${esc(first)}` : `Talk with Raven, ${esc(first)}`}</h2><p class="voice-sub">${saved ? 'What they said is on their spot in the map. Raven keeps learning from every question after this.' : 'A few minutes, out loud. Raven already knows your team and your code, so it only asks what isn\'t written down.'}</p><div class="voice-controls"><button class="button primary voice-call" data-intro="call" ${introBusy ? 'disabled' : ''}>${saved ? 'Talk again' : 'Start the call'}</button></div>${introData.dossier && !saved ? introKnownStrip(introData.dossier) : ''}${introNotes(introData.context)}</div></div>`;
+    return `<div class="voice">${back}<div class="voice-stage">${introOrb('idle')}<h2>${saved ? `Raven has talked with ${esc(first)}` : `Talk with Raven, ${esc(first)}`}</h2><p class="voice-sub">${saved ? 'What they said is on their page under People. Raven keeps learning from every question after this.' : 'A few minutes, out loud. Raven already knows your team and your code, so it only asks what isn\'t written down.'}</p><div class="voice-controls"><button class="button primary voice-call" data-intro="call" ${introBusy ? 'disabled' : ''}>${saved ? 'Talk again' : 'Start the call'}</button></div>${introData.dossier && !saved ? introKnownStrip(introData.dossier) : ''}${introNotes(introData.context)}</div></div>`;
   }
   if (row.status === 'review') return `<div class="voice">${back}<div class="voice-stage">${introOrb('thinking')}<p class="voice-caption">Keeping what ${esc(first)} said…</p></div></div>`;
   const turn = row.turns[row.turns.length - 1] || {};
@@ -103,19 +104,15 @@ function introVoice() {
   introSpokenFor = index;
   const turn = row.turns[index] || {};
   const text = `${turn.ack ? turn.ack + ' ' : ''}${turn.question || row.opening}`;
-  const listen = () => { introSpeaking = false; introKey = ''; if (!introMuted && !introTyping && introSpeech() && !introRecognition) startIntroMic(); render(); };
-  if (!introVoiceOut()) return listen();
   stopIntroMic();
-  try {
-    window.speechSynthesis.cancel();
-    const say = new SpeechSynthesisUtterance(text);
-    const voices = window.speechSynthesis.getVoices() || [];
-    say.voice = voices.find(v => /Samantha|Google US English|Jenny|Aria|Natural/i.test(v.name)) || voices.find(v => /^en/i.test(v.lang)) || null;
-    say.rate = 1.02;
-    say.onend = say.onerror = listen;
-    introSpeaking = true; introKey = '';
-    window.speechSynthesis.speak(say);
-  } catch { listen(); }
+  introSpeaking = true; introKey = '';
+  render();
+  RavenVoice.speak(text).finally(() => {
+    if (introSpokenFor !== index || !introSpeaking) return;
+    introSpeaking = false; introKey = '';
+    if (!introMuted && !introTyping && introSpeech() && !introRecognition) startIntroMic();
+    render();
+  });
 }
 
 function renderIntro() {
@@ -179,40 +176,25 @@ async function introCall(action, path, body) {
 }
 
 function stopIntroMic() {
-  clearTimeout(introSilence);
   if (!introRecognition) return;
-  const rec = introRecognition;
   introRecognition = null;
-  rec.onresult = rec.onerror = rec.onend = null;
-  try { rec.stop(); } catch {}
+  RavenVoice.stopListening();
 }
 
-// Live words as they are spoken; a pause of about two seconds after
-// something was said sends it, the way a person stops talking.
+// Raven listens until the person stops: a short pause after a finished
+// sentence ends the turn (see voice.js), so nobody presses anything.
 function startIntroMic() {
-  const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Speech) return;
-  const rec = new Speech();
-  rec.lang = document.documentElement.lang || 'en-US';
-  rec.continuous = true;
-  rec.interimResults = true;
-  rec.onresult = event => {
-    let interim = '';
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const text = event.results[i][0].transcript.trim();
-      if (event.results[i].isFinal) introDraft = (introDraft.trim() + ' ' + text).trim();
-      else interim += ' ' + text;
-    }
-    introHeard = (introDraft + interim).trim();
-    const you = $('.voice-you');
-    if (you) { you.classList.remove('quiet'); you.innerHTML = `<b>${esc((introData?.interview?.dossier.person.first_name) || 'You')}</b> ${esc(introHeard)}`; }
-    clearTimeout(introSilence);
-    if (introDraft) introSilence = setTimeout(() => introSend('browser-speech'), 2200);
+  const you = text => {
+    introHeard = text;
+    const el = $('.voice-you');
+    if (el) { el.classList.remove('quiet'); el.innerHTML = `<b>${esc((introData?.interview?.dossier.person.first_name) || 'You')}</b> ${esc(text)}`; }
   };
-  rec.onerror = event => { if (event.error !== 'no-speech') { introError = 'The microphone stopped: ' + (event.error || 'unknown error') + '. You can type instead.'; introTyping = true; } stopIntroMic(); introKey = ''; render(); };
-  rec.onend = () => { if (introRecognition === rec) { try { rec.start(); } catch { introRecognition = null; render(); } } };
-  introRecognition = rec;
-  try { rec.start(); } catch { introRecognition = null; }
+  introRecognition = true;
+  RavenVoice.listen({
+    onheard: you,
+    onturn: (text, method) => { introRecognition = null; introDraft = text; you(text); introSend(method); },
+    onerror: error => { introRecognition = null; introError = error.message; introTyping = true; introKey = ''; render(); },
+  });
 }
 
 function introSend(method) {
@@ -239,14 +221,14 @@ document.addEventListener('click', async event => {
   event.preventDefault();
   const row = introData?.interview, base = row ? `/api/intro/${encodeURIComponent(row.id)}` : '';
   const action = button.dataset.intro;
-  if (action === 'call') return introPlaceCall();
+  if (action === 'call') { RavenVoice.unlock(); return introPlaceCall(); }
   if (action === 'mute') { introMuted = !introMuted; if (introMuted) stopIntroMic(); else if (!introSpeaking) startIntroMic(); introKey = ''; return render(); }
   if (action === 'type') { introTyping = !introTyping; if (introTyping) stopIntroMic(); else if (!introMuted) startIntroMic(); introKey = ''; return render(); }
-  if (action === 'send') return introSend('browser-speech');
+  if (action === 'send') return introRecognition ? RavenVoice.finishTurn() : introSend('typed');
   if (action === 'skip') { stopIntroMic(); introDraft = ''; introHeard = ''; return introCall('answer', base + '/skip', {expected_version: row.version}); }
   if (action === 'finish') {
     stopIntroMic();
-    if (introVoiceOut()) window.speechSynthesis.cancel();
+    RavenVoice.stopSpeaking();
     introSpeaking = false;
     const done = await introCall('finish', base + '/finish', {expected_version: row.version});
     if (done) { introData = await api('/api/intro/people/' + encodeURIComponent(introPersonId())).catch(() => introData); notify(`Saved what ${done.dossier.person.first_name} said.`); introKey = ''; render(); }
@@ -269,6 +251,6 @@ document.addEventListener('input', event => { if (event.target.id === 'intro-ans
 window.addEventListener('hashchange', () => {
   introKey = ''; introData = null; introList = null; introSpokenFor = -1; introSpeaking = false; introHeard = '';
   stopIntroMic();
-  if (introVoiceOut()) window.speechSynthesis.cancel();
+  RavenVoice.stopSpeaking();
   document.body.classList.remove('voice-view');
 });

@@ -277,7 +277,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                                        and self.me.id == link.person["id"])
                     view["viewer"]["interview_decision_id"] = link.decision_id
                     return self.send(200, view)
-                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/favicon.ico", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js", "/presentation.js", "/workbench.js", "/workbench.css", "/objectives.js", "/objectives.css", "/evidence.js", "/intro.js", "/intro.css", "/home.js", "/map.js", "/home.css"):
+                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/favicon.ico", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js", "/presentation.js", "/workbench.js", "/workbench.css", "/objectives.js", "/objectives.css", "/evidence.js", "/intro.js", "/intro.css", "/home.js", "/home.css", "/voice.js", "/people.js"):
                     if url.path == "/" and auth.enabled and self.me is None:
                         if parse_qs(url.query).get("github_connect") == ["1"]:
                             cookie = "bridge_github_connect=1; Max-Age=600; Path=/; HttpOnly; SameSite=Lax"
@@ -298,7 +298,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     files['/intro.js'] = 'intro.js'
                     files['/intro.css'] = 'intro.css'
                     files['/home.js'] = 'home.js'
-                    files['/map.js'] = 'map.js'
+                    files['/voice.js'] = 'voice.js'
+                    files['/people.js'] = 'people.js'
                     files['/home.css'] = 'home.css'
                     file = WEB / files[url.path]
                     return self.send(200, file.read_bytes(), (mimetypes.guess_type(str(file))[0] or "text/plain") + "; charset=utf-8",
@@ -490,6 +491,18 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     if url.path == "/api/runs":
                         return self.send(200, store.list_runs(page, size, one("status")))
                     return self.send(200, store.list_decisions(page, size, one("status"), one("owner_id"), one("run_id"), one("q")))
+                if url.path == "/api/people/directory":
+                    from . import people_context
+                    self.require("member")
+                    return self.send(200, people_context.directory(store, parse_qs(url.query).get("q", [""])[0]))
+                if len(parts) == 4 and parts[:2] == ["api", "people"] and parts[3] == "profile":
+                    from . import people_context
+                    self.require("member")
+                    return self.send(200, people_context.profile(store, parts[2]))
+                if url.path == "/api/muse":
+                    from . import muse
+                    self.require("member")
+                    return self.send(200, muse.listing(store, parse_qs(url.query).get("status", ["open"])[0][:20]))
                 if len(parts) == 4 and parts[:2] == ["api", "people"] and parts[3] == "context":
                     from . import intro
                     self.require("member")
@@ -693,6 +706,25 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                 return self.redirect("/auth/login", {"Set-Cookie": auth.clear_cookie()})
             return self.send(404, {"error": "Not found"})
 
+        def voice_post(self, action, data):
+            """Raven's voice on the server: what it can do, a line said
+            aloud (audio bytes back), or a recording turned into text."""
+            from . import voice
+            if action == "status":
+                return self.send(200, voice.status())
+            if action == "speak":
+                audio, mime = voice.speak(data.get("text"))
+                return self.send(200, audio, content_type=mime)
+            if action == "transcribe":
+                import base64
+                import binascii
+                try:
+                    audio = base64.b64decode(str(data.get("audio") or ""), validate=True)
+                except (binascii.Error, ValueError):
+                    raise Invalid("audio must be base64")
+                return self.send(200, voice.transcribe(audio, data.get("mime")))
+            return self.send(404, {"error": "Unknown voice action"})
+
         def brief_link(self):
             """The task link this request carries, or a refusal. It is a
             header the page sets, never a cookie: nothing ambient, so a
@@ -724,6 +756,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
             if auth.enabled and self.me is not None and self.me.id and self.me.id != link.person["id"]:
                 raise Forbidden(403, f"This task link was sent to {link.person['name']}, and you are signed in as "
                                      f"{self.me.name}. Open the task in Raven to act as yourself")
+            if path.startswith("/api/brief/voice/"):
+                return self.voice_post(path.rsplit("/", 1)[1], data)
             if path == "/api/brief/inquiry":
                 from .inquiry import ask_task
                 return self.send(200, ask_task(store, link.run_id, data, link.actor,
@@ -842,7 +876,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
             content_type = self.headers.get("Content-Type", "").split(";")[0]
             try:
                 length = int(self.headers.get("Content-Length", "0"))
-                limit = (8 << 20) if re.fullmatch(r"/api/meetings/[^/]+/import", path) else ((1 << 20) if path.startswith("/webhooks/") else 65536)
+                limit = (8 << 20) if re.fullmatch(r"/api/meetings/[^/]+/import", path) else (9 << 20) if path in ("/api/voice/transcribe", "/api/brief/voice/transcribe") else ((1 << 20) if path.startswith("/webhooks/") else 65536)
                 if not 0 < length <= limit:
                     return self.send(413, {"error": f"Request must be between 1 and {limit} bytes"})
                 raw = self.rfile.read(length)
@@ -950,6 +984,17 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                      and inquiry_parts[3] == 'recording'
                                      and self.me is not None and self.me.id == inquiry_parts[2])
                     self.require("viewer" if own_recording else "member")
+                if path.startswith('/api/voice/'):
+                    return self.voice_post(path.rsplit('/', 1)[1], data)
+                if path == '/api/muse/run':
+                    from . import muse
+                    return self.send(200, muse.run(store, repo=field(data, 'repo', limit=200) if data.get('repo') else ''))
+                if len(inquiry_parts) == 4 and inquiry_parts[:2] == ['api', 'muse']:
+                    from . import muse
+                    return self.send(200, muse.act(store, inquiry_parts[2], inquiry_parts[3], self.actor()))
+                if len(inquiry_parts) == 4 and inquiry_parts[:2] == ['api', 'people'] and inquiry_parts[3] == 'context':
+                    from . import people_context
+                    return self.send(200, people_context.edit(store, inquiry_parts[2], data, self.actor()))
                 if path == '/api/objectives':
                     from .objectives import create
                     if 'start_preparation' in data and type(data['start_preparation']) is not bool:
@@ -1189,6 +1234,9 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                             result = intro.prepare(store, parts[3], self.actor())
                         elif len(parts) == 4 and parts[3] in ("start", "answer", "skip", "finish", "save", "cancel"):
                             result = getattr(intro, parts[3])(store, parts[2], data, self.actor())
+                            if parts[3] in ("answer", "finish", "save") and isinstance(result, dict) and result.get("status") == "saved":
+                                # New context from a person: let Raven look for what it changes.
+                                __import__("bridge.muse", fromlist=["run_in_background"]).run_in_background(store)
                         else:
                             return self.send(404, {"error": "Unknown intro chat action"})
                     elif len(parts) in (4, 6) and parts[:2] == ["api", "tasks"] and parts[3] == "interviews":
@@ -1447,6 +1495,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     pass
 
     server = ThreadingHTTPServer((host, port), Handler)
+    __import__("bridge.voice", fromlist=["warm"]).warm()
     server.stop_waits = waits.stop
     original_shutdown = server.shutdown
     def shutdown():

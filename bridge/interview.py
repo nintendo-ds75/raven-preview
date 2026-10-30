@@ -8,6 +8,7 @@ revision checks, with interview provenance committed atomically beside it.
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import time
 from dataclasses import dataclass
@@ -16,7 +17,7 @@ from . import authz, approval_scope
 from .graph import parse_applicability
 from .store import Invalid, field, now
 
-METHODS = {"typed", "browser-speech"}
+METHODS = {"typed", "browser-speech", "server-speech"}
 FAILURES = {"not-allowed", "service-not-allowed", "audio-capture", "network", "no-speech",
             "aborted", "language-not-supported", "unsupported", "recognition-failed"}
 
@@ -139,7 +140,7 @@ def _view(row):
         result[key] = json.loads(result[key])
     result["audio_stored"] = False
     result["voice_verified"] = False
-    result["capture_attribution"] = "client-reported" if result["capture_method"] == "browser-speech" else "typed"
+    result["capture_attribution"] = "client-reported" if result["capture_method"] in ("browser-speech", "server-speech") else "typed"
     result["interviewer"] = result["guidance"].get("mode", "model-assisted" if result["prompts"] != _prompts(result["scope"]) else "deterministic-guided-prompts")
     return result
 
@@ -220,7 +221,7 @@ def update(store, task_id, interview_id, data, actor=None, action="draft"):
             values[key] = val.strip()
         method = data.get("capture_method", row["capture_method"])
         if not isinstance(method, str) or method not in METHODS:
-            raise Invalid("capture_method must be typed or browser-speech")
+            raise Invalid("capture_method must be typed, browser-speech or server-speech")
         applicability = parse_applicability(data.get("applicability", row["applicability"]))
         turns = _turns(data.get("turns", json.loads(row["turns"])), json.loads(row["prompts"]))
         failure = data.get("failure", "") if action == "failed" else ""
@@ -334,6 +335,34 @@ def _validate_model_guidance(raw, context, responses):
     return ""
 
 
+CALL_SECONDS = 10.0
+
+
+def _call_seconds():
+    try:
+        return max(1.0, float(os.environ.get("BRIDGE_CALL_TURN_SECONDS") or CALL_SECONDS))
+    except ValueError:
+        return CALL_SECONDS
+
+
+def _within(seconds, work):
+    """work() in a thread: its value, the LLMError it raised, or None when
+    it isn't done in time (a late reply is dropped)."""
+    import threading
+    from .llm import LLMError
+    box = {}
+
+    def run():
+        try:
+            box["value"] = work()
+        except LLMError as error:
+            box["value"] = error
+    thread = threading.Thread(target=run, daemon=True, name="call-turn")
+    thread.start()
+    thread.join(seconds)
+    return None if thread.is_alive() else box.get("value", LLMError("model call failed"))
+
+
 def _model_guidance(cfg, row):
     """Strictly validated draft; one repair attempt cannot become a signature."""
     from .llm import Client, LLMError
@@ -347,11 +376,15 @@ def _model_guidance(cfg, row):
     payload = {"scope": scope, "turns": turns, "transcript": row["transcript"],
                "pending_response": row["pending_response"]}
     for attempt in range(2):
-        try:
-            raw = Client(cfg.fast()).complete_json("interview_followup", _INTERVIEW_SYSTEM,
-                                                  json.dumps(payload, ensure_ascii=False), max_tokens=1600)
-        except LLMError:
+        # On a live call the person is waiting in silence; a reply slower
+        # than the budget falls back to the standard question.
+        box = _within(_call_seconds(), lambda: Client(cfg.fast()).complete_json(
+            "interview_followup", _INTERVIEW_SYSTEM, json.dumps(payload, ensure_ascii=False), max_tokens=1600))
+        if box is None:
+            return {**fallback, "reason": "model_slow"}
+        if isinstance(box, LLMError):
             return {**fallback, "reason": "model_failed"}
+        raw = box
         error = _validate_model_guidance(raw, context, responses)
         if not error:
             return {**raw, "mode": "model-assisted", "model": cfg.fast_model, "status": "unapproved"}

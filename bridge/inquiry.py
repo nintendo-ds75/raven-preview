@@ -91,6 +91,14 @@ def ask(store, data, actor, *, cfg=None):
                          'scope': decision.get('applicability', ''), 'facts': decision.get('facts', ''),
                          'task_id': decision.get('run_id', ''), 'signoff': decision.get('signoff', ''),
                          'needs_review': bool(decision.get('needs_review')), 'url': ''})
+    # What people told Raven (intro calls, notes) answers questions too,
+    # attributed to them and marked as what they said, not a decision.
+    from .people_context import relevant
+    for note in relevant(store, question):
+        evidence.append({'id': 'note:' + note['id'], 'version': note['created_at'], 'title': f"What {note['person_name']} told Raven",
+                         'text': note['text'] + (f"\nIn their words: \"{note['quote']}\"" if note['quote'] else '')
+                                 + f"\nRecorded by: {note['person_name']} ({note['source']})",
+                         'kind': 'person_note', 'author': note['person_name'], 'created_at': note['created_at'], 'url': ''})
     # Access/revision may change while inference is in flight. Never return the
     # old packet after that race, even when the model's answer sounds plausible.
     def revalidate_evidence():
@@ -99,7 +107,7 @@ def ask(store, data, actor, *, cfg=None):
                 current = store.get_record(source['id'], repo)['source']
                 if current.get('source_version_id', '') != source['version']:
                     raise Invalid('Evidence changed during this reading. Ask again to read its current version.')
-            else:
+            elif source['kind'] == 'prior_decision':
                 current = store.get_decision(source['id'])
                 if current.get('updated_at', '') != source['version']:
                     raise Invalid('A prior answer changed during this reading. Ask again.')

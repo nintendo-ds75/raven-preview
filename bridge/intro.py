@@ -16,8 +16,10 @@ the person can reword or drop any of them afterwards.
 from __future__ import annotations
 
 import json
+import os
 import re
 import secrets
+import threading
 import time
 from datetime import datetime
 
@@ -28,6 +30,34 @@ DURATION_MINUTES = 5
 MAX_TURNS = 16
 MAX_FOLLOWUPS = 2
 ANSWER_LIMIT = 4000
+# How long the person waits for Raven's next line. A model reply that takes
+# longer is dropped for the next planned question, so a slow model never
+# leaves a caller in silence. Spoken conversation feels broken past a few
+# seconds; with an API key the fast model answers well inside this.
+TURN_SECONDS = 6.0
+
+
+def _turn_seconds():
+    try:
+        return max(1.0, float(os.environ.get("BRIDGE_INTRO_TURN_SECONDS") or TURN_SECONDS))
+    except ValueError:
+        return TURN_SECONDS
+
+
+def _within(seconds, work):
+    """work() in a thread, or None when it isn't done in time. A late
+    reply is ignored, never applied to a later turn."""
+    box = {}
+
+    def run():
+        try:
+            box["value"] = work()
+        except Exception as error:  # noqa: BLE001 - the caller treats any failure as no reply
+            box["error"] = error
+    thread = threading.Thread(target=run, daemon=True, name="intro-turn")
+    thread.start()
+    thread.join(seconds)
+    return None if thread.is_alive() or "error" in box else box.get("value")
 
 STAGES = [
     ("background", "Background"),
@@ -428,7 +458,6 @@ def _ask(turns, text, why, stage, kind, plan_index=None, ack=""):
 def _decide(cfg, row, d, plan_rows, turns):
     """What Raven asks next: a follow-up, the next planned question, or
     nothing (the chat is over). The model proposes; these rules decide."""
-    from .llm import LLMError
     minutes = _elapsed(row)
     left = DURATION_MINUTES - minutes
     index, planned = _next_planned(plan_rows, turns)
@@ -454,10 +483,8 @@ def _decide(cfg, row, d, plan_rows, turns):
                    "conversation": [{"stage": t["stage"], "raven": t["question"], "person": t["answer"]} for t in turns],
                    "next_planned": planned, "minutes_left": round(left, 1),
                    "follow_up_allowed": may_follow}
-        try:
-            raw = _client(cfg, fast=True).complete_json("intro_next", _NEXT_SYSTEM, json.dumps(payload, ensure_ascii=False), max_tokens=600)
-        except LLMError:
-            raw = None
+        raw = _within(_turn_seconds(), lambda: _client(cfg, fast=True).complete_json(
+            "intro_next", _NEXT_SYSTEM, json.dumps(payload, ensure_ascii=False), max_tokens=400))
         if isinstance(raw, dict) and isinstance(raw.get("question"), str) and len(raw["question"]) <= 400 and (
                 raw["question"].strip() or raw.get("action") == "wrap"):
             ack = raw.get("ack") if isinstance(raw.get("ack"), str) and len(raw.get("ack", "")) <= 200 else ""
@@ -684,8 +711,8 @@ def answer(store, interview_id, data, actor=None, cfg=None):
     if not isinstance(text, str) or not text.strip() or len(text) > ANSWER_LIMIT:
         raise Invalid(f"Write an answer of 1 to {ANSWER_LIMIT} characters, or skip the question")
     method = data.get("capture_method", "typed")
-    if method not in ("typed", "browser-speech"):
-        raise Invalid("capture_method must be typed or browser-speech")
+    if method not in ("typed", "browser-speech", "server-speech"):
+        raise Invalid("capture_method must be typed, browser-speech or server-speech")
     return _advance(store, row, data, actor, _cfg(cfg), text.strip(), method)
 
 
