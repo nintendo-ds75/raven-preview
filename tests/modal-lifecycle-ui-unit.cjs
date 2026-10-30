@@ -69,6 +69,7 @@ function harness() {
   const dismiss = mode => mode === 'escape' ? modal.dispatch('cancel') : mode === 'backdrop'
     ? modal.dispatch('click', {target: modal, clientX: 0, clientY: 0}) : click('close');
   const loadInterview = () => {
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../web/voice.js'), 'utf8'), context);
     vm.runInContext(interviewSource, context);
     // Only the ordinary-modal handoff is under test; do not exercise interview
     // rendering, identity, edits, or confirmation.

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const voice = fs.readFileSync(path.join(__dirname, '../web/voice.js'), 'utf8');
 const code = fs.readFileSync(path.join(__dirname, '../web/interview.js'), 'utf8');
 const row = () => ({id:'interview', task_id:'task', decision_id:'decision', version:1, status:'draft',
   decision_revision:'rev', transcript:'', answer:'Keep five seconds.', rationale:'Compatibility.',
@@ -20,9 +21,11 @@ function harness(link = false) {
     addEventListener:(event,fn) => handlers.dialog[event] = fn, showModal(){this.open=true;}, close(){this.open=false;}};
   const calls = [], notifications = [];
   const ctx = {
-    console, Promise, Object, String, JSON, setTimeout, clearTimeout, FormData:class {}, crypto:{randomUUID:()=>'random-key'},
+    console, Promise, Object, String, JSON, setTimeout, clearTimeout, setInterval, clearInterval, FormData:class {}, crypto:{randomUUID:()=>'random-key'},
     document:{body:{append(){}},documentElement:{lang:'en'},createElement:()=>dialog,
-      addEventListener:(event,fn)=>handlers.document[event] = fn,querySelector:()=>null},
+      addEventListener:(event,fn)=>handlers.document[event] = fn,querySelector:()=>null,querySelectorAll:()=>[],dispatchEvent(){}},
+    performance:{now:()=>Date.now()}, CustomEvent:class {constructor(type, init){this.type=type;this.detail=init?.detail;}},
+    fetch:async()=>({ok:true,json:async()=>({tts:'',stt:''})}), requestAnimationFrame:()=>0,
     addEventListener:(event,fn)=>handlers.window[event] = fn,
     state:link ? undefined : {auth:{enabled:true},me:{id:'person',name:'Ada Owner',kind:'session'}},
     esc:value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'),
@@ -33,7 +36,7 @@ function harness(link = false) {
   };
   if (link) ctx.ravenInterviewBridge = {user:()=>({name:'Ada via task link'}),request:(...args)=>ctx.api(...args),notify:ctx.notify,refresh:ctx.refresh};
   ctx.window = ctx;
-  vm.createContext(ctx); vm.runInContext(code,ctx);
+  vm.createContext(ctx); vm.runInContext(voice,ctx); vm.runInContext(code,ctx);
   return {ctx,handlers,dialog,calls,notifications,get,run:js=>vm.runInContext(js,ctx)};
 }
 (async()=>{
@@ -41,7 +44,7 @@ function harness(link = false) {
     const h = harness(link);
     await h.run("openInterview('task','decision')");
     assert(h.dialog.open);
-    assert.match(h.dialog.innerHTML,/Browser dictation is unavailable here/);
+    assert.match(h.dialog.innerHTML,/Speech recognition is unavailable here/);
     assert.match(h.dialog.innerHTML,/model provider/);
     assert.match(h.dialog.innerHTML,/customer=Synthetic North; environment=staging; release=r17/);
     assert(!h.dialog.innerHTML.includes('<script>unsafe'));
@@ -83,12 +86,14 @@ function harness(link = false) {
   // Every audio stop detaches callbacks before abort and cancels spoken output.
   {
     const h = harness(); await h.run("openInterview('task','decision')");
-    let aborted=false;
-    h.ctx.rec = {onresult:()=>{},onerror:()=>{},onend:()=>{},abort(){aborted=true;}};
-    h.run('interviewSession.recognition = rec');
+    let rec = null;
+    h.ctx.SpeechRecognition = function () { rec = this; this.aborted = false; this.start = () => {}; this.abort = () => { this.aborted = true; }; };
+    h.run('interviewSession.typing = false; startInterviewSpeech()');
+    for (let i = 0; i < 10 && !rec; i++) await new Promise(r => setImmediate(r));
+    assert(rec, 'the browser fallback recognizer started');
     h.handlers.window.pagehide();
-    assert(aborted);
-    assert.equal(h.ctx.rec.onresult,null);
+    assert(rec.aborted);
+    assert.equal(rec.onresult,null);
     assert.equal(h.run('interviewSession.recognition'),null);
     assert(h.ctx.cancels > 0);
   }

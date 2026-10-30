@@ -1,4 +1,4 @@
-/* Ask Raven, the map and the voice intro: the three screens of the simplified Raven. */
+/* Ask Raven, People and the voice intro: the three screens of the simplified Raven. */
 .ask-label{display:block;font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
 .ask-muted{color:var(--muted);font-size:12.5px;line-height:1.6;margin:0}
 .ask-error{color:#f0bd83;background:#33281c;border-radius:8px;padding:10px 14px;font-size:12.5px;margin:0}
@@ -12,7 +12,7 @@
 
 /* Ask Raven */
 body.home-view main,body.voice-view main{padding-top:0;min-height:calc(100vh - 41px)}
-.ask{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:40px;max-width:1240px;margin:0 auto;padding:28px 0 40px;color:var(--ink)}
+.ask{display:grid;grid-template-columns:minmax(0,1fr) 360px;align-items:start;gap:40px;max-width:1240px;margin:0 auto;padding:28px 0 40px;color:var(--ink)}
 .ask-main{display:flex;flex-direction:column;min-height:calc(100vh - 140px)}
 .ask.is-empty .ask-main{justify-content:center}
 .ask-hero{text-align:center;max-width:620px;margin:0 auto 30px}
@@ -80,57 +80,78 @@ body.home-view main,body.voice-view main{padding-top:0;min-height:calc(100vh - 4
 .ask-prompt{margin:14px 0 12px;padding:10px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--line)}
 .ask-prompt code{font-size:12px;color:var(--ink);white-space:normal}
 
-/* Map */
-.map{max-width:1320px;margin:0 auto;padding:22px 0 30px;color:var(--ink)}
-.map-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-.map-head h1{font-size:26px;font-weight:550;letter-spacing:-.5px;margin:0}
-.map-head-actions{display:flex;gap:8px}
-.map-body{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:22px;align-items:start}
-.map-canvas{background:radial-gradient(ellipse at center,#141813 0%,var(--bg) 75%);border:1px solid var(--line);border-radius:16px;overflow:hidden}
-.map-svg{display:block;width:100%;height:auto;max-height:calc(100vh - 150px)}
-.map-link{stroke:#3a4036;stroke-width:1.4;transition:opacity .2s}
-.map-link.decides{stroke:#4f8a48;stroke-width:2}
-.map-link.knows{stroke:#6d7468}
-.map-link.git{stroke:#4a5045;stroke-dasharray:4 5}
-.map-link.on{stroke:var(--green);stroke-width:2.6;opacity:1}
-.map-link.dim,.map-node.dim{opacity:.18}
-.map-node{cursor:pointer;transition:opacity .2s;outline:none}
-.map-node text{text-anchor:middle;font-family:inherit;pointer-events:none}
-.map-node.area circle{fill:#151a14;stroke:#3a4a36;stroke-width:1.5}
-.map-node.area text{fill:var(--text);font-size:12.5px;font-weight:550}
-.map-node.person circle{fill:#1f2b1d;stroke:#355033;stroke-width:1.5}
-.map-node.person.heard>circle:first-child{fill:#2b4a27;stroke:var(--green)}
-.map-node.person text.initials{fill:var(--green);font-size:12px;font-weight:600}
-.map-node.person text.name{fill:var(--ink);font-size:12.5px}
-.map-node:hover circle,.map-node:focus-visible circle{stroke:var(--green);stroke-width:2.2}
-.map-node.selected circle{stroke:var(--green);stroke-width:3;filter:drop-shadow(0 0 10px rgba(131,217,122,.5))}
-.map-heard{fill:var(--green);stroke:var(--bg);stroke-width:2}
-.map-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
-.map-card h2{font-size:17px;font-weight:550;margin:0}
-.map-card-head{display:flex;gap:12px;align-items:center;margin-bottom:14px}
-.map-card-head .avatar{width:42px;height:42px;font-size:14px}
-.map-card-head small{color:var(--muted);font-size:12px}
-.map-card-head code{font-size:11px;background:var(--pale);padding:1px 5px;border-radius:4px;color:var(--text)}
-.map-area-dot{width:38px;height:38px;border-radius:50%;border:1.5px solid #3a4a36;background:#151a14;flex-shrink:0}
-.map-detail{font-size:13px;line-height:1.6;color:var(--text);margin:0 0 14px}
-.map-section{margin-top:16px}
-.map-chip{background:transparent;border:1px solid var(--line);border-radius:999px;color:var(--ink);font:inherit;font-size:12.5px;padding:5px 11px;margin:0 6px 6px 0;cursor:pointer}
-.map-chip.decides{border-color:#4f8a48}
-.map-chip.git{border-style:dashed}
-.map-quote{margin:0 0 8px;padding:10px 12px;border-left:2px solid var(--green);background:var(--bg);border-radius:0 8px 8px 0}
-.map-quote p{margin:0;font-size:13px;line-height:1.55;color:var(--ink)}
-.map-quote small{display:block;margin-top:5px;color:var(--muted);font-size:11.5px;line-height:1.45}
-.map-who{display:flex;gap:10px;align-items:center;width:100%;background:transparent;border:0;border-radius:10px;padding:7px 8px;margin:0 -8px;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-.map-who:hover{background:var(--bg)}
-.map-who span{display:flex;flex-direction:column}
-.map-who b{font-weight:550;font-size:13px}
-.map-who small{color:var(--muted);font-size:11.5px}
-.map-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
-.map-legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12px;color:var(--text);margin:4px 0 14px}
-.map-legend i{display:inline-block;width:18px;height:0;border-top:2px solid #4f8a48;vertical-align:middle;margin-right:6px}
-.map-legend i.knows{border-color:#6d7468}
-.map-legend i.git{border-top:2px dashed #6d7468}
-.map-legend i.heard{width:9px;height:9px;border:0;border-radius:50%;background:var(--green)}
+/* People: find anyone, then what Raven has learned from them. */
+.people{max-width:980px;margin:0 auto;padding:22px 0 40px;color:var(--ink)}
+.people-head h1,.person-head h1{font-size:26px;font-weight:550;letter-spacing:-.5px;margin:0}
+.people-head p{color:var(--muted);font-size:13.5px;margin:6px 0 18px}
+.people-search{width:100%;background:var(--card);border:1px solid var(--line);border-radius:12px;color:var(--ink);font:inherit;font-size:15px;padding:13px 16px;margin-bottom:14px}
+.people-search:focus{outline:none;border-color:#4f8a48}
+.people-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.person-row{display:flex;gap:14px;align-items:center;padding:14px 18px;color:var(--ink);text-decoration:none;border-top:1px solid var(--line);background:var(--card)}
+.person-row:first-child{border-top:0}
+.person-row:hover{background:#171b16}
+.person-row .avatar{width:36px;height:36px}
+.person-row-main{display:flex;flex-direction:column;min-width:0;flex:1}
+.person-row-main b{font-weight:550;font-size:14px}
+.person-row-main small{color:var(--muted);font-size:12px;margin-top:2px}
+.person-row-main em{color:var(--text);font-size:12.5px;margin-top:6px;font-style:normal;border-left:2px solid var(--green);padding-left:8px}
+.person-row-learned{font-size:12px;color:var(--muted);white-space:nowrap}
+.person-row-learned.on{color:var(--green)}
+.person-head{display:flex;gap:14px;align-items:center;margin:10px 0 22px;flex-wrap:wrap}
+.person-head .avatar{width:52px;height:52px;font-size:17px}
+.person-head small{color:var(--muted);font-size:12.5px}
+.person-actions{margin-left:auto;display:flex;gap:8px}
+.person-grid{display:grid;grid-template-columns:240px minmax(0,1fr);gap:28px;align-items:start}
+.person-sec{margin-bottom:18px}
+.person-sec>div{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.person-chip{border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:12px;color:var(--ink)}
+.person-chip.decides{border-color:#4f8a48}
+.person-chip.code{border-style:dashed;color:var(--text)}
+.person-count{font-size:12.5px;color:var(--text);margin:6px 0 0;line-height:1.6}
+.person-count b{color:var(--ink)}
+.person-main-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px}
+.person-main-head h2{font-size:16px;font-weight:550;margin:0}
+.learned-add{display:flex;gap:8px;margin-bottom:18px}
+.learned-add input{flex:1;background:var(--card);border:1px solid var(--line);border-radius:10px;color:var(--ink);font:inherit;font-size:13.5px;padding:9px 12px}
+.learned-list{list-style:none;margin:0;padding:0;position:relative}
+.learned-list::before{content:"";position:absolute;left:5px;top:8px;bottom:8px;width:1px;background:var(--line)}
+.learned{display:flex;gap:16px;padding:0 0 20px;position:relative}
+.learned-dot{flex-shrink:0;width:11px;height:11px;border-radius:50%;background:var(--bg);border:2px solid var(--green);margin-top:5px;z-index:1}
+.learned.decided .learned-dot{background:var(--green)}
+.learned>div{min-width:0;flex:1}
+.learned p{margin:0}
+.learned-quote{font-size:15px;line-height:1.55;color:var(--ink)}
+.learned-text{font-size:13.5px;line-height:1.55;color:var(--text);margin-top:4px!important}
+.learned.said .learned-quote+.learned-text{font-size:12.5px;color:var(--muted)}
+.learned-q{font-size:12.5px;color:var(--muted)}
+.learned.decided .learned-text{color:var(--ink);font-size:14px}
+.learned-why{font-size:12.5px;color:var(--text);margin-top:4px!important}
+.learned small{display:block;margin-top:6px;color:var(--muted);font-size:11.5px}
+.learned small a{color:var(--green)}
+.learned-tools{margin-left:8px}
+.learned-tools button{background:none;border:0;color:var(--muted);font:inherit;font-size:11.5px;cursor:pointer;padding:0 6px;text-decoration:underline}
+.learned-edit{flex:1;display:flex;flex-direction:column;gap:8px}
+.learned-edit textarea{background:var(--card);border:1px solid var(--line);border-radius:10px;color:var(--ink);font:inherit;font-size:13.5px;padding:9px 12px}
+.said-quote{margin:0 0 8px;padding:10px 12px;border-left:2px solid var(--green);background:var(--bg);border-radius:0 8px 8px 0}
+.said-quote p{margin:0;font-size:13px;line-height:1.55;color:var(--ink)}
+.said-quote small{display:block;margin-top:5px;color:var(--muted);font-size:11.5px;line-height:1.45}
+@media (max-width:760px){.person-grid{grid-template-columns:1fr}.person-actions{margin-left:0}}
+
+/* Raven noticed: findings from the background pass, on the home screen. */
+.noticed{margin:0 0 26px}
+.noticed-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.noticed-head .ask-label{margin:0}
+.noticed-head button{margin-left:auto}
+.noticed-card{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--green);border-radius:12px;padding:14px 16px;margin-bottom:10px}
+.noticed-kind{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--green);font-weight:600}
+.noticed-card h3{font-size:15px;font-weight:550;margin:4px 0 6px;line-height:1.4}
+.noticed-card>p{font-size:13px;color:var(--text);line-height:1.55;margin:0 0 10px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.noticed-card:hover>p,.noticed-card:focus-within>p{-webkit-line-clamp:unset}
+.noticed-cite{font-size:12.5px;color:var(--ink);margin:0 0 6px;padding-left:10px;border-left:2px solid var(--line)}
+.noticed-cite small{color:var(--muted)}
+.noticed-paths{font-size:11.5px;color:var(--muted);margin:6px 0 0}
+.noticed-paths code{font-size:11px;background:var(--pale);padding:1px 5px;border-radius:4px;color:var(--text)}
+.noticed-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 
 /* Voice intro */
 body.voice-view .sidebar{opacity:.55}
@@ -142,27 +163,25 @@ body.voice-view .sidebar{opacity:.55}
 .voice-dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
 .voice-dot.speaking,.voice-dot.listening{background:var(--green);animation:orb-breathe 1.2s infinite}
 .voice-clock{font-variant-numeric:tabular-nums;margin-left:8px;color:var(--text)}
-.voice-orb{position:relative;width:220px;height:220px;margin:28px auto 18px}
-.voice-orb span{position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle at 34% 28%,#effcec 0%,#a8ec9f 22%,#83d97a 45%,#2c6a26 78%,#122a10 100%);box-shadow:0 0 90px rgba(131,217,122,.35),inset -18px -24px 60px rgba(0,0,0,.35);animation:orb-breathe 6s ease-in-out infinite}
-.voice-orb i{position:absolute;inset:-14px;border-radius:50%;border:1px solid rgba(131,217,122,.25);opacity:0}
-.voice-orb.speaking span{animation:orb-talk .9s ease-in-out infinite}
-.voice-orb.speaking i{animation:orb-ring 2.4s linear infinite}
-.voice-orb.speaking i:nth-child(3){animation-delay:.8s}
-.voice-orb.speaking i:nth-child(4){animation-delay:1.6s}
-.voice-orb.listening span{animation:orb-breathe 2.4s ease-in-out infinite;filter:saturate(.8)}
-.voice-orb.listening i{border-color:rgba(245,245,241,.18);animation:orb-ring 3.2s linear infinite}
-.voice-orb.thinking span{animation:orb-spin 2.6s linear infinite;background:conic-gradient(from 0deg,#83d97a,#2c6a26,#a8ec9f,#1c3f19,#83d97a)}
-@keyframes orb-talk{0%,100%{transform:scale(1)}25%{transform:scale(1.06)}50%{transform:scale(.98)}75%{transform:scale(1.08)}}
-@keyframes orb-ring{0%{transform:scale(.92);opacity:.9}100%{transform:scale(1.45);opacity:0}}
-@keyframes orb-spin{to{transform:rotate(360deg)}}
-.voice-wave{display:flex;gap:4px;align-items:center;justify-content:center;height:34px;margin-bottom:8px}
-.voice-wave b{width:4px;height:6px;border-radius:2px;background:var(--line)}
-.voice-wave.speaking b,.voice-wave.listening b{background:var(--green);animation:wave 1s ease-in-out infinite}
-.voice-wave.listening b{background:var(--ink);opacity:.7}
-.voice-wave b:nth-child(2){animation-delay:.1s}.voice-wave b:nth-child(3){animation-delay:.25s}.voice-wave b:nth-child(4){animation-delay:.05s}
-.voice-wave b:nth-child(5){animation-delay:.3s}.voice-wave b:nth-child(6){animation-delay:.15s}.voice-wave b:nth-child(7){animation-delay:.35s}
-.voice-wave b:nth-child(8){animation-delay:.2s}.voice-wave b:nth-child(9){animation-delay:.4s}
-@keyframes wave{0%,100%{height:6px}50%{height:30px}}
+/* The orb: one soft circle. Its size follows the real sound (Raven's
+   voice while it speaks, the microphone while it listens) through --level,
+   set every frame by voice.js. Thinking is a slow breath, never a spin. */
+.raven-orb{--level:0;position:relative;width:200px;height:200px;margin:30px auto 24px}
+.raven-orb .halo{position:absolute;inset:-22%;border-radius:50%;background:radial-gradient(circle,rgba(131,217,122,.30) 0%,rgba(131,217,122,.10) 45%,rgba(131,217,122,0) 68%);opacity:calc(.45 + var(--level) * .8);transform:scale(calc(.92 + var(--level) * .3))}
+.raven-orb .core{position:absolute;inset:0;border-radius:50%;overflow:hidden;background:radial-gradient(circle at 50% 38%,#c9f5c2 0%,#8fdf86 34%,#4e9c45 70%,#24521f 100%);box-shadow:inset 0 -22px 46px rgba(0,0,0,.30),0 18px 50px rgba(0,0,0,.35);transform:scale(calc(1 + var(--level) * .2));will-change:transform}
+.raven-orb .core i{position:absolute;width:72%;height:72%;border-radius:50%;filter:blur(20px);opacity:.6}
+.raven-orb .core i:first-child{left:-12%;top:-10%;background:#effdeb;animation:orb-drift-a 9s ease-in-out infinite}
+.raven-orb .core i:last-child{right:-18%;bottom:-18%;background:#1f6b4c;animation:orb-drift-b 12s ease-in-out infinite}
+.raven-orb.idle,.raven-orb.listening{animation:orb-breathe-soft 5s ease-in-out infinite}
+.raven-orb.thinking{animation:orb-breathe-soft 1.6s ease-in-out infinite}
+.raven-orb.thinking .core{filter:saturate(.7) brightness(.92)}
+.raven-orb.thinking .core i{animation-duration:3.5s,4.5s}
+.raven-orb.speaking.pulse .core{animation:orb-talk 1.1s ease-in-out infinite}
+.raven-orb.small{width:150px;height:150px;margin:18px auto 14px}
+@keyframes orb-breathe-soft{0%,100%{transform:scale(.97)}50%{transform:scale(1.03)}}
+@keyframes orb-drift-a{0%,100%{transform:translate(0,0)}50%{transform:translate(20%,24%)}}
+@keyframes orb-drift-b{0%,100%{transform:translate(0,0)}50%{transform:translate(-22%,-16%)}}
+@keyframes orb-talk{0%,100%{transform:scale(1)}30%{transform:scale(1.07)}60%{transform:scale(1.02)}80%{transform:scale(1.09)}}
 .voice-caption{font-size:21px;line-height:1.5;font-weight:450;letter-spacing:-.2px;max-width:680px;margin:6px auto 16px;min-height:64px}
 .voice-you{font-size:14.5px;color:var(--text);line-height:1.6;max-width:620px;margin:0 auto 18px;min-height:24px}
 .voice-you b{color:var(--green);font-weight:600;margin-right:6px}
@@ -191,7 +210,6 @@ dialog.voice-dialog .modal-head{border:0;padding:14px 18px 0}
 dialog.voice-dialog .modal-head h2{font-size:12px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--muted,#92968d)}
 dialog.voice-dialog .modal-body{padding:0 28px 22px}
 .voice-stage.call{padding:4px 0 8px}
-.voice-stage.call .voice-orb{width:170px;height:170px;margin:18px auto 12px}
 .voice-topic{font-size:13px;color:var(--text,#bebfb6);max-width:600px;margin:4px auto 0;padding:6px 14px;border:1px solid var(--line,#2b2e27);border-radius:999px}
 .voice-fine{font-size:11px;max-width:600px;margin:14px auto 0}
 .voice-scope{width:100%;max-width:620px;margin:14px auto 0;text-align:left;font-size:12.5px}
@@ -209,10 +227,10 @@ dialog.voice-dialog .modal-body{padding:0 28px 22px}
 }
 @media (max-width:640px){
   .ask-hero h1{font-size:28px}
-  .voice-orb{width:170px;height:170px}
+  .raven-orb{width:160px;height:160px}
   .voice-caption{font-size:18px}
 }
 @media (prefers-reduced-motion:reduce){
-  .ask-orb,.voice-orb span,.voice-orb i,.voice-wave b,.voice-dot,.ask-live.on::before,.voice-ellipsis i{animation:none!important}
+  .ask-orb,.raven-orb,.raven-orb .core,.raven-orb .core i,.voice-dot,.ask-live.on::before,.voice-ellipsis i{animation:none!important}
 }
 dialog.voice-dialog [data-interview-status]{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}

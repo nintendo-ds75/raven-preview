@@ -22,6 +22,8 @@ reachable only by chance (`tests/test_docs_reachable.py` checks that).
 - [Meeting adapters](meeting-adapters.md): transcript import, the Vexa participant adapter, per-occurrence consent, revocation and the consented background observer.
 - [Voice interviews](voice-interviews.md): spoken or typed answers from a decision.
 - [Intro chats](intro-chats.md): a fifteen-minute get-to-know-you chat with each person.
+- [Voice calls](voice.md): how Raven speaks and listens on calls, the engines, and why the turn-taking is fast.
+- [People and Raven noticed](people-and-noticed.md): each person's living context, and the background pass that surfaces product gaps.
 - [Workspace accounts](user-onboarding.md): the two-step workspace creation, invitations, roles.
 
 **Connect an agent**

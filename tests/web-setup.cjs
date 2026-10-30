@@ -80,7 +80,7 @@ vm.runInContext(source.slice(source.indexOf('const signedNow'), source.indexOf('
   // The sidebar is three pages: ask, the map of who holds context, and settings.
   const nav = html.slice(html.indexOf('<nav aria-label="Workspace navigation">'), html.indexOf('</nav>'));
   const links = [...nav.matchAll(/<a href="#(\w+)" data-view="(\w+)" aria-label="([^"]+)">[\s\S]*?<\/a>/g)].map(m => [m[1], m[2], m[3]]);
-  assert.deepEqual(links, [['ask', 'ask', 'Ask Raven'], ['map', 'map', 'Map'], ['connect', 'connect', 'Settings']]);
+  assert.deepEqual(links, [['ask', 'ask', 'Ask Raven'], ['people', 'people', 'People'], ['connect', 'connect', 'Settings']]);
   for (const [, , label] of links) assert.match(nav, new RegExp(`<span class="nav-text">${label}</span>`), `${label} is the link's visible text`);
   assert.match(nav, /id="inbox-count"/);
   assert.match(nav, /<span class="nav-dot" id="settings-dot" hidden title="Setup incomplete"><\/span>/);

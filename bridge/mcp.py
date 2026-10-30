@@ -50,7 +50,7 @@ def result_envelope(method, result, params, header=None):
 READ_ONLY_TOOLS = frozenset({
     "bridge_get_tree", "bridge_wait", "bridge_get_decision", "bridge_search_decisions",
     "bridge_list_owners", "bridge_connection_status", "bridge_export_proof", "bridge_get_record", "bridge_lookup_record",
-    "bridge_context_sources",
+    "bridge_context_sources", "bridge_ask_raven", "bridge_person_context", "bridge_find_people", "bridge_raven_noticed",
 })
 
 
@@ -172,6 +172,17 @@ TOOLS = [
           "changed": {"type": "array", "items": {"type": "string"}, "description": "report: files the resumed run changed, with line counts"},
           "denied": {"type": "array", "items": {"type": "string"}, "description": "report: actions the host's permission mode blocked"}},
          ["event", "host", "session_id", "project", "repo"]),
+    tool("bridge_ask_raven", "Ask Raven a plain question about how this company works or what it decided (\"how do we price Bloom's labels?\", \"what did Priya say about rate cards?\"). Raven reads prior decisions, connected sources and what people told it in voice intros and calls, answers with citations, and names the people who hold the context and why. Use it before guessing at product intent, and before asking a person something the team may have already said. The answer is evidence, not approval.",
+         {"question": "The question, in plain words", "repo": "Repository identity (owner/name), optional"}, ["question"]),
+    tool("bridge_person_context", "Everything Raven holds about one person, newest first: what they decide and know about, code they have written lately, what they told Raven (intro calls, notes) and decisions they answered. Use it to understand who you are building for or asking, and to quote them accurately. Lines are what the person said, not verified facts.",
+         {"person": "Name, email or GitHub login"}, ["person"]),
+    tool("bridge_find_people", "Who to talk to about a topic: the people Raven routes it to (authority map, git history) and the people who have said something about it, each with the one line that says why. Use it instead of git blame when you need the person who owns the call today.",
+         {"topic": "The area, feature or question", "repo": "Repository identity (owner/name), optional"}, ["topic"]),
+    tool("bridge_remember", "Keep something a person told you in this session as part of their context in Raven, so later agents and teammates get it (\"Maya said Bloom wants labels grouped by SKU\"). Write it in third person, one sentence, and pass their exact words as quote when you have them. It is stored as said through an agent, attributed to that person, never as a decision.",
+         {"person": "Name, email or GitHub login of the person who said it", "text": "One plain sentence about what they said", "quote": "Their exact words (optional)",
+          "topic": {"type": "string", "enum": ["background", "role", "team", "current", "unwritten", "other"]}}, ["person", "text"]),
+    tool("bridge_raven_noticed", "What Raven noticed in the background: gaps between what people said the product must do and what the code does, decisions the code disagrees with, and open calls nobody has made. Each finding quotes who said it and when, lists the files Raven read, and carries a ready agent_prompt. Use it when asked what to work on next, or set run=true to have Raven look again now (takes a model call).",
+         {"run": {"type": "boolean", "description": "Look again now before listing (optional)"}, "repo": "Repository identity (owner/name), optional"}, []),
 ]
 
 _import_properties = next(t['inputSchema']['properties'] for t in TOOLS if t['name'] == 'bridge_import_record')
@@ -302,6 +313,45 @@ def _import_actor(principal):
     return Actor.from_identity(principal if principal is not None else OPERATOR)
 
 
+def _who(store, text):
+    person = store.graph.find_person(str(text or "").strip())
+    if not person:
+        raise Invalid(f"Raven doesn't know anyone called {text!r}; bridge_list_owners lists the people it knows")
+    return person
+
+
+def _ask_raven(store, args, principal=None):
+    from .inquiry import ask
+    return ask(store, {"question": args["question"], "repository": args.get("repo", "")}, _import_actor(principal))
+
+
+def _find_people(store, args):
+    from .inquiry import people_with_context
+    from .people_context import relevant
+    people = people_with_context(store, args.get("repo", ""), args["topic"], [])
+    said = [{"person": n["person_name"], "said": n["text"], "quote": n["quote"], "where": n["source"], "at": n["created_at"]}
+            for n in relevant(store, args["topic"])]
+    return {"people": people, "what_people_said": said}
+
+
+def _remember(store, args, principal=None):
+    from .people_context import remember
+    person = _who(store, args["person"])
+    by = _import_actor(principal)
+    row = remember(store, person["id"], args["text"], "via an agent", args.get("topic", "other"), args.get("quote", ""),
+                   f"Recorded by {by.name}")
+    return {"kept": row, "person": person["name"]}
+
+
+def _noticed(store, args):
+    from . import muse
+    ran = muse.run(store, repo=args.get("repo", "")) if args.get("run") else None
+    out = muse.listing(store)
+    if ran:
+        out["this_pass"] = {"added": len(ran["added"]), "read": ran["read"]}
+    return out
+
+
 HANDLERS = {
     'bridge_review_discovery': lambda store, args: __import__('bridge.investigation', fromlist=['review']).review(store, args, defer=True),
     "bridge_start_task": lambda store, args: canvas.start_task(store, load(), args),
@@ -343,6 +393,11 @@ HANDLERS = {
     "bridge_search_context": lambda store, args: __import__('bridge.context_connectors', fromlist=['search']).search(store, args),
     "bridge_host_notification": lambda store, args: __import__('bridge.host_notifications', fromlist=['handle']).handle(store, args),
     "bridge_host_event": lambda store, args: __import__('bridge.host_sessions', fromlist=['event']).event(store, args),
+    "bridge_ask_raven": _ask_raven,
+    "bridge_person_context": lambda store, args: __import__("bridge.people_context", fromlist=["profile"]).profile(store, _who(store, args["person"])["id"]),
+    "bridge_find_people": _find_people,
+    "bridge_remember": _remember,
+    "bridge_raven_noticed": _noticed,
 }
 
 
@@ -433,7 +488,7 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None, principal
         # With a progress sleep the finish waits for the whole reading of
         # the diff; without one it answers in time and keeps the reading.
         result = canvas.finish_task(store, args, sleep=sleep, stop=stop)
-    elif name == "bridge_import_record":
+    elif name in ("bridge_import_record", "bridge_ask_raven", "bridge_remember"):
         result = HANDLERS[name](store, args, principal)
     else:
         result = HANDLERS[name](store, args)
