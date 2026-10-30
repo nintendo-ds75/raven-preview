@@ -186,7 +186,13 @@ def dossier(store, person_id):
         line += f" since {_month(first)}" if _month(first) else ""
         line += f" (about {span} month{'s' if span != 1 else ''} of history)." if span else "."
         facts.append({"kind": "history", "text": line})
-        recent = [r["subject"] for r in authored[:4] if r["subject"]]
+        recent = []
+        for r in authored:
+            subject = (r["subject"] or "").strip()
+            if subject and subject not in recent and not re.search(r":\s*(update|wip|tidy)$", subject, re.I):
+                recent.append(subject)
+            if len(recent) == 4:
+                break
         if recent:
             facts.append({"kind": "recent", "text": "Most recent commits: " + "; ".join(f"“{s}”" for s in recent) + "."})
     if reviewed:
@@ -579,7 +585,9 @@ def latest(store, person_id, actor=None):
     _check(store, actor, person_id)
     row = store.graph.db.execute("SELECT * FROM intro_interviews WHERE person_id=? AND status != 'cancelled' "
                                  "ORDER BY created_at DESC LIMIT 1", (person_id,)).fetchone()
-    return {"interview": _view(dict(row)) if row else None, "context": context_for(store, person_id)}
+    view = _view(dict(row)) if row else None
+    known = None if view and view["status"] in ("ready", "active", "review") else dossier(store, person_id)
+    return {"interview": view, "context": context_for(store, person_id), "dossier": known}
 
 
 def prepare(store, person_id, actor=None, cfg=None):

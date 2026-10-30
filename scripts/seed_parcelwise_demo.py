@@ -36,63 +36,80 @@ TEAMS = [
 AUTHORITY = [
     ("Priya Shah", "category", "pricing", "decides", "Plans, prices and discounts"),
     ("Marcus Lee", "path", "infra/*", "decides", ""),
-    ("Jordan Okafor", "path", "labels/*", "decides", "Label purchasing and carrier APIs"),
-    ("Jordan Okafor", "path", "carriers/*", "decides", ""),
+    ("Jordan Okafor", "path", "app/labels/*", "decides", "Label purchasing and carrier APIs"),
     ("Lena Park", "path", "web/*", "decides", "Merchant dashboard"),
-    ("Theo Grant", "path", "integrations/shopify/*", "decides", ""),
+    ("Theo Grant", "path", "app/shopify/*", "decides", ""),
     ("Sam Rivera", "category", "customer", "knows", "Merchant relationships, including Bloom & Co"),
 ]
 CODEOWNERS = """# Parcelwise code owners
-/labels/        @jokafor
-/carriers/      @jokafor @marcuslee
-/orders/        @jokafor @lenapark
+/app/labels/    @jokafor
+/app/orders/    @jokafor @lenapark
 /web/           @lenapark
-/integrations/  @theogrant
+/app/shopify/   @theogrant
 /infra/         @marcuslee
-/billing/       @priyashah @marcuslee
+/app/billing/   @priyashah @marcuslee
 """
+# Past judgment from outside git, imported as ordinary records the ladder
+# can cite: kind, ref, date, author, title, body, paths.
+RECORDS = [
+    ("slack", "founders-2026-03-14", "2026-03-14T16:02:00+00:00", "Priya Shah",
+     "We don't build for one customer",
+     "We don't build for one customer. Three paying accounts asking, or it waits.", []),
+    ("doc", "postmortem-2026-06-02", "2026-06-02T18:30:00+00:00", "Marcus Lee",
+     "Postmortem: labels bought at a stale rate",
+     "We bought $4,100 of labels at a stale rate. Rule from here on: never buy a label before the "
+     "merchant sees the price.", ["app/labels/"]),
+    ("note", "founders-sync-2026-08-20", "2026-08-20T17:00:00+00:00", "Priya Shah",
+     "Founders' sync: who we win with",
+     "We win on the fastest morning for 1 to 5 person shops. No enterprise features, no new top-level pages.", ["web/"]),
+    ("note", "pr-212", "2026-09-09T15:12:00+00:00", "Jordan Okafor",
+     "PR #212: every label purchase goes through purchase_label()",
+     "Every label purchase goes through purchase_label() with an idempotency key. No other code path buys labels.",
+     ["app/labels/"]),
+]
+
 # day offset from 2026-03-02, author, files, subject
 HISTORY = [
     (0, "Marcus Lee", ["infra/deploy.sh", "README.md"], "Initial skeleton and deploy script"),
     (2, "Marcus Lee", ["infra/db.py"], "Postgres connection pool"),
-    (5, "Priya Shah", ["billing/plans.py"], "Starter and Growth plans"),
-    (9, "Marcus Lee", ["carriers/usps.py"], "USPS rate quotes behind a client"),
-    (16, "Jordan Okafor", ["labels/purchase.py"], "Buy a single label from a quote"),
-    (19, "Jordan Okafor", ["labels/pdf.py"], "Render 4x6 label PDFs"),
-    (23, "Jordan Okafor", ["carriers/ups.py"], "UPS client with negotiated rates"),
+    (5, "Priya Shah", ["app/billing/plans.py"], "Starter and Growth plans"),
+    (9, "Marcus Lee", ["app/labels/carriers/usps.py"], "USPS rate quotes behind a client"),
+    (16, "Jordan Okafor", ["app/labels/purchase.py"], "Buy a single label from a quote"),
+    (19, "Jordan Okafor", ["app/labels/pdf.py"], "Render 4x6 label PDFs"),
+    (23, "Jordan Okafor", ["app/labels/carriers/ups.py"], "UPS client with negotiated rates"),
     (30, "Lena Park", ["web/orders.tsx"], "Orders table with filters"),
     (34, "Lena Park", ["web/label_modal.tsx"], "Buy label modal"),
-    (41, "Jordan Okafor", ["labels/purchase.py", "carriers/usps.py"], "Retry carrier timeouts once, then fail loudly"),
-    (47, "Priya Shah", ["billing/plans.py"], "Per-label fee for Starter"),
-    (52, "Theo Grant", ["integrations/shopify/sync.py"], "Import open Shopify orders"),
-    (58, "Theo Grant", ["integrations/shopify/webhooks.py"], "Verify Shopify webhook HMAC"),
-    (63, "Jordan Okafor", ["labels/void.py"], "Void unused labels within 24h"),
+    (41, "Jordan Okafor", ["app/labels/purchase.py", "app/labels/carriers/usps.py"], "Retry carrier timeouts once, then fail loudly"),
+    (47, "Priya Shah", ["app/billing/plans.py"], "Per-label fee for Starter"),
+    (52, "Theo Grant", ["app/shopify/sync.py"], "Import open Shopify orders"),
+    (58, "Theo Grant", ["app/shopify/webhooks.py"], "Verify Shopify webhook HMAC"),
+    (63, "Jordan Okafor", ["app/labels/void.py"], "Void unused labels within 24h"),
     (70, "Lena Park", ["web/orders.tsx"], "Show carrier and service on each order row"),
     (76, "Marcus Lee", ["infra/queue.py"], "Background job queue on Postgres"),
-    (83, "Jordan Okafor", ["carriers/fedex.py"], "FedEx Ground behind feature flag"),
-    (90, "Theo Grant", ["integrations/shopify/sync.py"], "Write tracking numbers back to Shopify"),
-    (97, "Jordan Okafor", ["labels/purchase.py"], "Idempotency keys on label purchase"),
+    (83, "Jordan Okafor", ["app/labels/carriers/fedex.py"], "FedEx Ground behind feature flag"),
+    (90, "Theo Grant", ["app/shopify/sync.py"], "Write tracking numbers back to Shopify"),
+    (97, "Jordan Okafor", ["app/labels/purchase.py"], "Idempotency keys on label purchase"),
     (104, "Lena Park", ["web/settings.tsx"], "Default package presets"),
-    (111, "Priya Shah", ["billing/discounts.py"], "Annual discount for Growth"),
-    (118, "Jordan Okafor", ["carriers/rates.py"], "Cache rate quotes for 10 minutes"),
-    (126, "Theo Grant", ["integrations/shopify/webhooks.py"], "Dedupe orders/updated bursts"),
+    (111, "Priya Shah", ["app/billing/discounts.py"], "Annual discount for Growth"),
+    (118, "Jordan Okafor", ["app/labels/carriers/rates.py"], "Cache rate quotes for 10 minutes"),
+    (126, "Theo Grant", ["app/shopify/webhooks.py"], "Dedupe orders/updated bursts"),
     (133, "Marcus Lee", ["infra/queue.py"], "Retry queue jobs with backoff"),
     (140, "Lena Park", ["web/orders.tsx", "web/label_modal.tsx"], "Keyboard shortcuts on the orders page"),
-    (147, "Jordan Okafor", ["labels/purchase.py", "labels/pdf.py"], "Merge label PDFs for printing"),
-    (155, "Theo Grant", ["integrations/shopify/sync.py"], "Handle partially fulfilled orders"),
-    (162, "Jordan Okafor", ["carriers/usps.py"], "USPS address validation before purchase"),
+    (147, "Jordan Okafor", ["app/labels/purchase.py", "app/labels/pdf.py"], "Merge label PDFs for printing"),
+    (155, "Theo Grant", ["app/shopify/sync.py"], "Handle partially fulfilled orders"),
+    (162, "Jordan Okafor", ["app/labels/carriers/usps.py"], "USPS address validation before purchase"),
     (170, "Lena Park", ["web/orders.tsx"], "Select multiple orders"),
     (176, "Marcus Lee", ["infra/metrics.py"], "Track label purchase latency"),
-    (183, "Jordan Okafor", ["labels/purchase.py"], "Surface carrier errors to the merchant"),
-    (190, "Theo Grant", ["integrations/shopify/webhooks.py"], "Back off when Shopify rate limits"),
+    (183, "Jordan Okafor", ["app/labels/purchase.py"], "Surface carrier errors to the merchant"),
+    (190, "Theo Grant", ["app/shopify/webhooks.py"], "Back off when Shopify rate limits"),
     (197, "Lena Park", ["web/orders.tsx"], "Empty states for new merchants"),
-    (205, "Priya Shah", ["billing/plans.py"], "Rename Growth to Pro"),
-    (211, "Jordan Okafor", ["carriers/rates.py", "carriers/ups.py"], "Prefer cheapest rate within delivery window"),
-    (218, "Theo Grant", ["integrations/shopify/sync.py"], "Sync order tags for routing rules"),
-    (224, "Jordan Okafor", ["orders/batch.py"], "Draft batch model for multi-order purchase"),
+    (205, "Priya Shah", ["app/billing/plans.py"], "Rename Growth to Pro"),
+    (211, "Jordan Okafor", ["app/labels/carriers/rates.py", "app/labels/carriers/ups.py"], "Prefer cheapest rate within delivery window"),
+    (218, "Theo Grant", ["app/shopify/sync.py"], "Sync order tags for routing rules"),
+    (224, "Jordan Okafor", ["app/orders/batch.py"], "Draft batch model for multi-order purchase"),
     (229, "Lena Park", ["web/orders.tsx"], "Batch selection bar (behind flag)"),
-    (233, "Jordan Okafor", ["orders/batch.py", "labels/purchase.py"], "Spike: buy labels for a batch sequentially"),
-    (236, "Theo Grant", ["integrations/shopify/webhooks.py"], "Log webhook payload sizes"),
+    (233, "Jordan Okafor", ["app/orders/batch.py", "app/labels/purchase.py"], "Spike: buy labels for a batch sequentially"),
+    (236, "Theo Grant", ["app/shopify/webhooks.py"], "Log webhook payload sizes"),
 ]
 BASE = "2026-03-02T10:00:00+00:00"
 
@@ -155,6 +172,9 @@ def seed(db_path: str, repo: Path):
         store.add_authority({"who": who, "person": who, "scope_kind": kind, "scope": scope, "role": role,
                              "repo": REPO, "note": note})
     stats = index_repo(store.graph, repo, repo_name=REPO, max_commits=0)
+    for kind, ref, created, author, title, body, paths in RECORDS:
+        store.add_record({"repo": REPO, "kind": kind, "ref": ref, "created_at": created, "author": author,
+                          "title": title, "body": body, "paths": paths, "status": "decided"})
     return stats
 
 

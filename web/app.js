@@ -15,6 +15,7 @@ restoreLoginRoute();
 
 
 const paths = {
+  chat: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',
   inbox: '<path d="M4 4h16v16H4zM4 13h5l2 3h2l2-3h5"/>',
   activity: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
   layers: '<path d="m12 3 10 5-10 5L2 8Zm-9 10 9 5 9-5M3 18l9 5 9-5"/>',
@@ -53,7 +54,7 @@ const ago = value => {
 };
 const pill = (text, color = '') => `<span class="pill ${color}"><span class="status-dot"></span>${esc(text)}</span>`;
 // The one word each page is called, in the sidebar, the h1 and the window title.
-const titles = {inbox: ['Inbox'], runs: ['Tasks'], owners: ['People'], connect: ['Settings'], today: ['Outcomes'], work: ['Raven']};
+const titles = {inbox: ['Inbox'], runs: ['Tasks'], owners: ['People'], connect: ['Settings'], today: ['Outcomes'], work: ['Raven'], intro: ['Intro chats']};
 let state = {decisions: [], runs: [], owners: [], events: []};
 let workspaceError = '';
 // The ownership graph and the directory (people, teams, the authority map, the coordinator) are not in the
@@ -867,6 +868,7 @@ function render() {
   $('.page-head').hidden = !!taskId() || view === 'work';
   document.body.classList.toggle('work-view', view === 'work');
   if (view === 'today' && typeof renderObjectives === 'function') { $('#app').dataset.taskId = ''; renderObjectives(); return; }
+  if (view === 'intro' && typeof renderIntro === 'function') { $('#app').dataset.taskId = ''; renderIntro(); return; }
   if (view === 'work' && typeof renderWorkbench === 'function') { $('#app').dataset.taskId = ''; renderWorkbench(); return; }
   $('#app').innerHTML = taskId() ? taskOverview() : ({inbox, runs, owners, connect: connections})[view]();
   $('#app').dataset.taskId = taskId();
