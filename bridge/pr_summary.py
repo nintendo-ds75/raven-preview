@@ -32,6 +32,18 @@ def _first(text, limit=180):
     return cut + "…"
 
 
+def _whole(text):
+    """The whole answer or reason on one line. A PR description that drops
+    the second sentence drops conditions people signed ("run it in staging first")."""
+    return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def _lead(text):
+    """(first sentence, the rest): the first is bolded so the list stays scannable."""
+    head, _, rest = re.sub(r"\s+", " ", text).partition(". ")
+    return (head + ".", rest) if rest else (head, "")
+
+
 def _day(iso):
     return str(iso or "")[:10]
 
@@ -71,7 +83,7 @@ def _task_title(store, task_id):
 def _item(store, node):
     status, source = node.get("status") or "", node.get("source") or ""
     item = {"node_id": node["node_id"], "question": node.get("question") or "",
-            "answer": _first(node.get("answer")), "signed_by": node.get("signed_by") or "",
+            "answer": _whole(node.get("answer")), "signed_by": node.get("signed_by") or "",
             "signatures": node.get("signatures") or [], "authorized": bool(node.get("authorized")),
             "updated_at": node.get("updated_at") or ""}
     prior_id = node.get("source_id") if source == "memory" else ""
@@ -80,18 +92,18 @@ def _item(store, node):
     if prior_id:
         prior = store.get_decision(prior_id) or {}
         item.update(kind="cache", who=prior.get("answered_by") or node.get("answered_by") or "",
-                    answer=_first(prior.get("answer") or node.get("answer")),
+                    answer=_whole(prior.get("answer") or node.get("answer")),
                     source={"node_id": prior_id, "task_id": prior.get("run_id") or "",
                             "task": _task_title(store, prior.get("run_id") or ""),
                             "decided_at": _day(prior.get("updated_at"))})
-        rationale = _first(prior.get("rationale"), 140)
+        rationale = _whole(prior.get("rationale"))
         if rationale:
             item["why"] = rationale
     elif status == "pending" or node.get("blocking") and not node.get("answer"):
         item.update(kind="open", who=node.get("owner") or "")
     elif source == "human" or status == "approved" or node.get("kind") == "answer":
         item.update(kind="live", who=node.get("answered_by") or node.get("owner") or "", **_channel(store, node["node_id"]))
-        rationale = _first(node.get("rationale"), 140)
+        rationale = _whole(node.get("rationale"))
         if rationale:
             item["why"] = rationale
     elif source == "record" or node.get("kind") == "evidence":
@@ -130,7 +142,8 @@ def summary(store, task_id):
 
 
 def _line(x):
-    head = f"- **{x['answer'] or x['question']}**"
+    lead, rest = _lead(x["answer"] or x["question"])
+    head = f"- **{lead}**" + (f" {rest}" if rest else "")
     if x["kind"] == "cache":
         s = x["source"]
         where = f" in “{s['task']}”" if s.get("task") else ""
