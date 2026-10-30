@@ -38,6 +38,9 @@ in the browser or on a quick call.
 
 ## Notes
 
+- With `ANTHROPIC_API_KEY` set, Ask Raven answers in seconds. Without it, Raven runs the
+  signed-in `claude` CLI once per step and an answer takes one to three minutes, so set the
+  key before a live demo.
 - Without `--voice`, calls use the browser's own speech recognition and voice (Chrome
   works best). With `--voice`, Raven transcribes and speaks on this machine with Whisper
   and Kokoro, and needs `ffmpeg` on PATH.
