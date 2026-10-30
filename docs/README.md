@@ -21,6 +21,7 @@ reachable only by chance (`tests/test_docs_reachable.py` checks that).
 - [Read-only objective research](objective-research.md): the bounded search/list/read loop behind a proposal, its reading budget, coverage report and the background request budget.
 - [Meeting adapters](meeting-adapters.md): transcript import, the Vexa participant adapter, per-occurrence consent, revocation and the consented background observer.
 - [Voice interviews](voice-interviews.md): spoken or typed answers from a decision.
+- [Intro chats](intro-chats.md): a fifteen-minute get-to-know-you chat with each person.
 - [Workspace accounts](user-onboarding.md): the two-step workspace creation, invitations, roles.
 
 **Connect an agent**

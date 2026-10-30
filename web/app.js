@@ -15,6 +15,7 @@ restoreLoginRoute();
 
 
 const paths = {
+  chat: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',
   inbox: '<path d="M4 4h16v16H4zM4 13h5l2 3h2l2-3h5"/>',
   activity: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
   layers: '<path d="m12 3 10 5-10 5L2 8Zm-9 10 9 5 9-5M3 18l9 5 9-5"/>',
@@ -34,6 +35,8 @@ const paths = {
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.inbox}</svg>`;
 document.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon); });
 const $ = selector => document.querySelector(selector);
+// Raven stores this placeholder when an agent gave a node no context; it is not for people to read.
+const shownContext = text => text === 'a node on the canvas' ? '' : text;
 const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const plural = (count, word, words = word + 's') => `${count} ${count === 1 ? word : words}`;
 const CLIENT_NAMES = {claude: 'Claude Code', codex: 'Codex', cursor: 'Cursor'};
@@ -53,7 +56,7 @@ const ago = value => {
 };
 const pill = (text, color = '') => `<span class="pill ${color}"><span class="status-dot"></span>${esc(text)}</span>`;
 // The one word each page is called, in the sidebar, the h1 and the window title.
-const titles = {inbox: ['Inbox'], runs: ['Tasks'], owners: ['People'], connect: ['Settings'], today: ['Outcomes'], work: ['Raven']};
+const titles = {inbox: ['Inbox'], runs: ['Tasks'], owners: ['People'], connect: ['Settings'], today: ['Outcomes'], work: ['Raven'], intro: ['Intro chats']};
 let state = {decisions: [], runs: [], owners: [], events: []};
 let workspaceError = '';
 // The ownership graph and the directory (people, teams, the authority map, the coordinator) are not in the
@@ -428,7 +431,7 @@ function decisionCard(d) {
   return `<article class="decision-card">
     <div class="card-top"><span class="agent-symbol">${(d.agent || '').includes('Claude') ? '✳' : (d.agent || '').includes('Codex') ? '⌘' : '◇'}</span><span>${esc(d.agent)}</span><span>·</span><span class="repo">${esc(d.repo)}</span><time datetime="${esc(d.created_at)}">${ago(d.created_at)}</time>${open}</div>
     <h2>${esc(d.question)}</h2>${d.run_title ? `<a class="card-task" href="${esc(taskHref)}" data-action="run" data-id="${esc(d.run_id)}">${esc(d.run_title)}</a>` : ''}
-    ${scope ? objectiveScopeCard(scope, `scope-${d.id}`) : clamped(d.context, 'context', `card-${d.id}`)}
+    ${scope ? objectiveScopeCard(scope, `scope-${d.id}`) : clamped(shownContext(d.context), 'context', `card-${d.id}`)}
     ${answerBox(d)}
     <div class="card-bottom"><span class="owner" title="${esc(d.owner_name || 'No owner yet')}">${avatar(d.owner_name)}</span>${statusPill(d)}<button class="button small ${settled ? '' : 'soft'}" data-action="review" data-id="${esc(d.id)}" aria-label="${button}: ${esc(d.question)}">${button}</button></div>
   </article>`;
@@ -644,7 +647,8 @@ function authorityRows(rows, who) {
 // row recorded for them. Authority ids and data-action=end-authority are the
 // table's; only where they are shown changed.
 function personCard(p, rows = []) {
-  const team = `${esc(p.team || '')}${p.teams && p.teams.length ? `${p.team ? ' · ' : ''}${esc(p.teams.join(', '))}` : ''}`;
+  const others = (p.teams || []).filter(t => t !== p.team);
+  const team = `${esc(p.team || '')}${others.length ? `${p.team ? ' · ' : ''}${esc(others.join(', '))}` : ''}`;
   const identities = [p.email, p.github_login ? '@' + p.github_login : '', p.slack_id ? 'Slack ' + p.slack_id : ''].filter(Boolean).map(esc).join(' · ');
   const waiting = state.decisions.filter(d => d.status === 'pending' && (d.owner_id === p.id || sameName(d.owner_name, p.name))).length;
   return `<article class="person-card${p.active ? '' : ' inactive'}">${avatar(p.name)}<h2>${esc(p.name)}</h2>${team ? `<p>${team}</p>` : ''}${identities ? `<small>${identities}</small>` : ''}${p.active ? '' : '<small>inactive</small>'}${waiting ? `<p class="person-waiting">Waiting on them: ${waiting}</p>` : ''}<h3>Decides</h3>${authorityRows(rows)}${canAdminister() ? `<button class="button small" data-action="authority" data-person="${esc(p.id)}" aria-label="Say what they decide: ${esc(p.name)}">Say what they decide</button>` : ''}</article>`;
@@ -867,6 +871,7 @@ function render() {
   $('.page-head').hidden = !!taskId() || view === 'work';
   document.body.classList.toggle('work-view', view === 'work');
   if (view === 'today' && typeof renderObjectives === 'function') { $('#app').dataset.taskId = ''; renderObjectives(); return; }
+  if (view === 'intro' && typeof renderIntro === 'function') { $('#app').dataset.taskId = ''; renderIntro(); return; }
   if (view === 'work' && typeof renderWorkbench === 'function') { $('#app').dataset.taskId = ''; renderWorkbench(); return; }
   $('#app').innerHTML = taskId() ? taskOverview() : ({inbox, runs, owners, connect: connections})[view]();
   $('#app').dataset.taskId = taskId();
@@ -1183,7 +1188,7 @@ function decisionInquiry(d) {
 // the question was asked with, folded after four lines.
 function decisionCurrentSummary(d, withAnswer = true) {
   const scope = typeof objectiveScope === 'function' ? objectiveScope(d) : null;
-  return `<section class="decision-current" aria-label="Current decision">${withAnswer && d.answer ? `<p class="decision-current-answer">${esc(d.answer)}</p>${d.rationale ? `<p class="decision-current-reason"><strong>Why:</strong> ${esc(d.rationale)}</p>` : ''}` : ''}${scope ? objectiveScopeCard(scope, `current-${d.id}`) : clamped(d.context, 'modal-context', `modal-${d.id}`)}</section>`;
+  return `<section class="decision-current" aria-label="Current decision">${withAnswer && d.answer ? `<p class="decision-current-answer">${esc(d.answer)}</p>${d.rationale ? `<p class="decision-current-reason"><strong>Why:</strong> ${esc(d.rationale)}</p>` : ''}` : ''}${scope ? objectiveScopeCard(scope, `current-${d.id}`) : clamped(shownContext(d.context), 'modal-context', `modal-${d.id}`)}</section>`;
 }
 
 function decisionReviewScope(d) {
@@ -1202,7 +1207,7 @@ function decisionReviewScope(d) {
 
 function decisionBackground(d) {
   const scope = typeof objectiveScope === 'function' ? objectiveScope(d) : null;
-  return `<details class="history decision-background" ${!d.answer && !d.prediction ? 'open' : ''}><summary>Recorded background & evidence</summary>${d.brief ? `<p><strong>Original brief:</strong> ${esc(d.brief)}</p>` : ''}${scope ? objectiveScopeCard(scope, `background-${d.id}`) : d.context ? `<p class="modal-context">${esc(d.context)}</p>` : ''}${d.evidence ? `<p class="context"><strong>Recorded evidence:</strong> ${esc(d.evidence)}</p>` : ''}${workItemContext(d)}${sourceEvidence(d.sources, d.needs_review ? null : d.source_revalidation)}</details>`;
+  return `<details class="history decision-background" ${!d.answer && !d.prediction ? 'open' : ''}><summary>Recorded background & evidence</summary>${d.brief ? `<p><strong>Original brief:</strong> ${esc(d.brief)}</p>` : ''}${scope ? objectiveScopeCard(scope, `background-${d.id}`) : shownContext(d.context) ? `<p class="modal-context">${esc(d.context)}</p>` : ''}${d.evidence ? `<p class="context"><strong>Recorded evidence:</strong> ${esc(d.evidence)}</p>` : ''}${workItemContext(d)}${sourceEvidence(d.sources, d.needs_review ? null : d.source_revalidation)}</details>`;
 }
 
 function inviteForm(people, preset = {}) {
