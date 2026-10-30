@@ -262,7 +262,8 @@ function focusCard(f) {
     ${back}<p class="brief-kicker">${kicker}</p>
     <h2 id="focus-question" tabindex="-1">${esc(f.question)}</h2>
     ${f.brief ? `<p class="brief-lead">${prose(f.brief)}</p>` : ''}
-    ${f.objective && typeof objectiveScopeCard === 'function' ? `<div class="brief-block"><span class="label">Proposed scope</span>${objectiveScopeCard({...f.objective, link_to_today: ''}, `brief-${f.node_id}`)}</div>` : f.context && !sameAsBrief ? `<div class="brief-block"><span class="label">Context from the coding agent</span><p>${prose(f.context)}</p></div>` : ''}
+    ${['answer', 'sign', 'cosign'].includes(standing) ? '<button type="button" class="button text brief-ask-first" data-action="ask-first">Have a question first? Ask Raven</button>' : ''}
+    ${f.objective && typeof objectiveScopeCard === 'function' ? `<div class="brief-block"><span class="label">Proposed scope</span>${objectiveScopeCard({...f.objective, link_to_today: ''}, `brief-${f.node_id}`)}</div>` : f.context && !sameAsBrief ? (f.brief ? `<details class="brief-why brief-agent-context" data-keep="agent-context-${esc(f.node_id)}"><summary>What the coding agent said</summary><p>${prose(f.context)}</p></details>` : `<div class="brief-block"><span class="label">Context from the coding agent</span><p>${prose(f.context)}</p></div>`) : ''}
     ${f.answer ? `<div class="brief-block is-answer"><span class="label">${mine ? 'Your answer' : (['signed', 'rule'].includes(f.signoff) ? 'Signed answer' : 'Answer on the table') + (f.answered_by ? ' · ' + esc(f.answered_by) : '')}</span><p>${prose(f.answer)}</p>${f.rationale ? `<p class="brief-why-line">Why: ${prose(f.rationale)}</p>` : ''}</div>` : ''}
     ${f.prediction ? `<div class="brief-block is-guess"><span class="label">Your earlier answer · a guess</span><p>${prose(f.prediction)}</p></div>` : ''}
     ${form}
@@ -679,6 +680,7 @@ document.addEventListener('click', async event => {
   const el = event.target.closest('[data-action]');
   if (!el) return;
   const action = el.dataset.action;
+  if (action === 'ask-first') { const box = $('#inquiry-text'); if (box) { scrollToEl(box); box.focus({preventScroll: true}); } }
   if (action === 'account') accountModal();
   if (action === 'close-modal') $('#brief-modal').close();
   if (action === 'history-all') { historyAll = true; render(); }
@@ -790,6 +792,7 @@ window.ravenInterviewBridge = {
     const action = parts[6] || (interviewId ? 'get' : body === undefined ? 'list' : 'create');
     return call('/api/brief/interview', {...(body || {}), action, ...(interviewId ? {interview_id: interviewId} : {})});
   },
+  inquiry: (question, focus) => call('/api/brief/inquiry', {question, focus_id: focus || ''}),
 };
 
 // Clarification has its own read-only endpoint; it never submits an answer.

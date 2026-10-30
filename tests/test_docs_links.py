@@ -42,7 +42,7 @@ class DocsAgreeTests(unittest.TestCase):
         self.assertEqual(text.count(f"{word} tools"), 2, f"the reference should say '{word} tools' twice")
         for n, other in _NUMBER_WORDS.items():
             if n != len(names):
-                self.assertNotIn(f"{other} tools", text)
+                self.assertIsNone(re.search(rf"(?<![\w-]){other} tools", text), f"'{other} tools'")
 
     def test_slack_scopes_and_events_match_the_manifest_everywhere(self):
         _tracked_text()

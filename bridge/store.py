@@ -458,6 +458,7 @@ class Store:
                 "session_records": graph.get_setting("session_records") == "1",
                 "objective_scope_fallback": graph.get_setting("objective_scope_fallback") or "accepter",
                 "brief_mode": brief_mode(graph),
+                "act_as": graph.get_setting("act_as") or "",
                 "coordinators": {k[len("coordinator:"):]: graph.get_person(v)
                                  for k, v in graph.db.execute("SELECT key, value FROM settings WHERE key LIKE 'coordinator:%'")}}
 
@@ -471,6 +472,10 @@ class Store:
                     graph.set_setting(key, "")
                 else:
                     graph.set_setting(key, self._person_ref(data["coordinator"])["id"])
+            if "act_as" in data:
+                # Who the local operator is, when sign-in is off: a person on
+                # the map, so pages, tasks and answers show their name.
+                graph.set_setting("act_as", self._person_ref(data["act_as"])["id"] if data["act_as"] else "")
             if "require_verified_route" in data:
                 on = data["require_verified_route"] in (True, 1, "1", "true", "on")
                 graph.set_setting("require_verified_route", "1" if on else "0")

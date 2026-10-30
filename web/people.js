@@ -9,8 +9,39 @@ let peopleTimer = null;
 const peopleId = () => { try { return view === 'people' ? decodeURIComponent(location.hash.slice(1).split('/')[1] || '') : ''; } catch { return ''; } };
 const peopleFirst = name => String(name || '').split(/\s+/)[0];
 const peopleArea = scope => String(scope || '').replace(/\/?\*+$/, '') || 'everything';
-const peopleSource = {'intro chat': 'Voice intro with Raven', 'added by them': 'Added by them', 'added by an admin': 'Added by an admin',
+const peopleSource = {'on a call with Raven': 'On a call with Raven', 'from a meeting': 'From a meeting', 'intro chat': 'Voice intro with Raven', 'added by them': 'Added by them', 'added by an admin': 'Added by an admin',
   'via an agent': 'Told an agent', 'from a call': 'On a call with Raven', 'answered an agent': 'Answered an agent'};
+
+// A learned line is a pointer: its source (the voice intro, the call, the
+// meeting transcript, the decision) with a one-line summary. Clicking it
+// opens the whole source with the quoted line marked.
+function sourceChip(ptr, quote) {
+  if (!ptr) return '';
+  return `<button type="button" class="source-chip" data-source="${esc(ptr.ref)}" data-quote="${esc(quote || '')}" title="${esc(ptr.summary || '')}"><span class="source-kind">${esc(ptr.kind_label)}</span><span class="source-title">${esc(ptr.title)}</span><span aria-hidden="true">↗</span></button>`;
+}
+
+async function openSource(ref, quote = '') {
+  const [kind, ...rest] = String(ref || '').split(':'), id = rest.join(':');
+  if (!kind || !id) return;
+  let r;
+  try { r = await api(`/api/sources/${encodeURIComponent(kind)}/${encodeURIComponent(id)}?quote=${encodeURIComponent(quote)}`); }
+  catch (error) { notify(error.message); return; }
+  const when = r.at ? new Date(r.at).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) : '';
+  const people = (r.people || []).map(p => `<a class="ask-person-chip" href="#people/${esc(p.id)}" data-action="close">${avatar(p.name)}${esc(p.name)}</a>`).join('');
+  const turns = (r.turns || []).map(t => `<div class="source-turn ${t.who === 'Raven' ? 'raven' : ''} ${t.quoted ? 'quoted' : ''}"><b>${esc(t.who || '')}</b><p>${esc(t.text)}</p></div>`).join('');
+  const decision = r.answer || r.question ? `<div class="source-decision">${r.question ? `<p class="muted">${esc(r.question)}</p>` : ''}${r.answer ? `<p><strong>${esc(r.answer)}</strong></p>` : ''}${r.why ? `<p>Why: ${esc(r.why)}</p>` : ''}${r.signed_by ? `<p class="pr-signed">✓ Signed off by ${esc(r.signed_by)}</p>` : ''}</div>` : '';
+  const learned = (r.learned || []).length ? `<div class="source-learned"><span class="ask-label">What Raven took from it</span><ul>${r.learned.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
+  const task = r.task_id ? `<a class="button small" href="#runs/${esc(r.task_id)}${r.node_id ? '/' + esc(r.node_id) : ''}" data-action="close">Open the task</a>` : '';
+  openModal(r.title, [r.kind_label, when].filter(Boolean).join(' · '), `<div class="source-view"><p class="source-summary">${esc(r.summary || '')}</p>${people ? `<div class="source-people">${people}</div>` : ''}${decision}${learned}${turns ? `<div class="source-turns"><span class="ask-label">Full transcript</span>${turns}</div>` : ''}${task}</div>`);
+  const quoted = document.querySelector('.source-turn.quoted');
+  if (quoted) quoted.scrollIntoView({block: 'center'});
+}
+document.addEventListener('click', event => {
+  const chip = event.target.closest('[data-source]');
+  if (!chip) return;
+  event.preventDefault();
+  openSource(chip.dataset.source, chip.dataset.quote || '');
+});
 
 function saidQuote(x) {
   const same = (a, b) => String(a || '').replace(/\W+/g, ' ').trim().toLowerCase() === String(b || '').replace(/\W+/g, ' ').trim().toLowerCase();
@@ -37,7 +68,7 @@ function peopleListView() {
     <span class="person-row-main"><b>${esc(p.name)}</b><small>${esc([p.teams.join(', '), p.decides.length ? 'Decides ' + p.decides.map(peopleArea).join(', ') : ''].filter(Boolean).join(' · ') || 'No team yet')}</small>
     ${p.match ? `<em>“${esc(p.match.length > 140 ? p.match.slice(0, 138) + '…' : p.match)}”</em>` : ''}</span>
     <span class="person-row-learned ${p.notes ? 'on' : ''}">${p.notes ? `${plural(p.notes, 'thing')} learned${p.learned_at ? ' · ' + esc(ago(p.learned_at)) : ''}` : 'Not heard from yet'}</span></a>`).join('');
-  return `<div class="people"><div class="people-head"><h1>People</h1><p>Find anyone, and see what Raven has learned from them.</p></div>
+  return `<div class="people"><div class="people-head"><div><h1>People</h1><p>Find anyone, and see what Raven has learned from them.</p></div><button type="button" class="button small" data-people="meeting">Add a meeting transcript</button></div>
     <label class="sr-only" for="people-search">Search people</label>
     <input id="people-search" class="people-search" type="search" autocomplete="off" placeholder="Search by name, team, area, or something they said" value="${esc(peopleQuery)}">
     ${!peopleList ? '<p class="ask-muted" role="status">Loading…</p>' : rows ? `<div class="people-list">${rows}</div>` : `<p class="ask-muted">${peopleQuery ? 'Nobody matches that.' : 'Add people under Settings, or connect a repository.'}</p>`}</div>`;
@@ -48,7 +79,7 @@ function peopleItem(t, p) {
   if (t.kind === 'decided') {
     return `<li class="learned decided"><span class="learned-dot" aria-hidden="true"></span><div>
       <p class="learned-q">${esc(t.question)}</p><p class="learned-text">${esc(t.text)}</p>${t.why ? `<p class="learned-why">${esc(t.why)}</p>` : ''}
-      <small>${esc(peopleSource[t.source] || t.source)} · ${when}${t.task_id ? ` · <a href="#runs/${encodeURIComponent(t.task_id)}">Open the task</a>` : ''}</small></div></li>`;
+      <small>${esc(peopleSource[t.source] || t.source)} · ${when}</small>${sourceChip(t.pointer, t.text)}</div></li>`;
   }
   if (peopleEditing === t.id) {
     return `<li class="learned said editing"><span class="learned-dot" aria-hidden="true"></span><form class="learned-edit" data-people-edit="${esc(t.id)}">
@@ -58,7 +89,7 @@ function peopleItem(t, p) {
   return `<li class="learned said"><span class="learned-dot" aria-hidden="true"></span><div>
     ${t.quote ? `<p class="learned-quote">“${esc(t.quote)}”</p>` : ''}<p class="learned-text">${esc(t.text)}</p>
     <small>${esc(peopleSource[t.source] || t.source)}${t.question ? ` · asked “${esc(t.question.length > 80 ? t.question.slice(0, 78) + '…' : t.question)}”` : ''} · ${when}
-    ${t.editable && p.can_edit ? `<span class="learned-tools"><button type="button" data-people="edit" data-id="${esc(t.id)}">Edit</button><button type="button" data-people="remove" data-id="${esc(t.id)}">Remove</button></span>` : ''}</small></div></li>`;
+    ${t.editable && p.can_edit ? `<span class="learned-tools"><button type="button" data-people="edit" data-id="${esc(t.id)}">Edit</button><button type="button" data-people="remove" data-id="${esc(t.id)}">Remove</button></span>` : ''}</small>${sourceChip(t.pointer, t.quote || t.text)}</div></li>`;
 }
 
 function peopleProfileView() {
@@ -141,4 +172,27 @@ window.addEventListener('hashchange', () => {
   peopleKey = ''; peopleEditing = '';
   if (!location.hash.startsWith('#people')) { peopleList = null; peopleProfile = null; peopleFor = ''; }
   else if (!peopleId()) peopleList = null;
+});
+
+// A meeting that just ended: paste its transcript and Raven keeps, on each
+// teammate's page, the asks and commitments in it, quoted and linked back.
+document.addEventListener('click', event => {
+  const open = event.target.closest('[data-people="meeting"]');
+  if (!open) return;
+  openModal('Add a meeting transcript', 'Raven keeps the asks, numbers and commitments on the right teammate’s page, each quoted and linked to the transcript. Nothing becomes a decision.',
+    `<form id="meeting-form"><label for="meeting-title">Meeting</label><input id="meeting-title" name="title" maxlength="300" required placeholder="Bloom check-in, Oct 29">
+     <label for="meeting-transcript">Transcript</label><textarea id="meeting-transcript" name="transcript" rows="10" required placeholder="Dana (Bloom): We print about 300 labels every morning…"></textarea>
+     <p class="error" id="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="button" data-action="close">Cancel</button><button class="button primary" type="submit">Read it</button></div></form>`);
+});
+document.addEventListener('submit', async event => {
+  if (event.target.id !== 'meeting-form') return;
+  event.preventDefault();
+  const form = event.target, button = form.querySelector('[type="submit"]'), error = form.querySelector('#form-error');
+  button.disabled = true; button.textContent = 'Reading…'; error.hidden = true;
+  try {
+    const repo = (state.question_repositories || [])[0]?.id || (state.runs || []).find(r => r.repo)?.repo || '';
+    const r = await api('/api/meetings/learn', {repo, title: form.elements.title.value, transcript: form.elements.transcript.value});
+    closeModal(); notify(`Raven kept ${plural(r.learned.length, 'thing')} from ${r.meeting.title}.`);
+    peopleList = null; peopleKey = ''; if (view === 'people') { loadPeople(); render(); }
+  } catch (e) { error.textContent = e.message; error.hidden = false; button.disabled = false; button.textContent = 'Read it'; }
 });

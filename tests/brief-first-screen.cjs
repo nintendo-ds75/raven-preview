@@ -40,7 +40,8 @@ const {html, context} = page(true);
 const at = marker => { const i = html.indexOf(marker); assert(i >= 0, `missing ${marker}`); return i; };
 const form = at('id="answer-form"');
 assert(at('id="focus-question"') < at('class="brief-lead"'), 'the question comes first');
-assert(at('class="brief-lead"') < form && at('Context from the coding agent') < form, 'the brief and the context are read before the form');
+assert(at('class="brief-lead"') < form && at('What the coding agent said') < form, 'the brief, then the agent\'s own words on request, before the form');
+assert.match(html, /<details class="brief-why brief-agent-context"[^>]*>\s*<summary>What the coding agent said<\/summary>/, 'beside a brief, the agent\'s context opens on request');
 assert(at('brief-options') < at('id="answer-text"'), 'the options are the first thing in the form');
 for (const later of ['What Raven checked', 'decision-scope', 'work-item-context', 'class="brief-where"', 'class="brief-reason"']) {
   assert(at(later) > form, `${later} belongs below the form`);

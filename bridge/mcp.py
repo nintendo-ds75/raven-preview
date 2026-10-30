@@ -51,6 +51,7 @@ READ_ONLY_TOOLS = frozenset({
     "bridge_get_tree", "bridge_wait", "bridge_get_decision", "bridge_search_decisions",
     "bridge_list_owners", "bridge_connection_status", "bridge_export_proof", "bridge_get_record", "bridge_lookup_record",
     "bridge_context_sources", "bridge_ask_raven", "bridge_person_context", "bridge_find_people", "bridge_raven_noticed",
+    "bridge_pr_summary",
 })
 
 
@@ -183,6 +184,10 @@ TOOLS = [
           "topic": {"type": "string", "enum": ["background", "role", "team", "current", "unwritten", "other"]}}, ["person", "text"]),
     tool("bridge_raven_noticed", "What Raven noticed in the background: gaps between what people said the product must do and what the code does, decisions the code disagrees with, and open calls nobody has made. Each finding quotes who said it and when, lists the files Raven read, and carries a ready agent_prompt. Use it when asked what to work on next, or set run=true to have Raven look again now (takes a model call).",
          {"run": {"type": "boolean", "description": "Look again now before listing (optional)"}, "repo": "Repository identity (owner/name), optional"}, []),
+    tool("bridge_learn_meeting", "File the transcript of a meeting that just happened (a customer call, a planning sync) and have Raven keep what each teammate needs to remember from it: the asks, numbers, commitments and calls, each quoted and pointing back to the transcript. Use it when the user pastes or points you at a meeting transcript. Nothing becomes a decision.",
+         {"title": "Meeting title, e.g. \"Bloom check-in, Oct 29\"", "transcript": "The transcript text, one \"Speaker: words\" line per turn", "repo": "Repository identity (owner/name)"}, ["title", "transcript", "repo"]),
+    tool("bridge_pr_summary", "The decisions behind a task's change, ready to paste as the pull request body: one short bullet per decision marked New judgment (who answered and how: a call, their task page, Slack) or Raven cache hit (an earlier decision reused, with who made it and in which task), plus who signed off and what is still open. Call it before opening the PR and put its markdown in the PR description.",
+         {"task_id": "Task id from bridge_start_task"}, ["task_id"]),
 ]
 
 _import_properties = next(t['inputSchema']['properties'] for t in TOOLS if t['name'] == 'bridge_import_record')
@@ -304,13 +309,13 @@ def _ingest_repo(store, args):
         raise Invalid(str(error))
 
 
-def _import_actor(principal):
+def _import_actor(principal, store=None):
     """Who an import is attributed to: the credential behind an HTTP MCP
     call, else the local operator on stdio. The record's author is this
     person, not whatever the arguments claim."""
-    from .auth import OPERATOR
+    from .auth import OPERATOR, acting
     from .authz import Actor
-    return Actor.from_identity(principal if principal is not None else OPERATOR)
+    return Actor.from_identity(principal if principal is not None else acting(store) if store is not None else OPERATOR)
 
 
 def _who(store, text):
@@ -322,7 +327,7 @@ def _who(store, text):
 
 def _ask_raven(store, args, principal=None):
     from .inquiry import ask
-    return ask(store, {"question": args["question"], "repository": args.get("repo", "")}, _import_actor(principal))
+    return ask(store, {"question": args["question"], "repository": args.get("repo", "")}, _import_actor(principal, store))
 
 
 def _find_people(store, args):
@@ -337,7 +342,7 @@ def _find_people(store, args):
 def _remember(store, args, principal=None):
     from .people_context import remember
     person = _who(store, args["person"])
-    by = _import_actor(principal)
+    by = _import_actor(principal, store)
     row = remember(store, person["id"], args["text"], "via an agent", args.get("topic", "other"), args.get("quote", ""),
                    f"Recorded by {by.name}")
     return {"kept": row, "person": person["name"]}
@@ -366,7 +371,7 @@ HANDLERS = {
     "bridge_search_decisions": lambda store, args: __import__("bridge.decision_reads", fromlist=["search"]).search(store, args),
     "bridge_list_owners": _list_owners,
     "bridge_ingest_repo": _ingest_repo,
-    "bridge_import_record": lambda store, args, principal=None: store.add_record(args, actor=_import_actor(principal)),
+    "bridge_import_record": lambda store, args, principal=None: store.add_record(args, actor=_import_actor(principal, store)),
     "bridge_get_record": lambda store, args: store.get_record(args['record_id'], args['repo']),
     "bridge_link_work_item": lambda store, args: store.link_work_item(args),
     "bridge_lookup_record": lambda store, args: store.lookup_record(**args),
@@ -398,6 +403,8 @@ HANDLERS = {
     "bridge_find_people": _find_people,
     "bridge_remember": _remember,
     "bridge_raven_noticed": _noticed,
+    "bridge_learn_meeting": lambda store, args, principal=None: __import__("bridge.meeting_learn", fromlist=["import_and_learn"]).import_and_learn(store, args, _import_actor(principal, store).name),
+    "bridge_pr_summary": lambda store, args: __import__("bridge.pr_summary", fromlist=["summary"]).summary(store, args["task_id"]),
 }
 
 
@@ -475,6 +482,14 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None, principal
     # naming who; an answer the agent has not read is the next gate.
     if name == "bridge_finish_task":
         canvas.require_agent_read(store, args)
+    # A task started without a requester is for whoever holds the credential
+    # (or the person the local operator acts as), by name.
+    if name == "bridge_start_task" and not str(args.get("requester") or "").strip() and "requester" in schema["properties"]:
+        who = _import_actor(principal, store)
+        if who.name and who.name != "Local operator" and who.kind != "agent":
+            args = {**args, "requester": who.name}
+        elif principal is not None and principal.name:
+            args = {**args, "requester": principal.name}
     if name == 'bridge_host_notification':
         from .host_notifications import handle
         result = handle(store, args, principal=principal)
@@ -488,10 +503,19 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None, principal
         # With a progress sleep the finish waits for the whole reading of
         # the diff; without one it answers in time and keeps the reading.
         result = canvas.finish_task(store, args, sleep=sleep, stop=stop)
-    elif name in ("bridge_import_record", "bridge_ask_raven", "bridge_remember"):
+    elif name in ("bridge_import_record", "bridge_ask_raven", "bridge_remember", "bridge_learn_meeting"):
         result = HANDLERS[name](store, args, principal)
     else:
         result = HANDLERS[name](store, args)
+    if name == "bridge_add_node" and isinstance(result, dict) and result.get("node_id"):
+        from .pr_summary import node_line
+        result["raven"] = node_line(store, result["node_id"])
+    if name in ("bridge_get_tree", "bridge_wait") and isinstance(result, dict) and args.get("task_id"):
+        from .pr_summary import tree_lines
+        try:
+            result["raven"] = tree_lines(store, args["task_id"])
+        except Invalid:
+            pass
     if name in ("bridge_start_task", "bridge_add_node"):
         result["delivery"] = {"enabled": store.delivery.enabled,
                               "channel": store.delivery.channel if store.delivery.enabled else "",

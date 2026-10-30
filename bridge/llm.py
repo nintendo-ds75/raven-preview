@@ -403,14 +403,16 @@ SUMMARY_STYLE = (
     "it, and keep identifiers exactly as written. Say what is unknown in one clause, never a paragraph, and "
     "never pad with what was not provided. One idea per sentence; two or three sentences, or at most five "
     "short items when the instructions below allow a list. Stay inside the material you are given. Do not "
-    "mention the model, the tools or how the text was produced. "
+    "mention the model, the tools or how the text was produced. Keep it under 60 words unless the "
+    "instructions below allow more: a reader should get the point in one glance. "
 )
 
 BRIEF_SYSTEM = (
     SUMMARY_STYLE +
     "You write the short brief a busy owner reads before deciding. You are given the decision a coding agent "
-    "needs, the context the agent gave, the task it is part of, and the options if any. Write two or three plain "
-    "sentences: what is being decided and why it came up, and what the owner is asked to choose. Use only what "
+    "needs, the context the agent gave, the task it is part of, and the options if any. Write one or two short "
+    "plain sentences, under 40 words in all, that a person can take in at a glance: what the agent is working on, "
+    "and the one thing it needs the owner to choose. Use only what "
     "you are given. Do not add a fact, a standard, a best practice, a recommendation or a risk the material does "
     "not state in those terms, and where the context is unsure, stay unsure. Where the material says what a "
     "choice leads to, keep each outcome with the choice the material ties it to, in the material's own words; "

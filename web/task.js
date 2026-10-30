@@ -334,6 +334,32 @@ function taskOverview() {
   ].filter(Boolean);
   return `<div class="task-heading"><div class="task-heading-row"><a class="task-back" href="#runs">← Tasks</a><details class="more-menu" id="task-more"><summary aria-label="More actions">More</summary><div class="more-menu-items">${more.join('')}</div></details></div><h1>${esc(taskDisplayLabel(t))}</h1>${goal ? `<p class="task-goal${long && !saved.briefOpen ? ' is-clamped' : ''}" id="task-brief">${esc(goal)}</p>` : ''}${long ? `<button id="task-brief-summary" class="button text task-brief-toggle" data-action="task-brief-toggle" aria-expanded="${saved.briefOpen ? 'true' : 'false'}" aria-controls="task-brief">${saved.briefOpen ? 'Show less' : 'Show more'}</button>` : ''}<p class="task-meta">${meta}</p></div>
     ${taskError ? `<p class="task-warning" role="alert">Refresh failed: ${esc(taskError)}. Showing the last successful read.</p>` : ''}${summary}
-    <nav class="task-tabs" aria-label="Task sections">${[['decisions',`Decisions (${nodes.length})`],['history','History']].map(([key,label]) => `<button id="task-tab-${key}" class="tab ${(taskTab === 'history') === (key === 'history') ? 'active' : ''}" data-action="task-tab" data-tab="${key}" aria-pressed="${(taskTab === 'history') === (key === 'history')}">${label}</button>`).join('')}</nav>
-    ${taskTab === 'history' ? history : decisions}`;
+    <nav class="task-tabs" aria-label="Task sections">${[['decisions',`Decisions (${nodes.length})`],['pr','PR summary'],['history','History']].map(([key,label]) => { const on = key === (['history','pr'].includes(taskTab) ? taskTab : 'decisions'); return `<button id="task-tab-${key}" class="tab ${on ? 'active' : ''}" data-action="task-tab" data-tab="${key}" aria-pressed="${on}">${label}</button>`; }).join('')}</nav>
+    ${taskTab === 'history' ? history : taskTab === 'pr' ? taskPrSummary(t.task_id) : decisions}`;
+}
+
+// The PR summary: the decisions behind the change, each marked by where its
+// answer came from, read from /api/tasks/<id>/pr-summary and copyable as the
+// pull request body.
+const taskPr = new Map();
+const PR_TONES = {live:'live', cache:'cache', record:'record', agent:'agent', open:'open'};
+function taskPrSummary(id) {
+  const got = taskPr.get(id);
+  if (!got) {
+    taskPr.set(id, {loading: true});
+    api(`/api/tasks/${encodeURIComponent(id)}/pr-summary`).then(r => taskPr.set(id, r)).catch(e => taskPr.set(id, {error: e.message})).finally(() => { if (taskId() === id) render(); });
+    return '<div class="empty" role="status">Reading the decisions…</div>';
+  }
+  if (got.loading) return '<div class="empty" role="status">Reading the decisions…</div>';
+  if (got.error) return `<div class="empty" role="alert">${esc(got.error)}</div>`;
+  const c = got.counts, who = x => x.person_id ? `<a href="#people/${esc(x.person_id)}">${esc(x.who)}</a>` : esc(x.who || 'the owner');
+  const how = x => x.kind === 'cache' ? `${who(x)} decided this${x.source?.task ? ` in <a href="#runs/${esc(x.source.task_id)}/${esc(x.source.node_id)}">${esc(x.source.task)}</a>` : ''}${x.source?.decided_at ? ` on ${esc(x.source.decided_at)}` : ''}. Reused; nobody was asked again.`
+    : x.kind === 'live' ? `New judgment from ${who(x)}, ${esc(x.how || 'in Raven')}.`
+    : x.kind === 'open' ? `Waiting on ${who(x)}.` : x.kind === 'record' ? esc(x.detail || 'Found in the team’s records.') : 'Nobody was asked; the agent chose this.';
+  const rows = got.items.map(x => `<li class="pr-item ${PR_TONES[x.kind]}"><span class="pr-tag">${esc(x.label)}</span><div><strong>${esc(x.answer || x.question)}</strong><p>${how(x)}${x.why ? ` <span class="muted">Why: ${esc(x.why)}</span>` : ''}${(x.signatures || []).length || x.signed_by ? ` <span class="pr-signed">✓ Signed off by ${esc((x.signatures || []).join(', ') || x.signed_by)}</span>` : ''}</p>${x.answer ? `<small class="muted">Q: ${esc(x.question)}</small>` : ''}</div></li>`).join('');
+  const tally = [[c.live,'live repl'],[c.cache,'Raven cache hit'],[c.record,'from records'],[c.agent,'agent default'],[c.open,'still open']].filter(([n], i) => n || i < 2).map(([n,l]) => `<span><b>${n}</b> ${l}${l === 'live repl' ? (n === 1 ? 'y' : 'ies') : n === 1 || l.startsWith('from') || l.startsWith('still') ? '' : 's'}</span>`).join('');
+  return `<section class="task-panel pr-summary" aria-labelledby="pr-title"><div class="pr-head"><h2 id="pr-title">Decisions behind this change</h2><button class="button small" data-action="pr-copy" data-id="${esc(id)}">Copy as PR description</button></div>
+    <p class="pr-tally">${tally}</p><ol class="pr-items">${rows || '<li class="muted">No decisions yet.</li>'}</ol>
+    <p class="pr-signoff ${got.signed_off ? 'done' : ''}">${got.signed_off ? '✓ Every decision is signed off by the person who owns it.' : 'Sign-off is not complete yet.'}</p>
+    <details><summary>Markdown</summary><pre class="pr-markdown">${esc(got.markdown)}</pre></details></section>`;
 }

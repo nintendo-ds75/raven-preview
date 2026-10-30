@@ -522,6 +522,14 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     result = (interview.list_for_task(store, parts[2], self.actor()) if len(parts) == 4
                               else interview.get(store, parts[2], parts[4], self.actor()))
                     return self.send(200, result)
+                if len(parts) == 4 and parts[:2] == ["api", "sources"]:
+                    from . import artifacts
+                    self.require("member")
+                    return self.send(200, artifacts.resolve(store, parts[2], parts[3], parse_qs(url.query).get("quote", [""])[0][:600]))
+                if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "pr-summary":
+                    from . import pr_summary
+                    self.require("viewer")
+                    return self.send(200, pr_summary.summary(store, parts[2]))
                 if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "tree":
                     from .canvas import get_tree
                     if self.me is not None and self.me.is_agent:
@@ -787,7 +795,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                         raise Invalid("Unknown interview action")
                 return self.send(200, result)
             if path == "/api/brief/answer":
-                return self.send(200, briefing.act(store, link, data))
+                self.send(200, briefing.act(store, link, data))
+                return __import__("bridge.muse", fromlist=["nudge"]).nudge(store)
             if path == "/api/brief/refer":
                 return self.send(200, briefing.refer(store, link, data))
             if path == "/api/brief/note":
@@ -1027,6 +1036,13 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     if len(parts) != 4:
                         raise Invalid('Unknown proposal action')
                     result = proposal_action(store, parts[2], parts[3], data, self.me)
+                elif path == '/api/meetings/learn':
+                    # A transcript from a call that just ended: file it, then
+                    # keep what each teammate needs to remember from it.
+                    self.require('member')
+                    from .meeting_learn import import_and_learn
+                    result = import_and_learn(store, data, self.me.name or 'Local operator')
+                    __import__("bridge.muse", fromlist=["nudge"]).nudge(store)
                 elif path == '/api/meetings':
                     self.require('admin')
                     from . import meeting_records
@@ -1040,7 +1056,11 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     ident, action = parts[2], parts[3].replace('-', '_')
                     repo = field(data, 'repo', limit=100)
                     attributed = {**data, 'by': self.me.name or 'local operator'}
-                    if action == 'consent':
+                    if action == 'learn':
+                        from .meeting_learn import learn
+                        meeting_records.get(store, ident, repo)
+                        result = learn(store, ident)
+                    elif action == 'consent':
                         result = meeting_records.set_consent(store, ident, repo, attributed)
                     elif action == 'import':
                         result = meeting_records.import_transcript(store, ident, repo, attributed)
@@ -1346,6 +1366,9 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     else:
                         return self.send(404, {"error": "Not found"})
                 self.send(200, result)
+                if re.fullmatch(r"/api/(?:decisions/[^/]+/(?:answer|signoff|correct)|people/[^/]+/context|meetings/[^/]+/learn)", path):
+                    # New context from a person: Raven looks again in the background.
+                    __import__("bridge.muse", fromlist=["nudge"]).nudge(store)
             except Forbidden as error:
                 self.send(error.code, {"error": str(error)})
             except Refused as error:

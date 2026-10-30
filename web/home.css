@@ -234,3 +234,38 @@ dialog.voice-dialog .modal-body{padding:0 28px 22px}
   .ask-orb,.raven-orb,.raven-orb .core,.raven-orb .core i,.voice-dot,.ask-live.on::before,.voice-ellipsis i{animation:none!important}
 }
 dialog.voice-dialog [data-interview-status]{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+/* Sources: each learned line points at what it came from. */
+.source-chip{display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:3px 10px 3px 4px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);font:inherit;font-size:11.5px;cursor:pointer;max-width:100%}
+.source-chip:hover{border-color:var(--green);color:var(--text)}
+.source-kind{padding:1px 7px;border-radius:999px;background:var(--card);color:var(--text);font-weight:550}
+.source-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.source-view{display:flex;flex-direction:column;gap:12px}
+.source-summary{margin:0;font-size:14.5px;line-height:1.55}
+.source-people{display:flex;flex-wrap:wrap;gap:6px}
+.ask-person-chip,.ask-mention{display:inline-flex;align-items:center;gap:5px;padding:1px 8px 1px 2px;border-radius:999px;background:var(--card);border:1px solid var(--line);color:var(--text);text-decoration:none;font-size:.92em;vertical-align:baseline;white-space:nowrap}
+.ask-person-chip:hover,.ask-mention:hover{border-color:var(--green)}
+.ask-person-chip .avatar,.ask-mention .avatar{width:18px;height:18px;font-size:8px}
+.source-decision p{margin:0 0 6px}
+.source-learned ul{margin:6px 0 0;padding-left:18px}
+.source-learned li{margin:0 0 4px;line-height:1.5}
+.source-turns{display:flex;flex-direction:column;gap:8px;max-height:46vh;overflow:auto;padding-right:4px}
+.source-turn{padding:8px 12px;border-radius:10px;background:var(--card)}
+.source-turn.raven{background:transparent;border:1px solid var(--line)}
+.source-turn b{display:block;font-size:11.5px;color:var(--muted);font-weight:550;margin-bottom:2px}
+.source-turn p{margin:0;line-height:1.5;font-size:13.5px}
+.source-turn.quoted{outline:2px solid var(--green);background:rgba(80,160,110,.12)}
+.ask-points{margin:0 0 12px;padding-left:18px}
+.ask-points li{margin:0 0 6px;line-height:1.6;font-size:14.5px}
+.ask-quote{cursor:pointer}
+.ask-quote:hover{background:rgba(80,160,110,.08)}
+.ask-ref{margin-left:auto;color:var(--green)}
+.voice-reply{max-width:620px;margin:0 auto 6px;padding:10px 14px;border-radius:12px;background:var(--card);font-size:13.5px;line-height:1.55;text-align:left}
+.voice-reply b{color:var(--muted);font-weight:550;margin-right:6px}
+.profile-switch{background:none;border:0;padding:0;color:var(--muted);font:inherit;text-decoration:underline;cursor:pointer}
+.act-as-list{display:flex;flex-direction:column;gap:6px}
+.act-as-list .person-row{width:100%;text-align:left;background:transparent;border:1px solid var(--line);border-radius:10px;color:inherit;font:inherit;cursor:pointer}
+.noticed-last{margin:-4px 0 10px;font-size:11.5px;color:var(--muted)}
+.noticed-card[data-kind="idea"] .noticed-kind{color:#f0c36a}
+.noticed-card[data-kind="connect"] .noticed-kind{color:#a9bdff}
+.noticed-card[data-kind="bug"] .noticed-kind{color:#f09a8a}
+.people-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}

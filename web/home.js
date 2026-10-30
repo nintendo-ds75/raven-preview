@@ -50,25 +50,45 @@ function askSuggestions() {
   return [...new Set(out)].slice(0, 4);
 }
 
+// People named in an answer become chips that open their page.
+function askMentions(html, people) {
+  const known = [...new Map(people.filter(p => p.name && p.id).map(p => [p.name, p])).values()].sort((a, b) => b.name.length - a.name.length);
+  for (const p of known) {
+    const name = esc(p.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    html = html.replace(new RegExp(`(^|[^\\w>])(${name})(?![\\w<])`, 'g'), (m, pre) => `${pre}<a class="ask-mention" href="#people/${encodeURIComponent(p.id)}">${avatar(p.name)}${esc(p.name)}</a>`);
+  }
+  return html;
+}
+// The answer as written for scanning: a lead sentence, then short points.
+function askProse(text, people) {
+  const lines = String(text || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const points = lines.filter(l => /^[-•*]\s+/.test(l)).map(l => l.replace(/^[-•*]\s+/, ''));
+  const lead = lines.filter(l => !/^[-•*]\s+/.test(l)).join(' ');
+  return `${lead ? `<p class="ask-lead">${askMentions(esc(lead), people)}</p>` : ''}${points.length ? `<ul class="ask-points">${points.map(p => `<li>${askMentions(esc(p), people)}</li>`).join('')}</ul>` : ''}`;
+}
+
 function askAnswer(entry) {
   if (entry.status === 'thinking') return '<div class="ask-raven"><span class="ask-orb thinking" aria-hidden="true"></span><p class="ask-muted" role="status">Reading what your team has said…</p></div>';
   if (entry.status === 'error') return `<div class="ask-raven"><span class="ask-orb" aria-hidden="true"></span><p class="ask-error" role="alert">${esc(entry.error)}</p></div>`;
   const r = entry.result || {};
   const evidence = r.evidence || [];
   const byId = Object.fromEntries(evidence.map(e => [e.id, e]));
-  const said = e => (e.text.match(/Recorded by: (.+)/) || [])[1] || e.author || '';
+  const said = e => e.author || (e.text.match(/Recorded by: ([^(\n]+)/) || [])[1]?.trim() || '';
+  const how = e => e.kind === 'prior_decision' ? (String(e.ref || '').startsWith('call:') ? 'decided on a call' : 'decided') : e.kind === 'person_note' ? ({'intro chat': 'said in a voice intro', 'from a meeting': 'heard it in a meeting', 'via an agent': 'told an agent', 'from a call': 'said on a call'}[e.via] || 'told Raven') : 'wrote';
   const cites = r.model_used ? (r.citations || []).filter(c => byId[c.id]) : evidence.slice(0, 3).map(e => ({id: e.id, quote: e.text.split('\n')[0]}));
   const seen = new Set();
   const quotes = cites.filter(c => !seen.has(c.quote) && seen.add(c.quote)).slice(0, 3).map((c, i) => {
-    const e = byId[c.id];
-    return `<blockquote class="ask-quote"><p>“${esc(c.quote)}”</p><footer>${said(e) ? `${avatar(said(e))}<b>${esc(said(e))}</b> · ` : ''}${esc(e.title)}${e.updated_at || e.created_at ? ' · ' + esc(askDate(e.updated_at || e.created_at)) : ''}<span class="ask-ref">[${i + 1}]</span></footer></blockquote>`;
+    const e = byId[c.id], who = said(e);
+    const open = e.ref ? `data-source="${esc(e.ref)}" data-quote="${esc(c.quote)}"` : e.person_id ? `data-href="#people/${esc(e.person_id)}"` : e.url ? `data-href="${esc(e.url)}"` : '';
+    return `<blockquote class="ask-quote" ${open} tabindex="0" role="button" aria-label="Open the source"><p>“${esc(c.quote)}”</p><footer>${who ? `${avatar(who)}<b>${esc(who)}</b> ${esc(how(e))} · ` : ''}${esc(e.kind === 'person_note' ? (e.source_title || (e.via === 'intro chat' ? 'Voice intro' : 'What they told Raven')) : e.title)}${e.updated_at || e.created_at || e.version ? ' · ' + esc(askDate(e.updated_at || e.created_at || e.version)) : ''}<span class="ask-ref">Open source ↗</span></footer></blockquote>`;
   }).join('');
-  const lead = r.model_used ? esc(r.answer)
-    : evidence.length ? 'Here is what your team has already said about this.'
-    : (r.people || []).length ? `Nobody has written this down yet. ${esc(r.people.slice(0, 2).map(p => p.name).join(' and '))} ${r.people.length > 1 ? 'are' : 'is'} who to ask.` : 'Nothing your team has said covers this yet.';
+  const mentionable = [...(r.people || []), ...evidence.filter(e => e.person_id).map(e => ({name: said(e), id: e.person_id}))];
+  const lead = r.model_used ? askProse(r.answer, mentionable)
+    : `<p class="ask-lead">${evidence.length ? 'Here is what your team has already said about this.'
+    : (r.people || []).length ? `Nobody has written this down yet. ${askMentions(esc(r.people.slice(0, 2).map(p => p.name).join(' and ')), mentionable)} ${r.people.length > 1 ? 'are' : 'is'} who to ask.` : 'Nothing your team has said covers this yet.'}</p>`;
   const people = (r.people || []).length ? `<div class="ask-people"><span class="ask-label">People with context</span>${r.people.map(p => `<a class="ask-person" href="#people/${encodeURIComponent(p.id || '')}">${avatar(p.name)}<span><b>${esc(p.name)}</b><small>${esc(p.why)}</small></span></a>`).join('')}</div>` : '';
   const open = (r.open || []).length ? `<p class="ask-muted">Still open: ${esc(r.open.join('; '))}</p>` : '';
-  return `<div class="ask-raven"><span class="ask-orb" aria-hidden="true"></span><div class="ask-body"><p class="ask-lead">${lead}</p>${quotes}${people}${open}</div></div>`;
+  return `<div class="ask-raven"><span class="ask-orb" aria-hidden="true"></span><div class="ask-body">${lead}${quotes}${people}${open}</div></div>`;
 }
 
 function askThreadView() {
@@ -105,9 +125,9 @@ function loadNoticed(force) {
     .catch(() => { noticed = noticed || {insights: []}; });
 }
 function noticedCard(x) {
-  const cites = x.evidence.slice(0, 2).map(e => `<p class="noticed-cite">“${esc(e.quote)}” <small>${esc(e.who)}, ${esc(e.kind === 'decided' ? 'answering an agent' : (e.where === 'intro chat' ? 'voice intro' : e.where))} · ${esc(askDate(e.at))}</small></p>`).join('');
+  const cites = x.evidence.slice(0, 2).map(e => `<p class="noticed-cite">“${esc(e.quote)}” <small>${e.person_id ? `<a href="#people/${esc(e.person_id)}">${esc(e.who)}</a>` : esc(e.who)}, ${esc(e.kind === 'decided' ? 'answering an agent' : (e.where === 'intro chat' ? 'voice intro' : e.where))} · ${esc(askDate(e.at))}</small></p>`).join('');
   const who = x.person ? askFirst(x.person.name) : '';
-  return `<article class="noticed-card"><span class="noticed-kind">${esc(x.kind_label)}</span><h3>${esc(x.title)}</h3><p>${esc(x.body)}</p>${cites}
+  return `<article class="noticed-card" data-kind="${esc(x.kind)}"><span class="noticed-kind">${esc(x.kind_label)}</span><h3>${esc(x.title)}</h3><p>${esc(x.body)}</p>${cites}
     ${x.paths.length ? `<p class="noticed-paths">Raven read ${x.paths.slice(0, 3).map(p => `<code>${esc(p)}</code>`).join(' ')}</p>` : ''}
     <div class="noticed-actions">${x.task_id ? `<a class="button small" href="#runs/${encodeURIComponent(x.task_id)}">Asked${who ? ' · see ' + esc(who) + "'s answer" : ''}</a>`
       : `<button type="button" class="button small primary" data-noticed="ask" data-id="${esc(x.id)}" ${noticedBusy ? 'disabled' : ''}>${who ? 'Ask ' + esc(who) : 'Ask the right person'}</button>`}
@@ -115,10 +135,12 @@ function noticedCard(x) {
       <button type="button" class="button small text" data-noticed="dismiss" data-id="${esc(x.id)}">Dismiss</button></div></article>`;
 }
 function noticedView() {
-  const items = (noticed?.insights || []).slice(0, 2);
+  const items = (noticed?.insights || []).slice(0, 3);
+  const last = noticed?.last_pass;
   const looking = noticedBusy === 'run' || noticed?.running;
   return `<section class="noticed"><div class="noticed-head"><span class="ask-orb small ${looking ? 'thinking' : ''}" aria-hidden="true"></span><h2 class="ask-label">Raven noticed</h2>
     <button type="button" class="button small text" data-noticed="run" ${looking ? 'disabled' : ''}>${looking ? 'Looking…' : 'Look again'}</button></div>
+    ${last && !looking ? `<p class="noticed-last">Read ${plural(last.said, 'thing')} people said, ${plural(last.decided, 'decision')} and ${plural(last.files, 'file')} · ${esc(ago(last.at))}</p>` : ''}
     ${items.length ? items.map(noticedCard).join('') : `<p class="ask-muted">${looking ? 'Reading what people said next to the code…' : 'When people tell Raven something the product doesn\'t do yet, it shows up here.'}</p>`}</section>`;
 }
 
@@ -178,6 +200,14 @@ document.addEventListener('submit', event => {
   const q = input.value;
   input.value = '';
   askRaven(q);
+});
+document.addEventListener('click', event => {
+  const quote = event.target.closest('.ask-quote[data-href]');
+  if (quote) { const href = quote.dataset.href; if (href.startsWith('#')) location.hash = href; else window.open(href, '_blank', 'noopener'); }
+});
+document.addEventListener('keydown', event => {
+  const quote = event.target.closest?.('.ask-quote');
+  if (quote && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); quote.click(); }
 });
 document.addEventListener('click', event => {
   const chip = event.target.closest('[data-ask]');

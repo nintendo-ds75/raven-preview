@@ -116,6 +116,7 @@ function interviewBody(session, reviewing = false) {
       <div class="voice-top"><span class="voice-dot ${mode}"></span><span>${mode === 'speaking' ? 'Raven is speaking' : mode === 'listening' ? 'Listening' : mode === 'thinking' ? 'Raven is thinking' : 'Your turn'}</span><span class="voice-clock">${index < row.prompts.length ? `${index + 1} of ${row.prompts.length}` : 'Wrapping up'}</span></div>
       <p class="voice-topic">${esc(scope.question)}</p>
       ${interviewOrb(mode)}
+      ${session.reply ? `<p class="voice-reply"><b>You asked</b> ${esc(session.reply.question)}<br><b>Raven</b> ${esc(session.reply.answer)}</p>` : ''}
       <p class="voice-caption" aria-live="polite">${session.thinking ? '<span class="voice-ellipsis"><i></i><i></i><i></i></span>' : esc(asking)}</p>
       <p class="voice-you ${heard ? '' : 'quiet'}" data-interview-heard>${heard ? `<b>${esc(first || 'You')}</b> ${esc(heard)}` : typing ? '' : 'Just talk. Raven listens until you pause.'}</p>
       <div class="voice-type" ${typing && index < row.prompts.length ? '' : 'hidden'}><label class="sr-only" for="interview-response">Your answer</label><textarea id="interview-response" name="pending_response" form="interview-form" maxlength="2000" rows="2" placeholder="Type your answer">${esc(row.pending_response)}</textarea><button type="button" class="button primary small" data-interview-action="next">Send</button></div>
@@ -175,10 +176,43 @@ async function interviewWrap(session) {
   if (interviewSession !== session || !saved) return;
   interviewBody(session, true);
 }
+// Before answering, the person can ask Raven one question back ("what did
+// Marcus decide last time?"). Raven reads the task's context, answers in a
+// sentence or two, and asks its question again. The question is not saved
+// as an answer.
+const interviewIsQuestion = text => /\?\s*$/.test(text) || /^(?:what|why|who|which|how|when|where|can you|could you|do we|did we|does|is there|are there|remind me|tell me)\b/i.test(String(text).trim());
+const interviewShort = text => { const parts = String(text || '').replace(/\s+/g, ' ').trim().split(/(?<=[.!?])\s+/); return parts.slice(0, 2).join(' '); };
+async function interviewAskBack(session, question) {
+  session.askedBack = true; session.thinking = true; session.heard = '';
+  const box = interviewDialog.querySelector('#interview-response');
+  if (box) box.value = '';
+  interviewBody(session);
+  let answer = '';
+  try {
+    const r = window.ravenInterviewBridge?.inquiry ? await window.ravenInterviewBridge.inquiry(question, session.row.decision_id)
+      : await api(`/api/tasks/${encodeURIComponent(session.row.task_id)}/inquiry`, {question, focus_id: session.row.decision_id});
+    answer = interviewShort(r.answer);
+  } catch { answer = "I couldn't check that just now."; }
+  finally { session.thinking = false; }
+  if (interviewSession !== session) return;
+  session.reply = {question, answer};
+  const ask = session.row.prompts[session.turns.length] || '';
+  session.spokenFor = 'ask:' + session.turns.length;
+  interviewBody(session);
+  session.speaking = true;
+  RavenVoice.speak(`${answer} So, ${ask.charAt(0).toLowerCase()}${ask.slice(1)}`).finally(() => {
+    if (interviewSession !== session) return;
+    session.speaking = false;
+    if (!session.typing && !session.muted && interviewCanListen() && !session.recognition) { try { startInterviewSpeech(); } catch {} }
+    interviewBody(session);
+  });
+}
 async function interviewNext(session, advance = true) {
   stopInterviewSpeech();
   const response = (interviewDialog.querySelector('#interview-response')?.value || '').trim();
   if (!response) throw new Error('Say or type an answer first, or tap That\'s everything.');
+  if (advance && !session.askedBack && interviewIsQuestion(response)) return interviewAskBack(session, response);
+  session.reply = null;
   const index = session.turns.length;
   const turns = [...session.turns, {prompt_id: index, response, capture_method: session.captureMethod}];
   const transcript = [interviewDialog.querySelector('#interview-transcript')?.value, `Q: ${session.row.prompts[index]}\nA: ${response}`].filter(Boolean).join('\n\n');
