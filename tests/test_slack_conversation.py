@@ -1204,6 +1204,19 @@ class InferenceIsolationTests(OfflineCase):
         self.assertIn('--no-session-persistence',args)
         self.assertEqual(run.call_args.kwargs['input'],'untrusted Slack text')
 
+    def test_cli_does_not_inherit_a_parent_claude_code_session(self):
+        import os
+        import subprocess
+        from bridge.llm import _claude_cli
+        parent={'CLAUDECODE':'1','CLAUDE_CODE_ENTRYPOINT':'cli','CLAUDE_CONFIG_DIR':'/cfg'}
+        with patch.dict(os.environ,parent), patch('bridge.llm.find_claude',return_value='/fake/claude'), \
+                patch('subprocess.run',return_value=subprocess.CompletedProcess([],0,stdout='{}')) as run:
+            _claude_cli('system','prompt')
+        env=run.call_args.kwargs['env']
+        self.assertNotIn('CLAUDECODE',env)
+        self.assertNotIn('CLAUDE_CODE_ENTRYPOINT',env)
+        self.assertEqual(env['CLAUDE_CONFIG_DIR'],'/cfg')
+
 class ReplySchemaTests(OfflineCase):
     def validated(self, replies, message='Bill two units for this task only.'):
         from bridge.slack_chat import validated_reading
