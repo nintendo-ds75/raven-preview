@@ -452,6 +452,7 @@ class Store:
                 "weekly_question_limit": self.weekly_question_limit(),
                 "slack_capture_repo": graph.get_setting("slack_capture_repo"),
                 "auto_rules": graph.get_setting("auto_rules") == "1",
+                "background": graph.get_setting("background") == "1",
                 "notify_requester": graph.get_setting("notify_requester") == "1",
                 "session_records": graph.get_setting("session_records") == "1",
                 "objective_scope_fallback": graph.get_setting("objective_scope_fallback") or "accepter",
@@ -499,6 +500,13 @@ class Store:
                     raise Invalid(f"brief_mode must be one of {', '.join(BRIEF_MODES)}")
                 graph.set_setting("brief_mode", mode)
                 graph.append_event("setting_changed", {"key": "brief_mode", "value": mode})
+            if "background" in data:
+                # Working in the background: answers become rules for their
+                # own scope and rules apply without a fresh signature.
+                on = data["background"] in (True, 1, "1", "true", "on")
+                graph.set_setting("background", "1" if on else "0")
+                graph.set_setting("auto_rules", "1" if on else "0")
+                graph.append_event("setting_changed", {"key": "background", "value": "1" if on else "0"})
             for key in ("auto_rules", "notify_requester", "session_records"):
                 if key in data:
                     on = data[key] in (True, 1, "1", "true", "on")
@@ -1241,6 +1249,16 @@ class Store:
             self.notify(decision_id, "answered")
             for name in remaining:
                 self.notify(decision_id, "signoff", to=name)
+            # In the background (settings.background) a person's answer is
+            # theirs to reuse: it becomes a standing rule for its own scope,
+            # so the next matching question resolves without anyone signing.
+            if self.graph.get_setting("background") == "1" and actor is not None:
+                try:
+                    current = self.get_decision(decision_id)
+                    if current.get("signoff") in ("signed", "rule") and not current.get("reusable"):
+                        self.make_rule(decision_id, {"expected_updated_at": current["updated_at"]}, actor=actor)
+                except Invalid as error:
+                    print(f"Raven: answer {decision_id} stays request-specific: {error}", file=sys.stderr)
             # A signed answer settles the still-open twins of this question in
             # other runs (deterministic bar only; no model call on this path).
             try:

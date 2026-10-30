@@ -72,7 +72,8 @@ def ask(store, data, actor, *, cfg=None):
         evidence.append({'id': record_id, 'version': source.get('source_version_id', ''),
                          'title': source.get('title', ''), 'text': next(v['snapshot'].get('body', '') for v in read['versions'] if v['id'] == source['source_version_id']),
                          'kind': 'source', 'updated_at': source.get('updated_at', ''),
-                         'status': source.get('status', ''), 'url': source.get('url', '')})
+                         'status': source.get('status', ''), 'url': source.get('url', ''),
+                         'author': source.get('author', ''), 'created_at': source.get('created_at', '')})
     for item in store.search(question, repo)['matches'][:5]:
         decision = store.get_decision(item['id'])
         # Keep attribution and reasoning with the answer. The live customer
@@ -104,10 +105,79 @@ def ask(store, data, actor, *, cfg=None):
                     raise Invalid('A prior answer changed during this reading. Ask again.')
     result = read_evidence(question, evidence, cfg, revalidate=revalidate_evidence)
     revalidate_evidence()
+    result['people'] = people_with_context(store, repo, question, evidence)
     store.graph.append_event('question_read', {'repo': repo, 'actor_id': actor.id,
         'question': question, 'outcome': result['outcome'], 'model_used': result['model_used'],
         'sources': [{'id': e['id'], 'version': e['version'], 'kind': e['kind']} for e in evidence]})
     return result
+
+
+def _plain_route(line):
+    """A routing evidence line as a person would say it."""
+    import re
+    line = re.sub(r'^(verified|inferred[^:]*):\s*', '', line or '')
+    m = re.match(r'^.+? (decides|knows about|knows) (?:for )?(\S+?)\*?(?: \(matches [^)]*\))?(?: \([^)]*\))?(?::\s*(.*))?$', line)
+    if m:
+        verb = 'Decides' if m.group(1) == 'decides' else 'Knows about'
+        scope = m.group(2).rstrip('/*')
+        return f"{verb} {scope}" + (f": {m.group(3)}" if m.group(3) else '')
+    m = re.match(r'^authored (\d+) of the last (\d+) changes under (\S+)', line)
+    if m:
+        return f"Wrote {m.group(1)} of the last {m.group(2)} changes under {m.group(3)}"
+    return line[:1].upper() + line[1:]
+
+
+def people_with_context(store, repo, question, evidence, limit=4):
+    """Who to talk to about this question: the people the authority map and
+    git history route it to, then whoever wrote or answered the evidence.
+    Each comes with the one line that says why. Never authority by itself."""
+    from .routing import route_ranked
+    people, seen = [], set()
+
+    def add(name, why, source):
+        name = str(name or '').strip()
+        person = store.graph.find_person(name) if name else None
+        name = person['name'] if person else name
+        if not name or name.lower() in seen or len(people) >= limit:
+            return
+        seen.add(name.lower())
+        people.append({'name': name, 'id': person['id'] if person else '', 'team': (person or {}).get('team', ''),
+                       'why': why, 'source': source})
+    try:
+        ranked = route_ranked(store.graph, repo, question)
+        for rank, (name, lines, _score) in enumerate(ranked[:4]):
+            why = _plain_route(next((line for line in lines if line), ''))
+            # The top route always counts; the rest only on an explicit
+            # claim (decides, knows), not on a share of the commits.
+            if rank == 0 or why.startswith(('Decides', 'Knows')):
+                add(name, why, 'route')
+    except Exception as error:  # routing is a hint here, never the answer
+        print(f'Raven: no routing for question: {type(error).__name__}: {error}')
+    # The authority map by the question's own words: an area it names
+    # ("labels", "pricing") points at whoever decides or knows it.
+    import re
+    words = set(re.findall(r'[a-z0-9]+', question.lower()))
+    stems = {w[:-1] if w.endswith('s') else w for w in words}
+    try:
+        rows = store.graph.authority_rows(repo)
+    except Exception:
+        rows = []
+    for row in sorted(rows, key=lambda r: r.get('role') != 'decides'):
+        scope = (row.get('scope') or '').strip('/*').lower()
+        parts = [p for p in re.split(r'[/_\-. ]+', scope) if len(p) > 2]
+        named = scope in question.lower() or any(p in words or (p[:-1] if p.endswith('s') else p) in stems for p in parts[-1:])
+        who = (row.get('person') or {}).get('name')
+        if named and who:
+            verb = 'Decides' if row.get('role') == 'decides' else 'Knows about'
+            add(who, f"{verb} {scope}" + (f": {row['note']}" if row.get('note') else ''), 'authority')
+    for item in evidence:
+        for line in item['text'].splitlines():
+            if line.startswith(('Recorded by: ', 'Signed by: ')):
+                add(line.split(': ', 1)[1], f'Answered “{item["title"][:90]}”', 'answer')
+        author = item.get('author')
+        if author:
+            add(author, f'Wrote “{item["title"][:90]}”', 'record')
+    return people
 
 
 def read_evidence(question, evidence, cfg, *, revalidate=None):

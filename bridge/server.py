@@ -277,7 +277,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                                        and self.me.id == link.person["id"])
                     view["viewer"]["interview_decision_id"] = link.decision_id
                     return self.send(200, view)
-                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/favicon.ico", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js", "/presentation.js", "/workbench.js", "/workbench.css", "/objectives.js", "/objectives.css", "/evidence.js", "/intro.js", "/intro.css"):
+                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/favicon.ico", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js", "/presentation.js", "/workbench.js", "/workbench.css", "/objectives.js", "/objectives.css", "/evidence.js", "/intro.js", "/intro.css", "/home.js", "/map.js", "/home.css"):
                     if url.path == "/" and auth.enabled and self.me is None:
                         if parse_qs(url.query).get("github_connect") == ["1"]:
                             cookie = "bridge_github_connect=1; Max-Age=600; Path=/; HttpOnly; SameSite=Lax"
@@ -297,6 +297,9 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     files['/evidence.js'] = 'evidence.js'
                     files['/intro.js'] = 'intro.js'
                     files['/intro.css'] = 'intro.css'
+                    files['/home.js'] = 'home.js'
+                    files['/map.js'] = 'map.js'
+                    files['/home.css'] = 'home.css'
                     file = WEB / files[url.path]
                     return self.send(200, file.read_bytes(), (mimetypes.guess_type(str(file))[0] or "text/plain") + "; charset=utf-8",
                                      etag=True, cache="no-cache")

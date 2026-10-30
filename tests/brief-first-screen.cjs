@@ -52,7 +52,7 @@ assert.doesNotMatch(html, /brief-scope"[^>]*\sopen/, 'the scope table starts clo
 assert(at('class="brief-reason"') > at('<summary>Details</summary>'), 'why it came to them is inside Details');
 for (const gone of ['Next:', 'Record my decision', 'Prefer to talk it through', 'Recorded scope of this decision', 'not approved'])
   assert(!html.includes(gone), `${gone} is gone`);
-assert(html.includes('>Answer and sign<') && html.includes('Signed as Lina.') && html.includes('>Talk it through instead<'), 'the form ends with the button, the note and the interview link');
+assert(html.includes('>Send answer<') && html.includes('Answering as Lina.') && html.includes('>Talk it through instead<'), 'the form ends with the button, the note and the interview link');
 assert.equal(html.split('Near the cap the jitter can exceed it.').length - 1, 1, 'the context is said once');
 
 // A brief that only repeats the context is shown once.

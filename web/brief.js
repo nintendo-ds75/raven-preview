@@ -240,12 +240,12 @@ function focusCard(f) {
       <textarea id="answer-why" class="short brief-grow" maxlength="4000" placeholder="The reason, constraint or policy behind it."${why}></textarea>
       ${sourceReview(f)}
       <p class="error" id="answer-error" role="alert" hidden></p>
-      <div class="brief-answer-foot"><button class="button ${open || standing === 'sign' ? 'primary' : ''}" type="submit"${open || mine ? '' : ` data-plain="${cosign ? 'Add my signature' : 'Sign'}"`}>${open ? 'Answer and sign' : mine ? 'Save correction' : cosign ? 'Add my signature' : 'Sign'}</button><span class="brief-answer-note">Signed as ${esc(data.viewer.name)}.</span>${interview}</div>
+      <div class="brief-answer-foot"><button class="button ${open || standing === 'sign' ? 'primary' : ''}" type="submit"${open || mine ? '' : ` data-plain="${cosign ? 'Add my signature' : 'Confirm'}"`}>${open ? 'Send answer' : mine ? 'Save correction' : cosign ? 'Add my signature' : 'Confirm'}</button><span class="brief-answer-note">Answering as ${esc(data.viewer.name)}. Raven reuses it the next time this comes up.</span>${interview}</div>
     </form>`;
   const form = standing === 'handed' ? `<p class="brief-cannot">You handed this on to ${esc(f.handed_to)}. It now waits on them.</p>`
     : standing === 'read' ? `<p class="brief-cannot">${esc(f.why_not ? 'You can read this, but not answer it: ' + f.why_not + '.' : 'You can read this decision.')}</p>`
     : mine ? `<details class="brief-why brief-correct" data-keep="correct-${esc(f.node_id)}"><summary>Correct my answer</summary>${fields}</details>` : fields + handonForm(f);
-  const kicker = {answer: 'Waiting on you', sign: 'Sign-off wanted from you', cosign: 'You were asked about', mine: 'You decided this', read: f.asked ? 'You were asked about' : 'On this task', handed: 'You handed this on'}[standing];
+  const kicker = {answer: 'Waiting on you', sign: 'Raven would like you to confirm', cosign: 'You were asked about', mine: 'You decided this', read: f.asked ? 'You were asked about' : 'On this task', handed: 'You handed this on'}[standing];
   const paths = (f.paths || []).filter(p => p && p !== 'unknown');
   const found = f.found || [];
   const back = !f.asked && data.asked_focus ? '<button type="button" class="button text brief-back" data-action="focus-asked">Back to the decision you were asked about</button>' : '';
@@ -315,7 +315,7 @@ function decisionsCard(nodes) {
       <strong>${esc(n.question)}</strong>
       ${n.answer ? `<p>${prose(n.answer)}</p>` : ''}${n.rationale && n.answer ? `<p class="brief-why-line">Why: ${prose(n.rationale)}</p>` : ''}
       ${n.needs_review ? `<p class="task-warning">${esc(n.review_reason || 'An answer this relied on changed.')}</p>` : ''}
-      ${n.can_act && !n.handed_to ? `<button class="button small" data-action="focus" data-id="${esc(n.node_id)}">${n.action === 'answer' ? 'Answer' : n.signatures.some(x => same(x, me)) ? 'Correct my answer' : 'Sign'}</button>` : ''}
+      ${n.can_act && !n.handed_to ? `<button class="button small" data-action="focus" data-id="${esc(n.node_id)}">${n.action === 'answer' ? 'Answer' : n.signatures.some(x => same(x, me)) ? 'Correct my answer' : 'Confirm'}</button>` : ''}
     </li>`).join('')}</ol>` : '<p class="task-empty">No decisions yet.</p>'}
   </section>`;
 }

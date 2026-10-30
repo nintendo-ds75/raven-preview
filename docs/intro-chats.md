@@ -1,14 +1,16 @@
-# Intro chats
+# Voice intros
 
-Raven holds a fifteen-minute, get-to-know-you chat with each person, from
-**Intro chats** in the sidebar. The goal is a solid base of context that
-today exists only in people's heads.
+Raven holds a short spoken intro with each person, started from their spot
+on the **Map**. It is a head start, not the product: a base of context that
+today exists only in people's heads, so Raven doesn't begin from scratch.
+After it, Raven keeps learning from the questions agents ask and the answers
+people give.
 
 ## How a chat works
 
 1. **Prepare.** Raven reads what the workspace already records about the
    person: their teams and teammates, the authority map, CODEOWNERS, git
-   ownership and recent commits. It shows that list, then writes about eight
+   ownership and recent commits. It shows that list, then writes six or seven
    questions that skip anything the record already answers.
 2. **Talk.** The chat follows an interview arc from broad to specific:
    background, their role, how the team works, their current work, and what
@@ -16,16 +18,18 @@ today exists only in people's heads.
    either follows up on something concrete the person said (at most two
    follow-ups in a row) or moves to the next planned question, and it wraps
    up when the person is done or time runs out. The clock pauses while Raven
-   is thinking. People can type or use browser dictation; Raven stores text,
-   never audio.
-3. **Review.** Raven drafts notes from the answers. Each note quotes the
-   answer it came from, and a draft note whose quote isn't in the transcript
-   is dropped. The page says how many questions were asked and lists what
-   Raven still doesn't know. The person unchecks or rewrites notes before
-   anything is saved.
+   is thinking. Raven says each question out loud with the browser's speech
+   voice and listens with browser speech recognition; a pause of about two
+   seconds sends what the person said. Typing works everywhere. Raven stores
+   text, never audio.
+3. **Kept.** When the call ends Raven writes notes from the answers and keeps
+   them straight away; nobody reviews or signs them first. Each note quotes
+   the answer it came from, and a draft note whose quote isn't in the
+   transcript is dropped. The person can reword or drop notes later
+   (`POST /api/intro/:id/save`).
 
 Saved notes are the person's own words, not decisions and not verified
-facts. They appear on the person's intro page and are available to Raven as
+facts. They appear on the person's card in the Map and are available to Raven as
 background through `GET /api/people/:id/context`.
 
 ## Models
