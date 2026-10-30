@@ -94,7 +94,7 @@ def migrate(db):
     """)
     # A learned line points at the first-class source it came from
     # ("meeting:<id>", "call:<id>"); intro lines use interview_id.
-    if "artifact" not in {r[1] for r in db.execute("PRAGMA table_info(person_context)")}:
+    if "artifact" not in {r["name"] for r in db.execute("PRAGMA table_info(person_context)")}:
         db.execute("ALTER TABLE person_context ADD COLUMN artifact TEXT NOT NULL DEFAULT ''")
 
 
