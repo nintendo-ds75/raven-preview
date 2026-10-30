@@ -110,7 +110,7 @@ function introPersonView() {
   }
   if (row.status === 'review') return `<div class="intro">${back}${introBusy === 'finish' ? '' : introReview(row)}</div>`;
   const left = Math.max(0, row.duration_minutes - row.elapsed_minutes);
-  return `<div class="intro">${back}<div class="intro-live"><div class="intro-live-head"><div><h2>Intro chat with ${esc(d.person.name)}</h2>${introStages(row)}</div><div class="intro-clock"><span id="intro-clock" data-started="${esc(row.started_at)}" data-duration="${row.duration_minutes}">${introClock(left)}</span><small>left of ${row.duration_minutes}:00</small></div></div><div class="intro-live-body"><div class="intro-thread" id="intro-thread" aria-live="polite">${introChat(row)}${introBusy === 'finish' ? '<p class="intro-muted" role="status">Writing up what Raven heard…</p>' : ''}</div><aside>${introKnown(d)}</aside></div>${introComposer(row)}</div></div>`;
+  return `<div class="intro">${back}<div class="intro-live"><div class="intro-live-head"><div><h2>Intro chat with ${esc(d.person.name)}</h2>${introStages(row)}</div><div class="intro-clock"><span id="intro-clock" data-elapsed="${row.elapsed_minutes}" data-drawn="${Date.now()}" data-paused="${introBusy ? 1 : 0}" data-duration="${row.duration_minutes}">${introClock(left)}</span><small>left of ${row.duration_minutes}:00</small></div></div><div class="intro-live-body"><div class="intro-thread" id="intro-thread" aria-live="polite">${introChat(row)}${introBusy === 'finish' ? '<p class="intro-muted" role="status">Writing up what Raven heard…</p>' : ''}</div><aside>${introKnown(d)}</aside></div>${introComposer(row)}</div></div>`;
 }
 
 function renderIntro() {
@@ -141,11 +141,14 @@ function introTick() {
   clearInterval(introTimer);
   const clock = $('#intro-clock');
   if (!clock) return;
-  const started = Date.parse(clock.dataset.started), total = Number(clock.dataset.duration);
+  // The server's elapsed time leaves out Raven's thinking, so the clock
+  // runs from that figure and stands still while Raven is thinking.
+  const elapsed = Number(clock.dataset.elapsed), drawn = Number(clock.dataset.drawn), total = Number(clock.dataset.duration);
+  const paused = clock.dataset.paused === '1';
   const update = () => {
     const el = $('#intro-clock');
     if (!el) { clearInterval(introTimer); return; }
-    const left = total - (Date.now() - started) / 60000;
+    const left = total - elapsed - (paused ? 0 : (Date.now() - drawn) / 60000);
     el.textContent = introClock(left);
     el.classList.toggle('low', left <= 2);
   };
