@@ -36,6 +36,7 @@ TEAMS = [
 AUTHORITY = [
     ("Priya Shah", "category", "pricing", "decides", "Plans, prices and discounts"),
     ("Marcus Lee", "path", "infra/*", "decides", ""),
+    ("Marcus Lee", "category", "ops", "decides", "Incidents and postmortems"),
     ("Jordan Okafor", "path", "app/labels/*", "decides", "Label purchasing and carrier APIs"),
     ("Lena Park", "path", "web/*", "decides", "Merchant dashboard"),
     ("Theo Grant", "path", "app/shopify/*", "decides", ""),
@@ -153,7 +154,7 @@ DECISIONS = [
      "We don't build for one customer. Three paying accounts asking, or it waits.",
      "Building for one account pulls the roadmap toward whoever is loudest. Slack #founders, Mar 14."),
     ("2026-06-02T18:40:00+00:00", "Marcus Lee", "Stale-rate incident follow-up",
-     "Can a label be bought before the merchant has seen its current price?", "app/labels/", "",
+     "Can a label be bought before the merchant has seen its current price?", "app/labels/", "ops",
      "Never buy a label before the merchant sees the price.",
      "We bought $4,100 of labels at a stale rate. Incident postmortem, Jun 2."),
     ("2026-08-20T17:10:00+00:00", "Priya Shah", "Positioning after the August sync",
