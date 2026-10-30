@@ -101,13 +101,21 @@ def _decision(store, ref_id):
         raise Invalid("Decision not found")
     task = store.graph.get_task(d.get("run_id") or "")
     task = dict(task) if task else {}
-    who = d.get("answered_by") or d.get("owner_name") or ""
+    # Who made the call: whoever recorded or signed the answer, never just
+    # whoever it was first routed to.
+    who = d.get("actor_name") or d.get("answered_by") or d.get("signed_by") or ""
     person = store.graph.find_person(who) if who else None
     return {"title": task.get("title") or "Decision", "at": d.get("updated_at", ""),
             "people": [{"id": person["id"], "name": person["name"]}] if person else [],
             "question": d.get("question", ""), "answer": d.get("answer", ""), "why": d.get("rationale") or "",
             "signed_by": d.get("signed_by") or "", "task_id": d.get("run_id", ""), "node_id": d["id"], "turns": [],
-            "summary": (f"{who} decided: " if who else "Decided: ") + _short(d.get("answer"), 150)}
+            "summary": _decided_line(who, d.get("signed_by") or "") + _short(d.get("answer"), 150)}
+
+
+def _decided_line(who, signer):
+    if who and signer and signer.lower() != who.lower():
+        return f"{who} answered and {signer} signed off: "
+    return f"{who} decided: " if who else "Decided: "
 
 
 def _meeting(store, ref_id):

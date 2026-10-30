@@ -558,7 +558,7 @@ function harness() {
   await test('a task with a code review keeps it as a section the warning jumps to',()=>{
     const h=harness();h.selectTask(fixture.tree('review-run',{review:{status:'done',follows:[{node_id:'pending-a',verdict:'unclear',why:'Outside the diff.',requirements:[]}]}}));
     const html=h.run('taskOverview()');
-    assert.match(html,/<p class="task-warning">1 decisions need inspection after the model review\.<button class="button small" data-action="task-review">Open code review<\/button><\/p>/);
+    assert.match(html,/<p class="task-warning">1 decision needs inspection after the model review\.<button class="button small" data-action="task-review">Open code review<\/button><\/p>/);
     assert.match(html,/<section class="task-panel" id="task-review"><h2 tabindex="-1">Code review<\/h2>/);assert.match(html,/Outside the diff\./);
     assert.doesNotMatch(html,/does not replace tests|No code review yet|Code review against decisions/);
     assert.doesNotMatch(h.run('taskOverview()').replace(/<section class="task-panel" id="task-review">[\s\S]*?<\/section>/,''),/Outside the diff/);

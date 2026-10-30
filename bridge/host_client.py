@@ -272,6 +272,9 @@ def hook(config, host, payload, *, deadline=None):
         text += ('Task already registered as ' + result['task_id'] + '. Do not create another task for this prompt. '
                  'Read bridge_get_tree for current decisions and evidence. Discover the relevant files yourself. '
                  'Use this task_id when adding decisions and finishing. ')
+    if result.get('question'):
+        text += ('This prompt is a question, not a change, so Raven started no task. Answer it from the code, and '
+                 'use bridge_ask_raven for what the team said or decided. Do not call bridge_start_task for it. ')
     if 'bridge_link_work_item' in tools:
         text += ('For an existing external work item, use bridge_lookup_record, read its current version with '
                  'bridge_get_record, then bridge_link_work_item to attach it to this task without reimporting. '

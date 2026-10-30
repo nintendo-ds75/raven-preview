@@ -249,6 +249,18 @@ def speak(text):
     raise VoiceOff("No server voice is set up; the page uses the browser's")
 
 
+# Sound tags speech models write for noise: *buzzer*, [Music], (door closes),
+# ♪ ... ♪. None of it is something the person said.
+_SOUND = re.compile(r"\*[^*]{1,40}\*|\[[^\]]{1,40}\]|\((?:[^()]{0,40}\b(?:noise|music|laugh\w*|cough\w*|sigh\w*|"
+                    r"applause|buzz\w*|beep\w*|silence|inaudible|static|door\w*|ring\w*|click\w*|breath\w*)\b[^()]{0,40})\)|"
+                    r"[♪♫]+[^♪♫]{0,80}[♪♫]*", re.I)
+
+
+def clean_transcript(text):
+    text = _SOUND.sub(" ", str(text or ""))
+    return re.sub(r"\s+", " ", text).strip(" ,")
+
+
 def transcribe(audio, mime=""):
     """What the person said in this recording, as text."""
     if not audio or len(audio) > AUDIO_LIMIT:
@@ -280,7 +292,7 @@ def transcribe(audio, mime=""):
             text = stream.result.text
     else:
         raise VoiceOff("No server transcription is set up; the page uses the browser's")
-    text = re.sub(r"\s+", " ", str(text or "")).strip()
+    text = clean_transcript(text)
     # Whisper hears these in silence and room noise.
     if re.fullmatch(r"[\[\(]?(blank_audio|silence|music|inaudible|you|thank you\.?)[\]\)]?\.?", text, re.I):
         text = ""

@@ -135,7 +135,8 @@ Only raise a finding you can ground: every finding cites at least one item from 
 with an exact quote copied from its "said" text ("connect" cites two different people), and for gap/bug
 names the file paths you read that show it (paths must come from "files"). If the excerpts don't show
 enough to claim the code lacks something, say "I couldn't find" rather than "the code doesn't". Prefer
-fewer, sharper findings. Skip anything in open_findings. No praise, no filler.
+fewer, sharper findings. Skip anything in open_findings, and anything in dismissed_findings: the team
+said no to those, so never raise them again in other words. No praise, no filler.
 
 Write for someone scanning a sidebar. The title is one plain statement under 70 characters. The body is
 two short sentences, under 40 words in all: what you noticed, then why it matters now.
@@ -216,7 +217,10 @@ def run(store, cfg=None, repo=""):
                    "decided": [{k: x[k] for k in ("id", "who", "question", "said", "at")} for x in decided],
                    "files": files[:400], "excerpts": excerpts,
                    "open_findings": [r["title"] for r in store.graph.db.execute(
-                       "SELECT title FROM muse_insights WHERE status='open'").fetchall()]}
+                       "SELECT title FROM muse_insights WHERE status='open'").fetchall()],
+                   "dismissed_findings": [r["title"] for r in store.graph.db.execute(
+                       "SELECT title FROM muse_insights WHERE status IN ('dismissed','done') "
+                       "ORDER BY updated_at DESC LIMIT 40").fetchall()]}
         try:
             raw = Client(cfg).complete_json("muse", _SYSTEM, json.dumps(payload, ensure_ascii=False), max_tokens=3000)
         except LLMError as error:
@@ -231,15 +235,15 @@ def run(store, cfg=None, repo=""):
             seen = [{"kind": r["kind"], "ids": {e.get("id") for e in json.loads(r["evidence"])},
                      "paths": set(json.loads(r["paths"])), "person": r["person_id"]}
                     for r in db.execute("SELECT kind, evidence, paths, person_id FROM muse_insights "
-                                        "WHERE status IN ('open','asked')").fetchall()]
+                                        "WHERE status IN ('open','asked','dismissed','done')").fetchall()]
             for f in findings:
                 fp = hashlib.sha1(_norm(f["title"]).encode()).hexdigest()[:16]
-                if db.execute("SELECT 1 FROM muse_insights WHERE fingerprint=? AND status IN ('open','asked')", (fp,)).fetchone():
+                if db.execute("SELECT 1 FROM muse_insights WHERE fingerprint=?", (fp,)).fetchone():
                     continue
                 mine = {"kind": f["kind"], "ids": {e["id"] for e in f["evidence"]}, "paths": set(f["paths"]),
                         "person": f["person_id"]}
                 if any(_same_finding(mine, other) for other in seen):
-                    continue  # the same finding in new words: keep the one already shown
+                    continue  # the same finding in new words, or one the team dismissed: never again
                 seen.append(mine)
                 iid = "ins_" + secrets.token_hex(6)
                 db.execute("INSERT INTO muse_insights(id, kind, title, body, evidence, paths, person_id, question, agent_prompt, "

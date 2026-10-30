@@ -157,128 +157,33 @@ function fixture() {
     assert(keys.every(Boolean), 'source, metadata, and dependent-decision disclosures need keys');
     assert.equal(new Set(keys).size, keys.length);
   });
-  for (const transition of ['render', 'poll']) await test(transition + ' preserves open and closed disclosures', async () => {
+  await test('no checkbox stands between the person and Send; the evidence is shown and the answer is tied to it', () => {
     const h = harness(), value = fixture(); h.render(value);
-    h.source('record-"A<&').open = false;
-    h.metadata('record-"A<&').open = true;
-    h.dependency('Synthetic dependency A?').open = true;
-    const prior = h.source('record-"A<&');
-    value.progress.signed = 1; // Force a quiet-poll replacement without changing evidence.
-    await h[transition](value);
-    assert.notEqual(h.source('record-"A<&'), prior, 'the test must rebuild the DOM');
-    assert.equal(h.source('record-"A<&').open, false, 'a collapsed default-open source stays collapsed');
-    assert.equal(h.metadata('record-"A<&').open, true, 'opened metadata stays open');
-    assert.equal(h.dependency('Synthetic dependency A?').open, true, 'opened dependency stays open');
-    assert.equal(h.metadata('record-B').open, false);
-    assert.equal(h.dependency('Synthetic dependency B?').open, false);
-  });
-  await test('disclosure state follows exact records and decisions after reordering', () => {
-    const h = harness(), value = fixture(); h.render(value);
-    h.source('record-"A<&').open = false;
-    h.metadata('record-"A<&').open = true;
-    h.dependency('Synthetic dependency A?').open = true;
-    value.focus.source_revalidation.sources.reverse();
-    value.focus.source_revalidation.dependencies.reverse(); h.render(value);
-    assert.equal(h.source('record-"A<&').open, false);
-    assert.equal(h.metadata('record-"A<&').open, true);
-    assert.equal(h.metadata('record-B').open, false);
-    assert.equal(h.dependency('Synthetic dependency A?').open, true);
-    assert.equal(h.dependency('Synthetic dependency B?').open, false);
-  });
-  await test('new source version and decision snapshot get their default disclosure state', () => {
-    const h = harness(), value = fixture(); h.render(value);
-    h.source('record-"A<&').open = false;
-    h.metadata('record-"A<&').open = true;
-    h.dependency('Synthetic dependency A?').open = true;
-    value.focus.source_revalidation.sources[0].source_version_id = 'version-new';
-    value.focus.source_revalidation.dependencies[0].reviewed_snapshot.revision = 2;
-    h.render(value);
-    assert.equal(h.source('record-"A<&').open, true);
-    assert.equal(h.metadata('record-"A<&').open, false);
-    assert.equal(h.dependency('Synthetic dependency A?').open, false);
-  });
-  await test('different exact source IDs do not share state through a short-hash collision', () => {
-    // Aa and BB collide in the existing 31-based display hash. They are still
-    // distinct records, so neither disclosure nor acknowledgment may transfer.
-    const h = harness(), value = fixture();
-    value.focus.source_revalidation.sources[0].record_id = 'Aa'; h.render(value);
-    h.source('Aa').open = false; h.metadata('Aa').open = true;
-    h.get('brief-source-confirm').checked = true;
-    value.focus.source_revalidation.sources[0].record_id = 'BB'; h.render(value);
-    assert.equal(h.source('BB').open, true);
-    assert.equal(h.metadata('BB').open, false);
-    assert.equal(h.get('brief-source-confirm').checked, false);
-  });
-  await test('different exact decision snapshots do not share short-hash disclosure state', () => {
-    const h = harness(), value = fixture();
-    value.focus.source_revalidation.dependencies[0].reviewed_snapshot.answer = 'Aa'; h.render(value);
-    h.dependency('Synthetic dependency A?').open = true;
-    value.focus.source_revalidation.dependencies[0].reviewed_snapshot.answer = 'BB'; h.render(value);
-    assert.equal(h.dependency('Synthetic dependency A?').open, false);
-  });
-  for (const transition of ['render', 'poll']) await test(transition + ' retains an acknowledgment of identical context', async () => {
-    const h = harness(), value = fixture(); h.render(value);
-    h.get('brief-source-confirm').checked = true;
-    value.progress.signed = 1;
-    await h[transition](value);
-    assert.equal(h.get('brief-source-confirm').checked, true);
-    h.get('brief-source-confirm').checked = false; h.render(value);
-    assert.equal(h.get('brief-source-confirm').checked, false, 'a deliberate uncheck survives replacement');
-  });
-  const changes = {
-    'source record': f => { f.source_revalidation.sources[0].record_id = 'different-record'; },
-    'source version': f => { f.source_revalidation.sources[0].source_version_id = 'version-new'; },
-    'source body': f => { f.source_revalidation.sources[0].snapshot.body = 'Keep seven days.'; },
-    'dependency snapshot': f => { f.source_revalidation.dependencies[0].reviewed_snapshot.revision = 2; },
-    'source pins': f => { f.source_revalidation.pins[0].source_version_id = 'version-new'; },
-    'decision pins': f => { f.source_revalidation.decision_pins[0].revision = 2; },
-    'question': f => { f.question = 'How long are audit records retained?'; },
-    'answer': f => { f.answer = 'Keep seven days.'; },
-    'rationale': f => { f.rationale = 'Changed rationale.'; },
-    'context': f => { f.context = 'Production scope.'; },
-    'visible paths': f => { f.paths = ['policy/audit.py']; },
-    'facts': f => { f.facts.environment = 'production'; },
-    'approval scope': f => { f.approval_scope.facts.environment = 'production'; },
-    'original scope text': f => { f.approval_scope_text = 'production'; },
-    'root revision': f => { f.updated_at = 'revision-two'; },
-    'focus': f => { f.node_id = 'different-decision'; },
-  };
-  for (const [name, change] of Object.entries(changes)) await test(name + ' change clears acknowledgment during a quiet poll', async () => {
-    const h = harness(), value = fixture(); h.render(value);
-    h.get('brief-source-confirm').checked = true;
-    change(value.focus); await h.poll(value);
-    assert.equal(h.get('brief-source-confirm').checked, false);
-  });
-  for (const missing of ['unavailable', 'removed', 'informational', 'no focus']) await test(missing + ' context clears acknowledgment permanently', () => {
-    const h = harness(), value = fixture(); h.render(value);
-    h.get('brief-source-confirm').checked = true;
-    const changed = clone(value);
-    if (missing === 'unavailable') changed.focus.source_revalidation.available = false;
-    if (missing === 'removed') delete changed.focus.source_revalidation;
-    if (missing === 'informational') changed.focus.source_revalidation.has_reliance = false;
-    if (missing === 'no focus') changed.focus = null;
-    h.render(changed);
     assert.equal(h.get('brief-source-confirm'), null);
-    h.render(value); assert.equal(h.get('brief-source-confirm').checked, false);
+    for (const missing of ['unavailable', 'removed', 'informational']) {
+      const changed = clone(value);
+      if (missing === 'unavailable') changed.focus.source_revalidation.available = false;
+      if (missing === 'removed') delete changed.focus.source_revalidation;
+      if (missing === 'informational') changed.focus.source_revalidation.has_reliance = false;
+      h.render(changed);
+      assert.equal(h.get('brief-source-confirm'), null);
+    }
   });
-  await test('switching away and back does not resurrect acknowledgment or source disclosure state', () => {
+  await test('switching away and back does not resurrect source disclosure state', () => {
     const h = harness(), value = fixture(); h.render(value);
-    h.get('brief-source-confirm').checked = true;
     h.metadata('record-"A<&').open = true;
     const changed = clone(value); changed.focus.node_id = 'different-decision'; h.render(changed);
-    assert.equal(h.get('brief-source-confirm').checked, false);
     assert.equal(h.metadata('record-"A<&').open, false);
     h.render(value);
-    assert.equal(h.get('brief-source-confirm').checked, false);
     assert.equal(h.metadata('record-"A<&').open, false);
   });
   await test('identical quiet reads do not rebuild the DOM', async () => {
     const h = harness(), value = fixture(); h.render(value);
-    const count = h.renderCount(), checkbox = h.get('brief-source-confirm');
-    checkbox.checked = true; await h.poll(value);
+    const count = h.renderCount(), meta = h.metadata('record-"A<&');
+    meta.open = true; await h.poll(value);
     assert.equal(h.renderCount(), count);
-    assert.equal(h.get('brief-source-confirm'), checkbox);
-    assert.equal(checkbox.checked, true);
+    assert.equal(h.metadata('record-"A<&'), meta);
+    assert.equal(meta.open, true);
   });
   if (failures.length) {
     console.error(failures.join('\n'));

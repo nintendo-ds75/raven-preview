@@ -38,7 +38,9 @@ for (const role of ['context','work_item']) {
   assert(!rendered.includes('Signing waits'));
   assert(rendered.includes('informational'));
 }
-assert(context.sourceReview({source_revalidation:review}).includes('id="brief-source-confirm"'));
+{ const bound = context.sourceReview({source_revalidation:review});
+  assert(!bound.includes('id="brief-source-confirm"'));
+  assert(bound.includes('Sending ties your answer to these exact versions.')); }
 assert.equal(context.sourceEvidence([]), '');
 assert.equal(context.sourceReview({source_revalidation:{has_reliance:false,sources:[],dependencies:[]}}),'');
 console.log('Fresh source review rendering checks passed');

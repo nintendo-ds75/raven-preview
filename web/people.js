@@ -107,7 +107,7 @@ function peopleProfileView() {
       ${r.decides.length ? `<div class="person-sec"><span class="ask-label">Decides</span><div>${chips(r.decides, 'decides')}</div></div>` : ''}
       ${r.knows.length ? `<div class="person-sec"><span class="ask-label">Knows about</span><div>${chips(r.knows, 'knows')}</div></div>` : ''}
       ${r.code.length ? `<div class="person-sec"><span class="ask-label">Has been writing</span><div>${chips(r.code, 'code')}</div></div>` : ''}
-      <div class="person-sec"><span class="ask-label">Raven has</span><p class="person-count"><b>${said}</b> things they said · <b>${decided}</b> decisions they made</p></div>
+      <div class="person-sec"><span class="ask-label">Raven has</span><p class="person-count"><b>${said}</b> ${said === 1 ? 'thing' : 'things'} they said · <b>${decided}</b> ${decided === 1 ? 'decision' : 'decisions'} they made</p></div>
     </aside>
     <section class="person-main"><div class="person-main-head"><h2>What Raven has learned</h2><span class="ask-muted">Newest first</span></div>
       ${canEdit ? `<form class="learned-add" id="people-add-form"><label class="sr-only" for="people-add">Add something Raven should know about ${esc(first)}</label><input id="people-add" name="text" maxlength="600" placeholder="Add something Raven should know about ${esc(first)}"><button class="button small" type="submit">Add</button></form>` : ''}

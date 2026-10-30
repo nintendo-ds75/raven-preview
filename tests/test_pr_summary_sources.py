@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase
-from bridge import artifacts, auth, mcp, meeting_learn, muse, people_context, pr_summary
+from bridge import artifacts, auth, inquiry, mcp, meeting_learn, muse, people_context, pr_summary, voice
 from bridge.config import Config
 from bridge.store import Invalid
 
@@ -93,6 +93,33 @@ class Summary(OfflineCase):
         self.assertIn('Marcus Lee decided', decided['pointer']['summary'])
         with self.assertRaises(Invalid):
             artifacts.resolve(self.store, 'nothing', 'x')
+
+    def test_a_bare_yes_is_bolded_with_the_sentence_that_decides(self):
+        self.assertEqual(pr_summary._lead('Yes. Run it in staging first. Then ship.'),
+                         ('Yes. Run it in staging first.', 'Then ship.'))
+        self.assertEqual(pr_summary._lead('At most 40 a minute. Batch first.'), ('At most 40 a minute.', 'Batch first.'))
+
+    def test_the_source_names_who_answered_and_who_signed(self):
+        self.assertEqual(artifacts._decided_line('Ana Ruiz', 'Marcus Lee'), 'Ana Ruiz answered and Marcus Lee signed off: ')
+        self.assertEqual(artifacts._decided_line('Marcus Lee', 'Marcus Lee'), 'Marcus Lee decided: ')
+
+
+class Questions(OfflineCase):
+    def test_a_question_starts_no_task(self):
+        self.assertTrue(inquiry.is_question('Why does the job runner retry twice?'))
+        self.assertTrue(inquiry.is_question('Explain why bulk buys skip the price check'))
+        self.assertFalse(inquiry.is_question('Can you fix the retry bug?'))
+        self.assertFalse(inquiry.is_question('Add bulk label purchase'))
+        store = self.fresh_store('q.db')
+        self.addCleanup(store.graph.close)
+        with self.assertRaises(Invalid):
+            mcp.call_tool(store, 'bridge_start_task', {'title': 'Explain why the job runner retries',
+                                                       'goal': 'Why does the job runner retry twice?', 'repo': REPO})
+
+    def test_sound_tags_are_not_speech(self):
+        self.assertEqual(voice.clean_transcript('*buzzer*'), '')
+        self.assertEqual(voice.clean_transcript('So [Music] the queue is redis.'), 'So the queue is redis.')
+        self.assertEqual(voice.clean_transcript('ok (as in, fine)'), 'ok (as in, fine)')
 
 
 class Meetings(OfflineCase):

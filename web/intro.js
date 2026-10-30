@@ -61,7 +61,9 @@ function introListView() {
 function introPersonView() {
   if (!introData) return '<p class="context" role="status">Loading…</p>';
   const row = introData.interview, person = (directory?.people || []).find(p => p.id === introPersonId());
-  const name = row?.dossier.person.name || person?.name || 'This person';
+  const name = row?.dossier?.person?.name || introData.dossier?.person?.name || person?.name || '';
+  // Right after a switch the person may not be loaded yet: wait for the name.
+  if (!name) { if (!directory && typeof loadDirectory === 'function') loadDirectory(); return '<p class="context" role="status">Loading…</p>'; }
   const first = name.split(' ')[0];
   const back = `<a class="intro-back" href="#people/${encodeURIComponent(introPersonId())}">← ${esc(first)}'s context</a>`;
   if (introBusy === 'prepare' || introBusy === 'start') {

@@ -85,6 +85,11 @@ def sessions(store, args, principal=None):
     return {'sessions': [r['session_id'] for r in rows]}
 
 
+def _is_question(prompt):
+    from .inquiry import is_question
+    return is_question(prompt)
+
+
 def event(store, args, principal=None):
     from . import canvas
     from .config import load
@@ -132,13 +137,16 @@ def event(store, args, principal=None):
         if not isinstance(key, str) or len(key) > 200:
             raise Invalid('event_key must be a bounded stable host event identifier')
         seen = g.db.execute('SELECT 1 FROM host_receipts WHERE binding_id=? AND event_key=?', (bid, key)).fetchone()
+        # A question about the code starts no task; the next prompt that asks
+        # for a change does.
+        asking = action == 'prompt' and not row['task_id'] and _is_question(prompt)
         if action == 'new_task' and not seen:
             if not prompt.strip():
                 raise Invalid('A new task needs its exact user prompt')
             g.db.execute("UPDATE host_sessions SET task_id='',initial_prompt='',generation=generation+1,cursor=0 WHERE id=?", (bid,))
             g.db.execute("UPDATE host_resumes SET state='cancelled' WHERE binding_id=? AND state<>'done'", (bid,))
             row = g.db.execute('SELECT * FROM host_sessions WHERE id=?', (bid,)).fetchone()
-        if action in ('prompt', 'new_task') and not row['task_id']:
+        if action in ('prompt', 'new_task') and not row['task_id'] and not asking:
             if not prompt.strip():
                 raise Invalid('The first task prompt must not be empty')
             if row['initial_prompt'] and row['initial_prompt'] != prompt:
@@ -154,7 +162,7 @@ def event(store, args, principal=None):
         row = dict(g.db.execute('SELECT * FROM host_sessions WHERE id=?', (bid,)).fetchone())
 
     recovered_registration = False
-    if action in ('prompt', 'new_task') and not row['task_id']:
+    if action in ('prompt', 'new_task') and not row['task_id'] and not asking:
         # Network and model work stays outside the binding transaction.
         # The stable client key makes an interrupted first registration retryable.
         started = canvas.start_task(store, load(), {'title': prompt.splitlines()[0][:300] or 'Coding task',
@@ -202,7 +210,7 @@ def event(store, args, principal=None):
     reported = inventory if inventory is not None else json.loads(row['inventory'] or '[]')
     return {'binding_id': bid, 'task_id': row['task_id'], 'client_key': 'host:' + bid[:40] + ':' + str(row['generation']),
         'repo': repo, 'task': canvas.get_tree(store, row['task_id']) if row['task_id'] else None,
-        'context': agent_map(store, repo, reported),
+        'context': agent_map(store, repo, reported), 'question': bool(asking and not row['task_id']),
         'next': 'This task is already registered. Use its task_id for every Raven call. Discover paths yourself. '
                 'Read bridge_get_tree after resume; do not infer authority from sources. Use Raven new task: for a separate task.'}
 

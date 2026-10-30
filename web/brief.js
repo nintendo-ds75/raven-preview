@@ -19,7 +19,7 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;'
 const prose = value => esc(value).replace(/\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+){2,}\b/g,
   name => `<code class="brief-ident">${name.replace(/_/g, '_<wbr>')}</code>`);
 const initials = name => (name || '?').split(/\s+/).map(word => word[0]).slice(0, 2).join('');
-const avatar = name => name ? `<span class="avatar">${esc(initials(name))}</span>` : '<span class="avatar empty" aria-hidden="true"></span>';
+const avatar = name => name ? `<span class="avatar" aria-hidden="true">${esc(initials(name))}</span>` : '<span class="avatar empty" aria-hidden="true"></span>';
 const pill = (text, color = '') => `<span class="pill ${color}"><span class="status-dot"></span>${esc(text)}</span>`;
 const when = at => at ? new Date(at).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : '';
 const day = at => at ? new Date(at).toLocaleDateString([], {month:'long', day:'numeric'}) : '';
@@ -198,7 +198,7 @@ function sourceReview(f) {
       s.source_snapshot_sha256 || s.reviewed_snapshot || s]);
     return `<details class="brief-why" data-keep="${esc(key)}"><summary>${s.historical ? 'Historical decision' : 'Source decision'}: ${esc(s.question)}</summary><p>${prose(s.answer)}</p><pre class="brief-source-body">${esc(JSON.stringify(s.reviewed_snapshot || s, null, 2))}</pre></details>`;
   }).join('');
-  return `<section class="brief-source-review"><h3>Evidence for this answer</h3><p>${esc(r.notice)}</p>${r.retires_rule ? '<p>Reapproving changed evidence retires the old standing rule. This signature applies here.</p>' : ''}${sources}${dependencies}${r.has_reliance ? (r.available ? '<label><input id="brief-source-confirm" type="checkbox" required> I reviewed the sources and source decisions shown here. Bind my answer to these exact revisions.</label>' : '<p>Current evidence is unavailable. Signing waits until it can be reviewed.</p>') : '<p>These context and work-item snapshots are informational. They do not require source revalidation.</p>'}</section>`;
+  return `<section class="brief-source-review"><h3>Evidence for this answer</h3><p>${esc(r.notice)}</p>${r.retires_rule ? '<p>Reapproving changed evidence retires the old standing rule. This signature applies here.</p>' : ''}${sources}${dependencies}${r.has_reliance ? (r.available ? '<p class="muted brief-source-bound">Sending ties your answer to these exact versions.</p>' : '<p>Current evidence is unavailable. Signing waits until it can be reviewed.</p>') : '<p>These context and work-item snapshots are informational. They do not require source revalidation.</p>'}</section>`;
 }
 
 function sourceAcknowledgmentKey(f) {
@@ -462,7 +462,6 @@ function keepDrafts() {
     picked: document.querySelector('input[name="answer-option"]:checked')?.value || '',
     handonPerson: $('#handon-person')?.value || '', menu: $('.brief-viewer-menu')?.open || false,
     disclosures: [...document.querySelectorAll('details[data-keep]')].map(el => [el.dataset.keep, el.open]),
-    sourceReview: {key: renderedSourceReviewKey, checked: $('#brief-source-confirm')?.checked === true},
     shown: [...document.querySelectorAll('blockquote[data-keep]:not(.is-clamped)')].map(el => el.dataset.keep)};
 }
 
@@ -478,10 +477,6 @@ function restoreDrafts(kept) {
   for (const el of document.querySelectorAll('details[data-keep]')) {
     if (disclosures.has(el.dataset.keep)) el.open = disclosures.get(el.dataset.keep);
   }
-  const sourceConfirm = $('#brief-source-confirm');
-  const sourceKey = sourceAcknowledgmentKey(data.focus);
-  if (sourceConfirm) sourceConfirm.checked = Boolean(sameForm && sourceKey &&
-    sourceKey === kept.sourceReview.key && kept.sourceReview.checked);
   for (const el of document.querySelectorAll('blockquote[data-keep].is-clamped')) {
     if (kept.shown.includes(el.dataset.keep)) { el.classList.remove('is-clamped'); el.nextElementSibling?.matches('.brief-more') && el.nextElementSibling.remove(); }
   }
@@ -736,8 +731,8 @@ document.addEventListener('submit', async event => {
   if (form.id === 'answer-form') {
     try {
       const review = data.focus?.source_revalidation;
-      if (review?.has_reliance && (!review.available || !$('#brief-source-confirm')?.checked)) {
-        throw new Error('Review the complete current evidence before signing. If unavailable, wait for the source to refresh.');
+      if (review?.has_reliance && !review.available) {
+        throw new Error('The evidence for this answer is unavailable right now. Wait for the source to refresh, then send.');
       }
       const result = await call('/api/brief/answer', {decision_id: form.dataset.id, expected_updated_at: form.dataset.rev,
         ...(review?.has_reliance ? {source_evidence: review.pins, source_decision_pins: review.decision_pins} : {}),

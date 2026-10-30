@@ -102,7 +102,8 @@ console.log(JSON.stringify({source:context.sourceEvidence(d.sources,d.needs_revi
         self.assertFalse(any(n['tag'] == 'input' for n in parsed.nodes))
         self.assertEqual(rendered['revalidation'], '')
         brief = self.assert_snapshots(rendered['brief'], row, brief=True)
-        self.assertTrue(any(n['attrs'].get('id') == 'brief-source-confirm' for n in brief.nodes))
+        self.assertFalse(any(n['attrs'].get('id') == 'brief-source-confirm' for n in brief.nodes))
+        self.assertIn('Sending ties your answer to these exact versions.', rendered['brief'])
         signed = canvas.sign_off(self.store, self.did, {'by': 'Source Reviewer', 'expected_updated_at': row['updated_at']})
         self.assertTrue(signed['authorized'])
         self.assertCountEqual([cm.pin(s, s['role']) for s in self.store.get_decision(self.did)['sources']],
