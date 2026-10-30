@@ -21,12 +21,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 PEOPLE = [
     # name, email, login, team, role
-    ("Priya Shah", "priya@parcelwise.dev", "priyashah", "Founders", "admin"),
-    ("Marcus Lee", "marcus@parcelwise.dev", "marcuslee", "Founders", "admin"),
-    ("Jordan Okafor", "jordan@parcelwise.dev", "jokafor", "Engineering", "member"),
-    ("Lena Park", "lena@parcelwise.dev", "lenapark", "Engineering", "member"),
-    ("Sam Rivera", "sam@parcelwise.dev", "samrivera", "Customer success", "member"),
-    ("Theo Grant", "theo@parcelwise.dev", "theogrant", "Engineering", "member"),
+    ("Priya Shah", "priya@parcelwise.example", "priyashah", "Founders", "admin"),
+    ("Marcus Lee", "marcus@parcelwise.example", "marcuslee", "Founders", "admin"),
+    ("Jordan Okafor", "jordan@parcelwise.example", "jokafor", "Engineering", "member"),
+    ("Lena Park", "lena@parcelwise.example", "lenapark", "Engineering", "member"),
+    ("Sam Rivera", "sam@parcelwise.example", "samrivera", "Customer success", "member"),
+    ("Theo Grant", "theo@parcelwise.example", "theogrant", "Engineering", "member"),
 ]
 TEAMS = [
     ("Founders", "parcelwise/founders", ["Priya Shah", "Marcus Lee"]),
