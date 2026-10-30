@@ -19,3 +19,11 @@ Verified from the rendered https://agentswithagency.com/ design tokens on
 green `#83d97a`, divider `#2b2e27`, muted `#92968d`, secondary text
 `#bebfb6`, amber `#e4ba6a`. The interface uses these tokens with dark
 semantic status surfaces; warnings and human approval controls remain explicit.
+
+## Raven mark
+
+`favicon.svg` (the app icon, also used in the header, sign-in page and README)
+and `favicon.ico` (16, 32 and larger sizes for browsers without SVG favicons)
+are the Raven mark designed by the Raven team. Source variants live in
+`docs/brand/`: dark and light app icons (SVG and 1024 px PNG) and the bare mark
+in white on transparent and on black.
