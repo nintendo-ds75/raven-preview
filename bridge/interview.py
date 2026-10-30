@@ -108,9 +108,10 @@ def _owned(store, task_id, interview_id, actor, db=None):
 
 
 def _prompts(scope):
-    place = ", ".join(scope["paths"]) or scope["path"] or "the named scope"
     return [scope["question"],
-            f"For {scope['repo']} / {place}, where does your answer apply, and what must remain unchanged?",
+            # Spoken aloud on a call: no repository names or file paths.
+            # The page shows where it applies under "What this is about".
+            "Where does your answer apply, and is there anything that must stay as it is?",
             "What exceptions, edge cases or new caveats would change your answer? Say if there are none.",
             "What implementation constraints, tests or evidence must the agent provide before this is done?",
             "Why is this the right choice? State the final decision and its conditions in your own words."]
