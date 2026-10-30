@@ -19,7 +19,7 @@ from . import authz
 from .store import Invalid, now
 
 NOTE_LIMIT = 600
-SOURCES_EDITABLE = {"intro chat", "added by them", "added by an admin", "via an agent", "from a call"}
+SOURCES_EDITABLE = {"intro chat", "added by them", "added by an admin", "via an agent", "from a call", "from a meeting"}
 
 
 def _keys(person):
@@ -51,7 +51,7 @@ def _may_edit(store, actor, person):
 
 def _notes(store, person_id):
     rows = store.graph.db.execute(
-        "SELECT id, topic, text, quote, question, source, interview_id, created_at FROM person_context "
+        "SELECT id, topic, text, quote, question, source, interview_id, artifact, created_at FROM person_context "
         "WHERE person_id=? AND removed_at='' ORDER BY created_at DESC, seq", (person_id,)).fetchall()
     return [dict(r) for r in rows]
 
@@ -125,14 +125,26 @@ def profile(store, person_id):
     full = next((p for p in store.people() if p["id"] == person_id), person)
     authority = [a for a in full.get("authority", []) if not a.get("ended_at")]
     timeline = []
+    from . import artifacts
+    pointers = {}
+
+    def point(ref):
+        if ref and ref not in pointers:
+            kind, _, ref_id = ref.partition(":")
+            pointers[ref] = artifacts.pointer(store, kind, ref_id)
+        return pointers.get(ref) if ref else None
     for n in _notes(store, person_id):
+        ref = n.get("artifact") or ("intro:" + n["interview_id"] if n["interview_id"] else "")
         timeline.append({"kind": "said", "id": n["id"], "text": n["text"], "quote": n["quote"],
                          "question": n["question"], "topic": n["topic"], "source": n["source"],
-                         "at": n["created_at"], "editable": n["source"] in SOURCES_EDITABLE})
+                         "at": n["created_at"], "editable": n["source"] in SOURCES_EDITABLE, "pointer": point(ref)})
     for d in _decided(store, person):
+        call = artifacts.call_for(store, d["id"])
         timeline.append({"kind": "decided", "id": d["id"], "text": d["answer"] or "", "question": d["question"],
-                         "why": d["rationale"] or "", "task_id": d["run_id"], "source": "answered an agent",
-                         "at": d["updated_at"], "editable": False})
+                         "why": d["rationale"] or "", "task_id": d["run_id"],
+                         "source": "on a call with Raven" if call else "answered an agent",
+                         "at": d["updated_at"], "editable": False,
+                         "pointer": point("call:" + call if call else "decision:" + d["id"])})
     timeline.sort(key=lambda t: t["at"] or "", reverse=True)
     from . import intro
     latest = store.graph.db.execute("SELECT status, saved_at FROM intro_interviews WHERE person_id=? "
@@ -147,7 +159,7 @@ def profile(store, person_id):
             "topics": intro.TOPICS}
 
 
-def remember(store, person_id, text, source="added by them", topic="other", quote="", question=""):
+def remember(store, person_id, text, source="added by them", topic="other", quote="", question="", artifact=""):
     """Keep one line about a person. Returns the stored row."""
     from .intro import TOPICS
     person = _person(store, person_id)
@@ -156,11 +168,12 @@ def remember(store, person_id, text, source="added by them", topic="other", quot
         raise Invalid(f"A note must be 1 to {NOTE_LIMIT} characters")
     topic = topic if topic in TOPICS else "other"
     row = {"id": secrets.token_hex(10), "person_id": person_id, "topic": topic, "text": text,
-           "quote": str(quote or "")[:NOTE_LIMIT], "question": str(question or "")[:400], "source": source, "created_at": now()}
+           "quote": str(quote or "")[:NOTE_LIMIT], "question": str(question or "")[:400], "source": source,
+           "artifact": str(artifact or "")[:120], "created_at": now()}
     with store.graph.transaction() as db:
-        db.execute("INSERT INTO person_context(id, person_id, interview_id, topic, text, quote, question, source, seq, created_at) "
-                   "VALUES(?,?,?,?,?,?,?,?,?,?)", (row["id"], person_id, "", topic, text, row["quote"], row["question"],
-                                                   source, 0, row["created_at"]))
+        db.execute("INSERT INTO person_context(id, person_id, interview_id, topic, text, quote, question, source, seq, artifact, created_at) "
+                   "VALUES(?,?,?,?,?,?,?,?,?,?,?)", (row["id"], person_id, "", topic, text, row["quote"], row["question"],
+                                                   source, 0, row["artifact"], row["created_at"]))
         store.graph.append_event("context_added", {"person_id": person_id, "person_name": person["name"],
                                                    "note_id": row["id"], "source": source}, db=db)
     return row
@@ -214,7 +227,7 @@ def relevant(store, question, limit=5):
     named = {pid for pid, p in people.items() if any(k and re.search(r"\b" + re.escape(k) + r"\b", question.lower())
                                                     for k in {p["name"].lower(), p["name"].split()[0].lower()})}
     scored = []
-    for r in store.graph.db.execute("SELECT id, person_id, text, quote, source, created_at FROM person_context "
+    for r in store.graph.db.execute("SELECT id, person_id, text, quote, source, interview_id, artifact, created_at FROM person_context "
                                     "WHERE removed_at=''").fetchall():
         overlap = len(terms & _terms(r["text"] + " " + (r["quote"] or "")))
         score = overlap + (2 if r["person_id"] in named else 0)

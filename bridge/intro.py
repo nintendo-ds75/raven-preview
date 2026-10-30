@@ -92,6 +92,10 @@ def migrate(db):
             removed_at TEXT NOT NULL DEFAULT '');
         CREATE INDEX IF NOT EXISTS person_context_person ON person_context(person_id, removed_at);
     """)
+    # A learned line points at the first-class source it came from
+    # ("meeting:<id>", "call:<id>"); intro lines use interview_id.
+    if "artifact" not in {r[1] for r in db.execute("PRAGMA table_info(person_context)")}:
+        db.execute("ALTER TABLE person_context ADD COLUMN artifact TEXT NOT NULL DEFAULT ''")
 
 
 # ---------------------------------------------------------------- who may

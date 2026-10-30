@@ -528,7 +528,7 @@ function harness() {
     h.context.pair=[fixture.node('a'),fixture.node('b')];const first=h.run('taskQuestions(pair,"finding","none")');
     assert.match(first,/id="finding-a-review" class="button small primary"/);assert.match(first,/id="finding-b-review" class="button small"/);
   });
-  await test('the page head is title, goal, meta line, one pill, two tabs and a More menu; nothing explains the product',()=>{
+  await test('the page head is title, goal, meta line, one pill, three tabs and a More menu; nothing explains the product',()=>{
     const h=harness();const long=('A long brief line that keeps going. ').repeat(12);
     h.selectTask(fixture.tree('head-run',{goal:long,requester:'',verdict:'pass',verdict_why:'Scoped.'}));
     h.run("state.runs=[{id:'head-run',agent:'Cursor',repo:'synthetic/minimal-ui',status:'needs_judgment',updated_at:'2026-10-09T00:00:00Z'}]");
@@ -538,7 +538,7 @@ function harness() {
     assert.match(html,/<button id="task-brief-summary" class="button text task-brief-toggle" data-action="task-brief-toggle" aria-expanded="false" aria-controls="task-brief">Show more<\/button>/);
     assert.match(html,/<p class="task-meta">synthetic\/minimal-ui · Cursor<\/p>/,'an unknown requester is left out, not announced');
     assert.doesNotMatch(html,/Requester not recorded|Nothing decided yet|No notes yet|id="task-decided"/,'empty Decided is omitted; Notes shows only the form');
-    assert.match(html,/<button id="task-tab-decisions" class="tab active"[^>]*>Decisions \(1\)<\/button><button id="task-tab-history" class="tab "[^>]*>History<\/button><\/nav>/);
+    assert.match(html,/<button id="task-tab-decisions" class="tab active"[^>]*>Decisions \(1\)<\/button><button id="task-tab-pr" class="tab "[^>]*>PR summary<\/button><button id="task-tab-history" class="tab "[^>]*>History<\/button><\/nav>/);
     assert.match(html,/<details class="task-panel task-context" id="task-context"><summary id="task-context-summary">Details<\/summary>/);
     assert.match(html,/<p id="task-kickoff"><strong>Kickoff verdict · pass<\/strong> Scoped\.<\/p>/);
     assert.match(html,/<details class="task-panel task-inquiry" id="task-inquiry"><summary id="task-inquiry-summary">Ask Raven about this task<\/summary>/);

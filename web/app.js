@@ -284,7 +284,8 @@ async function refresh({quiet = false} = {}) {
       if (state.me) {
         $('#profile-name').textContent = state.me.name;
         $('#profile-avatar').textContent = initials(state.me.name);
-        $('#profile-note').innerHTML = state.auth && state.auth.enabled ? `${esc(state.me.role)} · <a href="/auth/logout">Sign out</a>` : 'Self-hosted workspace';
+        $('#profile-note').innerHTML = state.auth && state.auth.enabled ? `${esc(state.me.role)} · <a href="/auth/logout">Sign out</a>`
+          : `${state.me.email ? esc(state.me.email) : 'Self-hosted workspace'} · <button type="button" class="profile-switch" data-action="act-as">${state.me.id ? 'Switch' : 'Choose who you are'}</button>`;
       }
       if (personalInbox() && !tabChosen) tab = 'mine';
       $('#inbox-count').textContent = personalInbox() ? state.decisions.filter(assignedToMe).length
@@ -1370,6 +1371,13 @@ document.addEventListener('click', async event => {
   const version = modalVersion;
   const done = busyLabels[action] ? busy(target, busyLabels[action]) : () => {};
   try {
+    if (action === 'act-as') {
+      const list = await api('/api/people/directory');
+      openModal('Who is using Raven?', 'Sign-in is off on this workspace. Pick the person you are, so tasks, answers and pages carry your name.',
+        `<div class="act-as-list">${list.people.map(p => `<button type="button" class="person-row" data-action="act-as-pick" data-id="${esc(p.id)}">${avatar(p.name)}<span class="person-row-main"><b>${esc(p.name)}</b><small>${esc(p.teams.join(', ') || '')}</small></span>${state.me?.id === p.id ? '<span class="pill green">You</span>' : ''}</button>`).join('')}
+        <button type="button" class="button text" data-action="act-as-pick" data-id="">Use “Local operator”</button></div>`);
+    }
+    if (action === 'act-as-pick') { await api('/api/settings', {act_as: target.dataset.id}); closeModal(); location.reload(); }
     if (action === 'close') closeModal();
     if (action === 'new' || action === 'request-status') newRequest();
     if (action === 'request-new') { requestDraft = null; newRequest(); }
@@ -1413,7 +1421,8 @@ document.addEventListener('click', async event => {
     }
     if (action === 'review' || action === 'source') await review(target.dataset.id);
     if (action === 'run') location.hash = ((state.browser_tasks || []).some(t => t.task_id === target.dataset.id) ? 'work/' : 'runs/') + encodeURIComponent(target.dataset.id);
-    if (action === 'task-tab') { taskTab = target.dataset.tab; taskView().tab = taskTab; render(); }
+    if (action === 'task-tab') { if (target.dataset.tab === 'pr' && typeof taskPr !== 'undefined') taskPr.delete(taskId()); taskTab = target.dataset.tab; taskView().tab = taskTab; render(); }
+    if (action === 'pr-copy') { const got = taskPr.get(target.dataset.id); if (got?.markdown) { try { await navigator.clipboard.writeText(got.markdown); notify('Copied. Paste it into the pull request description.'); } catch { notify('Copy failed; open Markdown below and copy it.'); } } }
     if (action === 'task-brief-toggle') { taskView().briefOpen = !taskView().briefOpen; render(); }
     if (action === 'task-review') { taskTab = 'decisions'; taskView().tab = taskTab; render(); const heading = $('#task-review h2'); if (heading) { heading.focus(); heading.scrollIntoView({block: 'start'}); } }
     if (action === 'task-more') taskMore(target.dataset.key, Number(target.dataset.step) || 12);

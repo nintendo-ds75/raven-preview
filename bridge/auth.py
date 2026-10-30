@@ -74,6 +74,24 @@ class Identity:
 OPERATOR = Identity(id="", name="Local operator", role="admin", kind="operator")
 
 
+def acting(store) -> Identity:
+    """The local operator, as the person it stands for. With sign-in off,
+    the act_as setting (Settings, or RAVEN_ACT_AS as the default) names a
+    person on the map; Raven then shows and attributes the operator as that
+    person ("Maya Chen <maya@...>") instead of "Local operator". It keeps the
+    operator's standing; it is not a sign-in as them."""
+    try:
+        key = store.graph.get_setting("act_as") or os.environ.get("RAVEN_ACT_AS", "").strip()
+        person = store.graph.find_person(key) if key else None
+        if person is None and key:
+            person = store.graph.get_person(key)
+    except Exception:
+        person = None
+    if not person:
+        return OPERATOR
+    return Identity(id=person["id"], name=person["name"], role="admin", kind="operator", email=person.get("email") or "")
+
+
 class Auth:
     """Authentication for one server: reads the environment once, keeps
     the signing secret in the settings table so sessions survive a
@@ -212,7 +230,7 @@ class Auth:
         token, or a session cookie. None when it carries none that is
         valid. With auth off, the local operator."""
         if not self.enabled:
-            return OPERATOR
+            return acting(self.store)
         authorization = headers.get("Authorization", "")
         if authorization.lower().startswith("bearer "):
             token = authorization[7:].strip()
