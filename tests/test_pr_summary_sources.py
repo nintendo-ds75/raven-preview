@@ -66,6 +66,19 @@ class Summary(OfflineCase):
         self.assertIn('`Still open`', md)
         self.assertFalse(result['signed_off'])
 
+    def test_the_whole_answer_and_reason_reach_the_pr(self):
+        # Only the first sentence is bold; the condition after it is what the owner signed too.
+        task = self.store.add_run({'title': 'Bulk label purchase, staging', 'repo': REPO})['id']
+        node = self.g.add_decision(task, 'How fast may bulk buys call USPS?', 'ops', 'pending', repo=REPO,
+                                   owner='Priya Shah')
+        self.store.answer(node, {'answer': 'At most 40 a minute. Yes, run a full 200-label batch in staging first.',
+                                 'rationale': 'USPS throttles past 40 a minute, and they have suspended an account '
+                                              'before, so staging must show the limiter holds under a full batch.',
+                                 'by': 'Priya Shah'})
+        md = pr_summary.summary(self.store, task)['markdown']
+        self.assertIn('- **At most 40 a minute.** Yes, run a full 200-label batch in staging first.', md)
+        self.assertIn('so staging must show the limiter holds under a full batch.', md)
+
     def test_over_mcp_and_one_line_per_node(self):
         self.assertIn('bridge_pr_summary', mcp.READ_ONLY_TOOLS)
         out = mcp.call_tool(self.store, 'bridge_pr_summary', {'task_id': self.task})
