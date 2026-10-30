@@ -161,11 +161,11 @@ function interviewVoice(session) {
 // otherwise the person's own first answer with the rest as the reasoning.
 // "No, that's everything" said out loud ends the call the way the button does.
 const interviewDone = text => String(text || '').trim().length < 80 && /^(?:no[,.!]?\s*|nope[,.!]?\s*|i think\s+)?(?:that'?s (?:it|all|everything)|nothing (?:else|more)|that covers it|we'?re (?:done|good)|i'?m (?:done|good)|all good)(?: for now| from me)?[.!]?$/i.test(String(text || '').trim());
-async function interviewWrap(session) {
+async function interviewWrap(session, guidance) {
   const box = interviewDialog.querySelector('#interview-response');
   if (box && box.value?.trim() && session.turns.length < session.row.prompts.length) await interviewNext(session, false);
   if (interviewSession !== session) return;
-  const g = session.row.guidance || {};
+  const g = guidance || session.row.guidance || {};
   const said = session.turns.map(t => t.response).filter(t => t && !interviewDone(t));
   const answer = g.proposed_answer || said[0] || session.row.answer;
   // Confirming needs a reason. When nobody asked "why", say so plainly
@@ -191,7 +191,8 @@ async function interviewAskBack(session, question) {
   try {
     const r = window.ravenInterviewBridge?.inquiry ? await window.ravenInterviewBridge.inquiry(question, session.row.decision_id)
       : await api(`/api/tasks/${encodeURIComponent(session.row.task_id)}/inquiry`, {question, focus_id: session.row.decision_id});
-    answer = interviewShort(r.answer);
+    // An unverified reading is a list of records to review, not something to say out loud.
+    answer = r.model_used === false ? "I couldn't confirm that from this task's records." : interviewShort(r.answer);
   } catch { answer = "I couldn't check that just now."; }
   finally { session.thinking = false; }
   if (interviewSession !== session) return;
@@ -216,11 +217,14 @@ async function interviewNext(session, advance = true) {
   const index = session.turns.length;
   const turns = [...session.turns, {prompt_id: index, response, capture_method: session.captureMethod}];
   const transcript = [interviewDialog.querySelector('#interview-transcript')?.value, `Q: ${session.row.prompts[index]}\nA: ${response}`].filter(Boolean).join('\n\n');
+  // Saving a turn clears the stored guidance, so keep the readback proposed
+  // before it: "that's everything" adds nothing to read back.
+  const guidance = session.row.guidance;
   const saved = await interviewWrite('draft', {turns, transcript, pending_response: ''});
   session.turns = saved.turns;
   session.heard = '';
   if (interviewSession !== session || !advance) return;
-  if (interviewDone(response)) return interviewWrap(session);
+  if (interviewDone(response)) return interviewWrap(session, guidance);
   session.thinking = true;
   interviewBody(session);
   let advanced = false;
