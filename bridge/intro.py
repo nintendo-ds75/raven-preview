@@ -503,7 +503,10 @@ Return ONLY JSON: {"notes": [{"topic": string, "text": string, "quote": string, 
 
 
 def _norm(text):
-    return re.sub(r"\s+", " ", str(text or "")).strip().lower()
+    """Compare quotes the way a reader would: case, spacing, curly versus
+    straight quotes and trailing punctuation don't make a quote untrue."""
+    text = str(text or "").translate(str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"', "\u2014": "-", "\u2013": "-"}))
+    return re.sub(r"\s+", " ", text).strip().strip(".,;:!?\"' ").lower()
 
 
 def _grounded_notes(raw, turns):
@@ -512,12 +515,17 @@ def _grounded_notes(raw, turns):
         if not isinstance(item, dict):
             continue
         turn, text, quote, topic = item.get("turn"), item.get("text"), item.get("quote"), item.get("topic")
-        if type(turn) is not int or not 0 <= turn < len(turns) or not turns[turn]["answer"]:
-            continue
         if not isinstance(text, str) or not text.strip() or len(text) > 500:
             continue
-        if not isinstance(quote, str) or not quote.strip() or _norm(quote) not in _norm(turns[turn]["answer"]):
+        if not isinstance(quote, str) or not _norm(quote):
             continue
+        # The quote must be in an answer; a wrong turn number is corrected,
+        # an invented quote is dropped.
+        homes = [i for i, t in enumerate(turns) if t["answer"] and _norm(quote) in _norm(t["answer"])]
+        if not homes:
+            continue
+        if turn not in homes:
+            turn = homes[0]
         notes.append({"id": secrets.token_hex(6), "topic": topic if topic in TOPICS else "other",
                       "text": text.strip(), "quote": quote.strip(), "turn": turn,
                       "question": turns[turn]["question"]})

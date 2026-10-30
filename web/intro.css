@@ -74,7 +74,7 @@
 .intro-review-main>p{color:var(--text);font-size:14px;margin:0 0 8px;max-width:720px}
 .intro-note-group h3{font-size:12px;font-weight:600;color:var(--muted);margin:22px 0 8px}
 .intro-note{display:grid;grid-template-columns:auto 1fr;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--card);margin-bottom:8px}
-.intro-note textarea{width:100%;background:transparent;border:0;color:var(--ink);font-size:14px;line-height:1.55;resize:vertical;padding:0;outline:none}
+.intro-note textarea{width:100%;background:transparent;border:0;color:var(--ink);font-size:14px;line-height:1.55;resize:none;padding:0;outline:none;field-sizing:content;min-height:1.55em}
 .intro-note:focus-within{border-color:var(--green)}
 .intro-note small{display:block;color:var(--muted);font-size:11px;margin-top:6px;line-height:1.5}
 .intro-note:has(input:not(:checked)){opacity:.45}
