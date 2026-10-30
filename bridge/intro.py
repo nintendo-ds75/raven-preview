@@ -58,7 +58,7 @@ def migrate(db):
             id TEXT PRIMARY KEY, person_id TEXT NOT NULL REFERENCES people(id),
             interview_id TEXT NOT NULL DEFAULT '', topic TEXT NOT NULL DEFAULT 'other',
             text TEXT NOT NULL, quote TEXT NOT NULL DEFAULT '', question TEXT NOT NULL DEFAULT '',
-            source TEXT NOT NULL DEFAULT 'intro chat', created_at TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'intro chat', seq INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
             removed_at TEXT NOT NULL DEFAULT '');
         CREATE INDEX IF NOT EXISTS person_context_person ON person_context(person_id, removed_at);
     """)
@@ -775,11 +775,11 @@ def save(store, interview_id, data, actor=None):
         stamp = now()
         db.execute("UPDATE person_context SET removed_at=? WHERE person_id=? AND removed_at='' AND source='intro chat'",
                    (stamp, row["person_id"]))
-        for note in rows:
-            db.execute("INSERT INTO person_context(id, person_id, interview_id, topic, text, quote, question, source, created_at) "
-                       "VALUES(?,?,?,?,?,?,?,?,?)",
+        for seq, note in enumerate(rows):
+            db.execute("INSERT INTO person_context(id, person_id, interview_id, topic, text, quote, question, source, seq, created_at) "
+                       "VALUES(?,?,?,?,?,?,?,?,?,?)",
                        (secrets.token_hex(10), row["person_id"], interview_id, note["topic"], note["text"],
-                        note.get("quote", ""), note.get("question", ""), note.get("source", "intro chat"), stamp))
+                        note.get("quote", ""), note.get("question", ""), note.get("source", "intro chat"), seq, stamp))
         _write(store, db, interview_id, status="saved", saved_at=stamp)
         store.graph.append_event("intro_saved", {"interview_id": interview_id, "person_id": row["person_id"],
                                  "person_name": person["name"], "notes": len(rows)}, db=db)
@@ -799,7 +799,7 @@ def context_for(store, person_id):
     """The notes a person kept from their intro chat: base context, in
     their words, never a decision and never a verified fact."""
     rows = store.graph.db.execute("SELECT id, topic, text, quote, question, source, created_at FROM person_context "
-                                  "WHERE person_id=? AND removed_at='' ORDER BY created_at, rowid", (person_id,)).fetchall()
+                                  "WHERE person_id=? AND removed_at='' ORDER BY created_at, seq", (person_id,)).fetchall()
     return [dict(r) for r in rows]
 
 
