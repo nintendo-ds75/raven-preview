@@ -20,7 +20,7 @@ function harness(link = false) {
     addEventListener:(event,fn) => handlers.dialog[event] = fn, showModal(){this.open=true;}, close(){this.open=false;}};
   const calls = [], notifications = [];
   const ctx = {
-    console, Promise, Object, String, JSON, FormData:class {}, crypto:{randomUUID:()=>'random-key'},
+    console, Promise, Object, String, JSON, setTimeout, clearTimeout, FormData:class {}, crypto:{randomUUID:()=>'random-key'},
     document:{body:{append(){}},documentElement:{lang:'en'},createElement:()=>dialog,
       addEventListener:(event,fn)=>handlers.document[event] = fn,querySelector:()=>null},
     addEventListener:(event,fn)=>handlers.window[event] = fn,
@@ -41,7 +41,7 @@ function harness(link = false) {
     const h = harness(link);
     await h.run("openInterview('task','decision')");
     assert(h.dialog.open);
-    assert.match(h.dialog.innerHTML,/Start microphone/);
+    assert.match(h.dialog.innerHTML,/Browser dictation is unavailable here/);
     assert.match(h.dialog.innerHTML,/model provider/);
     assert.match(h.dialog.innerHTML,/customer=Synthetic North; environment=staging; release=r17/);
     assert(!h.dialog.innerHTML.includes('<script>unsafe'));

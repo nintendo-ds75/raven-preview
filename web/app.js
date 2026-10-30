@@ -1312,7 +1312,7 @@ async function review(id) {
       ${assignable ? handOnRow(d) : ''}
       ${details}
       ${decisionInquiry(d)}
-      ${canDecide && !inert && state.auth?.enabled && state.me?.id && ['session','token'].includes(state.me.kind) ? `<button class="button text" data-action="interview-start" data-task="${esc(d.run_id)}" data-id="${esc(d.id)}">Talk it through instead</button>` : ''}
+      ${canDecide && !inert && state.auth?.enabled && state.me?.id && ['session','token'].includes(state.me.kind) ? `<button class="button text" data-action="interview-start" data-task="${esc(d.run_id)}" data-id="${esc(d.id)}">Take a quick call instead</button>` : ''}
       <details class="history"><summary>History · ${plural(d.events.length, 'event')}</summary>${d.events.map(e => `<div class="history-item"><strong>${esc(eventLabels[e.kind] || e.kind)}</strong>${esc(e.detail)}<br><small>${esc(new Date(e.created_at).toLocaleString())}</small></div>`).join('')}</details>`);
   } catch (error) { notify(error.message); }
 }

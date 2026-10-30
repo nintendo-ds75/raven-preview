@@ -1,7 +1,8 @@
 'use strict';
 
-// Speech recognition is a browser capability, not an identity credential or
-// a Raven model call. Only an explicitly reviewed answer reaches the agent.
+// A short voice call about one decision. Speech recognition is a browser
+// capability, not an identity credential or a Raven model call. Only the
+// readback the person confirms reaches the agent.
 let interviewSession = null, interviewGeneration = 0;
 const interviewDialog = document.createElement('dialog');
 interviewDialog.id = 'interview-modal';
@@ -43,15 +44,12 @@ function interviewStatus(text) {
 function stopInterviewSpeech() {
   if (window.speechSynthesis) window.speechSynthesis.cancel();
   const session = interviewSession;
+  if (session) { clearTimeout(session.silence); session.speaking = false; }
   if (!session?.recognition) return;
   const recognition = session.recognition;
   session.recognition = null; // Late events from an aborted capture are ignored.
   recognition.onresult = recognition.onerror = recognition.onend = null;
   recognition.abort();
-  const start = interviewDialog.querySelector('[data-interview-action="record"]');
-  const stop = interviewDialog.querySelector('[data-interview-action="stop"]');
-  if (start) start.disabled = false;
-  if (stop) stop.disabled = true;
 }
 function interviewPayload(session) {
   const form = interviewDialog.querySelector('#interview-form');
@@ -74,27 +72,131 @@ async function interviewWrite(action = 'draft', extra = {}) {
   session.writes = work;
   return work;
 }
+// The call, drawn the way the voice intro is: one orb, Raven's question as
+// a caption, the person's words as they say them, and a readback at the
+// end that they confirm in one tap. The form underneath is the same draft.
+const interviewCanListen = () => !!(window.SpeechRecognition || window.webkitSpeechRecognition) && window.isSecureContext;
+const interviewCanSpeak = () => !!window.speechSynthesis && !!window.SpeechSynthesisUtterance;
+function interviewOrb(mode) {
+  return `<div class="voice-orb ${mode}" aria-hidden="true"><span></span><i></i><i></i><i></i></div><div class="voice-wave ${mode}" aria-hidden="true">${'<b></b>'.repeat(9)}</div>`;
+}
+function interviewMode(session) {
+  return session.thinking ? 'thinking' : session.speaking ? 'speaking' : session.recognition ? 'listening' : 'idle';
+}
 function interviewBody(session, reviewing = false) {
   const row = session.row, scope = row.scope;
   // Bind the button to exactly what this render showed, never a later save.
   session.review = reviewing ? {id: row.id, version: row.version, revision: row.decision_revision} : null;
-  const title = reviewing ? 'Review your decision' : 'Talk through this decision';
-  const context = `<div class="context-box"><strong>${esc(scope.question)}</strong><p>${esc(scope.context)}</p><p class="context">${esc(scope.repo)} · ${esc(scope.paths.join(', ') || scope.path)} · Task ${esc(scope.task_id)}</p><pre>${esc(scope.decision_scope_text || "This older draft has no bound structured scope. Start a new interview before confirming.")}</pre></div>`;
-  const canSpeak = !!window.speechSynthesis && !!window.SpeechSynthesisUtterance;
+  session.reviewing = reviewing;
+  const first = String(interviewUser()?.name || '').split(' ')[0];
+  const where = `${esc(scope.repo)} · ${esc(scope.paths.join(', ') || scope.path)}`;
+  const scopeBox = `<details class="voice-scope"><summary>What this is about</summary><p>${esc(scope.context)}</p><p class="context">${where} · Task ${esc(scope.task_id)}</p><pre>${esc(scope.decision_scope_text || "This older draft has no bound structured scope. Start a new call before confirming.")}</pre></details>`;
+  const mode = interviewMode(session);
   let body;
   if (reviewing) {
     const spec = row.applicability;
-    body = `${context}${scope.decision_scope?.reusable ? '<p class="context">Confirming this interview answer retires the existing standing rule. Future automatic reuse needs a fresh explicit make-rule action.</p>' : ''}<button class="button small" data-interview-action="readback" ${canSpeak ? '' : 'disabled'}>Read decision aloud</button><h3>The exact answer you will sign</h3><p class="task-answer">${esc(row.answer)}</p><h3>Why</h3><p>${esc(row.rationale)}</p><details class="history"><summary>Reviewed transcript</summary><p>${esc(row.transcript || 'No transcript supplied; answer entered directly.')}</p></details><h3>Reuse boundaries</h3><pre>${esc(JSON.stringify(spec, null, 2))}</pre><p class="context">${Object.keys(spec).length ? 'Other tasks must satisfy these boundaries; a fresh signature is still required unless an enabled standing rule applies.' : 'No extra reuse boundaries declared. This signs this decision; it does not create a standing rule.'} Other required approvers must still sign.</p><p class="context">Recorded as ${esc(interviewUser().name)} using ${window.ravenInterviewBridge ? 'your personal task link' : 'your signed-in identity'}. Speech recognition does not verify who spoke.</p><div class="modal-actions"><button class="button" data-interview-action="edit">Back to edit</button><button class="button primary" data-interview-action="confirm" data-interview-id="${esc(row.id)}" data-interview-version="${row.version}">Confirm and sign as ${esc(interviewUser().name)}</button></div>`;
+    body = `<div class="voice-stage call">
+      <div class="voice-top"><span class="voice-dot ${mode}"></span><span>${mode === 'speaking' ? 'Raven is reading it back' : 'Is this right?'}</span></div>
+      <p class="voice-topic">${esc(scope.question)}</p>
+      ${interviewOrb(mode)}
+      <p class="voice-sub">Here's what I'll tell the agent${first ? `, ${esc(first)}` : ''}:</p>
+      <p class="voice-caption">${esc(row.answer)}</p>
+      ${row.rationale ? `<p class="voice-you"><b>Why</b> ${esc(row.rationale)}</p>` : ''}
+      ${scope.decision_scope?.reusable ? '<p class="context">Confirming this interview answer retires the existing standing rule. Future automatic reuse needs a fresh explicit make-rule action.</p>' : ''}
+      <div class="voice-controls"><button class="voice-btn" data-interview-action="edit">Change it</button><button class="voice-btn" data-interview-action="readback" ${interviewCanSpeak() ? '' : 'disabled'}>Read it again</button><button class="button primary voice-call-btn" data-interview-action="confirm" data-interview-id="${esc(row.id)}" data-interview-version="${row.version}">That's right</button></div>
+      <p class="context voice-fine">Recorded as ${esc(interviewUser().name)} using ${window.ravenInterviewBridge ? 'your personal task link' : 'your signed-in identity'}. Speech recognition does not verify who spoke. ${Object.keys(spec).length ? 'Other tasks must satisfy the boundaries below.' : 'It applies to this decision.'} Anyone else who must approve is still asked.</p>
+      <details class="voice-scope"><summary>Transcript and boundaries</summary><p>${esc(row.transcript || 'No transcript supplied; answer entered directly.')}</p><pre>${esc(JSON.stringify(spec, null, 2))}</pre></details>
+      ${scopeBox}</div>`;
   } else {
-    const available = !!(window.SpeechRecognition || window.webkitSpeechRecognition) && window.isSecureContext;
     const index = session.turns.length;
-    const guided = index < row.prompts.length ? `<section class="context-box"><span class="label">Guided question ${index + 1} of ${row.prompts.length}</span><p>${esc(row.prompts[index])}</p><button type="button" class="button small" data-interview-action="speak" ${canSpeak ? '' : 'disabled'}>Read question aloud</button><label for="interview-response">Your response to this question</label><textarea id="interview-response" name="pending_response" form="interview-form" maxlength="2000">${esc(row.pending_response)}</textarea><button type="button" class="button small" data-interview-action="next">Save response and continue</button></section>` : '<p class="context">Your interview responses are saved. Review the transcript and write your exact decision below.</p>';
+    const asking = index < row.prompts.length ? row.prompts[index] : 'That covers it. Anything else before I read it back?';
+    const typing = session.typing || !interviewCanListen();
+    const heard = session.heard || row.pending_response || '';
     const guidance = row.guidance || {};
-    const proposed = guidance.mode === 'model-assisted' ? `<section class="context-box prediction"><span class="label">Model-proposed readback · unapproved</span><p>${esc(guidance.proposed_answer || 'More clarification is needed before proposing an answer.')}</p><p>${esc(guidance.proposed_rationale)}</p>${guidance.caveats.length ? `<h3>Caveats to preserve</h3><ul>${guidance.caveats.map(c => `<li>${esc(c.text)}<br><small>From your response: ${esc(c.quote)}</small></li>`).join('')}</ul>` : ''}${guidance.proposed_answer ? '<button type="button" class="button small" data-interview-action="use-readback">Copy readback into editable answer</button>' : ''}</section>` : guidance.reason ? `<p class="context">${guidance.reason === 'model_unavailable' ? 'No model interviewer is configured. Continuing with guided prompts.' : 'The model did not return a usable follow-up. Continuing with guided prompts.'}</p>` : '';
-    const history = session.turns.length ? `<details class="history"><summary>Interview responses (${session.turns.length})</summary>${session.turns.map(t => `<p><strong>${esc(t.prompt)}</strong></p><p>${esc(t.response)}</p>`).join('')}</details>` : '';
-    body = `${context}<p class="context">${row.interviewer === 'model-assisted' ? 'Model-assisted follow-ups are grounded in your saved responses. Suggestions remain unapproved.' : 'Guided questions are available without a model. After a response, Raven uses an adaptive interviewer when a model backend is configured.'} You can answer the prompts or write your decision directly. Adaptive follow-ups send the saved task context and responses to the configured model provider.</p>${guided}${history}${proposed}<p class="context">Optional browser dictation may send audio to your browser provider. Raven stores only the text you save. Microphone access starts only when you choose Start microphone. You can type instead.</p><div class="modal-actions"><button class="button" data-interview-action="record" ${available ? '' : 'disabled'}>Start microphone</button><button class="button" data-interview-action="stop" disabled>Stop microphone</button></div>${available ? '' : '<p class="context">Browser dictation is unavailable here. Use HTTPS and a supported browser, or type your interview below.</p>'}${row.failure ? `<p class="task-warning">Last capture stopped: ${esc(row.failure)}. Your saved text is preserved; type or try again.</p>` : ''}<form id="interview-form"><label for="interview-transcript">Interview transcript · review for recognition errors</label><textarea id="interview-transcript" name="transcript" maxlength="12000">${esc(row.transcript)}</textarea><p class="context">The transcript is an unapproved draft. Write or edit the exact decision below.</p><label for="interview-answer">Answer the agent should follow</label><textarea id="interview-answer" name="answer" maxlength="12000" required>${esc(row.answer)}</textarea><label for="interview-rationale">Reasoning, constraints and exceptions</label><textarea id="interview-rationale" name="rationale" maxlength="12000" required>${esc(row.rationale)}</textarea>${interviewScopeFields(row.applicability)}<div class="modal-actions"><button type="button" class="button" data-interview-action="save">Save draft</button><button type="button" class="button" data-interview-action="adapt">Suggest follow-up and readback</button><button type="submit" class="button primary">Save and review</button></div></form><button class="button text small" data-interview-action="cancel">Discard this interview</button><p class="context">Discard closes the draft without recording an answer. Previously saved text stays in your private interview history.</p>`;
+    const note = guidance.reason ? (guidance.reason === 'model_unavailable' ? 'No model interviewer is configured, so Raven asks its standard questions.' : 'The model did not return a usable follow-up, so Raven asks its standard questions.') : '';
+    body = `<div class="voice-stage call">
+      <div class="voice-top"><span class="voice-dot ${mode}"></span><span>${mode === 'speaking' ? 'Raven is speaking' : mode === 'listening' ? 'Listening' : mode === 'thinking' ? 'Raven is thinking' : 'Your turn'}</span><span class="voice-clock">${index < row.prompts.length ? `${index + 1} of ${row.prompts.length}` : 'Wrapping up'}</span></div>
+      <p class="voice-topic">${esc(scope.question)}</p>
+      ${interviewOrb(mode)}
+      <p class="voice-caption" aria-live="polite">${session.thinking ? '<span class="voice-ellipsis"><i></i><i></i><i></i></span>' : esc(asking)}</p>
+      <p class="voice-you ${heard ? '' : 'quiet'}" data-interview-heard>${heard ? `<b>${esc(first || 'You')}</b> ${esc(heard)}` : typing ? '' : 'Just talk. Raven listens until you pause.'}</p>
+      <div class="voice-type" ${typing && index < row.prompts.length ? '' : 'hidden'}><label class="sr-only" for="interview-response">Your answer</label><textarea id="interview-response" name="pending_response" form="interview-form" maxlength="2000" rows="2" placeholder="Type your answer">${esc(row.pending_response)}</textarea><button type="button" class="button primary small" data-interview-action="next">Send</button></div>
+      <div class="voice-controls">
+        ${interviewCanListen() ? `<button type="button" class="voice-btn" data-interview-action="${session.recognition ? 'stop' : 'record'}">${session.recognition ? 'Mute' : 'Start microphone'}</button><button type="button" class="voice-btn" data-interview-action="type" aria-pressed="${!!session.typing}">${session.typing ? 'Talk instead' : 'Type instead'}</button>` : ''}
+        ${!typing && heard && index < row.prompts.length ? '<button type="button" class="voice-btn" data-interview-action="next">Done</button>' : ''}
+        <button type="button" class="voice-btn" data-interview-action="wrap" ${index ? '' : 'disabled'}>That's everything</button>
+        <button type="button" class="voice-btn end" data-interview-action="close">End call</button>
+      </div>
+      ${note ? `<p class="context voice-fine">${note}</p>` : ''}
+      <p class="context voice-fine">${interviewCanListen() ? 'Browser dictation may send audio to your browser provider. ' : 'Browser dictation is unavailable here, so type your answers. '}Raven stores only the text. Adaptive follow-ups send the task context and your answers to the configured model provider.</p>
+      ${row.failure ? `<p class="task-warning">Last capture stopped: ${esc(row.failure)}. Your saved text is preserved; type or try again.</p>` : ''}
+      ${scopeBox}
+      <details class="voice-scope"><summary>Write the answer yourself</summary><form id="interview-form"><label for="interview-transcript">Transcript</label><textarea id="interview-transcript" name="transcript" maxlength="12000">${esc(row.transcript)}</textarea><label for="interview-answer">Answer the agent should follow</label><textarea id="interview-answer" name="answer" maxlength="12000" required>${esc(row.answer)}</textarea><label for="interview-rationale">Reasoning, constraints and exceptions</label><textarea id="interview-rationale" name="rationale" maxlength="12000" required>${esc(row.rationale)}</textarea>${interviewScopeFields(row.applicability)}<div class="modal-actions"><button type="button" class="button" data-interview-action="save">Save draft</button><button type="submit" class="button primary">Read it back to me</button></div></form><button class="button text small" data-interview-action="cancel">Discard this call</button></details>
+    </div>`;
   }
-  interviewDialog.innerHTML = `<div class="modal-head"><div><h2 id="interview-title">${title}</h2><p>Attributed human interview · no automatic approval</p></div><button class="icon-button" data-interview-action="close" aria-label="Save draft and close interview"><span aria-hidden="true">×</span></button></div><div class="modal-body">${body}<p data-interview-status role="status">Draft saved. No decision recorded.</p><p class="error" data-interview-error role="alert" hidden></p></div>`;
+  interviewDialog.classList?.add?.('voice-dialog');
+  interviewDialog.innerHTML = `<div class="modal-head"><div><h2 id="interview-title">${reviewing ? 'Review your decision' : 'Call with Raven'}</h2></div><button class="icon-button" data-interview-action="close" aria-label="Save draft and close the call"><span aria-hidden="true">×</span></button></div><div class="modal-body">${body}<p class="context" data-interview-status role="status">Draft saved. No decision recorded.</p><p class="error" data-interview-error role="alert" hidden></p></div>`;
+  interviewVoice(session);
+}
+// Raven says each new question (or the readback) once, then listens.
+function interviewVoice(session) {
+  if (interviewSession !== session || session.thinking) return;
+  const key = session.reviewing ? 'review:' + session.row.version : 'ask:' + session.turns.length;
+  if (session.spokenFor === key) return;
+  session.spokenFor = key;
+  const row = session.row;
+  const text = session.reviewing ? `Here's what I'll tell the agent. ${row.answer}` : session.turns.length < row.prompts.length ? row.prompts[session.turns.length] : '';
+  const listen = () => {
+    if (interviewSession !== session) return;
+    session.speaking = false;
+    if (!session.reviewing && !session.typing && !session.muted && interviewCanListen() && !session.recognition) {
+      try { startInterviewSpeech(); } catch {}
+    }
+    interviewBody(session, session.reviewing);
+  };
+  if (!text || !interviewCanSpeak()) return text && Promise.resolve().then(listen);
+  try {
+    window.speechSynthesis.cancel();
+    const say = new SpeechSynthesisUtterance(text);
+    const voices = window.speechSynthesis.getVoices?.() || [];
+    say.voice = voices.find(v => /Samantha|Google US English|Jenny|Aria|Natural/i.test(v.name)) || voices.find(v => /^en/i.test(v.lang)) || null;
+    say.onend = say.onerror = listen;
+    session.speaking = true;
+    window.speechSynthesis.speak(say);
+  } catch { session.speaking = false; }
+}
+// End of the call: the readback is the model's proposal when there is one,
+// otherwise the person's own first answer with the rest as the reasoning.
+async function interviewWrap(session) {
+  const box = interviewDialog.querySelector('#interview-response');
+  if (box && box.value?.trim() && session.turns.length < session.row.prompts.length) await interviewNext(session, false);
+  if (interviewSession !== session) return;
+  const g = session.row.guidance || {};
+  const said = session.turns.map(t => t.response).filter(Boolean);
+  const answer = g.proposed_answer || said[0] || session.row.answer;
+  const rationale = g.proposed_answer ? g.proposed_rationale : (said.slice(1).join(' ') || session.row.rationale || 'Said on a call with Raven.');
+  const saved = await interviewWrite('draft', {answer, rationale});
+  if (interviewSession !== session || !saved) return;
+  interviewBody(session, true);
+}
+async function interviewNext(session, advance = true) {
+  stopInterviewSpeech();
+  const response = (interviewDialog.querySelector('#interview-response')?.value || '').trim();
+  if (!response) throw new Error('Say or type an answer first, or tap That\'s everything.');
+  const index = session.turns.length;
+  const turns = [...session.turns, {prompt_id: index, response, capture_method: session.captureMethod}];
+  const transcript = [interviewDialog.querySelector('#interview-transcript')?.value, `Q: ${session.row.prompts[index]}\nA: ${response}`].filter(Boolean).join('\n\n');
+  const saved = await interviewWrite('draft', {turns, transcript, pending_response: ''});
+  session.turns = saved.turns;
+  session.heard = '';
+  if (interviewSession !== session || !advance) return;
+  session.thinking = true;
+  interviewBody(session);
+  let advanced = false;
+  try { advanced = await advanceInterview(session); } finally { session.thinking = false; }
+  if (interviewSession !== session) return;
+  if (session.turns.length >= session.row.prompts.length) return interviewWrap(session);
+  if (advanced !== false) interviewBody(session);
 }
 async function openInterview(task, decision) {
   const generation = ++interviewGeneration;
@@ -106,7 +208,8 @@ async function openInterview(task, decision) {
   if (!row) row = await interviewRequest(base, {decision_id: decision, client_key: (typeof ravenUuid === 'function' ? ravenUuid() : crypto.randomUUID())});
   if (generation !== interviewGeneration) return;
   if ($('#modal')?.open) closeModal();
-  interviewSession = {row, base: `${base}/${row.id}`, writes: Promise.resolve(), captureMethod: row.capture_method, turns: row.turns, recognition: null, editVersion: 0};
+  interviewSession = {row, base: `${base}/${row.id}`, writes: Promise.resolve(), captureMethod: row.capture_method, turns: row.turns, recognition: null, editVersion: 0,
+    typing: false, muted: false, speaking: false, thinking: false, heard: '', spokenFor: ''};
   interviewBody(interviewSession);
   interviewDialog.showModal();
 }
@@ -138,44 +241,50 @@ function startInterviewSpeech() {
   const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Speech || !window.isSecureContext) throw new Error('Browser dictation is unavailable. You can type instead.');
   if (window.speechSynthesis) window.speechSynthesis.cancel();
+  session.speaking = false;
   const recognition = new Speech();
   recognition.lang = document.documentElement.lang || 'en-US';
   recognition.continuous = true;
-  recognition.interimResults = false;
+  recognition.interimResults = true;
   session.recognition = recognition;
+  let spoken = '';
   recognition.onresult = event => {
     if (interviewSession !== session || session.recognition !== recognition) return;
     const input = interviewDialog.querySelector('#interview-response') || interviewDialog.querySelector('#interview-transcript');
     if (!input) return;
-    const parts = [];
-    for (let i = event.resultIndex; i < event.results.length; i++) if (event.results[i].isFinal) parts.push(event.results[i][0].transcript);
-    if (!parts.length) return;
-    const joined = [input.value, ...parts].filter(Boolean).join('\n');
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      if (event.results[i].isFinal) spoken = [spoken, event.results[i][0].transcript.trim()].filter(Boolean).join(' ');
+      else interim += ' ' + event.results[i][0].transcript;
+    }
+    const joined = [input.value && !spoken ? input.value : '', spoken].filter(Boolean).join(' ');
     if (joined.length > input.maxLength) { stopInterviewSpeech(); interviewError(new Error('Transcript limit reached. Save this draft before continuing.')); return; }
-    input.value = joined;
+    if (spoken) input.value = joined;
+    session.heard = (joined + interim).trim();
     session.editVersion++;
     session.captureMethod = 'browser-speech';
-    interviewStatus('Speech transcribed. Save the draft and review recognition errors.');
-    interviewWrite().catch(interviewError);
+    const heard = interviewDialog.querySelector('[data-interview-heard]');
+    if (heard) { heard.classList?.remove?.('quiet'); heard.innerHTML = `<b>${esc(String(interviewUser()?.name || 'You').split(' ')[0])}</b> ${esc(session.heard)}`; }
+    clearTimeout(session.silence);
+    // A pause of about two seconds after something was said sends it.
+    if (spoken) session.silence = setTimeout(() => { if (interviewSession === session && session.recognition === recognition) interviewNext(session).catch(interviewError); }, 2200);
   };
   recognition.onerror = event => {
     if (interviewSession !== session || session.recognition !== recognition) return;
     stopInterviewSpeech();
     const allowed = ['not-allowed','service-not-allowed','audio-capture','network','no-speech','aborted','language-not-supported'];
     const failure = allowed.includes(event.error) ? event.error : 'recognition-failed';
-    interviewError(new Error(`Microphone stopped: ${failure}. Your saved text is preserved. You can type instead.`));
-    interviewWrite('failed', {failure}).catch(interviewError);
+    if (failure === 'no-speech') return interviewBody(session);
+    session.typing = true;
+    interviewWrite('failed', {failure}).then(() => interviewBody(session)).catch(interviewError);
   };
   recognition.onend = () => {
     if (interviewSession !== session || session.recognition !== recognition) return;
-    stopInterviewSpeech();
-    interviewStatus('Microphone stopped. Review the transcript before recording a decision.');
+    try { recognition.start(); } catch { stopInterviewSpeech(); interviewBody(session); }
   };
   try { recognition.start(); }
   catch (error) { stopInterviewSpeech(); throw error; }
-  interviewDialog.querySelector('[data-interview-action="record"]').disabled = true;
-  interviewDialog.querySelector('[data-interview-action="stop"]').disabled = false;
-  interviewStatus('Listening. Stop the microphone before reviewing.');
+  interviewStatus('Listening.');
 }
 document.addEventListener('click', async event => {
   const start = event.target.closest('[data-action="interview-start"]');
@@ -191,28 +300,22 @@ interviewDialog.addEventListener('click', async event => {
   const action = button.dataset.interviewAction;
   button.disabled = true;
   try {
-    if (action === 'record') startInterviewSpeech();
-    else if (action === 'stop') { stopInterviewSpeech(); await interviewWrite(); }
+    if (action === 'record') { interviewSession.muted = false; startInterviewSpeech(); interviewBody(interviewSession); }
+    else if (action === 'stop') { interviewSession.muted = true; stopInterviewSpeech(); await interviewWrite(); interviewBody(interviewSession); }
+    else if (action === 'type') {
+      const session = interviewSession;
+      session.typing = !session.typing;
+      if (session.typing) stopInterviewSpeech(); else if (!session.muted) startInterviewSpeech();
+      interviewBody(session);
+    }
+    else if (action === 'wrap') { stopInterviewSpeech(); await interviewWrap(interviewSession); }
     else if (action === 'speak' || action === 'readback') {
       stopInterviewSpeech();
       const row = interviewSession.row;
-      const text = action === 'speak' ? row.prompts[interviewSession.turns.length] : `${row.scope.decision_scope_text || "No bound structured scope is available."} Your decision: ${row.answer}. Your reasoning and constraints: ${row.rationale}. Reuse boundaries: ${JSON.stringify(row.applicability)}. ${row.scope.decision_scope?.reusable ? "Confirming this answer retires the existing standing rule. Future automatic reuse needs an explicit make-rule action." : ""} This has not been confirmed yet.`;
+      const text = action === 'speak' ? row.prompts[interviewSession.turns.length] : `Here's what I'll tell the agent. ${row.answer}. ${row.scope.decision_scope_text || "No bound structured scope is available."} Your decision: ${row.answer}. Your reasoning and constraints: ${row.rationale}. Reuse boundaries: ${JSON.stringify(row.applicability)}. ${row.scope.decision_scope?.reusable ? "Confirming this answer retires the existing standing rule. Future automatic reuse needs an explicit make-rule action." : ""} This has not been confirmed yet.`;
       window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
     }
-    else if (action === 'next') {
-      stopInterviewSpeech();
-      const session = interviewSession;
-      const response = interviewDialog.querySelector('#interview-response').value.trim();
-      if (!response) throw new Error('Answer this prompt first, or write your decision directly below.');
-      const index = session.turns.length;
-      const turns = [...session.turns, {prompt_id: index, response, capture_method: session.captureMethod}];
-      const transcript = [interviewDialog.querySelector('#interview-transcript').value, `Q: ${session.row.prompts[index]}\nA: ${response}`].filter(Boolean).join('\n\n');
-      const saved = await interviewWrite('draft', {turns, transcript, pending_response: ''});
-      session.turns = saved.turns;
-      if (interviewSession !== session) return;
-      interviewBody(session);
-      if (await advanceInterview(session)) interviewBody(session);
-    }
+    else if (action === 'next') await interviewNext(interviewSession);
     else if (action === 'adapt') {
       stopInterviewSpeech();
       const session = interviewSession;
@@ -228,11 +331,11 @@ interviewDialog.addEventListener('click', async event => {
     }
     else if (action === 'save') await interviewWrite();
     else if (action === 'close') await closeInterview();
-    else if (action === 'edit') { stopInterviewSpeech(); interviewBody(interviewSession); }
+    else if (action === 'edit') { stopInterviewSpeech(); interviewSession.typing = true; interviewBody(interviewSession); const box = interviewDialog.querySelector('.voice-scope:last-of-type'); if (box) box.open = true; }
     else if (action === 'cancel') {
       stopInterviewSpeech(); await interviewWrite('cancel');
       interviewSession = null; ++interviewGeneration; interviewDialog.close();
-      interviewNotify('Interview discarded. No answer was recorded.');
+      interviewNotify('Call discarded. No answer was recorded.');
     } else if (action === 'confirm') {
       stopInterviewSpeech();
       const session = interviewSession, review = session?.review;
@@ -248,7 +351,7 @@ interviewDialog.addEventListener('click', async event => {
       if (interviewSession !== session) return;
       session.row = result;
       interviewSession = null; ++interviewGeneration; interviewDialog.close();
-      interviewNotify('Your answer and signature were recorded. Other required approvers may still need to sign.');
+      interviewNotify('Got it. Raven passed your answer to the agent.');
       await interviewRefresh();
     }
   } catch (error) { interviewError(error); }
