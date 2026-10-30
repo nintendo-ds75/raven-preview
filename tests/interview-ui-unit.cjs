@@ -177,5 +177,18 @@ function harness(link = false) {
     assert.match(draft.rationale, /no separate reason/);
     assert.doesNotMatch(draft.rationale, /everything/);
   }
+  // Saving the "that's everything" turn clears the stored guidance; the
+  // readback is still the model's proposal from the turn before.
+  {
+    const h = harness(); await h.run("openInterview('task','decision')");
+    h.run(`interviewSession.row.guidance = {mode:'model-assisted', question:'Should the job enforce the limit?', proposed_answer:'Run them as a background job, at most 40 a minute.', proposed_rationale:'USPS throttles past that.'};
+      interviewSession.turns = [{prompt_id:0,response:'Run them as a job at most 40 a minute. USPS throttles us past that.'}];
+      interviewDialog.querySelector = sel => sel === '#interview-response' ? {value:"No, that's everything."} : null;`);
+    h.ctx.api = (url, body) => { h.calls.push({url, body}); return Promise.resolve({...h.run('interviewSession.row'), ...body, guidance: {}, version: 3}); };
+    await h.run('interviewNext(interviewSession)');
+    const draft = h.calls.filter(c => c.url.endsWith('/draft')).pop().body;
+    assert.equal(draft.answer, 'Run them as a background job, at most 40 a minute.');
+    assert.equal(draft.rationale, 'USPS throttles past that.');
+  }
   console.log('Interview UI logic checks passed (DOM/audio stubs, not browser verification).');
 })().catch(e=>{console.error(e);process.exitCode=1;});

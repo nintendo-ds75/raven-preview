@@ -255,7 +255,12 @@ def read_evidence(question, evidence, cfg, *, revalidate=None):
                     continue
                 if raw['outcome'] == 'supported_answer' and not raw['citations']:
                     raise ValueError('An answer needs a citation')
-                checked = llm.check_support(cfg, question, json.dumps(evidence), raw['answer'], bounded=True)
+                # The checker reads at most 6000 characters of source. A task's
+                # whole packet runs past that, so a claim cited from a later
+                # record was judged unsupported; check against what was cited.
+                cited = {c['id'] for c in raw['citations']}
+                source = [e for e in evidence if e['id'] in cited] or evidence
+                checked = llm.check_support(cfg, question, json.dumps(source), raw['answer'], bounded=True)
                 if revalidate:
                     revalidate()
                 claims = checked.get('claims') if isinstance(checked, dict) else None

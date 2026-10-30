@@ -92,6 +92,18 @@ class InquiryCitationTests(OfflineCase):
         support.assert_called_once_with(self.cfg, 'Who signed the exclusion, and for which scope?',
                                         json.dumps(self.evidence), self.good['answer'], bounded=True)
 
+    def test_support_check_reads_the_cited_records_not_a_prefix_of_the_packet(self):
+        # A long task packet ran past the checker's source window, so a claim
+        # cited from a later record was judged unsupported.
+        filler = [{'id': f'other{i}', 'text': 'Unrelated context. ' * 200, 'kind': 'task_decision'} for i in range(3)]
+        self.evidence = [*filler, *self.evidence]
+        with patch.object(Client, 'complete_json', return_value=self.good), \
+                patch('bridge.llm.check_support', return_value=self.support) as support:
+            result = self.read()
+        self.assertTrue(result['model_used'])
+        support.assert_called_once_with(self.cfg, 'Who signed the exclusion, and for which scope?',
+                                        json.dumps(self.evidence[-1:]), self.good['answer'], bounded=True)
+
     def test_supported_repair_requires_a_new_strict_check_of_its_own_claims(self):
         bad = {**self.good, 'answer': self.good['answer'] + ' All real customers receive free service.'}
         rejected = {'claims': [*self.support['claims'], {'claim': 'All real customers receive free service.', 'support': 'inferred'}]}
