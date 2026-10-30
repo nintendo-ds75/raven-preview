@@ -189,7 +189,7 @@ def seed_decisions(store):
                                       "expected_updated_at": decision["updated_at"]}, actor=actor)
         with store.connect() as db:
             db.execute("UPDATE decisions SET created_at=?, updated_at=? WHERE id=?", (when, when, decision["id"]))
-            db.execute("UPDATE runs SET updated_at=? WHERE id=?", (when, task["task_id"]))
+            db.execute("UPDATE runs SET status='completed', updated_at=? WHERE id=?", (when, task["task_id"]))
 
 
 def rename(company: str):
