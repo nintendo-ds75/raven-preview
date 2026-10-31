@@ -4,7 +4,7 @@
 
 <h1 align="center">Raven</h1>
 
-<p align="center"><strong>Raven is the self-hosted decision record between your customers, your team and your coding agents: evidence goes in, one signed decision comes out, and the agent does the work.</strong></p>
+<p align="center"><strong>Raven lets agents drive work forward instead of waiting for people to coordinate every step. It brings past decisions to the right person for evidence-backed sign-off, or asks for fresh judgment when something new needs deciding. It can also sit in on meetings and conversations, applying your team’s judgment to what it hears before anyone has turned it into a task. Fully self-hosted.</strong></p>
 
 <p align="center">
   <a href="docs/getting-started.md">Getting started</a> ·
