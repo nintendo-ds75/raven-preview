@@ -9,6 +9,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../web/home.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(__dirname, '../web/app.js'), 'utf8');
+// app.js's callRefs, run against the context's own `state`.
+const callRefsSource = appSource.slice(appSource.indexOf('const callRefs ='), appSource.indexOf('const plural ='));
 
 function harness(state) {
   const c = {
@@ -20,6 +23,7 @@ function harness(state) {
     askFirst: name => String(name || '').split(/\s+/)[0],
   };
   vm.createContext(c);
+  vm.runInContext(callRefsSource.replace('const callRefs', 'globalThis.callRefs'), c);
   const start = source.indexOf('function buildSources(d)'), end = source.indexOf('function buildAttention(stories)');
   assert.ok(start > 0 && end > start, 'home.js shape changed');
   vm.runInContext(source.slice(start, end) + '\n;globalThis.fns = {taskStory, buildCard, buildLine, judge, buildGoal};', c);
@@ -96,6 +100,7 @@ const decisions = [
   assert.ok(source.indexOf('function buildDetail(d, j)') > 0, 'buildDetail is shipped');
   const c = {state: {runs: [run], decisions: [prior, partial], me: null}, esc: v => String(v ?? ''), avatar: () => '', plural: (n, one) => `${n} ${one}`, ago: () => 'now', askFirst: n => String(n || '').split(/\s+/)[0]};
   vm.createContext(c);
+  vm.runInContext(callRefsSource.replace('const callRefs', 'globalThis.callRefs'), c);
   const end2 = source.indexOf('function buildAttention(stories)');
   vm.runInContext(source.slice(source.indexOf('function buildSources(d)'), end2) + '\n;globalThis.fns = {buildDetail, judge, buildGaps};', c);
   const j = c.fns.judge(partial);
@@ -109,6 +114,17 @@ const decisions = [
   assert.equal(JSON.stringify(c.fns.buildGaps({gaps: 'not json'})), '[]');
   assert.equal(JSON.stringify(c.fns.buildGaps({})), '[]');
   assert.doesNotMatch(c.fns.buildDetail({...partial, gaps: ''}, j), /could not find/);
+}
+
+// An earlier call cited by its id reads as whose call it was and the day, never the id.
+{
+  const c = {state: {decisions: [{id: '52a409283ec9', answered_by: 'Jordan Okafor', created_at: '2026-10-28T19:05:00+00:00'}]}};
+  vm.createContext(c);
+  vm.runInContext(callRefsSource.replace('const callRefs', 'globalThis.callRefs'), c);
+  assert.equal(c.callRefs('Once per order, per decision 52a409283ec9.'), 'Once per order, per Jordan’s Oct 28 call.');
+  assert.equal(c.callRefs('Per decision 52a409283ec9 (2026-10-28), reprint it.'), 'Per Jordan’s Oct 28 call, reprint it.');
+  assert.equal(c.callRefs('Does the rule from decision 27fca17c0708 apply?'), 'Does the rule from an earlier call apply?');
+  assert.equal(c.callRefs('Commit 27fca17c0708 added it.'), 'Commit 27fca17c0708 added it.');
 }
 
 console.log('being-built ui unit checks passed');

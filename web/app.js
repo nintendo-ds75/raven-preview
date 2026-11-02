@@ -38,6 +38,17 @@ const $ = selector => document.querySelector(selector);
 // Raven stores this placeholder when an agent gave a node no context; it is not for people to read.
 const shownContext = text => text === 'a node on the canvas' ? '' : text;
 const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+// Raven's composed answers can cite an earlier call by its id ("per decision 52a409283ec9 (2026-10-28)").
+// People read whose call it was and the day, so a known id reads "Jordan's Oct 28 call"; an unknown id
+// named as a decision reads "an earlier call". Other hex strings (commits, hashes) are left alone.
+const callRefs = text => String(text ?? '').replace(/\b(decision\s+)?([0-9a-f]{12})\b(?:\s*\(\d{4}-\d{2}-\d{2}\))?/g, (match, named, id) => {
+  const d = (state.decisions || []).find(x => x.id === id);
+  if (!d) return named ? 'an earlier call' : match;
+  const who = String(d.answered_by || d.signed_by || '').split(/\s+/)[0];
+  const when = new Date(d.created_at);
+  const day = Number.isNaN(+when) ? '' : ' ' + when.toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
+  return who ? `${who}’s${day} call` : `an earlier call${day ? ' from' + day : ''}`;
+});
 const plural = (count, word, words = word + 's') => `${count} ${count === 1 ? word : words}`;
 const CLIENT_NAMES = {claude: 'Claude Code', codex: 'Codex', cursor: 'Cursor'};
 const clientName = id => CLIENT_NAMES[id] || id;
