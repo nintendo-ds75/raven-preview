@@ -1557,6 +1557,40 @@ def _clause_candidates(store: Graph, clauses: list[str], scored: list, repo: str
     return picks if len({p.id for p in picks}) >= 2 else []
 
 
+def _rule_given(p) -> str:
+    """The standing of a rule whose conditions the question meets, as the
+    composer is given it: the answer does not have to establish its own
+    membership again."""
+    return (f"The rule {p.rule_by or p.answered_by or 'its owner'} made of decision {p.id} covers this question: "
+            f"its conditions ({'; '.join(rule_conditions(p.rule_conditions)) or 'none'}) are met here.")
+
+
+def _owner_rules(item, candidates: list, question: str, context: str, facts: dict | None, repo: str,
+                 limit: int = 3) -> list:
+    """The other signed standing rules of the owner of `item`, with the same
+    scope and their conditions met here, best score first: what completes a
+    rule that answers a question in part. A question that offers two
+    alternatives ("a completed answer, or every model attempt?") is one
+    question, so `_compound_clauses` does not split it, while one rule of
+    the owner may settle each side. Measured on the Parcelwise dry run
+    (Nov 2, 6ee6ac89dcf7): Jordan's Jun 1 rule (one answer is one use) and
+    his Sep 15 rule (every attempt counts in usage_daily) each answered a
+    half, and neither was read with the other."""
+    out, seen = [], {item.id}
+    for _eff, _sim, p in candidates:
+        if p.id in seen or not p.reusable or not p.authorized:
+            continue
+        seen.add(p.id)
+        if _norm_name(p.answered_by) != _norm_name(item.answered_by) or (p.rule_scope or "") != (item.rule_scope or ""):
+            continue
+        if not rule_status(p, question, context, facts=facts, repo=repo)[0]:
+            continue
+        out.append(p)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _compound_joint(store: Graph, cfg: Config, question: str, clauses: list[str], scored: list, repo: str,
                     context: str = "", facts: dict | None = None):
     """The joint composition of a compound question from one earlier call
@@ -1569,12 +1603,8 @@ def _compound_joint(store: Graph, cfg: Config, question: str, clauses: list[str]
     rows = _clause_candidates(store, clauses, scored, repo)
     if len(rows) < 2:
         return None
-    given_rules = []
-    for p in rows:
-        if p.reusable and rule_status(p, question, context, facts=facts, repo=repo)[0]:
-            given_rules.append(f"The rule {p.rule_by or p.answered_by or 'its owner'} made of decision {p.id} covers "
-                               f"this question: its conditions ({'; '.join(rule_conditions(p.rule_conditions)) or 'none'}) "
-                               "are met here.")
+    given_rules = [_rule_given(p) for p in rows
+                   if p.reusable and rule_status(p, question, context, facts=facts, repo=repo)[0]]
     joint = _compose_joint(cfg, question, [_as_record(p) for p in rows], given=_given(context, facts, " ".join(given_rules)))
     if joint is None or len(joint) < 4 or len(joint[3]) < 2:
         return None
@@ -2327,18 +2357,21 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
         # the record won the arbitration, so the call wanted a signature.
         agreeing_record, agreeing_role = None, "support"
         covers_notes: list[str] = []
+        context_records: list = []
         # A record that describes what shipped ("no charge for those yet")
         # or that is older than the rule's signature covers the same ground
         # without contesting it, whatever the model made of the two: the
         # rule settles and the record is noted beside it. Measured on the
         # Parcelwise dry run: PR #220 sent three signed rules to sign-off.
-        rule_wins = rule_guarded = False
-        if mem_pick is not None and rec_best is not None and _is_settled(rec_best) and not _void(rec_best) \
-                and _current_grant(store, mem_pick[2], question, d_context, d_path, d_facts, repo)[0] \
+        rule_wins = rule_guarded = record_disputes = False
+        rule_current = (mem_pick is not None and mem_pick[2].authorized and bool(mem_pick[2].reusable)
+                        and _current_grant(store, mem_pick[2], question, d_context, d_path, d_facts, repo)[0])
+        if rule_current and rec_best is not None and _is_settled(rec_best) and not _void(rec_best) \
                 and not _numeric_clash(mem_pick[2].answer or "", _row_text(rec_best)):
             disagrees = _disagrees(cfg, question, mem_pick[2].answer or "", rec_best)
             rule_guarded = disagrees and bool(mem_pick[2].reusable) and not _contests_rule(mem_pick[2], rec_best)
             rule_wins = not disagrees or rule_guarded
+            record_disputes = disagrees and not rule_guarded
         if compound_joint is not None and mem_pick is not None:
             # A compound question answered one clause per earlier call: the
             # calls are the answer; a record that disagrees is still found below.
@@ -2414,6 +2447,46 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     pick_note = "scope confirmed by the selector"
             else:
                 pick = ("record", rec_best)
+        pre_grounded, disputed_record = None, None
+        if pick is None and rule_current and cfg.semantic_retrieval:
+            # The selector set a current standing rule aside because it does
+            # not answer the whole question. The rule is still its owner's
+            # closest call, so the grounded composer reads it before the
+            # records are swept: when it answers, whole or in part, the
+            # owner's other rules complete it (below) and what stays open
+            # goes to that owner to sign, with the records cited as context;
+            # a partial answer from a signed rule outranks a partial
+            # composition from pull requests. A record the model read as
+            # disagreeing with the rule is read again against the answer as
+            # served. When the rule does not answer at all, the sweep runs
+            # as before. Measured on the Parcelwise dry run (Nov 2,
+            # 6ee6ac89dcf7): "a completed answer, or every model attempt?"
+            # had Jordan's Jun 1 rule for one side and his Sep 15 rule for
+            # the other; the selector rejected the Jun 1 rule and PR #216
+            # alike, three pull requests were composed in their place, and
+            # Jordan was asked to sign what he had already ruled on.
+            rule_row = mem_pick[2]
+            read = _compose_answer(cfg, question, f"earlier answer {rule_row.id}", _memory_body(rule_row),
+                                   rule_row.answered_by, given=_given(d_context, d_facts, _rule_given(rule_row)))
+            if read is not None:
+                pick, mem_lex = ("memory", rule_row), True
+                pre_grounded = (rule_row.id, read)
+                pick_note = "a standing rule is the closest call; read for the part it answers"
+                if rec_best is not None and _is_settled(rec_best) and not _void(rec_best):
+                    if record_disputes:
+                        disputed_record = rec_best
+                    else:
+                        agreeing_record, agreeing_role = rec_best, "context"
+                context_records = [r for r in ref_rows if _is_settled(r) and not _void(r)
+                                   and (rec_best is None or r["ref"] != rec_best["ref"])][:2]
+                store.append_event("rule_read_in_part", {
+                    "task_id": task_id, "decision_id": did, "memory": rule_row.id,
+                    "record": f"{rec_best['kind']} {_ref(rec_best)}" if rec_best is not None else "",
+                    "disputes": disputed_record is not None, "whole": not _states_a_gap(read),
+                    "why": "the selector picked nothing; a current standing rule is read for the part it answers"})
+            else:
+                why_open.append(f"memory: the standing rule from decision {rule_row.id} is the closest call and "
+                                "does not answer this question")
         sweep_mems: list = []
         if pick is None and cfg.deep_retrieval:
             expansion = _expand_query(cfg, question)
@@ -2537,7 +2610,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                                                       "memory": pick[1].id, "missing": unmet_m})
                 pick, mem_lex = None, False
         verbatim_ok = (pick is not None and pick[0] == "memory" and mem_lex and mem_pick is not None
-                       and question == asked_q and mem_pick[1] >= 0.95)
+                       and question == asked_q and mem_pick[1] >= 0.95 and pre_grounded is None)
         joint_partial = False
         if pick is not None and pick[0] == "memory" and cfg.semantic_retrieval and not verbatim_ok:
             # A rule whose conditions this question meets is given: the
@@ -2545,15 +2618,13 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             # Measured live on 63eb671: the rule was found to cover the
             # question while the composed answer doubted that it applied.
             rule_given = ""
-            if pick[1].reusable:
-                covered, _why = rule_status(pick[1], question, d_context, facts=d_facts, repo=repo)
-                if covered:
-                    rule_given = (f"The rule {pick[1].rule_by or pick[1].answered_by or 'its owner'} made of decision "
-                                  f"{pick[1].id} covers this question: its conditions "
-                                  f"({'; '.join(rule_conditions(pick[1].rule_conditions)) or 'none'}) are met here.")
+            if pick[1].reusable and rule_status(pick[1], question, d_context, facts=d_facts, repo=repo)[0]:
+                rule_given = _rule_given(pick[1])
             m_given = _given(d_context, d_facts, rule_given)
-            grounded = None if compound_joint is not None else _compose_answer(
-                cfg, question, f"earlier answer {pick[1].id}", _memory_body(pick[1]), pick[1].answered_by, given=m_given)
+            grounded = (None if compound_joint is not None
+                        else pre_grounded[1] if pre_grounded is not None and pre_grounded[0] == pick[1].id
+                        else _compose_answer(cfg, question, f"earlier answer {pick[1].id}", _memory_body(pick[1]),
+                                             pick[1].answered_by, given=m_given))
             if grounded is None and compound_joint is None and mem_lex:
                 # The closest row does not answer this; a compound question
                 # may still be answered one clause per call.
@@ -2562,12 +2633,20 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                             if clauses else None)
                 if compound is not None:
                     compound_joint, compound_rows = compound
+            # A rule that answers in part is read first with its owner's
+            # other standing rules, which may settle the rest; the joint's
+            # standing is checked below (_joint_rule_standing) as for a
+            # compound question.
+            owner_rules = (_owner_rules(pick[1], rule_candidates + scored, question, d_context, d_facts, repo)
+                           if rule_given and mem_lex and compound_joint is None else [])
             others = ([p for p in compound_rows if p.id != pick[1].id] if compound_joint is not None
-                      else [p for _, s2, p in scored[1:6] if s2 >= 0.35 and p.id != pick[1].id][:3] if mem_lex else [])
+                      else (owner_rules + [p for _, s2, p in scored[1:6] if s2 >= 0.35 and p.id != pick[1].id
+                                           and all(p.id != o.id for o in owner_rules)])[:3] if mem_lex else [])
+            j_given = _given(d_context, d_facts, " ".join([rule_given] + [_rule_given(p) for p in owner_rules]).strip())
             if grounded is None or (_states_a_gap(grounded) and others):
                 joint = (compound_joint if compound_joint is not None
                          else _compose_joint(cfg, question, [_as_record(pick[1])] + [_as_record(p) for p in others],
-                                             given=m_given) if others else None)
+                                             given=j_given) if others else None)
                 if joint is not None:
                     joint_partial = len(joint) > 2 and bool(joint[2])
                     memory_used_rows = joint[3] if len(joint) > 3 else []
@@ -2642,7 +2721,28 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     mkind = "semantic"
                     detail = f"reused from decision {item.id}, {pick_note}, checked against this question"
                 mem_partial = _states_a_gap(item.answer) or joint_partial or bool(item.gaps)
-                rival = pre_rival[0] if pre_rival else _record_contradicting(store, cfg, repo, question, item.answer)
+                # An answer read from several rows, or one that leaves part
+                # of the question open, is checked as served: a record is
+                # read against the words the person signs, not against the
+                # row they started from. Measured on the Parcelwise dry run:
+                # PR #216 disagreed with Jordan's Jun 1 rule alone and is the
+                # record his Sep 15 rule was made on; read against the two
+                # together it agrees.
+                read_in_part = len(memory_used_rows) > 1 or mem_partial
+                rival = (pre_rival[0] if pre_rival and not read_in_part
+                         else _record_contradicting(store, cfg, repo, question, item.answer))
+                if rival is None and disputed_record is not None:
+                    # The record the model read as disagreeing with the rule
+                    # alone. Against the rule's reading of the whole question
+                    # it still disagrees; against the rules read together, or
+                    # the part the rule settles, it is read again.
+                    clash = f"{disputed_record['kind']} {_ref(disputed_record)}{_ticket_state(disputed_record)}"
+                    if not read_in_part or _disagrees(cfg, question, item.answer, disputed_record):
+                        rival = disputed_record
+                    else:
+                        noted_record = disputed_record
+                        covers_notes.append(f"{clash} covers this too: \"{_record_claim(disputed_record, item.answer, 160)}\"; "
+                                            "read against the answer as served, it does not decide it differently")
                 if rival is not None and _numeric_clash(item.answer, (rival["title"] or "") + " " + (rival["body"] or "")):
                     # An unsettled record, or an unsigned answer: the figures
                     # still disagree, and the answer says so rather than one
@@ -2842,6 +2942,8 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     + ([_evidence_role(agreeing_record, agreeing_role)] if agreeing_record is not None else [])
                     + ([_evidence_role(noted_record, 'context')] if noted_record is not None
                        and (agreeing_record is None or noted_record["ref"] != agreeing_record["ref"]) else [])
+                    + [_evidence_role(r, 'context') for r in context_records
+                       if noted_record is None or r["ref"] != noted_record["ref"]]
                     + ([_evidence_role(rival, 'contradiction')] if mem_conflict and rival is not None else []),
                     status=status, source=origin, answer=item.answer,
                     answered_by=item.answered_by if signed else "",

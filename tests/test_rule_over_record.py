@@ -111,6 +111,7 @@ class RuleOverRecordTests(RuleCase):
         with semantic_on(), patch("bridge.ladder._selector_pick", return_value=None) as selector, \
                 patch("bridge.ladder._disagrees", return_value=True), \
                 patch("bridge.ladder._record_contradicting", return_value=None), \
+                patch("bridge.ladder._compose_answer", return_value=None), \
                 patch("bridge.ladder._expand_query", return_value=[]), \
                 patch("bridge.ladder._wide_select", return_value=None), \
                 patch("bridge.ladder._compose_joint", return_value=None), \

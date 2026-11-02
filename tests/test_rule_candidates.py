@@ -220,7 +220,15 @@ class RuleCandidateSelectionTests(RuleCandidateFixture):
                 calls += 1
                 return None if calls == 1 else initial(*args, **kwargs)
 
-            with patch.object(ladder, "_selector_pick", defer_once):
+            # A current rule the selector set aside is read for the part it
+            # answers before the sweep; here that reading does not answer.
+            reads = iter([None])
+
+            def refuse_once(*args, **kwargs):
+                return next(reads, ANSWER)
+
+            with patch.object(ladder, "_selector_pick", defer_once), \
+                    patch.object(ladder, "_compose_answer", side_effect=refuse_once):
                 result = self.ask()
             self.assertGreater(calls, 1)
             self.assertEqual(result["source_id"], source)
