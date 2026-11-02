@@ -7,7 +7,7 @@
 // the signed-in person and to the tasks being built now; each line opens
 // the record it came from.
 let attention = null, attentionAt = 0, attentionKey = '';
-const attOpen = new Set(), attForm = new Set();
+const attOpen = new Set(), attForm = new Set(), attHand = new Set();
 let attShowAll = false;
 
 function loadAttention(force) {
@@ -54,9 +54,25 @@ function attNeeds(item) {
       <p class="ask-error" hidden></p>
       <div class="att-actions"><button class="button small primary" type="submit">Record my answer</button>
         ${state.auth?.enabled && state.me?.id && ['session', 'token'].includes(state.me.kind) ? `<button class="button small text" type="button" data-action="interview-start" data-task="${esc(item.run_id)}" data-id="${esc(item.id)}">Take a quick call instead</button>` : ''}
+        <button class="button small text" type="button" data-att="handon" data-id="${esc(item.id)}" aria-expanded="${attHand.has(item.id)}">Not mine: hand it on</button>
         <a class="att-open" href="${attHref(item.run_id, item.id)}">Full record ↗</a></div>
     </form>
+    ${attHand.has(item.id) ? attHandOn(item) : ''}
   </article>`;
+}
+
+// Hand the call to the person who should make it, from the card itself: whoever is picked sees it on
+// their page with the note as the reason it reached them, and once they answer, calls like it route to
+// them first (the same hand-on as the full record).
+function attHandOn(item) {
+  const people = (state.owners || []).filter(o => o.id !== state.me?.id);
+  return `<form class="att-handon" data-id="${esc(item.id)}" data-updated="${esc(item.updated_at)}">
+      <span class="att-k">Hand this to</span>
+      <select name="person" aria-label="Hand on to" required><option value="">Pick a person</option>${people.map(o => `<option value="${esc(o.name)}">${esc(o.name)}${o.team ? ' · ' + esc(o.team) : ''}</option>`).join('')}</select>
+      <input name="note" maxlength="200" placeholder="A word for them (optional)">
+      <p class="ask-error" hidden></p>
+      <div class="att-actions"><button class="button small primary" type="submit">Hand on</button><button class="button small text" type="button" data-att="cancel-handon" data-id="${esc(item.id)}">Cancel</button></div>
+    </form>`;
 }
 
 // What the source left open: Raven's own note, never inside the quote.
@@ -137,6 +153,8 @@ document.addEventListener('click', event => {
   if (att === 'toggle') { if (attOpen.has(id)) { attOpen.delete(id); attForm.delete(id); } else attOpen.add(id); }
   else if (att === 'correct') attForm.add(id);
   else if (att === 'cancel') attForm.delete(id);
+  else if (att === 'handon') attHand.add(id);
+  else if (att === 'cancel-handon') attHand.delete(id);
   else if (att === 'all') attShowAll = !attShowAll;
   else if (att === 'apply' || att === 'option') {
     const item = (attention?.needs_you || []).find(x => x.id === id);
@@ -146,10 +164,11 @@ document.addEventListener('click', event => {
   }
   attentionKey = ''; render();
   if (att === 'correct') document.querySelector(`.att-correct[data-id="${CSS.escape(id)}"] textarea[name=why]`)?.focus();
+  if (att === 'handon') document.querySelector(`.att-handon[data-id="${CSS.escape(id)}"] select`)?.focus();
 });
 
 document.addEventListener('submit', async event => {
-  const form = event.target.closest('.att-answer, .att-correct');
+  const form = event.target.closest('.att-answer, .att-correct, .att-handon');
   if (!form || view !== 'you') return;
   event.preventDefault();
   const data = Object.fromEntries(new FormData(form).entries());
@@ -159,7 +178,12 @@ document.addEventListener('submit', async event => {
   button.disabled = true; button.textContent = 'Recording…';
   try {
     let result;
-    if (form.classList.contains('att-correct')) {
+    if (form.classList.contains('att-handon')) {
+      if (!data.person) throw new Error('Pick the person to hand it to first.');
+      result = await api(`/api/decisions/${encodeURIComponent(form.dataset.id)}/refer`, {person: data.person, ...(data.note ? {note: data.note} : {}), expected_updated_at: form.dataset.updated});
+      attHand.delete(form.dataset.id);
+      notify(result.notice || `Handed on to ${data.person}.`);
+    } else if (form.classList.contains('att-correct')) {
       result = await api(`/api/decisions/${encodeURIComponent(form.dataset.id)}/correct`, {answer: data.answer, why: data.why, scope: data.scope || 'here', expected_updated_at: form.dataset.updated});
       attForm.delete(form.dataset.id);
       notify(result.notice || 'Recorded.');
