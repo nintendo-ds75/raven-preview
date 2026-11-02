@@ -124,6 +124,10 @@ def _item(store, node):
     prior_id = node.get("source_id") if source == "memory" else ""
     if not prior_id and status == "duplicate":
         prior_id = (node.get("resolution") or {}).get("node_id") or node.get("duplicate_of") or ""
+    confirmed = ""
+    if not prior_id and node.get("answer"):
+        prior_id = _confirmed_from(store, node)
+        confirmed = node.get("answered_by") or node.get("owner") or "" if prior_id else ""
     if prior_id:
         prior = store.get_decision(prior_id) or {}
         item.update(kind="cache", who=prior.get("answered_by") or node.get("answered_by") or "",
@@ -134,6 +138,8 @@ def _item(store, node):
         rationale = _reason(prior.get("rationale"))
         if rationale:
             item["why"] = rationale
+        if confirmed:
+            item.update(confirmed_by=confirmed, answer=_whole(node.get("answer")))
     elif status == "pending" or node.get("blocking") and not node.get("answer"):
         item.update(kind="open", who=node.get("owner") or "")
     elif source == "human" or status == "approved" or node.get("kind") == "answer":
@@ -162,6 +168,37 @@ def _signer(store, name):
     row = store.graph.db.execute("SELECT team FROM people WHERE lower(name)=lower(?) LIMIT 1", (name,)).fetchone()
     first = str(name).split(" ")[0]
     return f"{first} ({row['team']})" if row and row["team"] else first
+
+
+def _norm(text):
+    return re.sub(r"[^a-z0-9 ]", "", re.sub(r"\s+", " ", str(text or "").lower())).strip()
+
+
+def _confirmed_from(store, node):
+    """The earlier call an owner confirmed: Raven proposed an answer from it
+    ("Raven would apply this, but isn't sure: your call") and the owner sent
+    that answer. A PR reader should see it as a reuse the owner checked, not
+    as a new judgment."""
+    rows = store.graph.db.execute(
+        "SELECT kind, detail FROM events WHERE decision_id=? AND kind IN ('proposal_composed','resolve','previous_answer') "
+        "ORDER BY id", (node["node_id"],)).fetchall()
+    row = store.get_decision(node["node_id"]) or {}
+    prior, proposed = "", [node.get("prediction") or "", row.get("prediction") or ""]
+    for row in rows:
+        try:
+            detail = json.loads(row["detail"] or "{}")
+        except ValueError:
+            continue
+        if row["kind"] == "proposal_composed" and detail.get("from"):
+            prior = detail["from"]
+        elif row["kind"] == "resolve" and detail.get("source") == "memory" and detail.get("cited"):
+            prior = detail["cited"]
+        elif row["kind"] == "previous_answer":
+            proposed.append(detail.get("answer") or "")
+    if not prior or not store.get_decision(prior):
+        return ""
+    said = _norm(node.get("answer"))[:24]
+    return prior if said and any(_norm(p).startswith(said) for p in proposed if p) else ""
 
 
 def _person_id(store, name):
@@ -219,7 +256,10 @@ def _row(n, x):
         src = x["source"]
         first = (x["who"] or "").split(" ")[0]
         how = f"Reused {first + chr(39) + 's' if first else 'an'} call" + (f" from “{src['task']}”" if src.get("task") else "")
-        how += "; nobody asked"
+        if x.get("confirmed_by"):
+            how += f"; {x['confirmed_by'].split(' ')[0]} confirmed it in a click"
+        else:
+            how += "; nobody asked"
         when = _when(src.get("decided_at"))
     elif x["kind"] == "live":
         how, when = HOW.get(x.get("how", ""), x.get("how", "In Raven")), _when(x["updated_at"])

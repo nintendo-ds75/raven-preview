@@ -106,6 +106,34 @@ class Summary(OfflineCase):
         self.assertIn("Which rate do Bloom's bulk buys use?", folded)
         self.assertIn('*Why:* We bought $4,100 of labels at a stale rate.', folded)
 
+    def test_an_owner_confirming_raven_s_answer_from_an_earlier_call_is_a_reuse(self):
+        import json
+        did = self.g.add_decision(self.task, 'May a bulk buy run before the merchant sees prices?', 'policy', 'pending',
+                                  repo=REPO, owner='Marcus Lee')
+        with self.g.transaction():
+            self.g.db.execute("INSERT INTO events(kind, detail, decision_id, run_id, created_at) VALUES (?,?,?,?,?)",
+                              ('resolve', json.dumps({'source': 'memory', 'cited': self.prior}), did, self.task,
+                               '2026-11-02T10:00:00+00:00'))
+            self.g.db.execute("INSERT INTO events(kind, detail, decision_id, run_id, created_at) VALUES (?,?,?,?,?)",
+                              ('previous_answer', json.dumps({'answer': 'Never buy a label before the merchant sees '
+                                                              'the price, in a bulk buy too.'}), did, self.task,
+                               '2026-11-02T10:01:00+00:00'))
+        self.store.answer(did, {'answer': 'Never buy a label before the merchant sees the price, in a bulk buy too.',
+                                'by': 'Marcus Lee'})
+        item = next(x for x in pr_summary.summary(self.store, self.task)['items'] if x['node_id'] == did)
+        self.assertEqual((item['kind'], item['confirmed_by']), ('cache', 'Marcus Lee'))
+        self.assertIn('Marcus confirmed it in a click', pr_summary.summary(self.store, self.task)['markdown'])
+        # A different answer from the owner is their own judgment.
+        other = self.g.add_decision(self.task, 'May a bulk buy skip the confirm step?', 'policy', 'pending',
+                                    repo=REPO, owner='Marcus Lee')
+        with self.g.transaction():
+            self.g.db.execute("INSERT INTO events(kind, detail, decision_id, run_id, created_at) VALUES (?,?,?,?,?)",
+                              ('resolve', json.dumps({'source': 'memory', 'cited': self.prior}), other, self.task,
+                               '2026-11-02T10:00:00+00:00'))
+        self.store.answer(other, {'answer': 'No, the confirm step lists every order.', 'by': 'Marcus Lee'})
+        item = next(x for x in pr_summary.summary(self.store, self.task)['items'] if x['node_id'] == other)
+        self.assertEqual(item['kind'], 'live')
+
     def test_over_mcp_and_one_line_per_node(self):
         self.assertIn('bridge_pr_summary', mcp.READ_ONLY_TOOLS)
         out = mcp.call_tool(self.store, 'bridge_pr_summary', {'task_id': self.task})
