@@ -230,7 +230,7 @@ const BUILD_TL_PILL = new Set(['pr', 'commit', 'ticket', 'doc', 'slack', 'record
 // The sentence with its references marked in place: an earlier call or a
 // flagged question becomes a link to it, a record its pill.
 function buildTimelineText(row) {
-  let html = esc(row.text || ''), from = 0;
+  let html = esc(callRefs(row.text || '')), from = 0;
   const extra = [];
   for (const r of row.refs || []) {
     const label = esc(r.label || '');
