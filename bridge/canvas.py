@@ -203,6 +203,51 @@ def _corrects_the_repo(graph, row, repo: str) -> bool:
             and graph.resolve_repo(repo_key(repo)) in known)
 
 
+TITLE_WIDTH = 70
+TITLE_SLACK = 8  # a sentence a few characters over is kept whole rather than cut mid-thought
+_TITLE_LEAD_RE = re.compile(
+    r"^(?:(?:please|hey|hi|ok(?:ay)?|so)[,:\s]+)?"
+    r"(?:(?:can|could|would|will) you (?:please )?|(?:we|i)(?:'d| would)? (?:want|need|like) (?:you )?to |"
+    r"(?:we|i)(?:'re| are) going to |let'?s |please )?", re.IGNORECASE)
+_TITLE_CLAUSE_RE = re.compile(
+    r",\s|\s(?:based on|because|so that|since|which|where|when|while|and then|then|but|and|so|using|with)\s",
+    re.IGNORECASE)
+
+
+def task_title(title: str, goal: str) -> str:
+    """The short line a task is shown under. A host hook registers the
+    prompt as both title and goal, so Being built showed the prompt twice.
+    When the title is missing, is the goal, or is a long first line of it,
+    the title is derived from the goal: its first sentence, trimmed of a
+    polite lead-in ("We want to", "Please"), cut at a clause boundary when
+    it still runs past TITLE_WIDTH characters, with no trailing period.
+    A title of the agent's own wording is kept as it was."""
+    title = " ".join((title or "").split())
+    goal = " ".join((goal or "").split())
+    if not goal:
+        return title
+    same = title.lower() == goal.lower()
+    long_first_line = len(title) > TITLE_WIDTH and goal.lower().startswith(title.lower())
+    if title and not same and not long_first_line:
+        return title
+    first = next((part.strip() for part in re.split(r"(?<=[.!?;])\s+|\s[—–-]\s", goal) if part.strip()), goal)
+    led = _TITLE_LEAD_RE.sub("", first, count=1).strip()
+    # "Can you make the job idempotent?" is the imperative without its lead-in.
+    short = (led.rstrip("?") if led and led != first else first).rstrip(".;:,!").strip() or first
+    if len(short) > TITLE_WIDTH + TITLE_SLACK:
+        cut = 0
+        for m in _TITLE_CLAUSE_RE.finditer(short):
+            if m.start() <= TITLE_WIDTH and m.start() >= TITLE_WIDTH // 3:
+                cut = m.start()
+        if cut:
+            short = short[:cut].rstrip(".;:,!")
+        else:
+            head = short[:TITLE_WIDTH]
+            short = (head.rsplit(" ", 1)[0] if " " in head else head).rstrip(".;:,!") + "…"
+    short = short[:1].upper() + short[1:] if short else short
+    return short or title or goal[:TITLE_WIDTH]
+
+
 def _same_task(row, title: str, goal: str) -> bool:
     """Whether a kickoff under an existing client_key is that task. The
     title is the agent's own one-line wording and a fresh process words
@@ -289,10 +334,16 @@ def _start_task(store, cfg, data) -> dict:
                               "(status=abandoned, reason=...), then omit task_id and use a new client_key "
                               "when starting the correctly scoped task.")
             return _task_as_started(store, existing, cfg)
-    title = field(data, "title", limit=300)
     goal = _text(data, "goal")
+    # A host registers the prompt as both title and goal: the title
+    # shown is derived from the goal, so the card does not read it twice.
+    given = data.get("title")
+    if goal and not (isinstance(given, str) and given.strip()):
+        given = goal[:300]
+    title = task_title(field({"title": given}, "title", limit=300), goal)
     repo = field(data, "repo", "local", 300)
-    agent = field(data, "agent", "Coding agent", 100)
+    from .agent_names import display_name
+    agent = display_name(field(data, "agent", "Coding agent", 100))
     requester = _text(data, "requester", 200)
     client_key = _text(data, "client_key", 200)
     paths = _paths(data.get("paths"))

@@ -15,6 +15,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from . import authz
+from .agent_names import display_name
 
 LIVE_EXCLUDED = ("completed", "failed", "cancelled", "abandoned")
 HIDDEN_STATUSES = ("duplicate", "suggested", "adopted", "withdrawn")
@@ -46,6 +47,10 @@ def _area(evidence: str) -> str:
         return ""
     verb = {"decides": "decide", "approves": "approve", "knows": "know the most about"}[m.group(1)]
     return f"you {verb} {m.group(2).strip()}" if verb != "decide" else f"you decide for {m.group(2).strip()}"
+
+
+def _agent(row) -> str:
+    return display_name(row["run_agent"]) if row["run_agent"] else ""
 
 
 def _same_person(row, name: str) -> bool:
@@ -92,7 +97,7 @@ def _needs_item(db, row, task_rows, name=""):
     others = [r for r in task_rows if r["id"] != row["id"] and r["status"] not in HIDDEN_STATUSES]
     settled = [r for r in others if r["status"] == "approved" or (r["signoff"] in ("signed", "rule") and not r["needs_review"])]
     waiting = len(others) - len(settled)
-    agent = row["run_agent"] or "The coding agent"
+    agent = display_name(row["run_agent"]) if row["run_agent"] else "The coding agent"
     meanwhile = f"{agent} keeps building the parts that don't depend on this"
     if settled:
         meanwhile += f"; {len(settled)} other call{'s' if len(settled) != 1 else ''} on this task {'are' if len(settled) != 1 else 'is'} already settled"
@@ -105,7 +110,7 @@ def _needs_item(db, row, task_rows, name=""):
         why += f" {area[0].upper()}{area[1:]}."
     guess = (row["prediction"] or "").strip() if row["kind"] == "prediction" or not (row["answer"] or "").strip() else (row["answer"] or "").strip()
     return {
-        "id": row["id"], "run_id": row["run_id"], "task": row["run_title"], "agent": row["run_agent"] or "",
+        "id": row["id"], "run_id": row["run_id"], "task": row["run_title"], "agent": _agent(row),
         "requester": row["run_requester"] or "", "question": row["question"], "context": _clip(row["context"], 420),
         "options": _options(row["options"]), "status": row["status"], "kind": row["kind"] or "",
         "created_at": row["created_at"], "updated_at": row["updated_at"],
@@ -114,13 +119,24 @@ def _needs_item(db, row, task_rows, name=""):
     }
 
 
-def _handled_item(db, row, source):
+def _handled_item(db, row, source, call=None):
     return {
-        "id": row["id"], "run_id": row["run_id"], "task": row["run_title"], "agent": row["run_agent"] or "",
+        "id": row["id"], "run_id": row["run_id"], "task": row["run_title"], "agent": _agent(row),
         "question": row["question"], "answer": row["answer"] or "", "fit_reason": row["fit_reason"] or "",
         "when": row["updated_at"], "updated_at": row["updated_at"],
-        "call": _call(source, row["source_revision"]),
+        "call": call if call is not None else _call(source, row["source_revision"]),
     }
+
+
+def _meeting_call(row):
+    """What the person said in the meeting, as the call Raven used: the
+    verbatim quote (the node's rationale), the meeting named in the fit
+    reason, dated by the meeting."""
+    fit = row["fit_reason"] or ""
+    where = fit.split(":", 1)[0] if fit.startswith("From ") else ""
+    return {"id": "", "run_id": "", "task": where[5:] if where.startswith("From ") else "a meeting",
+            "question": "", "answer": row["rationale"] or "", "by": row["answered_by"] or "",
+            "when": row["source_revision"] or row["created_at"], "answered_via": "meeting", "replaced_by": ""}
 
 
 def overview(store, me) -> dict:

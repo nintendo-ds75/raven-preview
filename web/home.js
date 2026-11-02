@@ -106,10 +106,18 @@ function taskStory(run) {
 const buildOpen = new Set(), buildForm = new Set();
 const buildCanAct = d => !!state.me?.name && (state.me.name === d.owner_name || state.me.role === 'admin');
 const buildClip = (text, n) => { text = String(text || ''); return text.length > n ? text.slice(0, n - 1) + '…' : text; };
+// The goal under a title, unless it is the title again: an older task
+// registered by a host hook carries the prompt as both.
+const buildGoal = run => { const g = String(run.goal || '').trim(), t = String(run.title || '').trim(); return g && g.toLowerCase() !== t.toLowerCase() ? g : ''; };
+
+// "From the Oct 29 Pilot pricing sync": the meeting a call was settled
+// from, as the fit reason names it.
+const buildMeeting = d => { const head = String(d.fit_reason || '').split(':')[0].trim(); return /^From /.test(head) ? head : `From the ${buildWhen(d.source_revision) || ''} meeting`.replace(/\s+/g, ' '); };
 
 // The one line under each question: who settled it, how, and when.
 function buildLine(d, j) {
   const first = askFirst;
+  if (j.kind === 'settled' && d.answered_via === 'meeting') return `<span class="dot past"></span>${esc(buildMeeting(d))} · nobody asked`;
   if (j.kind === 'settled') return `<span class="dot past"></span>From ${esc(first(j.priorBy) || 'an earlier')}’s call${j.priorWhen ? ' · ' + esc(buildWhen(j.priorWhen)) : ''} · nobody asked`;
   if (j.kind === 'corrected') return `<span class="dot person"></span>${esc(first(j.by))} corrected this${j.prior ? ` · replaces ${esc(first(j.priorBy))}’s ${esc(buildWhen(j.priorWhen))} call` : ''}`;
   if (j.kind === 'answered') return `<span class="dot person"></span>${j.guessed ? `Raven guessed, ${esc(first(j.by))} confirmed` : `${esc(first(j.by))} answered`}${j.via ? ' ' + esc(j.via) : ''} · ${esc(ago(d.updated_at))}`;
@@ -199,7 +207,7 @@ function buildCard(run) {
   return `<article class="build-card">
     <div class="build-top">${pill}<span class="ask-agent">${esc(run.agent || 'Coding agent')}${run.requester ? ' · for ' + esc(run.requester) : ''}</span><span class="ask-when">${esc(ago(run.updated_at))}</span></div>
     <h2><a href="#runs/${encodeURIComponent(run.id)}">${esc(run.title)}</a></h2>
-    ${run.goal ? `<p class="build-goal">${esc(buildClip(run.goal, 220))}</p>` : ''}
+    ${buildGoal(run) ? `<p class="build-goal">${esc(buildClip(buildGoal(run), 220))}</p>` : ''}
     <div class="build-counts">
       <div><b>${ds.length}</b><span>judgment calls the agent hit</span></div>
       <div class="past"><b>${settled.length}</b><span>settled by Raven from earlier calls, nobody asked</span></div>
