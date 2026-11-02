@@ -32,8 +32,7 @@ class AgentPaceTests(OfflineCase):
         first = self.call("bridge_add_node", {"task_id": self.task, "paths": "hw/net/virtio-net.c", "client_ref": "a",
                                               "question": "Should hw/net/virtio-net.c drop the legacy header?"})
         self.assertEqual(first["status"], "pending")
-        self.assertIn("blocks only the code that needs the answer", first["next"])
-        self.assertIn("named parameter", first["next"])
+        self.assertIn("blocks only the code that needs the answer, so build the rest first", first["next"])
         second = self.call("bridge_add_node", {"task_id": self.task, "paths": "hw/net/virtio-net.c", "client_ref": "b",
                                                "question": "Which release note announces the header removal?",
                                                "depends_on": first["node_id"]})
@@ -41,7 +40,7 @@ class AgentPaceTests(OfflineCase):
         waiting = {w["node_id"]: w for w in result["waiting_on"]}
         self.assertEqual(waiting[first["node_id"]]["blocks"], [second["node_id"]])
         self.assertEqual(waiting[first["node_id"]]["path"], "hw/net/virtio-net.c")
-        self.assertEqual(waiting[second["node_id"]]["blocks"], [])
+        self.assertNotIn("blocks", waiting[second["node_id"]])  # nothing depends on it: no empty list
         self.assertIn("each blocks only the code that needs its answer (its path and the nodes in blocks), not the task",
                       result["next"])
         self.assertIn("wait again only when nothing independent is left", result["next"])
@@ -55,6 +54,8 @@ class AgentPaceTests(OfflineCase):
                                              "waiting_since": first["pace"]["waiting_since"]})
             self.assertTrue(first["pace"]["waiting_since"])
             self.assertNotIn("Stop now", first["next"])
+            self.assertIn("counted in pace", first["next"])
+            self.assertNotIn("1 idle", first["next"])
             second = self.call("bridge_wait", {"task_id": self.task, "timeout": "0"})
             self.assertEqual(second["pace"]["idle_waits"], 2)
             self.assertTrue(second["next"].startswith("2 waits in a row returned nothing new (the cap). Stop now and report"))

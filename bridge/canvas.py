@@ -1745,10 +1745,8 @@ def _next_for_node(status: str, d: dict) -> str:
     if status == "pending":
         # Measured on a real task: told to "continue independent work", the
         # agent wrote the very choice it had asked about, its own way.
-        return (f"waiting on {d.get('owner_name')}: do not settle this in code yourself. It blocks only the code "
-                "that needs the answer; the mechanism around it (a named parameter or setting with no value yet, "
-                "the tests, the docs) does not depend on it, so build that now, then bridge_wait (or read "
-                "bridge_get_tree) before you write the part that does")
+        return (f"waiting on {d.get('owner_name')}: do not settle this in code yourself; it blocks only the code "
+                "that needs the answer, so build the rest first, then bridge_wait before you write the part that does")
     if status == "unrouted":
         return "Raven does not know who owns this; a person assigns it in the inbox, or settle it yourself"
     if status == "duplicate":
@@ -2067,7 +2065,8 @@ def get_tree(store, task_id: str) -> dict:
                    and n["resolution"].get("task_id") != task_id)]
     if waiting:
         who = sorted({n["owner"] for n in waiting if n["owner"]})
-        parts.append(f"{len(waiting)} waiting on {', '.join(who) if who else 'nobody yet'}")
+        parts.append(f"{len(waiting)} waiting on {', '.join(who) if who else 'nobody yet'}"
+                     + _MEANWHILE.replace("the nodes in blocks", "the nodes that depend on it"))
     if counts["unrouted"]:
         parts.append(f"{counts['unrouted']} with no owner (assign in the inbox or settle yourself)")
     if counts["needs_review"]:
@@ -2962,8 +2961,12 @@ def _waiting_entry(n: dict) -> dict:
     """One node a wait still waits on, with what it blocks: its path and the
     nodes that depend on it. blocking means it waits on a person and gates
     bridge_finish_task, not that it blocks all work."""
-    return {"node_id": n["node_id"], "question": n["question"], "status": n["status"], "owner": n["owner"],
-            "path": n.get("path") or "", "blocks": list(n.get("dependents") or [])}
+    entry = {"node_id": n["node_id"], "question": n["question"], "status": n["status"], "owner": n["owner"]}
+    if n.get("path"):
+        entry["path"] = n["path"]
+    if n.get("dependents"):
+        entry["blocks"] = list(n["dependents"])
+    return entry
 
 
 def _paced(store, result: dict, idle: bool) -> dict:
@@ -2980,9 +2983,10 @@ def _paced(store, result: dict, idle: bool) -> dict:
                           f"with bridge_start_task(task_id={result['task_id']}) and a person's answer resumes a "
                           "supervised session. " + result["next"])
     elif idle:
-        left = pace["idle_wait_cap"] - pace["idle_waits"]
-        result["next"] += (f" ({pace['idle_waits']} idle wait{'s' if pace['idle_waits'] != 1 else ''} in a row; "
-                           f"after {left} more you may stop and report)")
+        # No count here: the timeout text must read the same wait after
+        # wait, so it cannot reveal whether a private reply exists. The
+        # count is in pace.
+        result["next"] += "; idle waits in a row are counted in pace, and the wait that reaches the cap says to stop"
     return result
 
 

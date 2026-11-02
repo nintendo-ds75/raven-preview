@@ -109,9 +109,11 @@ class HostWakeTests(SharedServer):
             self.assertTrue(first['timed_out'])
             self.assertEqual((first['pace']['idle_waits'], first['pace']['idle_wait_cap']), (1, 2))
             self.assertEqual(first['waiting_on'][0]['path'], 'billing/usage.py')
-            self.assertEqual(first['waiting_on'][0]['blocks'], [])
+            self.assertNotIn('blocks', first['waiting_on'][0])  # nothing depends on it
             self.assertIn('each blocks only the code that needs its answer', first['next'])
-            self.assertIn('1 idle wait in a row; after 1 more you may stop', first['next'])
+            # The timeout text reads the same wait after wait; the count is in pace.
+            self.assertIn('counted in pace', first['next'])
+            self.assertNotIn('1 idle', first['next'])
             held = self.stop()
             self.assertEqual(held['decision'], 'block')
             self.assertIn('1 wait(s) in a row returned nothing new; 1 more allowed', held['reason'])
