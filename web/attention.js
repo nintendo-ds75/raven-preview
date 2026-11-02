@@ -62,17 +62,45 @@ function attNeeds(item) {
 
 // Hand the call to the person who should make it, from the card itself: whoever is picked sees it on
 // their page with the note as the reason it reached them, and once they answer, calls like it route to
-// them first (the same hand-on as the full record).
+// them first (the same hand-on as the full record). The row is a group, not a form: it sits beside the
+// answer form and its button is type="button", so handing on never goes through the browser's own form
+// submission or its validation; the row says itself when nobody is picked. Measured on the Parcelwise
+// demo (Nov 2, Chromium): a hand-on from the card was followed by the browser's "Please fill out this
+// field." on an answer box, which only a native submission can raise.
 function attHandOn(item) {
   // Owners carry ownership-map ids, not person ids: leave the signed-in person out by name as well.
   const people = (state.owners || []).filter(o => o.id !== state.me?.id && o.name !== state.me?.name);
-  return `<form class="att-handon" data-id="${esc(item.id)}" data-updated="${esc(item.updated_at)}">
+  return `<div class="att-handon" role="group" aria-label="Hand this call on" data-id="${esc(item.id)}" data-updated="${esc(item.updated_at)}">
       <span class="att-k">Hand this to</span>
-      <select name="person" aria-label="Hand on to" required><option value="">Pick a person</option>${people.map(o => `<option value="${esc(o.name)}">${esc(o.name)}${o.team ? ' · ' + esc(o.team) : ''}</option>`).join('')}</select>
+      <select name="person" aria-label="Hand on to"><option value="">Pick a person</option>${people.map(o => `<option value="${esc(o.name)}">${esc(o.name)}${o.team ? ' · ' + esc(o.team) : ''}</option>`).join('')}</select>
       <input name="note" maxlength="200" placeholder="A word for them (optional)">
       <p class="ask-error" hidden></p>
-      <div class="att-actions"><button class="button small primary" type="submit">Hand on</button><button class="button small text" type="button" data-att="cancel-handon" data-id="${esc(item.id)}">Cancel</button></div>
-    </form>`;
+      <div class="att-actions"><button class="button small primary" type="button" data-att="send-handon" data-id="${esc(item.id)}">Hand on</button><button class="button small text" type="button" data-att="cancel-handon" data-id="${esc(item.id)}">Cancel</button></div>
+    </div>`;
+}
+
+// Post the hand-on the row describes: the person picked, the note if any, and the revision the card
+// showed, so a card that changed underneath is refused rather than handed on blind.
+async function attSendHandOn(row) {
+  const person = row.querySelector('select[name=person]')?.value || '';
+  const note = row.querySelector('input[name=note]')?.value.trim() || '';
+  const error = row.querySelector('.ask-error');
+  const button = row.querySelector('[data-att="send-handon"]');
+  if (button?.disabled) return;
+  if (!person) { error.textContent = 'Pick the person to hand it to first.'; error.hidden = false; row.querySelector('select[name=person]')?.focus(); return; }
+  const label = button.textContent;
+  button.disabled = true; button.textContent = 'Handing on…'; error.hidden = true;
+  try {
+    const result = await api(`/api/decisions/${encodeURIComponent(row.dataset.id)}/refer`, {person, ...(note ? {note} : {}), expected_updated_at: row.dataset.updated});
+    attHand.delete(row.dataset.id);
+    notify(result.notice || `Handed on to ${person}.`);
+    attentionKey = '';
+    loadAttention(true);
+    await refresh();
+  } catch (err) {
+    error.textContent = err.message; error.hidden = false;
+    button.disabled = false; button.textContent = label;
+  }
 }
 
 // What the source left open: Raven's own note, never inside the quote.
@@ -155,6 +183,7 @@ document.addEventListener('click', event => {
   else if (att === 'cancel') attForm.delete(id);
   else if (att === 'handon') attHand.add(id);
   else if (att === 'cancel-handon') attHand.delete(id);
+  else if (att === 'send-handon') { const row = button.closest('.att-handon'); if (row) attSendHandOn(row); return; }
   else if (att === 'all') attShowAll = !attShowAll;
   else if (att === 'apply' || att === 'option') {
     const item = (attention?.needs_you || []).find(x => x.id === id);
@@ -179,8 +208,17 @@ document.addEventListener('input', event => {
   box.style.height = 'auto'; box.style.height = `${Math.min(box.scrollHeight, 180)}px`;
 });
 
+// Enter in the hand-on row hands on, as it would in a form, without a form.
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Enter' || event.isComposing || view !== 'you') return;
+  const row = event.target.closest?.('.att-handon');
+  if (!row || !event.target.matches('select, input')) return;
+  event.preventDefault();
+  attSendHandOn(row);
+});
+
 document.addEventListener('submit', async event => {
-  const form = event.target.closest('.att-answer, .att-correct, .att-handon');
+  const form = event.target.closest('.att-answer, .att-correct');
   if (!form || view !== 'you') return;
   event.preventDefault();
   const data = Object.fromEntries(new FormData(form).entries());
@@ -190,12 +228,7 @@ document.addEventListener('submit', async event => {
   button.disabled = true; button.textContent = 'Sending…';
   try {
     let result;
-    if (form.classList.contains('att-handon')) {
-      if (!data.person) throw new Error('Pick the person to hand it to first.');
-      result = await api(`/api/decisions/${encodeURIComponent(form.dataset.id)}/refer`, {person: data.person, ...(data.note ? {note: data.note} : {}), expected_updated_at: form.dataset.updated});
-      attHand.delete(form.dataset.id);
-      notify(result.notice || `Handed on to ${data.person}.`);
-    } else if (form.classList.contains('att-correct')) {
+    if (form.classList.contains('att-correct')) {
       result = await api(`/api/decisions/${encodeURIComponent(form.dataset.id)}/correct`, {answer: data.answer, why: data.why, scope: data.scope || 'here', expected_updated_at: form.dataset.updated});
       attForm.delete(form.dataset.id);
       notify(result.notice || 'Recorded.');
