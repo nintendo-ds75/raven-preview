@@ -147,6 +147,18 @@ class AskOpenReadingTest(unittest.TestCase):
         self.assertEqual(result['answer'], 'Group labels by merchant.\n- Join merchants for names.\n- Filter by month.\n'
                          f'{fence}\nSELECT merchant_id, count(*) FROM labels GROUP BY 1;\n{fence}')
 
+    def test_a_cited_pull_request_opens_as_a_record(self):
+        from bridge import artifacts
+        result = inquiry.ask(self.store, {'question': 'how do Stripe webhooks for plan changes work?', 'repository': REPO},
+                             self.me, cfg=Config(model_api='none'))
+        record = next(e for e in result['evidence'] if e['kind'] == 'source' and '#65' in e['title'])
+        kind, _, record_id = record['ref'].partition(':')
+        self.assertEqual(kind, 'record')
+        view = artifacts.resolve(self.store, kind, record_id)
+        self.assertEqual(view['kind_label'], 'Pull request')
+        self.assertEqual(view['people'][0]['name'], 'Marcus Lee')
+        self.assertIn('app/billing/stripe_webhooks.py', view['summary'])
+
     def test_model_markdown_is_shown_as_plain_text(self):
         self.assertEqual(inquiry._plain('**Use** `stripe listen`\n## Steps\n- one'), 'Use stripe listen\nSteps\n- one')
         self.assertEqual(inquiry._plain('Bulk label purchase (task 5065df84d70a) is ready.'), 'Bulk label purchase is ready.')

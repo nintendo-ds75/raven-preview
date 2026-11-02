@@ -32,7 +32,7 @@ async function openSource(ref, quote = '') {
   const decision = r.answer || r.question ? `<div class="source-decision">${r.question ? `<p class="muted">${esc(r.question)}</p>` : ''}${r.answer ? `<p><strong>${esc(r.answer)}</strong></p>` : ''}${r.why ? `<p>Why: ${esc(r.why)}</p>` : ''}${r.signed_by ? `<p class="pr-signed">✓ Signed off by ${esc(r.signed_by)}</p>` : ''}</div>` : '';
   const learned = (r.learned || []).length ? `<div class="source-learned"><span class="ask-label">What Raven took from it</span><ul>${r.learned.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
   const task = r.task_id ? `<a class="button small" href="#runs/${esc(r.task_id)}${r.node_id ? '/' + esc(r.node_id) : ''}" data-action="close">Open the task</a>` : '';
-  openModal(r.title, [r.kind_label, when].filter(Boolean).join(' · '), `<div class="source-view"><p class="source-summary">${esc(r.summary || '')}</p>${people ? `<div class="source-people">${people}</div>` : ''}${decision}${learned}${turns ? `<div class="source-turns"><span class="ask-label">Full transcript</span>${turns}</div>` : ''}${task}</div>`);
+  openModal(r.title, [r.kind_label, when].filter(Boolean).join(' · '), `<div class="source-view"><p class="source-summary">${esc(r.summary || '')}</p>${people ? `<div class="source-people">${people}</div>` : ''}${decision}${learned}${turns ? `<div class="source-turns"><span class="ask-label">${r.kind === 'record' ? 'Full text' : 'Full transcript'}</span>${turns}</div>` : ''}${task}${r.url && /^https:\/\//.test(r.url) ? `<a class="button small" href="${esc(r.url)}" target="_blank" rel="noopener">Open the original ↗</a>` : ''}</div>`);
   const quoted = document.querySelector('.source-turn.quoted');
   if (quoted) quoted.scrollIntoView({block: 'center'});
 }

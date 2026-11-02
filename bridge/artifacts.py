@@ -174,7 +174,8 @@ def _record(store, ref_id):
     read = store.get_record(ref_id, row["repo"])
     source = read["source"] or {}
     version = next((v for v in read["versions"] if v.get("id") == source.get("source_version_id")), {})
-    body = (version.get("snapshot") or {}).get("body", "")
+    snapshot = version.get("snapshot") or {}
+    body = snapshot.get("body", "")
     author = source.get("author") or ""
     person = store.graph.find_person(author) if author else None
     kind = str(source.get("kind") or row["object_kind"] or "").lower()
@@ -182,11 +183,18 @@ def _record(store, ref_id):
     title = source.get("title") or "Record"
     if kind == "pr" and ref and not title.startswith("#"):
         title = f"{title} (#{ref})" if f"#{ref}" not in title else title
-    return {"title": title, "at": source.get("source_updated_at") or source.get("observed_at") or "",
+    label = RECORD_LABELS.get(kind, "Record")
+    paths = [str(p) for p in snapshot.get("paths") or []][:4]
+    # A record with no body (most pull requests imported from git) still
+    # says who made it and what it changed.
+    about = (f"{author} opened this {label.lower()}." if author else f"A {label.lower()}.") + (
+        f" It changed {', '.join(paths)}." if paths else "")
+    return {"title": title, "at": source.get("source_updated_at") or source.get("source_created_at")
+            or snapshot.get("source_created_at") or source.get("observed_at") or "",
             "people": [{"id": person["id"], "name": person["name"]}] if person else [],
             "turns": [{"who": "", "text": line.strip()} for line in body.splitlines() if line.strip()][:80],
-            "url": source.get("url") or "", "label": RECORD_LABELS.get(kind, "Record"),
-            "summary": (f"{author}: " if author else "") + _short(body, 160)}
+            "url": source.get("url") or "", "label": label,
+            "summary": ((f"{author}: " if author else "") + _short(body, 160)) if body.strip() else about}
 
 
 RESOLVERS = {"intro": _intro, "call": _call, "meeting": _meeting, "decision": _decision, "record": _record}

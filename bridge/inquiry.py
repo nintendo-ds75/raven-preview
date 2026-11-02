@@ -671,7 +671,7 @@ def read_open(question, evidence, workspace, cfg, actor=None):
     if (not isinstance(raw, dict) or not isinstance(raw.get('answer'), str) or not raw['answer'].strip()
             or raw.get('basis') not in BASES):
         raise ValueError('Malformed open reading')
-    points = [_plain(p) for p in raw.get('points') or [] if isinstance(p, str) and p.strip()][:5]
+    points = [_plain(p) for p in raw.get('points') or [] if isinstance(p, str) and p.strip()][:4]
     answer = '\n'.join([_plain(raw['answer']), *('- ' + p.lstrip('-• ') for p in points)])
     if len(answer) < 2:
         raise ValueError('Empty open reading')
