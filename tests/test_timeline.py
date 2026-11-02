@@ -160,6 +160,24 @@ class TemplateTests(OfflineCase):
         ])
         self.assertEqual(rows[0]["people"], ["Dana Whitfield", "Elena Rossi"])
 
+    def test_an_own_answer_over_a_guess_and_a_correction_read_as_what_the_person_did(self):
+        # Measured on a demo take: a person who typed their own answer to a
+        # call Raven had a guess for read as "confirmed Raven's guess", and a
+        # correction showed as a confirmation and then a correction.
+        a = decision("a", "Should select all pick every order?", owner_name="Lena Park", kind="prediction")
+        b = decision("b", "Do we refuse the whole batch?", owner_name="Priya Shah", kind="prediction")
+        c = decision("c", "Skip orders with a live label?", owner_name="Jordan Okafor", kind="prediction")
+        rows = self.build([a, b, c], [
+            event(1, "owner_approved", 3, did="a", answer="This page, with a link for all", actor="Lena Park", took_guess=False),
+            event(2, "owner_approved", 4, did="b", answer="Buy what fits", actor="Priya Shah", took_guess=False),
+            event(3, "precedent_corrected", 4, did="b", by="Priya Shah", scope="here", replaced="", why="a batch is not one label"),
+            event(4, "owner_approved", 5, did="c", answer="Skip it", actor="Jordan Okafor", took_guess=True)])
+        self.assertEqual(texts(rows), [
+            "Lena answered “Should select all pick every order”",
+            "Priya corrected “Do we refuse the whole batch”: a batch is not one label; the earlier call stays for other cases",
+            "Jordan confirmed Raven's guess on “Skip orders with a live label”",
+        ])
+
     def test_the_agent_waiting_and_the_finish(self):
         ds = [decision("a", "Which table?", status="approved", answered_by="Raj Patel"), decision("b", "Which plan?")]
         rows = self.build(ds, [event(1, "node_settled", 3, did="b"),

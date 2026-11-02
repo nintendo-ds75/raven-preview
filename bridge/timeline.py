@@ -422,6 +422,20 @@ def build(run, decisions, events, priors=None, meetings=None) -> list[dict]:
     for e in events:
         if e["kind"] in OUTCOMES and e.get("decision_id"):
             last_outcome[e["decision_id"]] = e["id"]
+    # The answer a correction records is the correction's own row: the
+    # answer event just before a precedent_corrected one for the same call
+    # is not a separate "answered" (or "confirmed Raven's guess") step.
+    answer_kinds = ("owner_approved", "answer_corrected", "signoff", "signature")
+    by_call: dict[str, list] = {}
+    for e in events:
+        if e.get("decision_id") and e["kind"] in answer_kinds + ("precedent_corrected",):
+            by_call.setdefault(e["decision_id"], []).append(e)
+    def _who(e):
+        detail = _json(e.get("detail"))
+        return detail.get("actor") or detail.get("by") or ""
+    part_of_correction = {a["id"] for seq in by_call.values() for a, b in zip(seq, seq[1:])
+                          if a["kind"] in answer_kinds and b["kind"] == "precedent_corrected"
+                          and _who(a) and _who(a) == _who(b)}
     rows: list[dict] = []
     seen: dict[str, set] = {}
     agrees: dict[str, str] = {}
@@ -566,11 +580,14 @@ def build(run, decisions, events, priors=None, meetings=None) -> list[dict]:
                              people=[detail.get("by") or "", detail.get("to") or ""]))
         elif kind == "route_learned" and did and rows and rows[-1]["kind"] == "handed":
             rows[-1]["items"][0]["scopes"] = [str(s) for s in (detail.get("scopes") or [])][:3]
-        elif kind in ("owner_approved", "answer_corrected", "signoff", "signature") and did:
+        elif kind in answer_kinds and did and e["id"] in part_of_correction:
+            continue
+        elif kind in answer_kinds and did:
             by = detail.get("actor") or detail.get("by") or detail.get("owner") or d.get("answered_by") or ""
             rows.append(_row("answered", at, {"topic": topic(d.get("question")), "by": _first(by),
                                               "via": _via(detail.get("source")),
-                                              "guessed": kind == "owner_approved" and d.get("kind") == "prediction",
+                                              "guessed": kind == "owner_approved" and d.get("kind") == "prediction"
+                                              and detail.get("took_guess", True) is not False,
                                               "signed": kind in ("signoff", "signature") and not detail.get("corrected"),
                                               "remaining": ", ".join(_first(x) for x in (detail.get("remaining") or []))},
                              people=[by]))
