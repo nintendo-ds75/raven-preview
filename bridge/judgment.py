@@ -62,13 +62,19 @@ def received_via(db, source, actor=None) -> str:
     return ""
 
 
-def fit_reason(item, match_kind: str, rule_ok: bool, conditions=(), *, when: str = "", partial: bool = False) -> str:
+def fit_reason(item, match_kind: str, rule_ok: bool, conditions=(), *, when: str = "", partial: bool = False,
+               withheld: str = "") -> str:
     """One plain sentence on why a precedent fits the question it settled:
     how close the match was, whose call it was and when, and the standing
     its owner gave it. `item` is the memory row the ladder picked. With
     `partial` the answer settles only part of the question, so a person
     still signs it, rule or no rule: the reason says that, so it never
-    reads "nobody needed to be asked" beside a sign-off that is required."""
+    reads "nobody needed to be asked" beside a sign-off that is required.
+    `withheld` is why a standing rule was not applied ("a record
+    disagrees", "the answer combines sources"): the sentence then says so,
+    and never blames the owner for not making a rule of a row that is one.
+    Measured on the Parcelwise dry run: three signed rules vetoed by a pull
+    request read "Jordan did not make it a standing rule"."""
     who = item.answered_by or item.signed_by or "its owner"
     first = who.split()[0]
     if match_kind == "direct":
@@ -87,6 +93,9 @@ def fit_reason(item, match_kind: str, rule_ok: bool, conditions=(), *, when: str
             standing += " when " + "; ".join(terms[:3])
         standing += (", but it settles this only in part, so a person still signs it here" if partial
                      else ", so nobody needed to be asked")
+    elif withheld or getattr(item, "reusable", False):
+        why = withheld or "it does not fit this question"
+        standing = f"{first} made it a standing rule, but {why}, so a person still signs it here"
     else:
         standing = f"{first} did not make it a standing rule, so a person still signs it here"
     return f"{how}; {standing}."

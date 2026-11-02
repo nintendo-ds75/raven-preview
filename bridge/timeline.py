@@ -193,12 +193,12 @@ def _t_settled(items):
     if len(items) == 1:
         it = items[0]
         part = " in part" if it.get("partial") else ""
-        agrees = f"; {it['agrees']} agrees" if it.get("agrees") else ""
+        agrees = f"; {it['agrees']}" if it.get("agrees") else ""
         return f"Settled “{it['topic']}”{part} from {it['call']}{agrees}; {tail}"
     def label(it):
         inside = ", ".join(x for x in (it.get("who"), it.get("day")) if x)
         if it.get("agrees"):
-            inside += f"; {it['agrees']} agrees"
+            inside += f"; {it['agrees']}"
         return f"{it['topic']}{' in part' if it.get('partial') else ''} ({inside})" if inside else it["topic"]
     return f"Settled {len(items)} from earlier calls, {tail}: {_join([label(it) for it in items])}"
 
@@ -425,6 +425,10 @@ def build(run, decisions, events, priors=None, meetings=None) -> list[dict]:
     rows: list[dict] = []
     seen: dict[str, set] = {}
     agrees: dict[str, str] = {}
+    # What the record beside a settled rule did: agreed with it, or only
+    # covered the same ground (a PR that describes what shipped, or one
+    # older than the rule), which is not agreement.
+    agree_phrase: dict[str, str] = {}
     started_verdict = ""
 
     def mark(did, kind):
@@ -451,6 +455,8 @@ def build(run, decisions, events, priors=None, meetings=None) -> list[dict]:
             record = record_refs(detail.get("record", ""))
             if record:
                 agrees[did] = record[0]["label"]
+                agree_phrase[did] = (f"{record[0]['label']} covers this too" if detail.get("covers")
+                                     else f"{record[0]['label']} agrees")
         elif kind == "checking" and did and not has(did, "checking"):
             prior = dec(detail.get("cited") or "") or prior_of(d)
             mark(did, "checking")
@@ -480,7 +486,7 @@ def build(run, decisions, events, priors=None, meetings=None) -> list[dict]:
                 item = {"topic": topic(d.get("question")), "call": _call_label(prior),
                         "who": _first(detail.get("answered_by") or prior.get("answered_by") or prior.get("owner_name")),
                         "day": _call_day(prior), "partial": d.get("status") == "partial",
-                        "agrees": agrees.get(did, ""), "tail": tail_for(d)}
+                        "agrees": agree_phrase.get(did, ""), "tail": tail_for(d)}
                 refs = [_call_ref(prior)] if prior else []
                 if agrees.get(did):
                     refs.append({"kind": "record", "id": agrees[did], "label": agrees[did]})

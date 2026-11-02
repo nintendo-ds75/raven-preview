@@ -745,14 +745,21 @@ SAME_DECISION_SYSTEM = (
 
 CONFLICT_SYSTEM = (
     "You compare an answer already on file against one org record, both "
-    "about the same question. Reply with exactly one word. CONFLICT if the "
-    "record states something that cannot both be true with the answer: a "
-    "different value, a different rule, a different set of who may do it. "
-    "AGREE if the record supports the answer or merely adds detail. "
-    "UNRELATED if the record does not actually bear on the question. Two "
-    "statements can share almost all their vocabulary and still conflict, "
-    "so compare what each one CLAIMS, not the words they use. Say nothing "
-    "except the single word."
+    "about the same question. Reply with exactly one word.\n"
+    "CONFLICT: the record itself DECIDES the same question differently. It "
+    "states a different value, a different rule, or a different set of who "
+    "may do it, so the two cannot both be the rule.\n"
+    "STATUS: the record only describes the state of the code or what has "
+    "shipped so far: 'not yet', 'for now', 'today', 'this month', "
+    "'currently', a change that implements part of the answer, a commit "
+    "message. That something is not built, not wired or not charged yet is "
+    "not a different rule about how to decide it.\n"
+    "AGREE: the record supports the answer or merely adds detail.\n"
+    "UNRELATED: the record does not actually bear on the question.\n"
+    "Two statements can share almost all their vocabulary and still "
+    "conflict, so compare what each one CLAIMS, not the words they use. A "
+    "pull request title is not a claim; read the body. When torn between "
+    "CONFLICT and STATUS, say STATUS. Say nothing except the single word."
 )
 
 COMPOSER_SYSTEM = (
