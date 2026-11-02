@@ -65,12 +65,12 @@ function attHandled(item) {
   return `<li class="att-handled ${open ? 'open' : ''}" data-id="${esc(item.id)}">
     <button type="button" class="att-line" data-att="toggle" data-id="${esc(item.id)}" aria-expanded="${open}">
       <span class="att-q">${esc(item.question)}</span>
-      <span class="att-from">from your ${esc(attDate(call.when))} call${attVia[call.answered_via] ? ' ' + esc(attVia[call.answered_via]) : ''} · <em>${esc(item.task)}</em></span>
+      <span class="att-from">from ${call.answered_via === 'meeting' ? `what you said in ${esc(call.task || 'a meeting')}` : `your ${esc(attDate(call.when))} call${attVia[call.answered_via] ? ' ' + esc(attVia[call.answered_via]) : ''}`} · <em>${esc(item.task)}</em></span>
     </button>
     ${open ? `<div class="att-detail">
       <p class="att-a">“${esc(item.answer)}”</p>
       <p class="att-why"><span class="att-k">Why it fits</span>${esc(item.fit_reason || 'Raven matched it to your earlier call.')}</p>
-      <p class="att-call"><span class="att-k">Your call it used</span>${esc(attDate(call.when))}${attVia[call.answered_via] ? ', ' + esc(attVia[call.answered_via]) : ''}, on <a href="${attHref(call.run_id, call.id)}">${esc(call.task)}</a>: “${esc(call.answer)}”</p>
+      <p class="att-call"><span class="att-k">${call.answered_via === 'meeting' ? 'What you said' : 'Your call it used'}</span>${call.answered_via === 'meeting' ? `in ${esc(call.task)}` : `${esc(attDate(call.when))}${attVia[call.answered_via] ? ', ' + esc(attVia[call.answered_via]) : ''}, on <a href="${attHref(call.run_id, call.id)}">${esc(call.task)}</a>`}: “${esc(call.answer)}”</p>
       <div class="att-actions"><button type="button" class="button small" data-att="correct" data-id="${esc(item.id)}">That’s wrong, or doesn’t apply here</button><a class="att-open" href="${attHref(item.run_id, item.id)}">Full record ↗</a></div>
       ${attForm.has(item.id) ? `<form class="att-correct" data-id="${esc(item.id)}" data-updated="${esc(item.updated_at)}">
         <label>The right answer<textarea name="answer" rows="3" maxlength="12000" required>${esc(item.answer)}</textarea></label>
