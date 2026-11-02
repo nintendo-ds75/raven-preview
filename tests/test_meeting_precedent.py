@@ -253,3 +253,29 @@ class WhenTests(OfflineCase):
         self.assertEqual(meeting_precedent.meeting_when({"title": "Bloom check-in 2026-10-29", "at": ""}), ("Oct 29", "2026-10-29"))
         self.assertEqual(meeting_precedent.meeting_when({"title": "Planning", "at": "2026-11-02T10:00:00+00:00"}), ("Nov 2", "2026-11-02"))
         self.assertEqual(meeting_precedent._short_title("Pilot pricing sync (Dana, Elena), Oct 29"), "Pilot pricing sync (Dana, Elena)")
+
+    def test_a_month_inside_a_persons_name_is_not_a_date(self):
+        """Parcelwise dry run: "Marcus" read as "Mar", so the title lost the
+        name and the date fell back to the import day."""
+        at = "2026-11-02T10:00:00+00:00"
+        title = "Assistant pricing sync (Priya, Marcus), Oct 29"
+        self.assertEqual(meeting_precedent.meeting_when({"title": title, "at": at}), ("Oct 29", "2026-10-29"))
+        self.assertEqual(meeting_precedent._short_title(title), "Assistant pricing sync (Priya, Marcus)")
+        names = "Sync with Mary, June, Augusto, Novak, Decker, Julian and Sept"
+        self.assertEqual(meeting_precedent.meeting_when({"title": names, "at": at}), ("Nov 2", "2026-11-02"))
+        self.assertEqual(meeting_precedent._short_title(names), names)
+        self.assertEqual(meeting_precedent._short_title("May Chen 1:1"), "May Chen 1:1")
+        self.assertEqual(meeting_precedent.meeting_when({"title": "Marcus and June, 2026-10-29", "at": at}),
+                         ("Oct 29", "2026-10-29"))
+
+    def test_a_date_is_a_whole_month_word_next_to_a_day(self):
+        at = "2026-11-02T10:00:00+00:00"
+        for title, when in (("Sept. 3 pricing call", ("Sep 3", "2026-09-03")),
+                            ("3 September pricing call", ("Sep 3", "2026-09-03")),
+                            ("29 Oct billing", ("Oct 29", "2026-10-29")),
+                            ("Oct. 29th sync", ("Oct 29", "2026-10-29")),
+                            ("Q3 review Jun 1, 2025", ("Jun 1", "2025-06-01")),
+                            ("Dec 2025 planning", ("Nov 2", "2026-11-02"))):
+            self.assertEqual(meeting_precedent.meeting_when({"title": title, "at": at}), when, title)
+        self.assertEqual(meeting_precedent._short_title("Q3 review Jun 1, 2025"), "Q3 review")
+        self.assertEqual(meeting_precedent._short_title("Dec 2025 planning"), "Dec 2025 planning")

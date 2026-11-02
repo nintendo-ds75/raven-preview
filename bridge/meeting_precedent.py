@@ -61,9 +61,21 @@ SYSTEM = (
 )
 
 _MONTHS = {m.lower(): m for m in ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")}
+# A month is a whole word that is a full month name or its standard
+# abbreviation (an optional period after it), and it is a date only next to
+# a day number: "Oct 29", "29 Oct", "Sept. 3", "3 September", "Oct 29 2026".
+# A month that starts a name is not one: Marcus, Mary, June, Augusto, Novak,
+# Decker and Julian are people. Measured on the Parcelwise dry run, where
+# "Assistant pricing sync (Priya, Marcus), Oct 29" read as the import day
+# and was shown as "Assistant pricing sync (Priya, )".
+_MONTH_WORD = (r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?"
+               r"|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)")
+_ORDINAL = r"(?:st|nd|rd|th)?"
+_YEAR = r"(?:,?\s+(?P<year{n}>\d{{4}}))?"
 _DATE_IN_TITLE = re.compile(
-    r"\b(?P<day1>\d{1,2})?\s*(?P<mon>jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s*(?P<day2>\d{1,2})?\b"
-    r"|(?P<iso>\d{4}-\d{2}-\d{2})", re.IGNORECASE)
+    rf"\b(?P<day1>\d{{1,2}}){_ORDINAL}\s+(?P<mon1>{_MONTH_WORD})\b\.?{_YEAR.format(n=1)}\b"
+    rf"|\b(?P<mon2>{_MONTH_WORD})\b\.?\s+(?P<day2>\d{{1,2}}){_ORDINAL}\b{_YEAR.format(n=2)}\b"
+    r"|\b(?P<iso>\d{4}-\d{2}-\d{2})\b", re.IGNORECASE)
 _ENTITY_STOP = {"raven", "ok", "okay", "agreed", "yes", "right", "fair", "thanks", "and", "one", "the", "legal",
                 "finance", "engineering", "monetization", "paths", "options", "context", "facts", "record",
                 "code", "customer", "customers"}
@@ -90,22 +102,32 @@ def _entities(text: str, people_words: set[str]) -> set[str]:
     return out
 
 
+def _title_date(title: str) -> tuple[int, int, str] | None:
+    """(month 1-12, day, year or '') for the first real date a meeting
+    title names, else None."""
+    for m in _DATE_IN_TITLE.finditer(title or ""):
+        if m.group("iso"):
+            y, mo, d = m.group("iso").split("-")
+            if 1 <= int(mo) <= 12 and 1 <= int(d) <= 31:
+                return int(mo), int(d), y
+            continue
+        mon = m.group("mon1") or m.group("mon2")
+        day = int(m.group("day1") or m.group("day2"))
+        if 1 <= day <= 31:
+            return list(_MONTHS).index(mon.lower()[:3]) + 1, day, m.group("year1") or m.group("year2") or ""
+    return None
+
+
 def meeting_when(meeting: dict) -> tuple[str, str]:
     """('Oct 29', '2026-10-29') for a meeting: the date its title names,
     else the day it was recorded."""
-    title = meeting.get("title") or ""
-    m = _DATE_IN_TITLE.search(title)
     at = (meeting.get("at") or "")[:10]
-    if m and m.group("iso"):
-        y, mo, d = m.group("iso").split("-")
-        label = f"{list(_MONTHS.values())[int(mo) - 1]} {int(d)}" if 1 <= int(mo) <= 12 else m.group("iso")
-        return label, m.group("iso")
-    if m and m.group("mon") and (m.group("day1") or m.group("day2")):
-        mon = _MONTHS[m.group("mon").lower()[:3]]
-        day = int(m.group("day1") or m.group("day2"))
-        year = at[:4] if at else ""
-        iso = f"{year}-{list(_MONTHS.values()).index(mon) + 1:02d}-{day:02d}" if year else ""
-        return f"{mon} {day}", iso
+    found = _title_date(meeting.get("title") or "")
+    if found:
+        mo, day, year = found
+        year = year or (at[:4] if at else "")
+        iso = f"{year}-{mo:02d}-{day:02d}" if year else ""
+        return f"{list(_MONTHS.values())[mo - 1]} {day}", iso
     if at:
         try:
             y, mo, d = at.split("-")
@@ -117,7 +139,8 @@ def meeting_when(meeting: dict) -> tuple[str, str]:
 
 def _short_title(title: str) -> str:
     """The meeting's title without the date it may carry: 'Pilot pricing
-    sync (Dana, Elena), Oct 29' reads 'Pilot pricing sync (Dana, Elena)'."""
+    sync (Dana, Elena), Oct 29' reads 'Pilot pricing sync (Dana, Elena)'.
+    Only a real date goes: a person named Marcus or June stays."""
     out = _DATE_IN_TITLE.sub("", title or "")
     return re.sub(r"\s*[,;:·-]\s*$", "", " ".join(out.split())).strip() or (title or "the meeting")
 

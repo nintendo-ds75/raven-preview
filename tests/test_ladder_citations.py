@@ -101,6 +101,52 @@ class DirectRungPrefersTheQuestionAskedTests(CitationCase):
         self.assertEqual(d.source_id, self.retry, d.evidence)
 
 
+class NearIdenticalWordingBeatsSharedTermsTests(CitationCase):
+    """Parcelwise dry run (run 1): "What counts as one billable assistant
+    use?" was settled from Jordan's Sep 15 call about retried and timed-out
+    attempts at 0.75, not his Jun 1 call that asks this question ("What
+    counts as one use of the assistant: a question, a completed answer, or
+    tokens?"). Both share the same three terms (count, assistant, use) and
+    neither repeats "billable", so the terms tied at 0.75, the Jun 1 call
+    decayed under the floor on age, and the newer neighbouring question
+    won. A past question that repeats nearly every word of the question
+    does not decay, an even score goes to the closer wording, and a looser
+    question is not a rival answer preferred for being newer."""
+
+    UNIT = "What counts as one use of the assistant: a question, a completed answer, or tokens?"
+    RETRY = "Does a retried assistant attempt count as a second use, and does a timed-out attempt count?"
+
+    def setUp(self):
+        super().setUp()
+        self.unit = self.answered(self.raj, self.UNIT,
+                                  "One answer to one question is one use (PR #80). Tokens, requests and streamed "
+                                  "chunks are not units of use; the event is `assistant` with the merchant and the "
+                                  "request id, the same shape as a label.", "2026-06-01", "services/usage/",
+                                  rationale="Settled on the review of PR #80.")
+        self.retry = self.answered(self.raj, self.RETRY,
+                                   "Yes to both since PR #216: every attempt we make is a usage row with its status "
+                                   "and attempt number, and usage_daily counts attempts. The counter is what the "
+                                   "model cost us, not what the merchant saw.", "2026-09-15", "services/usage/",
+                                   rationale="PR #216.")
+
+    def ask(self, question):
+        r = run_task(self.graph, self.cfg, "Bill for the assistant", repo=REPO,
+                     decisions=[{"question": question, "category": "data", "path": "services/usage/events.py"}])
+        return self.first(r)
+
+    def test_the_same_question_in_more_words_beats_a_newer_call_that_shares_its_terms(self):
+        d = self.ask("What counts as one billable assistant use?")
+        self.assertIn(d.status, ("resolved", "partial"), d.evidence)
+        self.assertEqual(d.source_id, self.unit, d.evidence)
+        self.assertIn("One answer to one question is one use", d.answer)
+        self.assertNotIn(self.retry, d.evidence)
+
+    def test_the_retry_question_still_finds_the_retry_call(self):
+        d = self.ask("Does a retried assistant attempt count as a second use?")
+        self.assertIn(d.status, ("resolved", "partial"), d.evidence)
+        self.assertEqual(d.source_id, self.retry, d.evidence)
+
+
 class PreferenceIsNotRetirementTests(CitationCase):
     """Run 10: three conflict_resolved events said "kept 8531bfc34012, retired
     5bdec5f18755, rule newest answer wins" about Dana's Sep 24 call, which is

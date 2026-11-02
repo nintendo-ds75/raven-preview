@@ -292,7 +292,9 @@ class AskTests(GraphCase):
                     rationale="The March double-refund incident refunded 212 customers twice.", path="billing/refunds.py")
         batch = self.signed("What batch size should the metering exporter use?", "500 rows per request.", path="metering/exporter.py")
         # Old enough that the ladder's decayed memory score falls under its
-        # floor, so the question reaches the inbox fallback.
+        # floor, so the question reaches the inbox fallback. The question
+        # below shares the terms but not the wording: one that repeats the
+        # signed question's words does not decay and the ladder answers it.
         self.graph.db.execute("UPDATE decisions SET updated_at='2026-01-15T12:00:00+00:00' WHERE id=?", (batch,))
         other = self.store.add_owner({"name": "Yuki Tanaka", "team": "Data", "patterns": "exports/*"})
         far = ask(self.store, Config(), self.run["id"], "A customer was double-charged $320 yesterday. Is that refunded automatically?",
@@ -302,7 +304,7 @@ class AskTests(GraphCase):
                     context="c", path="billing/refunds.py")
         self.assertIsNone(retro["prediction"])
         self.assertEqual(retro["category"], "data-source")
-        near = ask(self.store, Config(), self.run["id"], "What batch size is the metering exporter supposed to use?",
+        near = ask(self.store, Config(), self.run["id"], "Which batch size does the metering exporter send?",
                    context="c", path="exports/batch.py", owner_id=other["id"])
         self.assertEqual(near["prediction"], "500 rows per request.")
         self.assertEqual(near["kind"], "prediction")

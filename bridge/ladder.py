@@ -40,6 +40,14 @@ MEMORY_HALF_LIFE_DAYS = 180.0
 MEMORY_FRESH_DAYS = 90.0
 DIRECT_MEMORY_MIN = 0.85
 NEAR_MEMORY_MIN = 0.60
+# The share of the question's words a past question must repeat to be read
+# as the question asked, give or take a word: "What counts as one use of
+# the assistant: a question, a completed answer, or tokens?" repeats five
+# of the six words of "What counts as one billable assistant use?".
+SAME_WORDS_MIN = 0.80
+# How much less of the question's wording a near-even candidate may repeat
+# and still be a rival answer to it rather than a neighbouring question.
+WORDING_GAP = 0.20
 # How far below the floor a candidate is still worth showing the model
 # when nothing cleared it. Low enough to reach a paraphrase that shares
 # few words with the original, high enough that the model is not asked
@@ -1627,13 +1635,24 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             # dry run: an eleven-month-old answer to the question asked
             # decayed to 0.40 while a newer call about retries, a superset of
             # its three terms, scored 1.00 and was cited in its place.
-            if retrospective or _asks_this(p):
+            # Nor does a past question that repeats nearly all of its
+            # words: it is the question asked, give or take a qualifier.
+            # Measured on the Parcelwise dry run: "What counts as one
+            # billable assistant use?" shared three terms (count, assistant,
+            # use) with Jordan's Jun 1 "What counts as one use of the
+            # assistant: a question, a completed answer, or tokens?" and
+            # with his Sep 15 call about retried and timed-out attempts;
+            # neither repeats "billable", so both overlapped at 0.75, the
+            # Jun 1 call decayed under the floor and the retry call was
+            # cited for the question it does not answer.
+            if retrospective or _asks_this(p) or _fit(p) >= SAME_WORDS_MIN:
                 return 1.0
             return _recency(p.updated_at)
+        # An even score goes to the candidate worded closest to the question.
         scored = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in raw),
-                        key=lambda t: -t[0])
+                        key=lambda t: (-t[0], -_fit(t[2])))
         rule_candidates = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in rule_raw),
-                                 key=lambda t: -t[0])
+                                 key=lambda t: (-t[0], -_fit(t[2])))
         accepted = [(eff, s, p) for eff, s, p in scored if eff >= floor]
         if accepted:
             eff, sim, past = accepted[0]
@@ -1645,7 +1664,11 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     return False
                 return len(pt & qt2) / min(len(pt), len(qt2)) >= 0.7
 
-            near_even = {p.id for e2, _, p in accepted[1:] if eff - e2 <= CONFLICT_MARGIN}
+            # A candidate scoring about the same that repeats clearly less
+            # of the question's wording is a neighbouring question, not a
+            # rival answer to this one; it is not preferred for being newer.
+            near_even = {p.id for e2, _, p in accepted[1:]
+                         if eff - e2 <= CONFLICT_MARGIN and _fit(p) >= _fit(past) - WORDING_GAP}
             rivals = [p for _, _, p in scored
                       if p.id != past.id and p.answer != past.answer
                       and (p.id in near_even or _same_decision(p))]
