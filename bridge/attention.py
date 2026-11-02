@@ -95,6 +95,16 @@ def _day(stamp) -> str:
     return f"{when:%b} {when.day}"
 
 
+# What someone said in a meeting that bears on the open call, as
+# meeting_precedent.context_line writes it into the evidence.
+_SAID_RE = re.compile(r"(?:^|; )meeting: (?P<who>[^;:]+?) said in (?P<where>[^:;]+): “(?P<quote>[^”]+)”")
+
+
+def _said(evidence: str) -> str:
+    m = _SAID_RE.search(evidence or "")
+    return f"{m.group('who')} said in {m.group('where')}: “{m.group('quote')}”" if m else ""
+
+
 def _why_reached(row, source, name="") -> str:
     if row["needs_review"]:
         return "An earlier call this leaned on was replaced since, so it needs another look."
@@ -108,6 +118,15 @@ def _why_reached(row, source, name="") -> str:
         return "Raven has a likely answer, but nothing on record settles it."
     if row["status"] != "pending" and (row["answer"] or "").strip():
         return "Raven found an answer on record, but nobody has signed it for this case."
+    # What was said about it in a meeting, or what the records said instead
+    # of an answer, is the context the person is asked against, never
+    # Raven's guess. Measured on the Parcelwise dry run (Nov 2): "I still
+    # need to land the rate" came to Priya as "Raven would apply this".
+    said = _said(row["evidence"] or "")
+    if said:
+        return f"Nothing on record settles this; {said}."
+    if _gaps(row):
+        return "Nothing on record settles this."
     return "No earlier call covers this."
 
 

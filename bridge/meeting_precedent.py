@@ -38,7 +38,13 @@ the ladder runs, a question is held against the meeting notes:
 - when the speaker is not the person who decides, their words settle
   nothing and become nobody's guess: the ladder routes the call as it
   would have, and the quote travels with it as context for the decider
-  ("Marcus Lee said in the Oct 29 sync: ...; Priya Shah decides pricing").
+  ("Marcus Lee said in the Oct 29 sync: ...; Priya Shah decides pricing");
+- when the words only say the call is still open, or only who makes it
+  ("I still need to land the rate and whether there's a free monthly
+  allowance"), they are not an answer, whoever spoke: never Raven's guess
+  with a "Use this answer" button, they travel with the open call as
+  context, and the decider is asked. Measured on the Parcelwise dry run
+  (Nov 2), where that line was served as Raven's guess to Priya.
 
 Nothing here invents an answer: the settled answer is composed from the
 quote alone and may carry no figure the speaker did not say.
@@ -275,7 +281,9 @@ def consider(store, cfg, run, question: str, *, context: str = "", paths: list[s
         named = sum(1 for e in q_entities if e in body.lower())
         scored.append((len(shared) + named, n, bool(named)))
     scored.sort(key=lambda x: (-x[0], x[1]["created_at"]))
-    best_guess = best_context = None
+    from .ladder import _states_no_answer
+    names = [p["name"] for p in people.values()]
+    best_guess = best_open = best_context = None
     route: dict | None = None
     task_id = run["id"] if run is not None and "id" in run.keys() else ""
     for score, n, named in scored[:CANDIDATES]:
@@ -313,15 +321,23 @@ def consider(store, cfg, run, question: str, *, context: str = "", paths: list[s
             _note(why, n, "the meeting did not speak of everything this question names")
             continue
         when, iso = meeting_when(meeting)
+        # Words that say the call is still open, or only who makes it, are
+        # not an answer: they go along as context, never as a guess.
+        says_open = _states_no_answer(n["text"], names, question) or _states_no_answer(n["quote"], names, question)
         details = {"note": n, "meeting_id": meeting_id, "meeting": meeting, "title": _short_title(meeting["title"]),
                    "when": when, "iso": iso, "speaker": speaker, "area": area, "decider": route, "quote": n["quote"],
-                   "turns": turns[max(0, at - WINDOW): at + WINDOW + 1]}
+                   "turns": turns[max(0, at - WINDOW): at + WINDOW + 1], "open": says_open}
         if cfg is not None and cfg.semantic_retrieval and cfg.has_backend():
             verdict = _read(cfg, question, context, facts, details)
             if verdict is not None and verdict.get("settles") is True and verdict.get("answer"):
                 answer = str(verdict["answer"]).strip()
                 said = " ".join(t.get("text", "") for t in details["turns"]) + " " + n["quote"]
-                if _figures(answer) - _figures(said):
+                if says_open or _states_no_answer(answer, names, question):
+                    _note(why, n, "the words say the call is still open, or only who makes it; they settle nothing "
+                                  "and are nobody's guess, so they go along as context")
+                    details["open"] = True
+                    bears = True
+                elif _figures(answer) - _figures(said):
                     _note(why, n, "the model's answer carried a figure the speaker did not say; asked instead")
                     bears = True
                 elif not decides:
@@ -345,12 +361,20 @@ def consider(store, cfg, run, question: str, *, context: str = "", paths: list[s
         else:
             _note(why, n, "no model to read whether it settles this")
             bears = named or score >= MIN_SHARED + 1
-        if bears and decides and best_guess is None:
+        if bears and details["open"]:
+            if decides:
+                _note(why, n, f"{speaker['name']} said the call is still open; it is not a guess to confirm, "
+                              f"{speaker['name'].split()[0]} is asked with the words as context")
+            if best_open is None:
+                best_open = details
+        elif bears and decides and best_guess is None:
             best_guess = details
         elif bears and not decides and best_context is None:
             best_context = details
     if best_guess is not None:
         return "predict", best_guess
+    if best_open is not None:
+        return "context", best_open
     if best_context is not None:
         return "context", best_context
     return None
@@ -462,10 +486,10 @@ def attach_context(store, row: dict, details: dict, *, repo: str = "", why: list
     where = f"the {when} {title}" if when else f"the {title}"
     owner = row.get("owner_name") or ""
     area = _route_area([row.get("owner_evidence") or ""])
-    line = context_line(speaker, where, quote, owner, area)
+    line = context_line(speaker, where, quote, owner, area, still_open=bool(details.get("open")))
     before = row.get("evidence") or ""
     graph.update_decision(did, evidence=f"{before}; {line}" if before else line)
-    _pin(store, did, details, repo, "context", task_id, why, event="meeting_context")
+    _pin(store, did, details, repo, "open" if details.get("open") else "context", task_id, why, event="meeting_context")
     out = dict(graph.db.execute(_DECISION_SELECT + " WHERE d.id=?", (did,)).fetchone())
     for key in ("drafts", "ranked", "note", "duplicate_stub"):
         if key in row:
@@ -474,15 +498,29 @@ def attach_context(store, row: dict, details: dict, *, repo: str = "", why: list
     return out
 
 
-def context_line(speaker: str, where: str, quote: str, owner: str = "", area: str = "") -> str:
+def context_line(speaker: str, where: str, quote: str, owner: str = "", area: str = "", still_open: bool = False) -> str:
     """One line of evidence: what was said, by whom, and whose call it is.
-    The 'meeting:' head is how delivery picks it out for the owner."""
+    The 'meeting:' head is how delivery picks it out for the owner. With
+    `still_open`, the words themselves say the call is not made yet, so the
+    person who decides is asked rather than handed them as a guess."""
     line = f"meeting: {speaker} said in {where}: “{quote}”"
+    first = speaker.split()[0]
+    if still_open and owner and _same_name(owner, speaker):
+        return f"{line}; {first} said the call is still open, so {first} is asked"
+    if still_open and owner:
+        return f"{line}; the call is still open" + (f", and {owner} decides {area}, so it is {owner.split()[0]}'s call"
+                                                  if area else f"; {owner} is asked")
     if owner and area:
         return f"{line}; {owner} decides {area}, so it is {owner.split()[0]}'s call"
     if owner:
         return f"{line}; {owner} is asked"
-    return f"{line}; {speaker.split()[0]} does not decide this"
+    if still_open:
+        return f"{line}; the call is still open"
+    return f"{line}; {first} does not decide this"
+
+
+def _same_name(a: str, b: str) -> bool:
+    return " ".join(str(a or "").split()).lower() == " ".join(str(b or "").split()).lower()
 
 
 _CONTEXT_LINE = re.compile(r"(?:^|; )(meeting: .+)$", re.S)

@@ -704,17 +704,138 @@ def _covers_note(rule, record) -> str:
     return f"{clash} covers this too: \"{_record_claim(record, rule.answer or '', 160)}\"; {why}"
 
 
+def _clauses(body: str) -> list[str]:
+    """A text as the clauses a reader weighs one by one: sentences, the
+    parts of a semicolon list, and what follows a contrasting comma."""
+    return [c.strip() for c in re.split(r"(?<=[.!?])\s+|;\s*|,\s*(?:but|however|although|while)\s+", body) if c.strip()]
+
+
 def _is_pure_refusal(text: str) -> bool:
     """Whether a composed text only says what the sources do not say:
     every clause states a gap, or the first does and nothing is decided."""
     body = text.strip()
     if not _states_a_gap(body):
         return False
-    clauses = [c for c in re.split(r"(?<=[.!?])\s+|;\s*|,\s*(?:but|however|although|while)\s+", body) if c.strip()]
+    clauses = _clauses(body)
     if clauses and all(_GAP_RE.search(c.lower()) for c in clauses):
         return True
     first = body.split(".")[0].lower()
     return bool(_GAP_RE.search(first)) and not _DECIDED_RE.search(body.lower())
+
+
+# A text that says the call is still open, or only who makes it, is not an
+# answer, however it is phrased. Measured on the Parcelwise dry run (Nov 2):
+# "Priya owns deciding the free monthly allowance and rate for assistant
+# metering before it goes live" (the model's reading of a Slack line,
+# "Priya owns pricing for Q4, number not decided") and Priya's own "I still
+# need to land the rate and whether there's a free monthly allowance" were
+# served on For you as "Raven would apply this, but isn't sure: your call"
+# with a "Use this answer" button, while Being built said nothing on record
+# settles it. The strong phrases stand on their own; the weak ones, and a
+# clause that only names a known person as the decider, count only when the
+# clause carries no figure, so "$0.04 per answer, confirmed before it goes
+# live" is still an answer.
+_OPEN_RE = re.compile(
+    r"\bowns? (?:deciding|the (?:call|decision|number|rate|allowance|price|figure|choice)|this (?:call|decision|one))\b"
+    r"|(?:\bnot|\bnever|n't)\s+(?:yet\s+|been\s+|formally\s+|finally\s+|fully\s+)*"
+    r"(?:decided|landed|agreed(?: on)?|finali[sz]ed|nailed down|pinned down|worked out)\b"
+    r"|\bundecided\b|\btbd\b|\btbc\b"
+    r"|\bstill (?:needs?|has|have|had) to (?:land|decide|pick|choose|settle|set|work out|figure out|nail down|pin down"
+    r"|confirm|sign off(?: on)?)\b"
+    r"|\b(?:still |yet )?to be (?:decided|landed|agreed(?: on)?|finali[sz]ed|worked out|nailed down|pinned down|confirmed"
+    r"|determined(?! by))\b"
+    r"|\bwill (?:write up|circulate|propose|come back with|get back (?:to|with)|follow up (?:on|with))\b"
+    r"|\bwrites? up (?:the )?options\b"
+    r"|\bnothing (?:is|has been|was) (?:set|decided|agreed|landed|fixed|on record|recorded|written down)\b"
+    r"|\bno (?:\w+ ){0,2}(?:rate|number|figure|price|allowance|date|value|cutoff|threshold|list) (?:is|has been|was) "
+    r"(?:recorded|set|decided|agreed|landed|on record|given|named)\b"
+    r"|\bno (?:\w+ ){0,2}(?:rate|number|figure|price|allowance|date|value|cutoff|threshold|list) on record\b"
+    r"|\bopen question\b|\b(?:is|are|remains?|stays?) still open\b|\bremains? open\b")
+_OPEN_WEAK_RE = re.compile(
+    r"\bbefore (?:it|this|that|we|anything|the \w+) (?:goes|go|is|starts?) (?:live|counting|charging|shipping)\b"
+    r"|\bowns? (?:\w+ ){0,2}(?:pricing|billing|the (?:rate|number|allowance|price|figure|list|cutoff|date))\b"
+    r"|\bwill (?:decide|land|pick|choose|settle)\b"
+    r"|\bis (?:still )?(?:deciding|working (?:it|this|that )?out|landing|on it)\b"
+    r"|\b(?:needs?|has|have) to (?:land|decide|pick|choose|work out|figure out|nail down|pin down)\b")
+# Who decides, said of a named person: "Priya decides the allowance".
+_DECIDER_RE = re.compile(
+    r"\b(?:owns?|decides?|gets? to decide|is deciding|will decide|has to decide|needs? to decide|signs? off(?: on)?"
+    r"|makes? (?:the|that|this) call|is (?:still )?(?:landing|working (?:it|this|that) out|on it)"
+    r"|is (?:the )?(?:one|person) (?:who|to) (?:decides?|lands?|picks?))\b|'s call\b")
+# A figure or amount: a clause that states one is saying something.
+_FIGURE_RE = re.compile(
+    r"\d|[$€£%¢]|\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty"
+    r"|forty|fifty|sixty|ninety|hundred|thousand)\s+(?:cents?|dollars?|percent|per|each|days?|hours?|minutes?|weeks?"
+    r"|months?|years?|answers?|uses?|events?)\b")
+_WHO_Q_RE = re.compile(r"\bwho(?:m|se|'s)?\b")
+
+
+def _names_a_decider(clause: str, people) -> bool:
+    """The clause names one of `people` (full name or first name) as the
+    one who decides, and nothing else."""
+    if not _DECIDER_RE.search(clause):
+        return False
+    for name in people:
+        name = " ".join(str(name or "").split()).lower()
+        if not name:
+            continue
+        first = name.split()[0]
+        if re.search(rf"\b{re.escape(name)}\b", clause) or (len(first) > 2 and re.search(rf"\b{re.escape(first)}\b", clause)):
+            return True
+    return False
+
+
+def _states_no_answer(text: str, people=(), question: str = "") -> bool:
+    """Whether a candidate answer only says the call is still open, or only
+    names who makes it: every clause states a gap, says the value is not
+    decided or still to be landed, or (with no figure in it) names one of
+    `people` as the decider. Such a text is context for the open call,
+    never a prediction, a proposal or an answer. Conservative: one clause
+    that says anything else, or the question asking who decides, and the
+    text is taken as an answer."""
+    body = " ".join(str(text or "").split())
+    if not body or _WHO_Q_RE.search((question or "").lower()):
+        return False
+    clauses = _clauses(body)
+    if not clauses:
+        return False
+    for clause in clauses:
+        low = clause.lower()
+        if _GAP_RE.search(low) or _OPEN_RE.search(low):
+            continue
+        if _FIGURE_RE.search(low):
+            return False
+        if _OPEN_WEAK_RE.search(low) or _names_a_decider(low, people):
+            continue
+        return False
+    return True
+
+
+def _known_people(store) -> list[str]:
+    """The names Raven knows, for the decider reading; [] when the store
+    has no people table to read."""
+    try:
+        return [p["name"] for p in store.people(active_only=False)]
+    except Exception:
+        return []
+
+
+def _cited_prose(cited: str) -> str:
+    """'pr 220 and slack founders' from the ladder's citation list ('pr 220;
+    slack founders; left out, not adopted: ...')."""
+    parts = [c.strip() for c in (cited or "").split(";") if c.strip() and not c.strip().startswith("left out")]
+    parts = [re.sub(r":\s.*$", "", p) for p in parts]
+    if not parts:
+        return "the records"
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
+def _open_note(cited: str, text: str) -> str:
+    """Raven's note beside an open call, shown as "Raven could not find
+    ...": what the sources that spoke of it said instead of an answer."""
+    says = "say" if ";" in (cited or "").split("left out")[0] else "says"
+    return (f"a settled value: {_cited_prose(cited)} {says} only that the call is still open "
+            f"(“{_word_trunc(text, 160)}”)")
 
 
 def _superseded_by_newer(store: Graph, repo: str, chosen) -> object | None:
@@ -1371,6 +1492,128 @@ def _compose_joint(cfg: Config, question: str, rows: list, given: str = ""):
     return text, cited, partial or _states_a_gap(text), rows
 
 
+# A question that asks two things at once splits at "and how", "and
+# which", a semicolon or a second question mark. "A or B" is one question
+# with two options, and "X and Y" inside a clause is one subject.
+_CLAUSE_SPLIT_RE = re.compile(
+    r"\s*;\s*|,?\s+and\s+(?=(?:how|which|what|where|when|who|whom|whose|why|whether|is|are|was|were|does|do|did|"
+    r"should|can|could|must|will|would)\b)|\?\s+(?=\S)", re.IGNORECASE)
+# The share of a clause's own terms an earlier call must repeat to answer
+# that clause; a stem meets another it is a prefix of (paged meets page).
+CLAUSE_MATCH_MIN = 0.6
+
+
+def _compound_clauses(question: str) -> list[str]:
+    """The clauses of a question that asks two things at once ("Which
+    table does billing read usage from, and how are reads paged?"), each
+    with at least two terms of its own; empty for a question that asks one
+    thing, however long. Measured on the Parcelwise dry run: that question
+    had Jordan's standing rule for each half, the nearer half scored 0.54
+    against the whole and was read as not answering it, and the two were
+    never read together."""
+    parts = [re.sub(r"^and\s+", "", p.strip(" ?,;"), flags=re.IGNORECASE) for p in _CLAUSE_SPLIT_RE.split(question or "")]
+    parts = [p for p in parts if len(set(_meaningful_terms(p)) - _ASK_MACHINERY) >= 2]
+    return parts if 2 <= len(parts) <= 3 else []
+
+
+def _clause_candidates(store: Graph, clauses: list[str], scored: list, repo: str) -> list:
+    """One earlier call per clause of a compound question: the memory row
+    whose question and answer repeat most of that clause's own terms, from
+    the rows the whole question already scored, the standing rules and the
+    recent answers. Empty unless every clause has such a row and at least
+    two clauses find different rows: a single row that answers every
+    clause is the ordinary memory match, not a composition."""
+    from .graph import MEMORY_STATUSES
+    pool: dict[str, object] = {p.id: p for _, _, p in scored}
+    for p in store.recent_answered(repo=repo, limit=12):
+        pool.setdefault(p.id, p)
+    for clause in clauses:
+        for _s, p in store.standing_grant_candidates(llm_mod.embed(clause), repo=repo, query=clause, min_score=0.0):
+            pool.setdefault(p.id, p)
+        for hit in store.memory_search(clause, limit=6, repo=repo, min_score=0.2):
+            if hit["id"] not in pool:
+                p = store.get_decision(hit["id"], exact=True)
+                if p is not None:
+                    pool[p.id] = p
+    rows = [p for p in pool.values() if p.status in MEMORY_STATUSES and (p.answer or "").strip()]
+
+    def met(term: str, have: set[str]) -> bool:
+        return any(h == term or (len(min(h, term, key=len)) >= 3 and (h.startswith(term) or term.startswith(h)))
+                   for h in have)
+
+    picks: list = []
+    for clause in clauses:
+        ct = set(_meaningful_terms(clause)) - _ASK_MACHINERY
+        best, best_key = None, (0.0, 0.0, 0.0)
+        for p in rows:
+            have = set(_meaningful_terms(p.question + " " + (p.answer or "")))
+            ov = sum(1 for t in ct if met(t, have)) / len(ct) if ct else 0.0
+            key = (ov, _wording_fit(clause, p.question), p.updated_at)
+            if ov >= CLAUSE_MATCH_MIN and key > best_key:
+                best, best_key = p, key
+        if best is None:
+            return []
+        picks.append(best)
+    return picks if len({p.id for p in picks}) >= 2 else []
+
+
+def _compound_joint(store: Graph, cfg: Config, question: str, clauses: list[str], scored: list, repo: str,
+                    context: str = "", facts: dict | None = None):
+    """The joint composition of a compound question from one earlier call
+    per clause, as (joint, rows), or None when no clause has a call, the
+    composer declines, or it used fewer than two of them. The standing of
+    each rule whose conditions the question meets is given to the
+    composer, as it is for one rule. Measured on the Parcelwise dry run:
+    "Which table does assistant billing read usage from, and how are reads
+    paged?" went to Jordan while his Jun 9 and Jun 10 rules answered it."""
+    rows = _clause_candidates(store, clauses, scored, repo)
+    if len(rows) < 2:
+        return None
+    given_rules = []
+    for p in rows:
+        if p.reusable and rule_status(p, question, context, facts=facts, repo=repo)[0]:
+            given_rules.append(f"The rule {p.rule_by or p.answered_by or 'its owner'} made of decision {p.id} covers "
+                               f"this question: its conditions ({'; '.join(rule_conditions(p.rule_conditions)) or 'none'}) "
+                               "are met here.")
+    joint = _compose_joint(cfg, question, [_as_record(p) for p in rows], given=_given(context, facts, " ".join(given_rules)))
+    if joint is None or len(joint) < 4 or len(joint[3]) < 2:
+        return None
+    used = {r.get("decision_source_id") for r in joint[3]}
+    return joint, [p for p in rows if p.id in used]
+
+
+def _joint_rule_standing(store: Graph, used_rows: list, item, question: str, context: str, path: str,
+                         facts: dict | None, repo: str) -> list:
+    """The standing rules a composed answer rests on, when every row it
+    used is one: each signed, reusable, with the same owner and the same
+    scope, its conditions met here, and the answer naming no figure and no
+    word the rows do not. Then the composition stays within what those
+    rules say and settles without a fresh signature, as one rule would.
+    Empty for any other combination: a row nobody made a rule of, two
+    owners, a scope the question may be outside, or an answer that adds
+    to its sources, each of which a person signs."""
+    rules: list = []
+    for row in used_rows:
+        d = store.get_decision(row.get("decision_source_id") or "", exact=True) if row.get("decision_source_id") else None
+        if d is None or not d.authorized or not d.reusable or not rule_status(d, question, context, facts=facts, repo=repo)[0]:
+            return []
+        if _norm_name(d.answered_by) != _norm_name(item.answered_by) or (d.rule_scope or "") != (item.rule_scope or ""):
+            return []
+        if d.rule_scope != "any" and _scope_difference(question, context, path, d, facts, _facts_of(store, d.id), repo)[0]:
+            return []
+        rules.append(d)
+    if len(rules) < 2:
+        return []
+    sources = [_row_text(r) for r in used_rows]
+    answer = item.answer or ""
+    if _novel_words(answer, question, *sources):
+        return []
+    have = set(re.findall(r"\d+(?:\.\d+)?", " ".join(sources)))
+    if any(n not in have for n in re.findall(r"\d+(?:\.\d+)?", answer)):
+        return []
+    return rules
+
+
 _CHANGE_VERBS = {"add", "remov", "remove", "fix", "use", "make", "drop", "move", "updat", "update", "chang", "change",
                  "set", "get", "allow", "avoid", "keep", "enabl", "enable", "disabl", "disable", "support",
                  "implement", "handl", "handle", "introduc", "introduce", "convert", "replac", "replace", "renam",
@@ -1573,6 +1816,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
     result = RunResult(task_id=task_id, title=title)
     decisions = [d for d in (decisions or []) if isinstance(d, dict) and d.get("question")]
 
+    known_people = _known_people(store)
     for d in decisions:
         question = d["question"].strip()
         category = str(d.get("category", "") or "").strip() or guess_category(question)
@@ -1634,6 +1878,9 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             result.open.append({"id": did, "question": asked_q, "owner": None, "note": missing_history})
             continue
         why_open: list[str] = []
+        # What a source said instead of an answer: that the call is still
+        # open, or only who makes it. Raven's note beside the open node.
+        open_notes: list[str] = []
         # A signed answer and a settled record that disagree on a figure:
         # set when that is found, and then neither is served or proposed.
         conflict = None
@@ -1807,6 +2054,22 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                                    else ""))
         else:
             why_open.append("memory: nothing similar answered before")
+        # A compound question whose halves each have an earlier call: no
+        # single row scores for the whole, so the halves are read together
+        # before memory gives up on it.
+        compound_joint, compound_rows = None, []
+        if mem_pick is None and cfg.semantic_retrieval:
+            clauses = _compound_clauses(question)
+            compound = (_compound_joint(store, cfg, question, clauses, scored, repo, d_context, d_facts)
+                        if clauses else None)
+            if compound is not None:
+                compound_joint, compound_rows = compound
+                for p in compound_rows:
+                    if all(p.id != row[2].id for row in scored):
+                        scored.append((floor, floor, p))
+                mem_pick = next((max(eff2, floor), s2, p) for eff2, s2, p in scored if p.id == compound_rows[0].id)
+                store.append_event("memory_compound", {"task_id": task_id, "decision_id": did, "clauses": clauses,
+                                                       "memories": [p.id for p in compound_rows]})
 
         def preserve_grant(picked):
             candidate = _same_answer_grant(store, picked, rule_candidates, question, d_context, d_path, d_facts, repo)
@@ -1816,7 +2079,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     "why": "same answer from a relevant current standing grant; entailment and conflicts still checked"})
             return candidate
 
-        if mem_pick is not None:
+        if mem_pick is not None and compound_joint is None:
             candidate = preserve_grant(mem_pick[2])
             if candidate.id != mem_pick[2].id:
                 mem_pick = next(row for row in rule_candidates if row[2].id == candidate.id)
@@ -2076,7 +2339,12 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             disagrees = _disagrees(cfg, question, mem_pick[2].answer or "", rec_best)
             rule_guarded = disagrees and bool(mem_pick[2].reusable) and not _contests_rule(mem_pick[2], rec_best)
             rule_wins = not disagrees or rule_guarded
-        if rule_wins:
+        if compound_joint is not None and mem_pick is not None:
+            # A compound question answered one clause per earlier call: the
+            # calls are the answer; a record that disagrees is still found below.
+            pick, mem_lex = ("memory", mem_pick[2]), True
+            pick_note = "a compound question, one earlier call per clause"
+        elif rule_wins:
             pick, mem_lex = ("memory", mem_pick[2]), True
             agreeing_record = rec_best
             if rule_guarded or _describes_state(rec_best):
@@ -2194,6 +2462,12 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     joint = None
                 else:
                     joint = _compose_joint(cfg, question, joint_rows, given=_given(d_context, d_facts))
+                if joint is not None and _states_no_answer(joint[0], known_people, question):
+                    # The records say the call is open, or who makes it: not
+                    # an answer to propose, a note beside the open call.
+                    open_notes.append(_open_note(joint[1], joint[0]))
+                    why_open.append(f"semantic: {_cited_prose(joint[1])} say only that the call is still open, not what it is")
+                    joint = None
                 if joint is not None:
                     j_answer, j_cited, *j_more = joint
                     j_partial = bool(j_more and j_more[0]) or _states_a_gap(j_answer)
@@ -2278,12 +2552,22 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                                   f"{pick[1].id} covers this question: its conditions "
                                   f"({'; '.join(rule_conditions(pick[1].rule_conditions)) or 'none'}) are met here.")
             m_given = _given(d_context, d_facts, rule_given)
-            grounded = _compose_answer(cfg, question, f"earlier answer {pick[1].id}",
-                                       _memory_body(pick[1]), pick[1].answered_by, given=m_given)
-            others = [p for _, s2, p in scored[1:6] if s2 >= 0.35 and p.id != pick[1].id][:3] if mem_lex else []
+            grounded = None if compound_joint is not None else _compose_answer(
+                cfg, question, f"earlier answer {pick[1].id}", _memory_body(pick[1]), pick[1].answered_by, given=m_given)
+            if grounded is None and compound_joint is None and mem_lex:
+                # The closest row does not answer this; a compound question
+                # may still be answered one clause per call.
+                clauses = _compound_clauses(question)
+                compound = (_compound_joint(store, cfg, question, clauses, scored, repo, d_context, d_facts)
+                            if clauses else None)
+                if compound is not None:
+                    compound_joint, compound_rows = compound
+            others = ([p for p in compound_rows if p.id != pick[1].id] if compound_joint is not None
+                      else [p for _, s2, p in scored[1:6] if s2 >= 0.35 and p.id != pick[1].id][:3] if mem_lex else [])
             if grounded is None or (_states_a_gap(grounded) and others):
-                joint = _compose_joint(cfg, question, [_as_record(pick[1])] + [_as_record(p) for p in others],
-                                       given=m_given) if others else None
+                joint = (compound_joint if compound_joint is not None
+                         else _compose_joint(cfg, question, [_as_record(pick[1])] + [_as_record(p) for p in others],
+                                             given=m_given) if others else None)
                 if joint is not None:
                     joint_partial = len(joint) > 2 and bool(joint[2])
                     memory_used_rows = joint[3] if len(joint) > 3 else []
@@ -2328,6 +2612,14 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                                                           "served": "neither"})
             pick, mem_lex = None, False
 
+        if (pick is not None and pick[0] == "memory" and not pick[1].authorized
+                and _states_no_answer(pick[1].answer or "", known_people, question)):
+            # An unsigned earlier answer that only says the call is open is
+            # nothing to propose: the call stays open, with the note.
+            open_notes.append(_open_note(f"earlier decision {pick[1].id}", pick[1].answer or ""))
+            why_open.append(f"memory: decision {pick[1].id} says only that the call is still open, not what it is; "
+                            "nothing to propose")
+            pick, mem_lex = None, False
         if pick is not None:
             kind, item = pick
             mem_conflict = ""
@@ -2433,6 +2725,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 # row that is one. Measured on the Parcelwise dry run: three
                 # rules vetoed by a record were blamed on their owners.
                 withheld = ""
+                joint_rules: list = []
                 if signed and item.reusable and not rule_ok and rule_why:
                     withheld = ("it has expired" if "expired" in rule_why else "its source needs review"
                                 if "review" in rule_why else "its conditions do not hold here")
@@ -2441,9 +2734,18 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     rule_why = 'A record disagrees with the answer; it requires a fresh human sign-off'
                     withheld = "a record disagrees"
                 elif len(memory_used_rows) > 1:
-                    rule_ok = False
-                    rule_why = 'The answer combines or contrasts premises; it requires a fresh human sign-off'
-                    withheld = "the answer combines sources"
+                    # Every row a standing rule of the same owner, met here,
+                    # and the answer within what they say: the rules settle
+                    # it together. Anything else is a fresh sign-off.
+                    joint_rules = (_joint_rule_standing(store, memory_used_rows, item, question, d_context, d_path,
+                                                        d_facts, repo) if rule_ok else [])
+                    if joint_rules:
+                        rule_why = (f"the rules {item.rule_by or item.answered_by} made of decisions "
+                                    f"{' and '.join(d.id for d in joint_rules)} together cover this question")
+                    else:
+                        rule_ok = False
+                        rule_why = 'The answer combines or contrasts premises; it requires a fresh human sign-off'
+                        withheld = "the answer combines sources"
                 if rule_ok and other_scope and item.rule_scope != "any":
                     # Another customer, other files: the rule was made for
                     # its own scope and its owner did not say anywhere.
@@ -2461,6 +2763,9 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 covered = (f"the rule {item.rule_by or item.answered_by} made of decision {item.id}"
                            + (f" (conditions: {'; '.join(terms[:3])})" if terms else "")
                            + (f", until {item.rule_expires[:10]}" if item.rule_expires else ""))
+                if joint_rules:
+                    covered = (f"the rules {item.rule_by or item.answered_by} made of decisions "
+                               f"{' and '.join(d.id for d in joint_rules)}, together")
                 rule_note = ""
                 attribution = (item.answered_by + " answered") if item.answered_by else (item.signed_by + " approved")
                 if rule_ok and not auto_rules:
@@ -2544,7 +2849,9 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     kind=_kind_for(status, origin, mkind) if signed else "prediction",
                     source_id=item.id, source_revision=revision,
                     fit_reason=(fit_reason(item, mkind, rule_ok, terms, when=ts_to_iso(item.updated_at)[:10]
-                                           if item.updated_at else "", partial=mem_partial, withheld=withheld)
+                                           if item.updated_at else "", partial=mem_partial, withheld=withheld,
+                                           also=[ts_to_iso(d.updated_at)[:10] for d in joint_rules if d.id != item.id]
+                                           if rule_ok else ())
                                 if signed else ""),
                     evidence=evidence + (f"; conflict: {mem_conflict}" if mem_conflict else "")
                     + (f"; {pick_note}" if mem_lex and pick_note else "")
@@ -2555,7 +2862,10 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 store.append_event("resolve" if signed else "proposed",
                                    {"task_id": task_id, "decision_id": did, "source": origin,
                                     "cited": item.id, "answered_by": item.answered_by if signed else "",
-                                    "kind": mkind, "signed": signed})
+                                    "kind": mkind, "signed": signed,
+                                    **({"also": [r.get("decision_source_id") for r in memory_used_rows
+                                                 if r.get("decision_source_id") and r.get("decision_source_id") != item.id]}
+                                       if len(memory_used_rows) > 1 else {})})
                 entry = {"id": did, "question": question, "source": origin,
                          "by": item.answered_by if signed else "", "answer": item.answer,
                          "conflict": mem_conflict, "partial": mem_partial,
@@ -2616,6 +2926,10 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             if answer is not None and _is_pure_refusal(answer):
                 why_open.append(f"records: {citation} does not state an answer to this question")
                 answer = None
+            elif answer is not None and _states_no_answer(answer, known_people, question):
+                open_notes.append(_open_note(citation, answer))
+                why_open.append(f"records: {citation} says only that the call is still open, not what it is")
+                answer = None
             if not reversal_request and answer is None and category == "data-source" and _is_settled(item) \
                     and any(t in _RETRO_MACHINERY for t in _meaningful_terms(question)):
                 pointer = (f"Not stated in the indexed record. The change itself is {citation}, by "
@@ -2652,6 +2966,10 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     joint2 = None
                 else:
                     joint2 = _compose_joint(cfg, question, joint_rows2, given=_given(d_context, d_facts))
+                if joint2 is not None and _states_no_answer(joint2[0], known_people, question):
+                    open_notes.append(_open_note(joint2[1], joint2[0]))
+                    why_open.append(f"records: {_cited_prose(joint2[1])} say only that the call is still open, not what it is")
+                    joint2 = None
                 if joint2 is not None:
                     j_answer2, j_cited2, *j_more2 = joint2
                     j_partial2 = bool(j_more2 and j_more2[0]) or _states_a_gap(j_answer2)
@@ -2910,7 +3228,8 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                            if route_notes else "no routing signal cleared the bar")
             store.update_decision(did, status=OPEN, owner="", kind="new",
                                   owner_evidence=unknown_why,
-                                  evidence="; ".join(why_open))
+                                  evidence="; ".join(why_open),
+                                  **({"gaps": json.dumps(open_notes)} if open_notes else {}))
             store.append_event("route_unknown", {"task_id": task_id, "decision_id": did})
             result.open.append({"id": did, "question": question, "owner": None, "ranked": [],
                                 "note": "Raven does not know who owns this from the graph."})
@@ -2936,6 +3255,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             store.update_decision(did, status=OPEN, owner=owner, kind="prediction" if proposal else "new",
                                   owner_evidence="; ".join(evidence),
                                   evidence="; ".join(why_open + ([proposal_why] if proposal_why else [])),
+                                  **({"gaps": json.dumps(open_notes)} if open_notes else {}),
                                   **({"prediction": proposal, "source_id": proposal_from,
                                       "source_revision": proposal_observations[proposal_from]} if proposal else {}))
             if proposal:
@@ -3046,7 +3366,7 @@ def _how_they_decide(store: Graph, cfg, repo: str, question: str, context: str, 
         text, relation = llm_mod.compose_proposal(cfg, owner, question, context, [
             {"question": p.question, "answer": p.answer, "rationale": p.rationale, "scope": sc}
             for _s, p, sc in priors])
-        if text and not _takes_a_choice(text, choices):
+        if text and (not _takes_a_choice(text, choices) or _states_no_answer(text, (owner,), question)):
             return "", "", ""
         if text:
             # A concrete detail none of their answers states is taken out and
@@ -3066,7 +3386,7 @@ def _how_they_decide(store: Graph, cfg, repo: str, question: str, context: str, 
                                    "confirm" + ("; it leaves open what their earlier answers do not settle"
                                                 if trimmed else "") + scope_note)
         return "", "", ""
-    if not _takes_a_choice(best.answer, choices):
+    if not _takes_a_choice(best.answer, choices) or _states_no_answer(best.answer, (owner,), question):
         return "", "", ""
     return best.answer, best.id, (f"how they decide: {owner} answered \"{_word_trunc(best.question, 80)}\" "
                                   f"(decision {best.id}, similarity {best_score:.2f})"

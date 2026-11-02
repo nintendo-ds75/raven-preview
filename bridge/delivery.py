@@ -1535,6 +1535,15 @@ def render(row: dict, kind: str, person_name: str, base_url: str, note: str = ""
     found = _found_for_owner(row.get("evidence") or "", rest)
     if kind == "ask" and found:
         lines.append(f"What Raven found: {found}")
+    if kind == "ask":
+        # What the sources said instead of an answer (that the call is still
+        # open, or only who makes it): Raven's note, never a guess.
+        try:
+            gaps = [str(g).strip() for g in json.loads(row.get("gaps") or "[]") if str(g).strip()]
+        except (ValueError, TypeError):
+            gaps = []
+        if gaps:
+            lines.append("Raven could not find " + transport_text(_clip("; ".join(gaps), 600, rest)) + ".")
     evidence = split_evidence(row.get("owner_evidence") or "")[:3]
     if kind == "reassigned" or (kind == "ask" and not task_link):
         # Who handed it on, and what answering teaches, belongs in the

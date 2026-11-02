@@ -110,6 +110,22 @@ def _call_ref(prior, label="") -> dict:
             "label": label or _call_label(prior)}
 
 
+def _calls_label(prior, others) -> str:
+    """'Jordan's Jun 9 and Jun 10 calls' for a compound question settled
+    from one earlier call per clause; the calls of two people are named
+    one by one."""
+    calls = [p for p in [prior, *others] if p]
+    if len(calls) < 2:
+        return _call_label(prior)
+    who = {_first(p.get("answered_by") or p.get("signed_by") or p.get("owner_name")) for p in calls}
+    if len(who) == 1 and who != {""}:
+        days = [d for d in (_call_day(p) for p in calls) if d]
+        inside = (", ".join(days[:-1]) + " and " + days[-1]) if len(days) > 1 else (days[0] if days else "")
+        return f"{who.pop()}'s {inside + ' ' if inside else ''}calls"
+    labels = [_call_label(p) for p in calls]
+    return ", ".join(labels[:-1]) + " and " + labels[-1]
+
+
 def record_refs(cited, meetings=None) -> list[dict]:
     """The records a resolve cites ('merge 36; commit 387e508c8d5d; slack
     pricing-2026-09-24 [decided]; ticket BILL-201 (resolved): title') as
@@ -204,13 +220,24 @@ def _t_settled(items):
 
 
 def _t_settled_record(items):
+    # "Settled" only when nobody has to sign it. An answer found in the
+    # record that its owner still signs is found, not settled: measured on
+    # the Parcelwise dry run (Nov 2), "Settled ... from the repo's own
+    # record: ADR-0007 · PR #148; Jordan signs it" contradicted itself.
+    tail = items[0].get("tail", "nobody asked")
+    settled = tail == "nobody asked"
     if len(items) == 1:
         it = items[0]
         part = " in part" if it.get("partial") else ""
         refs = " · ".join(r["label"] for r in it.get("refs", [])) or "the repo's own record"
-        return f"Settled “{it['topic']}”{part} from the repo's own record: {refs}; {it.get('tail', 'nobody asked')}"
+        if settled:
+            return f"Settled “{it['topic']}”{part} from the repo's own record: {refs}; {tail}"
+        found = "a partial answer" if it.get("partial") else "an answer"
+        return f"Found {found} in the repo's own record for “{it['topic']}”: {refs}; {tail}"
     body = _join([f"{it['topic']} ({', '.join(r['label'] for r in it.get('refs', [])[:2]) or 'record'})" for it in items])
-    return f"Settled {len(items)} from the repo's own record: {body}"
+    if settled:
+        return f"Settled {len(items)} from the repo's own record: {body}"
+    return f"Found answers in the repo's own record for {len(items)}, {tail.replace('signs it', 'signs them')}: {body}"
 
 
 def _t_settled_meeting(items):
@@ -496,16 +523,19 @@ def build(run, decisions, events, priors=None, meetings=None) -> list[dict]:
                 continue
             if source == "memory":
                 prior = dec(detail.get("cited") or "") or prior_of(d)
+                # A compound question settled from one call per clause cites them all.
+                others = [p for p in (dec(x) for x in detail.get("also") or [] if isinstance(x, str)) if p]
                 mark(did, "settled")
-                item = {"topic": topic(d.get("question")), "call": _call_label(prior),
+                item = {"topic": topic(d.get("question")), "call": _calls_label(prior, others),
                         "who": _first(detail.get("answered_by") or prior.get("answered_by") or prior.get("owner_name")),
                         "day": _call_day(prior), "partial": d.get("status") == "partial",
                         "agrees": agree_phrase.get(did, ""), "tail": tail_for(d)}
-                refs = [_call_ref(prior)] if prior else []
+                refs = [_call_ref(p) for p in [prior, *others] if p]
                 if agrees.get(did):
                     refs.append({"kind": "record", "id": agrees[did], "label": agrees[did]})
                 row_kind = "confirmed" if has(did, "checking") else "settled"
-                rows.append(_row(row_kind, at, item, refs=refs, people=[prior.get("answered_by") or ""],
+                rows.append(_row(row_kind, at, item, refs=refs,
+                                 people=[p.get("answered_by") or "" for p in [prior, *others]],
                                  group=(row_kind, item["tail"])))
             else:
                 mark(did, "settled")
@@ -703,7 +733,7 @@ def _priors(db, decisions, events) -> dict:
             value = detail.get(key)
             if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{12,32}", value):
                 wanted.add(value)
-        for key in ("over", "retired"):
+        for key in ("over", "retired", "also"):
             for value in detail.get(key) or []:
                 if isinstance(value, str):
                     wanted.add(value)

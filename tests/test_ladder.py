@@ -1535,3 +1535,168 @@ class ContrastGateTests(LadderCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OpenValueTests(LadderCase):
+    """A text that says the call is still open, or only who makes it, is not
+    an answer. Measured on the Parcelwise dry run (Nov 2): "Priya owns
+    deciding the free monthly allowance and rate for assistant metering
+    before it goes live" and Priya's own "I still need to land the rate"
+    were served on For you as "Raven would apply this, but isn't sure: your
+    call" with a "Use this answer" button, while Being built said nothing
+    on record settles it."""
+
+    PEOPLE = ("Priya Shah", "Marcus Lee", "Jordan Okafor")
+    OPEN = [
+        "Priya owns deciding the free monthly allowance and rate for assistant metering before it goes live.",
+        "I still need to land the rate and whether there's a free monthly allowance before it starts counting.",
+        "Priya owns pricing for Q4, number not decided",
+        "The rate hasn't been decided; Priya will write up options.",
+        "Priya decides the allowance.",
+        "Open question; nothing is set yet.",
+        "No rate is recorded.",
+        "Still to be decided.",
+        "The free allowance is to be decided by Priya.",
+        "Marcus will decide which merchants are in.",
+        "The allowance is still open: Priya owns pricing.",
+        "The records do not state a rate; it is Priya's call.",
+    ]
+    ANSWERS = [
+        "Starter and Growth, both of them, in arrears on the monthly Stripe invoice, same as extra labels.",
+        "one invoice line per feature per period",
+        "$0.04 per answer",
+        "Two cents an answer past the allowance, on every plan.",
+        "$0.04 per answer, confirmed before it goes live.",
+        "No: Northwind stays on its contract terms, with no public rate, until Noah clears the MFN clause.",
+        "Nothing charges when the merchant asks the question. It goes through the nightly job like everything else.",
+        "Priya decides pricing; Starter and Growth are charged.",
+        "The default is 30 days unless Priya decides otherwise.",
+        "Jordan decided usage_daily.",
+        "Merchants not chosen for the pilot are excluded.",
+        "The plan is determined by the install path.",
+        "Assistant billing reads usage_daily, paged by cursor (day, merchant, feature) never offset.",
+        "Merchants should not pay twice on a retry: PR #140 and ADR 0007 establish that every charge carries an "
+        "idempotency key (merchant, feature, period) so re-running the job bills once.",
+        "Keep Bloom & Co off the public rate until Sam clears the order form clause.",
+        "",
+    ]
+
+    def test_words_that_say_the_call_is_open_or_only_who_makes_it_are_not_an_answer(self):
+        for text in self.OPEN:
+            with self.subTest(text=text):
+                self.assertTrue(ladder_mod._states_no_answer(text, self.PEOPLE, "What do we charge per assistant answer?"))
+
+    def test_real_answers_are_never_caught(self):
+        for text in self.ANSWERS:
+            with self.subTest(text=text):
+                self.assertFalse(ladder_mod._states_no_answer(text, self.PEOPLE, "What do we charge per assistant answer?"))
+
+    def test_naming_who_decides_answers_a_question_that_asks_who_decides(self):
+        self.assertFalse(ladder_mod._states_no_answer("Priya decides pricing.", self.PEOPLE, "Who decides the rate?"))
+        self.assertFalse(ladder_mod._states_no_answer("Priya owns pricing for Q4.", self.PEOPLE, "Whose call is the allowance?"))
+        # Without the names, a bare "X decides Y" is not read as the decider case.
+        self.assertFalse(ladder_mod._states_no_answer("Stripe decides the retry schedule.", (), "How are retries scheduled?"))
+        self.assertTrue(ladder_mod._states_no_answer("Stripe decides the retry schedule.", ("Stripe Bot",), "How are retries scheduled?"))
+
+    def test_the_note_names_the_sources_and_what_they_said(self):
+        note = ladder_mod._open_note("slack founders-2026-10-30 [decided]; pr 220: web: labels; left out, not adopted: ticket X",
+                                     "Priya owns pricing for Q4, number not decided")
+        self.assertEqual(note, "a settled value: slack founders-2026-10-30 [decided] and pr 220 say only that the call is "
+                               "still open (“Priya owns pricing for Q4, number not decided”)")
+        self.assertTrue(ladder_mod._open_note("pr 220", "x").startswith("a settled value: pr 220 says only"))
+
+
+class ParcelwiseOpenValueTests(LadderCase):
+    """The Parcelwise dry run (Nov 2) through the ladder: the records that
+    speak of the assistant rate say only that Priya owns it and the number
+    is not decided. Composed across records, that is a note beside the
+    open call for Priya, not a proposal with a "Use this answer" button."""
+
+    REPO = "parcelwise/parcelwise-app"
+    QUESTION = "What do we charge per assistant answer past the allowance?"
+    COMPOSED_OPEN = "Priya owns deciding the free monthly allowance and rate for assistant metering before it goes live."
+    COMPOSED_ANSWER = "Past the allowance each assistant answer is charged two cents, the same on every plan, per slack founders."
+
+    def setUp(self):
+        super().setUp()
+        g = self.graph
+        with g.transaction():
+            self.priya = g.add_person("Priya Shah", email="priya@parcelwise.example")
+            g.add_authority("category", "pricing", "decides", person_id=self.priya, repo=self.REPO, source="config")
+        g.upsert_intent(self.REPO, "slack", "founders-2026-10-30", "assistant pricing",
+                        "Priya owns pricing for Q4, number not decided. Metering lands before the rate does.",
+                        "Marcus Lee", "2026-10-30T10:00:00Z", status="decided")
+        g.upsert_intent(self.REPO, "pr", "220", "web: labels and assistant answers this month on the Plan page",
+                        "Shows assistant answers this month; no allowance and no charge for those yet.",
+                        "Jordan Okafor", "2026-10-28T10:00:00Z", status="merged")
+
+    def run_it(self, composed):
+        self.semantic(True)
+        _wire_fakes(self, text_map={"compose_joint": composed})
+        r = run_task(self.graph, Config(), "Charge for assistant answers", repo=self.REPO,
+                     decisions=[{"question": self.QUESTION, "category": "pricing", "path": "app/billing/plans.py"}])
+        return self.first(r)
+
+    def test_a_composition_that_only_says_who_decides_leaves_the_call_open_with_a_note(self):
+        d = self.run_it(self.COMPOSED_OPEN)
+        self.assertEqual((d.status, d.kind, d.owner, d.prediction or "", d.answer or ""), ("pending", "new", "Priya Shah", "", ""))
+        self.assertEqual(len(d.gaps), 1, d.gaps)
+        note = d.gaps[0]
+        self.assertTrue(note.startswith("a settled value: "), note)
+        self.assertIn("pr 220 [merged]", note)
+        self.assertIn("slack founders-2026-10-30 [decided]", note)
+        self.assertTrue(note.endswith(f" say only that the call is still open (“{self.COMPOSED_OPEN}”)"), note)
+        self.assertIn("say only that the call is still open, not what it is", d.evidence)
+        self.assertNotIn("composed across records", d.evidence)
+        # The owner's page shows the note, and no guess to apply.
+        from bridge import attention
+        from bridge.authz import Actor
+        view = attention.overview(self.store, Actor(id=self.priya, name="Priya Shah"))
+        self.assertEqual([i["id"] for i in view["needs_you"]], [d.id])
+        item = view["needs_you"][0]
+        self.assertFalse(item["guess"])
+        self.assertEqual(item["gaps"], d.gaps)
+        self.assertTrue(item["why"].startswith("Nothing on record settles this."), item["why"])
+        # Being built: no proposal event, so the timeline has no guess and no "Settled".
+        from bridge import timeline
+        rows = timeline.rows(self.store, d.task_id)
+        self.assertFalse(any(r["kind"] in ("guess", "settled_record") for r in rows), rows)
+        self.assertTrue(any(r["kind"] == "flagged" and "to Priya" in r["text"] for r in rows), rows)
+        # The message to Priya carries the note.
+        from bridge.delivery import render
+        import json
+        row = self.graph.db.execute("SELECT * FROM decisions WHERE id=?", (d.id,)).fetchone()
+        self.assertEqual(json.loads(row["gaps"]), d.gaps)
+        text = render({**dict(row), "run_title": "Charge for assistant answers"}, "ask", "Priya Shah", "")["text"]
+        self.assertIn("Raven could not find a settled value: ", text)
+        self.assertIn(" say only that the call is still open", text)
+
+    def test_a_composition_that_states_the_value_still_proposes_it(self):
+        d = self.run_it(self.COMPOSED_ANSWER)
+        self.assertIn("composed across records", d.evidence)
+        self.assertEqual(d.answer, self.COMPOSED_ANSWER)
+        self.assertEqual(d.gaps, [])
+        self.assertNotEqual(d.status, "pending")
+
+    def test_an_unsigned_earlier_answer_that_only_says_who_decides_is_not_a_proposal(self):
+        g = self.graph
+        t = g.create_task("earlier")
+        g.add_decision(t, self.QUESTION, "pricing", "resolved", source="agent", answer=self.COMPOSED_OPEN,
+                       embedding=llm_mod.embed(self.QUESTION), repo=self.REPO)
+        r = run_task(g, self.cfg, "again", repo=self.REPO,
+                     decisions=[{"question": self.QUESTION, "category": "pricing", "path": "app/billing/plans.py"}])
+        d = self.first(r)
+        self.assertEqual((d.status, d.kind, d.owner, d.prediction or ""), ("pending", "new", "Priya Shah", ""))
+        self.assertIn("says only that the call is still open, not what it is; nothing to propose", d.evidence)
+        self.assertEqual(len(d.gaps), 1, d.gaps)
+        self.assertTrue(d.gaps[0].startswith("a settled value: earlier decision "), d.gaps)
+
+    def test_an_unsigned_earlier_answer_that_states_the_value_is_still_proposed(self):
+        g = self.graph
+        t = g.create_task("earlier")
+        g.add_decision(t, self.QUESTION, "pricing", "resolved", source="agent", answer=self.COMPOSED_ANSWER,
+                       embedding=llm_mod.embed(self.QUESTION), repo=self.REPO)
+        r = run_task(g, self.cfg, "again", repo=self.REPO,
+                     decisions=[{"question": self.QUESTION, "category": "pricing", "path": "app/billing/plans.py"}])
+        d = self.first(r)
+        self.assertEqual((d.status, d.kind, d.prediction), ("proposed", "prediction", self.COMPOSED_ANSWER))
