@@ -1,8 +1,8 @@
 # What Raven is
 
-## The sentence
+## The lead
 
-Raven is the self-hosted decision record between your customers, your team and your coding agents: evidence goes in, one signed decision comes out, and the agent does the work. The same sentence leads the [README](../README.md), and `tests/test_customer_text.py` checks that the two copies match. Every other section on this page states a boundary and points at the document that backs it. Where a behaviour is planned rather than shipped, this page says so.
+Raven lets agents drive work forward instead of waiting for people to coordinate every step. It brings past decisions to the right person for evidence-backed sign-off, or asks for fresh judgment when something new needs deciding. It can also sit in on meetings and conversations, applying your team’s judgment to what it hears before anyone has turned it into a task. Fully self-hosted. The same lead opens the [README](../README.md), and `tests/test_customer_text.py` checks that the two copies match. Every other section on this page states a boundary and points at the document that backs it. Where a behaviour is planned rather than shipped, this page says so.
 
 ## Who it is for
 
