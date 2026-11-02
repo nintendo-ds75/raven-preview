@@ -124,6 +124,26 @@ class SettleTests(MeetingCase):
         self.assertEqual(tree["counts"]["signoff_required"], 0)
         self.assertEqual(tree["counts"]["blocking"], 0)
 
+    def test_the_words_shown_are_the_ones_that_decide_it(self):
+        # Dry run 9: the settle quoted the note's turn ("I still need to land
+        # the rate") while the answer came from another of Dana's turns. The
+        # model copies the deciding words; they stand when they are verbatim
+        # from a turn of the speaker's, and never when another person said
+        # them or the model made them up.
+        self.learned()
+        part = "Northwind stays on their contract terms, no public rate for them until Noah clears it."
+        verdict = dict(SETTLES)
+        self.model(lambda payload: verdict)
+        for picked, shown in [(part, part),
+                              ("keep Northwind off the public rate until Legal clears the MFN clause", QUOTE),  # Elena's words
+                              ("Northwind is never charged the public rate.", QUOTE),  # not in the transcript
+                              ("", QUOTE)]:
+            with self.subTest(picked=picked):
+                verdict["quote"] = picked
+                n = self.node(ModelOn(model_api="claude-cli"), question=QUESTION + f" ({len(picked)})")
+                self.assertEqual(n["rationale"], shown)
+                self.assertIn(f"said “{shown}”", self.store.get_decision(n["node_id"])["fit_reason"])
+
     def test_for_you_shows_dana_what_raven_settled_from_her_words(self):
         self.learned()
         self.model(SETTLES)
@@ -178,6 +198,11 @@ class SafeguardTests(MeetingCase):
         self.assertEqual((n["status"], n["owner"], n["prediction"]), ("predicted", "Dana Price", NOTE))
         self.assertIn("Raven would apply what Dana Price said", n["evidence"])
         self.assertIn("The ladder left it open", n["evidence"])
+        # The prediction stands on the meeting, not on whatever earlier call
+        # the ladder matched under its floor.
+        row = self.store.get_decision(n["node_id"])
+        self.assertEqual((row["source"], row["answered_via"], row["source_id"] or "", row["fit_reason"]),
+                         ("meeting", "meeting", "", ""))
 
     def test_words_the_model_reads_as_not_about_this_question_leave_the_ladders_route(self):
         self.learned()

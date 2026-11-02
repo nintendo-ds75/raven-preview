@@ -54,8 +54,10 @@ SYSTEM = (
     "adding no figure, date or condition the speaker did not say. "
     "Also say whether the words bear on the question at all (the same customer, feature or variable, even if "
     "they leave the asked value open), so the speaker can be asked rather than someone else. "
+    "When it settles, also copy the speaker's own words that decide it: one turn of theirs, or a part of "
+    "one, exactly as it appears in the quote or around_it, changing nothing. "
     "Return ONLY JSON: {\"settles\": true or false, \"bears_on\": true or false, \"answer\": string, "
-    "\"why\": string (one sentence)}"
+    "\"quote\": string, \"why\": string (one sentence)}"
 )
 
 _MONTHS = {m.lower(): m for m in ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")}
@@ -171,6 +173,23 @@ def _figures(text: str) -> set[str]:
     return set(re.findall(r"\d[\d,.]*", text or ""))
 
 
+def _spoken(graph, turns: list[dict], speaker: dict, words) -> str:
+    """`words` when they are verbatim (at least three words of) a turn the
+    speaker said among `turns`; otherwise ''. Another person's words, or
+    words the model made up, never stand as the speaker's."""
+    text = " ".join(str(words or "").split())
+    if len(text.split()) < 3:
+        return ""
+    want = _norm(text)
+    for t in turns:
+        if want not in _norm(t.get("text", "")):
+            continue
+        who = graph.find_person(t.get("who") or "") if t.get("who") else None
+        if who and who["id"] == speaker["id"]:
+            return text
+    return ""
+
+
 def consider(store, cfg, run, question: str, *, context: str = "", paths: list[str] | None = None,
              category: str = "", facts: dict | None = None, repo: str = "", why: list | None = None):
     """The meeting-backed outcome for a question, or None when no meeting
@@ -244,7 +263,11 @@ def consider(store, cfg, run, question: str, *, context: str = "", paths: list[s
                     bears = True
                 else:
                     _note(why, n, f"settles it: {verdict.get('why') or 'the model read it as the same call'}")
-                    return "settle", {**details, "answer": answer, "why": str(verdict.get("why") or "")}
+                    # The words shown are the ones that decide it: the model's
+                    # pick when it is verbatim from a turn of this speaker's,
+                    # else the note's quote.
+                    quote = _spoken(graph, details["turns"], speaker, verdict.get("quote")) or n["quote"]
+                    return "settle", {**details, "quote": quote, "answer": answer, "why": str(verdict.get("why") or "")}
             else:
                 bears = bool(verdict and verdict.get("bears_on") is True)
                 _note(why, n, ("read as bearing on this without settling it; the speaker is asked instead" if bears
@@ -329,8 +352,11 @@ def predict_draft(store, row: dict, details: dict, *, repo: str = "", why: list 
         evidence=(f"Raven would apply what {speaker} said in {where}, but isn't sure it settles this: “{quote}”. "
                   f"{first} confirms or corrects it."
                   + (f" The ladder left it open: {_short(row.get('evidence') or '', 200)}" if row.get("evidence") else "")))
-    graph.db.execute("UPDATE decisions SET answered_via='meeting', source_revision=? WHERE id=?",
-                     (details["iso"] or (details["meeting"].get("at") or "")[:10], did))
+    # The ladder's own guess (a memory match under the floor) gave the draft
+    # a source; the prediction now stands on the meeting, so the page does
+    # not read "from Dana's call of" an earlier date.
+    graph.db.execute("UPDATE decisions SET answered_via='meeting', source_revision=?, source_id=NULL, fit_reason='' "
+                     "WHERE id=?", (details["iso"] or (details["meeting"].get("at") or "")[:10], did))
     _pin(store, did, details, repo, "predict", task_id, why)
     out = dict(graph.db.execute(_DECISION_SELECT + " WHERE d.id=?", (did,)).fetchone())
     out["drafts"] = list(row.get("drafts") or [did])
