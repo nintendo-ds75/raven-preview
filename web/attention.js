@@ -49,8 +49,7 @@ function attNeeds(item) {
     <p class="att-meanwhile">${esc(item.meanwhile)}</p>
     ${item.context ? `<details class="att-found"><summary>What the agent found</summary><p>${esc(item.context)}</p></details>` : ''}
     <form class="att-answer" data-id="${esc(item.id)}" data-updated="${esc(item.updated_at)}">
-      <textarea name="answer" rows="${open ? 3 : 2}" maxlength="12000" required placeholder="Your answer, in a sentence or two…"></textarea>
-      <input name="rationale" maxlength="12000" placeholder="Why, in one line (optional; Raven reuses it next time)">
+      <textarea name="answer" rows="${open ? 3 : 2}" maxlength="12000" required placeholder="Your answer, and why if it matters, in a sentence or two…"></textarea>
       <p class="ask-error" hidden></p>
       <div class="att-actions"><button class="button small primary" type="submit">Record my answer</button>
         ${state.auth?.enabled && state.me?.id && ['session', 'token'].includes(state.me.kind) ? `<button class="button small text" type="button" data-action="interview-start" data-task="${esc(item.run_id)}" data-id="${esc(item.id)}">Take a quick call instead</button>` : ''}
@@ -193,7 +192,7 @@ document.addEventListener('submit', async event => {
       // showed, the way the task page does; without them the answer is refused for review.
       const review = (attention?.needs_you || []).find(i => i.id === form.dataset.id)?.review;
       if (review?.has_reliance && !review.available) throw new Error('The earlier call this leans on is not readable right now. Try again in a moment.');
-      result = await api(`/api/decisions/${encodeURIComponent(form.dataset.id)}/answer`, {answer: data.answer, ...(data.rationale ? {rationale: data.rationale} : {}),
+      result = await api(`/api/decisions/${encodeURIComponent(form.dataset.id)}/answer`, {answer: data.answer,
         ...(review?.has_reliance ? {source_evidence: review.pins, source_decision_pins: review.decision_pins} : {}), expected_updated_at: form.dataset.updated});
       notify('Recorded under your name. The coding agent can read it now.');
     }
