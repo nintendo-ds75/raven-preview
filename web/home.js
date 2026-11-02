@@ -218,6 +218,52 @@ function buildTile(d, j) {
   </li>`;
 }
 
+// What's been done: the task's story in one sentence per row, from
+// /api/state's `timeline` on each live task (bridge/timeline.py renders
+// the stored events; nothing here is composed). Folded by default to the
+// last rows so the open calls below keep the eye; "Show all" opens it.
+const buildTimelineOpen = new Set();
+const BUILD_TL_SHOWN = 2;
+const buildClock = iso => { const d = new Date(iso); return Number.isNaN(+d) ? '' : d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', hourCycle: 'h23'}); };
+const buildDay = iso => { const d = new Date(iso); return Number.isNaN(+d) ? '' : d.toDateString(); };
+const BUILD_TL_PILL = new Set(['pr', 'commit', 'ticket', 'doc', 'slack', 'record', 'graph']);
+// The sentence with its references marked in place: an earlier call or a
+// flagged question becomes a link to it, a record its pill.
+function buildTimelineText(row) {
+  let html = esc(row.text || ''), from = 0;
+  const extra = [];
+  for (const r of row.refs || []) {
+    const label = esc(r.label || '');
+    const href = ['call', 'decision'].includes(r.kind) && r.id ? `#runs/${encodeURIComponent(r.run_id || '')}/${encodeURIComponent(r.id)}` : '';
+    const at = label ? html.indexOf(label, from) : -1;
+    const tag = href ? `<a class="build-tl-ref" href="${href}">${label}</a>` : `<span class="${BUILD_TL_PILL.has(r.kind) ? 'build-tl-pill' : 'build-tl-ref'}">${label}</span>`;
+    if (at >= 0) { html = html.slice(0, at) + tag + html.slice(at + label.length); from = at + tag.length; }
+    else if (BUILD_TL_PILL.has(r.kind) && label) extra.push(tag);
+  }
+  return html + (extra.length ? ' ' + extra.join(' ') : '');
+}
+function buildTimeline(id, rows, {all = false, head = true} = {}) {
+  rows = Array.isArray(rows) ? rows.filter(r => r && r.text) : [];
+  if (!rows.length) return '';
+  const open = all || buildTimelineOpen.has(id) || rows.length <= BUILD_TL_SHOWN + 1;
+  const shown = open ? rows : rows.slice(-BUILD_TL_SHOWN);
+  const hidden = rows.length - shown.length;
+  const today = new Date().toDateString();
+  let day = '';
+  const items = shown.map((row, i) => {
+    const last = i === shown.length - 1;
+    const d = buildDay(row.at);
+    const marker = d && d !== today && d !== day ? `<li class="build-tl-day">${esc(askDate(row.at))}</li>` : '';
+    day = d || day;
+    return `${marker}<li class="build-tl-row ${esc(row.kind || '')}"><time datetime="${esc(row.at || '')}" title="${esc(row.at || '')}">${esc(buildClock(row.at))}</time><i class="build-tl-dot" aria-hidden="true"></i><p>${buildTimelineText(row)}${last ? ` <small class="build-tl-ago">${esc(ago(row.at))}</small>` : ''}</p></li>`;
+  }).join('');
+  const toggle = all || rows.length <= BUILD_TL_SHOWN + 1 ? '' : `<button type="button" class="build-tl-toggle" data-build="timeline" data-id="${esc(id)}" aria-expanded="${open}">${open ? 'Show less' : `Show all ${rows.length}`}</button>`;
+  return `<section class="build-tl ${open ? 'open' : ''}" aria-label="What’s been done">
+    ${head ? `<div class="build-tl-head"><span class="ask-label">What’s been done</span>${toggle}</div>` : ''}
+    <ol class="build-tl-rows">${hidden ? `<li class="build-tl-cut">${hidden} earlier</li>` : ''}${items}</ol>
+  </section>`;
+}
+
 function buildCard(run) {
   const {ds, js, settled, answered, asked, checking, reached, spared} = taskStory(run);
   const waiting = asked.map(d => js.get(d.id).owner).filter(Boolean);
@@ -241,6 +287,7 @@ function buildCard(run) {
     </div>
     <div class="build-bar" role="img" aria-label="${done} of ${ds.length} settled">${settled.map(() => '<i class="past"></i>').join('')}${answered.map(() => '<i class="person"></i>').join('')}${asked.map(() => '<i class="open"></i>').join('')}${checking.map(() => '<i class="checking"></i>').join('')}<em>${done} of ${ds.length} settled${checking.length ? ` · ${checking.length} still being read` : ''}</em></div>
     ${spared.length ? `<p class="build-spared">Not asked: ${spared.map(x => `<span>${avatar(x.name)}${esc(askFirst(x.name))}</span> (${esc(askFirst(x.name))}’s ${x.when ? esc(x.when) + ' ' : ''}call already covered it)`).join(', ')}.</p>` : ''}
+    ${buildTimeline(run.id, run.timeline)}
     <ul class="build-tiles">${rows.map(d => buildTile(d, js.get(d.id))).join('')}</ul>
   </article>`;
 }
@@ -283,7 +330,7 @@ function renderTasks() {
   const rest = live.filter(r => !mine.includes(r));
   const replaced = run => (state.decisions || []).filter(d => d.run_id === run.id && d.superseded_by).length;
   const done = (state.runs || []).filter(r => r.status === 'completed' && (taskStory(r).ds.length || replaced(r))).slice(0, 5);
-  const key = JSON.stringify(['tasks', live.map(r => [r.id, r.updated_at]), done.map(r => r.id), (state.decisions || []).map(d => [d.id, d.status, d.updated_at]), me, [...buildOpen], [...buildForm]]);
+  const key = JSON.stringify(['tasks', live.map(r => [r.id, r.updated_at, (r.timeline || []).length]), done.map(r => r.id), (state.decisions || []).map(d => [d.id, d.status, d.updated_at]), me, [...buildOpen], [...buildForm], [...buildTimelineOpen]]);
   if (key === askKey && $('#app .build')) return;
   askKey = key;
   const all = live.map(taskStory);
@@ -304,6 +351,7 @@ document.addEventListener('click', event => {
   if (!button || view !== 'tasks') return;
   const {build, id} = button.dataset;
   if (build === 'toggle') { if (buildOpen.has(id)) { buildOpen.delete(id); buildForm.delete(id); } else buildOpen.add(id); }
+  else if (build === 'timeline') { if (buildTimelineOpen.has(id)) buildTimelineOpen.delete(id); else buildTimelineOpen.add(id); }
   else if (build === 'correct') buildForm.add(id);
   else if (build === 'cancel') buildForm.delete(id);
   askKey = ''; render();
