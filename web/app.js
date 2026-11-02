@@ -288,8 +288,11 @@ async function refresh({quiet = false} = {}) {
           : `${state.me.email ? esc(state.me.email) : 'Self-hosted workspace'} · <button type="button" class="profile-switch" data-action="act-as">${state.me.id ? 'Switch' : 'Choose who you are'}</button>`;
       }
       if (personalInbox() && !tabChosen) tab = 'mine';
-      $('#inbox-count').textContent = personalInbox() ? state.decisions.filter(assignedToMe).length
-        : state.counts ? state.counts.needs_you : state.decisions.filter(needsYou).length;
+      // The badge on For you counts what waits on this person as its owner
+      // or a required signer (/api/attention), the same number the page
+      // shows; an admin's standing to act on anything is not a to-do list.
+      if (state.auth?.enabled && state.me?.id && typeof loadAttention === 'function') loadAttention();
+      if (typeof syncYouBadge === 'function') syncYouBadge();
     }
     settingsDotState();
     if (taskId()) await loadTask({quiet});
@@ -494,6 +497,13 @@ const assignedToMe = d => needsYou(d) && d.can_act === true;
 // account from a task link, with nothing waiting on him, saw "Inbox 1" and
 // someone else's decision with a Review button. Admins and viewers keep
 // the workspace view.
+function syncYouBadge() {
+  const personal = state?.auth?.enabled && state.me?.id && typeof attention !== 'undefined' && attention?.counts;
+  const n = personal ? attention.counts.needs_you : personalInbox() ? state.decisions.filter(assignedToMe).length
+    : state.counts ? state.counts.needs_you : state.decisions.filter(needsYou).length;
+  const badge = $('#inbox-count');
+  if (badge) { badge.textContent = n; badge.hidden = !n; }
+}
 const personalInbox = () => Boolean(state?.auth?.enabled && state.me?.id && state.me.role === 'member');
 function empty(title, description = '', action = '', button = '') {
   return `<div class="empty">${icon('inbox')}<h2>${esc(title)}</h2>${description ? `<p>${esc(description)}</p>` : ''}${action ? `<button class="button soft" data-action="${action}">${esc(button)}</button>` : ''}</div>`;

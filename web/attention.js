@@ -13,7 +13,7 @@ let attShowAll = false;
 function loadAttention(force) {
   if (!force && Date.now() - attentionAt < 8000) return;
   attentionAt = Date.now();
-  api('/api/attention').then(r => { const before = JSON.stringify(attention); attention = r; if (JSON.stringify(r) !== before) { attentionKey = ''; if (view === 'you') render(); } })
+  api('/api/attention').then(r => { const before = JSON.stringify(attention); attention = r; if (JSON.stringify(r) !== before) { attentionKey = ''; askKey = ''; if (typeof syncYouBadge === 'function') syncYouBadge(); if (view === 'you' || view === 'ask') render(); } })
     .catch(error => { if (!attention) { attention = {error: error.message}; attentionKey = ''; if (view === 'you') render(); } });
 }
 

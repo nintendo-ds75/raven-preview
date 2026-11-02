@@ -443,11 +443,12 @@ function askAgentUses() {
     ${connected ? '' : '<a class="button small" href="#connect">Connect Claude Code</a>'}</section>`;
 }
 
+// The same items For you shows as "Needs you": calls this person owns or
+// must sign, from /api/attention. Nothing shows until that has loaded.
 function askWaiting() {
-  const mine = (state.decisions || []).filter(d => typeof assignedToMe === 'function' && assignedToMe(d) && d.status === 'pending');
-  if (!mine.length || !state.auth?.enabled) return '';
-  const d = mine[0];
-  return `<a class="ask-waiting" href="#runs/${encodeURIComponent(d.run_id)}/${encodeURIComponent(d.id)}"><span class="ask-orb small" aria-hidden="true"></span><span><b>Raven has ${plural(mine.length, 'question')} only you can answer.</b><small>${esc(d.question)}</small></span><span aria-hidden="true">→</span></a>`;
+  if (!state.auth?.enabled || typeof attention === 'undefined' || !attention?.needs_you?.length) return '';
+  const mine = attention.needs_you;
+  return `<a class="ask-waiting" href="#you"><span class="ask-orb small" aria-hidden="true"></span><span><b>Raven needs you for ${plural(mine.length, 'thing')}.</b><small>${esc(mine[0].question)}</small></span><span aria-hidden="true">→</span></a>`;
 }
 
 // Raven noticed: what the background pass found when it read what people
