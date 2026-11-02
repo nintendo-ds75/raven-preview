@@ -4,7 +4,7 @@
 // team has already decided, with the people who hold the context named
 // beside each answer, and the coding-agent tasks Raven is working on in
 // the background shown as they happen. Nothing here asks anyone to sign.
-let askThread = [], askBusy = false, askKey = '';
+let askThread = [], askBusy = false, askKey = '', askStick = true;
 try { askThread = JSON.parse(sessionStorage.getItem('raven-ask') || '[]').slice(-12); } catch { askThread = []; }
 const askSave = () => { try { sessionStorage.setItem('raven-ask', JSON.stringify(askThread.slice(-12))); } catch {} };
 const askRepo = () => (state.question_repositories || [])[0]?.id || (state.runs || []).find(r => r.repo)?.repo || '';
@@ -38,6 +38,107 @@ function askTaskCard(run) {
   </a>`;
 }
 
+// Tasks being built right now: live coding-agent tasks Raven is part of.
+const taskLive = run => !['completed', 'failed', 'cancelled', 'abandoned'].includes(run.status);
+function askBuilding() {
+  return (state.runs || []).filter(r => taskLive(r) && taskStory(r).ds.length)
+    .sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+}
+
+// Where a decision's context came from, as short labels: the earlier
+// decision it was settled from, and the records the agent cited (an ADR,
+// a pull request, a postmortem, a Slack thread, a Jira issue, a file).
+function buildSources(d) {
+  const out = [];
+  if (d.source_id) {
+    const prior = (state.decisions || []).find(x => x.id === d.source_id);
+    const who = prior?.answered_by || d.answered_by || d.signed_by || '';
+    out.push({label: `${who ? askFirst(who) + '’s' : 'An earlier'} decision${d.source_revision ? ' · ' + askDate(d.source_revision) : ''}`, href: prior ? `#runs/${encodeURIComponent(prior.run_id)}/${encodeURIComponent(prior.id)}` : '', kind: 'decision'});
+  }
+  const text = `${d.context || ''}\n${d.evidence || ''}`;
+  const seen = new Set();
+  const add = (label, kind) => { const k = label.toLowerCase(); if (!seen.has(k) && out.length < 5) { seen.add(k); out.push({label, kind}); } };
+  for (const m of text.matchAll(/\bADR\s?0*(\d+)/gi)) add('ADR ' + m[1].padStart(4, '0'), 'doc');
+  for (const m of text.matchAll(/\bPR\s?#(\d+)/gi)) add('PR #' + m[1], 'github');
+  for (const m of text.matchAll(/\bpostmortem(?:\s+\d{4}-\d{2}-\d{2})?/gi)) add('Postmortem' + m[0].slice(10), 'doc');
+  for (const m of text.matchAll(/\bslack\s+(#[\w-]+)/gi)) add(m[1].slice(1), 'slack');
+  for (const m of text.matchAll(/\b([A-Z][A-Z0-9]{1,9}-\d+)\b/g)) add(m[1], 'jira');
+  // Files, but not an ADR's own file when the ADR is already named.
+  for (const m of text.matchAll(/\b((?:app|web|infra|docs|tests)\/[\w./-]+?\.\w+)(?::\d+)?/g)) {
+    if (/docs\/adr\//.test(m[1]) && out.some(x => x.label.startsWith('ADR'))) continue;
+    add(m[1].split('/').slice(-2).join('/'), 'code');
+  }
+  return out;
+}
+
+// One decision, in three parts: which camp it is in (strong precedent,
+// close precedent or novel judgement), its status and who Raven talked
+// to, and where the information came from.
+function buildRow(d, settled) {
+  const camp = settled || d.kind === 'evidence' ? ['precedent', 'Strong precedent', 'Raven settled this from what the team already decided. Nobody was asked.']
+    : d.kind === 'prediction' ? ['close', 'Close precedent', 'Raven had a likely answer from earlier context and asked the owner to confirm it.']
+    : ['novel', 'Novel judgement', 'Nothing on record covered this. Raven asked the person who owns it to decide from first principles.'];
+  const owner = d.owner_name || '';
+  const by = d.answered_by || d.signed_by || '';
+  let status;
+  if (settled || d.kind === 'evidence') status = `Settled from ${esc(askFirst(by) || 'an earlier')}’s decision · nobody asked`;
+  else if (d.status === 'approved') status = `Raven asked ${esc(askFirst(owner) || askFirst(by))}${by && owner && by !== owner ? `, ${esc(askFirst(by))} answered` : ' · answered'} ${esc(ago(d.updated_at))}`;
+  else status = owner ? `Raven asked ${esc(askFirst(owner))} · waiting ${esc(ago(d.created_at)).replace(/ ago$/, '')}` : 'Raven is finding who owns this';
+  const done = settled || d.kind === 'evidence' || d.status === 'approved';
+  const sources = buildSources(d);
+  const who = done ? by || owner : owner;
+  return `<li class="build-row ${camp[0]} ${done ? 'done' : 'waiting'}">
+    <div class="build-row-top"><span class="build-camp ${camp[0]}" title="${esc(camp[2])}">${camp[1]}</span><span class="build-status">${who ? avatar(who) : ''}${status}</span></div>
+    <a class="build-q" href="#runs/${encodeURIComponent(d.run_id)}/${encodeURIComponent(d.id)}">${esc(d.question)}</a>
+    ${done && d.answer ? `<p class="build-a">${esc(d.answer.length > 160 ? d.answer.slice(0, 158) + '…' : d.answer)}</p>` : ''}
+    ${sources.length ? `<div class="build-from"><span>From</span>${sources.map(x => x.href ? `<a class="build-src ${x.kind}" href="${esc(x.href)}">${esc(x.label)}</a>` : `<span class="build-src ${x.kind}">${esc(x.label)}</span>`).join('')}</div>` : ''}
+  </li>`;
+}
+
+function buildCard(run) {
+  const {ds, settled, answered, asked} = taskStory(run);
+  const novel = ds.filter(d => !settled.includes(d) && d.kind !== 'evidence' && d.kind !== 'prediction').length;
+  const precedent = ds.length - novel;
+  const talked = [...new Set(ds.filter(d => !settled.includes(d) && d.kind !== 'evidence').map(d => d.owner_name).filter(Boolean))];
+  const order = d => (settled.includes(d) || d.kind === 'evidence') ? 2 : d.status === 'approved' ? 1 : 0;
+  const rows = [...ds].sort((a, b) => order(a) - order(b) || String(a.created_at).localeCompare(String(b.created_at)));
+  return `<article class="build-card">
+    <div class="ask-task-top"><span class="ask-live on">Building</span><span class="ask-agent">${esc(run.agent || 'Coding agent')}${run.requester ? ' · picked up by ' + esc(run.requester) : ''}</span><span class="ask-when">${esc(ago(run.updated_at))}</span></div>
+    <h2><a href="#runs/${encodeURIComponent(run.id)}">${esc(run.title)}</a></h2>
+    ${run.goal ? `<p class="build-goal">${esc(run.goal.length > 260 ? run.goal.slice(0, 258) + '…' : run.goal)}</p>` : ''}
+    <div class="build-stats">
+      <div><b>${precedent}</b><span>from precedent</span></div>
+      <div><b>${novel}</b><span>novel judgement</span></div>
+      <div><b>${answered.length + settled.length}</b><span>of ${ds.length} settled</span></div>
+      <div><b>${asked.length}</b><span>waiting on people</span></div>
+    </div>
+    <div class="ask-meter" aria-hidden="true">${settled.map(() => '<i class="past"></i>').join('')}${answered.map(() => '<i class="person"></i>').join('')}${asked.map(() => '<i class="open"></i>').join('')}</div>
+    ${talked.length ? `<p class="build-talked">Raven talked to ${talked.map(n => `<span>${avatar(n)}${esc(askFirst(n))}</span>`).join('')}</p>` : ''}
+    <ul class="build-rows">${rows.map(d => buildRow(d, settled.includes(d))).join('')}</ul>
+  </article>`;
+}
+
+function renderTasks() {
+  $('.page-head').hidden = true;
+  const live = askBuilding();
+  const me = (state.me?.name || '').toLowerCase();
+  const mine = me ? live.filter(r => String(r.requester || '').toLowerCase() === me) : [];
+  const rest = live.filter(r => !mine.includes(r));
+  const done = (state.runs || []).filter(r => r.status === 'completed' && taskStory(r).ds.length).slice(0, 5);
+  const key = JSON.stringify(['tasks', live.map(r => [r.id, r.updated_at]), done.map(r => r.id), (state.decisions || []).map(d => [d.id, d.status]).length, me]);
+  if (key === askKey && $('#app .build')) return;
+  askKey = key;
+  $('#app').innerHTML = `<div class="build">
+    <header class="build-head"><h1>Being built</h1><p>Every judgement call in the tasks agents are building now: settled from precedent or a novel call for a person, who Raven talked to, and where each answer came from.</p></header>
+    ${mine.length ? `<h2 class="ask-label">Yours</h2>${mine.map(buildCard).join('')}` : ''}
+    ${rest.length ? `${mine.length ? '<h2 class="ask-label">Across the team</h2>' : ''}${rest.map(buildCard).join('')}` : ''}
+    ${live.length ? '' : '<p class="ask-muted">Nothing is being built right now. When Claude Code, Codex or Cursor starts a task, it shows up here.</p>'}
+    ${done.length ? `<h2 class="ask-label">Recently finished</h2><div class="build-done">${done.map(r => `<a href="#runs/${encodeURIComponent(r.id)}"><span>${esc(r.title)}</span><small>${plural(taskStory(r).ds.length, 'decision')} · ${esc(askDate(r.updated_at))}</small></a>`).join('')}</div>` : ''}
+    ${askAgentUses()}
+  </div>`;
+}
+window.addEventListener('hashchange', () => { if (location.hash.startsWith('#tasks')) askKey = ''; });
+
 function askSuggestions() {
   const out = [];
   const decided = (state.decisions || []).filter(d => d.status === 'approved' && d.question && !d.run_id?.startsWith('x')).slice(0, 2);
@@ -67,28 +168,61 @@ function askProse(text, people) {
   return `${lead ? `<p class="ask-lead">${askMentions(esc(lead), people)}</p>` : ''}${points.length ? `<ul class="ask-points">${points.map(p => `<li>${askMentions(esc(p), people)}</li>`).join('')}</ul>` : ''}`;
 }
 
-function askAnswer(entry) {
-  if (entry.status === 'thinking') return '<div class="ask-raven"><span class="ask-orb thinking" aria-hidden="true"></span><p class="ask-muted" role="status">Reading what your team has said…</p></div>';
-  if (entry.status === 'error') return `<div class="ask-raven"><span class="ask-orb" aria-hidden="true"></span><p class="ask-error" role="alert">${esc(entry.error)}</p></div>`;
-  const r = entry.result || {};
+// A record's line in an answer: who, how they said it, when. The
+// question a decision answered is left out: it is close to what was just
+// asked, and repeated on every quote it made the answer twice as long.
+const askSaid = e => e.author || (e.text.match(/Recorded by: ([^(\n]+)/) || [])[1]?.trim() || '';
+const askHow = e => e.kind === 'prior_decision' ? (String(e.ref || '').startsWith('call:') ? 'decided on a call' : 'decided')
+  : e.kind === 'person_note' ? ({'intro chat': 'said in a voice intro', 'from a meeting': 'said in a meeting', 'via an agent': 'told an agent', 'from a call': 'said on a call'}[e.via] || 'told Raven')
+  : e.kind === 'profile' ? 'on Raven' : 'wrote';
+// Lines that only say who signed or recorded a decision repeat its byline.
+const askBylineOnly = quote => /^(Signed by|Recorded by):/i.test(String(quote).trim());
+
+function askSources(r) {
   const evidence = r.evidence || [];
   const byId = Object.fromEntries(evidence.map(e => [e.id, e]));
-  const said = e => e.author || (e.text.match(/Recorded by: ([^(\n]+)/) || [])[1]?.trim() || '';
-  const how = e => e.kind === 'prior_decision' ? (String(e.ref || '').startsWith('call:') ? 'decided on a call' : 'decided') : e.kind === 'person_note' ? ({'intro chat': 'said in a voice intro', 'from a meeting': 'heard it in a meeting', 'via an agent': 'told an agent', 'from a call': 'said on a call'}[e.via] || 'told Raven') : 'wrote';
-  const cites = r.model_used ? (r.citations || []).filter(c => byId[c.id]) : evidence.slice(0, 3).map(e => ({id: e.id, quote: e.text.split('\n')[0]}));
-  const seen = new Set();
-  const quotes = cites.filter(c => !seen.has(c.quote) && seen.add(c.quote)).slice(0, 3).map((c, i) => {
-    const e = byId[c.id], who = said(e);
-    const open = e.ref ? `data-source="${esc(e.ref)}" data-quote="${esc(c.quote)}"` : e.person_id ? `data-href="#people/${esc(e.person_id)}"` : e.url ? `data-href="${esc(e.url)}"` : '';
-    return `<blockquote class="ask-quote" ${open} tabindex="0" role="button" aria-label="Open the source"><p>“${esc(c.quote)}”</p><footer>${who ? `${avatar(who)}<b>${esc(who)}</b> ${esc(how(e))} · ` : ''}${esc(e.kind === 'person_note' ? (e.source_title || (e.via === 'intro chat' ? 'Voice intro' : 'What they told Raven')) : e.title)}${e.updated_at || e.created_at || e.version ? ' · ' + esc(askDate(e.updated_at || e.created_at || e.version)) : ''}<span class="ask-ref">Open source ↗</span></footer></blockquote>`;
+  const cites = r.model_used ? (r.citations || []).filter(c => byId[c.id])
+    : evidence.filter(e => e.kind !== 'profile').slice(0, 3).map(e => ({id: e.id, quote: e.text.split('\n')[0]}));
+  const groups = new Map();
+  for (const c of cites) {
+    if (askBylineOnly(c.quote)) { if (!groups.has(c.id)) groups.set(c.id, []); continue; }
+    const list = groups.get(c.id) || [];
+    if (!list.includes(c.quote)) list.push(c.quote);
+    groups.set(c.id, list);
+  }
+  const rows = [...groups.entries()].slice(0, 3).map(([id, quotes]) => {
+    const e = byId[id], who = askSaid(e);
+    const open = e.ref ? `data-source="${esc(e.ref)}" data-quote="${esc(quotes[0] || '')}"` : e.person_id ? `data-href="#people/${esc(e.person_id)}"` : e.url ? `data-href="${esc(e.url)}"` : '';
+    const where = e.kind === 'person_note' ? (e.source_title || '') : e.kind === 'source' ? e.title : '';
+    const when = askDate(e.updated_at || e.created_at || e.version);
+    return `<div class="ask-src ask-quote" ${open} tabindex="0" role="button" aria-label="Open the source" title="${esc(e.title || '')}">
+      <div class="ask-src-head">${who ? `${avatar(who)}<b>${esc(who)}</b> ` : ''}<span>${esc(askHow(e))}${where ? ' · ' + esc(where.length > 60 ? where.slice(0, 58) + '…' : where) : ''}${when ? ' · ' + esc(when) : ''}</span><span class="ask-ref" aria-hidden="true">↗</span></div>
+      ${quotes.slice(0, 2).map(q => `<p>“${esc(q)}”</p>`).join('')}</div>`;
   }).join('');
-  const mentionable = [...(r.people || []), ...evidence.filter(e => e.person_id).map(e => ({name: said(e), id: e.person_id}))];
-  const lead = r.model_used ? askProse(r.answer, mentionable)
-    : `<p class="ask-lead">${evidence.length ? 'Here is what your team has already said about this.'
-    : (r.people || []).length ? `Nobody has written this down yet. ${askMentions(esc(r.people.slice(0, 2).map(p => p.name).join(' and ')), mentionable)} ${r.people.length > 1 ? 'are' : 'is'} who to ask.` : 'Nothing your team has said covers this yet.'}</p>`;
-  const people = (r.people || []).length ? `<div class="ask-people"><span class="ask-label">People with context</span>${r.people.map(p => `<a class="ask-person" href="#people/${encodeURIComponent(p.id || '')}">${avatar(p.name)}<span><b>${esc(p.name)}</b><small>${esc(p.why)}</small></span></a>`).join('')}</div>` : '';
-  const open = (r.open || []).length ? `<p class="ask-muted">Still open: ${esc(r.open.join('; '))}</p>` : '';
-  return `<div class="ask-raven"><span class="ask-orb" aria-hidden="true"></span><div class="ask-body">${lead}${quotes}${people}${open}</div></div>`;
+  const refs = (r.workspace_refs || []).map(x => `<div class="ask-src ask-quote" ${x.task_id ? `data-href="#runs/${esc(x.task_id)}"` : ''} tabindex="0" role="button">
+      <div class="ask-src-head"><span>${esc(x.title)}</span>${x.task_id ? '<span class="ask-ref" aria-hidden="true">↗</span>' : ''}</div><p>“${esc(x.quote)}”</p></div>`).join('');
+  return rows + refs ? `<div class="ask-sources">${rows}${refs}</div>` : '';
+}
+
+function askAnswer(entry) {
+  if (entry.status === 'thinking') return `<div class="ask-raven"><span class="ask-orb thinking" aria-hidden="true"></span><p class="ask-muted" role="status">${entry.slow ? 'Still reading. Longer questions can take a minute…' : 'Reading what your team has said…'}</p></div>`;
+  if (entry.status === 'error') return `<div class="ask-raven"><span class="ask-orb" aria-hidden="true"></span><div class="ask-body"><p class="ask-error" role="alert">${esc(entry.error)}</p><button type="button" class="button small text" data-ask-retry="${esc(entry.q)}">Ask again</button></div></div>`;
+  const r = entry.result || {};
+  const evidence = r.evidence || [];
+  const sourced = new Set(evidence.map(askSaid).filter(Boolean).map(n => n.toLowerCase()));
+  const mentionable = [...(r.people || []), ...evidence.filter(e => e.person_id).map(e => ({name: askSaid(e), id: e.person_id}))];
+  const profile = evidence.find(e => e.kind === 'profile');
+  let lead;
+  if (r.model_used || r.grounding === 'workspace') lead = askProse(r.answer, mentionable);
+  else if (profile) { const [first, ...rest] = profile.text.split('\n'); lead = askProse([first, ...rest.slice(0, 3).map(l => '- ' + l)].join('\n'), mentionable); }
+  else lead = `<p class="ask-lead">${evidence.length ? 'Here is what your team has already said about this.'
+    : (r.people || []).length ? `Nobody has written this down yet. ${askMentions(esc(r.people.slice(0, 2).map(p => p.name).join(' and ')), mentionable)} ${r.people.length > 1 ? 'are' : 'is'} who to ask.` : 'Nobody has written this down yet.'}</p>`;
+  const note = r.grounding === 'workspace' ? '<p class="ask-note">Nobody has recorded an answer to this, so this is Raven’s read from what it knows about the team.</p>' : '';
+  // People the sources already name are not listed again.
+  const others = (r.people || []).filter(p => !sourced.has(String(p.name).toLowerCase()));
+  const people = others.length ? `<div class="ask-who"><span>Also ask</span>${others.slice(0, 4).map(p => `<a class="ask-person-chip" href="#people/${encodeURIComponent(p.id || '')}" title="${esc(p.why)}">${avatar(p.name)}${esc(p.name)}</a>`).join('')}</div>` : '';
+  const open = (r.open || []).length ? `<p class="ask-muted ask-open">Still open: ${esc(r.open.join('; '))}</p>` : '';
+  return `<div class="ask-raven"><span class="ask-orb" aria-hidden="true"></span><div class="ask-body">${lead}${note}${askSources(r)}${people}${open}</div></div>`;
 }
 
 function askThreadView() {
@@ -147,51 +281,86 @@ function noticedView() {
 function renderHome() {
   loadNoticed();
   if (directory === null && typeof loadDirectory === 'function') loadDirectory();
-  const live = run => !['completed', 'failed', 'cancelled', 'abandoned'].includes(run.status);
-  const runs = (state.runs || []).filter(r => taskStory(r).ds.length > 1 || (live(r) && taskStory(r).ds.length)).slice(0, 3);
-  const key = JSON.stringify([noticed, noticedBusy, askThread, askBusy, runs.map(r => [r.id, r.updated_at]), (state.decisions || []).length, !!directory, (state.agent_connections || []).length]);
+  const building = askBuilding();
+  const key = JSON.stringify([noticed, noticedBusy, askThread, askBusy, building.map(r => [r.id, r.updated_at]), !!directory]);
   $('.page-head').hidden = true;
   if (key === askKey && $('#app .ask')) return;
   const typed = $('#ask-input')?.value || '';
   const hadFocus = document.activeElement?.id === 'ask-input';
+  const oldThread = $('#ask-thread');
+  const keepTop = oldThread && !askStick ? oldThread.scrollTop : null;
   askKey = key;
-  $('.page-head').hidden = true;
   const empty = !askThread.length;
   const name = state.workspace?.name || state.workspace_name || '';
   $('#app').innerHTML = `<div class="ask ${empty ? 'is-empty' : ''}">
     <div class="ask-main">
-      ${empty ? `<div class="ask-hero"><span class="ask-orb big" aria-hidden="true"></span><h1>Ask Raven</h1><p>Raven keeps track of what people across ${name ? esc(name) : 'your company'} have decided and who knows what. Your coding agents ask it before they guess, and so can you.</p></div>` : ''}
-      ${askWaiting()}
-      <div class="ask-thread" id="ask-thread" aria-live="polite">${askThreadView()}</div>
-      <form class="ask-composer" id="ask-form"><label class="sr-only" for="ask-input">Ask Raven</label><input id="ask-input" autocomplete="off" maxlength="2000" placeholder="Ask who knows something, or why it was decided…" ${askBusy ? 'disabled' : ''}><button class="button primary" type="submit" ${askBusy ? 'disabled' : ''}>Ask</button></form>
-      <div class="ask-chips" ${empty ? '' : 'hidden'}>${askSuggestions().map(s => `<button type="button" class="ask-chip" data-ask="${esc(s)}">${esc(s)}</button>`).join('')}</div>
+      <div class="ask-thread" id="ask-thread" aria-live="polite">
+        ${empty ? `<div class="ask-hero"><span class="ask-orb big" aria-hidden="true"></span><h1>Ask Raven</h1><p>Raven keeps track of what people across ${name ? esc(name) : 'your company'} have decided and who knows what. Your coding agents ask it before they guess, and so can you.</p></div>` : ''}
+        ${askWaiting()}
+        ${askThreadView()}
+      </div>
+      <div class="ask-dock">
+        <form class="ask-composer" id="ask-form"><label class="sr-only" for="ask-input">Ask Raven</label><input id="ask-input" autocomplete="off" maxlength="2000" placeholder="Ask who knows something, or why it was decided…" ${askBusy ? 'disabled' : ''}><button class="button primary" type="submit" ${askBusy ? 'disabled' : ''}>Ask</button></form>
+        <div class="ask-chips" ${empty ? '' : 'hidden'}>${askSuggestions().map(s => `<button type="button" class="ask-chip" data-ask="${esc(s)}">${esc(s)}</button>`).join('')}</div>
+      </div>
     </div>
     <aside class="ask-side">
       ${noticedView()}
-      <section><h2>Working in the background</h2>${runs.length ? runs.map(askTaskCard).join('') : '<p class="ask-muted">When Claude Code, Codex or Cursor starts a task, it shows up here: what Raven settled from past context, and who it asked.</p>'}</section>
-      ${askAgentUses()}
+      ${building.length ? `<a class="ask-building" href="#tasks"><span class="ask-live on">Live</span><span>${plural(building.length, 'task')} being built</span><span aria-hidden="true">→</span></a>` : ''}
     </aside>
   </div>`;
   const input = $('#ask-input');
   if (input) { input.value = typed; if (hadFocus || (!askBusy && !empty)) input.focus({preventScroll: true}); }
   const thread = $('#ask-thread');
-  if (thread && thread.lastElementChild) thread.lastElementChild.scrollIntoView({block: 'nearest'});
+  if (thread) {
+    // Pinned to the newest message unless the reader scrolled up to read.
+    if (keepTop !== null) thread.scrollTop = keepTop;
+    else thread.scrollTop = thread.scrollHeight;
+    thread.addEventListener('scroll', () => { askStick = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 60; }, {passive: true});
+  }
 }
 
+// The reading runs on the server as a job; the page polls for it. One
+// long request was what showed "Failed to fetch": the claude CLI can take
+// minutes, and a browser or proxy drops a request held open that long.
+const askPause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function askRaven(question) {
   question = question.trim();
   if (!question || askBusy) return;
   const entry = {q: question, status: 'thinking'};
-  askThread.push(entry); askBusy = true; askKey = ''; render();
+  askThread.push(entry); askBusy = true; askStick = true; askKey = ''; render();
+  const started = Date.now();
   try {
-    entry.result = await api('/api/ask', {question, repository: askRepo()});
+    const job = await api('/api/ask', {question, repository: askRepo(), background: true});
+    let misses = 0;
+    for (;;) {
+      if (job.status === 'done' || job.status === 'error') break;
+      await askPause(Date.now() - started < 10000 ? 900 : 2000);
+      try { Object.assign(job, await api('/api/ask/' + encodeURIComponent(job.job))); misses = 0; }
+      catch (error) {
+        // A dropped poll is retried; the reading is still going on the server.
+        if (/gone/i.test(error.message) || ++misses > 5) throw error;
+      }
+      if (!entry.slow && Date.now() - started > 15000) { entry.slow = true; askKey = ''; render(); }
+    }
+    if (job.status === 'error') throw new Error(job.error || 'Raven could not finish reading this.');
+    entry.result = job.result;
     entry.status = 'done';
   } catch (error) {
-    entry.status = 'error'; entry.error = error.message;
+    entry.status = 'error';
+    entry.error = /failed to fetch|networkerror|load failed/i.test(error.message)
+      ? 'Raven lost the connection to the server. Check that it is still running, then ask again.' : error.message;
   } finally {
-    askBusy = false; askSave(); askKey = ''; render();
+    delete entry.slow;
+    askBusy = false; askStick = true; askSave(); askKey = ''; render();
   }
 }
+document.addEventListener('click', event => {
+  const retry = event.target.closest('[data-ask-retry]');
+  if (!retry || view !== 'ask') return;
+  askThread = askThread.filter(e => !(e.status === 'error' && e.q === retry.dataset.askRetry));
+  askRaven(retry.dataset.askRetry);
+});
 
 document.addEventListener('submit', event => {
   if (event.target.id !== 'ask-form') return;

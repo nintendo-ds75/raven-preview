@@ -45,3 +45,14 @@ in the browser or on a quick call.
   workspace.
 - The database is `fixtures/parcelwise-demo.db`. It was built from the recording's
   database by bridged `demo/raven-video/v5/tools/make_demo_snapshot.py`.
+
+## Being built
+
+The sidebar's **Being built** page (`#tasks`) shows every live coding-agent task and each
+judgement call in it: whether Raven settled it from strong precedent, had a close precedent
+a person confirmed, or needed a novel judgement; who Raven talked to and whether they have
+answered; and where the context came from (the earlier decision, ADRs, pull requests, Slack,
+Jira, files). The fixture has two live tasks, both picked up by Maya Chen: the bulk label
+purchase from the recording, and **Turn on overage billing for the Starter plan**, seven
+decisions with three still waiting on Lena, Sam and Ana. `scripts/seed_billing_task.py`
+adds that task to a database; `--reset` moves both live tasks' times up to now.

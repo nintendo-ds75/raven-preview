@@ -491,6 +491,10 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     if url.path == "/api/runs":
                         return self.send(200, store.list_runs(page, size, one("status")))
                     return self.send(200, store.list_decisions(page, size, one("status"), one("owner_id"), one("run_id"), one("q")))
+                if len(parts) == 3 and parts[:2] == ["api", "ask"]:
+                    from .inquiry import ask_job
+                    self.require("member")
+                    return self.send(200, ask_job(parts[2], self.me))
                 if url.path == "/api/people/directory":
                     from . import people_context
                     self.require("member")
@@ -1082,8 +1086,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     elif isinstance(result, dict) and 'provider' in result and 'state' in result:
                         result = meeting_records.operational_view(store, result)
                 elif path == '/api/ask':
-                    from .inquiry import ask
-                    result = ask(store, data, self.me)
+                    from .inquiry import ask, start_ask
+                    result = start_ask(store, data, self.me) if data.get('background') else ask(store, data, self.me)
                 elif path == '/api/workbench':
                     if not workbench:
                         return self.send(503, {'error': 'Browser execution is not configured'})

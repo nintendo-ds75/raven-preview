@@ -269,3 +269,81 @@ dialog.voice-dialog [data-interview-status]{position:absolute;width:1px;height:1
 .noticed-card[data-kind="connect"] .noticed-kind{color:#a9bdff}
 .noticed-card[data-kind="bug"] .noticed-kind{color:#f09a8a}
 .people-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+
+/* Ask Raven as a chat: the thread scrolls on its own and the composer
+   stays at the bottom of the window, wherever the side column ends. */
+body.ask-view main{padding-bottom:0}
+body.ask-view .ask{height:calc(100vh - 41px);padding:0;align-items:stretch;overflow:hidden}
+body.ask-view .ask-main{min-height:0;height:100%}
+body.ask-view .ask-thread{flex:1;min-height:0;overflow-y:auto;padding:28px 6px 18px 0;overscroll-behavior:contain;scrollbar-gutter:stable}
+body.ask-view .ask.is-empty .ask-thread{flex:1;display:flex;flex-direction:column;justify-content:flex-end}
+body.ask-view .ask-dock{padding:6px 0 22px;background:var(--bg)}
+body.ask-view .ask-composer{position:static}
+body.ask-view .ask-side{height:100%;overflow-y:auto;padding:28px 2px 28px 0}
+.ask-building{display:flex;gap:10px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);text-decoration:none;font-size:13px}
+.ask-building span:nth-child(2){flex:1}
+.ask-building:hover{border-color:#3f4a3a}
+
+/* A compact answer: the answer, then one line per source with its quotes. */
+.ask-note{font-size:12px;color:var(--muted);margin:-4px 0 12px;font-style:italic}
+.ask-sources{display:flex;flex-direction:column;gap:6px;margin:4px 0 10px}
+.ask-src{padding:8px 12px;border-left:2px solid var(--green);background:var(--card);border-radius:0 8px 8px 0;margin:0}
+.ask-src-head{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted)}
+.ask-src-head .avatar{width:18px;height:18px;font-size:8px}
+.ask-src-head b{color:var(--text);font-weight:550}
+.ask-src p{margin:4px 0 0;font-size:13px;line-height:1.5;color:var(--ink)}
+.ask-who{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;font-size:12px}
+.ask-who>span{color:var(--muted);margin-right:2px}
+.ask-open{margin-top:8px}
+
+/* Being built: the judgement calls inside the tasks agents are building. */
+.build{max-width:980px;margin:0 auto;padding:22px 0 40px;color:var(--ink)}
+.build-head h1{font-size:26px;font-weight:550;letter-spacing:-.5px;margin:0}
+.build-head p{color:var(--muted);font-size:13.5px;margin:6px 0 22px;max-width:720px;line-height:1.55}
+.build>.ask-label{margin:22px 0 10px}
+.build-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:16px}
+.build-card h2{font-size:18px;font-weight:550;margin:8px 0 6px}
+.build-card h2 a{color:var(--ink);text-decoration:none}
+.build-card h2 a:hover{text-decoration:underline}
+.build-goal{color:var(--text);font-size:13px;line-height:1.55;margin:0 0 14px}
+.build-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 10px}
+.build-stats div{border:1px solid var(--line);border-radius:10px;padding:8px 12px;display:flex;flex-direction:column}
+.build-stats b{font-size:20px;font-weight:600}
+.build-stats span{font-size:11.5px;color:var(--muted)}
+.build-talked{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:12.5px;color:var(--muted);margin:12px 0 4px}
+.build-talked span{display:inline-flex;align-items:center;gap:5px;color:var(--text)}
+.build-talked .avatar{width:20px;height:20px;font-size:9px}
+.build-rows{list-style:none;margin:12px 0 0;padding:0;border-top:1px solid var(--line)}
+.build-row{padding:12px 0;border-bottom:1px solid var(--line)}
+.build-row:last-child{border-bottom:0}
+.build-row-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.build-camp{font-size:10px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;border-radius:999px;padding:3px 9px;border:1px solid}
+.build-camp.precedent{color:#9ad792;border-color:#3d6b37;background:#1a2a18}
+.build-camp.close{color:#c9d98a;border-color:#5a6634;background:#22261a}
+.build-camp.novel{color:#f0c27a;border-color:#6b5530;background:#2a2116}
+.build-status{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text)}
+.build-status .avatar{width:18px;height:18px;font-size:8px}
+.build-row.waiting .build-status{color:#f0c27a}
+.build-q{display:block;color:var(--ink);text-decoration:none;font-size:13.5px;line-height:1.5}
+.build-q:hover{text-decoration:underline}
+.build-a{margin:4px 0 0;font-size:12.5px;color:var(--muted);line-height:1.5;border-left:2px solid var(--line);padding-left:8px}
+.build-from{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;font-size:11.5px}
+.build-from>span:first-child{color:var(--muted)}
+.build-src{border:1px solid var(--line);border-radius:6px;padding:2px 8px;color:var(--text);text-decoration:none;white-space:nowrap}
+.build-src.decision{border-color:#3d6b37}
+.build-src.github::before{content:"GitHub ";color:var(--muted)}
+.build-src.slack::before{content:"# ";color:var(--muted)}
+.build-src.jira::before{content:"Jira ";color:var(--muted)}
+.build-src.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+a.build-src:hover{border-color:var(--green)}
+.build-done{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:22px}
+.build-done a{display:flex;justify-content:space-between;gap:12px;padding:10px 14px;border-top:1px solid var(--line);color:var(--ink);text-decoration:none;font-size:13px;background:var(--card)}
+.build-done a:first-child{border-top:0}
+.build-done small{color:var(--muted)}
+.build .ask-uses{margin-top:10px}
+@media (max-width:1100px){
+  body.ask-view .ask{height:auto;overflow:visible}
+  body.ask-view .ask-main{height:calc(100vh - 41px)}
+  body.ask-view .ask-side{height:auto;overflow:visible}
+}
+@media (max-width:640px){.build-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
