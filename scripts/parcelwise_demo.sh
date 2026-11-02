@@ -54,6 +54,18 @@ with graph.transaction():
     for person in graph.people():
         graph.db.execute("INSERT OR REPLACE INTO account_passwords(person_id, password_hash) VALUES(?,?)",
                          (person["id"], password_hash(password)))
+# The tasks still being built were recorded on Oct 30 and Nov 1: move them
+# to now, so the Being built page shows them as live, not days old.
+from datetime import datetime, timedelta, timezone
+latest = graph.db.execute("SELECT max(updated_at) FROM runs WHERE status NOT IN ('completed','failed','cancelled','abandoned')").fetchone()[0]
+if latest:
+    shift = datetime.now(timezone.utc) - timedelta(minutes=20) - datetime.fromisoformat(latest)
+    move = lambda ts: (datetime.fromisoformat(ts) + shift).isoformat() if ts else ts
+    with graph.transaction():
+        for run in graph.db.execute("SELECT id, updated_at FROM runs WHERE status NOT IN ('completed','failed','cancelled','abandoned')").fetchall():
+            graph.db.execute("UPDATE runs SET updated_at=? WHERE id=?", (move(run["updated_at"]), run["id"]))
+            for d in graph.db.execute("SELECT id, created_at, updated_at FROM decisions WHERE run_id=?", (run["id"],)).fetchall():
+                graph.db.execute("UPDATE decisions SET created_at=?, updated_at=? WHERE id=?", (move(d["created_at"]), move(d["updated_at"]), d["id"]))
 maya = graph.find_person("maya@parcelwise.example")
 token = Auth(store, enabled=True).create_token(maya["id"], label="Claude Code (Parcelwise demo)")["token"]
 with open(f"{repo}/.mcp.json", "w") as f:

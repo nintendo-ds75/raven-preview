@@ -56,7 +56,7 @@ const ago = value => {
 };
 const pill = (text, color = '') => `<span class="pill ${color}"><span class="status-dot"></span>${esc(text)}</span>`;
 // The one word each page is called, in the sidebar, the h1 and the window title.
-const titles = {ask: ['Ask Raven'], people: ['People'], inbox: ['Inbox'], runs: ['Tasks'], owners: ['People'], connect: ['Settings'], today: ['Outcomes'], work: ['Raven'], intro: ['Voice intros']};
+const titles = {ask: ['Ask Raven'], tasks: ['Being built'], people: ['People'], inbox: ['Inbox'], runs: ['Tasks'], owners: ['People'], connect: ['Settings'], today: ['Outcomes'], work: ['Raven'], intro: ['Voice intros']};
 let state = {decisions: [], runs: [], owners: [], events: []};
 let workspaceError = '';
 // The ownership graph and the directory (people, teams, the authority map, the coordinator) are not in the
@@ -875,8 +875,10 @@ function render() {
   document.body.classList.toggle('work-view', view === 'work');
   if (view === 'today' && typeof renderObjectives === 'function') { $('#app').dataset.taskId = ''; renderObjectives(); return; }
   if (view !== 'intro') document.body.classList.toggle('voice-view', false);
-  document.body.classList.toggle('home-view', view === 'ask' || view === 'people');
+  document.body.classList.toggle('home-view', view === 'ask' || view === 'people' || view === 'tasks');
+  document.body.classList.toggle('ask-view', view === 'ask');
   if (view === 'ask' && typeof renderHome === 'function') { $('#app').dataset.taskId = ''; renderHome(); return; }
+  if (view === 'tasks' && typeof renderTasks === 'function') { $('#app').dataset.taskId = ''; renderTasks(); return; }
   if (view === 'people' && typeof renderPeople === 'function') { $('#app').dataset.taskId = ''; renderPeople(); return; }
   if (view === 'intro' && typeof renderIntro === 'function') { $('#app').dataset.taskId = ''; renderIntro(); return; }
   if (view === 'work' && typeof renderWorkbench === 'function') { $('#app').dataset.taskId = ''; renderWorkbench(); return; }

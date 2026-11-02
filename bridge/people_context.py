@@ -219,13 +219,37 @@ def _terms(text):
             if len(w) > 2 and w not in _STOP}
 
 
+def named_people(store, text, people=None):
+    """The people a question names, by full name, first name or a close
+    misspelling of either ("leena park" is Lena Park). A last name alone
+    counts only when it is spelled right and nobody else shares it."""
+    from difflib import SequenceMatcher
+    people = people if people is not None else store.graph.people(active_only=False)
+    words = re.findall(r"[a-z][a-z'\-]+", str(text or "").lower())
+    words = [w for w in words if w not in _STOP]
+    close = lambda a, b: a == b or (len(a) > 3 and len(b) > 3 and SequenceMatcher(None, a, b).ratio() >= 0.8)
+    found = []
+    for p in people:
+        parts = p["name"].lower().split()
+        if not parts:
+            continue
+        first, last = parts[0], parts[-1]
+        pairs = list(zip(words, words[1:]))
+        full = any(close(a, first) and close(b, last) for a, b in pairs) if len(parts) > 1 else False
+        exact_first = first in words
+        fuzzy_first = len(first) > 3 and any(close(w, first) for w in words)
+        shared_last = sum(1 for o in people if o["name"].lower().split()[-1:] == [last]) > 1
+        if full or exact_first or (fuzzy_first and len(words) <= 12) or (len(parts) > 1 and last in words and not shared_last):
+            found.append(p)
+    return found
+
+
 def relevant(store, question, limit=5):
     """What people told Raven that bears on a question: lines sharing its
     words, or about a person it names."""
     terms = _terms(question)
     people = {p["id"]: p for p in store.graph.people(active_only=False)}
-    named = {pid for pid, p in people.items() if any(k and re.search(r"\b" + re.escape(k) + r"\b", question.lower())
-                                                    for k in {p["name"].lower(), p["name"].split()[0].lower()})}
+    named = {p["id"] for p in named_people(store, question, list(people.values()))}
     scored = []
     for r in store.graph.db.execute("SELECT id, person_id, text, quote, source, interview_id, artifact, created_at FROM person_context "
                                     "WHERE removed_at=''").fetchall():

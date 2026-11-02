@@ -77,10 +77,10 @@ vm.runInContext(source.slice(source.indexOf('const signedNow'), source.indexOf('
   assert.match(html, /id="agent-connect-prompt"/);
   assert.match(html, /Connect an agent <span aria-hidden="true">↓<\/span>/);
   assert.doesNotMatch(html, /Connect an agent <span>↗<\/span>/);
-  // The sidebar is three pages: ask, the map of who holds context, and settings.
+  // The sidebar is four pages: ask, what agents are building, who holds context, and settings.
   const nav = html.slice(html.indexOf('<nav aria-label="Workspace navigation">'), html.indexOf('</nav>'));
   const links = [...nav.matchAll(/<a href="#(\w+)" data-view="(\w+)" aria-label="([^"]+)">[\s\S]*?<\/a>/g)].map(m => [m[1], m[2], m[3]]);
-  assert.deepEqual(links, [['ask', 'ask', 'Ask Raven'], ['people', 'people', 'People'], ['connect', 'connect', 'Settings']]);
+  assert.deepEqual(links, [['ask', 'ask', 'Ask Raven'], ['tasks', 'tasks', 'Being built'], ['people', 'people', 'People'], ['connect', 'connect', 'Settings']]);
   for (const [, , label] of links) assert.match(nav, new RegExp(`<span class="nav-text">${label}</span>`), `${label} is the link's visible text`);
   assert.match(nav, /id="inbox-count"/);
   assert.match(nav, /<span class="nav-dot" id="settings-dot" hidden title="Setup incomplete"><\/span>/);
