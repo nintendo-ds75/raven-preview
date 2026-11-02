@@ -38,6 +38,38 @@ def _whole(text):
     return re.sub(r"\s+", " ", str(text or "")).strip()
 
 
+# The placeholder an answer with no reason is stored with: not a reason.
+NO_REASON = "No additional rationale supplied"
+CALL_ID = re.compile(r"\b(decision\s+)?([0-9a-f]{12})\b(?:\s*\(\d{4}-\d{2}-\d{2}\))?")
+
+
+def _calls(store, text):
+    """A decision id in an answer or reason, as people say it: "Jordan's Oct
+    28 call". A PR reader cannot open an id, and the For you page already
+    shows the same text this way."""
+    from .attention import _day as said_day
+
+    def name(match):
+        row = store.graph.db.execute("SELECT answered_by, signed_by, created_at FROM decisions WHERE id=?",
+                                     (match.group(2),)).fetchone()
+        if row is None:
+            return "an earlier call" if match.group(1) else match.group(0)
+        who = str(row["answered_by"] or row["signed_by"] or "").split(" ")[0]
+        day = said_day(row["created_at"])
+        if who:
+            return f"{who}'s {day} call".replace("  ", " ") if day else f"{who}'s call"
+        return f"an earlier call from {day}" if day else "an earlier call"
+    return CALL_ID.sub(name, text or "")
+
+
+def _reason(text):
+    """A reason as a sentence, or nothing when none was given."""
+    text = _whole(text)
+    if not text or text.rstrip(".") == NO_REASON:
+        return ""
+    return text if text[-1] in ".!?\"”)" else text + "."
+
+
 def _lead(text):
     """(first sentence, the rest): the first is bolded so the list stays scannable."""
     parts = re.split(r"(?<=[.!?])\s+", re.sub(r"\s+", " ", text).strip())
@@ -99,20 +131,23 @@ def _item(store, node):
                     source={"node_id": prior_id, "task_id": prior.get("run_id") or "",
                             "task": _task_title(store, prior.get("run_id") or ""),
                             "decided_at": _day(prior.get("updated_at"))})
-        rationale = _whole(prior.get("rationale"))
+        rationale = _reason(prior.get("rationale"))
         if rationale:
             item["why"] = rationale
     elif status == "pending" or node.get("blocking") and not node.get("answer"):
         item.update(kind="open", who=node.get("owner") or "")
     elif source == "human" or status == "approved" or node.get("kind") == "answer":
         item.update(kind="live", who=node.get("answered_by") or node.get("owner") or "", **_channel(store, node["node_id"]))
-        rationale = _whole(node.get("rationale"))
+        rationale = _reason(node.get("rationale"))
         if rationale:
             item["why"] = rationale
     elif source == "record" or node.get("kind") == "evidence":
         item.update(kind="record", who="", detail=_first(node.get("evidence"), 140))
     else:
         item.update(kind="agent", who="")
+    item["answer"] = _calls(store, item["answer"])
+    if item.get("why"):
+        item["why"] = _calls(store, item["why"])
     item["label"] = KINDS[item["kind"]]
     item["person_id"] = _person_id(store, item.get("who"))
     return item

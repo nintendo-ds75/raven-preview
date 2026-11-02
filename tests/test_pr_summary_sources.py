@@ -49,6 +49,19 @@ class Summary(OfflineCase):
         self.open = self.g.add_decision(self.task, 'Should USPS bulk buys batch by carrier?', 'ops', 'pending',
                                         repo=REPO, owner='Priya Shah')
 
+    def test_answers_name_earlier_calls_as_people_say_them_and_skip_empty_reasons(self):
+        # Measured on a demo PR: "per decision 52a409283ec9" and "Why: No
+        # additional rationale supplied Signed off by Jordan Okafor."
+        did = self.g.add_decision(self.task, 'One purchase per order?', 'policy', 'pending', repo=REPO, owner='Marcus Lee')
+        self.store.answer(did, {'answer': f'Yes, one purchase_label() call per order, per decision {self.prior}.', 'by': 'Marcus Lee'})
+        item = next(x for x in pr_summary.summary(self.store, self.task)['items'] if x['node_id'] == did)
+        self.assertNotIn(self.prior, item['answer'])
+        self.assertRegex(item['answer'], r"per Marcus's \w{3} \d{1,2} call\.$")
+        self.assertNotIn('why', item)
+        self.assertNotIn('No additional rationale', pr_summary.markdown(pr_summary.summary(self.store, self.task)))
+        hit = next(x for x in pr_summary.summary(self.store, self.task)['items'] if x['kind'] == 'cache')
+        self.assertEqual(hit['why'], 'We bought $4,100 of labels at a stale rate.')
+
     def test_each_decision_says_where_its_answer_came_from(self):
         result = pr_summary.summary(self.store, self.task)
         kinds = {x['node_id']: x['kind'] for x in result['items']}
