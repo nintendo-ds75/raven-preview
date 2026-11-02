@@ -71,6 +71,14 @@ def field(data, key, default=None, limit=12000):
     return value.strip()
 
 
+def _with_agent_name(row):
+    """The agent column as people read it (Claude Code, not 'claude')."""
+    if "agent" in row:
+        from .agent_names import display_name
+        row["agent"] = display_name(row["agent"])
+    return row
+
+
 def answer_hash(answer):
     """A short fingerprint of an answer's text: what a signature covers."""
     import hashlib
@@ -1419,9 +1427,10 @@ class Store:
                 "owners": [dict(row) for row in db.execute("SELECT * FROM owners ORDER BY created_at")],
                 # The discovery digest is the kickoff's answer to the agent,
                 # not something the inbox shows; it stays in the export.
-                "runs": [{k: v for k, v in dict(row).items() if full_history or k != "discovery"}
+                "runs": [_with_agent_name({k: v for k, v in dict(row).items() if full_history or k != "discovery"})
                          for row in db.execute("SELECT * FROM runs ORDER BY updated_at DESC" + limit)],
-                "decisions": [{k: v for k, v in dict(row).items() if k != "embedding"} for row in db.execute(decisions_sql)],
+                "decisions": [_with_agent_name({k: v for k, v in dict(row).items() if k != "embedding"})
+                              for row in db.execute(decisions_sql)],
                 "events": [dict(row) for row in db.execute("SELECT * FROM events ORDER BY id DESC" + ("" if full_history else " LIMIT 100"))],
                 "graph": graph_summary(db),
                 "counts": inbox_counts(db),

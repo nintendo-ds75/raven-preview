@@ -203,6 +203,51 @@ def _corrects_the_repo(graph, row, repo: str) -> bool:
             and graph.resolve_repo(repo_key(repo)) in known)
 
 
+TITLE_WIDTH = 70
+TITLE_SLACK = 8  # a sentence a few characters over is kept whole rather than cut mid-thought
+_TITLE_LEAD_RE = re.compile(
+    r"^(?:(?:please|hey|hi|ok(?:ay)?|so)[,:\s]+)?"
+    r"(?:(?:can|could|would|will) you (?:please )?|(?:we|i)(?:'d| would)? (?:want|need|like) (?:you )?to |"
+    r"(?:we|i)(?:'re| are) going to |let'?s |please )?", re.IGNORECASE)
+_TITLE_CLAUSE_RE = re.compile(
+    r",\s|\s(?:based on|because|so that|since|which|where|when|while|and then|then|but|and|so|using|with)\s",
+    re.IGNORECASE)
+
+
+def task_title(title: str, goal: str) -> str:
+    """The short line a task is shown under. A host hook registers the
+    prompt as both title and goal, so Being built showed the prompt twice.
+    When the title is missing, is the goal, or is a long first line of it,
+    the title is derived from the goal: its first sentence, trimmed of a
+    polite lead-in ("We want to", "Please"), cut at a clause boundary when
+    it still runs past TITLE_WIDTH characters, with no trailing period.
+    A title of the agent's own wording is kept as it was."""
+    title = " ".join((title or "").split())
+    goal = " ".join((goal or "").split())
+    if not goal:
+        return title
+    same = title.lower() == goal.lower()
+    long_first_line = len(title) > TITLE_WIDTH and goal.lower().startswith(title.lower())
+    if title and not same and not long_first_line:
+        return title
+    first = next((part.strip() for part in re.split(r"(?<=[.!?;])\s+|\s[—–-]\s", goal) if part.strip()), goal)
+    led = _TITLE_LEAD_RE.sub("", first, count=1).strip()
+    # "Can you make the job idempotent?" is the imperative without its lead-in.
+    short = (led.rstrip("?") if led and led != first else first).rstrip(".;:,!").strip() or first
+    if len(short) > TITLE_WIDTH + TITLE_SLACK:
+        cut = 0
+        for m in _TITLE_CLAUSE_RE.finditer(short):
+            if m.start() <= TITLE_WIDTH and m.start() >= TITLE_WIDTH // 3:
+                cut = m.start()
+        if cut:
+            short = short[:cut].rstrip(".;:,!")
+        else:
+            head = short[:TITLE_WIDTH]
+            short = (head.rsplit(" ", 1)[0] if " " in head else head).rstrip(".;:,!") + "…"
+    short = short[:1].upper() + short[1:] if short else short
+    return short or title or goal[:TITLE_WIDTH]
+
+
 def _same_task(row, title: str, goal: str) -> bool:
     """Whether a kickoff under an existing client_key is that task. The
     title is the agent's own one-line wording and a fresh process words
@@ -289,10 +334,16 @@ def _start_task(store, cfg, data) -> dict:
                               "(status=abandoned, reason=...), then omit task_id and use a new client_key "
                               "when starting the correctly scoped task.")
             return _task_as_started(store, existing, cfg)
-    title = field(data, "title", limit=300)
     goal = _text(data, "goal")
+    # A host registers the prompt as both title and goal: the title
+    # shown is derived from the goal, so the card does not read it twice.
+    given = data.get("title")
+    if goal and not (isinstance(given, str) and given.strip()):
+        given = goal[:300]
+    title = task_title(field({"title": given}, "title", limit=300), goal)
     repo = field(data, "repo", "local", 300)
-    agent = field(data, "agent", "Coding agent", 100)
+    from .agent_names import display_name
+    agent = display_name(field(data, "agent", "Coding agent", 100))
     requester = _text(data, "requester", 200)
     client_key = _text(data, "client_key", 200)
     paths = _paths(data.get("paths"))
@@ -1167,12 +1218,47 @@ def add_node(store, cfg, data, *, _cached_rule_attempt=False) -> dict:
     did = ""
     try:
         query = _ask_cached_rule if _cached_rule_attempt else ask
-        row = query(store, first_pass, task_id, question, context=ctx or "a node on the canvas",
-                  path=paths[0] if paths else "unknown", category=category, owner_id=owner_id or None,
-                  requester=requester, hints=hints, facts=facts, keep_draft=True, also_paths=paths[1:],
-                  # A model pass follows: the static pass settles only the
-                  # same question, and publishes a near match as a check.
-                  **({"provisional": True} if background and not _cached_rule_attempt else {}))
+        own = not _cached_rule_attempt and not adopt
+        repo_scope = graph.resolve_repo(repo_key(run["repo"])) if own else ""
+        # What a person with authority said in a meeting settles the call
+        # the way an earlier decision does; words that only bear on it
+        # reach the speaker as Raven's guess once the ladder has had its
+        # turn and left the question open.
+        spoken = None
+        spoken_why: list[str] = []
+        if own and not owner_id:
+            from . import meeting_precedent
+            spoken = meeting_precedent.consider(store, effective, run, question, context=ctx, paths=scope_paths,
+                                                category=category, facts=facts, repo=repo_scope, why=spoken_why)
+        twin = None
+        twin_why: list[str] = []
+        applied = False
+        if spoken is not None and spoken[0] == "settle":
+            row = meeting_precedent.write(store, "settle", spoken[1], task_id, question, context=ctx,
+                                          path=paths[0] if paths else "", category=category, facts=facts,
+                                          repo=repo_scope, why=spoken_why)
+            applied = True
+        else:
+            row = query(store, first_pass, task_id, question, context=ctx or "a node on the canvas",
+                        path=paths[0] if paths else "unknown", category=category, owner_id=owner_id or None,
+                        requester=requester, hints=hints, facts=facts, keep_draft=True, also_paths=paths[1:],
+                        # A model pass follows: the static pass settles only the
+                        # same question, and publishes a near match as a check.
+                        **({"provisional": True} if background and not _cached_rule_attempt else {}))
+            if own and row["status"] == "pending" and not row.get("duplicate_stub"):
+                # The same thing asked again on this canvas, in other words,
+                # is folded into the open node rather than reaching its
+                # owner twice; only a question nothing on record settled.
+                from . import dedupe
+                twin = dedupe.same_task_twin(store, effective, task_id, question, context=ctx,
+                                             path=paths[0] if paths else "", category=category, facts=facts,
+                                             repo=repo_scope, why=twin_why, exclude=row["id"])
+                if twin is not None:
+                    row = dedupe.fold_draft(store, row, twin, why=twin_why)
+                    applied = True
+                elif spoken is not None:
+                    row = meeting_precedent.predict_draft(store, row, spoken[1], repo=repo_scope, why=spoken_why)
+                    applied = True
         drafts = list(row.get("drafts") or [])
         # A duplicate comes back as its twin's row, which belongs to another
         # task; the node of this task is the stub, and its view names the
@@ -1181,7 +1267,7 @@ def add_node(store, cfg, data, *, _cached_rule_attempt=False) -> dict:
         view = _place_node(store, graph, run, row, did, task_id, question, context, ctx, category, paths,
                            options, parent_id, client_ref, adopted, depth, scope, related_ids, depends_on,
                            first_pass, requester, hints, drafts, scope_paths=scope_paths,
-                           deferred=background or _cached_rule_attempt)
+                           deferred=(background and not applied) or _cached_rule_attempt)
     except Exception:
         # A node that could not be placed is still a decision somebody
         # asked: published, not hidden. The claim follows it, so a retry
@@ -1197,7 +1283,7 @@ def add_node(store, cfg, data, *, _cached_rule_attempt=False) -> dict:
         raise
     if client_ref:
         graph.settle_node_ref(task_id, client_ref, did)
-    if background:
+    if background and not applied:
         _start_background(('node', did), _model_node_pass, store, effective, did, ctx, paths, hints, requester,
                           owner_id, context, view['updated_at'])
     resolve_scope(graph, task_id, scope_request_key)
@@ -1482,7 +1568,8 @@ def _place_node(store, graph, run, row, did, task_id, question, context, ctx, ca
             # made from, and no one else. Measured live on 5e967e4: a rule
             # Mira made authorized a node on a file Theo must approve, and
             # the task finished without Theo.
-            missing = _not_behind_rule(graph, row.get("source_id") or "", approvers)
+            missing = _not_behind_rule(graph, row.get("source_id") or "", approvers,
+                                       spoken_by=(row.get("answered_by") or "") if row.get("source") == "meeting" else "")
             if missing:
                 graph.db.execute(
                     "UPDATE decisions SET signoff='required', evidence=evidence || ? WHERE id=?",
@@ -1524,12 +1611,13 @@ def _fact_clashes(question: str, facts: dict) -> list[tuple[str, str, str]]:
     return out
 
 
-def _not_behind_rule(graph, source_id: str, approvers: list[str]) -> list[str]:
+def _not_behind_rule(graph, source_id: str, approvers: list[str], spoken_by: str = "") -> list[str]:
     """The required approvers who did not sign the decision a rule was
-    made from."""
+    made from. A call settled from a meeting stands on its speaker's
+    word: the speaker is behind it, nobody else."""
     row = graph.db.execute("SELECT signatures, signed_by FROM decisions WHERE id=?", (source_id,)).fetchone() \
         if source_id else None
-    signed = set()
+    signed = {spoken_by.strip().lower()} if spoken_by.strip() else set()
     if row is not None:
         signed = {str(x.get("by", "")).strip().lower() for x in _json_list(row["signatures"]) if isinstance(x, dict)}
         signed |= {n.strip().lower() for n in (row["signed_by"] or "").split(",") if n.strip()}
@@ -1663,7 +1751,8 @@ def _next_for_node(status: str, d: dict) -> str:
     if status == "unrouted":
         return "Raven does not know who owns this; a person assigns it in the inbox, or settle it yourself"
     if status == "duplicate":
-        return f"the same question is already open as node {d.get('superseded_by')}; one answer settles both"
+        return (f"folded into node {d.get('superseded_by')}: the same question is already open there; "
+                "one answer settles both")
     if status == "suggested":
         if d.get("followup_required"):
             return ("a person added this question and marked it required: adopt it with "
@@ -1784,7 +1873,7 @@ def _view(row, repeated: bool = False, canonical=None) -> dict:
         view["blocking"] = _blocking(c)
         view["resolution"] = {"node_id": c["id"], "task_id": c["run_id"], "status": c_status,
                               "updated_at": c["updated_at"]}
-        view["next"] = (f"same decision as node {c['id']} (task {c['run_id']}), which is {c_status}: "
+        view["next"] = (f"folded into node {c['id']} (task {c['run_id']}), the same decision, which is {c_status}: "
                         + _next_for_node(c_status, c))
     from .reuse_guidance import standing_grant_view
     view['standing_grant'] = standing_grant_view(canonical if canonical is not None else d)
@@ -1970,8 +2059,11 @@ def get_tree(store, task_id: str) -> dict:
         counts['needs_scope_clarification'] = len(scope_clarifications)
         parts.append(f"{len(scope_clarifications)} scope clarification(s) wait on the agent: confirm the missing "
                      "facts, then retry bridge_add_node with the same client_ref and explicit facts")
+    # A stub folded into an open node of this same task is that node's
+    # wait, not another: it counts once.
     waiting = [n for n in nodes if n["status"] == "pending"
-               or (n["status"] == "duplicate" and n.get("resolution", {}).get("status") == "pending")]
+               or (n["status"] == "duplicate" and n.get("resolution", {}).get("status") == "pending"
+                   and n["resolution"].get("task_id") != task_id)]
     if waiting:
         who = sorted({n["owner"] for n in waiting if n["owner"]})
         parts.append(f"{len(waiting)} waiting on {', '.join(who) if who else 'nobody yet'}")

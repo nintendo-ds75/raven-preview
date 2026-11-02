@@ -84,7 +84,7 @@ function judge(d) {
   if (d.model_pending && d.status !== 'approved') kind = 'checking';
   else if (d.needs_review) kind = 'review';
   else if (d.status === 'approved' && d.supersedes) kind = 'corrected';
-  else if (['signed', 'rule'].includes(d.signoff) && d.source_id && d.status !== 'approved') kind = 'settled';
+  else if (['signed', 'rule'].includes(d.signoff) && (d.source_id || d.source === 'meeting') && d.status !== 'approved') kind = 'settled';
   else if (d.status === 'approved') kind = 'answered';
   else kind = 'waiting';
   return {kind, prior, by, priorBy, priorWhen, guessed: d.kind === 'prediction', via: buildVia[d.answered_via] || '',
@@ -113,10 +113,18 @@ function taskStory(run) {
 const buildOpen = new Set(), buildForm = new Set();
 const buildCanAct = d => !!state.me?.name && (state.me.name === d.owner_name || state.me.role === 'admin');
 const buildClip = (text, n) => { text = String(text || ''); return text.length > n ? text.slice(0, n - 1) + '…' : text; };
+// The goal under a title, unless it is the title again: an older task
+// registered by a host hook carries the prompt as both.
+const buildGoal = run => { const g = String(run.goal || '').trim(), t = String(run.title || '').trim(); return g && g.toLowerCase() !== t.toLowerCase() ? g : ''; };
+
+// "From the Oct 29 Pilot pricing sync": the meeting a call was settled
+// from, as the fit reason names it.
+const buildMeeting = d => { const head = String(d.fit_reason || '').split(':')[0].trim(); return /^From /.test(head) ? head : `From the ${buildWhen(d.source_revision) || ''} meeting`.replace(/\s+/g, ' '); };
 
 // The one line under each question: who settled it, how, and when.
 function buildLine(d, j) {
   const first = askFirst;
+  if (j.kind === 'settled' && d.answered_via === 'meeting') return `<span class="dot past"></span>${esc(buildMeeting(d))} · nobody asked`;
   if (j.kind === 'settled') return `<span class="dot past"></span>From ${esc(first(j.priorBy) || 'an earlier')}’s call${j.priorWhen ? ' · ' + esc(buildWhen(j.priorWhen)) : ''} · nobody asked`;
   if (j.kind === 'corrected') return `<span class="dot person"></span>${esc(first(j.by))} corrected this${j.prior ? ` · replaces ${esc(first(j.priorBy))}’s ${esc(buildWhen(j.priorWhen))} call` : ''}`;
   if (j.kind === 'answered') return `<span class="dot person"></span>${j.guessed ? `Raven guessed, ${esc(first(j.by))} confirmed` : `${esc(first(j.by))} answered`}${j.via ? ' ' + esc(j.via) : ''} · ${esc(ago(d.updated_at))}`;
@@ -133,8 +141,11 @@ function buildDetail(d, j) {
   if (d.answer && j.kind !== 'review' && j.kind !== 'checking') parts.push(`<p class="build-answer">${esc(d.answer)}</p>`);
   if (j.kind === 'settled') {
     parts.push(`<div class="build-why"><span class="ask-label">Why Raven applied it</span><p>${esc(d.fit_reason || `Raven matched it to a call ${j.priorBy || 'someone'} already made.`)}</p></div>`);
-    parts.push(buildPrecedent(j, 'Settled from this call'));
-    if (j.priorBy) parts.push(`<p class="build-note">${esc(first(j.priorBy))} was not pinged: the call already covered it. ${buildCanAct(d) ? 'If it doesn’t, say so below.' : `Only ${esc(first(j.priorBy))} (or an admin) can change that.`}</p>`);
+    if (d.answered_via === 'meeting') parts.push(`<div class="build-prior"><span class="ask-label">Settled from this meeting</span>
+      <div class="build-prior-head">${avatar(j.priorBy)}<b>${esc(j.priorBy)}</b><span>said${j.priorWhen ? ' ' + esc(buildWhen(j.priorWhen)) : ''}, ${esc(buildMeeting(d).replace(/^From /, 'in '))}</span></div>
+      ${d.rationale ? `<p class="build-prior-a">“${esc(d.rationale)}”</p>` : ''}</div>`);
+    else parts.push(buildPrecedent(j, 'Settled from this call'));
+    if (j.priorBy) parts.push(`<p class="build-note">${esc(first(j.priorBy))} was not pinged: ${d.answered_via === 'meeting' ? 'what they said in the meeting' : 'the call'} already covered it. ${buildCanAct(d) ? 'If it doesn’t, say so below.' : `Only ${esc(first(j.priorBy))} (or an admin) can change that.`}</p>`);
   } else if (j.kind === 'corrected') {
     if (d.rationale) parts.push(`<div class="build-why"><span class="ask-label">Why</span><p>${esc(d.rationale)}</p></div>`);
     if (j.prior) parts.push(buildPrecedent(j, 'Replaced this call'));
@@ -212,7 +223,7 @@ function buildCard(run) {
   return `<article class="build-card">
     <div class="build-top">${pill}<span class="ask-agent">${esc(run.agent || 'Coding agent')}${run.requester ? ' · for ' + esc(run.requester) : ''}</span><span class="ask-when">${esc(ago(run.updated_at))}</span></div>
     <h2><a href="#runs/${encodeURIComponent(run.id)}">${esc(run.title)}</a></h2>
-    ${run.goal ? `<p class="build-goal">${esc(buildClip(run.goal, 220))}</p>` : ''}
+    ${buildGoal(run) ? `<p class="build-goal">${esc(buildClip(buildGoal(run), 220))}</p>` : ''}
     <div class="build-counts">
       <div><b>${ds.length}</b><span>judgment calls the agent hit</span></div>
       <div class="past"><b>${settled.length}</b><span>settled by Raven from earlier calls, nobody asked</span></div>
