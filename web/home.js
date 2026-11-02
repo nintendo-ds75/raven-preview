@@ -78,7 +78,7 @@ function judge(d) {
   let kind;
   if (d.needs_review) kind = 'review';
   else if (d.status === 'approved' && d.supersedes) kind = 'corrected';
-  else if (['signed', 'rule'].includes(d.signoff) && d.source_id && d.status !== 'approved') kind = 'settled';
+  else if (['signed', 'rule'].includes(d.signoff) && (d.source_id || d.source === 'meeting') && d.status !== 'approved') kind = 'settled';
   else if (d.status === 'approved') kind = 'answered';
   else kind = 'waiting';
   return {kind, prior, by, priorBy, priorWhen, guessed: d.kind === 'prediction', via: buildVia[d.answered_via] || '',
@@ -133,8 +133,11 @@ function buildDetail(d, j) {
   if (d.answer && j.kind !== 'review') parts.push(`<p class="build-answer">${esc(d.answer)}</p>`);
   if (j.kind === 'settled') {
     parts.push(`<div class="build-why"><span class="ask-label">Why Raven applied it</span><p>${esc(d.fit_reason || `Raven matched it to a call ${j.priorBy || 'someone'} already made.`)}</p></div>`);
-    parts.push(buildPrecedent(j, 'Settled from this call'));
-    if (j.priorBy) parts.push(`<p class="build-note">${esc(first(j.priorBy))} was not pinged: the call already covered it. ${buildCanAct(d) ? 'If it doesn’t, say so below.' : `Only ${esc(first(j.priorBy))} (or an admin) can change that.`}</p>`);
+    if (d.answered_via === 'meeting') parts.push(`<div class="build-prior"><span class="ask-label">Settled from this meeting</span>
+      <div class="build-prior-head">${avatar(j.priorBy)}<b>${esc(j.priorBy)}</b><span>said${j.priorWhen ? ' ' + esc(buildWhen(j.priorWhen)) : ''}, ${esc(buildMeeting(d).replace(/^From /, 'in '))}</span></div>
+      ${d.rationale ? `<p class="build-prior-a">“${esc(d.rationale)}”</p>` : ''}</div>`);
+    else parts.push(buildPrecedent(j, 'Settled from this call'));
+    if (j.priorBy) parts.push(`<p class="build-note">${esc(first(j.priorBy))} was not pinged: ${d.answered_via === 'meeting' ? 'what they said in the meeting' : 'the call'} already covered it. ${buildCanAct(d) ? 'If it doesn’t, say so below.' : `Only ${esc(first(j.priorBy))} (or an admin) can change that.`}</p>`);
   } else if (j.kind === 'corrected') {
     if (d.rationale) parts.push(`<div class="build-why"><span class="ask-label">Why</span><p>${esc(d.rationale)}</p></div>`);
     if (j.prior) parts.push(buildPrecedent(j, 'Replaced this call'));

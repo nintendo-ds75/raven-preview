@@ -417,7 +417,7 @@ def _memory_namespace_difference(store: Graph, task_id: str, source) -> str:
 
 def _open_twin(store: Graph, cfg, client, question: str, emb: list[float], repo: str,
                exclude: str = "", context: str = "", path: str = "", related: list | None = None,
-               facts: dict | None = None, skip: set | None = None):
+               facts: dict | None = None, skip: set | None = None, category: str = ""):
     """An already-open decision this question duplicates, if any. Above 0.80
     hybrid similarity the twin is deterministic; the 0.45 to 0.80 band gets
     one same-decision model check when a backend is on. A candidate whose
@@ -435,9 +435,17 @@ def _open_twin(store: Graph, cfg, client, question: str, emb: list[float], repo:
         # delivered to every call waiting on it or on its duplicates.
         if q_refs - set(_cited_refs(cand.question)):
             continue
+        # The same words about another figure ("30 days" / "90 days") are
+        # two decisions, however close.
+        if _numeric_clash(question, cand.question):
+            continue
         ct = set(_meaningful_terms(cand.question))
         ov = len(ct & qt) / min(len(ct), len(qt)) if ct and qt else 0.0
         hybrid = max(s, ov)
+        # Filed under another category, the same words are a twin only
+        # when the model reads them as one decision, never on words alone.
+        if category and cand.category and category.strip().lower() != cand.category.strip().lower():
+            hybrid = min(hybrid, 0.79)
         why, known = (_scope_difference(question, context, path, cand, facts, _facts_of(store, cand.id), repo)
                       if hybrid >= 0.45 else ("", False))
         if why:
@@ -2554,7 +2562,8 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             continue
         related_open: list = []
         twin = _open_twin(store, cfg, client, question, emb, repo, exclude=did,
-                          context=d_context, path=d_path, related=related_open, facts=d_facts)
+                          context=d_context, path=d_path, related=related_open, facts=d_facts,
+                          category=d_category)
         for cand, why, known in related_open[:3]:
             # The same question is open in another scope: a relationship
             # to show, never one answer for two decisions.

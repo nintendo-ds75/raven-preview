@@ -175,7 +175,15 @@ def overview(store, me) -> dict:
             out["counts"]["asked_elsewhere"] += 1
     out["needs_you"].sort(key=lambda x: x["created_at"])
     for r in rows:
-        if r["signoff"] not in ("signed", "rule") or not r["source_id"] or r["status"] == "approved" or r["needs_review"]:
+        if r["signoff"] not in ("signed", "rule") or r["status"] == "approved" or r["needs_review"]:
+            continue
+        if r["source"] == "meeting" and not r["source_id"]:
+            # Settled from what this person said in a meeting: the call it
+            # used is their words there, not an earlier decision.
+            if _same_person(r, name):
+                out["handled"].append(_handled_item(db, r, None, call=_meeting_call(r)))
+            continue
+        if not r["source_id"]:
             continue
         source = _source(db, r["source_id"])
         if source is None or not _same_person(source, name):
