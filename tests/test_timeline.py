@@ -159,6 +159,24 @@ class TemplateTests(OfflineCase):
         self.assertEqual(texts(rows)[1], "Flagged “What is the per-use rate” to Dana, who decides for pricing decisions; waiting on Dana")
         self.assertEqual(rows[1]["refs"], [{"kind": "decision", "id": "b", "run_id": "task1", "label": "What is the per-use rate"}])
 
+    def test_confirmed_against_two_calls_says_they_cover_it(self):
+        # Measured on the Parcelwise demo (Nov 2): "Jordan's Sep 15 and Jun 1 calls covers ...", a plural
+        # subject with a singular verb. Two calls cover; one call covers.
+        p1, p2 = prior("p1", "Jordan Okafor", "09-15"), prior("p2", "Jordan Okafor", "06-01")
+        d = decision("a", "Do retried, timed-out or failed assistant calls count as uses?",
+                     status="resolved", signoff="rule", source="memory", source_id="p1")
+        shown = timeline.topic(d["question"])
+        events = [event(1, "checking", 3, did="a", cited="p1", kind="near match"),
+                  event(2, "resolve", 4, 55, did="a", source="memory", cited="p1", also=["p2"], answered_by="Jordan Okafor", signed=True)]
+        rows = self.build([d], events, {"p1": p1, "p2": p2})
+        self.assertEqual(texts(rows)[1], f"Confirmed: Jordan's Sep 15 and Jun 1 calls cover “{shown}”; nobody asked")
+        # Two people's calls, named one by one, are plural too.
+        rows = self.build([d], events, {"p1": p1, "p2": prior("p2", "Marcus Lee", "06-01")})
+        self.assertEqual(texts(rows)[1], f"Confirmed: Jordan's Sep 15 call and Marcus's Jun 1 call cover “{shown}”; nobody asked")
+        # One call still covers.
+        rows = self.build([d], [events[0], event(2, "resolve", 4, 55, did="a", source="memory", cited="p1", answered_by="Jordan Okafor", signed=True)], {"p1": p1})
+        self.assertEqual(texts(rows)[1], f"Confirmed: Jordan's Sep 15 call covers “{shown}”; nobody asked")
+
     def test_a_static_route_the_model_pass_then_settled_is_not_a_row(self):
         p = prior("p1", "Raj Patel", "09-17")
         d = decision("a", "How are retries counted?", status="resolved", signoff="rule", source="memory", source_id="p1")

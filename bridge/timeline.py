@@ -256,10 +256,19 @@ def _t_checking(items):
     return f"Checking {len(items)} against earlier calls, nobody asked yet: {body}"
 
 
+def _calls_are_plural(label) -> bool:
+    """'Jordan's Sep 15 and Jun 1 calls' and 'Jordan's Sep 15 call and
+    Marcus's Jun 1 call' are more than one call; 'Raj's Sep 17 call' and
+    'an earlier call' are one."""
+    return label.endswith("calls") or " and " in label
+
+
 def _t_confirmed(items):
     if len(items) == 1:
         it = items[0]
-        return f"Confirmed: {it['call']} covers “{it['topic']}”; {it.get('tail', 'nobody asked')}"
+        # Measured on the Parcelwise demo (Nov 2): "Jordan's Sep 15 and Jun 1 calls covers ..." read as a slip.
+        verb = "cover" if _calls_are_plural(it["call"]) else "covers"
+        return f"Confirmed: {it['call']} {verb} “{it['topic']}”; {it.get('tail', 'nobody asked')}"
     body = _join([f"{it['topic']} ({it['who']}, {it['day']})" for it in items])
     return f"Confirmed {len(items)} against earlier calls, nobody asked: {body}"
 
