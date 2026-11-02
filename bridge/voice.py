@@ -222,9 +222,27 @@ def _voice(default):
 
 # ---------------------------------------------------------------- the two calls
 
+# Initialisms are said letter by letter. Written as dotted letters, every
+# engine Raven speaks through (Kokoro's phonemiser, ElevenLabs, OpenAI) says
+# "U.S.P.S." as four letters, where "USPS" comes out as a word ("usps") and
+# "ADR" as "adder". A handful of capitalised words stay words.
+_INITIALISM = re.compile(r"\b([A-Z]{2,5})(s?)\b")
+_SAID_AS_WORD = {"OK", "AM", "PM", "NO", "YES", "AND", "THE", "NOT", "FOR", "ALL", "NASA"}
+
+
+def spoken(text):
+    """`text` as Raven should say it aloud."""
+    def letters(m):
+        word = m.group(1)
+        if word in _SAID_AS_WORD:
+            return m.group(0)
+        return ".".join(word) + "." + m.group(2)
+    return _INITIALISM.sub(letters, str(text or ""))
+
+
 def speak(text):
     """Raven saying `text`: (audio bytes, mime type)."""
-    text = re.sub(r"\s+", " ", str(text or "")).strip()
+    text = spoken(re.sub(r"\s+", " ", str(text or "")).strip())
     if not text or len(text) > TEXT_LIMIT:
         raise Invalid(f"Text to speak must be 1 to {TEXT_LIMIT} characters")
     engine = tts_engine()
