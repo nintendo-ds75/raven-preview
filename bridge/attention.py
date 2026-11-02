@@ -100,6 +100,28 @@ def _day(stamp) -> str:
 _SAID_RE = re.compile(r"(?:^|; )meeting: (?P<who>[^;:]+?) said in (?P<where>[^:;]+): “(?P<quote>[^”]+)”")
 
 
+# A reused answer the ladder found a record disagreeing with, in the words
+# it composes ("CONFLICTED, do not act on either side alone: Jordan Okafor
+# says: ... But pr #216 states otherwise: \"...\". Neither is corroborated
+# over the other; confirm with the owner which stands."). Measured on the
+# Parcelwise take 6 (Nov 2): Jordan's card quoted the whole paragraph as
+# his Jun 1 call. The person's words and the record's are shown apart.
+_CONFLICT_RE = re.compile(
+    r"^CONFLICTED, do not act on either side alone:\s*(?P<who>.+?) says:\s*(?P<answer>.+?)\s*"
+    r"But (?P<record>.+?) states (?P<how>a different figure|otherwise):\s*[\"“](?P<claim>.*?)[\"”]\.?\s*"
+    r"(?:Neither is corroborated over the other; )?[Cc]onfirm with the owner which stands\.?\s*$", re.S)
+
+
+def _conflict(answer: str):
+    """(the earlier answer alone, Raven's note about the record) when the
+    answer is a composed conflict, else (answer, None)."""
+    m = _CONFLICT_RE.match((answer or "").strip())
+    if not m:
+        return (answer or "").strip(), None
+    return m.group("answer").strip(), {"by": m.group("who").strip(), "record": m.group("record").strip(),
+                                       "claim": m.group("claim").strip(), "figure": m.group("how") != "otherwise"}
+
+
 def _said(evidence: str) -> str:
     m = _SAID_RE.search(evidence or "")
     return f"{m.group('who')} said in {m.group('where')}: “{m.group('quote')}”" if m else ""
@@ -168,12 +190,20 @@ def _needs_item(db, row, task_rows, name=""):
     if area and not row["needs_review"]:
         why += f" {area[0].upper()}{area[1:]}."
     guess = (row["prediction"] or "").strip() if row["kind"] == "prediction" or not (row["answer"] or "").strip() else (row["answer"] or "").strip()
+    guess, conflict = _conflict(guess)
+    if conflict:
+        mine = source is not None and _same_person(source, name)
+        whose = "Your" if mine else conflict["by"] + "'s"
+        why = (f"{whose} earlier call and {conflict['record']} disagree"
+               f"{' on the figure' if conflict['figure'] else ''}, so Raven asks you which stands.")
+        if area and not row["needs_review"]:
+            why += f" {area[0].upper()}{area[1:]}."
     return {
         "id": row["id"], "run_id": row["run_id"], "task": row["run_title"], "agent": _agent(row),
         "requester": row["run_requester"] or "", "question": row["question"], "context": _clip(row["context"], 420),
         "options": _options(row["options"]), "status": row["status"], "kind": row["kind"] or "",
         "created_at": row["created_at"], "updated_at": row["updated_at"],
-        "why": why, "guess": guess, "gaps": _gaps(row),
+        "why": why, "guess": guess, "gaps": _gaps(row), "conflict": conflict,
         "guess_from": _call(source, row["source_revision"]) if source is not None else None,
         "review_reason": row["review_reason"] or "", "meanwhile": meanwhile,
         "review": _review(db, row["id"]),

@@ -41,8 +41,8 @@ function attNeeds(item) {
     <div class="att-meta"><span class="att-task"><a href="${attHref(item.run_id)}">${esc(item.task)}</a></span><span>${esc(item.agent || 'Coding agent')}${item.requester ? ' · for ' + esc(attFirst(item.requester)) : ''}</span><span class="att-wait">waiting ${esc(attWait(item.created_at))}</span></div>
     <h3>${esc(item.question)}</h3>
     <p class="att-why"><span class="att-k">Why it reached you</span>${esc(item.why)}</p>
-    ${item.guess ? `<div class="att-guess"><span class="att-k">Raven would apply this, but isn’t sure: your call</span>
-      <p>“${esc(callRefs(item.guess))}”</p>${attGaps(item)}
+    ${item.guess ? `<div class="att-guess"><span class="att-k">${item.conflict ? 'Two readings disagree: your call' : 'Raven would apply this, but isn’t sure: your call'}</span>
+      <p>“${esc(callRefs(item.guess))}”</p>${attConflict(item)}${attGaps(item)}
       ${guessFrom ? `<small>from ${esc(guessFrom.by === attention.person.name ? 'your' : attFirst(guessFrom.by) + '’s')} ${esc(attDate(guessFrom.when))} call${attVia[guessFrom.answered_via] ? ' ' + esc(attVia[guessFrom.answered_via]) : ''} on <a href="${attHref(guessFrom.run_id, guessFrom.id)}">${esc(guessFrom.task)}</a></small>` : ''}
       <button type="button" class="button small" data-att="apply" data-id="${esc(item.id)}">Use this answer</button></div>` : attGaps(item)}
     ${item.options.length ? `<div class="att-options"><span class="att-k">The agent’s options</span>${item.options.map((o, i) => `<button type="button" class="att-option" data-att="option" data-id="${esc(item.id)}" data-n="${i}">${esc(o)}</button>`).join('')}</div>` : ''}
@@ -104,6 +104,12 @@ async function attSendHandOn(row) {
 }
 
 // What the source left open: Raven's own note, never inside the quote.
+function attConflict(item) {
+  const c = item.conflict;
+  if (!c || !c.record) return '';
+  return `<p class="att-why att-gaps"><span class="att-k">But ${esc(c.record)} says</span>“${esc(callRefs(c.claim))}”. Neither is corroborated over the other.</p>`;
+}
+
 function attGaps(item) {
   const gaps = Array.isArray(item.gaps) ? item.gaps.map(g => String(g || '').trim()).filter(Boolean) : [];
   return gaps.length ? `<p class="att-why att-gaps"><span class="att-k">Raven could not find</span>${esc(callRefs(gaps.join('; ')))}.</p>` : '';

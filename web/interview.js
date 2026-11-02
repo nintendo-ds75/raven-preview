@@ -323,7 +323,7 @@ function interviewFollowTower() {
     const fresh = interviewTower(session);
     if (tower && fresh && tower.outerHTML !== fresh) tower.outerHTML = fresh;
   }, 2500);
-  interviewTowerTimer.unref?.();
+  interviewTowerTimer?.unref?.();
 }
 async function advanceInterview(session) {
   interviewStatus('Preparing a follow-up and draft readback. No answer has been signed.');

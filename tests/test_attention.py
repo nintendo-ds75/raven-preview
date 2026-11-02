@@ -1,5 +1,6 @@
 """The attention page: only what waits on this person and why it reached
 them, what Raven settled from their own calls, and their calls that changed."""
+import unittest
 from unittest.mock import patch
 
 from fixtures import OfflineCase
@@ -135,6 +136,23 @@ class AttentionTests(OfflineCase):
         self.assertEqual(item['guess'], ANSWER)
         self.assertIn('likely answer', item['why'])
 
+    def test_a_conflicted_guess_shows_the_call_and_the_record_apart(self):
+        _, source = self.precedent()
+        task, did = self.node(question='How long should billing audit records remain?')
+        composed = (f'CONFLICTED, do not act on either side alone: Policy Owner says: {ANSWER} But pr #216 states '
+                    'a different figure: "Billing keeps ninety days." Confirm with the owner which stands.')
+        self.graph.publish_evidence(did, [], status='proposed', source='memory', kind='evidence', answer=composed,
+                                    answered_by='Policy Owner', source_id=source,
+                                    source_revision=self.store.get_decision(source)['updated_at'])
+        item = next(i for i in attention.overview(self.store, self.owner)['needs_you'] if i['id'] == did)
+        self.assertEqual(item['guess'], ANSWER)
+        self.assertNotIn('CONFLICTED', item['guess'])
+        self.assertEqual(item['conflict'], {'by': 'Policy Owner', 'record': 'pr #216', 'figure': True,
+                                            'claim': 'Billing keeps ninety days.'})
+        self.assertEqual(item['why'], 'Your earlier call and pr #216 disagree on the figure, so Raven asks you which stands.')
+        plain = next(i for i in attention.overview(self.store, self.owner)['needs_you'] if i['id'] == did)
+        self.assertEqual(plain['guess_from']['id'], source)
+
     def test_the_area_a_person_decides_for_is_said_plainly(self):
         self.assertEqual(attention._area('verified: Priya Shah decides for pricing decisions (this one speaks of pricing) (config): Plans'),
                          'you decide for pricing decisions')
@@ -166,3 +184,25 @@ class AttentionTests(OfflineCase):
         item = attention.overview(self.store, self.owner)['needs_you'][0]
         self.assertEqual(set(item['review']), {'has_reliance', 'available', 'pins', 'decision_pins'})
         self.assertFalse(item['review']['has_reliance'])
+
+
+class ConflictedGuessTests(unittest.TestCase):
+    """Measured on the Parcelwise take 6 (Nov 2): Jordan's card quoted the
+    ladder's whole "CONFLICTED, do not act on either side alone: …" paragraph
+    as his Jun 1 call. His words and the record's travel apart."""
+
+    COMPOSED = ('CONFLICTED, do not act on either side alone: Jordan Okafor says: One billable assistant use is '
+                'one completed answer to one question. But pr #216 states otherwise: "Timeouts are a third of the '
+                'answers merchants never get; one retry with the same request id fixes most of them." Neither is '
+                'corroborated over the other; confirm with the owner which stands.')
+
+    def test_the_composed_conflict_splits_into_the_call_and_the_record(self):
+        answer, conflict = attention._conflict(self.COMPOSED)
+        self.assertEqual(answer, 'One billable assistant use is one completed answer to one question.')
+        self.assertEqual(conflict, {'by': 'Jordan Okafor', 'record': 'pr #216', 'figure': False,
+                                    'claim': 'Timeouts are a third of the answers merchants never get; one retry with '
+                                             'the same request id fixes most of them.'})
+        figure = self.COMPOSED.replace('states otherwise', 'states a different figure').replace(
+            ' Neither is corroborated over the other;', '')
+        self.assertTrue(attention._conflict(figure)[1]['figure'])
+        self.assertEqual(attention._conflict('Thirty days.'), ('Thirty days.', None))
