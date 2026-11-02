@@ -44,7 +44,7 @@ function attNeeds(item) {
     ${item.guess ? `<div class="att-guess"><span class="att-k">Raven would apply this, but isn’t sure: your call</span>
       <p>“${esc(callRefs(item.guess))}”</p>${attGaps(item)}
       ${guessFrom ? `<small>from ${esc(guessFrom.by === attention.person.name ? 'your' : attFirst(guessFrom.by) + '’s')} ${esc(attDate(guessFrom.when))} call${attVia[guessFrom.answered_via] ? ' ' + esc(attVia[guessFrom.answered_via]) : ''} on <a href="${attHref(guessFrom.run_id, guessFrom.id)}">${esc(guessFrom.task)}</a></small>` : ''}
-      <button type="button" class="button small" data-att="apply" data-id="${esc(item.id)}">Use this answer</button></div>` : ''}
+      <button type="button" class="button small" data-att="apply" data-id="${esc(item.id)}">Use this answer</button></div>` : attGaps(item)}
     ${item.options.length ? `<div class="att-options"><span class="att-k">The agent’s options</span>${item.options.map((o, i) => `<button type="button" class="att-option" data-att="option" data-id="${esc(item.id)}" data-n="${i}">${esc(o)}</button>`).join('')}</div>` : ''}
     <p class="att-meanwhile">${esc(item.meanwhile)}</p>
     ${item.context ? `<details class="att-found"><summary>What the agent found</summary><p>${esc(item.context)}</p></details>` : ''}

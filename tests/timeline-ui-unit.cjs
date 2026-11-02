@@ -36,7 +36,7 @@ const rows = [
     refs: [{kind: 'decision', id: 'd1', run_id: 'r1', label: 'What is the per-use rate'}], people: ['Dana Whitfield'], count: 1},
   {kind: 'guess', at: stamp(11, 54), text: 'Raven\'s guess on “Is Northwind charged” from Dana\'s Oct 29 call; Noah confirms',
     refs: [{kind: 'call', id: 'p2', run_id: 'r1', label: "Dana's Oct 29 call"}], people: ['Noah Kim'], count: 1},
-  {kind: 'settled_record', at: stamp(11, 56), text: 'Settled “Is Northwind charged” from the repo\'s own record: PR #36 · #pricing; Noah signs it',
+  {kind: 'settled_record', at: stamp(11, 56), text: 'Found an answer in the repo\'s own record for “Is Northwind charged”: PR #36 · #pricing; Noah signs it',
     refs: [{kind: 'pr', id: '36', label: 'PR #36'}, {kind: 'slack', id: 'pricing', label: '#pricing'}, {kind: 'ticket', id: 'BILL-9', label: 'BILL-9'}], people: [], count: 1},
   {kind: 'answered', at: stamp(11, 58), text: 'Dana answered “What is the per-use rate” on Slack <b>', refs: [], people: ['Dana Whitfield'], count: 1},
 ];

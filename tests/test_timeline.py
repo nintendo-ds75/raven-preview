@@ -81,9 +81,27 @@ class TemplateTests(OfflineCase):
         cited = "meeting meeting:m1:chunk:00000 [transcript]; commit 387e508c8d5d; merge 36; slack pricing-2026-09-24 [decided]; ticket BILL-201 (resolved): title; doc adr-0002: title"
         rows = self.build([d], [event(1, "resolve", 6, did="a", source="record", cited=cited, kind="joint-composition")],
                           meetings={"m1": "Pilot pricing sync, Oct 29"})
-        self.assertEqual(texts(rows), ["Settled “Is Northwind charged for Pilot” from the repo's own record: the Pilot pricing sync, Oct 29 · "
+        # An answer its owner still signs is found, not settled: "Settled ...;
+        # Noah signs it" contradicted itself on the Parcelwise dry run.
+        self.assertEqual(texts(rows), ["Found an answer in the repo's own record for “Is Northwind charged for Pilot”: the Pilot pricing sync, Oct 29 · "
                                        "commit 387e508 · PR #36 · #pricing · BILL-201 · ADR-0002; Noah signs it"])
         self.assertEqual([r["kind"] for r in rows[0]["refs"]], ["meeting", "commit", "pr", "slack", "ticket", "doc"])
+        part = {**d, "status": "partial"}
+        rows = self.build([part], [event(1, "resolve", 6, did="a", source="record", cited="merge 36", kind="joint-composition")])
+        self.assertEqual(texts(rows), ["Found a partial answer in the repo's own record for “Is Northwind charged for Pilot”: PR #36; Noah signs the rest"])
+        # Nobody signs it: settled.
+        rule = {**d, "status": "resolved", "signoff": "rule"}
+        rows = self.build([rule], [event(1, "resolve", 6, did="a", source="record", cited="merge 36", kind="joint-composition")])
+        self.assertEqual(texts(rows), ["Settled “Is Northwind charged for Pilot” from the repo's own record: PR #36; nobody asked"])
+        # Two found within two minutes fold, and still say who signs.
+        e = decision("b", "Which plans are metered?", status="proposed", signoff="required", source="record", owner_name="Noah Kim")
+        rows = self.build([d, e], [event(1, "resolve", 6, did="a", source="record", cited="merge 36", kind="joint-composition"),
+                                   event(2, "resolve", 6, 30, did="b", source="record", cited="doc adr-0002: plans", kind="joint-composition")])
+        self.assertEqual(texts(rows), ["Found answers in the repo's own record for 2, Noah signs them: Is Northwind charged for Pilot (PR #36) · Which plans are metered (ADR-0002)"])
+        rows = self.build([rule, {**e, "status": "resolved", "signoff": "rule"}],
+                          [event(1, "resolve", 6, did="a", source="record", cited="merge 36", kind="joint-composition"),
+                           event(2, "resolve", 6, 30, did="b", source="record", cited="doc adr-0002: plans", kind="joint-composition")])
+        self.assertEqual(texts(rows), ["Settled 2 from the repo's own record: Is Northwind charged for Pilot (PR #36) · Which plans are metered (ADR-0002)"])
 
     def test_settled_from_a_meeting_quotes_the_speaker(self):
         d = decision("a", "Which plans are charged per use for Pilot?", status="resolved", signoff="rule", source="meeting",

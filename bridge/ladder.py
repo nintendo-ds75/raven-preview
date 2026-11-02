@@ -620,17 +620,138 @@ def _disagrees(cfg: Config, question: str, answer: str, record) -> bool:
     return verdict.startswith("CONFLICT")
 
 
+def _clauses(body: str) -> list[str]:
+    """A text as the clauses a reader weighs one by one: sentences, the
+    parts of a semicolon list, and what follows a contrasting comma."""
+    return [c.strip() for c in re.split(r"(?<=[.!?])\s+|;\s*|,\s*(?:but|however|although|while)\s+", body) if c.strip()]
+
+
 def _is_pure_refusal(text: str) -> bool:
     """Whether a composed text only says what the sources do not say:
     every clause states a gap, or the first does and nothing is decided."""
     body = text.strip()
     if not _states_a_gap(body):
         return False
-    clauses = [c for c in re.split(r"(?<=[.!?])\s+|;\s*|,\s*(?:but|however|although|while)\s+", body) if c.strip()]
+    clauses = _clauses(body)
     if clauses and all(_GAP_RE.search(c.lower()) for c in clauses):
         return True
     first = body.split(".")[0].lower()
     return bool(_GAP_RE.search(first)) and not _DECIDED_RE.search(body.lower())
+
+
+# A text that says the call is still open, or only who makes it, is not an
+# answer, however it is phrased. Measured on the Parcelwise dry run (Nov 2):
+# "Priya owns deciding the free monthly allowance and rate for assistant
+# metering before it goes live" (the model's reading of a Slack line,
+# "Priya owns pricing for Q4, number not decided") and Priya's own "I still
+# need to land the rate and whether there's a free monthly allowance" were
+# served on For you as "Raven would apply this, but isn't sure: your call"
+# with a "Use this answer" button, while Being built said nothing on record
+# settles it. The strong phrases stand on their own; the weak ones, and a
+# clause that only names a known person as the decider, count only when the
+# clause carries no figure, so "$0.04 per answer, confirmed before it goes
+# live" is still an answer.
+_OPEN_RE = re.compile(
+    r"\bowns? (?:deciding|the (?:call|decision|number|rate|allowance|price|figure|choice)|this (?:call|decision|one))\b"
+    r"|(?:\bnot|\bnever|n't)\s+(?:yet\s+|been\s+|formally\s+|finally\s+|fully\s+)*"
+    r"(?:decided|landed|agreed(?: on)?|finali[sz]ed|nailed down|pinned down|worked out)\b"
+    r"|\bundecided\b|\btbd\b|\btbc\b"
+    r"|\bstill (?:needs?|has|have|had) to (?:land|decide|pick|choose|settle|set|work out|figure out|nail down|pin down"
+    r"|confirm|sign off(?: on)?)\b"
+    r"|\b(?:still |yet )?to be (?:decided|landed|agreed(?: on)?|finali[sz]ed|worked out|nailed down|pinned down|confirmed"
+    r"|determined(?! by))\b"
+    r"|\bwill (?:write up|circulate|propose|come back with|get back (?:to|with)|follow up (?:on|with))\b"
+    r"|\bwrites? up (?:the )?options\b"
+    r"|\bnothing (?:is|has been|was) (?:set|decided|agreed|landed|fixed|on record|recorded|written down)\b"
+    r"|\bno (?:\w+ ){0,2}(?:rate|number|figure|price|allowance|date|value|cutoff|threshold|list) (?:is|has been|was) "
+    r"(?:recorded|set|decided|agreed|landed|on record|given|named)\b"
+    r"|\bno (?:\w+ ){0,2}(?:rate|number|figure|price|allowance|date|value|cutoff|threshold|list) on record\b"
+    r"|\bopen question\b|\b(?:is|are|remains?|stays?) still open\b|\bremains? open\b")
+_OPEN_WEAK_RE = re.compile(
+    r"\bbefore (?:it|this|that|we|anything|the \w+) (?:goes|go|is|starts?) (?:live|counting|charging|shipping)\b"
+    r"|\bowns? (?:\w+ ){0,2}(?:pricing|billing|the (?:rate|number|allowance|price|figure|list|cutoff|date))\b"
+    r"|\bwill (?:decide|land|pick|choose|settle)\b"
+    r"|\bis (?:still )?(?:deciding|working (?:it|this|that )?out|landing|on it)\b"
+    r"|\b(?:needs?|has|have) to (?:land|decide|pick|choose|work out|figure out|nail down|pin down)\b")
+# Who decides, said of a named person: "Priya decides the allowance".
+_DECIDER_RE = re.compile(
+    r"\b(?:owns?|decides?|gets? to decide|is deciding|will decide|has to decide|needs? to decide|signs? off(?: on)?"
+    r"|makes? (?:the|that|this) call|is (?:still )?(?:landing|working (?:it|this|that) out|on it)"
+    r"|is (?:the )?(?:one|person) (?:who|to) (?:decides?|lands?|picks?))\b|'s call\b")
+# A figure or amount: a clause that states one is saying something.
+_FIGURE_RE = re.compile(
+    r"\d|[$€£%¢]|\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty"
+    r"|forty|fifty|sixty|ninety|hundred|thousand)\s+(?:cents?|dollars?|percent|per|each|days?|hours?|minutes?|weeks?"
+    r"|months?|years?|answers?|uses?|events?)\b")
+_WHO_Q_RE = re.compile(r"\bwho(?:m|se|'s)?\b")
+
+
+def _names_a_decider(clause: str, people) -> bool:
+    """The clause names one of `people` (full name or first name) as the
+    one who decides, and nothing else."""
+    if not _DECIDER_RE.search(clause):
+        return False
+    for name in people:
+        name = " ".join(str(name or "").split()).lower()
+        if not name:
+            continue
+        first = name.split()[0]
+        if re.search(rf"\b{re.escape(name)}\b", clause) or (len(first) > 2 and re.search(rf"\b{re.escape(first)}\b", clause)):
+            return True
+    return False
+
+
+def _states_no_answer(text: str, people=(), question: str = "") -> bool:
+    """Whether a candidate answer only says the call is still open, or only
+    names who makes it: every clause states a gap, says the value is not
+    decided or still to be landed, or (with no figure in it) names one of
+    `people` as the decider. Such a text is context for the open call,
+    never a prediction, a proposal or an answer. Conservative: one clause
+    that says anything else, or the question asking who decides, and the
+    text is taken as an answer."""
+    body = " ".join(str(text or "").split())
+    if not body or _WHO_Q_RE.search((question or "").lower()):
+        return False
+    clauses = _clauses(body)
+    if not clauses:
+        return False
+    for clause in clauses:
+        low = clause.lower()
+        if _GAP_RE.search(low) or _OPEN_RE.search(low):
+            continue
+        if _FIGURE_RE.search(low):
+            return False
+        if _OPEN_WEAK_RE.search(low) or _names_a_decider(low, people):
+            continue
+        return False
+    return True
+
+
+def _known_people(store) -> list[str]:
+    """The names Raven knows, for the decider reading; [] when the store
+    has no people table to read."""
+    try:
+        return [p["name"] for p in store.people(active_only=False)]
+    except Exception:
+        return []
+
+
+def _cited_prose(cited: str) -> str:
+    """'pr 220 and slack founders' from the ladder's citation list ('pr 220;
+    slack founders; left out, not adopted: ...')."""
+    parts = [c.strip() for c in (cited or "").split(";") if c.strip() and not c.strip().startswith("left out")]
+    parts = [re.sub(r":\s.*$", "", p) for p in parts]
+    if not parts:
+        return "the records"
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
+def _open_note(cited: str, text: str) -> str:
+    """Raven's note beside an open call, shown as "Raven could not find
+    ...": what the sources that spoke of it said instead of an answer."""
+    says = "say" if ";" in (cited or "").split("left out")[0] else "says"
+    return (f"a settled value: {_cited_prose(cited)} {says} only that the call is still open "
+            f"(“{_word_trunc(text, 160)}”)")
 
 
 def _superseded_by_newer(store: Graph, repo: str, chosen) -> object | None:
@@ -1489,6 +1610,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
     result = RunResult(task_id=task_id, title=title)
     decisions = [d for d in (decisions or []) if isinstance(d, dict) and d.get("question")]
 
+    known_people = _known_people(store)
     for d in decisions:
         question = d["question"].strip()
         category = str(d.get("category", "") or "").strip() or guess_category(question)
@@ -1546,6 +1668,9 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             result.open.append({"id": did, "question": asked_q, "owner": None, "note": missing_history})
             continue
         why_open: list[str] = []
+        # What a source said instead of an answer: that the call is still
+        # open, or only who makes it. Raven's note beside the open node.
+        open_notes: list[str] = []
         # A signed answer and a settled record that disagree on a figure:
         # set when that is found, and then neither is served or proposed.
         conflict = None
@@ -2088,6 +2213,12 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     joint = None
                 else:
                     joint = _compose_joint(cfg, question, joint_rows, given=_given(d_context, d_facts))
+                if joint is not None and _states_no_answer(joint[0], known_people, question):
+                    # The records say the call is open, or who makes it: not
+                    # an answer to propose, a note beside the open call.
+                    open_notes.append(_open_note(joint[1], joint[0]))
+                    why_open.append(f"semantic: {_cited_prose(joint[1])} say only that the call is still open, not what it is")
+                    joint = None
                 if joint is not None:
                     j_answer, j_cited, *j_more = joint
                     j_partial = bool(j_more and j_more[0]) or _states_a_gap(j_answer)
@@ -2222,6 +2353,14 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                                                           "served": "neither"})
             pick, mem_lex = None, False
 
+        if (pick is not None and pick[0] == "memory" and not pick[1].authorized
+                and _states_no_answer(pick[1].answer or "", known_people, question)):
+            # An unsigned earlier answer that only says the call is open is
+            # nothing to propose: the call stays open, with the note.
+            open_notes.append(_open_note(f"earlier decision {pick[1].id}", pick[1].answer or ""))
+            why_open.append(f"memory: decision {pick[1].id} says only that the call is still open, not what it is; "
+                            "nothing to propose")
+            pick, mem_lex = None, False
         if pick is not None:
             kind, item = pick
             mem_conflict = ""
@@ -2472,6 +2611,10 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             if answer is not None and _is_pure_refusal(answer):
                 why_open.append(f"records: {citation} does not state an answer to this question")
                 answer = None
+            elif answer is not None and _states_no_answer(answer, known_people, question):
+                open_notes.append(_open_note(citation, answer))
+                why_open.append(f"records: {citation} says only that the call is still open, not what it is")
+                answer = None
             if not reversal_request and answer is None and category == "data-source" and _is_settled(item) \
                     and any(t in _RETRO_MACHINERY for t in _meaningful_terms(question)):
                 pointer = (f"Not stated in the indexed record. The change itself is {citation}, by "
@@ -2508,6 +2651,10 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     joint2 = None
                 else:
                     joint2 = _compose_joint(cfg, question, joint_rows2, given=_given(d_context, d_facts))
+                if joint2 is not None and _states_no_answer(joint2[0], known_people, question):
+                    open_notes.append(_open_note(joint2[1], joint2[0]))
+                    why_open.append(f"records: {_cited_prose(joint2[1])} say only that the call is still open, not what it is")
+                    joint2 = None
                 if joint2 is not None:
                     j_answer2, j_cited2, *j_more2 = joint2
                     j_partial2 = bool(j_more2 and j_more2[0]) or _states_a_gap(j_answer2)
@@ -2766,7 +2913,8 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                            if route_notes else "no routing signal cleared the bar")
             store.update_decision(did, status=OPEN, owner="", kind="new",
                                   owner_evidence=unknown_why,
-                                  evidence="; ".join(why_open))
+                                  evidence="; ".join(why_open),
+                                  **({"gaps": json.dumps(open_notes)} if open_notes else {}))
             store.append_event("route_unknown", {"task_id": task_id, "decision_id": did})
             result.open.append({"id": did, "question": question, "owner": None, "ranked": [],
                                 "note": "Raven does not know who owns this from the graph."})
@@ -2792,6 +2940,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             store.update_decision(did, status=OPEN, owner=owner, kind="prediction" if proposal else "new",
                                   owner_evidence="; ".join(evidence),
                                   evidence="; ".join(why_open + ([proposal_why] if proposal_why else [])),
+                                  **({"gaps": json.dumps(open_notes)} if open_notes else {}),
                                   **({"prediction": proposal, "source_id": proposal_from,
                                       "source_revision": proposal_observations[proposal_from]} if proposal else {}))
             if proposal:
@@ -2902,7 +3051,7 @@ def _how_they_decide(store: Graph, cfg, repo: str, question: str, context: str, 
         text, relation = llm_mod.compose_proposal(cfg, owner, question, context, [
             {"question": p.question, "answer": p.answer, "rationale": p.rationale, "scope": sc}
             for _s, p, sc in priors])
-        if text and not _takes_a_choice(text, choices):
+        if text and (not _takes_a_choice(text, choices) or _states_no_answer(text, (owner,), question)):
             return "", "", ""
         if text:
             # A concrete detail none of their answers states is taken out and
@@ -2922,7 +3071,7 @@ def _how_they_decide(store: Graph, cfg, repo: str, question: str, context: str, 
                                    "confirm" + ("; it leaves open what their earlier answers do not settle"
                                                 if trimmed else "") + scope_note)
         return "", "", ""
-    if not _takes_a_choice(best.answer, choices):
+    if not _takes_a_choice(best.answer, choices) or _states_no_answer(best.answer, (owner,), question):
         return "", "", ""
     return best.answer, best.id, (f"how they decide: {owner} answered \"{_word_trunc(best.question, 80)}\" "
                                   f"(decision {best.id}, similarity {best_score:.2f})"
