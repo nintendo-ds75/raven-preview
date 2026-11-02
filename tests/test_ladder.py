@@ -131,8 +131,14 @@ class SupportedAnswerTests(LadderCase):
         d = self.first(result)
         self.assertEqual(d.status, "partial", d.evidence)
         self.assertNotIn("same mechanism holds", d.answer)
-        self.assertTrue(d.answer.endswith("The record does not establish: Whether jitter applies when the parsed "
-                                          "delay is zero."), d.answer)
+        # What the record leaves open is Raven's note beside the answer, not
+        # part of the words a page shows as the person's. Measured on the
+        # Harborline dry run: a card quoted "The earlier answer does not
+        # establish: ..." as Raj's.
+        self.assertNotIn("does not establish", d.answer)
+        self.assertEqual(d.answer, "The rule caps Retry-After jitter: nonnegative jitter is added to the capped base "
+                                   "and the total is clamped to retry_after_max.")
+        self.assertEqual(d.gaps, ["Whether jitter applies when the parsed delay is zero"])
 
     def test_an_answer_the_record_fully_supports_is_kept_as_it_is(self):
         d = self.first(self.ask({"claims": [{"claim": "capped", "support": "stated"},

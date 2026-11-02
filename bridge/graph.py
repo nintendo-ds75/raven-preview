@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import sqlite3
 import struct
 import threading
@@ -259,6 +260,10 @@ _DECISION_COLUMNS = [
     # one line on why the precedent a settled decision came from fits it.
     ("answered_via", "TEXT NOT NULL DEFAULT ''"),
     ("fit_reason", "TEXT NOT NULL DEFAULT ''"),
+    # What the source a composed answer came from leaves open, as a JSON
+    # list: Raven's own note, kept out of the answer so a page never shows
+    # it as the person's words. Empty when the answer is whole.
+    ("gaps", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 _RUN_COLUMNS = [
@@ -621,6 +626,7 @@ class Decision:
     rule_scope: str = ""
     applicability: dict = field(default_factory=dict)
     source_reuse_uncertain: bool = False
+    gaps: list[str] = field(default_factory=list)
 
     @property
     def authorized(self) -> bool:
@@ -682,7 +688,40 @@ def _row_to_decision(row: sqlite3.Row) -> Decision:
         rule_scope=(row["rule_scope"] if "rule_scope" in keys else "") or "",
         source_reuse_uncertain=bool(row["source_reuse_uncertain"]) if "source_reuse_uncertain" in keys else False,
         applicability=parse_applicability((row["applicability"] if "applicability" in keys else "") or ""),
+        gaps=_load_options(row["gaps"]) if "gaps" in keys else [],
     )
+
+
+# The one sentence the composer's support check writes for what its source
+# leaves open (bridge/ladder.py, _supported): "The record does not establish:
+# a; b." for one record, "The records do not" for several, "The earlier
+# answer does not" for a memory, "Their earlier answers do not" for a
+# proposal. Measured on the Harborline dry run: a page quoted it as Raj's
+# words, and a proposal to Noah ended in it.
+_GAP_LEAD_RE = re.compile(r"\s*(?:The records?|The earlier answer|Their earlier answers) (?:does|do) not establish: ")
+# A note the record rung appends after the answer: it stays with the answer.
+_GAP_TAIL_RE = re.compile(r"\s\((?:note:|no newer indexed record|the record also names)")
+
+
+def split_gaps(text: str) -> tuple[str, list[str]]:
+    """The answer text without the composer's what-is-not-established
+    sentence, and that sentence's points as a list. Text without the
+    sentence comes back as it is with no points."""
+    text = text or ""
+    lead = None
+    for lead in _GAP_LEAD_RE.finditer(text):
+        pass
+    if lead is None:
+        return text, []
+    rest = text[lead.end():]
+    tail = _GAP_TAIL_RE.search(rest)
+    listing, after = (rest[:tail.start()], rest[tail.start():]) if tail else (rest, "")
+    gaps = [g.strip().rstrip(".").strip() for g in listing.split(";")]
+    gaps = [g for g in gaps if g]
+    answer = text[:lead.start()].rstrip()
+    if after.strip():
+        answer = (answer + " " + after.strip()).strip()
+    return answer, gaps
 
 
 def parse_applicability(raw) -> dict:
@@ -2063,7 +2102,7 @@ class Graph:
                    "prediction", "source_id", "routing_reason", "rationale",
                    "parent_id", "client_ref", "depth", "origin", "signoff", "signed_by", "options", "brief",
                    "source_revision", "needs_review", "review_reason", "signed_revision", "signed_hash",
-                   "scope_key", "model_pending", "fit_reason"}
+                   "scope_key", "model_pending", "fit_reason", "gaps"}
         sets, vals = [], []
         for k, v in fields.items():
             if k not in allowed:
@@ -2112,6 +2151,13 @@ class Graph:
     def publish_evidence(self, decision_id: str, rows, **fields) -> None:
         """Publish exact used source versions and answer in one write boundary."""
         from . import context_memory as cm
+        if 'answer' in fields:
+            # What the source leaves open is Raven's note beside the answer,
+            # never part of the words a page attributes to a person.
+            fields['answer'], gaps = split_gaps(fields['answer'] or '')
+            fields['gaps'] = json.dumps(gaps) if gaps else ''
+        if fields.get('prediction'):
+            fields['prediction'] = split_gaps(fields['prediction'])[0]
         pins = [p for row in rows if (p := cm.pin(row, dict(row).get('_evidence_role', 'support')))]
         with self.transaction():
             cm.validate(self.db, decision_id, pins)

@@ -1338,6 +1338,19 @@ def _meaningful_terms(text: str) -> list[str]:
     return out
 
 
+def _wording_fit(asked: str, candidate: str) -> float:
+    """The share of the asked question's words that the candidate question
+    repeats: every word of three or more letters, stemmed, question words
+    included. 1.0 means the candidate asks this question in its own words,
+    whatever else it adds; the meaningful-term overlap cannot tell that,
+    because it drops the words (what, one) that carry what is asked."""
+    words = {llm_mod.stem(t) for t in re.findall(r"[a-z0-9]{3,}", (asked or "").lower())}
+    if not words:
+        return 0.0
+    have = {llm_mod.stem(t) for t in re.findall(r"[a-z0-9]{3,}", (candidate or "").lower())}
+    return len(words & have) / len(words)
+
+
 def _word_trunc(text: str, n: int) -> str:
     if len(text) <= n:
         return text
@@ -1543,10 +1556,33 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                      for r in _cited_refs(question)]
         fup = bool(q_ref_res or _FOLLOWUP_REF_RE.search(question.lower()))
 
+        fit_of: dict[str, float] = {}
+
+        def _fit(p) -> float:
+            if p.id not in fit_of:
+                fit_of[p.id] = _wording_fit(question, p.question)
+            return fit_of[p.id]
+
+        def _asks_this(p) -> bool:
+            """The candidate asks this question in its own words: every
+            meaningful term and every word of it appear in the candidate."""
+            return bool(qt) and qt <= set(_meaningful_terms(p.question)) and _fit(p) >= 1.0
+
         def _hybrid(sim: float, p) -> float:
             blob = (p.question + " " + (p.answer or "") if fup else p.question)
             pt = set(_meaningful_terms(blob))
             ov = (len(qt & pt) / min(len(qt), len(pt)) if qt and pt else 0.0)
+            pq = set(_meaningful_terms(p.question))
+            if ov >= DIRECT_MEMORY_MIN and qt and qt <= pq and pq - qt and _fit(p) < 1.0:
+                # A superset match: every term of this question sits inside
+                # a longer question that asks about more and does not repeat
+                # these words. A neighbouring question, read as a near match,
+                # never as the question itself. Measured on the Harborline
+                # dry run: "What counts as one Pilot use?" (terms: count,
+                # pilot, use) was settled from "Does a retried Pilot chat
+                # turn count as a second use, and does a failed generation
+                # count?" at "direct, similarity 1.00".
+                ov = min(ov, DIRECT_MEMORY_MIN - 0.01)
             if q_ref_res and any(rx.search(blob) for rx in q_ref_res):
                 ov = max(ov, 0.85)
             return max(sim, ov)
@@ -1581,7 +1617,19 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
         # recency ranks what stands now, not what was decided then. Found
         # when a test's dates aged: an April decision decayed below an
         # August one on a question about the April decision.
-        aged = (lambda p: 1.0) if guess_category(question) == "data-source" else (lambda p: _recency(p.updated_at))
+        retrospective = guess_category(question) == "data-source"
+
+        def aged(p) -> float:
+            # The question asked, in its own words, does not decay either:
+            # age ranks answers to the same question against each other
+            # (the newest wins, below) and never ranks a neighbouring
+            # question above the question itself. Measured on the Harborline
+            # dry run: an eleven-month-old answer to the question asked
+            # decayed to 0.40 while a newer call about retries, a superset of
+            # its three terms, scored 1.00 and was cited in its place.
+            if retrospective or _asks_this(p):
+                return 1.0
+            return _recency(p.updated_at)
         scored = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in raw),
                         key=lambda t: -t[0])
         rule_candidates = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in rule_raw),
@@ -1608,9 +1656,16 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 pool = [past] + rivals
                 pool.sort(key=lambda p: -p.updated_at)
                 winner = pool[0]
+                # A preference for this question, not a retirement: the
+                # others stay approved and unsuperseded. Measured on the
+                # Harborline dry run: the log said Dana's Sep 24 call was
+                # "retired" three times while it stood untouched.
+                others = ", ".join(f"{p.id} ({ts_to_iso(p.updated_at)[:10]})" for p in pool[1:])
                 store.append_event("conflict_resolved", {
-                    "task_id": task_id, "decision_id": did, "kept": winner.id,
-                    "retired": [p.id for p in pool[1:]], "rule": "newest answer wins"})
+                    "task_id": task_id, "decision_id": did, "preferred": winner.id,
+                    "over": [p.id for p in pool[1:]], "rule": "newest answer preferred for this question",
+                    "summary": (f"preferred {winner.id} ({ts_to_iso(winner.updated_at)[:10]}) over {others} for this "
+                                f"question; {'both' if len(pool) == 2 else 'all'} stand")})
                 past = winner
             mem_pick = (eff, sim, past)
         elif scored:
@@ -2164,7 +2219,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 else:
                     mkind = "semantic"
                     detail = f"reused from decision {item.id}, {pick_note}, checked against this question"
-                mem_partial = _states_a_gap(item.answer) or joint_partial
+                mem_partial = _states_a_gap(item.answer) or joint_partial or bool(item.gaps)
                 rival = pre_rival[0] if pre_rival else _record_contradicting(store, cfg, repo, question, item.answer)
                 if rival is not None and _numeric_clash(item.answer, (rival["title"] or "") + " " + (rival["body"] or "")):
                     # An unsettled record, or an unsigned answer: the figures

@@ -86,4 +86,29 @@ const decisions = [
   assert.equal(text(h.buildLine(settled, h.judge(settled))), 'From Raj’s call · Jan 22 · nobody asked');
 }
 
+// What a source left open is Raven's note under the answer, never inside it.
+{
+  const prior = {...base, id: 'p2', question: 'How are usage reads paged?', status: 'approved', answered_by: 'Raj Patel', created_at: '2026-02-12T12:00:00Z'};
+  const partial = {...base, id: 'pg', question: 'How are Pilot usage reads paged for billing?', status: 'partial', signoff: 'required',
+    source: 'memory', source_id: 'p2', source_revision: '2026-02-12T12:00:00Z', answered_by: 'Raj Patel',
+    answer: 'Pilot usage reads are paged by cursor, never by offset (ADR-0002).',
+    gaps: '["Why is the cursor-based paging method specifically necessary", "what requires readers to walk every page"]'};
+  assert.ok(source.indexOf('function buildDetail(d, j)') > 0, 'buildDetail is shipped');
+  const c = {state: {runs: [run], decisions: [prior, partial], me: null}, esc: v => String(v ?? ''), avatar: () => '', plural: (n, one) => `${n} ${one}`, ago: () => 'now', askFirst: n => String(n || '').split(/\s+/)[0]};
+  vm.createContext(c);
+  const end2 = source.indexOf('function buildAttention(stories)');
+  vm.runInContext(source.slice(source.indexOf('function buildSources(d)'), end2) + '\n;globalThis.fns = {buildDetail, judge, buildGaps};', c);
+  const j = c.fns.judge(partial);
+  const html = c.fns.buildDetail(partial, j);
+  const answer = html.match(/<p class="build-answer">([^<]*)<\/p>/)[1];
+  assert.equal(answer, 'Pilot usage reads are paged by cursor, never by offset (ADR-0002).');
+  assert.doesNotMatch(answer, /does not establish/);
+  assert.match(html, /class="build-note build-gaps">Raven could not find: Why is the cursor-based paging method specifically necessary; what requires readers to walk every page\./);
+  // Arrays cross the vm realm, so compare their JSON.
+  assert.equal(JSON.stringify(c.fns.buildGaps({gaps: ['a', '', ' b ']})), '["a","b"]');
+  assert.equal(JSON.stringify(c.fns.buildGaps({gaps: 'not json'})), '[]');
+  assert.equal(JSON.stringify(c.fns.buildGaps({})), '[]');
+  assert.doesNotMatch(c.fns.buildDetail({...partial, gaps: ''}, j), /could not find/);
+}
+
 console.log('being-built ui unit checks passed');

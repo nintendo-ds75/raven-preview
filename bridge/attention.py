@@ -60,6 +60,16 @@ def _same_person(row, name: str) -> bool:
     return bool(name) and name in {(row[k] or "").strip().lower() for k in ("answered_by", "rule_by", "owner_name") if k in row.keys()}
 
 
+def _gaps(row) -> list[str]:
+    """What the source left open, Raven's own note: shown as such, never
+    inside the quoted answer."""
+    try:
+        parsed = json.loads(row["gaps"]) if "gaps" in row.keys() and row["gaps"] else []
+    except ValueError:
+        return []
+    return [str(g) for g in parsed if str(g).strip()] if isinstance(parsed, list) else []
+
+
 def _source(db, source_id):
     if not source_id:
         return None
@@ -114,7 +124,8 @@ def _needs_item(db, row, task_rows, name=""):
         "requester": row["run_requester"] or "", "question": row["question"], "context": _clip(row["context"], 420),
         "options": _options(row["options"]), "status": row["status"], "kind": row["kind"] or "",
         "created_at": row["created_at"], "updated_at": row["updated_at"],
-        "why": why, "guess": guess, "guess_from": _call(source, row["source_revision"]) if source is not None else None,
+        "why": why, "guess": guess, "gaps": _gaps(row),
+        "guess_from": _call(source, row["source_revision"]) if source is not None else None,
         "review_reason": row["review_reason"] or "", "meanwhile": meanwhile,
     }
 
@@ -123,7 +134,7 @@ def _handled_item(db, row, source, call=None):
     return {
         "id": row["id"], "run_id": row["run_id"], "task": row["run_title"], "agent": _agent(row),
         "question": row["question"], "answer": row["answer"] or "", "fit_reason": row["fit_reason"] or "",
-        "when": row["updated_at"], "updated_at": row["updated_at"],
+        "gaps": _gaps(row), "when": row["updated_at"], "updated_at": row["updated_at"],
         "call": call if call is not None else _call(source, row["source_revision"]),
     }
 

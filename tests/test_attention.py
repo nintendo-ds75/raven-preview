@@ -103,6 +103,31 @@ class AttentionTests(OfflineCase):
         self.assertTrue(change['now_precedent'])
         self.assertEqual(attention.overview(self.store, self.other)['changed'], [])
 
+    def test_what_the_source_left_open_is_ravens_note_not_the_persons_words(self):
+        """Measured on the Harborline dry run: a card quoted "The earlier
+        answer does not establish: Why is the cursor-based paging method
+        necessary..." as Raj's words. The gaps travel beside the answer."""
+        _, source = self.precedent()
+        task, did = self.node()
+        self.settle_from_memory(did)
+        self.graph.publish_evidence(did, [], status='partial', source='memory', kind='evidence',
+                                    answer=ANSWER + ' The earlier answer does not establish: Whether the thirty days '
+                                    'count from the last read; what happens to records on legal hold.',
+                                    answered_by='Policy Owner', signoff='rule', signed_by='Policy Owner',
+                                    source_id=source, source_revision=self.store.get_decision(source)['updated_at'])
+        handled = attention.overview(self.store, self.owner)['handled'][0]
+        self.assertEqual(handled['answer'], ANSWER)
+        self.assertNotIn('does not establish', handled['answer'])
+        self.assertEqual(handled['gaps'], ['Whether the thirty days count from the last read',
+                                           'what happens to records on legal hold'])
+        _, open_call = self.node(question='How long should billing audit records remain?')
+        self.graph.publish_evidence(open_call, [], status='proposed', source='record', kind='prediction',
+                                    answer='Thirty days. The records do not establish: whether billing differs.',
+                                    prediction='Thirty days. The records do not establish: whether billing differs.')
+        item = next(i for i in attention.overview(self.store, self.owner)['needs_you'] if i['id'] == open_call)
+        self.assertEqual(item['guess'], 'Thirty days.')
+        self.assertEqual(item['gaps'], ['whether billing differs'])
+
     def test_an_unsigned_guess_says_raven_is_not_sure(self):
         task, did = self.node()
         self.graph.db.execute("UPDATE decisions SET kind='prediction', prediction=? WHERE id=?", (ANSWER, did))
