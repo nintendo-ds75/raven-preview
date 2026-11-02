@@ -79,6 +79,16 @@ or doesn't apply here**. The correction is recorded under the person's name, ret
 earlier call (shown as replaced) and becomes the precedent the next similar question uses
 (`bridge/judgment.py`, `POST /api/decisions/<id>/correct`).
 
+Under the counts, each card carries **What's been done**: the task's story as a timeline,
+one plain sentence per row with the clock beside it ("Engaged: Alex's prompt read; 14 judgment
+calls identified", "Settled 4 from earlier calls, nobody asked: …", "Flagged 2 to Dana, who
+decides for pricing decisions: …", "Raven's guess on … from Dana's Oct 29 call; Noah confirms",
+"Dana handed … to Elena", "Raj corrected …"). Every row is a stored event rendered by
+`bridge/timeline.py` (`GET /api/tasks/<id>/timeline`, and `timeline` on each live task in
+`/api/state`); nothing is composed by a model. The card shows the last two rows with **Show all**,
+so the open calls below keep the eye; the task page shows the whole story above its decisions.
+An earlier call or a flagged question in a sentence opens it, a record shows as a pill.
+
 The fixture has two live tasks, both picked up by Maya Chen: the bulk label purchase from
 the recording, where Jordan has already corrected one call Raven settled from his Oct 28
 answer, and **Turn on overage billing for the Starter plan**, seven decisions with three
