@@ -702,7 +702,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     if path == '/auth/password':
                         return self.redirect('/auth/login?message=' + _quote(str(error)))
                     return self.account_page(path, str(error), str(data.get('invite', '')))
-                return self.redirect('/#connect' if path == '/auth/profile' else '/#inbox', {'Set-Cookie': ['bridge_setup=; Path=/auth; HttpOnly; SameSite=Strict; Max-Age=0', auth.session_cookie(pid)]})
+                return self.redirect('/#connect' if path == '/auth/profile' else '/#ask', {'Set-Cookie': ['bridge_setup=; Path=/auth; HttpOnly; SameSite=Strict; Max-Age=0', auth.session_cookie(pid)]})
             if path == "/auth/token":
                 token = str(data.get("token") or "").strip()
                 me = auth.identify({"Authorization": f"Bearer {token}"})

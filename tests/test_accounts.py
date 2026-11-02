@@ -59,7 +59,7 @@ class AccountFlowTests(SharedServer):
         self.assertEqual(status, 400)
         status, headers, _ = self.form('/auth/password', dict(email='member@example.test', password='another-long-password'))
         self.assertEqual(status, 302)
-        self.assertEqual(headers['Location'], '/#inbox')
+        self.assertEqual(headers['Location'], '/#ask')
         self.assertEqual(self.get('/api/state', cookie=headers['Set-Cookie'].split(';')[0])['me']['id'], member['me']['id'])
         saved = self.store.graph.db.execute('SELECT password_hash FROM account_passwords').fetchall()
         self.assertTrue(all('password' not in row['password_hash'] for row in saved))
