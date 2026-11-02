@@ -65,7 +65,8 @@ function attNeeds(item) {
 // their page with the note as the reason it reached them, and once they answer, calls like it route to
 // them first (the same hand-on as the full record).
 function attHandOn(item) {
-  const people = (state.owners || []).filter(o => o.id !== state.me?.id);
+  // Owners carry ownership-map ids, not person ids: leave the signed-in person out by name as well.
+  const people = (state.owners || []).filter(o => o.id !== state.me?.id && o.name !== state.me?.name);
   return `<form class="att-handon" data-id="${esc(item.id)}" data-updated="${esc(item.updated_at)}">
       <span class="att-k">Hand this to</span>
       <select name="person" aria-label="Hand on to" required><option value="">Pick a person</option>${people.map(o => `<option value="${esc(o.name)}">${esc(o.name)}${o.team ? ' · ' + esc(o.team) : ''}</option>`).join('')}</select>

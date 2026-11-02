@@ -28,7 +28,7 @@ function harness(state, hand = []) {
 
 const text = html => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 const me = {id: 'p-priya', name: 'Priya Shah', kind: 'session'};
-const owners = [{id: 'p-priya', name: 'Priya Shah', team: 'Founders'}, {id: 'p-sam', name: 'Sam Rivera', team: 'Customer success'},
+const owners = [{id: 'o-priya', name: 'Priya Shah', team: 'Founders'}, {id: 'p-sam', name: 'Sam Rivera', team: 'Customer success'},
   {id: 'p-marcus', name: 'Marcus Lee', team: 'Billing'}];
 const item = {id: 'bloom', run_id: 'r1', task: 'Start charging merchants for the assistant', agent: 'Claude Code', requester: 'Maya Chen',
   question: 'Is Bloom & Co excluded from assistant charges until Sam clears their order form?', why: 'No earlier call covers this. You decide for customer decisions.',
