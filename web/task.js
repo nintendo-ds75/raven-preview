@@ -81,6 +81,7 @@ async function loadTask({quiet = false} = {}) {
     ]);
     if (taskId() !== id || request !== taskRequest) return;
     taskDetail = {tree,trace}; taskError = '';
+    loadTaskTimeline(id);
     const drawn = taskFingerprint(tree, trace);
     if (!(quiet && drawn === taskDrawn && Date.now() - taskDrawnAt < 60000)) { taskDrawn = drawn; taskDrawnAt = Date.now(); render(); }
     const focused = location.hash.slice(1).split('/')[2];
@@ -91,6 +92,21 @@ async function loadTask({quiet = false} = {}) {
     taskError = error.message;
     render();
   }
+}
+
+// What's been done on the task, from /api/tasks/<id>/timeline: the same
+// rows the Being built card shows, all of them. Read after the tree and
+// trace, never on their critical path; a live task's rows already ride
+// on /api/state and are shown until this read lands.
+const taskDone = new Map();
+function loadTaskTimeline(id) {
+  if (!id || typeof buildTimeline !== 'function') return;
+  api(`/api/tasks/${encodeURIComponent(id)}/timeline`).then(r => { const before = JSON.stringify(taskDone.get(id) || null); taskDone.set(id, r); if (JSON.stringify(r) !== before && taskId() === id) { taskDrawn = ''; render(); } }).catch(() => {});
+}
+function taskDoneSection(id) {
+  if (typeof buildTimeline !== 'function') return '';
+  const rows = taskDone.get(id)?.rows || taskList(state.runs).find(r => r.id === id)?.timeline || [];
+  return rows.length ? `<section class="task-panel task-done" id="task-done"><h2>What’s been done</h2>${buildTimeline(id, rows, {all: true, head: false})}</section>` : '';
 }
 
 async function submitModalTaskNote(form) {
@@ -320,7 +336,7 @@ function taskOverview() {
   const facts = Object.entries(t.facts || {}), workItem = taskDetails(workItemContext(t),'task-work-item');
   const context = facts.length || workItem || t.verdict ? `<details class="task-panel task-context" id="task-context"><summary id="task-context-summary">Details</summary><dl class="task-facts"><dt>Requested by</dt><dd>${esc(t.requester || 'Not recorded')}</dd><dt>Repository</dt><dd>${esc(t.repo)}</dd>${facts.map(([k,v]) => `<dt>${esc(k)}</dt><dd>${esc(taskText(v))}</dd>`).join('')}</dl>${workItem}${t.verdict ? `<p id="task-kickoff"><strong>Kickoff verdict · ${esc(t.verdict)}</strong>${t.verdict_why ? ` ${esc(t.verdict_why)}` : ''}</p>` : ''}</details>` : '';
   const findings = [...nodes].sort((a,b) => Number(!!(b.blocking || b.needs_review || b.source_refresh_required)) - Number(!!(a.blocking || a.needs_review || a.source_refresh_required)));
-  const decisions = `<div class="task-overview">${scopes.length ? `<section class="task-panel"><h2>Scope needed · ${scopes.length}</h2>${taskScopes(scopes)}</section>` : ''}<section class="task-panel" id="task-waiting"><h2>Waiting</h2>${taskQuestions(findings.filter(n => !taskAuthorized(n)),'finding',reading ? 'Reading context…' : 'No open questions.')}</section>${findings.some(taskAuthorized) ? `<section class="task-panel" id="task-decided"><h2>Decided</h2>${taskQuestions(findings.filter(taskAuthorized),'resolved','')}</section>` : ''}${t.review ? taskReview(t.review,nodes) : ''}${taskNotes(t,canWrite)}${state.model?.investigation === false ? '' : taskInquiry(t.task_id)}${context}</div>`;
+  const decisions = `<div class="task-overview">${taskDoneSection(t.task_id)}${scopes.length ? `<section class="task-panel"><h2>Scope needed · ${scopes.length}</h2>${taskScopes(scopes)}</section>` : ''}<section class="task-panel" id="task-waiting"><h2>Waiting</h2>${taskQuestions(findings.filter(n => !taskAuthorized(n)),'finding',reading ? 'Reading context…' : 'No open questions.')}</section>${findings.some(taskAuthorized) ? `<section class="task-panel" id="task-decided"><h2>Decided</h2>${taskQuestions(findings.filter(taskAuthorized),'resolved','')}</section>` : ''}${t.review ? taskReview(t.review,nodes) : ''}${taskNotes(t,canWrite)}${state.model?.investigation === false ? '' : taskInquiry(t.task_id)}${context}</div>`;
   const history = `<section class="task-panel"><h2>What happened</h2>${taskTimeline(trace,all)}</section>`;
   const run = taskList(state.runs).find(r => r.id === t.task_id);
   const meta = [t.requester ? `Requested by ${t.requester}` : '', t.repo, run?.agent].filter(Boolean).map(esc).join(' · ');
