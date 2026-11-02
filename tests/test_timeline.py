@@ -75,6 +75,13 @@ class TemplateTests(OfflineCase):
                                    event(2, "resolve", 3, 1, did="a", source="memory", cited="p1", signed=True)], {"p1": p})
         self.assertEqual(texts(rows), ["Settled “Which table is Pilot usage read from” in part from Raj's Jan 22 call; PR #46 agrees; Raj signs the rest"])
         self.assertIn({"kind": "record", "id": "PR #46", "label": "PR #46"}, rows[0]["refs"])
+        # A record that only covers the same ground (a PR describing what
+        # shipped, or one older than the rule) is not said to agree.
+        rows = self.build([d], [event(1, "rule_over_record", 3, did="a", memory="p1", record="pr 220", covers=True),
+                                event(2, "resolve", 3, 1, did="a", source="memory", cited="p1", signed=True)], {"p1": p})
+        self.assertEqual(texts(rows), ["Settled “Which table is Pilot usage read from” from Raj's Jan 22 call; "
+                                       "PR #220 covers this too; nobody asked"])
+        self.assertIn({"kind": "record", "id": "PR #220", "label": "PR #220"}, rows[0]["refs"])
 
     def test_settled_from_records_lists_the_records_as_short_labels(self):
         d = decision("a", "Is Northwind charged for Pilot?", status="proposed", signoff="required", source="record", owner_name="Noah Kim")

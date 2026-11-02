@@ -606,18 +606,102 @@ def _record_contradicting(store: Graph, cfg: Config, repo: str, question: str, a
     return None
 
 
-def _disagrees(cfg: Config, question: str, answer: str, record) -> bool:
+RECORD_VERDICTS = ("CONFLICT", "STATUS", "AGREE", "UNRELATED")
+
+
+def _record_verdict(cfg: Config, question: str, answer: str, record) -> str:
+    """The model's one-word reading of a record against an answer on file:
+    CONFLICT (the record decides the same question differently), STATUS
+    (it only describes the state of the code or what shipped), AGREE,
+    UNRELATED, or "" when no model is available. The model reads the
+    record's body: a pull request title is a summary, not a claim."""
     if not cfg.semantic_retrieval:
-        return False
+        return ""
     try:
         verdict = llm_mod.Client(cfg).complete(
             "conflict", llm_mod.CONFLICT_SYSTEM,
             f"Question: {question}\n\nAnswer on file: {answer}\n\n"
-            f"Record {record['kind']} {_ref(record)}: {record['title']}\n{record['body'][:800]}",
+            f"Record {record['kind']} {_ref(record)}: {record['title']}\n{_field(record, 'body')[:1500]}",
             max_tokens=16).strip().upper()
     except llm_mod.LLMError:
+        return ""
+    return next((w for w in RECORD_VERDICTS if verdict.startswith(w)), "")
+
+
+def _disagrees(cfg: Config, question: str, answer: str, record) -> bool:
+    """Whether the record decides the question differently from the answer.
+    A record that only describes what shipped so far (STATUS) does not."""
+    return _record_verdict(cfg, question, answer, record) == "CONFLICT"
+
+
+# Wording that reports the state of the code or what has shipped, not a
+# rule: "no charge for those yet", "for now", "this month", "currently".
+_STATUS_RE = re.compile(
+    r"\b(?:yet|for now|today|currently|right now|at the moment|this month|so far|in the meantime"
+    r"|as of (?:now|today|this (?:change|pr|release))|not (?:yet )?(?:built|wired|shipped|charged|billed|metered"
+    r"|implemented|enforced)|still (?:free|unbilled|unmetered|open|manual))\b", re.IGNORECASE)
+_CODE_KINDS = frozenset({"pr", "pull", "pull_request", "merge", "commit"})
+_TRAILER_RE = re.compile(r"^\s*(?:reviewed|signed(?:-off)?|co-authored|acked|tested|approved)-by\s*:", re.IGNORECASE)
+
+
+def _is_code_record(row) -> bool:
+    """A pull request, merge or commit: a record of what changed in the
+    code, which may carry a decision in its body but is not one by kind."""
+    return _field(row, "kind").strip().lower() in _CODE_KINDS
+
+
+def _describes_state(row) -> bool:
+    """A pull request or commit whose text reads as the state of the code or
+    what has shipped, not as a rule about how to decide something.
+    Measured on the Parcelwise dry run: PR #220, "assistant answers (no
+    allowance and no charge for those yet)", vetoed Jordan's signed rule on
+    what counts as one use, and the card quoted the PR title as the
+    contrary statement."""
+    return _is_code_record(row) and bool(_STATUS_RE.search(_field(row, "title") + " " + _field(row, "body")))
+
+
+def _record_claim(record, answer: str, limit: int = 200) -> str:
+    """The sentence of a record's body that bears on `answer`: the one
+    sharing the most terms with it, the first when none does, the title
+    when there is no body. Review trailers are not claims. What a card
+    quotes as the record's statement, so it shows the claim, not the
+    pull request title."""
+    lines = [ln for ln in _field(record, "body").splitlines() if ln.strip() and not _TRAILER_RE.match(ln)]
+    body = " ".join(" ".join(lines).split())
+    if not body:
+        return _excerpt(_field(record, "title"), limit, "the record has the rest")
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", body) if s.strip()]
+    terms = set(_meaningful_terms(answer))
+    scored = [(sum(1 for t in _meaningful_terms(s) if t in terms), -i, s) for i, s in enumerate(sentences)]
+    best = max(scored)[2]
+    return _excerpt(best, limit, "the record has the rest")
+
+
+def _contests_rule(rule, record) -> bool:
+    """Whether a settled record may contest a signed standing rule, once the
+    model has read the two as disagreeing. Different figures always do.
+    Otherwise only a decision record newer than the rule's signature does:
+    its owner signed the rule with everything older in view, and a pull
+    request or commit that describes the state of the code or what shipped
+    never does, whatever words it shares with the rule. A newer ADR, a
+    settled ticket or a pull request whose body states a different rule
+    still contests it."""
+    if _numeric_clash(rule.answer or "", _row_text(record)):
+        return True
+    if not _is_settled(record):
         return False
-    return verdict.startswith("CONFLICT")
+    if _parse_ts(_field(record, "created_at")) <= float(rule.updated_at or 0):
+        return False
+    return not _describes_state(record)
+
+
+def _covers_note(rule, record) -> str:
+    """The note a settled rule carries for a record that covers the same
+    ground without contesting it."""
+    clash = f"{record['kind']} {_ref(record)}{_ticket_state(record)}"
+    why = ("it describes what has shipped, not a different rule" if _describes_state(record)
+           else "the rule is the newer call")
+    return f"{clash} covers this too: \"{_record_claim(record, rule.answer or '', 160)}\"; {why}"
 
 
 def _is_pure_refusal(text: str) -> bool:
@@ -1974,17 +2058,35 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
         # Harborline dry run: "What counts as one billable use of Pilot"
         # had Raj's rule (scope any) and the merge that recorded it, and
         # the record won the arbitration, so the call wanted a signature.
-        agreeing_record = None
+        agreeing_record, agreeing_role = None, "support"
+        covers_notes: list[str] = []
+        # A record that describes what shipped ("no charge for those yet")
+        # or that is older than the rule's signature covers the same ground
+        # without contesting it, whatever the model made of the two: the
+        # rule settles and the record is noted beside it. Measured on the
+        # Parcelwise dry run: PR #220 sent three signed rules to sign-off.
+        rule_wins = rule_guarded = False
         if mem_pick is not None and rec_best is not None and _is_settled(rec_best) and not _void(rec_best) \
                 and _current_grant(store, mem_pick[2], question, d_context, d_path, d_facts, repo)[0] \
-                and not _numeric_clash(mem_pick[2].answer or "", _row_text(rec_best)) \
-                and not _disagrees(cfg, question, mem_pick[2].answer or "", rec_best):
+                and not _numeric_clash(mem_pick[2].answer or "", _row_text(rec_best)):
+            disagrees = _disagrees(cfg, question, mem_pick[2].answer or "", rec_best)
+            rule_guarded = disagrees and bool(mem_pick[2].reusable) and not _contests_rule(mem_pick[2], rec_best)
+            rule_wins = not disagrees or rule_guarded
+        if rule_wins:
             pick, mem_lex = ("memory", mem_pick[2]), True
             agreeing_record = rec_best
-            pick_note = (f"a standing rule covers this, and {rec_best['kind']} {_ref(rec_best)} agrees with it")
+            if rule_guarded or _describes_state(rec_best):
+                # Read as disagreeing, or worded as a status report: the
+                # record is cited as context, not as support.
+                agreeing_role = "context"
+                pick_note = "a standing rule covers this"
+                covers_notes.append(_covers_note(mem_pick[2], rec_best))
+            else:
+                pick_note = (f"a standing rule covers this, and {rec_best['kind']} {_ref(rec_best)} agrees with it")
             store.append_event("rule_over_record", {"task_id": task_id, "decision_id": did,
                                                     "memory": mem_pick[2].id,
-                                                    "record": f"{rec_best['kind']} {_ref(rec_best)}"})
+                                                    "record": f"{rec_best['kind']} {_ref(rec_best)}",
+                                                    **({"covers": True} if agreeing_role == "context" else {})})
         elif mem_pick is not None and rec_best is not None:
             if cfg.semantic_retrieval:
                 choice = _selector_pick(cfg, question, {**memory_choices, "r1": ("record", rec_best)}, **selector_scope)
@@ -2214,7 +2316,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             clash = f"{rival['kind']} {_ref(rival)}{_ticket_state(rival)}"
             why_open.append(f"conflict: decision {mem.id}, signed by {mem.answered_by or 'a person'}, says \""
                             f"{_excerpt(mem.answer, 200, 'the decision has the rest')}\", and {clash} says \""
-                            f"{_excerpt(_row_text(rival), 200, 'the record has the rest')}\"; they state "
+                            f"{_record_claim(rival, mem.answer or '')}\"; they state "
                             "different figures, so Raven serves neither and proposes neither: a person decides "
                             "which stands")
             store.append_event("memory_record_conflict", {"task_id": task_id, "decision_id": did,
@@ -2226,6 +2328,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             kind, item = pick
             mem_conflict = ""
             mem_partial = False
+            noted_record = None
             if kind == "memory":
                 if mem_lex and mem_pick is not None:
                     eff, sim, _ = mem_pick
@@ -2253,7 +2356,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     item = replace(item, answer=(
                         f"CONFLICTED, do not act on either side alone: "
                         f"{item.answered_by or 'an earlier answer'} says: {item.answer} But {clash} states a "
-                        f"different figure: \"{rival['title']}\". Confirm with the owner which stands."))
+                        f"different figure: \"{_record_claim(rival, item.answer)}\". Confirm with the owner which stands."))
                     mem_conflict = f"{clash} states a different figure; surfaced in the answer itself"
                     store.append_event("memory_record_conflict", {"task_id": task_id, "decision_id": did,
                                                                   "memory": item.id, "record": clash,
@@ -2264,14 +2367,32 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                                                                   "memory": item.id, "record": clash,
                                                                   "escalated": True})
                     kind, item = "record", rival
+                elif rival is not None and _is_settled(rival) and item.authorized and item.reusable \
+                        and not _contests_rule(item, rival):
+                    # A signed standing rule is the organization's own
+                    # declaration. A pull request or commit that describes
+                    # the state of the code, or a record older than the
+                    # rule's signature, covers the same ground without
+                    # deciding it differently: it is noted on the settled
+                    # answer, it does not turn the rule into a CONFLICTED
+                    # sign-off. Measured on the Parcelwise dry run: PR #220
+                    # ("no allowance and no charge for those yet") vetoed
+                    # three signed rules on the strength of its title.
+                    clash = f"{rival['kind']} {_ref(rival)}{_ticket_state(rival)}"
+                    noted_record = rival
+                    if not any(clash in note for note in covers_notes):
+                        covers_notes.append(_covers_note(item, rival))
+                    store.append_event("rule_over_record", {"task_id": task_id, "decision_id": did,
+                                                            "memory": item.id, "record": clash, "covers": True})
+                    rival = None
                 elif rival is not None and _is_settled(rival):
                     clash = f"{rival['kind']} {_ref(rival)}{_ticket_state(rival)}"
                     mem_partial = True
                     item = replace(item, answer=(
                         f"CONFLICTED, do not act on either side alone: "
                         f"{item.answered_by or 'an earlier answer'} says: {item.answer} But {clash} states "
-                        f"otherwise: \"{rival['title']}\". Neither is corroborated over the other; confirm "
-                        f"with the owner which stands."))
+                        f"otherwise: \"{_record_claim(rival, item.answer)}\". Neither is corroborated over the "
+                        f"other; confirm with the owner which stands."))
                     mem_conflict = f"{clash} covers this too and does not agree; surfaced in the answer itself"
                     store.append_event("memory_record_conflict", {"task_id": task_id, "decision_id": did,
                                                                   "memory": item.id, "record": clash,
@@ -2303,15 +2424,29 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                                             if signed else ("", False))
                 rule_ok, rule_why = (rule_status(item, question, d_context, facts=d_facts, repo=repo)
                                      if signed and item.reusable else (False, ""))
-                if len(memory_used_rows) > 1 or mem_conflict:
+                # Why a standing rule was not applied, in the words the fit
+                # reason uses; never "did not make it a standing rule" for a
+                # row that is one. Measured on the Parcelwise dry run: three
+                # rules vetoed by a record were blamed on their owners.
+                withheld = ""
+                if signed and item.reusable and not rule_ok and rule_why:
+                    withheld = ("it has expired" if "expired" in rule_why else "its source needs review"
+                                if "review" in rule_why else "its conditions do not hold here")
+                if mem_conflict:
+                    rule_ok = False
+                    rule_why = 'A record disagrees with the answer; it requires a fresh human sign-off'
+                    withheld = "a record disagrees"
+                elif len(memory_used_rows) > 1:
                     rule_ok = False
                     rule_why = 'The answer combines or contrasts premises; it requires a fresh human sign-off'
+                    withheld = "the answer combines sources"
                 if rule_ok and other_scope and item.rule_scope != "any":
                     # Another customer, other files: the rule was made for
                     # its own scope and its owner did not say anywhere.
                     rule_ok, rule_why = False, (f"the rule from decision {item.id} applies in its own scope only, and "
                                                 f"this {'is' if known_scope else 'may be'} another ({other_scope}); its "
                                                 "owner did not make it apply anywhere")
+                    withheld = "it applies in its own scope only and this may be another"
                 # Task/context links can explain why ordinary historical
                 # evidence is not established here. They cannot narrow an
                 # explicit rule whose existing declared conditions hold.
@@ -2330,6 +2465,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     rule_ok = False
                     other_scope = ""
                     rule_why = ""
+                    withheld = "automatic rules are off"
                     rule_note = (f"{covered} covers this; automatic rule authorization is off (settings.auto_rules), "
                                  "so a person signs it")
                     why_open.append("memory: " + rule_note)
@@ -2394,7 +2530,9 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 status = ("partial" if mem_partial else "resolved") if signed else "proposed"
                 store.publish_evidence(
                     did, (memory_used_rows or [_as_record(item)])
-                    + ([_evidence_role(agreeing_record, 'support')] if agreeing_record is not None else [])
+                    + ([_evidence_role(agreeing_record, agreeing_role)] if agreeing_record is not None else [])
+                    + ([_evidence_role(noted_record, 'context')] if noted_record is not None
+                       and (agreeing_record is None or noted_record["ref"] != agreeing_record["ref"]) else [])
                     + ([_evidence_role(rival, 'contradiction')] if mem_conflict and rival is not None else []),
                     status=status, source=origin, answer=item.answer,
                     answered_by=item.answered_by if signed else "",
@@ -2402,9 +2540,11 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     kind=_kind_for(status, origin, mkind) if signed else "prediction",
                     source_id=item.id, source_revision=revision,
                     fit_reason=(fit_reason(item, mkind, rule_ok, terms, when=ts_to_iso(item.updated_at)[:10]
-                                           if item.updated_at else "", partial=mem_partial) if signed else ""),
+                                           if item.updated_at else "", partial=mem_partial, withheld=withheld)
+                                if signed else ""),
                     evidence=evidence + (f"; conflict: {mem_conflict}" if mem_conflict else "")
                     + (f"; {pick_note}" if mem_lex and pick_note else "")
+                    + "".join(f"; {note}" for note in covers_notes)
                     + (f"; {rule_note}" if rule_note else ""),
                     **({"signoff": "rule", "signed_by": item.rule_by or item.answered_by} if rule_ok and not mem_partial else {}))
                 store.add_link(did, item.id, "derived", "took its answer from this decision")
