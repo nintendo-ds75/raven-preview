@@ -120,7 +120,7 @@ def _why_reached(row, source, name="") -> str:
     # of it before; the hand-on note is their word to this person.
     handed = _handed_on((row["owner_evidence"] if "owner_evidence" in row.keys() else "") or "")
     if handed:
-        return handed + "."
+        return handed if handed.endswith("”") else handed + "."
     if row["needs_review"]:
         return "An earlier call this leaned on was replaced since, so it needs another look."
     if row["kind"] == "prediction" and source is not None:

@@ -149,7 +149,7 @@ class AttentionTests(OfflineCase):
                                'expected_updated_at': self.store.get_decision(did)['updated_at']}, actor=self.owner)
         self.graph.db.execute("UPDATE decisions SET needs_review=1, review_reason='stale' WHERE id=?", (did,))
         item = attention.overview(self.store, self.other)['needs_you'][0]
-        self.assertEqual(item['why'], 'Policy Owner handed this to you: “You know their order form.”.')
+        self.assertEqual(item['why'], 'Policy Owner handed this to you: “You know their order form.”')
         self.assertEqual(attention._handed_on('handed on by Priya Shah; once you answer, Raven routes customer decisions to you first'),
                          'Priya Shah handed this to you')
         self.assertEqual(attention._handed_on('verified: Priya Shah decides for pricing decisions'), '')
