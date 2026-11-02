@@ -298,6 +298,7 @@ async function openInterview(task, decision) {
     speaking: false, thinking: false, heard: '', spokenFor: '', ...carried};
   interviewBody(interviewSession);
   if (!interviewDialog.open) interviewDialog.showModal();
+  interviewFollowTower();
 }
 // The next call on the same task that waits on this person: one call covers
 // them all, the way a colleague would ask everything at once.
@@ -311,13 +312,19 @@ function interviewNextDecision(session) {
 }
 // While a call is open the tower follows the task: a card turns green the
 // moment its answer is recorded, by this person or anyone else.
-setInterval(() => {
-  const session = interviewSession;
-  if (!session || !interviewDialog.open || document.hidden) return;
-  const tower = interviewDialog.querySelector('.voice-tower');
-  const fresh = interviewTower(session);
-  if (tower && fresh && tower.outerHTML !== fresh) tower.outerHTML = fresh;
-}, 2500);
+let interviewTowerTimer = null;
+function interviewFollowTower() {
+  if (interviewTowerTimer) return;
+  interviewTowerTimer = setInterval(() => {
+    const session = interviewSession;
+    if (!session || !interviewDialog.open) { clearInterval(interviewTowerTimer); interviewTowerTimer = null; return; }
+    if (document.hidden) return;
+    const tower = interviewDialog.querySelector('.voice-tower');
+    const fresh = interviewTower(session);
+    if (tower && fresh && tower.outerHTML !== fresh) tower.outerHTML = fresh;
+  }, 2500);
+  interviewTowerTimer.unref?.();
+}
 async function advanceInterview(session) {
   interviewStatus('Preparing a follow-up and draft readback. No answer has been signed.');
   const version = session.row.version, edits = session.editVersion;
