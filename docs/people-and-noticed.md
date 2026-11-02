@@ -31,7 +31,10 @@ a planning sync): `POST /api/meetings/learn` with `{repo, title, transcript}`,
 or `bridge_learn_meeting` from Claude. Raven files it as a meeting record and
 keeps, on each teammate's page, the asks, numbers and commitments in it, each
 quoted from the transcript and pointing back to it. A line whose quote is not
-in the transcript is dropped. Nothing becomes a decision.
+in the transcript is dropped. Nothing becomes a decision here; when an agent
+later asks a question those words bear on, they settle it or stand as Raven's
+guess only if the speaker is the person Raven would route the question to,
+and otherwise go to that person as context ([the ladder](reference.md#the-resolution-ladder)).
 
 APIs: `GET /api/people/directory?q=`, `GET /api/people/<id>/profile`,
 `POST /api/people/<id>/context` with `{"action": "add"|"edit"|"remove", ...}`.

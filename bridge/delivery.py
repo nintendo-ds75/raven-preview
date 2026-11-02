@@ -1327,18 +1327,23 @@ def _found_for_owner(evidence: str, rest: str = "the inbox has the rest") -> str
     the records it cites. How the search went (scores, floors, what did
     not match) belongs to the audit trail in the inbox, not the message.
     Measured live: an owner was sent "memory: best match scored 0.28,
-    under the 0.6 floor". A conflict has its own line."""
-    keep = []
+    under the 0.6 floor". A conflict has its own line. What someone said
+    in a meeting that bears on the call ("meeting: ...", attached by
+    meeting_precedent) is kept: it is what the owner is asked against."""
+    keep, said = [], []
     # "how they decide" starts a part of its own; without it the ladder's
     # "assumption: ..." before it was kept, glued to the cited decision.
     for part in re.split(r";\s+(?=[a-z]+:\s|how they decide\b)", evidence or ""):
         part = part.strip()
         if part.startswith("conflict:"):
             continue
-        if re.search(r"\bdecision [0-9a-f]{12}\b|\b(?:retrieved|selected)\b", part) \
+        if part.startswith("meeting: "):
+            # Who said what, ahead of a record excerpt that would take the room.
+            said.append(part)
+        elif re.search(r"\bdecision [0-9a-f]{12}\b|\b(?:retrieved|selected)\b", part) \
                 and not re.search(r"\bscored\b|\bfloor\b", part):
             keep.append(part)
-    return _clip("; ".join(keep), 400, rest)
+    return _clip("; ".join(said + keep), 400, rest)
 
 
 def _conflicts(evidence: str) -> list[str]:
