@@ -1745,9 +1745,10 @@ def _next_for_node(status: str, d: dict) -> str:
     if status == "pending":
         # Measured on a real task: told to "continue independent work", the
         # agent wrote the very choice it had asked about, its own way.
-        return (f"waiting on {d.get('owner_name')}: do not settle this in code yourself; build only what does "
-                "not depend on the answer, then bridge_wait (or read bridge_get_tree) before you write the part "
-                "that does")
+        return (f"waiting on {d.get('owner_name')}: do not settle this in code yourself. It blocks only the code "
+                "that needs the answer; the mechanism around it (a named parameter or setting with no value yet, "
+                "the tests, the docs) does not depend on it, so build that now, then bridge_wait (or read "
+                "bridge_get_tree) before you write the part that does")
     if status == "unrouted":
         return "Raven does not know who owns this; a person assigns it in the inbox, or settle it yourself"
     if status == "duplicate":
@@ -2957,6 +2958,34 @@ STOPPED_NEXT = ("Raven stopped while you waited, most likely a restart: nothing 
                 "stored). Call bridge_wait again in a few seconds with the same since, or read bridge_get_tree")
 
 
+def _waiting_entry(n: dict) -> dict:
+    """One node a wait still waits on, with what it blocks: its path and the
+    nodes that depend on it. blocking means it waits on a person and gates
+    bridge_finish_task, not that it blocks all work."""
+    return {"node_id": n["node_id"], "question": n["question"], "status": n["status"], "owner": n["owner"],
+            "path": n.get("path") or "", "blocks": list(n.get("dependents") or [])}
+
+
+def _paced(store, result: dict, idle: bool) -> dict:
+    """Record this wait on the task and say where the agent stands against
+    the idle-wait cap. Past the cap the next step is to stop and report,
+    not to wait again: the Stop hook lets it go at the same count."""
+    from .host_sessions import note_wait
+    with store.graph.transaction() as db:
+        pace = note_wait(store, result["task_id"], idle, db=db)
+    result["pace"] = pace
+    if idle and pace["idle_waits"] >= pace["idle_wait_cap"]:
+        result["next"] = (f"{pace['idle_waits']} waits in a row returned nothing new (the cap). Stop now and report "
+                          "what you built and what waits on whom; do not wait again. The task stays open: resume it "
+                          f"with bridge_start_task(task_id={result['task_id']}) and a person's answer resumes a "
+                          "supervised session. " + result["next"])
+    elif idle:
+        left = pace["idle_wait_cap"] - pace["idle_waits"]
+        result["next"] += (f" ({pace['idle_waits']} idle wait{'s' if pace['idle_waits'] != 1 else ''} in a row; "
+                           f"after {left} more you may stop and report)")
+    return result
+
+
 def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, clock=None, stop=None) -> dict:
     """Block until a person moves the task, or the timeout: an answer, a
     signature, a correction, a hand-on, a follow-up question added, a
@@ -3020,13 +3049,14 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
     verdict_before = tree.get('verdict')
     if changed or result["notes"] or (not watched and not reading):
         result["changed"] = changed
-        result["waiting_on"] = [{"node_id": n["node_id"], "question": n["question"], "status": n["status"],
-                                 "owner": n["owner"]} for n in before.values() if n["blocking"]]
+        result["waiting_on"] = [_waiting_entry(n) for n in before.values() if n["blocking"]]
         if changed or result["notes"]:
             result["next"] = "read the changes above and act on each node's next; " + tree["next"]
+            if result["waiting_on"]:
+                result["next"] += _MEANWHILE
         else:
             result["next"] = ("nothing on this task waits on a person; " + tree["next"]) if before else tree["next"]
-        return result
+        return _paced(store, result, False)
     start = clock()
     while True:
         elapsed = clock() - start
@@ -3064,10 +3094,12 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
     if tree.get("review") is not None:
         result["review"] = tree["review"]
     still = [n for n in _flatten(tree["nodes"]) if n["blocking"] and (not node_id or n["node_id"] == node_id)]
-    result["waiting_on"] = [{"node_id": n["node_id"], "question": n["question"], "status": n["status"],
-                             "owner": n["owner"]} for n in still]
+    result["waiting_on"] = [_waiting_entry(n) for n in still]
+    idle = False
     if changed or result["notes"]:
         result["next"] = "read the changes above and act on each node's next; " + tree["next"]
+        if still:
+            result["next"] += _MEANWHILE
     elif result.get("interrupted"):
         result["next"] = STOPPED_NEXT
     elif review_pending and (tree.get('review') or {}).get('status') != 'running':
@@ -3077,14 +3109,23 @@ def wait(store, data, cap: float = WAIT_CAP, interval: float = 1.0, sleep=None, 
         result["next"] = tree["next"]
     else:
         who = sorted({n["owner"] for n in still if n["owner"]})
+        idle = bool(still)
         result["next"] = (f"no new decision or forwarded task note is observable after {result['waited_seconds']:g}s; "
                           "this does not prove that nobody replied privately; "
                           f"{len(still)} node"
                           f"{'s' if len(still) != 1 else ''} still wait{'s' if len(still) == 1 else ''} on "
                           f"{', '.join(who) if who else 'nobody yet (unrouted: assign in the inbox or settle yourself)'}"
-                          "; continue independent work, then wait again or read bridge_get_tree; an answer that "
-                          "lands meanwhile is on the tree when you read it")
-    return result
+                          + _MEANWHILE + "; wait again only when nothing independent is left, or read "
+                          "bridge_get_tree; an answer that lands meanwhile is on the tree when you read it")
+    return _paced(store, result, idle)
+
+
+# What an open call holds up, said to the agent whenever a wait names one.
+# Measured on dry run 10: with every open call marked blocking and the
+# Stop hook sending it back to wait, the agent took the open calls to
+# block the whole task and wrote no code.
+_MEANWHILE = ("; each blocks only the code that needs its answer (its path and the nodes in blocks), not the task: "
+              "build everything else now, with an open value left as a named parameter rather than settled by you")
 
 
 # The events people leave on a node; everything else on the log is the

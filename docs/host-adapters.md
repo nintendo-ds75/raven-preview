@@ -127,13 +127,28 @@ placed in the agent's instructions.
 ## Keep the agent waiting while a person answers
 
 The adapter also installs `Stop` and `SessionEnd` hooks. While a decision on the
-session's open task waits on a person, `Stop` is refused and the agent is told
-to call `bridge_wait` with the task id, so an answer given in Slack reaches an
-agent that is still running. The refusal names only the task id and a count;
-question and answer text stays on the tree. The hold lasts at most
-`BRIDGE_STOP_HOLD_MINUTES` in total (default 20, set where Raven runs). A new
-prompt from the person at the keyboard starts it afresh. Past the budget the
-agent stops, and a later answer resumes it as described below.
+session's open task waits on a person, `Stop` is refused, so an answer given in
+Slack reaches an agent that is still running. The refusal says that the open
+decisions block only the code that needs their answers: the agent is told to
+build everything independent first (the mechanism around an open value with the
+value left as a named parameter, the tests, the docs, never the open question
+settled its own way) and, when nothing independent is left, to call
+`bridge_wait` with the task id. The refusal names only the task id and counts;
+question and answer text stays on the tree.
+
+The hold has two budgets. It lasts at most `BRIDGE_STOP_HOLD_MINUTES` in total
+(default 20, set where Raven runs), and it ends after `BRIDGE_STOP_HOLD_WAITS`
+(default 6) `bridge_wait` calls in a row that returned nothing new: each wait
+result carries `pace` (`idle_waits`, `idle_wait_cap`), the refusal says how many
+idle waits remain, and the wait that reaches the cap tells the agent to stop and
+report what it built and what waits on whom. Any other call on the task (a node
+added or settled, a resume, a finish) or a wait that returns a change starts the
+count over, as does a new prompt from the person at the keyboard. Past either
+budget the agent stops, the task records `host_stopped_waiting`, and a later
+answer resumes it as described below. Measured on a dry run before the wait cap:
+an agent with nothing independent left was held for the whole 20 minutes, called
+`bridge_wait` 29 times and wrote nothing. The For you cards read this state
+(`agent_state`: building, waiting or stopped) rather than a fixed phrase.
 
 `Stop` and `SessionEnd` fail open. If Raven is unreachable or slow, the hook
 returns no decision and the host stops as it would without Raven. Only
