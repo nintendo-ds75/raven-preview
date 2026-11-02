@@ -477,6 +477,11 @@ def discover(store, cfg, repo: str, title: str, goal: str, paths: list[str], req
         notes: list[str] = []
         ranked = rank_for_decision(graph, repo, "Who should approve this change: " + title,
                                    paths[:1], context=goal, notes=notes, requester=requester, hits=hits, task_id=task_id)
+        # The requester is not somebody to ask: they stay in the digest only
+        # when the task is their own call (nobody else holds the area).
+        asker = graph.find_person(requester) if requester else None
+        ranked = [r for r in ranked if asker is None or str(r[0]) != asker["name"]
+                  or any(str(ln).startswith("own call:") for ln in r[1])]
         out["people"] = [{"name": n, "evidence": list(ev[:3]), "score": s} for n, ev, s in ranked[:3]]
         if not out["people"] and out["areas"]:
             out["people"] = _deciders_inside(graph, repo, [a["path"] for a in out["areas"]])
@@ -806,6 +811,24 @@ def candidates(discovery: dict, title: str, goal: str) -> list[dict]:
     return out[:6 - len(elsewhere)] + elsewhere
 
 
+_VERIFIED_DECIDES_RE = re.compile(r"^verified: (.+?) decides (for \S+)")
+
+
+def _verified_deciders(people: list[dict]) -> list[tuple[str, str]]:
+    """The people at the top of the digest the authority map names as
+    deciding a path this task names, in order: (name, "for app/pilot/*").
+    A category a word matched, or a rule a narrower one outranks, is not
+    one of them."""
+    out: list[tuple[str, str]] = []
+    for p in people:
+        line = next((str(ln) for ln in (p.get("evidence") or []) if str(ln).startswith("verified:")), "")
+        m = _VERIFIED_DECIDES_RE.match(line)
+        if not m or "only mentions" in line or "more specific rule" in line or "speaks of" in line:
+            break
+        out.append((m.group(1), m.group(2)))
+    return out
+
+
 def triage(discovery: dict, title: str, goal: str) -> tuple[str, str]:
     """Engage only for a reason; pass otherwise. The reasons: the org
     already decided something close, a decision is already pending on
@@ -862,11 +885,24 @@ def triage(discovery: dict, title: str, goal: str) -> tuple[str, str]:
         # A routing candidate may be only an author or a backup contact.
         # Recency and reachability do not establish decision authority.
         inside = people[0].get("inside", "") if people else ""
+        own = bool(people) and any(str(ln).startswith("own call:") for ln in people[0].get("evidence") or [])
+        deciders = _verified_deciders(people)
+        if not known:
+            contact = "a person" + nobody
+        elif own:
+            contact = f"{who}'s own call: {who} asked, and nobody else holds authority for this area"
+        elif inside:
+            contact = f"{who}, who decides for {inside} in this area; name the files to route to them"
+        elif deciders:
+            # The owners the authority map names for the task's area, not
+            # whoever the words happened to match. Measured on the
+            # Harborline dry run: the admin, whose infra category the word
+            # "cost" matched, was named first contact past the area's owner.
+            contact = " and ".join(f"{name}, who decides {what}" for name, what in deciders[:2])
+        else:
+            contact = f"{who} as a first contact; ask them to confirm who decides or refer"
         reasons.append(f"the task speaks of {', '.join(words[:4])}, in \"{_clip(signals[0][1])}\", "
-                       "which is a call for "
-                       + ((f"{who}, who decides for {inside} in this area; name the files to route to them" if inside
-                           else f"{who} as a first contact; ask them to confirm who decides or refer")
-                          if known else "a person" + nobody))
+                       f"which is a call for {contact}")
     text = f"{title}\n{task_statement(goal)}"
     if _QUESTION_RE.search(text) and in_scope:
         reasons.append("the task itself poses a question a person has to answer"
@@ -1133,7 +1169,10 @@ def add_node(store, cfg, data, *, _cached_rule_attempt=False) -> dict:
         query = _ask_cached_rule if _cached_rule_attempt else ask
         row = query(store, first_pass, task_id, question, context=ctx or "a node on the canvas",
                   path=paths[0] if paths else "unknown", category=category, owner_id=owner_id or None,
-                  requester=requester, hints=hints, facts=facts, keep_draft=True, also_paths=paths[1:])
+                  requester=requester, hints=hints, facts=facts, keep_draft=True, also_paths=paths[1:],
+                  # A model pass follows: the static pass settles only the
+                  # same question, and publishes a near match as a check.
+                  **({"provisional": True} if background and not _cached_rule_attempt else {}))
         drafts = list(row.get("drafts") or [])
         # A duplicate comes back as its twin's row, which belongs to another
         # task; the node of this task is the stub, and its view names the

@@ -302,12 +302,26 @@ class AuthorityRoutingTests(OfflineCase):
         self.assertEqual({r[0] for r in ranked[:2]}, {"Marisol Vega", "Wes Chen"})
         self.assertIn("as a member of Pricing", ranked[0][1][0])
 
-    def test_the_requester_is_routed_to_when_the_decision_is_theirs(self):
+    def test_the_requesters_own_authority_goes_to_the_next_holder_or_is_their_own_call(self):
+        """Tamsin asked, and the map says Tamsin decides billing. The call
+        goes to the next person who holds the area (Oriel, listed and
+        reviewing it), with Tamsin's authority still in the evidence; with
+        nobody else there, it stays with Tamsin as her own call, and says
+        so. Measured on the Harborline dry run: the requester, sole decider
+        of app/billing/*, collected seven of eighteen calls on his own task."""
         with self.graph.transaction():
             pid = self.graph.add_person("Tamsin Reed", email="tamsin@synthco.example")
             self.graph.add_authority("category", "billing", "decides", person_id=pid)
         n = self.ask("Should we bill the usage spike, or exclude it as a load test?")
-        self.assertEqual(n["owner"], "Tamsin Reed", n["owner_evidence"])
+        self.assertEqual(n["owner"], "Oriel Vance", n["owner_evidence"])
+        self.assertIn("Tamsin Reed asked this and decides for billing decisions", n["owner_evidence"])
+        self.assertIn("does not route a question back to its requester, so it asks Oriel Vance", n["owner_evidence"])
+        self.assertIn("Tamsin Reed", [r["owner"] for r in n["ranked"]])
+        # A new question (the same one would land on the node above), in an
+        # area nobody else holds.
+        alone = self.ask("Do we bill partial months, or only whole ones?", path="docs/billing-policy.md")
+        self.assertEqual(alone["owner"], "Tamsin Reed", alone["owner_evidence"])
+        self.assertIn("own call: Tamsin Reed asked this and nobody else holds authority or history", alone["owner_evidence"])
 
     def test_a_first_name_requester_is_never_asked_their_own_question(self):
         picked = route(self.graph, "qemulike", "Should hw/riscv/virt.c add the imsics compatible string?",

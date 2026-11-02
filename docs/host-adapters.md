@@ -40,6 +40,20 @@ checkout must have a repository remote, or the operator must set
 `BRIDGE_INGEST_REPO=owner/name` in Raven's private `.env`; until one of those
 holds, setup writes nothing into the checkout and says so.
 
+## Without hooks
+
+Hooks are the only reliable kickoff: they register the first prompt before the model
+runs. Without them, the kickoff rests on the agent following Raven's instructions, which
+is where every lever Raven has is pointed: the server instructions open with "first call
+on any task: `bridge_start_task`"; every reading tool (`bridge_search_decisions`,
+`bridge_search_context`, `bridge_lookup_record`, `bridge_list_owners`, `bridge_ask_raven`
+and the rest) says in its description that it registers no task; and until a task is live
+for the credential, each of those reads answers with a `kickoff` notice telling the agent to call
+`bridge_start_task` now. Measured on a dry run with `.mcp.json` alone, an agent searched
+Raven's decisions and records, built for sixteen turns and never registered the task; the
+notice is what reaches an agent in that position. Install the hooks for anything a person
+depends on.
+
 Hooks require Python 3 on the **coding host**. Raven's Docker server does not
 otherwise require a host Python installation. To use instruction-based MCP
 without hooks, set `BRIDGE_HOST_HOOKS=0` in `.env` and reconnect. Setup refuses to

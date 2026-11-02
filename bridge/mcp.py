@@ -191,6 +191,28 @@ TOOLS = [
          {"task_id": "Task id from bridge_start_task"}, ["task_id"]),
 ]
 
+# Tools an agent reaches for before it has registered anything: a search is
+# not a kickoff, and the description says so. Measured on the Harborline dry
+# run (v6, run 1): without host hooks, Claude Code read the repository,
+# searched decisions and records, built for sixteen turns and never called
+# bridge_start_task; nothing reached Raven's log.
+READ_BEFORE_KICKOFF = ("bridge_search_decisions", "bridge_search_context", "bridge_lookup_record",
+                       "bridge_get_record", "bridge_list_owners", "bridge_find_people", "bridge_person_context",
+                       "bridge_ask_raven", "bridge_context_sources", "bridge_raven_noticed")
+# The reads whose answers carry the notice as well. A record lookup
+# answers the same over MCP and REST, and the owner listing pages within
+# a byte bound, so those two carry it in their descriptions only.
+KICKOFF_NOTICE_TOOLS = tuple(t for t in READ_BEFORE_KICKOFF
+                             if t not in ("bridge_lookup_record", "bridge_get_record", "bridge_list_owners"))
+READ_ONLY_NOTE = (" This reads and registers no task: on a task, call bridge_start_task first, before any work, "
+                  "so the judgment calls you hit have a canvas to land on.")
+KICKOFF_NOTICE = ("No task is registered for you yet. Call bridge_start_task now, before any work, with the task as "
+                  "it was given to you, the repository and a client_key: reading Raven registers nothing, and a "
+                  "judgment call hit on a task nobody registered reaches nobody.")
+for _tool in TOOLS:
+    if _tool["name"] in READ_BEFORE_KICKOFF:
+        _tool["description"] += READ_ONLY_NOTE
+
 _import_properties = next(t['inputSchema']['properties'] for t in TOOLS if t['name'] == 'bridge_import_record')
 _import_properties.update({key: {'type': 'string', 'description': description} for key, description in {
     'provider': 'github, jira, slack, generic; omitted keeps the separate legacy identity',
@@ -208,7 +230,10 @@ _import_properties.update({key: {'type': 'string', 'description': description} f
 
 
 INSTRUCTIONS = (
-    DECISION_GUIDANCE +
+    "First call on any task: bridge_start_task, before reading the repository or searching Raven, with the task as "
+    "it was given to you. A search registers nothing, and a task nobody registered reaches nobody; until one is "
+    "registered, every read answers with a notice saying so. "
+    + DECISION_GUIDANCE +
     "Kickoff and node writes return their static reading promptly. model_pending means inference is still running; "
     "use bridge_wait or bridge_get_tree to read the update. Resume with bridge_start_task(task_id=...). "
     "To close an accidental task nobody has answered, use bridge_finish_task(status=abandoned, reason=...). "
@@ -535,6 +560,9 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None, principal
             result["delivery"]["notifications"] = [dict(r) for r in store.graph.db.execute(
                 "SELECT kind,state,person_name,last_error FROM notifications WHERE decision_id=? ORDER BY created_at",
                 (result["node_id"],))]
+    if name in KICKOFF_NOTICE_TOOLS and isinstance(result, dict) and not _task_registered(store, principal):
+        # Under its own key: a search carries a notice of its own already.
+        result = {**result, "kickoff": KICKOFF_NOTICE}
     if args.get('task_id'):
         visibility.remember_reads(store, args['task_id'], result)
     result = visibility.public(store, result)
@@ -559,6 +587,21 @@ def call_tool(store, name, args, wait_cap=None, sleep=None, stop=None, principal
             elif one_node and canvas.unread_by_agent(store, args.get('task_id', '')):
                 result['next'] += ' Other decisions on this task changed since you last read it; read bridge_get_tree before finishing.'
     return result
+
+
+def _task_registered(store, principal) -> bool:
+    """Whether a task is live for whoever is calling: one this credential's
+    person kicked off or its agent label is on; on stdio, the local
+    operator's, so any live task."""
+    rows = store.graph.db.execute(
+        "SELECT requester, agent FROM runs WHERE status NOT IN ('completed','failed','cancelled','abandoned') "
+        "ORDER BY updated_at DESC LIMIT 500").fetchall()
+    if principal is None:
+        return bool(rows)
+    who = _import_actor(principal, store)
+    names = {n for n in (getattr(who, "name", ""), getattr(principal, "name", ""),
+                         getattr(principal, "token_label", "")) if n}
+    return any(r["requester"] in names or r["agent"] in names for r in rows)
 
 
 def params_error(method, params):
