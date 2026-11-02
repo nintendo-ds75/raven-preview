@@ -41,6 +41,13 @@
 .att-answer textarea:focus,.att-answer input:focus,.att-correct textarea:focus{outline:none;border-color:#4f8a48}
 .att-answer input{font-size:13px}
 .att-actions{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-top:4px}
+.att-handon{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
+.att-handon .att-k{margin:0}
+.att-handon select,.att-handon input{background:var(--bg);border:1px solid var(--line);border-radius:10px;color:var(--ink);font:inherit;font-size:13px;padding:8px 12px}
+.att-handon input{flex:1 1 220px}
+.att-handon select:focus,.att-handon input:focus{outline:none;border-color:#4f8a48}
+.att-handon .ask-error{flex-basis:100%;margin:0}
+.att-handon .att-actions{margin:0}
 .att-open{margin-left:auto;font-size:12px;color:var(--muted);text-decoration:none}
 .att-open:hover{color:var(--green)}
 
