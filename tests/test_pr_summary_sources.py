@@ -74,9 +74,10 @@ class Summary(OfflineCase):
         self.assertEqual(hit['answer'], 'Never buy a label before the merchant sees the price.')
         self.assertTrue(hit['person_id'])
         md = result['markdown']
-        self.assertIn('`Raven cache hit` Marcus Lee decided this in “Stale-rate incident follow-up”', md)
-        self.assertIn('`Live reply` New judgment from Priya Shah', md)
-        self.assertIn('`Still open`', md)
+        self.assertIn('| 🟡 | **Never buy a label before the merchant sees the price.** | Marcus |', md)
+        self.assertIn('Reused Marcus\'s call from “Stale-rate incident follow-up”; nobody asked', md)
+        self.assertIn("| 🔵 | **Bloom pays the negotiated rate on bulk buys.** | Priya | In Raven |", md)
+        self.assertIn('| 🔴 | Should USPS bulk buys batch by carrier? | — | Waiting on Priya Shah |', md)
         self.assertFalse(result['signed_off'])
 
     def test_the_whole_answer_and_reason_reach_the_pr(self):
@@ -89,8 +90,21 @@ class Summary(OfflineCase):
                                               'before, so staging must show the limiter holds under a full batch.',
                                  'by': 'Priya Shah'})
         md = pr_summary.summary(self.store, task)['markdown']
-        self.assertIn('- **At most 40 a minute.** Yes, run a full 200-label batch in staging first.', md)
+        self.assertIn('| **At most 40 a minute.** Yes, run a full 200-label batch in staging first. |', md)
         self.assertIn('so staging must show the limiter holds under a full batch.', md)
+
+    def test_one_table_row_per_decision_with_questions_folded_away(self):
+        # Max on a 17-decision demo PR: "The pr description is way too long", and "a bit more of a table".
+        md = pr_summary.summary(self.store, self.task)['markdown']
+        listed, folded = md.split('<details>', 1)
+        self.assertIn('| # | Source | Decision | Signed by | How it was settled | When |', listed)
+        self.assertIn('🔵 Escalation', listed)
+        rows = [l for l in listed.splitlines() if l.startswith('| ') and l[2].isdigit()]
+        self.assertEqual([r.split(' | ')[0] for r in rows], ['| 1', '| 2', '| 3'])
+        self.assertNotIn('Q:', listed)
+        self.assertNotIn("Which rate do Bloom's bulk buys use?", listed)
+        self.assertIn("Which rate do Bloom's bulk buys use?", folded)
+        self.assertIn('*Why:* We bought $4,100 of labels at a stale rate.', folded)
 
     def test_over_mcp_and_one_line_per_node(self):
         self.assertIn('bridge_pr_summary', mcp.READ_ONLY_TOOLS)

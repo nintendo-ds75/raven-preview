@@ -150,7 +150,18 @@ def _item(store, node):
         item["why"] = _calls(store, item["why"])
     item["label"] = KINDS[item["kind"]]
     item["person_id"] = _person_id(store, item.get("who"))
+    if node.get("answered_via") and "meeting" in str(node["answered_via"]).lower():
+        item["how"] = "in a meeting"
+    names = item["signatures"] or ([item["signed_by"]] if item["signed_by"] else []) or ([item["who"]] if item.get("who") else [])
+    item["signed_label"] = ", ".join(_signer(store, n) for n in names)
     return item
+
+
+def _signer(store, name):
+    """"Ana (Carrier ops)": a first name and the team, as a PR reader knows people."""
+    row = store.graph.db.execute("SELECT team FROM people WHERE lower(name)=lower(?) LIMIT 1", (name,)).fetchone()
+    first = str(name).split(" ")[0]
+    return f"{first} ({row['team']})" if row and row["team"] else first
 
 
 def _person_id(store, name):
@@ -179,43 +190,77 @@ def summary(store, task_id):
     return result
 
 
-def _line(x):
+SOURCES = {"live": "🔵", "record": "🟢", "cache": "🟡", "agent": "⚪", "open": "🔴"}
+LEGEND = ("**Source:** 🔵 Escalation: routed to the person who owns it and answered live · 🟢 Document: "
+          "pulled from a written record (ticket, PR, code, ADR) · 🟡 Memory: reused from a past decision already on record")
+HOW = {"on a call with Raven": "📞 Call", "in Slack": "💬 Slack", "on their task page": "Task page", "in Raven": "In Raven",
+       "in a meeting": "Meeting"}
+
+
+def _cell(text):
+    """Text that stays inside one Markdown table cell."""
+    return re.sub(r"\s+", " ", str(text or "")).replace("|", "\\|").strip()
+
+
+def _when(iso):
+    return _day(iso) or "—"
+
+
+def _row(n, x):
+    """One table row per decision: the answer, who signed it, how it was
+    settled and when. The questions and reasons are folded away below the
+    table, so a reviewer reads what was decided and by whom at a glance."""
+    if x["kind"] == "open":
+        return f"| {n} | {SOURCES['open']} | {_cell(x['question'])} | — | Waiting on {_cell(x['who'] or 'an owner')} | — |"
     lead, rest = _lead(x["answer"] or x["question"])
-    head = f"- **{lead}**" + (f" {rest}" if rest else "")
+    decision = f"**{_cell(lead)}**" + (f" {_cell(rest)}" if rest else "")
+    signed = x.get("signed_label") or "—"
     if x["kind"] == "cache":
-        s = x["source"]
-        where = f" in “{s['task']}”" if s.get("task") else ""
-        when = f" on {s['decided_at']}" if s.get("decided_at") else ""
-        body = f"  `Raven cache hit` {x['who'] or 'Someone'} decided this{where}{when}. Reused; nobody was asked again."
+        src = x["source"]
+        first = (x["who"] or "").split(" ")[0]
+        how = f"Reused {first + chr(39) + 's' if first else 'an'} call" + (f" from “{src['task']}”" if src.get("task") else "")
+        how += "; nobody asked"
+        when = _when(src.get("decided_at"))
     elif x["kind"] == "live":
-        body = f"  `Live reply` New judgment from {x['who'] or 'the owner'}, {x.get('how', 'in Raven')}."
+        how, when = HOW.get(x.get("how", ""), x.get("how", "In Raven")), _when(x["updated_at"])
     elif x["kind"] == "record":
-        body = "  `From records` " + (x.get("detail") or "Found in the team's records.")
-    elif x["kind"] == "agent":
-        body = "  `Agent default` Nobody was asked; the agent chose this."
+        how, when = "From records" + (f": {x['detail']}" if x.get("detail") else ""), _when(x["updated_at"])
     else:
-        return f"- **{x['question']}**\n  `Still open` Waiting on {x['who'] or 'an owner'}."
-    if x.get("why"):
-        body += f" Why: {x['why']}"
-    if x["signatures"] or x["signed_by"]:
-        body += f" Signed off by {', '.join(x['signatures']) or x['signed_by']}."
-    question = f"\n  <sub>Q: {x['question']}</sub>" if x["answer"] and x["question"] else ""
-    return f"{head}\n{body}{question}"
+        how, when = "Agent default; nobody asked", _when(x["updated_at"])
+    return f"| {n} | {SOURCES[x['kind']]} | {decision} | {_cell(signed)} | {_cell(how)} | {when} |"
+
+
+def _detail(n, x):
+    """The question and the reason, for the collapsed block."""
+    line = f"{n}. {_cell(x['question'])}"
+    if x["answer"] and x.get("why"):
+        line += f" *Why:* {_cell(x['why'])}"
+    return line
 
 
 def markdown(result):
-    """The PR body section. Plain Markdown that GitHub renders as is."""
-    c = result["counts"]
-    tally = [f"{c['live']} live repl" + ("ies" if c["live"] != 1 else "y"),
-             f"{c['cache']} Raven cache hit" + ("s" if c["cache"] != 1 else "")]
-    tally += [f"{c[k]} {KINDS[k].lower()}" for k in ("record", "agent", "open") if c[k]]
+    """The PR body section. Plain Markdown that GitHub renders as is: one
+    short table a reviewer reads, and the questions and reasons folded away."""
+    c, items = result["counts"], result["items"]
+    asked = c["live"]
+    parts = [f"{asked} asked {'its owner' if asked == 1 else 'their owners'}" if asked else "",
+             f"{c['cache']} reused from past decisions" if c["cache"] else "",
+             f"{c['record']} from records" if c["record"] else "",
+             f"{c['agent']} agent default" + ("s" if c["agent"] != 1 else "") if c["agent"] else "",
+             f"{c['open']} still open" if c["open"] else ""]
+    signed = ("Each is signed off by the person who owns it." if result["signed_off"]
+              else "Sign-off is not complete.")
     lines = ["## Decisions behind this change", "",
-             f"Raven gathered {len(result['items'])} decision" + ("s" if len(result["items"]) != 1 else "")
-             + " for *" + result["task"]["title"] + "*: " + ", ".join(tally) + ".", ""]
-    lines += [_line(x) for x in result["items"]]
-    lines += ["", "**Sign-off:** " + ("every decision is signed off by the person who owns it."
-                                       if result["signed_off"] else "not complete; see the open lines above."),
-              "", f"<sub>Recorded by Raven · task {result['task']['id']}</sub>"]
+             f"Raven gathered {len(items)} decision" + ("s" if len(items) != 1 else "")
+             + " for *" + result["task"]["title"] + "*: " + ", ".join(p for p in parts if p) + ". " + signed, ""]
+    if items:
+        lines += [LEGEND, "", "| # | Source | Decision | Signed by | How it was settled | When |",
+                  "|---|---|---|---|---|---|"]
+        lines += [_row(i, x) for i, x in enumerate(items, 1)]
+        lines += ["", "<details><summary>The questions, and the reasons people gave</summary>", ""]
+        lines += [_detail(i, x) for i, x in enumerate(items, 1)]
+        lines += ["", "</details>"]
+    lines += ["", f"<sub>Recorded by Raven · task {result['task']['id']}</sub>"]
     return "\n".join(lines) + "\n"
 
 
