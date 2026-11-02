@@ -133,12 +133,22 @@ function buildLine(d, j) {
   return `<span class="dot open"></span>${j.owner ? `Waiting on ${esc(first(j.owner))} · ${esc(ago(d.created_at)).replace(/ ago$/, '')}` : 'Raven is finding who owns this'}`;
 }
 
+// The points a composed answer's source left open (decision.gaps, a JSON
+// list or an array), shown as Raven's own note.
+function buildGaps(d) {
+  let gaps = d.gaps;
+  if (typeof gaps === 'string') { try { gaps = gaps ? JSON.parse(gaps) : []; } catch { gaps = []; } }
+  return Array.isArray(gaps) ? gaps.map(g => String(g || '').trim()).filter(Boolean) : [];
+}
+
 // What opens when a tile is clicked: the answer, why Raven trusted it, the
 // earlier call it came from, where the rest was read, and the one action.
 function buildDetail(d, j) {
   const first = askFirst;
   const parts = [];
   if (d.answer && j.kind !== 'review' && j.kind !== 'checking') parts.push(`<p class="build-answer">${esc(d.answer)}</p>`);
+  // What the source left open is Raven's note, never part of the person's words.
+  if (buildGaps(d).length && j.kind !== 'review') parts.push(`<p class="build-note build-gaps">Raven could not find: ${esc(buildGaps(d).join('; '))}.</p>`);
   if (j.kind === 'settled') {
     parts.push(`<div class="build-why"><span class="ask-label">Why Raven applied it</span><p>${esc(d.fit_reason || `Raven matched it to a call ${j.priorBy || 'someone'} already made.`)}</p></div>`);
     if (d.answered_via === 'meeting') parts.push(`<div class="build-prior"><span class="ask-label">Settled from this meeting</span>

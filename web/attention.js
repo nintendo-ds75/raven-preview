@@ -42,7 +42,7 @@ function attNeeds(item) {
     <h3>${esc(item.question)}</h3>
     <p class="att-why"><span class="att-k">Why it reached you</span>${esc(item.why)}</p>
     ${item.guess ? `<div class="att-guess"><span class="att-k">Raven would apply this, but isn’t sure: your call</span>
-      <p>“${esc(item.guess)}”</p>
+      <p>“${esc(item.guess)}”</p>${attGaps(item)}
       ${guessFrom ? `<small>from ${esc(guessFrom.by === attention.person.name ? 'your' : attFirst(guessFrom.by) + '’s')} ${esc(attDate(guessFrom.when))} call${attVia[guessFrom.answered_via] ? ' ' + esc(attVia[guessFrom.answered_via]) : ''} on <a href="${attHref(guessFrom.run_id, guessFrom.id)}">${esc(guessFrom.task)}</a></small>` : ''}
       <button type="button" class="button small" data-att="apply" data-id="${esc(item.id)}">Use this answer</button></div>` : ''}
     ${item.options.length ? `<div class="att-options"><span class="att-k">The agent’s options</span>${item.options.map((o, i) => `<button type="button" class="att-option" data-att="option" data-id="${esc(item.id)}" data-n="${i}">${esc(o)}</button>`).join('')}</div>` : ''}
@@ -59,6 +59,12 @@ function attNeeds(item) {
   </article>`;
 }
 
+// What the source left open: Raven's own note, never inside the quote.
+function attGaps(item) {
+  const gaps = Array.isArray(item.gaps) ? item.gaps.map(g => String(g || '').trim()).filter(Boolean) : [];
+  return gaps.length ? `<p class="att-why att-gaps"><span class="att-k">Raven could not find</span>${esc(gaps.join('; '))}.</p>` : '';
+}
+
 function attHandled(item) {
   const open = attOpen.has(item.id);
   const call = item.call || {};
@@ -69,6 +75,7 @@ function attHandled(item) {
     </button>
     ${open ? `<div class="att-detail">
       <p class="att-a">“${esc(item.answer)}”</p>
+      ${attGaps(item)}
       <p class="att-why"><span class="att-k">Why it fits</span>${esc(item.fit_reason || 'Raven matched it to your earlier call.')}</p>
       <p class="att-call"><span class="att-k">${call.answered_via === 'meeting' ? 'What you said' : 'Your call it used'}</span>${call.answered_via === 'meeting' ? `in ${esc(call.task)}` : `${esc(attDate(call.when))}${attVia[call.answered_via] ? ', ' + esc(attVia[call.answered_via]) : ''}, on <a href="${attHref(call.run_id, call.id)}">${esc(call.task)}</a>`}: “${esc(call.answer)}”</p>
       <div class="att-actions"><button type="button" class="button small" data-att="correct" data-id="${esc(item.id)}">That’s wrong, or doesn’t apply here</button><a class="att-open" href="${attHref(item.run_id, item.id)}">Full record ↗</a></div>

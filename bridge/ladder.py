@@ -2164,7 +2164,7 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 else:
                     mkind = "semantic"
                     detail = f"reused from decision {item.id}, {pick_note}, checked against this question"
-                mem_partial = _states_a_gap(item.answer) or joint_partial
+                mem_partial = _states_a_gap(item.answer) or joint_partial or bool(item.gaps)
                 rival = pre_rival[0] if pre_rival else _record_contradicting(store, cfg, repo, question, item.answer)
                 if rival is not None and _numeric_clash(item.answer, (rival["title"] or "") + " " + (rival["body"] or "")):
                     # An unsettled record, or an unsigned answer: the figures

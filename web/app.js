@@ -1211,7 +1211,10 @@ function decisionInquiry(d) {
 // the question was asked with, folded after four lines.
 function decisionCurrentSummary(d, withAnswer = true) {
   const scope = typeof objectiveScope === 'function' ? objectiveScope(d) : null;
-  return `<section class="decision-current" aria-label="Current decision">${withAnswer && d.answer ? `<p class="decision-current-answer">${esc(d.answer)}</p>${d.rationale ? `<p class="decision-current-reason"><strong>Why:</strong> ${esc(d.rationale)}</p>` : ''}` : ''}${scope ? objectiveScopeCard(scope, `current-${d.id}`) : clamped(shownContext(d.context), 'modal-context', `modal-${d.id}`)}</section>`;
+  // What the source left open is Raven's note, never part of the person's words.
+  let gaps = d.gaps; if (typeof gaps === 'string') { try { gaps = gaps ? JSON.parse(gaps) : []; } catch { gaps = []; } }
+  gaps = Array.isArray(gaps) ? gaps.map(g => String(g || '').trim()).filter(Boolean) : [];
+  return `<section class="decision-current" aria-label="Current decision">${withAnswer && d.answer ? `<p class="decision-current-answer">${esc(d.answer)}</p>${gaps.length ? `<p class="context decision-current-gaps">Raven could not find: ${esc(gaps.join('; '))}.</p>` : ''}${d.rationale ? `<p class="decision-current-reason"><strong>Why:</strong> ${esc(d.rationale)}</p>` : ''}` : ''}${scope ? objectiveScopeCard(scope, `current-${d.id}`) : clamped(shownContext(d.context), 'modal-context', `modal-${d.id}`)}</section>`;
 }
 
 function decisionReviewScope(d) {

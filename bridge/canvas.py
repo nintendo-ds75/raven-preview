@@ -3713,7 +3713,7 @@ def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, or
                 # The memory target and its observed revision are one piece
                 # of provenance; never infer a new revision at publication.
                 fields = ['status','answer','rationale','source','source_id','source_revision','evidence','kind','prediction','owner_id',
-                          'owner_evidence','answered_by','signoff','signed_by','signed_hash','signed_revision','signatures','brief','superseded_by','source_reuse_state','fit_reason']
+                          'owner_evidence','answered_by','signoff','signed_by','signed_hash','signed_revision','signatures','brief','superseded_by','source_reuse_state','fit_reason','gaps']
                 fields = [f for f in fields if f in outcome]
                 graph.db.execute('UPDATE decisions SET ' + ','.join(f+'=?' for f in fields) + ', updated_at=? WHERE id=?',
                                  (*[outcome[f] for f in fields], now(), did))
