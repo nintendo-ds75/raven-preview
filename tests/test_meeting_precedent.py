@@ -10,7 +10,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase  # noqa: E402
 
-from bridge import attention, canvas, meeting_precedent, meeting_records as mr, people_context  # noqa: E402
+from bridge import attention, canvas, meeting_precedent, meeting_records as mr, people_context, timeline  # noqa: E402
 from bridge.authz import Actor  # noqa: E402
 from bridge.config import Config  # noqa: E402
 from bridge.llm import LLMError  # noqa: E402
@@ -69,8 +69,10 @@ class MeetingCase(OfflineCase):
                                        "Pricing sync (Dana, Elena), Oct 29", artifact="meeting:" + self.mid)
 
     def node(self, cfg=None, question=QUESTION, **extra):
+        # Filed as pricing: Dana decides pricing, and the words stand only
+        # when Raven's own route would ask the speaker (DeciderTests).
         return canvas.add_node(self.store, cfg or self.cfg, {"task_id": self.task, "question": question, "context": CONTEXT,
-                                                             "paths": "hw/riscv/virt.c", "category": "policy",
+                                                             "paths": "hw/riscv/virt.c", "category": "pricing",
                                                              "facts": "customer=northwind", **extra})
 
     def model(self, reading):
@@ -244,6 +246,207 @@ class SafeguardTests(MeetingCase):
         n = self.node(ModelOn(model_api="claude-cli"), question="Should the aplic be the default interrupt controller for the virt board?")
         self.assertNotEqual(self.store.get_decision(n["node_id"])["source"], "meeting")
         self.assertEqual(read.call_count, 0)
+
+
+PW = "parcelwise/parcelwise-app"
+PW_QUESTION = "What do we charge per assistant answer past the allowance?"
+PW_CONTEXT = "No rate on record. Code will hold it as Decimal per plan in PLANS (extra_assistant_price), left unset until answered."
+MARCUS_QUOTE = "Nothing charges when the merchant asks the question. It goes through the nightly job like everything else."
+MARCUS_NOTE = "Marcus: nothing is charged per assistant answer at question time; assistant charges go through the nightly job."
+PRIYA_QUOTE = "Past the allowance it's two cents an assistant answer, the same on every plan."
+PRIYA_NOTE = "Priya: past the allowance each assistant answer is charged two cents, the same on every plan."
+PW_TRANSCRIPT = "\n".join([
+    "Priya Shah: Assistant pricing, then. The allowance first: how many answers a month before we charge?",
+    "Marcus Lee: I'd rather charge from the first of the month than argue about it in February.",
+    "Priya Shah: " + PRIYA_QUOTE,
+    "Marcus Lee: " + MARCUS_QUOTE,
+])
+
+
+class DeciderTests(OfflineCase):
+    """Whose words stand. Measured on the Parcelwise dry run (Nov 2): "What
+    do we charge per assistant answer past the allowance?" (pricing,
+    app/billing/plans.py) became Raven's guess routed to Marcus from his
+    "nothing charges when the merchant asks" line, with owner evidence
+    "spoke for app/billing/*". Marcus decides billing and app/billing/*;
+    Priya decides pricing and app/billing/plans.py, the more specific path,
+    and the ladder's own route had named her. The speaker's own rows were
+    read instead of who Raven would ask."""
+
+    def setUp(self):
+        super().setUp()
+        self.store = self.fresh_store("parcelwise-meeting.db")
+        self.graph = g = self.store.graph
+        self.addCleanup(g.close)
+        mr.migrate(g.db)
+        self.cfg = Config()
+        with g.transaction():
+            self.marcus = g.add_person("Marcus Lee", email="marcus@parcelwise.example")
+            self.priya = g.add_person("Priya Shah", email="priya@parcelwise.example")
+            for who, kind, scope in (("Marcus Lee", "category", "billing"), ("Marcus Lee", "path", "app/billing/*"),
+                                     ("Priya Shah", "category", "pricing"), ("Priya Shah", "path", "app/billing/plans.py")):
+                g.add_authority(kind, scope, "decides", person_id=self.marcus if who == "Marcus Lee" else self.priya,
+                                repo=PW, source="config")
+            for path in ("app/billing/plans.py", "app/billing/nightly.py", "app/assistant/answers.py"):
+                g.upsert_artifact(PW, path)
+        meeting = mr.create(self.store, {"repo": PW, "provider": "import", "namespace": "import", "platform": "zoom",
+                                         "native_meeting_id": "assistant-pricing", "title": "Assistant pricing sync (founders), Oct 29"})
+        self.mid = meeting["id"]
+        mr.import_transcript(self.store, self.mid, PW, {"body": PW_TRANSCRIPT, "source_version": "import:" + self.mid,
+                                                        "workspace_shared": True, "by": "Priya Shah", "complete": True})
+        self.task = canvas.start_task(self.store, self.cfg, {
+            "title": "Charge for assistant answers past the allowance", "repo": PW, "agent": "claude",
+            "requester": "Sam Rivera <sam@parcelwise.example>", "paths": "app/billing/plans.py"})["task_id"]
+
+    def learned(self, person, text, quote):
+        return people_context.remember(self.store, person, text, "from a meeting", "unwritten", quote,
+                                       "Assistant pricing sync (founders), Oct 29", artifact="meeting:" + self.mid)
+
+    def node(self, cfg=None, question=PW_QUESTION, category="pricing", **extra):
+        return canvas.add_node(self.store, cfg or self.cfg, {"task_id": self.task, "question": question, "context": PW_CONTEXT,
+                                                             "paths": "app/billing/plans.py", "category": category, **extra})
+
+    def model(self, reading):
+        import json
+
+        def read(self_, purpose, system, prompt, **kw):
+            if purpose != "meeting_precedent":
+                raise LLMError("offline")
+            return reading(json.loads(prompt)) if callable(reading) else reading
+        patcher = patch("bridge.llm.Client.complete_json", autospec=True, side_effect=read)
+        mock = patcher.start()
+        self.addCleanup(patcher.stop)
+        quiet = patch("bridge.canvas._start_background", lambda *a, **k: None)
+        quiet.start()
+        self.addCleanup(quiet.stop)
+        return mock
+
+    def test_a_speaker_who_decides_a_broader_path_does_not_take_the_call_from_the_category_decider(self):
+        """Marcus decides app/billing/* and billing; Priya decides pricing
+        and app/billing/plans.py. His words go to Priya as context."""
+        self.learned(self.marcus, MARCUS_NOTE, MARCUS_QUOTE)
+        n = self.node()
+        self.assertEqual((n["status"], n["kind"], n["owner"], n["prediction"] or ""), ("pending", "new", "Priya Shah", ""))
+        row = self.store.get_decision(n["node_id"])
+        self.assertNotEqual((row["source"], row["answered_via"]), ("meeting", "meeting"))
+        self.assertTrue(row["owner_evidence"].startswith("verified: Priya Shah decides for pricing decisions"), row["owner_evidence"])
+        self.assertNotIn("spoke for", row["owner_evidence"])
+        self.assertIn("meeting: Marcus Lee said in the Oct 29 Assistant pricing sync (founders): “" + MARCUS_QUOTE + "”; "
+                      "Priya Shah decides pricing, so it is Priya's call", row["evidence"])
+        # The transcript is pinned as a source, and the event is not a guess.
+        self.assertEqual([(s["ref"].split(":")[0], s["role"]) for s in n["sources"]], [("meeting", "support")])
+        self.assertEqual(self.graph.count_events("meeting_context", decision_id=n["node_id"]), 1)
+        self.assertEqual(self.graph.count_events("meeting_precedent", decision_id=n["node_id"]), 0)
+        # Priya is asked, with what Marcus said; Marcus has nothing to confirm.
+        priya = attention.overview(self.store, Actor(id=self.priya, name="Priya Shah"))
+        self.assertEqual([i["id"] for i in priya["needs_you"]], [n["node_id"]])
+        self.assertFalse(priya["needs_you"][0].get("guess"))
+        marcus = attention.overview(self.store, Actor(id=self.marcus, name="Marcus Lee"))
+        self.assertEqual(marcus["needs_you"], [])
+        from bridge.delivery import _found_for_owner
+        self.assertIn(MARCUS_QUOTE, _found_for_owner(row["evidence"]))
+        rows = timeline.rows(self.store, self.task)
+        self.assertTrue(any(r["kind"] == "flagged" and "to Priya, who decides for pricing decisions" in r["text"] for r in rows), rows)
+        self.assertFalse(any(r["kind"] == "guess" for r in rows), rows)
+
+    def test_words_the_model_reads_as_settling_it_still_settle_nothing_when_the_speaker_does_not_decide(self):
+        self.learned(self.marcus, MARCUS_NOTE, MARCUS_QUOTE)
+        self.model({"settles": True, "bears_on": True, "quote": MARCUS_QUOTE,
+                    "answer": "Nothing is charged when the merchant asks; it goes through the nightly job.", "why": "Marcus said so."})
+        n = self.node(ModelOn(model_api="claude-cli"))
+        self.assertEqual((n["status"], n["owner"]), ("pending", "Priya Shah"))
+        row = self.store.get_decision(n["node_id"])
+        self.assertNotEqual(row["source"], "meeting")
+        self.assertIn("meeting: Marcus Lee said", row["evidence"])
+
+    def test_the_category_deciders_own_words_are_ravens_guess_routed_to_her(self):
+        self.learned(self.priya, PRIYA_NOTE, PRIYA_QUOTE)
+        n = self.node()
+        self.assertEqual((n["status"], n["kind"], n["owner"], n["prediction"]), ("predicted", "prediction", "Priya Shah", PRIYA_NOTE))
+        self.assertIn("Raven would apply what Priya Shah said in the Oct 29 Assistant pricing sync (founders), but isn't sure", n["evidence"])
+        self.assertIn("Priya confirms or corrects it", n["evidence"])
+        row = self.store.get_decision(n["node_id"])
+        self.assertEqual(row["answered_via"], "meeting")
+        self.assertTrue(row["owner_evidence"].startswith("verified: Priya Shah decides for pricing decisions"), row["owner_evidence"])
+        self.assertIn("; spoke for pricing in the Oct 29 Assistant pricing sync (founders)", row["owner_evidence"])
+        self.assertEqual(self.graph.count_events("meeting_precedent", decision_id=n["node_id"]), 1)
+        rows = timeline.rows(self.store, self.task)
+        guess = [r for r in rows if r["kind"] == "guess"]
+        self.assertEqual(len(guess), 1, rows)
+        self.assertTrue(guess[0]["text"].startswith(f"Raven's guess on “{timeline.topic(PW_QUESTION)}” from what Priya said in the"),
+                        guess[0]["text"])
+        self.assertTrue(guess[0]["text"].endswith("; Priya confirms"), guess[0]["text"])
+
+    def test_with_both_on_record_the_deciders_words_are_the_guess_not_the_other_persons(self):
+        self.learned(self.marcus, MARCUS_NOTE, MARCUS_QUOTE)
+        self.learned(self.priya, PRIYA_NOTE, PRIYA_QUOTE)
+        n = self.node()
+        self.assertEqual((n["status"], n["owner"], n["prediction"]), ("predicted", "Priya Shah", PRIYA_NOTE))
+
+    def test_with_no_category_the_most_specific_path_decider_is_the_one_whose_words_stand(self):
+        """Paths only: Marcus decides app/billing/*, Priya the file itself."""
+        self.learned(self.marcus, MARCUS_NOTE, MARCUS_QUOTE)
+        n = self.node(category="", question=PW_QUESTION + " (paths only)")
+        self.assertEqual((n["status"], n["owner"]), ("pending", "Priya Shah"))
+        row = self.store.get_decision(n["node_id"])
+        self.assertIn("Priya Shah decides app/billing/plans.py, so it is Priya's call", row["evidence"])
+
+    def test_with_no_category_the_file_deciders_own_words_are_the_guess(self):
+        self.learned(self.priya, PRIYA_NOTE, PRIYA_QUOTE)
+        n = self.node(category="")
+        self.assertEqual((n["status"], n["owner"], n["prediction"]), ("predicted", "Priya Shah", PRIYA_NOTE))
+        self.assertIn("spoke for app/billing/plans.py in the Oct 29", self.store.get_decision(n["node_id"])["owner_evidence"])
+
+    def test_the_deciders_words_settle_it_with_the_route_as_the_reason(self):
+        self.learned(self.priya, PRIYA_NOTE, PRIYA_QUOTE)
+        self.model({"settles": True, "bears_on": True, "quote": PRIYA_QUOTE, "why": "Priya set the rate.",
+                    "answer": "Two cents per assistant answer past the allowance, the same on every plan."})
+        n = self.node(ModelOn(model_api="claude-cli"))
+        self.assertEqual((n["status"], n["signoff"], n["answered_by"]), ("resolved", "rule", "Priya Shah"))
+        row = self.store.get_decision(n["node_id"])
+        self.assertIn("Priya Shah, who decides pricing, said “", row["fit_reason"])
+        self.assertTrue(row["owner_evidence"].startswith("verified: Priya Shah decides for pricing decisions"), row["owner_evidence"])
+
+    def test_the_route_not_the_speakers_rows_says_who_decides(self):
+        """A question the route sends to git history, not to the speaker:
+        the words travel as context, with who is asked."""
+        self.learned(self.marcus, MARCUS_NOTE, MARCUS_QUOTE)
+        why: list = []
+        run = self.graph.get_task(self.task)
+        out = meeting_precedent.consider(self.store, self.cfg, run, PW_QUESTION, context=PW_CONTEXT,
+                                         paths=["app/billing/plans.py"], category="pricing", repo=PW, why=why)
+        self.assertEqual(out[0], "context")
+        self.assertEqual((out[1]["decider"]["name"], out[1]["decider"]["area"], out[1]["area"]), ("Priya Shah", "pricing", ""))
+        self.assertTrue(any("Marcus Lee does not decide this; Priya Shah does (pricing)" in w for w in why), why)
+        out = meeting_precedent.consider(self.store, self.cfg, run, PW_QUESTION, context=PW_CONTEXT,
+                                         paths=["app/billing/nightly.py"], category="billing", repo=PW)
+        self.assertEqual((out[0], out[1]["area"]), ("predict", "billing"))
+
+
+class HelperTests(OfflineCase):
+    def test_the_area_a_route_line_names(self):
+        area = meeting_precedent._route_area
+        self.assertEqual(area(["verified: Priya Shah decides for pricing decisions (this one speaks of pricing) (config)"]), "pricing")
+        self.assertEqual(area(["verified: Priya Shah decides for app/billing/plans.py (matches app/billing/plans.py) (config)"]),
+                         "app/billing/plans.py")
+        self.assertEqual(area(["verified: Dana Price decides for hw/riscv/* (matches hw/riscv/virt.c) (config), as a member of Core"]),
+                         "hw/riscv/*")
+        self.assertEqual(area(["verified: Ana Ruiz decides repository-wide (config)"]), "this repository")
+        self.assertEqual(area(["inferred first contact: authored pr 12 for app/x.py"]), "")
+
+    def test_the_meeting_line_survives_a_rewrite_of_the_evidence(self):
+        line = "meeting: Marcus Lee said in the Oct 29 sync: “Nothing charges; ever: fine”; Priya Shah decides pricing, so it is Priya's call"
+        before = "memory: best match scored 0.32, under the 0.6 floor; " + line
+        self.assertEqual(meeting_precedent.carry_context(before, "semantic: no candidate answers this"),
+                         "semantic: no candidate answers this; " + line)
+        self.assertEqual(meeting_precedent.carry_context(before, "x; " + line), "x; " + line)
+        self.assertEqual(meeting_precedent.carry_context("memory: nothing", "x"), "x")
+        self.assertEqual(meeting_precedent.carry_context(before, ""), line)
+        # Delivery shows it to the owner first, ahead of a record excerpt.
+        from bridge.delivery import _found_for_owner
+        plain = "meeting: Marcus Lee said in the Oct 29 sync: “Nothing charges when the merchant asks”; Priya Shah decides pricing"
+        self.assertEqual(_found_for_owner("memory: best match scored 0.32, under the 0.6 floor; records: retrieved pr 220: x; " + plain),
+                         plain + "; records: retrieved pr 220: x")
 
 
 class WhenTests(OfflineCase):

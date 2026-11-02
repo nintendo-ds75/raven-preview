@@ -1220,16 +1220,20 @@ def add_node(store, cfg, data, *, _cached_rule_attempt=False) -> dict:
         query = _ask_cached_rule if _cached_rule_attempt else ask
         own = not _cached_rule_attempt and not adopt
         repo_scope = graph.resolve_repo(repo_key(run["repo"])) if own else ""
-        # What a person with authority said in a meeting settles the call
+        # What the person who decides said in a meeting settles the call
         # the way an earlier decision does; words that only bear on it
         # reach the speaker as Raven's guess once the ladder has had its
-        # turn and left the question open.
+        # turn and left the question open. Someone else's words travel
+        # with the open call as context for the decider. The meeting is
+        # held against the same route the ladder takes (paths, hints,
+        # requester), so the two agree on who decides.
         spoken = None
         spoken_why: list[str] = []
         if own and not owner_id:
             from . import meeting_precedent
-            spoken = meeting_precedent.consider(store, effective, run, question, context=ctx, paths=scope_paths,
-                                                category=category, facts=facts, repo=repo_scope, why=spoken_why)
+            spoken = meeting_precedent.consider(store, effective, run, question, context=ctx, paths=paths,
+                                                hints=hints, requester=requester, category=category, facts=facts,
+                                                repo=repo_scope, why=spoken_why)
         twin = None
         twin_why: list[str] = []
         applied = False
@@ -1256,9 +1260,14 @@ def add_node(store, cfg, data, *, _cached_rule_attempt=False) -> dict:
                 if twin is not None:
                     row = dedupe.fold_draft(store, row, twin, why=twin_why)
                     applied = True
-                elif spoken is not None:
+                elif spoken is not None and spoken[0] == "predict":
                     row = meeting_precedent.predict_draft(store, row, spoken[1], repo=repo_scope, why=spoken_why)
                     applied = True
+                elif spoken is not None:
+                    # The decider is asked, as the ladder routed it; what
+                    # the other person said goes along. The model pass
+                    # still runs, and keeps the line (carry_context).
+                    row = meeting_precedent.attach_context(store, row, spoken[1], repo=repo_scope, why=spoken_why)
         drafts = list(row.get("drafts") or [])
         # A duplicate comes back as its twin's row, which belongs to another
         # task; the node of this task is the stub, and its view names the
@@ -3750,6 +3759,11 @@ def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, or
                 graph.append_event('brief_withheld', {'task_id': run['id'], 'decision_id': did, 'why': withheld[0]})
         with graph.transaction():
             current = dict(graph.db.execute('SELECT * FROM decisions WHERE id=?', (did,)).fetchone())
+            if outcome['status'] == 'pending' and 'evidence' in outcome:
+                # What someone said in a meeting, attached for the owner
+                # when the node was placed, is not lost to the rewrite.
+                from .meeting_precedent import carry_context
+                outcome['evidence'] = carry_context(current.get('evidence') or '', outcome.get('evidence') or '')
             if current['updated_at'] == scheduled_revision and current['model_pending'] and _task(store, run['id'])['status'] != 'abandoned':
                 from . import context_memory as cm
                 source_pins = [cm.pin(e, e['role']) for e in cm.edges(graph.db, scratch)]

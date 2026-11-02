@@ -16,8 +16,15 @@ the ladder runs, a question is held against the meeting notes:
   the question names, and name nothing the question is not about;
 - the quote must still be verbatim in the transcript, and the person who
   spoke it (the transcript's speaker, not whoever the note was filed
-  under) must be someone the authority map says decides the area the
-  question falls in: a category of the question or a path it names;
+  under) must be the person Raven's ordinary routing would ask this
+  question: the same ranked route the ladder takes (routing.rank_for_decision:
+  the category the agent named or the question's words name, then the
+  most specific path rule, a path decider who judges an area keeping
+  their files), never the speaker's own broadest row. Measured on the
+  Parcelwise dry run (Nov 2): "What do we charge per assistant answer
+  past the allowance?" (pricing, app/billing/plans.py) became Raven's
+  guess routed to Marcus, who decides app/billing/* and billing, from his
+  line in the sync; Priya decides pricing and plans.py;
 - a model reads whether those words settle this exact question. When it
   says so, the node is settled from the meeting: answered by the speaker,
   answered_via 'meeting', signoff by the speaker's standing ('rule'), the
@@ -27,7 +34,11 @@ the ladder runs, a question is held against the meeting notes:
 - when the model is not sure, or there is no model, the words are not
   applied: the ladder runs as usual, and if it leaves the question open
   the node becomes a prediction routed to the speaker ("Raven would apply
-  this, but isn't sure"), with the quote as Raven's guess.
+  this, but isn't sure"), with the quote as Raven's guess;
+- when the speaker is not the person who decides, their words settle
+  nothing and become nobody's guess: the ladder routes the call as it
+  would have, and the quote travels with it as context for the decider
+  ("Marcus Lee said in the Oct 29 sync: ...; Priya Shah decides pricing").
 
 Nothing here invents an answer: the settled answer is composed from the
 quote alone and may carry no figure the speaker did not say.
@@ -122,35 +133,49 @@ def _short_title(title: str) -> str:
     return re.sub(r"\s*[,;:·-]\s*$", "", " ".join(out.split())).strip() or (title or "the meeting")
 
 
-def _decides(graph, repo: str, person: dict, question: str, context: str, category: str, paths: list[str]) -> str:
-    """The area the speaker decides that this question falls in, or ''.
-    A category row whose scope is one of the question's, a path row whose
-    pattern covers a path the decision names, or a repository-wide row."""
-    from fnmatch import fnmatch
-    from .scopes import decision_scopes
-    scopes = set(decision_scopes(question, context, category))
-    rows = []
-    for r in graph.authority_rows(repo):
-        if r.get("role") not in ("decides", "approves") or not r.get("accepted", 1):
-            continue
-        if r.get("person_id") == person["id"]:
-            rows.append(r)
-        elif r.get("team") and person["id"] in (r["team"].get("members") or []):
-            rows.append(r)
-    for r in rows:
-        kind, scope = r.get("scope_kind"), (r.get("scope") or "").strip()
-        if kind == "category" and scope.lower() in scopes:
-            return scope
-        if kind == "path":
-            pattern = scope.lstrip("/")
-            for p in paths:
-                p = (p or "").strip().lstrip("/")
-                if p and p != "unknown" and (fnmatch(p, pattern) or p.startswith(pattern.rstrip("*/") + "/")
-                                             or p == pattern.rstrip("/")):
-                    return scope
-        if kind == "repo" or (kind == "path" and scope in ("*", "**", "")):
-            return "this repository"
+_ROUTE_AREA = re.compile(r"\b(?:decides|must approve)\s+(?:for\s+([^(;]+?)\s+decisions\b|for\s+([^\s(;]+)|(repository-wide))")
+
+
+def _route_area(lines) -> str:
+    """The area a verified route line says its person decides: 'pricing'
+    from 'decides for pricing decisions (...)', 'app/billing/plans.py'
+    from 'decides for app/billing/plans.py (matches ...)', 'this
+    repository' from 'decides repository-wide'."""
+    for line in lines:
+        m = _ROUTE_AREA.search(line or "")
+        if m:
+            return m.group(1) or m.group(2) or ("this repository" if m.group(3) else "")
     return ""
+
+
+def _decider(graph, repo: str, question: str, context: str, category: str, paths: list[str], hints, requester: str,
+             task_id: str = "") -> dict:
+    """Who Raven's ordinary routing asks this question: the ranked route
+    the ladder itself takes (routing.rank_for_decision), so a meeting
+    never re-decides who decides. The category the agent named or the
+    question's words name comes first, then the most specific path rule
+    across everyone on the map, and a path decider who judges an area of
+    their own keeps their files (signals.py). `verified` is the authority
+    line that put them first, '' when only history or a fallback did;
+    {} when nobody is routed. Measured on the Parcelwise dry run: the
+    speaker's own rows were read instead, and app/billing/* (Marcus) took
+    a pricing question on app/billing/plans.py from Priya, who decides
+    both the category and the file."""
+    from .identity import person_id_of
+    from .routing import rank_for_decision
+    if not repo:
+        return {}
+    ranked = rank_for_decision(graph, repo, question, paths=[p for p in paths if p and p != "unknown"],
+                               context=context, requester=requester, category=category,
+                               hints=list(hints or []) or None, task_id=task_id)
+    if not ranked:
+        return {}
+    name, lines, _score = ranked[0]
+    verified = next((ln for ln in lines if str(ln).startswith("verified:")), "")
+    pid = person_id_of(name)
+    person = graph.get_person(pid) if pid else graph.find_person(str(name), repo)
+    return {"name": str(name), "person_id": (person or {}).get("id", "") or pid, "verified": verified,
+            "area": _route_area([verified]) if verified else "", "lines": [str(ln) for ln in lines]}
 
 
 def _notes(graph):
@@ -191,9 +216,14 @@ def _spoken(graph, turns: list[dict], speaker: dict, words) -> str:
 
 
 def consider(store, cfg, run, question: str, *, context: str = "", paths: list[str] | None = None,
-             category: str = "", facts: dict | None = None, repo: str = "", why: list | None = None):
+             category: str = "", facts: dict | None = None, repo: str = "", why: list | None = None,
+             hints: list[str] | None = None, requester: str = ""):
     """The meeting-backed outcome for a question, or None when no meeting
-    note bears on it. Returns ('settle' | 'predict', details)."""
+    note bears on it. Returns ('settle' | 'predict' | 'context', details):
+    settle and predict when the speaker is the person Raven would route
+    the question to, context when someone else decides it and the words
+    only travel with the call. `paths`, `hints` and `requester` are what
+    the ladder routes with, so the two agree on who that person is."""
     from . import artifacts
     from .people_context import _terms
     graph = store.graph
@@ -222,7 +252,9 @@ def consider(store, cfg, run, question: str, *, context: str = "", paths: list[s
         named = sum(1 for e in q_entities if e in body.lower())
         scored.append((len(shared) + named, n, bool(named)))
     scored.sort(key=lambda x: (-x[0], x[1]["created_at"]))
-    best_guess = None
+    best_guess = best_context = None
+    route: dict | None = None
+    task_id = run["id"] if run is not None and "id" in run.keys() else ""
     for score, n, named in scored[:CANDIDATES]:
         meeting_id = n["artifact"].split(":", 1)[1]
         try:
@@ -239,10 +271,18 @@ def consider(store, cfg, run, question: str, *, context: str = "", paths: list[s
         if not speaker:
             _note(why, n, "the speaker is not someone Raven knows")
             continue
-        area = _decides(graph, repo, speaker, question, context, category, list(paths or []))
-        if not area:
-            _note(why, n, f"{speaker['name']} does not decide the area this question falls in")
-            continue
+        # The speaker's words stand only when the speaker is the person
+        # Raven's ordinary routing would ask; anyone else's travel with
+        # the call as context for that person.
+        if route is None:
+            route = _decider(graph, repo, question, context, category, list(paths or []), hints, requester, task_id)
+        decides = bool(route.get("verified")) and route.get("person_id") == speaker["id"]
+        area = (route.get("area") or "this area") if decides else ""
+        if not decides:
+            who = route.get("name") or ""
+            _note(why, n, (f"{speaker['name']} does not decide this; {who} does ({route.get('area') or 'the route says why'}), "
+                           f"so the words can only go to {who.split()[0]} as context") if who and route.get("verified")
+                  else f"{speaker['name']} is not someone the map says decides this; the words can only go along as context")
         # Anything the question names (a customer, a product) must be what
         # the meeting talked about, in the quote or around it.
         transcript = _norm(" ".join(t.get("text", "") for t in turns))
@@ -251,7 +291,7 @@ def consider(store, cfg, run, question: str, *, context: str = "", paths: list[s
             continue
         when, iso = meeting_when(meeting)
         details = {"note": n, "meeting_id": meeting_id, "meeting": meeting, "title": _short_title(meeting["title"]),
-                   "when": when, "iso": iso, "speaker": speaker, "area": area, "quote": n["quote"],
+                   "when": when, "iso": iso, "speaker": speaker, "area": area, "decider": route, "quote": n["quote"],
                    "turns": turns[max(0, at - WINDOW): at + WINDOW + 1]}
         if cfg is not None and cfg.semantic_retrieval and cfg.has_backend():
             verdict = _read(cfg, question, context, facts, details)
@@ -260,6 +300,10 @@ def consider(store, cfg, run, question: str, *, context: str = "", paths: list[s
                 said = " ".join(t.get("text", "") for t in details["turns"]) + " " + n["quote"]
                 if _figures(answer) - _figures(said):
                     _note(why, n, "the model's answer carried a figure the speaker did not say; asked instead")
+                    bears = True
+                elif not decides:
+                    _note(why, n, f"the words would settle it, but {speaker['name']} does not decide this; "
+                                  "they go along as context")
                     bears = True
                 else:
                     _note(why, n, f"settles it: {verdict.get('why') or 'the model read it as the same call'}")
@@ -270,18 +314,22 @@ def consider(store, cfg, run, question: str, *, context: str = "", paths: list[s
                     return "settle", {**details, "quote": quote, "answer": answer, "why": str(verdict.get("why") or "")}
             else:
                 bears = bool(verdict and verdict.get("bears_on") is True)
-                _note(why, n, ("read as bearing on this without settling it; the speaker is asked instead" if bears
+                _note(why, n, ("read as bearing on this without settling it" if bears
                                else "read as not about this question" if verdict is not None
-                               else "the reading failed; the speaker is asked instead"))
+                               else "the reading failed; the words go along"))
                 if verdict is None:
                     bears = named or score >= MIN_SHARED + 1
         else:
-            _note(why, n, "no model to read whether it settles this; the speaker is asked instead")
+            _note(why, n, "no model to read whether it settles this")
             bears = named or score >= MIN_SHARED + 1
-        if best_guess is None and bears:
+        if bears and decides and best_guess is None:
             best_guess = details
+        elif bears and not decides and best_context is None:
+            best_context = details
     if best_guess is not None:
         return "predict", best_guess
+    if best_context is not None:
+        return "context", best_context
     return None
 
 
@@ -323,7 +371,7 @@ def write(store, kind: str, details: dict, task_id: str, question: str, *, conte
                              answered_by=speaker, owner=speaker, repo=repo, context=context, path=path or "unknown",
                              kind="evidence", draft=True, embedding=llm_mod.embed(question),
                              rationale=quote, routing_reason="settled from a meeting",
-                             owner_evidence=f"spoke for {details['area']} in {where}",
+                             owner_evidence=_owner_evidence(details, where),
                              evidence=(f"meeting {where}, {speaker} said: “{quote}”; {first} decides "
                                        f"{details['area']}, so the words stand as {first}'s call"
                                        + (f"; {details['why']}" if details.get("why") else "")))
@@ -348,7 +396,7 @@ def predict_draft(store, row: dict, details: dict, *, repo: str = "", why: list 
     where = f"the {when} {title}" if when else f"the {title}"
     graph.update_decision(
         did, status="proposed", kind="prediction", source="meeting", owner=speaker, prediction=details["note"]["text"],
-        owner_evidence=f"spoke for {details['area']} in {where}", routing_reason="a meeting may have settled this",
+        owner_evidence=_owner_evidence(details, where), routing_reason="a meeting may have settled this",
         evidence=(f"Raven would apply what {speaker} said in {where}, but isn't sure it settles this: “{quote}”. "
                   f"{first} confirms or corrects it."
                   + (f" The ladder left it open: {_short(row.get('evidence') or '', 200)}" if row.get("evidence") else "")))
@@ -368,7 +416,66 @@ def _short(text: str, n: int) -> str:
     return text if len(text) <= n else text[:n - 1].rsplit(" ", 1)[0] + "…"
 
 
-def _pin(store, did, details, repo, kind, task_id, why):
+def _owner_evidence(details: dict, where: str) -> str:
+    """Why the speaker is asked: the authority line that routes the
+    question to them, then that they spoke for the area in the meeting."""
+    spoke = f"spoke for {details['area']} in {where}"
+    verified = (details.get("decider") or {}).get("verified") or ""
+    return f"{verified}; {spoke}" if verified else spoke
+
+
+def attach_context(store, row: dict, details: dict, *, repo: str = "", why: list | None = None) -> dict:
+    """The ladder left this question open and routed it to the person who
+    decides it; a meeting bears on it, but someone else spoke. The quote
+    goes with the open call as context for the decider, who stays the one
+    asked: another person's words are never Raven's guess on their call.
+    Measured on the Parcelwise dry run (Nov 2): Marcus's "nothing charges
+    when the merchant asks" became a guess routed to Marcus on a pricing
+    question Priya decides."""
+    from .canvas import _DECISION_SELECT
+    graph = store.graph
+    did, task_id = row["id"], row["run_id"]
+    speaker, when, title, quote = details["speaker"]["name"], details["when"], details["title"], details["quote"]
+    where = f"the {when} {title}" if when else f"the {title}"
+    owner = row.get("owner_name") or ""
+    area = _route_area([row.get("owner_evidence") or ""])
+    line = context_line(speaker, where, quote, owner, area)
+    before = row.get("evidence") or ""
+    graph.update_decision(did, evidence=f"{before}; {line}" if before else line)
+    _pin(store, did, details, repo, "context", task_id, why, event="meeting_context")
+    out = dict(graph.db.execute(_DECISION_SELECT + " WHERE d.id=?", (did,)).fetchone())
+    for key in ("drafts", "ranked", "note", "duplicate_stub"):
+        if key in row:
+            out[key] = row[key]
+    out["drafts"] = list(row.get("drafts") or [did])
+    return out
+
+
+def context_line(speaker: str, where: str, quote: str, owner: str = "", area: str = "") -> str:
+    """One line of evidence: what was said, by whom, and whose call it is.
+    The 'meeting:' head is how delivery picks it out for the owner."""
+    line = f"meeting: {speaker} said in {where}: “{quote}”"
+    if owner and area:
+        return f"{line}; {owner} decides {area}, so it is {owner.split()[0]}'s call"
+    if owner:
+        return f"{line}; {owner} is asked"
+    return f"{line}; {speaker.split()[0]} does not decide this"
+
+
+_CONTEXT_LINE = re.compile(r"(?:^|; )(meeting: .+)$", re.S)
+
+
+def carry_context(before: str, after: str) -> str:
+    """The meeting line attached to an open call survives a later pass
+    that rewrites its evidence (the canvas's model pass): `after` with
+    the line `before` carried, when it is not already there."""
+    m = _CONTEXT_LINE.search(before or "")
+    if not m or m.group(1) in (after or ""):
+        return after or ""
+    return f"{after}; {m.group(1)}" if after else m.group(1)
+
+
+def _pin(store, did, details, repo, kind, task_id, why, event: str = "meeting_precedent"):
     """The transcript chunk the quote is in, pinned as the node's source,
     and the event that says what happened."""
     from . import context_memory as cm
@@ -382,6 +489,6 @@ def _pin(store, did, details, repo, kind, task_id, why):
                                        "role": "support"}])
     except Invalid:
         pass
-    graph.append_event("meeting_precedent", {"task_id": task_id, "decision_id": did, "kind": kind,
-                                             "meeting_id": details["meeting_id"], "speaker": details["speaker"]["name"],
-                                             "note_id": details["note"]["id"], "why": list(why or [])[:6]})
+    graph.append_event(event, {"task_id": task_id, "decision_id": did, "kind": kind,
+                               "meeting_id": details["meeting_id"], "speaker": details["speaker"]["name"],
+                               "note_id": details["note"]["id"], "why": list(why or [])[:6]})
