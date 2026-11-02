@@ -140,6 +140,20 @@ class AttentionTests(OfflineCase):
                          'you decide for pricing decisions')
         self.assertEqual(attention._area(''), '')
 
+    def test_a_handed_on_call_says_who_handed_it_and_their_word(self):
+        # Parcelwise rehearsal (Nov 2): Priya handed the Bloom & Co call to
+        # Sam with a note; Sam's card explained it with the review reason
+        # instead of Priya's words.
+        task, did = self.node()
+        self.store.refer(did, {'person': 'Billing Owner', 'note': 'You know their order form.',
+                               'expected_updated_at': self.store.get_decision(did)['updated_at']}, actor=self.owner)
+        self.graph.db.execute("UPDATE decisions SET needs_review=1, review_reason='stale' WHERE id=?", (did,))
+        item = attention.overview(self.store, self.other)['needs_you'][0]
+        self.assertEqual(item['why'], 'Policy Owner handed this to you: “You know their order form.”.')
+        self.assertEqual(attention._handed_on('handed on by Priya Shah; once you answer, Raven routes customer decisions to you first'),
+                         'Priya Shah handed this to you')
+        self.assertEqual(attention._handed_on('verified: Priya Shah decides for pricing decisions'), '')
+
     def test_the_closest_earlier_call_is_dated_the_way_people_say_it(self):
         self.assertEqual(attention._day('2026-10-28T19:05:00+00:00'), 'Oct 28')
         self.assertEqual(attention._day(''), '')

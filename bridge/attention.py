@@ -105,7 +105,22 @@ def _said(evidence: str) -> str:
     return f"{m.group('who')} said in {m.group('where')}: “{m.group('quote')}”" if m else ""
 
 
+def _handed_on(evidence: str) -> str:
+    """'Priya Shah handed this to you: “…”' from the owner evidence a
+    hand-on writes ('handed on by Priya Shah: "…"; once you answer, …')."""
+    m = re.match(r'handed on by ([^:;"]+?)(?::\s*"(.*?)")?(?:;|$)', (evidence or "").strip(), re.S)
+    if not m:
+        return ""
+    who, said = m.group(1).strip(), (m.group(2) or "").strip()
+    return f"{who} handed this to you" + (f": “{said}”" if said else "")
+
+
 def _why_reached(row, source, name="") -> str:
+    # Whoever handed it on is the reason it is here, whatever Raven thought
+    # of it before; the hand-on note is their word to this person.
+    handed = _handed_on((row["owner_evidence"] if "owner_evidence" in row.keys() else "") or "")
+    if handed:
+        return handed + "."
     if row["needs_review"]:
         return "An earlier call this leaned on was replaced since, so it needs another look."
     if row["kind"] == "prediction" and source is not None:
