@@ -71,6 +71,16 @@ token = Auth(store, enabled=True).create_token(maya["id"], label="Claude Code (P
 with open(f"{repo}/.mcp.json", "w") as f:
     json.dump({"mcpServers": {"raven": {"type": "http", "url": f"http://localhost:{port}/mcp",
                                         "headers": {"Authorization": f"Bearer {token}"}}}}, f, indent=2)
+# The host hooks register the first prompt as a task before the model
+# runs. Without them the kickoff rests on Claude Code following Raven's
+# instructions, and a dry run with .mcp.json alone never registered its
+# task (docs/host-adapters.md).
+try:
+    from bridge.setup import install_host_hooks
+    install_host_hooks(repo, repo, f"http://localhost:{port}/mcp", token, ["claude"], "parcelwise/parcelwise-app")
+except Exception as error:  # the demo still runs; the banner says what is missing
+    print(f"Host hooks were not installed ({error}); the kickoff depends on Claude Code calling "
+          "bridge_start_task itself. Run ./setup --configure --client claude to install them.", file=sys.stderr)
 EOF
   grep -qx '.mcp.json' "$REPO/.git/info/exclude" 2>/dev/null || echo '.mcp.json' >> "$REPO/.git/info/exclude"
 fi
@@ -98,7 +108,8 @@ cat <<EOF
   Raven        http://localhost:$PORT
   Sign in as   maya, ana, jordan, lena, marcus, priya, sam, theo or noor @parcelwise.example
   Password     $PASSWORD   (a private window lets two people be signed in at once)
-  Claude Code  cd "$REPO" && claude     (Raven's MCP is set up there, as Maya Chen)
+  Claude Code  cd "$REPO" && claude     (Raven's MCP and host hooks are set up there, as Maya Chen;
+               the hooks register each first prompt as a task, see docs/host-adapters.md)
   Live intro   sign in as noor@parcelwise.example: nobody has talked with Noor yet
   The PR       https://github.com/parcelwise/parcelwise-app/pull/15
 

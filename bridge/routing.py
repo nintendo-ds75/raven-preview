@@ -66,10 +66,13 @@ def route_ranked(store: Graph, repo: str, question: str,
     if learned:
         # Keep the existing authority precedence, including narrower paths and
         # decider versus approver. A pending referral is only a candidate.
-        from .signals import _authority_matches
+        from .signals import _authority_matches, _is_requester, requester_keys
         matches = _authority_matches(store, repo, hits or [], question, context, category, path, also_paths)
         explicit_ids = {a['id'] for a in store.authority_rows(repo) if a['source'] not in ('referral', 'answer')}
-        fixed = {a['name'] for a in matches if a['strong'] and a['role'] == 'decides' and a['id'] in explicit_ids}
+        req = requester_keys(requester, store, repo)
+        # The requester's authority does not put them back in front.
+        fixed = {a['name'] for a in matches if a['strong'] and a['role'] == 'decides' and a['id'] in explicit_ids
+                 and not _is_requester(a['name'], '', req)}
         verified = [r for r in ranked if r[0] in fixed]
         prior = [(BoundName(p['name'], p['id']), [contact_evidence(store, p, outcome, did, learned_details.get((p['id'], outcome, did)))], (2 if outcome in CONTACT_RESPONSES else 1) + score)
                  for p, outcome, score, did, _ in learned

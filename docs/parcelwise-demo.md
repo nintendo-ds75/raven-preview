@@ -32,7 +32,11 @@ private window lets two people be signed in at once, say Maya in one and Ana in 
 
 The script clones the repository into `~/.raven-parcelwise-demo/parcelwise-app` and puts
 Raven's MCP server, with an agent credential for Maya, in that clone's `.mcp.json`
-(untracked, never committed). Run `claude` there and give it a task. Questions it can't
+(untracked, never committed), and installs Raven's host hooks there (`.raven/` and
+`.claude/settings.local.json`, untracked too). The hooks register the first prompt as a
+task before Claude Code starts working; without them the kickoff depends on the agent
+calling `bridge_start_task` itself, which a headless run has skipped (see
+[host adapters](host-adapters.md)). Run `claude` there and give it a task. Questions it can't
 answer from the record go to the people who own them. Sign in as that person to answer,
 in the browser or on a quick call.
 
