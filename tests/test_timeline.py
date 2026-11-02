@@ -83,6 +83,23 @@ class TemplateTests(OfflineCase):
                                        "PR #220 covers this too; nobody asked"])
         self.assertIn({"kind": "record", "id": "PR #220", "label": "PR #220"}, rows[0]["refs"])
 
+    def test_settled_from_two_calls_of_one_person_names_both(self):
+        p1, p2 = prior("p1", "Jordan Okafor", "06-09"), prior("p2", "Jordan Okafor", "06-10")
+        d = decision("a", "Which table does assistant billing read usage from, and how are reads paged?",
+                     status="resolved", signoff="rule", source="memory", source_id="p1")
+        rows = self.build([d], [event(1, "resolve", 3, did="a", source="memory", cited="p1", also=["p2"],
+                                      answered_by="Jordan Okafor", signed=True)], {"p1": p1, "p2": p2})
+        shown = timeline.topic(d["question"])
+        self.assertEqual(texts(rows), [f"Settled “{shown}” from Jordan's Jun 9 and Jun 10 calls; nobody asked"])
+        self.assertEqual([r["id"] for r in rows[0]["refs"]], ["p1", "p2"])
+        self.assertEqual(rows[0]["people"], ["Jordan Okafor"])
+        # Two people's calls are named one by one, and the composition still wants a signature.
+        p2 = prior("p2", "Marcus Lee", "06-10")
+        signed = {**d, "signoff": "required", "owner_name": "Jordan Okafor"}
+        rows = self.build([signed], [event(1, "resolve", 3, did="a", source="memory", cited="p1", also=["p2"], signed=True)],
+                          {"p1": p1, "p2": p2})
+        self.assertEqual(texts(rows), [f"Settled “{shown}” from Jordan's Jun 9 call and Marcus's Jun 10 call; Jordan signs it"])
+
     def test_settled_from_records_lists_the_records_as_short_labels(self):
         d = decision("a", "Is Northwind charged for Pilot?", status="proposed", signoff="required", source="record", owner_name="Noah Kim")
         cited = "meeting meeting:m1:chunk:00000 [transcript]; commit 387e508c8d5d; merge 36; slack pricing-2026-09-24 [decided]; ticket BILL-201 (resolved): title; doc adr-0002: title"
