@@ -74,8 +74,11 @@ vm.runInContext(brief.slice(brief.indexOf('function sourceReview('),brief.indexO
 console.log(JSON.stringify({source:context.sourceEvidence(d.sources,d.needs_review?null:d.source_revalidation),
  revalidation:context.sourceRevalidationFields(d,'signoff'),brief:context.sourceReview(d)}));
 """
+        # Node reads and evaluates slices of two large page scripts; on a loaded
+        # CI runner that has taken longer than ten seconds, so the bound is
+        # generous while still catching a hang.
         result = subprocess.run(['node', '-e', code], cwd=ROOT, input=json.dumps(row), text=True,
-                                capture_output=True, check=True, timeout=10)
+                                capture_output=True, check=True, timeout=60)
         return json.loads(result.stdout)
 
     def assert_snapshots(self, html, row, brief=False):

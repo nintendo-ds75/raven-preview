@@ -10,6 +10,15 @@ from unittest.mock import patch
 
 from evals import raven_reasoning_acceptance as a
 
+try:
+    import httpx
+except ImportError:
+    httpx = None
+
+# The provider gateway under evals/ is built on httpx, which the stdlib-only
+# core does not need; CI installs httpx==0.28.1 so this test runs there.
+needs_gateway = unittest.skipUnless(httpx, "Install httpx (CI pins httpx==0.28.1) to test the provider gateway path")
+
 
 class ModelDouble:
     def __init__(self):
@@ -116,6 +125,7 @@ class AcceptanceTests(unittest.TestCase):
             finally:
                 fixture.close()
 
+    @needs_gateway
     def test_invalid_saved_credential_never_constructs_gateway_or_reads_again(self):
         with tempfile.TemporaryDirectory() as tmp, \
                 patch('evals.customer_test_credentials.read_saved_key', side_effect=ValueError('PRIVATE')) as read, \

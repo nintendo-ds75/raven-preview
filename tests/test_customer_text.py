@@ -58,7 +58,6 @@ class CustomerTextTests(unittest.TestCase):
 
 
 _LEAD = re.compile(r"<strong>(.*?)</strong>", re.S)
-_FIRST_SENTENCE = re.compile(r"^(.*?\.)(?:\s|$)", re.S)
 _RELATIVE_LINK = re.compile(r"\[[^\]]*\]\(([^)#\s]+)(?:#[^)]*)?\)")
 
 
@@ -71,20 +70,20 @@ def _section(text: str, heading: str) -> str:
 
 @unittest.skipUnless((ROOT / "docs").is_dir(), "requires source documentation")
 class PositioningTests(unittest.TestCase):
-    """One sentence describes Raven, the same in the README and in
-    docs/positioning.md, and every boundary that page states links to a
+    """One short lead describes Raven, the same in the README and at the top
+    of docs/positioning.md, and every boundary that page states links to a
     document that exists."""
 
-    def test_positioning_sentence_is_identical_in_readme_and_positioning_doc(self):
+    def test_positioning_lead_is_identical_in_readme_and_positioning_doc(self):
         lead = _LEAD.search((ROOT / "README.md").read_text())
         self.assertIsNotNone(lead, "README.md has no <strong> lead line")
-        readme_sentence = " ".join(lead.group(1).split())
-        body = _section((ROOT / "docs" / "positioning.md").read_text(), "The sentence")
-        first = _FIRST_SENTENCE.match(" ".join(body.split()))
-        self.assertIsNotNone(first)
-        self.assertEqual(readme_sentence, first.group(1))
-        self.assertLess(len(readme_sentence.split()), 35, readme_sentence)
-        self.assertTrue(readme_sentence.startswith("Raven is "), readme_sentence)
+        readme_lead = " ".join(lead.group(1).split())
+        body = " ".join(_section((ROOT / "docs" / "positioning.md").read_text(), "The lead").split())
+        # The section opens with the lead word for word, then says where else it appears.
+        self.assertTrue(body.startswith(readme_lead + " "),
+                        f"docs/positioning.md does not open with the README lead:\n{readme_lead}\n---\n{body}")
+        self.assertLess(len(readme_lead.split()), 80, readme_lead)
+        self.assertTrue(readme_lead.startswith("Raven "), readme_lead)
 
     def test_positioning_boundaries_link_to_existing_docs(self):
         page = ROOT / "docs" / "positioning.md"

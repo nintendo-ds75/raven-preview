@@ -16,6 +16,15 @@ import urllib.request
 
 from evals import claude_mcp_acceptance as a
 
+try:
+    import httpx
+except ImportError:
+    httpx = None
+
+# The provider gateway under evals/ is built on httpx, which the stdlib-only
+# core does not need; CI installs httpx==0.28.1 so these tests run there.
+needs_gateway = unittest.skipUnless(httpx, "Install httpx (CI pins httpx==0.28.1) to test the provider gateway path")
+
 
 class ScriptedHost:
     """Deliberate model double, using real authenticated Raven HTTP."""
@@ -197,6 +206,7 @@ class DriverTests(unittest.TestCase):
                     a.Fixture.human(fixture, '/api/tasks/t/inquiry', {})
             request.assert_not_called()
 
+    @needs_gateway
     def test_inquiry_only_cli_uses_saved_key_and_fixed_budget_without_sdk_or_smoke(self):
         with tempfile.TemporaryDirectory() as tmp:
             source, output = Path(tmp) / 'existing', Path(tmp) / 'new'
@@ -220,6 +230,7 @@ class DriverTests(unittest.TestCase):
             self.assertEqual(inquiry.call_args.kwargs['question'], 'Who signed the policy, and what scope applies?')
             self.assertNotIn('synthetic-key', (output / 'result.json').read_text())
 
+    @needs_gateway
     def test_inquiry_question_rejects_wrong_mode_blank_and_oversize_before_credentials(self):
         variants = (['--inquiry-question', 'Who signed?'],
                     ['--run-live', '--inquiry-question', 'Who signed?'],
@@ -250,6 +261,7 @@ class DriverTests(unittest.TestCase):
             with self.assertRaisesRegex(a.AcceptanceFailure, 'inquiry_question_invalid'):
                 a.live_inquiry(None, 'task', 'node', None, 'fixture-model', question='q' * 1001)
 
+    @needs_gateway
     def test_invalid_credential_file_never_prompts_or_calls_provider(self):
         reader = SimpleNamespace(read_saved_key=lambda _: (_ for _ in ()).throw(ValueError('SECRET private path')))
         with tempfile.TemporaryDirectory() as tmp, \
@@ -266,6 +278,7 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(json.loads(saved)['failure_code'], 'saved_credential_unavailable')
         self.assertNotIn('SECRET', saved)
 
+    @needs_gateway
     def test_saved_credential_uses_reader_and_never_prompts(self):
         reader = SimpleNamespace(read_saved_key=lambda _: 'synthetic-saved-key')
         with tempfile.TemporaryDirectory() as tmp, \
@@ -359,8 +372,8 @@ class DriverTests(unittest.TestCase):
                 patch.object(a.getpass, 'getpass', side_effect=AssertionError('must not ask')):
             self.assertEqual(a.main(['--run-live', '--model', 'fixture-model', '--output-dir', '/tmp/uncreated-child-check']), 1)
 
+    @needs_gateway
     def test_offline_sdk_transcript_emits_sse_tool_calls_and_uses_real_result_identity(self):
-        import httpx
         transcript = a.OfflineSDKTranscript()
         first = transcript(httpx.Request('POST', 'https://api.anthropic.com/v1/messages',
             json={'model': 'fixture-model', 'stream': True, 'messages': []}))
@@ -427,6 +440,7 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(options.resume, 'saved')
         self.assertEqual(options.setting_sources, [])
 
+    @needs_gateway
     def test_direct_failure_is_saved_without_raw_exception_or_credential(self):
         with tempfile.TemporaryDirectory() as tmp, \
                 patch.object(a.importlib.metadata, 'version', return_value=a.SDK_VERSION), \

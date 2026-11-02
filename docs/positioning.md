@@ -1,8 +1,8 @@
 # What Raven is
 
-## The sentence
+## The lead
 
-Raven is the self-hosted decision record between your customers, your team and your coding agents: evidence goes in, one signed decision comes out, and the agent does the work. The same sentence leads the [README](../README.md), and `tests/test_customer_text.py` checks that the two copies match. Every other section on this page states a boundary and points at the document that backs it. Where a behaviour is planned rather than shipped, this page says so.
+Raven lets agents drive work forward instead of waiting for people to coordinate every step. It brings past decisions to the right person for evidence-backed sign-off, or asks for fresh judgment when something new needs deciding. It can also sit in on meetings and conversations, applying your team’s judgment to what it hears before anyone has turned it into a task. Fully self-hosted. The same lead opens the [README](../README.md), and `tests/test_customer_text.py` checks that the two copies match. Every other section on this page states a boundary and points at the document that backs it. Where a behaviour is planned rather than shipped, this page says so.
 
 ## Who it is for
 
@@ -14,7 +14,7 @@ An agent hits a judgment call in the middle of a task and either stops or guesse
 
 ## What Raven is not
 
-Raven is not a meeting bot: transcripts are pasted or imported, the Vexa adapter is an administrator opt-in per meeting occurrence, enabling it does not join a meeting, and Raven does no speech-to-text of its own ([meeting adapters](meeting-adapters.md)). It is not a ticket tracker: it records the decisions inside a task, not the task list. It is not an agent that merges, deploys or emails customers: a signed move runs as private repository preparation only, a person signs before any move starts, and a browser task never pushes, merges or deploys ([Outcomes](startup-os.md), [browser tasks](browser-tasks.md)). It is not a chat assistant in Slack: Slack carries a notification that links back to the decision, and the conversational mode is a separate opt-in that reads a reply back before anything is recorded ([Slack](slack.md)). It is not hosted memory: the decision graph lives on your server and the proof of each finished task is exportable ([change proof](change-proof.md)). It is not a proposer without evidence: with no model key, a proposal is unavailable and Outcomes says so instead of inventing work ([Outcomes](startup-os.md)).
+Raven does not join meetings on its own: transcripts are pasted or imported, and the Vexa adapter is an administrator opt-in per meeting occurrence that does not join a meeting when enabled ([meeting adapters](meeting-adapters.md)). Its own speech-to-text serves the voice intro and decision calls a person starts in the browser ([voice](voice.md)), not meetings. It is not a ticket tracker: it records the decisions inside a task, not the task list. It is not an agent that merges, deploys or emails customers: a signed move runs as private repository preparation only, a person signs before any move starts, and a browser task never pushes, merges or deploys ([Outcomes](startup-os.md), [browser tasks](browser-tasks.md)). It is not a chat assistant in Slack: Slack carries a notification that links back to the decision, and the conversational mode is a separate opt-in that reads a reply back before anything is recorded ([Slack](slack.md)). It is not hosted memory: the decision graph lives on your server and the proof of each finished task is exportable ([change proof](change-proof.md)). It is not a proposer without evidence: with no model key, a proposal is unavailable and Outcomes says so instead of inventing work ([Outcomes](startup-os.md)).
 
 ## The asset
 
