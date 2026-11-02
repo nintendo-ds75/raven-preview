@@ -119,6 +119,9 @@ class Candidate:
     verified: float = 0.0       # the weight of the authority the organization verified, if any
     verified_role: str = ""     # "decides" or "approves" when that authority is a strong one
     topic: str = ""             # the category this decision is about that they verifiably decide
+    topic_explicit: bool = False  # that category is the one the agent named, not one the words matched
+    path_authority: bool = False  # verified decider of a file this decision names or resolves to
+    judges: bool = False        # holds a decides-category of their own in the map: a judgment holder, not only a code owner
     primary: bool = False       # verified decider of the agent's primary decision path
     merge_led: bool = False     # their approval here comes mostly from merging
     at: dict[str, float] = field(default_factory=dict)   # their weighted signal under each hit path
@@ -681,6 +684,20 @@ def _authority_matches(store: Graph, repo: str, hits: list[PathHit], question: s
         held = [w for w in worded if w and w in decided]
         if held:
             about = set(held)
+    # Who holds a judgment category of their own (any accepted decides-
+    # category row). A path decider who also judges an area keeps a call
+    # on their files against a category a word of the question matched; a
+    # path-only owner yields it to the decider of that topic.
+    judges: set[str] = set()
+    for r in rows:
+        if r["scope_kind"] == "category" and r["role"] == "decides" and r["accepted"]:
+            for person in ([r["person"]] if r["person"] else []):
+                judges.add(_norm_person(person["name"]))
+            if r["team"]:
+                for m in r["team"].get("members", []):
+                    pm = store.get_person(m)
+                    if pm:
+                        judges.add(_norm_person(pm["name"]))
     probes = [(h.path, h.is_dir) for h in hits]
     # Every path the decision names, not only the first: measured live on
     # eb9d22d, a decision about connectionpool.py and util/retry.py went
@@ -781,6 +798,9 @@ def _authority_matches(store: Graph, repo: str, hits: list[PathHit], question: s
                         "person_id": person.get("id", ""),
                         "weight": weight, "line": line, "strong": strong, "id": r["id"], "path": where,
                         "topic": (r["scope_kind"] == "category" and r["scope"] in about and r["scope"]) or area,
+                        # The agent's own category, not a word the question happens to use.
+                        "topic_explicit": r["scope_kind"] == "category" and r["scope"] == (category or "").strip().lower(),
+                        "judges": _norm_person(person["name"]) in judges,
                         "primary": r["scope_kind"] == "path" and any(
                             p.rstrip("/") == (path or "").strip().strip("/")
                             and _specificity(r["scope"]) >= narrowest[(p, r["role"])]
@@ -803,6 +823,26 @@ def _authority_matches(store: Graph, repo: str, hits: list[PathHit], question: s
                           "them on their own history here rather than a decider the map picks out")
         m.pop("scope_key", None)
     return out
+
+
+def _asked(cand: Candidate, req) -> bool:
+    """Whether this candidate is the person the question is asked for."""
+    return _is_requester(cand.name, "", req) or any(_is_requester("", e, req) for e in cand.emails)
+
+
+def _holds(cand: Candidate) -> str:
+    """What a candidate holds here, in the words of their first evidence
+    line: "decides for app/billing/* (matches app/billing/invoices.py)",
+    or what the history says when nothing is verified."""
+    prefix = f"verified: {cand.name} "
+    for ln in cand.lines:
+        if ln.startswith(prefix):
+            phrase = ln[len(prefix):]
+            cut = phrase.rfind(" (")
+            return phrase[:cut] if cut > 0 else phrase
+    if any(ln.startswith(("MAINTAINERS lists", "CODEOWNERS lists")) for ln in cand.lines):
+        return "is listed for this area"
+    return "holds the history here"
 
 
 def signal_route(store: Graph, repo: str, question: str, context: str = "", path: str = "",
@@ -1121,6 +1161,11 @@ def _signal_route(store: Graph, repo: str, question: str, context: str = "", pat
                            if m["key"] == key and m["topic"] and m["strong"] and m["role"] == "decides"), "")
         cand.primary = any(m["primary"] and m["strong"] and m["role"] == "decides"
                            for m in verified if m["key"] == key)
+        cand.path_authority = any(m["strong"] and m["role"] == "decides" and m.get("path")
+                                  for m in verified if m["key"] == key)
+        cand.topic_explicit = any(m["topic"] and m["strong"] and m["role"] == "decides" and m.get("topic_explicit")
+                                  for m in verified if m["key"] == key)
+        cand.judges = any(m.get("judges") for m in verified if m["key"] == key)
     # You told Raven: a recorded routing answer for a matching path wins;
     # a row recorded with no path is repo-wide.
     for r in user_rows:
@@ -1182,9 +1227,22 @@ def _signal_route(store: Graph, repo: str, question: str, context: str = "", pat
     # diagnostics contain bearer credentials?", category security, went to
     # the person who decides util/*, and the security decider was not even
     # among the signers.
+    # A topic the question's words name takes the call from a path-only
+    # owner (a pricing question in a billing file is the pricing decider's),
+    # but not from a path decider who holds a judgment category of their
+    # own: "billable" speaks of billing, and the person who decides
+    # services/usage/* and the data category is asked about
+    # services/usage/events.py. A category the agent names itself always
+    # wins. Measured on the Harborline dry run: "What counts as one
+    # billable use of Pilot?" on services/usage/events.py went to the
+    # billing decider, past the person who decides those files and data.
     if winner.verified and not winner.topic:
         topical = next((c for c in ranked[1:] if c.topic), None)
-        if topical is not None:
+        if topical is not None and winner.path_authority and winner.judges and not topical.topic_explicit:
+            note = (f"note: {topical.name} decides {topical.topic} decisions, which this one speaks of; "
+                    f"{winner.name} decides the files it names, so Raven asks {winner.name}")
+            override = f"{override}; {note}" if override else note
+        elif topical is not None:
             note = (f"note: {topical.name} decides {topical.topic} decisions, which this one is about; "
                     f"{winner.name} {'decides' if winner.verified_role == 'decides' else 'holds authority for'} "
                     f"the files it lands in, so Raven asks {topical.name}")
@@ -1265,7 +1323,33 @@ def _signal_route(store: Graph, repo: str, question: str, context: str = "", pat
             reasons.append(f"nobody holds a clear share under {winner.scope}: the strongest signal is {winner.name} "
                            f"with {_pct(max(winner.approval, winner.author))} of the recent changes")
         return []
+    # The person who asked is not asked. When the authority map names the
+    # requester for this scope, the call goes to the next person who
+    # holds it (a co-owner, an approver, whoever reviews the area), and
+    # the requester's authority stays in the evidence. When nobody else
+    # holds it, the call stays with the requester and is labelled their
+    # own call, so the kickoff and the tree say so plainly. Measured on
+    # the Harborline dry run: the requester, sole decider of app/billing/*,
+    # collected seven of the eighteen calls on his own task.
+    own_call = ""
+    if req and _asked(winner, req):
+        others = [c for c in ranked[1:] if not _asked(c, req)]
+        pick = (next((c for c in others if c.verified_role in ("decides", "approves")), None)
+                or next((c for c in others if c.verified or listed(c) or c.score >= MIN_SCORE * 0.7), None))
+        if pick is not None:
+            note = (f"note: {winner.name} asked this and {_holds(winner)}; Raven does not route a question back "
+                    f"to its requester, so it asks {pick.name}, who {_holds(pick)}")
+            override = f"{override}; {note}" if override else note
+            ranked.remove(pick)
+            ranked.insert(0, pick)
+            winner = pick
+        else:
+            where = winner.scope or (path.lstrip("/") if path and path != "unknown" else "") or "this area"
+            own_call = (f"own call: {winner.name} asked this and nobody else holds authority or history under "
+                        f"{where}, so it stays with {winner.name} as their own call")
     lines = list(winner.lines)
+    if own_call:
+        lines.append(own_call)
     if override:
         lines.append(override)
     elif listed_seen and _norm_person(winner.name) not in listed_seen \
@@ -1295,6 +1379,8 @@ def _signal_route(store: Graph, repo: str, question: str, context: str = "", pat
         if _norm_person(person) != _norm_person(winner.name):
             lines.append(f"note: {person} is listed project-wide ({pat}), not for this area")
     for who in sorted(requester_seen)[:1]:
+        if own_call:
+            break
         lines.append(f"note: {who} asked; they hold history here too, and Raven never routes a question back "
                      f"to its requester")
     if hits:
