@@ -1310,6 +1310,12 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                             self.attribute(data, "signed_by")
                             if auth.enabled and self.me.id:
                                 data["source"] = f"inbox: {self.me.name}"
+                            if not data.get("rationale"):
+                                # One box on the card: the call and its reason are filed apart here.
+                                from .reply import split_reply
+                                answer, why = split_reply(data.get("answer") or "")
+                                if why:
+                                    data["answer"], data["rationale"] = answer, why
                         result = getattr(store, parts[3])(parts[2], data, actor=self.actor(data))
                     elif len(parts) == 4 and parts[:2] == ["api", "decisions"] and parts[3] in {"followups", "signoff"}:
                         from . import canvas

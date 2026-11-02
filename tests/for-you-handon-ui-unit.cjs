@@ -41,7 +41,7 @@ const item = {id: 'bloom', run_id: 'r1', task: 'Start charging merchants for the
   const html = attNeeds(item);
   assert.match(html, /data-att="handon" data-id="bloom" aria-expanded="false">Not mine: hand it on</);
   assert.ok(!html.includes('att-handon'), 'the row stays closed until asked for');
-  assert.match(html, /Record my answer/);
+  assert.match(html, /att-composer/); assert.match(html, /Send</);
 }
 
 // Open: everyone but me, a note, and the revision the card showed.

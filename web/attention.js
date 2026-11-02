@@ -49,9 +49,9 @@ function attNeeds(item) {
     <p class="att-meanwhile">${esc(item.meanwhile)}</p>
     ${item.context ? `<details class="att-found"><summary>What the agent found</summary><p>${esc(item.context)}</p></details>` : ''}
     <form class="att-answer" data-id="${esc(item.id)}" data-updated="${esc(item.updated_at)}">
-      <textarea name="answer" rows="${open ? 3 : 2}" maxlength="12000" required placeholder="Your answer, and why if it matters, in a sentence or two…"></textarea>
+      <div class="att-composer"><label class="sr-only" for="att-reply-${esc(item.id)}">Your answer</label><textarea id="att-reply-${esc(item.id)}" name="answer" rows="${open ? 3 : 1}" maxlength="12000" required placeholder="Reply with your call, the way you’d say it…"></textarea><button class="button small primary" type="submit">Send</button></div>
       <p class="ask-error" hidden></p>
-      <div class="att-actions"><button class="button small primary" type="submit">Record my answer</button>
+      <div class="att-actions">
         ${state.auth?.enabled && state.me?.id && ['session', 'token'].includes(state.me.kind) ? `<button class="button small text" type="button" data-action="interview-start" data-task="${esc(item.run_id)}" data-id="${esc(item.id)}">Take a quick call instead</button>` : ''}
         <button class="button small text" type="button" data-att="handon" data-id="${esc(item.id)}" aria-expanded="${attHand.has(item.id)}">Not mine: hand it on</button>
         <a class="att-open" href="${attHref(item.run_id, item.id)}">Full record ↗</a></div>
@@ -159,12 +159,24 @@ document.addEventListener('click', event => {
   else if (att === 'apply' || att === 'option') {
     const item = (attention?.needs_you || []).find(x => x.id === id);
     const box = document.querySelector(`.att-answer[data-id="${CSS.escape(id)}"] textarea[name=answer]`);
-    if (item && box) { box.value = att === 'apply' ? callRefs(item.guess) : item.options[+n]; box.focus(); }
+    if (item && box) { box.value = att === 'apply' ? callRefs(item.guess) : item.options[+n]; box.dispatchEvent(new Event('input', {bubbles: true})); box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
     return;
   }
   attentionKey = ''; render();
   if (att === 'correct') document.querySelector(`.att-correct[data-id="${CSS.escape(id)}"] textarea[name=why]`)?.focus();
   if (att === 'handon') document.querySelector(`.att-handon[data-id="${CSS.escape(id)}"] select`)?.focus();
+});
+
+document.addEventListener('keydown', event => {
+  const box = event.target.closest('.att-composer textarea');
+  if (!box || view !== 'you' || event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+  event.preventDefault();
+  if (box.value.trim()) box.form.requestSubmit();
+});
+document.addEventListener('input', event => {
+  const box = event.target.closest('.att-composer textarea');
+  if (!box) return;
+  box.style.height = 'auto'; box.style.height = `${Math.min(box.scrollHeight, 180)}px`;
 });
 
 document.addEventListener('submit', async event => {
@@ -175,7 +187,7 @@ document.addEventListener('submit', async event => {
   const error = form.querySelector('.ask-error');
   const button = form.querySelector('button[type=submit]');
   const label = button.textContent;
-  button.disabled = true; button.textContent = 'Recording…';
+  button.disabled = true; button.textContent = 'Sending…';
   try {
     let result;
     if (form.classList.contains('att-handon')) {
@@ -194,7 +206,7 @@ document.addEventListener('submit', async event => {
       if (review?.has_reliance && !review.available) throw new Error('The earlier call this leans on is not readable right now. Try again in a moment.');
       result = await api(`/api/decisions/${encodeURIComponent(form.dataset.id)}/answer`, {answer: data.answer,
         ...(review?.has_reliance ? {source_evidence: review.pins, source_decision_pins: review.decision_pins} : {}), expected_updated_at: form.dataset.updated});
-      notify('Recorded under your name. The coding agent can read it now.');
+      notify('Sent. Recorded under your name; the coding agent can read it now.');
     }
     attentionKey = '';
     loadAttention(true);

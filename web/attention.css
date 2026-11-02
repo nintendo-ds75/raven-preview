@@ -37,8 +37,14 @@
 .att-found summary{cursor:pointer}
 .att-found p{margin:6px 0 0;line-height:1.55;color:var(--text)}
 .att-answer{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:14px}
-.att-answer textarea,.att-correct textarea{background:var(--bg);border:1px solid var(--line);border-radius:10px;color:var(--ink);font:inherit;font-size:14px;padding:10px 12px;resize:vertical}
-.att-answer textarea:focus,.att-correct textarea:focus{outline:none;border-color:#4f8a48}
+/* One box, like a chat: the person writes the call the way they would say it; Raven files the call and the why apart. */
+.att-composer{display:flex;gap:10px;align-items:flex-end;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:6px 6px 6px 16px}
+.att-composer:focus-within{border-color:var(--green);box-shadow:0 0 0 4px rgba(131,217,122,.06)}
+.att-composer textarea{flex:1;min-width:0;background:transparent;border:0;color:var(--ink);font:inherit;font-size:14.5px;line-height:1.5;padding:8px 0;resize:none;outline:none;max-height:180px;overflow:auto}
+.att-composer textarea::placeholder{color:var(--muted)}
+.att-composer .button{border-radius:11px;margin-bottom:2px}
+.att-correct textarea{background:var(--bg);border:1px solid var(--line);border-radius:10px;color:var(--ink);font:inherit;font-size:14px;padding:10px 12px;resize:vertical}
+.att-correct textarea:focus{outline:none;border-color:#4f8a48}
 .att-actions{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-top:4px}
 .att-handon{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
 .att-handon .att-k{margin:0}
