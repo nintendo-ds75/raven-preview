@@ -1059,7 +1059,9 @@ class LearnedContactTests(DeliveryCase):
         self.store.answer(d['id'],{'answer':'Keep five','rationale':'inventory','signed_by':'Marisol Vega','expected_updated_at':d['updated_at']},actor=Actor.person(self.graph.get_person(self.marisol)))
         ranked=route_ranked(self.graph,'acme/platform',d['question'],path=d['path'])
         self.assertEqual(ranked[0][0],'Marisol Vega',ranked)
-        self.assertIn('learned first contact',' '.join(ranked[0][1]))
+        # Answering accepted the hand-on: the referral is now the map's own word
+        # for her, ahead of the learned first-contact line.
+        self.assertIn('(referral, asserted by Wes Chen)',' '.join(ranked[0][1]))
         self.assertEqual(route_ranked(self.graph,'other/repo',d['question'],path=d['path']),[])
 
     def test_required_cosigner_does_not_displace_the_learned_decider(self):

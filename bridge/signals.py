@@ -738,6 +738,7 @@ def _authority_matches(store: Graph, repo: str, hits: list[PathHit], question: s
     # A rule for the file itself outranks a worded area.
     path_decided = any(hit_paths.get(r["id"]) for r in rows
                        if r["scope_kind"] == "path" and r["role"] in ("decides", "approves"))
+    handed = _handed_on(rows)
     out: list[dict] = []
     for r in rows:
         why, outranked, area = "", False, ""
@@ -767,6 +768,12 @@ def _authority_matches(store: Graph, repo: str, hits: list[PathHit], question: s
             outranked = True
         if not why:
             continue
+        if r["id"] in handed:
+            # The scope was handed on since, and the person it went to
+            # answered: Raven promised to route it to them first. The
+            # earlier holder stays a candidate with the hand-on on record.
+            why += f", handed on to {handed[r['id']]} since"
+            outranked = True
         people = [r["person"]] if r["person"] else store.team_members_by_handle((r["team"] or {}).get("handle", "")) \
             if r["team"] else []
         if r["team"] and not people:
@@ -822,6 +829,29 @@ def _authority_matches(store: Graph, repo: str, hits: list[PathHit], question: s
             m["line"] += (f"; {n} people are recorded as deciding for that same area, so this names one of "
                           "them on their own history here rather than a decider the map picks out")
         m.pop("scope_key", None)
+    return out
+
+
+def _handed_on(rows: list[dict]) -> dict[str, str]:
+    """The decides rows a later, accepted hand-on outranks: for each
+    referral row a person accepted by answering, the rows for the same
+    scope recorded before it, keyed by row id to the name of the person
+    the scope went to. Measured live on the Parcelwise demo (Nov 2):
+    Priya handed the Bloom & Co exemption to Sam, Sam answered, and the
+    card promised "Raven routes customer decisions to Sam from now on";
+    two minutes later the next customer call went to Priya, because her
+    configured row and Sam's accepted referral carried the same weight
+    and her review history under the files decided it. A referral the
+    person has not answered yet stays a candidate, as before."""
+    out: dict[str, str] = {}
+    for ref in rows:
+        if ref["source"] != "referral" or not ref["accepted"] or ref["role"] != "decides" or not ref["person"]:
+            continue
+        for r in rows:
+            if (r["id"] != ref["id"] and r["role"] == "decides" and r["scope_kind"] == ref["scope_kind"]
+                    and r["scope"] == ref["scope"] and r["created_at"] < ref["created_at"]
+                    and r["person_id"] != ref["person_id"]):
+                out[r["id"]] = ref["person"]["name"]
     return out
 
 

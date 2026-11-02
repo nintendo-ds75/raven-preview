@@ -65,10 +65,12 @@ def route_ranked(store: Graph, repo: str, question: str,
     declined = {p['name'] for p, outcome, *_ in learned if outcome == 'declined'}
     if learned:
         # Keep the existing authority precedence, including narrower paths and
-        # decider versus approver. A pending referral is only a candidate.
+        # decider versus approver. A pending referral is only a candidate; one
+        # the person accepted by answering is the map's word like a configured row.
         from .signals import _authority_matches, _is_requester, requester_keys
         matches = _authority_matches(store, repo, hits or [], question, context, category, path, also_paths)
-        explicit_ids = {a['id'] for a in store.authority_rows(repo) if a['source'] not in ('referral', 'answer')}
+        explicit_ids = {a['id'] for a in store.authority_rows(repo)
+                        if a['source'] != 'answer' and (a['source'] != 'referral' or a['accepted'])}
         req = requester_keys(requester, store, repo)
         # The requester's authority does not put them back in front.
         fixed = {a['name'] for a in matches if a['strong'] and a['role'] == 'decides' and a['id'] in explicit_ids

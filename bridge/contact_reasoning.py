@@ -74,8 +74,10 @@ def _placed_with_decider(graph, repo, fixed, ranked):
     live on the Parcelwise demo (main aaa0858): the ladder sent a label-
     allowance question to the person who decides pricing ("this one only
     mentions pricing"), and this pass handed it to whoever had written
-    plans.py and its last pull request. A decider learned from a referral
-    or an answer is not the map's own word and does not hold the call here.
+    plans.py and its last pull request. A referral the person accepted by
+    answering is the map's word too (the hand-on promised to route the
+    scope to them first); one not yet answered, or a row learned from an
+    answer, is not and does not hold the call here.
     """
     if not ranked:
         return False
@@ -84,7 +86,7 @@ def _placed_with_decider(graph, repo, fixed, ranked):
     head = ranked[0][0]
     head_id, head_key = person_id_of(head), _norm_person(str(head))
     configured = {r['id'] for r in graph.authority_rows(repo)
-                  if r['accepted'] and r['source'] not in ('referral', 'answer')}
+                  if r['accepted'] and r['source'] != 'answer'}
     for match in fixed:
         if match.get('role') != 'decides' or match.get('id') not in configured:
             continue
