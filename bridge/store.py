@@ -1190,6 +1190,9 @@ class Store:
                        (answer, rationale, decision["owner_name"], stamp, signer, stamp, answer_hash(answer),
                         supersedes, supersedes, actor.id if actor is not None else "", signer, basis, signature,
                         applicability_json, decision_id))
+            from .judgment import received_via
+            db.execute("UPDATE decisions SET answered_via=? WHERE id=?",
+                       (received_via(db, data.get("source"), actor), decision_id))
             self.event(db, kind, json.dumps({"answer": answer, "rationale": rationale, "owner": decision["owner_name"],
                                              "actor": signer, "basis": basis,
                                              **authz.event_provenance(actor, data.get("source")),

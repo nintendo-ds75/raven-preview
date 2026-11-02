@@ -3265,6 +3265,9 @@ def sign_off(store, decision_id: str, data, actor=None, transaction_db=None) -> 
                              (by if len(signatures) < 2 else ", ".join(x["by"] for x in signatures), stamp,
                               content, json.dumps(signatures), stamp,
                               actor.id if actor is not None else "", by, basis, d.id))
+            from .judgment import received_via
+            db.execute("UPDATE decisions SET answered_via=? WHERE id=?",
+                       (received_via(db, data.get("source"), actor), d.id))
             graph.append_event("signoff", {"task_id": d.task_id, "decision_id": d.id, "by": by, "corrected": False,
                                            "revision": stamp, "basis": basis,
                                            **authz.event_provenance(actor, data.get("source"))}, db=db)
@@ -3579,7 +3582,7 @@ def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, or
                 # The memory target and its observed revision are one piece
                 # of provenance; never infer a new revision at publication.
                 fields = ['status','answer','rationale','source','source_id','source_revision','evidence','kind','prediction','owner_id',
-                          'owner_evidence','answered_by','signoff','signed_by','signed_hash','signed_revision','signatures','brief','superseded_by','source_reuse_state']
+                          'owner_evidence','answered_by','signoff','signed_by','signed_hash','signed_revision','signatures','brief','superseded_by','source_reuse_state','fit_reason']
                 fields = [f for f in fields if f in outcome]
                 graph.db.execute('UPDATE decisions SET ' + ','.join(f+'=?' for f in fields) + ', updated_at=? WHERE id=?',
                                  (*[outcome[f] for f in fields], now(), did))

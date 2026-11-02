@@ -1275,6 +1275,12 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                             result = interview.update(store, parts[2], parts[4], data, self.actor(), parts[5])
                         else:
                             return self.send(404, {"error": "Unknown interview action"})
+                    elif len(parts) == 4 and parts[:2] == ["api", "decisions"] and parts[3] == 'correct':
+                        # "That's wrong / doesn't apply here": the person's
+                        # answer replaces what Raven settled, under their name.
+                        from . import judgment
+                        self.attribute(data, "by")
+                        result = judgment.correct(store, parts[2], data, actor=self.actor(data))
                     elif len(parts) == 4 and parts[:2] == ["api", "decisions"] and parts[3] == 'reframe':
                         from . import reframe
                         result = reframe.apply(store, parts[2], data, self.actor())

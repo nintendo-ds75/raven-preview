@@ -11,17 +11,6 @@ const askRepo = () => (state.question_repositories || [])[0]?.id || (state.runs 
 const askDate = value => { const d = new Date(value); return Number.isNaN(+d) ? '' : d.toLocaleDateString(undefined, {month: 'short', day: 'numeric'}); };
 const askFirst = name => String(name || '').split(/\s+/)[0];
 
-// A task in a sentence: what the agent ran into, what Raven settled from
-// what people already said, and who it asked about the rest.
-function taskStory(run) {
-  const ds = (state.decisions || []).filter(d => d.run_id === run.id && !d.superseded_by);
-  const fromPast = d => ['signed', 'rule'].includes(d.signoff) && d.source_id && d.status !== 'approved';
-  const settled = ds.filter(fromPast);
-  const answered = ds.filter(d => !fromPast(d) && d.status === 'approved');
-  const asked = ds.filter(d => !fromPast(d) && d.status !== 'approved');
-  return {ds, settled, answered, asked};
-}
-
 function askTaskCard(run) {
   const {ds, settled, answered, asked} = taskStory(run);
   const live = !['completed', 'failed', 'cancelled', 'abandoned'].includes(run.status);
@@ -45,16 +34,11 @@ function askBuilding() {
     .sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
 }
 
-// Where a decision's context came from, as short labels: the earlier
-// decision it was settled from, and the records the agent cited (an ADR,
-// a pull request, a postmortem, a Slack thread, a Jira issue, a file).
+// Where a decision's context came from, as short labels: the records the
+// agent cited (an ADR, a pull request, a postmortem, a Slack thread, a Jira
+// issue, a file). The earlier decision it was settled from is shown apart.
 function buildSources(d) {
   const out = [];
-  if (d.source_id) {
-    const prior = (state.decisions || []).find(x => x.id === d.source_id);
-    const who = prior?.answered_by || d.answered_by || d.signed_by || '';
-    out.push({label: `${who ? askFirst(who) + '’s' : 'An earlier'} decision${d.source_revision ? ' · ' + askDate(d.source_revision) : ''}`, href: prior ? `#runs/${encodeURIComponent(prior.run_id)}/${encodeURIComponent(prior.id)}` : '', kind: 'decision'});
-  }
   const text = `${d.context || ''}\n${d.evidence || ''}`;
   const seen = new Set();
   const add = (label, kind) => { const k = label.toLowerCase(); if (!seen.has(k) && out.length < 5) { seen.add(k); out.push({label, kind}); } };
@@ -71,50 +55,157 @@ function buildSources(d) {
   return out;
 }
 
-// One decision, in three parts: which camp it is in (strong precedent,
-// close precedent or novel judgement), its status and who Raven talked
-// to, and where the information came from.
-function buildRow(d, settled) {
-  const camp = settled || d.kind === 'evidence' ? ['precedent', 'Strong precedent', 'Raven settled this from what the team already decided. Nobody was asked.']
-    : d.kind === 'prediction' ? ['close', 'Close precedent', 'Raven had a likely answer from earlier context and asked the owner to confirm it.']
-    : ['novel', 'Novel judgement', 'Nothing on record covered this. Raven asked the person who owns it to decide from first principles.'];
-  const owner = d.owner_name || '';
+// The judgment log. Each decision is read into one of five plain states:
+//   settled   Raven applied a call a person already made; nobody was asked
+//   answered  a person answered (Raven may have guessed first and asked them to confirm)
+//   corrected a person said Raven's call was wrong, or did not apply, and gave the answer
+//   review    the call this leaned on was replaced since, so it needs another look
+//   waiting   Raven routed it to a person and is waiting
+const buildById = id => (state.decisions || []).find(x => x.id === id);
+const buildVia = {'browser': 'in Raven', 'slack': 'on Slack', 'teams': 'on Teams', 'voice call': 'on a Raven voice call',
+  'call (typed)': 'on a Raven call', 'meeting': 'in a meeting', 'github': 'in a GitHub review', 'agent': 'in Claude Code', 'operator': 'in Raven'};
+const buildWhen = value => { const d = new Date(value); return Number.isNaN(+d) ? '' : d.toLocaleDateString(undefined, {month: 'short', day: 'numeric'}); };
+const buildHref = d => `#runs/${encodeURIComponent(d.run_id)}/${encodeURIComponent(d.id)}`;
+function judge(d) {
+  const prior = d.source_id ? buildById(d.source_id) : d.supersedes ? buildById(d.supersedes) : null;
   const by = d.answered_by || d.signed_by || '';
-  let status;
-  if (settled || d.kind === 'evidence') status = `Settled from ${esc(askFirst(by) || 'an earlier')}’s decision · nobody asked`;
-  else if (d.status === 'approved') status = `Raven asked ${esc(askFirst(owner) || askFirst(by))}${by && owner && by !== owner ? `, ${esc(askFirst(by))} answered` : ' · answered'} ${esc(ago(d.updated_at))}`;
-  else status = owner ? `Raven asked ${esc(askFirst(owner))} · waiting ${esc(ago(d.created_at)).replace(/ ago$/, '')}` : 'Raven is finding who owns this';
-  const done = settled || d.kind === 'evidence' || d.status === 'approved';
+  const priorBy = prior ? (prior.answered_by || prior.signed_by || prior.owner_name || '') : by;
+  // When the earlier call was made: the revision Raven applied, else the
+  // call's own date (its updated_at moves when it is later replaced).
+  const priorWhen = d.source_revision || (prior ? prior.created_at : '');
+  let kind;
+  if (d.needs_review) kind = 'review';
+  else if (d.status === 'approved' && d.supersedes) kind = 'corrected';
+  else if (['signed', 'rule'].includes(d.signoff) && d.source_id && d.status !== 'approved') kind = 'settled';
+  else if (d.status === 'approved') kind = 'answered';
+  else kind = 'waiting';
+  return {kind, prior, by, priorBy, priorWhen, guessed: d.kind === 'prediction', via: buildVia[d.answered_via] || '',
+    owner: d.owner_name || '', done: kind !== 'waiting' && kind !== 'review'};
+}
+
+// A task in a sentence: what the agent ran into, what Raven settled from
+// what people already said, and who it asked about the rest.
+function taskStory(run) {
+  const ds = (state.decisions || []).filter(d => d.run_id === run.id && !d.superseded_by
+    && !['duplicate', 'suggested', 'adopted', 'withdrawn'].includes(d.status));
+  const js = new Map(ds.map(d => [d.id, judge(d)]));
+  const of = kind => ds.filter(d => js.get(d.id).kind === kind);
+  const settled = of('settled');
+  const answered = [...of('answered'), ...of('corrected')];
+  const asked = [...of('waiting'), ...of('review')];
+  // People Raven reached (asked or answered) and people it did not need to
+  // bother because a call they already made covered the question.
+  const reached = [...new Set([...answered.map(d => js.get(d.id).by || js.get(d.id).owner), ...asked.map(d => js.get(d.id).owner)].filter(Boolean))];
+  const spared = [...new Set(settled.map(d => js.get(d.id).priorBy).filter(n => n && !reached.includes(n)))]
+    .map(name => ({name, when: buildWhen(settled.map(d => js.get(d.id)).find(j => j.priorBy === name)?.priorWhen)}));
+  return {ds, js, settled, answered, asked, reached, spared};
+}
+
+const buildOpen = new Set(), buildForm = new Set();
+const buildCanAct = d => !!state.me?.name && (state.me.name === d.owner_name || state.me.role === 'admin');
+const buildClip = (text, n) => { text = String(text || ''); return text.length > n ? text.slice(0, n - 1) + '…' : text; };
+
+// The one line under each question: who settled it, how, and when.
+function buildLine(d, j) {
+  const first = askFirst;
+  if (j.kind === 'settled') return `<span class="dot past"></span>From ${esc(first(j.priorBy) || 'an earlier')}’s call${j.priorWhen ? ' · ' + esc(buildWhen(j.priorWhen)) : ''} · nobody asked`;
+  if (j.kind === 'corrected') return `<span class="dot person"></span>${esc(first(j.by))} corrected this${j.prior ? ` · replaces ${esc(first(j.priorBy))}’s ${esc(buildWhen(j.priorWhen))} call` : ''}`;
+  if (j.kind === 'answered') return `<span class="dot person"></span>${j.guessed ? `Raven guessed, ${esc(first(j.by))} confirmed` : `${esc(first(j.by))} answered`}${j.via ? ' ' + esc(j.via) : ''} · ${esc(ago(d.updated_at))}`;
+  if (j.kind === 'review') return `<span class="dot open"></span>Needs another look · the call this used was replaced`;
+  return `<span class="dot open"></span>${j.owner ? `Waiting on ${esc(first(j.owner))} · ${esc(ago(d.created_at)).replace(/ ago$/, '')}` : 'Raven is finding who owns this'}`;
+}
+
+// What opens when a tile is clicked: the answer, why Raven trusted it, the
+// earlier call it came from, where the rest was read, and the one action.
+function buildDetail(d, j) {
+  const first = askFirst;
+  const parts = [];
+  if (d.answer && j.kind !== 'review') parts.push(`<p class="build-answer">${esc(d.answer)}</p>`);
+  if (j.kind === 'settled') {
+    parts.push(`<div class="build-why"><span class="ask-label">Why Raven applied it</span><p>${esc(d.fit_reason || `Raven matched it to a call ${j.priorBy || 'someone'} already made.`)}</p></div>`);
+    parts.push(buildPrecedent(j, 'Settled from this call'));
+    if (j.priorBy) parts.push(`<p class="build-note">${esc(first(j.priorBy))} was not pinged: the call already covered it. ${buildCanAct(d) ? 'If it doesn’t, say so below.' : `Only ${esc(first(j.priorBy))} (or an admin) can change that.`}</p>`);
+  } else if (j.kind === 'corrected') {
+    if (d.rationale) parts.push(`<div class="build-why"><span class="ask-label">Why</span><p>${esc(d.rationale)}</p></div>`);
+    if (j.prior) parts.push(buildPrecedent(j, 'Replaced this call'));
+    parts.push(`<p class="build-note">From now on the next similar question uses ${esc(first(j.by))}’s correction.</p>`);
+  } else if (j.kind === 'answered') {
+    if (j.guessed) parts.push(`<p class="build-note">Raven had a likely answer from earlier context but was not sure, so it asked ${esc(first(j.by))} rather than apply it.</p>`);
+    if (d.rationale) parts.push(`<div class="build-why"><span class="ask-label">Why, in ${esc(first(j.by))}’s words</span><p>${esc(d.rationale)}</p></div>`);
+    parts.push(`<p class="build-note">${esc(j.by)} answered${j.via ? ' ' + esc(j.via) : ''} · ${esc(buildWhen(d.updated_at))}.</p>`);
+  } else if (j.kind === 'review') {
+    parts.push(`<div class="build-why"><span class="ask-label">What happened</span><p>${esc(d.review_reason || 'An answer this leaned on was corrected.')}</p></div>`);
+    if (d.answer) parts.push(`<p class="build-answer stale">Was: ${esc(d.answer)}</p>`);
+    parts.push(`<p class="build-note">Raven is asking ${esc(first(j.owner) || 'the owner')} to look again.</p>`);
+  } else {
+    parts.push(`<p class="build-note">Raven asked ${esc(j.owner || 'the owner')} ${esc(ago(d.created_at))}. Nothing on record settles this, so a person decides.</p>`);
+    if (d.context) parts.push(`<div class="build-why"><span class="ask-label">What the agent found</span><p>${esc(buildClip(d.context, 320))}</p></div>`);
+  }
   const sources = buildSources(d);
-  const who = done ? by || owner : owner;
-  return `<li class="build-row ${camp[0]} ${done ? 'done' : 'waiting'}">
-    <div class="build-row-top"><span class="build-camp ${camp[0]}" title="${esc(camp[2])}">${camp[1]}</span><span class="build-status">${who ? avatar(who) : ''}${status}</span></div>
-    <a class="build-q" href="#runs/${encodeURIComponent(d.run_id)}/${encodeURIComponent(d.id)}">${esc(d.question)}</a>
-    ${done && d.answer ? `<p class="build-a">${esc(d.answer.length > 160 ? d.answer.slice(0, 158) + '…' : d.answer)}</p>` : ''}
-    ${sources.length ? `<div class="build-from"><span>From</span>${sources.map(x => x.href ? `<a class="build-src ${x.kind}" href="${esc(x.href)}">${esc(x.label)}</a>` : `<span class="build-src ${x.kind}">${esc(x.label)}</span>`).join('')}</div>` : ''}
+  if (sources.length) parts.push(`<div class="build-from"><span>Raven also read</span>${sources.map(x => `<span class="build-src ${x.kind}">${esc(x.label)}</span>`).join('')}</div>`);
+  const actions = [`<a class="button small text" href="${buildHref(d)}">Open the full record</a>`];
+  if (j.done && buildCanAct(d)) actions.unshift(`<button type="button" class="button small" data-build="correct" data-id="${esc(d.id)}">That’s wrong, or doesn’t apply here</button>`);
+  if (!j.done && buildCanAct(d)) actions.unshift(`<a class="button small primary" href="${buildHref(d)}">Answer it</a>`);
+  parts.push(`<div class="build-actions">${actions.join('')}</div>`);
+  if (buildForm.has(d.id)) parts.push(buildCorrectForm(d, j));
+  return `<div class="build-detail">${parts.join('')}</div>`;
+}
+
+function buildPrecedent(j, label) {
+  const p = j.prior;
+  if (!p) return j.priorBy ? `<div class="build-prior"><span class="ask-label">${esc(label)}</span><div class="build-prior-head">${avatar(j.priorBy)}<b>${esc(j.priorBy)}</b><span>${esc(buildWhen(j.priorWhen))}</span></div></div>` : '';
+  const via = buildVia[p.answered_via] || '';
+  return `<div class="build-prior"><span class="ask-label">${esc(label)}</span>
+    <div class="build-prior-head">${avatar(j.priorBy)}<b>${esc(j.priorBy)}</b><span>decided ${esc(buildWhen(j.priorWhen))}${via ? ' ' + esc(via) : ''}${p.run_title ? ' · ' + esc(buildClip(p.run_title, 48)) : ''}</span><a href="${buildHref(p)}" aria-label="Open that call">↗</a></div>
+    <p class="build-prior-q">${esc(p.question)}</p>
+    <p class="build-prior-a">“${esc(p.answer || '')}”</p></div>`;
+}
+
+function buildCorrectForm(d, j) {
+  const hasPrior = !!(d.source_id || d.supersedes) && j.kind !== 'corrected';
+  return `<form class="build-correct" data-id="${esc(d.id)}" data-updated="${esc(d.updated_at)}">
+    <label>The right answer<textarea name="answer" required maxlength="12000" rows="3">${esc(d.answer || '')}</textarea></label>
+    <label>Why the call Raven made doesn’t hold here<textarea name="why" required maxlength="12000" rows="2" placeholder="One or two sentences. This becomes the record under your name."></textarea></label>
+    ${hasPrior ? `<div class="build-scope"><label><input type="radio" name="scope" value="everywhere" checked> The earlier call was wrong: replace it, so the next similar question uses this answer</label>
+    <label><input type="radio" name="scope" value="here"> It doesn’t apply to this case: keep the earlier call for other cases</label></div>` : '<input type="hidden" name="scope" value="here">'}
+    <p class="ask-error" hidden></p>
+    <div class="build-actions"><button class="button small primary" type="submit">Record under my name</button><button class="button small text" type="button" data-build="cancel" data-id="${esc(d.id)}">Cancel</button></div>
+  </form>`;
+}
+
+function buildTile(d, j) {
+  const open = buildOpen.has(d.id);
+  return `<li class="build-tile ${j.kind} ${open ? 'open' : ''}" data-id="${esc(d.id)}">
+    <button type="button" class="build-tile-head" data-build="toggle" data-id="${esc(d.id)}" aria-expanded="${open}">
+      <span class="build-q">${esc(d.question)}</span>
+      <span class="build-line">${buildLine(d, j)}</span>
+    </button>
+    ${open ? buildDetail(d, j) : ''}
   </li>`;
 }
 
 function buildCard(run) {
-  const {ds, settled, answered, asked} = taskStory(run);
-  const novel = ds.filter(d => !settled.includes(d) && d.kind !== 'evidence' && d.kind !== 'prediction').length;
-  const precedent = ds.length - novel;
-  const talked = [...new Set(ds.filter(d => !settled.includes(d) && d.kind !== 'evidence').map(d => d.owner_name).filter(Boolean))];
-  const order = d => (settled.includes(d) || d.kind === 'evidence') ? 2 : d.status === 'approved' ? 1 : 0;
+  const {ds, js, settled, answered, asked, reached, spared} = taskStory(run);
+  const waiting = asked.map(d => js.get(d.id).owner).filter(Boolean);
+  const waitingOn = [...new Set(waiting)];
+  const pill = asked.length
+    ? `<span class="build-pill waiting">Waiting on ${esc(waitingOn.map(askFirst).join(', ') || 'a person')}</span>`
+    : `<span class="build-pill building">Building · nothing waiting on anyone</span>`;
+  const done = settled.length + answered.length;
+  const order = d => ({review: 0, waiting: 1, corrected: 2, answered: 3, settled: 4})[js.get(d.id).kind];
   const rows = [...ds].sort((a, b) => order(a) - order(b) || String(a.created_at).localeCompare(String(b.created_at)));
   return `<article class="build-card">
-    <div class="ask-task-top"><span class="ask-live on">Building</span><span class="ask-agent">${esc(run.agent || 'Coding agent')}${run.requester ? ' · picked up by ' + esc(run.requester) : ''}</span><span class="ask-when">${esc(ago(run.updated_at))}</span></div>
+    <div class="build-top">${pill}<span class="ask-agent">${esc(run.agent || 'Coding agent')}${run.requester ? ' · for ' + esc(run.requester) : ''}</span><span class="ask-when">${esc(ago(run.updated_at))}</span></div>
     <h2><a href="#runs/${encodeURIComponent(run.id)}">${esc(run.title)}</a></h2>
-    ${run.goal ? `<p class="build-goal">${esc(run.goal.length > 260 ? run.goal.slice(0, 258) + '…' : run.goal)}</p>` : ''}
-    <div class="build-stats">
-      <div><b>${precedent}</b><span>from precedent</span></div>
-      <div><b>${novel}</b><span>novel judgement</span></div>
-      <div><b>${answered.length + settled.length}</b><span>of ${ds.length} settled</span></div>
-      <div><b>${asked.length}</b><span>waiting on people</span></div>
+    ${run.goal ? `<p class="build-goal">${esc(buildClip(run.goal, 220))}</p>` : ''}
+    <div class="build-counts">
+      <div><b>${ds.length}</b><span>judgment calls the agent hit</span></div>
+      <div class="past"><b>${settled.length}</b><span>settled by Raven from earlier calls, nobody asked</span></div>
+      <div class="person"><b>${answered.length + asked.length}</b><span>reached a person${reached.length ? ': ' + esc(reached.map(askFirst).join(', ')) : ''}</span></div>
     </div>
-    <div class="ask-meter" aria-hidden="true">${settled.map(() => '<i class="past"></i>').join('')}${answered.map(() => '<i class="person"></i>').join('')}${asked.map(() => '<i class="open"></i>').join('')}</div>
-    ${talked.length ? `<p class="build-talked">Raven talked to ${talked.map(n => `<span>${avatar(n)}${esc(askFirst(n))}</span>`).join('')}</p>` : ''}
-    <ul class="build-rows">${rows.map(d => buildRow(d, settled.includes(d))).join('')}</ul>
+    <div class="build-bar" role="img" aria-label="${done} of ${ds.length} settled">${settled.map(() => '<i class="past"></i>').join('')}${answered.map(() => '<i class="person"></i>').join('')}${asked.map(() => '<i class="open"></i>').join('')}<em>${done} of ${ds.length} settled</em></div>
+    ${spared.length ? `<p class="build-spared">Not asked: ${spared.map(x => `<span>${avatar(x.name)}${esc(askFirst(x.name))}</span> (${esc(askFirst(x.name))}’s ${x.when ? esc(x.when) + ' ' : ''}call already covered it)`).join(', ')}.</p>` : ''}
+    <ul class="build-tiles">${rows.map(d => buildTile(d, js.get(d.id))).join('')}</ul>
   </article>`;
 }
 
@@ -124,20 +215,66 @@ function renderTasks() {
   const me = (state.me?.name || '').toLowerCase();
   const mine = me ? live.filter(r => String(r.requester || '').toLowerCase() === me) : [];
   const rest = live.filter(r => !mine.includes(r));
-  const done = (state.runs || []).filter(r => r.status === 'completed' && taskStory(r).ds.length).slice(0, 5);
-  const key = JSON.stringify(['tasks', live.map(r => [r.id, r.updated_at]), done.map(r => r.id), (state.decisions || []).map(d => [d.id, d.status]).length, me]);
+  const replaced = run => (state.decisions || []).filter(d => d.run_id === run.id && d.superseded_by).length;
+  const done = (state.runs || []).filter(r => r.status === 'completed' && (taskStory(r).ds.length || replaced(r))).slice(0, 5);
+  const key = JSON.stringify(['tasks', live.map(r => [r.id, r.updated_at]), done.map(r => r.id), (state.decisions || []).map(d => [d.id, d.status, d.updated_at]), me, [...buildOpen], [...buildForm]]);
   if (key === askKey && $('#app .build')) return;
   askKey = key;
+  const all = live.map(taskStory);
+  const came = all.reduce((n, s) => n + s.ds.length, 0);
+  const settled = all.reduce((n, s) => n + s.settled.length, 0);
+  const answered = all.reduce((n, s) => n + s.answered.length, 0);
+  const waiting = all.reduce((n, s) => n + s.asked.length, 0);
+  const people = [...new Set(all.flatMap(s => s.reached))];
   $('#app').innerHTML = `<div class="build">
-    <header class="build-head"><h1>Being built</h1><p>Every judgement call in the tasks agents are building now: settled from precedent or a novel call for a person, who Raven talked to, and where each answer came from.</p></header>
+    <header class="build-head"><h1>Being built</h1><p>Every judgment call a coding agent hit while building. Raven settled each one from a call someone already made, or sent it to the one person who has to decide. Click a call to see where its answer came from.</p></header>
+    ${live.length ? `<div class="build-total">
+      <div><b>${came}</b><span>judgment calls came in</span></div>
+      <div class="past"><b>${settled}</b><span>settled by Raven from earlier calls<small>nobody was asked</small></span></div>
+      <div class="person"><b>${answered + waiting}</b><span>reached a person<small>${people.length ? esc(people.map(askFirst).join(', ')) : 'nobody yet'}</small></span></div>
+      <div class="open"><b>${waiting}</b><span>still waiting<small>${waiting ? 'on ' + esc([...new Set(all.flatMap(s => s.asked.map(d => s.js.get(d.id).owner)).filter(Boolean))].map(askFirst).join(', ')) : 'nothing'}</small></span></div>
+    </div>` : ''}
     ${mine.length ? `<h2 class="ask-label">Yours</h2>${mine.map(buildCard).join('')}` : ''}
     ${rest.length ? `${mine.length ? '<h2 class="ask-label">Across the team</h2>' : ''}${rest.map(buildCard).join('')}` : ''}
     ${live.length ? '' : '<p class="ask-muted">Nothing is being built right now. When Claude Code, Codex or Cursor starts a task, it shows up here.</p>'}
-    ${done.length ? `<h2 class="ask-label">Recently finished</h2><div class="build-done">${done.map(r => `<a href="#runs/${encodeURIComponent(r.id)}"><span>${esc(r.title)}</span><small>${plural(taskStory(r).ds.length, 'decision')} · ${esc(askDate(r.updated_at))}</small></a>`).join('')}</div>` : ''}
-    ${askAgentUses()}
+    ${done.length ? `<h2 class="ask-label">Recently finished</h2><div class="build-done">${done.map(r => `<a href="#runs/${encodeURIComponent(r.id)}"><span>${esc(r.title)}</span><small>${plural(taskStory(r).ds.length + replaced(r), 'decision')}${replaced(r) ? ` · ${replaced(r) === 1 ? 'one' : replaced(r)} since replaced by ${esc([...new Set((state.decisions || []).filter(d => d.run_id === r.id && d.superseded_by).map(d => askFirst(buildById(d.superseded_by)?.answered_by || '')).filter(Boolean))].join(', ') || 'a newer call')}` : ''} · ${esc(askDate(r.updated_at))}</small></a>`).join('')}</div>` : ''}
+    ${live.length ? '' : askAgentUses()}
   </div>`;
 }
 window.addEventListener('hashchange', () => { if (location.hash.startsWith('#tasks')) askKey = ''; });
+
+document.addEventListener('click', event => {
+  const button = event.target.closest('[data-build]');
+  if (!button || view !== 'tasks') return;
+  const {build, id} = button.dataset;
+  if (build === 'toggle') { if (buildOpen.has(id)) { buildOpen.delete(id); buildForm.delete(id); } else buildOpen.add(id); }
+  else if (build === 'correct') buildForm.add(id);
+  else if (build === 'cancel') buildForm.delete(id);
+  askKey = ''; render();
+  if (build === 'correct') $(`.build-correct[data-id="${CSS.escape(id)}"] textarea[name=why]`)?.focus();
+});
+document.addEventListener('submit', async event => {
+  const form = event.target.closest('.build-correct');
+  if (!form) return;
+  event.preventDefault();
+  const d = buildById(form.dataset.id);
+  const data = Object.fromEntries(new FormData(form).entries());
+  const error = form.querySelector('.ask-error');
+  const button = form.querySelector('button[type=submit]');
+  button.disabled = true; button.textContent = 'Recording…';
+  try {
+    const result = await api(`/api/decisions/${encodeURIComponent(form.dataset.id)}/correct`, {
+      answer: data.answer, why: data.why, scope: data.scope || 'here', expected_updated_at: form.dataset.updated,
+      ...(d && state.me?.role === 'admin' && state.me.name !== d.owner_name ? {override: true} : {})});
+    buildForm.delete(form.dataset.id);
+    notify(result.notice || 'Recorded.');
+    askKey = '';
+    await refresh();
+  } catch (err) {
+    error.textContent = err.message; error.hidden = false;
+    button.disabled = false; button.textContent = 'Record under my name';
+  }
+});
 
 function askSuggestions() {
   const out = [];

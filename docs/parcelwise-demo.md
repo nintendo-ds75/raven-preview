@@ -48,11 +48,22 @@ in the browser or on a quick call.
 
 ## Being built
 
-The sidebar's **Being built** page (`#tasks`) shows every live coding-agent task and each
-judgement call in it: whether Raven settled it from strong precedent, had a close precedent
-a person confirmed, or needed a novel judgement; who Raven talked to and whether they have
-answered; and where the context came from (the earlier decision, ADRs, pull requests, Slack,
-Jira, files). The fixture has two live tasks, both picked up by Maya Chen: the bulk label
-purchase from the recording, and **Turn on overage billing for the Starter plan**, seven
-decisions with three still waiting on Lena, Sam and Ana. `scripts/seed_billing_task.py`
-adds that task to a database; `--reset` moves both live tasks' times up to now.
+The sidebar's **Being built** page (`#tasks`) is the judgment log: every live coding-agent
+task and each judgment call the agent hit in it, as light tiles. The header and each task
+say plainly how many calls came in, how many Raven settled from a call someone already made
+without asking anyone, how many reached a person and who, and who was not asked because an
+earlier call of theirs covered it. Clicking a tile shows the answer, why Raven applied the
+precedent (one line), the earlier call itself (who, when, how their sign-off arrived, the
+quote, a link), the records the agent read, and one action for the owner: **That's wrong,
+or doesn't apply here**. The correction is recorded under the person's name, retires the
+earlier call (shown as replaced) and becomes the precedent the next similar question uses
+(`bridge/judgment.py`, `POST /api/decisions/<id>/correct`).
+
+The fixture has two live tasks, both picked up by Maya Chen: the bulk label purchase from
+the recording, where Jordan has already corrected one call Raven settled from his Oct 28
+answer, and **Turn on overage billing for the Starter plan**, seven decisions with three
+still waiting on Lena, Sam and Ana. `scripts/seed_billing_task.py` adds that task to a
+database, `scripts/seed_judgment_demo.py` adds the channels, fit lines and Jordan's
+correction, and `--reset` moves both live tasks' times up to now. To show the loop live,
+sign in as ana@parcelwise.example, open "Must a Starter merchant see the overage price…"
+and correct it.
