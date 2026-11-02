@@ -44,7 +44,7 @@ def login(base,email,password):
     status,_,html=request(base,'/auth/login');must(status==200,'Login form')
     csrf=re.search(r'name="csrf" value="([^"]+)"',html)[1]
     status,h,_=request(base,'/auth/password','POST',{'email':email,'password':password,'csrf':csrf},form=True)
-    must(status==302,'Login redirect');must(h['Location']=='/#inbox','Login destination')
+    must(status==302,'Login redirect');must(h['Location']=='/#you','Login destination')
     cookie=h['Set-Cookie'].split(';')[0]
     status,_,body=request(base,'/api/state',cookie=cookie)
     must(status==200,'Login authenticated')
@@ -66,7 +66,7 @@ def main():
             must(s==400 and 'invalid or expired' in body,'Expired invite');must('Set-Cookie' not in h,'Expired invite session')
             passed('Expired invitation refuses onboarding')
             s,h,body=form(base,'/auth/join',{'invite':a['invite'],'name':'Imposter display name','password':a['password']})
-            must(s==302 and h['Location']=='/#inbox','Invite lands inbox');cookie=h['Set-Cookie'].split(';')[0]
+            must(s==302 and h['Location']=='/#you','Invite lands on their page');cookie=h['Set-Cookie'].split(';')[0]
             s,_,body=get('/api/state',cookie);state=json.loads(body);must(s==200,'Invite authenticated');must(state['me']['id']==a['expert']['id'] and state['me']['name']==a['expert']['name'],'Mapped person identity');must(state['me']['role']=='member','Invite role')
             s,_,body=get('/api/inbox',cookie);must(s==200 and a['node'] in body,'Expert decision in inbox')
             s,_,body=form(base,'/auth/join',{'invite':a['invite'],'name':'Replay','password':a['password']});must(s==400,'Invite replay rejected')

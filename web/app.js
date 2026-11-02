@@ -56,7 +56,7 @@ const ago = value => {
 };
 const pill = (text, color = '') => `<span class="pill ${color}"><span class="status-dot"></span>${esc(text)}</span>`;
 // The one word each page is called, in the sidebar, the h1 and the window title.
-const titles = {ask: ['Ask Raven'], tasks: ['Being built'], people: ['People'], inbox: ['Inbox'], runs: ['Tasks'], owners: ['People'], connect: ['Settings'], today: ['Outcomes'], work: ['Raven'], intro: ['Voice intros']};
+const titles = {you: ['For you'], ask: ['Ask Raven'], tasks: ['Being built'], people: ['People'], inbox: ['Inbox'], runs: ['Tasks'], owners: ['People'], connect: ['Settings'], today: ['Outcomes'], work: ['Raven'], intro: ['Voice intros']};
 let state = {decisions: [], runs: [], owners: [], events: []};
 let workspaceError = '';
 // The ownership graph and the directory (people, teams, the authority map, the coordinator) are not in the
@@ -288,8 +288,11 @@ async function refresh({quiet = false} = {}) {
           : `${state.me.email ? esc(state.me.email) : 'Self-hosted workspace'} · <button type="button" class="profile-switch" data-action="act-as">${state.me.id ? 'Switch' : 'Choose who you are'}</button>`;
       }
       if (personalInbox() && !tabChosen) tab = 'mine';
-      $('#inbox-count').textContent = personalInbox() ? state.decisions.filter(assignedToMe).length
-        : state.counts ? state.counts.needs_you : state.decisions.filter(needsYou).length;
+      // The badge on For you counts what waits on this person as its owner
+      // or a required signer (/api/attention), the same number the page
+      // shows; an admin's standing to act on anything is not a to-do list.
+      if (state.auth?.enabled && state.me?.id && typeof loadAttention === 'function') loadAttention();
+      if (typeof syncYouBadge === 'function') syncYouBadge();
     }
     settingsDotState();
     if (taskId()) await loadTask({quiet});
@@ -350,7 +353,8 @@ function loadDirectory() {
 function navigate() {
   navigationVersion += 1;
   const parts = location.hash.slice(1).split('/');
-  let next = parts[0];
+  // With no hash, a signed-in person lands on their own page.
+  let next = parts[0] || (state.auth?.enabled && state.me?.id ? 'you' : '');
   if (next === 'memory') { tab = 'decided'; tabChosen = true; next = 'inbox'; history.replaceState(null, '', location.pathname + location.search + '#inbox'); }
   // The map became People: old links land on the same person.
   if (next === 'map') { next = 'people'; history.replaceState(null, '', location.pathname + location.search + '#people' + (parts[1] ? '/' + parts[1] : '')); }
@@ -493,6 +497,13 @@ const assignedToMe = d => needsYou(d) && d.can_act === true;
 // account from a task link, with nothing waiting on him, saw "Inbox 1" and
 // someone else's decision with a Review button. Admins and viewers keep
 // the workspace view.
+function syncYouBadge() {
+  const personal = state?.auth?.enabled && state.me?.id && typeof attention !== 'undefined' && attention?.counts;
+  const n = personal ? attention.counts.needs_you : personalInbox() ? state.decisions.filter(assignedToMe).length
+    : state.counts ? state.counts.needs_you : state.decisions.filter(needsYou).length;
+  const badge = $('#inbox-count');
+  if (badge) { badge.textContent = n; badge.hidden = !n; }
+}
 const personalInbox = () => Boolean(state?.auth?.enabled && state.me?.id && state.me.role === 'member');
 function empty(title, description = '', action = '', button = '') {
   return `<div class="empty">${icon('inbox')}<h2>${esc(title)}</h2>${description ? `<p>${esc(description)}</p>` : ''}${action ? `<button class="button soft" data-action="${action}">${esc(button)}</button>` : ''}</div>`;
@@ -845,6 +856,8 @@ async function agentCredential(target) {
 function render() {
   lastDraw = Date.now();
   settingsDotState();
+  // Opened with no page named, a signed-in person lands on their own page.
+  if (!render.landed && state.me?.id && !location.hash.slice(1)) { render.landed = true; location.hash = '#you'; return; }
   if (!state.auth) {
     $('#app').innerHTML = workspaceError ? `<div class="empty" role="alert"><h2>Workspace access unavailable</h2><p>${esc(workspaceError)}</p><button class="button" data-action="retry">Try again</button></div>` : '<p class="context" role="status">Loading workspace…</p>';
     return;
@@ -875,8 +888,9 @@ function render() {
   document.body.classList.toggle('work-view', view === 'work');
   if (view === 'today' && typeof renderObjectives === 'function') { $('#app').dataset.taskId = ''; renderObjectives(); return; }
   if (view !== 'intro') document.body.classList.toggle('voice-view', false);
-  document.body.classList.toggle('home-view', view === 'ask' || view === 'people' || view === 'tasks');
+  document.body.classList.toggle('home-view', view === 'ask' || view === 'people' || view === 'tasks' || view === 'you');
   document.body.classList.toggle('ask-view', view === 'ask');
+  if (view === 'you' && typeof renderAttention === 'function') { $('#app').dataset.taskId = ''; renderAttention(); return; }
   if (view === 'ask' && typeof renderHome === 'function') { $('#app').dataset.taskId = ''; renderHome(); return; }
   if (view === 'tasks' && typeof renderTasks === 'function') { $('#app').dataset.taskId = ''; renderTasks(); return; }
   if (view === 'people' && typeof renderPeople === 'function') { $('#app').dataset.taskId = ''; renderPeople(); return; }

@@ -254,6 +254,11 @@ _DECISION_COLUMNS = [
     # keeping the node's structural position on the task tree.
     ("independent_source_replacement", "INTEGER NOT NULL DEFAULT 0"),
     ("historical_parent_revalidated", "INTEGER NOT NULL DEFAULT 0"),
+    # The judgment log (bridge/judgment.py): how the person's answer or
+    # signature reached Raven (browser, slack, voice call, meeting...), and
+    # one line on why the precedent a settled decision came from fits it.
+    ("answered_via", "TEXT NOT NULL DEFAULT ''"),
+    ("fit_reason", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 _RUN_COLUMNS = [
@@ -2058,7 +2063,7 @@ class Graph:
                    "prediction", "source_id", "routing_reason", "rationale",
                    "parent_id", "client_ref", "depth", "origin", "signoff", "signed_by", "options", "brief",
                    "source_revision", "needs_review", "review_reason", "signed_revision", "signed_hash",
-                   "scope_key", "model_pending"}
+                   "scope_key", "model_pending", "fit_reason"}
         sets, vals = [], []
         for k, v in fields.items():
             if k not in allowed:

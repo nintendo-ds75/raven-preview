@@ -30,6 +30,7 @@ from dataclasses import dataclass, field, replace
 from . import llm as llm_mod
 from .config import Config
 from .graph import Graph, applicability_status, iso_to_ts, parse_facts, rule_conditions, rule_status, ts_to_iso
+from .judgment import fit_reason
 from .resolve import resolve_paths
 from .routing import coordinator_route, route_ranked
 
@@ -2257,6 +2258,8 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     prediction=None if signed else item.answer,
                     kind=_kind_for(status, origin, mkind) if signed else "prediction",
                     source_id=item.id, source_revision=revision,
+                    fit_reason=(fit_reason(item, mkind, rule_ok, terms, when=ts_to_iso(item.updated_at)[:10]
+                                           if item.updated_at else "") if signed else ""),
                     evidence=evidence + (f"; conflict: {mem_conflict}" if mem_conflict else "")
                     + (f"; {pick_note}" if mem_lex and pick_note else "")
                     + (f"; {rule_note}" if rule_note else ""),
