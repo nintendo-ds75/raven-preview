@@ -12,7 +12,12 @@ from unittest.mock import patch
 import urllib.request
 from urllib.parse import urlsplit
 
-import httpx
+try:
+    import httpx
+except ImportError:
+    # The gateway under evals/ is built on httpx, which the stdlib-only core
+    # does not need; CI installs httpx==0.28.1 so these tests run there.
+    raise unittest.SkipTest("Install httpx (CI pins httpx==0.28.1) to test the review acceptance driver") from None
 
 from bridge import canvas
 from evals import claude_mcp_acceptance as host

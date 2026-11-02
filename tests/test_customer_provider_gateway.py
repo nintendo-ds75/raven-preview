@@ -4,7 +4,12 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from urllib.request import Request
 
-import httpx
+try:
+    import httpx
+except ImportError:
+    # The gateway under evals/ is built on httpx, which the stdlib-only core
+    # does not need; CI installs httpx==0.28.1 so these tests run there.
+    raise unittest.SkipTest("Install httpx (CI pins httpx==0.28.1) to test the provider gateway") from None
 
 from evals.customer_provider_gateway import Gateway, _UsageObserver
 
