@@ -312,6 +312,12 @@ class Client:
 
 _NEUTRAL_CWD: str | None = None
 
+# Markers a running Claude Code session sets for its own children. A Raven
+# started from inside one (say, by a coding agent) would pass them on, and the
+# nested claude -p then behaves as part of that session and can stall.
+_PARENT_SESSION_VARS = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT",
+                        "CLAUDE_CODE_SESSION_ID", "CLAUDE_PID")
+
 META_LEAK_MARKERS = ("ask_bridge", "CLAUDE.md", "MCP", "this session",
                      "I can't", "I cannot", "I tried", "I checked",
                      "I want to flag", "tool search", "let me get this",
@@ -349,6 +355,7 @@ def find_claude() -> str | None:
 def _claude_cli(system: str, prompt: str, model: str = "") -> str:
     """Run the prompt through headless Claude Code (claude -p) from a
     neutral empty directory so no project instructions leak in."""
+    import os
     import subprocess
     import tempfile
     claude_bin = find_claude()
@@ -365,6 +372,7 @@ def _claude_cli(system: str, prompt: str, model: str = "") -> str:
              "--disable-slash-commands", "--no-session-persistence",
              *(["--model", model] if model else []), "--system-prompt", system],
             input=prompt, capture_output=True, text=True, timeout=600, cwd=_NEUTRAL_CWD,
+            env={k: v for k, v in os.environ.items() if k not in _PARENT_SESSION_VARS},
         )
     except subprocess.TimeoutExpired as e:
         raise LLMError("claude -p timed out after 600s") from e
