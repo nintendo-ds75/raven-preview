@@ -68,6 +68,50 @@ def is_postgres(target):
     return str(target).startswith(("postgresql://", "postgres://"))
 
 
+def dialect(db):
+    return getattr(db, "dialect", "sqlite")
+
+
+def table_names(db):
+    """Every ordinary table in the schema this connection sees."""
+    if dialect(db) == "postgres":
+        rows = db.execute("SELECT table_name AS name FROM information_schema.tables "
+                          "WHERE table_schema=current_schema() AND table_type='BASE TABLE' ORDER BY table_name")
+    else:
+        rows = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+    return [r["name"] for r in rows]
+
+
+def column_names(db, table):
+    return [r["name"] for r in db.execute(f"PRAGMA table_info({table})")]
+
+
+def foreign_keys_to(db, target):
+    """Every declared foreign key that points at `target`, as (table, column,
+    on_delete) with on_delete upper-cased (NO ACTION, CASCADE, ...). Read
+    from the schema itself on both backends, so a table added later is
+    found without anyone remembering to list it."""
+    out = []
+    if dialect(db) == "postgres":
+        rows = db.execute(
+            "SELECT tc.table_name AS tbl, kcu.column_name AS col, rc.delete_rule AS rule "
+            "FROM information_schema.table_constraints tc "
+            "JOIN information_schema.key_column_usage kcu ON kcu.constraint_name=tc.constraint_name "
+            "AND kcu.constraint_schema=tc.constraint_schema "
+            "JOIN information_schema.referential_constraints rc ON rc.constraint_name=tc.constraint_name "
+            "AND rc.constraint_schema=tc.constraint_schema "
+            "JOIN information_schema.constraint_column_usage ccu ON ccu.constraint_name=tc.constraint_name "
+            "AND ccu.constraint_schema=tc.constraint_schema "
+            "WHERE tc.constraint_type='FOREIGN KEY' AND tc.table_schema=current_schema() AND ccu.table_name=? "
+            "ORDER BY tc.table_name, kcu.column_name", (target,))
+        return [(r["tbl"], r["col"], str(r["rule"] or "NO ACTION").upper()) for r in rows]
+    for table in table_names(db):
+        for fk in db.execute(f"PRAGMA foreign_key_list({table})"):
+            if fk["table"] == target:
+                out.append((table, fk["from"], str(fk["on_delete"] or "NO ACTION").upper()))
+    return out
+
+
 def location(target):
     return str(target) if is_postgres(target) else str(Path(target).expanduser().resolve())
 

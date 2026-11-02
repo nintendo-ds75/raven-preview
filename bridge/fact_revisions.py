@@ -375,7 +375,7 @@ def correct_node_facts(store, data):
         try:
             with graph.source_scope(task_id):
                 result = run_task(graph, _LocalRecheck(model_api='none', deterministic=True),
-                    run['title'], repo=repo, run_id=task_id, keep_draft=True, scratch=True,
+                    run['title'], repo=repo, run_id=task_id, keep_draft=True, scratch=node_id,
                     decisions=[{'question': row['question'], 'category': row['category'],
                         'context': context, 'path': paths[0] if paths else 'unknown',
                         'requester': run['requester'], 'facts': facts,
@@ -447,10 +447,9 @@ def correct_node_facts(store, data):
                 db.execute("UPDATE decisions SET signoff='required',signed_by='',needs_review=1,review_reason=? WHERE id=?",
                            (str(error), node_id))
         graph.flag_dependents(node_id, f'Facts were explicitly corrected on decision {node_id}')
+        from .graph import discard_decision
         for sid in result.drafts:
-            db.execute('DELETE FROM decision_links WHERE decision_id=? OR related_id=?', (sid, sid))
-            db.execute('DELETE FROM events WHERE decision_id=?', (sid,))
-            db.execute('DELETE FROM decisions WHERE id=?', (sid,))
+            discard_decision(db, sid)
         if db.execute('SELECT 1 FROM decisions WHERE draft=1 LIMIT 1').fetchone() is None:
             graph.set_setting('drafts_pending', '')
         after_version = cm.snapshot_decision(db, node_id, reason='fact-correction-published')

@@ -264,6 +264,11 @@ _DECISION_COLUMNS = [
     # list: Raven's own note, kept out of the answer so a page never shows
     # it as the person's words. Empty when the answer is whole.
     ("gaps", "TEXT NOT NULL DEFAULT ''"),
+    # A model pass reads a node on a scratch twin of it (a draft nobody
+    # sees) and copies the outcome onto the live row: this names that
+    # live row on the twin, so a read of the twin is recorded against the
+    # decision it stands for and a twin left behind is found and removed.
+    ("scratch_of", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 _RUN_COLUMNS = [
@@ -394,6 +399,7 @@ def backfill(db: sqlite3.Connection) -> None:
     for name, decl in _RUN_COLUMNS:
         if name not in run_cols:
             db.execute(f"ALTER TABLE runs ADD COLUMN {name} {decl}")
+    repair_model_pass(db)
     # A listing's position in its file: CODEOWNERS is last-rule-wins.
     if "ord" not in {r["name"] for r in db.execute("PRAGMA table_info(listings)")}:
         db.execute("ALTER TABLE listings ADD COLUMN ord INTEGER NOT NULL DEFAULT 0")
@@ -486,6 +492,164 @@ def is_team_handle(name: str) -> bool:
 
 def ts_to_iso(ts: float) -> str:
     return datetime.fromtimestamp(ts, timezone.utc).isoformat()
+
+
+# A node still marked as being read this long after its last write has
+# no reader: the thread died, or its cleanup failed. The task page clears
+# the mark when no worker of its own process holds the node; open does
+# the same for every node, since no pass of a new process is running yet.
+MODEL_PENDING_STALE = 600
+# The client_ref of a scratch twin (ladder.run_task sets it).
+SCRATCH_REF = "__model_pass__"
+
+
+class ScratchCleanupFailed(Exception):
+    """A row that points at a scratch decision could not be moved or
+    removed; `table` names where, `error` is the database's own."""
+
+    def __init__(self, table: str, error: BaseException):
+        super().__init__(f"{table}: {type(error).__name__}: {error}")
+        self.table = table
+        self.error = error
+
+
+def log_event(db, kind: str, payload: dict) -> None:
+    db.execute("INSERT INTO events(decision_id, run_id, kind, detail, created_at) VALUES(?,?,?,?,?)",
+               (payload.get("decision_id"), payload.get("task_id"), kind,
+                json.dumps(payload, sort_keys=True, ensure_ascii=False), now_iso()))
+
+
+def decision_references(db) -> list[tuple[str, str, str]]:
+    """Every (table, column, on_delete) that points at decisions.id: the
+    foreign keys the schema declares, on either backend, then every other
+    table's decision_id column (events, decision_links, the routing
+    memory, ...) and decision_links.related_id. Read from the schema, so
+    a table added later is swept with the rest."""
+    from .database import column_names, foreign_keys_to, table_names
+    refs = [(t, c, rule) for t, c, rule in foreign_keys_to(db, "decisions") if t != "decisions"]
+    seen = {(t, c) for t, c, _ in refs}
+    for table in table_names(db):
+        if table == "decisions":
+            continue
+        columns = column_names(db, table)
+        for column in ("decision_id", "related_id") if table == "decision_links" else ("decision_id",):
+            if column in columns and (table, column) not in seen:
+                refs.append((table, column, "NO ACTION"))
+                seen.add((table, column))
+    return refs
+
+
+def _move_or_drop(db, table: str, column: str, decision_id: str, into: str) -> None:
+    db.execute("SAVEPOINT scratch_reference")
+    try:
+        db.execute(f"UPDATE {table} SET {column}=? WHERE {column}=?", (into, decision_id))
+    except sqlite3.IntegrityError:
+        # The live decision already has this row's twin (the same link,
+        # a read of the same revision): the scratch copy goes.
+        db.execute("ROLLBACK TO SAVEPOINT scratch_reference")
+        db.execute(f"DELETE FROM {table} WHERE {column}=?", (decision_id,))
+    db.execute("RELEASE SAVEPOINT scratch_reference")
+
+
+def discard_decision(db, decision_id: str, into: str | None = None) -> None:
+    """Remove a scratch decision and every row that points at it, in the
+    caller's transaction. With `into`, the live decision the scratch stood
+    for, a row that can be kept is re-pointed at it: a read of the scratch
+    was a read of the live question, a provider call made for it was made
+    for the live node. A row that would collide with one the live decision
+    already has, or that the schema says dies with its decision (ON DELETE
+    CASCADE), is removed. Without `into` everything goes. Raises
+    ScratchCleanupFailed naming the table when a row cannot be moved or
+    removed, with the attempt undone."""
+    nested = db.in_transaction
+    if nested:
+        db.execute("SAVEPOINT discard_decision")
+    table = "decisions"
+    try:
+        for table, column, on_delete in decision_references(db):
+            if into and into != decision_id and on_delete != "CASCADE":
+                if table == "events":
+                    # What the twin's events say about it is about the live node.
+                    db.execute("UPDATE events SET detail=replace(detail, ?, ?) WHERE decision_id=?",
+                               (decision_id, into, decision_id))
+                _move_or_drop(db, table, column, decision_id, into)
+            else:
+                db.execute(f"DELETE FROM {table} WHERE {column}=?", (decision_id,))
+        table = "decisions"
+        db.execute("DELETE FROM decisions WHERE id=?", (decision_id,))
+    except Exception as error:
+        if nested:
+            db.execute("ROLLBACK TO SAVEPOINT discard_decision")
+            db.execute("RELEASE SAVEPOINT discard_decision")
+        raise ScratchCleanupFailed(table, error) from error
+    if nested:
+        db.execute("RELEASE SAVEPOINT discard_decision")
+
+
+def hide_scratch(db, scratch_id: str, live_id: str, task_id: str, error: BaseException) -> None:
+    """A scratch twin whose cleanup failed: say so once, in the live
+    node's log, and leave the twin where no page reads it (a withdrawn
+    draft) until a later sweep manages to remove it."""
+    marker = json.dumps({"scratch_id": scratch_id})[1:-1]
+    if not db.execute("SELECT 1 FROM events WHERE kind='model_pass_cleanup_failed' AND detail LIKE ? LIMIT 1",
+                      (f"%{marker}%",)).fetchone():
+        cause = getattr(error, "error", error)
+        log_event(db, "model_pass_cleanup_failed", {
+            "task_id": task_id, "decision_id": live_id or None, "scratch_id": scratch_id,
+            "table": getattr(error, "table", ""), "error": type(cause).__name__})
+    db.execute("UPDATE decisions SET draft=1, status='withdrawn', model_pending=0, updated_at=? WHERE id=?",
+               (now_iso(), scratch_id))
+
+
+def adopted_into(db, scratch) -> str | None:
+    """The live decision a stale twin's rows belong to: the one it stood
+    for, when the pass published its outcome there (a model_read since the
+    twin was made) and that row still exists; otherwise nothing, and the
+    twin's rows go with it."""
+    live = scratch["scratch_of"] or ""
+    if not live:
+        # A twin from before the link was recorded: the one node of its
+        # task that asks its question, when there is exactly one.
+        twins = db.execute("SELECT id FROM decisions WHERE run_id=? AND question=? AND draft=0 AND id!=? LIMIT 2",
+                           (scratch["run_id"], scratch["question"], scratch["id"])).fetchall()
+        live = twins[0]["id"] if len(twins) == 1 else ""
+    if not live or not db.execute("SELECT 1 FROM decisions WHERE id=?", (live,)).fetchone():
+        return None
+    read = db.execute("SELECT 1 FROM events WHERE decision_id=? AND kind='model_read' AND created_at>=? LIMIT 1",
+                      (live, scratch["created_at"])).fetchone()
+    return live if read else None
+
+
+def repair_model_pass(db, stale: int = MODEL_PENDING_STALE) -> dict:
+    """At open, when no model pass of this process runs yet: a scratch twin
+    older than `stale` seconds is an orphan and goes (its rows moved to the
+    live node when the pass published there), and a node still marked as
+    being read that long after its last write is unmarked. Each repair is
+    logged in events; a twin that still cannot be removed is hidden and
+    logged once. Returns what was done."""
+    cutoff = ts_to_iso(time.time() - stale)
+    done = {"scratch": [], "hidden": [], "decisions": []}
+    rows = db.execute("SELECT id, run_id, question, scratch_of, created_at FROM decisions WHERE draft=1 "
+                      "AND (client_ref=? OR scratch_of!='') AND created_at<?", (SCRATCH_REF, cutoff)).fetchall()
+    for row in rows:
+        live = adopted_into(db, row)
+        try:
+            discard_decision(db, row["id"], into=live)
+        except ScratchCleanupFailed as error:
+            hide_scratch(db, row["id"], row["scratch_of"], row["run_id"], error)
+            done["hidden"].append(row["id"])
+            continue
+        log_event(db, "scratch_removed", {"task_id": row["run_id"], "decision_id": live or row["scratch_of"] or None,
+                                          "scratch_id": row["id"], "moved_to": live or ""})
+        done["scratch"].append(row["id"])
+    rows = db.execute("SELECT id, run_id, updated_at FROM decisions WHERE model_pending=1 AND draft=0 AND updated_at<?",
+                      (cutoff,)).fetchall()
+    for row in rows:
+        db.execute("UPDATE decisions SET model_pending=0 WHERE id=?", (row["id"],))
+        log_event(db, "model_pending_repaired", {"task_id": row["run_id"], "decision_id": row["id"],
+                                                 "since": row["updated_at"]})
+        done["decisions"].append(row["id"])
+    return done
 
 
 def _f32blob(vec: list[float]) -> bytes:
@@ -2053,18 +2217,26 @@ class Graph:
         one settings read while nothing is being built."""
         if self.get_setting("drafts_pending") != "1":
             return []
-        stale = self.db.execute("SELECT id FROM decisions WHERE draft=1 AND client_ref='__model_pass__' AND created_at < ?",
-                                (ts_to_iso(time.time() - 3600),)).fetchall()
-        if stale:
-            with self.transaction():
-                for row in stale:
-                    self.db.execute('DELETE FROM decision_links WHERE decision_id=? OR related_id=?', (row['id'], row['id']))
-                    self.db.execute('DELETE FROM events WHERE decision_id=?', (row['id'],))
-                    self.db.execute('DELETE FROM decisions WHERE id=?', (row['id'],))
+        stale = self.db.execute("SELECT id, run_id, question, scratch_of, created_at FROM decisions WHERE draft=1 "
+                                "AND (client_ref=? OR scratch_of!='') AND status!='withdrawn' AND created_at < ?",
+                                (SCRATCH_REF, ts_to_iso(time.time() - 3600))).fetchall()
+        for row in stale:
+            # A model pass's scratch twin left behind. Each goes in its own
+            # transaction, and one that cannot go is hidden and logged
+            # rather than raised: no page read breaks on a twin.
+            try:
+                with self.transaction():
+                    discard_decision(self.db, row["id"], into=adopted_into(self.db, row))
+            except ScratchCleanupFailed as error:
+                with self.transaction():
+                    hide_scratch(self.db, row["id"], row["scratch_of"], row["run_id"], error)
         cutoff = ts_to_iso(time.time() - seconds)
-        rows = self.db.execute("SELECT id, run_id FROM decisions WHERE draft=1 AND client_ref != '__model_pass__' AND created_at < ?",
-                               (cutoff,)).fetchall()
+        rows = self.db.execute("SELECT id, run_id FROM decisions WHERE draft=1 AND client_ref != ? AND scratch_of='' "
+                               "AND created_at < ?", (SCRATCH_REF, cutoff)).fetchall()
         if not rows:
+            if stale and self.db.execute("SELECT 1 FROM decisions WHERE draft=1 LIMIT 1").fetchone() is None:
+                with self.transaction():
+                    self.set_setting("drafts_pending", "")
             return []
         with self.transaction():
             for r in rows:

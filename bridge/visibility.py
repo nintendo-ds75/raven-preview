@@ -89,11 +89,17 @@ def remember_reads(store, task_id, value):
             if source:
                 db.execute('INSERT INTO task_source_reads VALUES(?,?,?,?) ON CONFLICT(task_id,record_id,source_version_id) DO NOTHING',
                            (task_id, ident, version, stamp()))
-            decision = db.execute('SELECT d.id,d.updated_at FROM decisions d JOIN runs r ON r.id=d.run_id '
+            decision = db.execute('SELECT d.id,d.updated_at,d.scratch_of FROM decisions d JOIN runs r ON r.id=d.run_id '
                                   'WHERE d.id=? AND r.repo=?', (ident, run['repo'])).fetchone()
+            if decision and decision['scratch_of']:
+                # A model pass's scratch twin: what was read is the live
+                # decision it stands for, and the twin is removed when the
+                # pass ends, so the read is recorded against the live row.
+                decision = db.execute('SELECT d.id,d.updated_at,d.scratch_of FROM decisions d JOIN runs r ON r.id=d.run_id '
+                                      'WHERE d.id=? AND r.repo=?', (decision['scratch_of'], run['repo'])).fetchone()
             if decision:
                 db.execute('INSERT INTO task_context_reads VALUES(?,?,?,?) ON CONFLICT(task_id,decision_id,revision) DO NOTHING',
-                           (task_id, ident, decision['updated_at'], stamp()))
+                           (task_id, decision['id'], decision['updated_at'], stamp()))
 
 
 def public(store, value, *, denied=None):
