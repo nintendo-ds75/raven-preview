@@ -7,6 +7,13 @@ chat reads afterwards comes from that real ingest, not from fixtures.
 
     python scripts/seed_parcelwise_demo.py --db .bridge/parcelwise.db --repo /tmp/parcelwise
     BRIDGE_DB=.bridge/parcelwise.db python -m bridge serve --port 7333
+
+The Parcelwise data lives in the module-level lists. Another company's demo
+passes its own to seed(): people, teams, authority, records, decisions and
+intro notes, with the same shapes (see each list's comment), and gets the
+same real paths: add_person, add_record, the ladder and store.answer for the
+earlier calls (with the channel the answer arrived through), make_rule, and
+people_context for what people said in their intro.
 """
 from __future__ import annotations
 
@@ -121,18 +128,21 @@ def git(repo, *args, env=None):
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, env={**os.environ, **(env or {})})
 
 
-def build_repo(repo: Path):
+def build_repo(repo: Path, people=None, history=None, codeowners=None, base=BASE):
+    """A small repository with the history given (day offset from base, author,
+    files, subject), CODEOWNERS added at the second commit."""
     from datetime import datetime, timedelta
     if repo.exists():
         shutil.rmtree(repo)
     repo.mkdir(parents=True)
     git(repo, "init", "-q", "-b", "main")
-    emails = {p[0]: p[1] for p in PEOPLE}
-    start = datetime.fromisoformat(BASE)
-    for index, (day, author, files, subject) in enumerate(HISTORY):
-        if index == 1:
+    emails = {p[0]: p[1] for p in (PEOPLE if people is None else people)}
+    start = datetime.fromisoformat(base)
+    history = HISTORY if history is None else history
+    for index, (day, author, files, subject) in enumerate(history):
+        if index == min(1, len(history) - 1):
             (repo / ".github").mkdir(exist_ok=True)
-            (repo / ".github" / "CODEOWNERS").write_text(CODEOWNERS)
+            (repo / ".github" / "CODEOWNERS").write_text(CODEOWNERS if codeowners is None else codeowners)
             files = [*files, ".github/CODEOWNERS"]
         for name in files:
             path = repo / name
@@ -147,7 +157,10 @@ def build_repo(repo: Path):
 
 
 # The same judgment as signed answers on past tasks, so the ladder can settle
-# new questions from them: date, who, title, question, paths, category, answer, rationale.
+# new questions from them: date, who, title, question, paths, category, answer, rationale,
+# and optionally how the answer arrived (a source label judgment.received_via reads:
+# "github: PR #12 review", "slack: #pricing", "meeting: ...", "inbox") and the rule's
+# scope ("any", the default, or "same" for the same area of the code only).
 DECISIONS = [
     ("2026-03-14T16:05:00+00:00", "Priya Shah", "Custom export for one merchant",
      "A single merchant asked for a custom feature. Do we build it now?", "", "customer",
@@ -168,12 +181,16 @@ DECISIONS = [
 ]
 
 
-def seed_decisions(store):
+def seed_decisions(store, decisions=None, repo=None):
     from bridge.authz import Actor
     from bridge.mcp import call_tool
+    repo = repo or REPO
     people = {p["name"]: p for p in store.graph.people()}
-    for when, who, title, question, paths, category, answer, rationale in DECISIONS:
-        task = call_tool(store, "bridge_start_task", {"title": title, "goal": question, "repo": REPO,
+    for row in (DECISIONS if decisions is None else decisions):
+        when, who, title, question, paths, category, answer, rationale = row[:8]
+        via = row[8] if len(row) > 8 else ""
+        scope = row[9] if len(row) > 9 else "any"
+        task = call_tool(store, "bridge_start_task", {"title": title, "goal": question, "repo": repo,
                                                        "client_key": "seed-" + when, **({"paths": paths} if paths else {})})
         node = {"task_id": task["task_id"], "question": question, "client_ref": "seed-" + when}
         if paths:
@@ -181,19 +198,34 @@ def seed_decisions(store):
         if category:
             node["category"] = category
         added = call_tool(store, "bridge_add_node", node)
+        # The call was this person's: the row says so whatever the routing
+        # signals of a young repository would have guessed.
+        store.graph.update_decision(added["node_id"], owner=who, owner_evidence="seeded: this person made the call")
         decision = store.get_decision(added["node_id"])
         person = people[who]
         actor = Actor.person(person, kind="session")
         actor.override = person.get("role") == "admin"
-        answered = store.answer(decision["id"], {"answer": answer, "rationale": rationale,
+        answered = store.answer(decision["id"], {"answer": answer, "rationale": rationale, "source": via or None,
                                                  "expected_updated_at": decision["updated_at"]}, actor=actor)
         # These are standing company rules: Raven applies them in the
         # background wherever they fit, with nobody signing again.
-        if not answered.get("reusable") or answered.get("rule_scope") != "any":
-            store.make_rule(decision["id"], {"scope": "any", "expected_updated_at": answered["updated_at"]}, actor=actor)
+        if not answered.get("reusable") or answered.get("rule_scope") != scope:
+            store.make_rule(decision["id"], {"scope": scope, "expected_updated_at": answered["updated_at"]}, actor=actor)
         with store.connect() as db:
             db.execute("UPDATE decisions SET created_at=?, updated_at=? WHERE id=?", (when, when, decision["id"]))
             db.execute("UPDATE runs SET status='completed', updated_at=? WHERE id=?", (when, task["task_id"]))
+
+
+# What people said in their intro chat, kept on their page the way the intro
+# saves it: person, text, topic (bridge.intro.TOPICS), quote.
+NOTES: list[tuple] = []
+
+
+def seed_notes(store, notes=None):
+    from bridge import people_context
+    people = {p["name"]: p for p in store.graph.people()}
+    for who, text, topic, quote in (NOTES if notes is None else notes):
+        people_context.remember(store, people[who]["id"], text, "intro chat", topic, quote)
 
 
 def rename(company: str):
@@ -212,29 +244,37 @@ REPO = "parcelwise/app"
 COMPANY = "Parcelwise"
 
 
-def seed(db_path: str, repo: Path):
+def seed(db_path: str, repo: Path, *, company=None, repo_name=None, people=None, teams=None, authority=None,
+         records=None, decisions=None, notes=None):
+    """Seed a workspace. Without arguments it is the Parcelwise demo; each
+    argument replaces the module-level list of the same name."""
     from bridge.ingest import index_repo
     from bridge.store import Store
+    company = company or COMPANY
+    repo_name = repo_name or REPO
     if Path(db_path).exists():
         for suffix in ("", "-wal", "-shm"):
             Path(db_path + suffix).unlink(missing_ok=True)
     store = Store(db_path)
-    store.graph.set_setting("workspace_name", COMPANY)
+    store.graph.set_setting("workspace_name", company)
     # Raven works in the background: answers become rules for their scope
     # and apply without a fresh signature.
     store.update_settings({"background": True})
-    for name, email, login, team, role in PEOPLE:
+    for name, email, login, team, role in (PEOPLE if people is None else people):
         store.add_person({"name": name, "email": email, "github_login": login, "team": team, "role": role})
-    for name, handle, members in TEAMS:
+    for name, handle, members in (TEAMS if teams is None else teams):
         store.add_team({"name": name, "handle": handle, "members": members})
-    for who, kind, scope, role, note in AUTHORITY:
+    for who, kind, scope, role, note in (AUTHORITY if authority is None else authority):
         store.add_authority({"who": who, "person": who, "scope_kind": kind, "scope": scope, "role": role,
-                             "repo": REPO, "note": note})
-    stats = index_repo(store.graph, repo, repo_name=REPO, max_commits=0)
-    for kind, ref, created, author, title, body, paths in RECORDS:
-        store.add_record({"repo": REPO, "kind": kind, "ref": ref, "created_at": created, "author": author,
-                          "title": title, "body": body, "paths": paths, "status": "decided", "resolved": True})
-    seed_decisions(store)
+                             "repo": repo_name, "note": note})
+    stats = index_repo(store.graph, repo, repo_name=repo_name, max_commits=0)
+    for row in (RECORDS if records is None else records):
+        kind, ref, created, author, title, body, paths = row[:7]
+        extra = row[7] if len(row) > 7 else {}
+        store.add_record({"repo": repo_name, "kind": kind, "ref": ref, "created_at": created, "author": author,
+                          "title": title, "body": body, "paths": paths, "status": "decided", "resolved": True, **extra})
+    seed_decisions(store, decisions, repo_name)
+    seed_notes(store, notes)
     return stats
 
 
