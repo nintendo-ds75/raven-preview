@@ -126,6 +126,46 @@ class SettleTests(MeetingCase):
         self.assertEqual(tree["counts"]["signoff_required"], 0)
         self.assertEqual(tree["counts"]["blocking"], 0)
 
+    def test_a_call_the_meeting_settled_survives_a_server_restart(self):
+        # Parcelwise run 4 (Nov 2): "Which plans pay per assistant answer?"
+        # settled from the Oct 29 sync; restarting the server re-flagged it
+        # ("An earlier call this leaned on was replaced since") because the
+        # legacy-provenance pass did not know a meeting as an origin and
+        # withdrew Priya's standing, plus the assumption derived from it.
+        from bridge import context_memory as cm
+        from bridge.store import Store
+        self.learned()
+        self.model(SETTLES)
+        n = self.node(ModelOn(model_api="claude-cli"))
+        did = n["node_id"]
+        self.assertEqual(self.graph.db.execute("SELECT source_reuse_state FROM decisions WHERE id=?", (did,)).fetchone()[0], "tracked")
+        self.assertFalse(cm.reuse_uncertain(self.graph.db, did))
+        leaning = self.graph.add_decision(self.task, "What should the plan page show?", "ux", "assumed", repo=REPO,
+                                          source="assumption", answer="Match the pricing page.", kind="prediction")
+        self.graph.add_link(leaning, did, "derived", "leans on the meeting call")
+        before = dict(self.store.get_decision(did))
+        reopened = Store(self.store.path)
+        self.addCleanup(reopened.graph.close)
+        after = reopened.get_decision(did)
+        self.assertEqual((after["status"], after["signoff"], after["answered_by"], after["needs_review"]),
+                         ("resolved", "rule", "Dana Price", 0))
+        self.assertEqual(after["updated_at"], before["updated_at"])
+        self.assertEqual(reopened.graph.count_events("legacy_source_reuse_review", decision_id=did), 0)
+        self.assertEqual(reopened.graph.count_events("legacy_source_reuse_review", decision_id=leaning), 0)
+        self.assertEqual(reopened.get_decision(leaning)["needs_review"], 0)
+        # The same row written before this fix (never classified, or left
+        # 'unknown' by the pin's own snapshot) is read as tracked on the next
+        # start, not withdrawn: its transcript version is pinned.
+        for stale in ("", "unknown"):
+            reopened.graph.db.execute("UPDATE decisions SET source_reuse_state=? WHERE id=?", (stale, did))
+            reopened.graph.db.commit()
+            again = Store(self.store.path)
+            self.addCleanup(again.graph.close)
+            self.assertEqual(again.graph.db.execute("SELECT source_reuse_state FROM decisions WHERE id=?", (did,)).fetchone()[0], "tracked", stale)
+            self.assertEqual(again.get_decision(did)["signoff"], "rule")
+            self.assertEqual(again.graph.count_events("legacy_source_reuse_review", decision_id=did), 0)
+            reopened = again
+
     def test_the_words_shown_are_the_ones_that_decide_it(self):
         # Dry run 9: the settle quoted the note's turn ("I still need to land
         # the rate") while the answer came from another of Dana's turns. The

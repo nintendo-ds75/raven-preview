@@ -548,6 +548,11 @@ def _pin(store, did, details, repo, kind, task_id, why, event: str = "meeting_pr
             source = store.get_record(chunk["record_id"], repo or details["meeting"].get("repo") or "")["source"]
             cm.attach(graph.db, did, [{"record_id": source["record_id"], "source_version_id": source["source_version_id"],
                                        "role": "support"}])
+            # The derivation is known: the exact transcript version is pinned.
+            # Left 'unknown' (attach classifies before the pin lands), the
+            # next server start would withdraw the speaker's standing as a
+            # legacy row of unknown provenance.
+            graph.db.execute("UPDATE decisions SET source_reuse_state='tracked' WHERE id=?", (did,))
     except Invalid:
         pass
     graph.append_event(event, {"task_id": task_id, "decision_id": did, "kind": kind,

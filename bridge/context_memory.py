@@ -11,6 +11,11 @@ from datetime import datetime, timezone
 ROLES = frozenset({'support', 'contradiction', 'context', 'work_item'})
 RELIANCE = frozenset({'support', 'contradiction'})
 LOCAL_ORIGINS = frozenset({'', 'human', 'human-reframing', 'agent', 'assumption'})
+# Origins whose answer came from something outside Raven that can change: a
+# record (PR, ticket, doc) or a meeting transcript. Each is pinned to the
+# exact source version it read, so later revisions are detected.
+EXTERNAL_ORIGINS = frozenset({'record', 'meeting'})
+KNOWN_ORIGINS = LOCAL_ORIGINS | EXTERNAL_ORIGINS | {'memory'}
 AGENT_SOURCE_LIMIT = 64
 
 SCHEMA = '''
@@ -100,10 +105,10 @@ def _legacy_reuse_state(db, row):
     """
     if row['independent_source_replacement'] == 1:
         return 'independent'
-    external = row['source'] == 'record'
+    external = row['source'] in EXTERNAL_ORIGINS
     memory = row['source'] == 'memory'
     ambiguous = (row['independent_source_replacement'] not in (0, 1)
-                 or (row['source'] or '') not in LOCAL_ORIGINS | {'record', 'memory'})
+                 or (row['source'] or '') not in KNOWN_ORIGINS)
     for event in db.execute("SELECT detail FROM events WHERE decision_id=? AND kind IN ('resolve','proposed')", (row['id'],)):
         try:
             detail = json.loads(event['detail'])
@@ -114,9 +119,9 @@ def _legacy_reuse_state(db, row):
             ambiguous = True
             continue
         source = detail['source']
-        external |= source == 'record'
+        external |= source in EXTERNAL_ORIGINS
         memory |= source == 'memory'
-        ambiguous |= source not in LOCAL_ORIGINS | {'record', 'memory'}
+        ambiguous |= source not in KNOWN_ORIGINS
     for version in db.execute('SELECT snapshot FROM decision_versions WHERE decision_id=?', (row['id'],)):
         try:
             value = json.loads(version['snapshot'])
@@ -127,10 +132,10 @@ def _legacy_reuse_state(db, row):
                     for k in ('record_id', 'source_version_id', 'role')) or source['role'] not in ROLES
                     for source in value.get('sources', [])):
                 raise ValueError('Malformed historical source pins')
-            if previous.get('source') == 'record' and not value.get('sources'):
+            if previous.get('source') in EXTERNAL_ORIGINS and not value.get('sources'):
                 ambiguous = True
-            ambiguous |= (previous.get('source') or '') not in LOCAL_ORIGINS | {'record', 'memory'}
-            external |= previous.get('source') == 'record'
+            ambiguous |= (previous.get('source') or '') not in KNOWN_ORIGINS
+            external |= previous.get('source') in EXTERNAL_ORIGINS
             memory |= previous.get('source') == 'memory'
         except (KeyError, TypeError, ValueError):
             ambiguous = True
@@ -159,6 +164,11 @@ def backfill_reuse(db):
     """
     for row in db.execute("SELECT * FROM decisions WHERE source_reuse_state='' ").fetchall():
         db.execute('UPDATE decisions SET source_reuse_state=? WHERE id=?', (_legacy_reuse_state(db, row), row['id']))
+    # A call settled from a meeting before meetings were a known origin was
+    # left 'unknown' although its transcript version is pinned; read again.
+    for row in db.execute("SELECT * FROM decisions WHERE source_reuse_state='unknown' AND source='meeting'").fetchall():
+        if _legacy_reuse_state(db, row) == 'tracked':
+            db.execute("UPDATE decisions SET source_reuse_state='tracked' WHERE id=?", (row['id'],))
     roots = db.execute("SELECT d.id FROM decisions d JOIN runs r ON r.id=d.run_id "
                        "WHERE d.signoff='rule' AND r.status<>'completed' AND " + reuse_uncertainty_sql()).fetchall()
     queue, seen = [r['id'] for r in roots], set()
@@ -376,7 +386,7 @@ def history(db, decision_id):
 def provenance_notice(source, sources, uncertain=False):
     if uncertain:
         return LEGACY_REUSE_NOTICE
-    if not sources and source in ('record', 'memory', 'assumption'):
+    if not sources and (source in EXTERNAL_ORIGINS or source in ('memory', 'assumption')):
         return ('External source provenance is unknown for this answer. Existing human authority is separate. '
                 'A new sign-off approves the exact answer and scope; it does not verify or reconstruct legacy source citations.')
     return ''
@@ -548,7 +558,7 @@ def snapshot_decision(db, decision_id, pins=None, reason='snapshot'):
         cit.pop('current', None)
     derivations = [dict(r) for r in db.execute("SELECT related_id,kind,note,created_at,source_version_id FROM decision_links WHERE decision_id=? AND (kind IN ('derived','depends') OR (kind='related' AND source_version_id<>'')) ORDER BY related_id,kind", (decision_id,))]
     value = {'decision': row, 'sources': cites, 'derivations': derivations, 'reason': reason,
-             'provenance': 'versioned' if cites else 'unknown' if row.get('source') == 'record' else 'human-or-local'}
+             'provenance': 'versioned' if cites else 'unknown' if row.get('source') in EXTERNAL_ORIGINS else 'human-or-local'}
     # Recording why a snapshot was read does not change the decision itself.
     mark = digest({key: value for key, value in value.items() if key != 'reason'})
     latest = db.execute('SELECT id,sequence,fingerprint FROM decision_versions WHERE decision_id=? ORDER BY sequence DESC LIMIT 1', (decision_id,)).fetchone()

@@ -2365,7 +2365,7 @@ class Graph:
             # when every supplied object has an exact source or decision pin.
             complete = bool(rows) and all(cm.pin(row) or dict(row).get('decision_source_id') for row in rows)
             self.db.execute('UPDATE decisions SET source_reuse_state=? WHERE id=?',
-                            ('tracked' if complete else 'unknown' if fields.get('source') in ('record','memory') else '', decision_id))
+                            ('tracked' if complete else 'unknown' if fields.get('source') in ('record','memory','meeting') else '', decision_id))
             cm.attach(self.db, decision_id, pins, replace=True)
 
     def recent_answered(self, repo: str = "", limit: int = 4) -> list[Decision]:
