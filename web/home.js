@@ -57,7 +57,9 @@ function buildSources(d) {
   return out;
 }
 
-// The judgment log. Each decision is read into one of five plain states:
+// The judgment log. Each decision is read into one of six plain states:
+//   checking  Raven is still reading it: the static pass found a match or a person, and
+//             the model pass has not confirmed it, so nobody has been asked or spared yet
 //   settled   Raven applied a call a person already made; nobody was asked
 //   answered  a person answered (Raven may have guessed first and asked them to confirm)
 //   corrected a person said Raven's call was wrong, or did not apply, and gave the answer
@@ -76,7 +78,11 @@ function judge(d) {
   // call's own date (its updated_at moves when it is later replaced).
   const priorWhen = d.source_revision || (prior ? prior.created_at : '');
   let kind;
-  if (d.needs_review) kind = 'review';
+  // A read still in progress is neither settled nor waiting on anyone:
+  // measured on a dry run, a static match shown as "nobody asked" was
+  // withdrawn by the model pass a minute later.
+  if (d.model_pending && d.status !== 'approved') kind = 'checking';
+  else if (d.needs_review) kind = 'review';
   else if (d.status === 'approved' && d.supersedes) kind = 'corrected';
   else if (['signed', 'rule'].includes(d.signoff) && (d.source_id || d.source === 'meeting') && d.status !== 'approved') kind = 'settled';
   else if (d.status === 'approved') kind = 'answered';
@@ -95,12 +101,13 @@ function taskStory(run) {
   const settled = of('settled');
   const answered = [...of('answered'), ...of('corrected')];
   const asked = [...of('waiting'), ...of('review')];
+  const checking = of('checking');
   // People Raven reached (asked or answered) and people it did not need to
   // bother because a call they already made covered the question.
   const reached = [...new Set([...answered.map(d => js.get(d.id).by || js.get(d.id).owner), ...asked.map(d => js.get(d.id).owner)].filter(Boolean))];
   const spared = [...new Set(settled.map(d => js.get(d.id).priorBy).filter(n => n && !reached.includes(n)))]
     .map(name => ({name, when: buildWhen(settled.map(d => js.get(d.id)).find(j => j.priorBy === name)?.priorWhen)}));
-  return {ds, js, settled, answered, asked, reached, spared};
+  return {ds, js, settled, answered, asked, checking, reached, spared};
 }
 
 const buildOpen = new Set(), buildForm = new Set();
@@ -122,6 +129,7 @@ function buildLine(d, j) {
   if (j.kind === 'corrected') return `<span class="dot person"></span>${esc(first(j.by))} corrected this${j.prior ? ` · replaces ${esc(first(j.priorBy))}’s ${esc(buildWhen(j.priorWhen))} call` : ''}`;
   if (j.kind === 'answered') return `<span class="dot person"></span>${j.guessed ? `Raven guessed, ${esc(first(j.by))} confirmed` : `${esc(first(j.by))} answered`}${j.via ? ' ' + esc(j.via) : ''} · ${esc(ago(d.updated_at))}`;
   if (j.kind === 'review') return `<span class="dot open"></span>Needs another look · the call this used was replaced`;
+  if (j.kind === 'checking') return `<span class="dot checking"></span>Raven is still reading this${j.priorBy ? ` · an earlier call by ${esc(first(j.priorBy))} may cover it` : ''} · nobody asked yet`;
   return `<span class="dot open"></span>${j.owner ? `Waiting on ${esc(first(j.owner))} · ${esc(ago(d.created_at)).replace(/ ago$/, '')}` : 'Raven is finding who owns this'}`;
 }
 
@@ -130,7 +138,7 @@ function buildLine(d, j) {
 function buildDetail(d, j) {
   const first = askFirst;
   const parts = [];
-  if (d.answer && j.kind !== 'review') parts.push(`<p class="build-answer">${esc(d.answer)}</p>`);
+  if (d.answer && j.kind !== 'review' && j.kind !== 'checking') parts.push(`<p class="build-answer">${esc(d.answer)}</p>`);
   if (j.kind === 'settled') {
     parts.push(`<div class="build-why"><span class="ask-label">Why Raven applied it</span><p>${esc(d.fit_reason || `Raven matched it to a call ${j.priorBy || 'someone'} already made.`)}</p></div>`);
     if (d.answered_via === 'meeting') parts.push(`<div class="build-prior"><span class="ask-label">Settled from this meeting</span>
@@ -146,6 +154,9 @@ function buildDetail(d, j) {
     if (j.guessed) parts.push(`<p class="build-note">Raven had a likely answer from earlier context but was not sure, so it asked ${esc(first(j.by))} rather than apply it.</p>`);
     if (d.rationale) parts.push(`<div class="build-why"><span class="ask-label">Why, in ${esc(first(j.by))}’s words</span><p>${esc(d.rationale)}</p></div>`);
     parts.push(`<p class="build-note">${esc(j.by)} answered${j.via ? ' ' + esc(j.via) : ''} · ${esc(buildWhen(d.updated_at))}.</p>`);
+  } else if (j.kind === 'checking') {
+    parts.push(`<p class="build-note">Raven's first pass ${j.priorBy ? `found a call ${esc(first(j.priorBy))} made that may cover this` : 'found who may own this'}; the model pass is reading it now. Nobody has been asked, and nothing is settled, until that read finishes.</p>`);
+    if (d.context) parts.push(`<div class="build-why"><span class="ask-label">What the agent found</span><p>${esc(buildClip(d.context, 320))}</p></div>`);
   } else if (j.kind === 'review') {
     parts.push(`<div class="build-why"><span class="ask-label">What happened</span><p>${esc(d.review_reason || 'An answer this leaned on was corrected.')}</p></div>`);
     if (d.answer) parts.push(`<p class="build-answer stale">Was: ${esc(d.answer)}</p>`);
@@ -198,14 +209,16 @@ function buildTile(d, j) {
 }
 
 function buildCard(run) {
-  const {ds, js, settled, answered, asked, reached, spared} = taskStory(run);
+  const {ds, js, settled, answered, asked, checking, reached, spared} = taskStory(run);
   const waiting = asked.map(d => js.get(d.id).owner).filter(Boolean);
   const waitingOn = [...new Set(waiting)];
   const pill = asked.length
     ? `<span class="build-pill waiting">Waiting on ${esc(waitingOn.map(askFirst).join(', ') || 'a person')}</span>`
-    : `<span class="build-pill building">Building · nothing waiting on anyone</span>`;
+    : checking.length
+      ? `<span class="build-pill building">Building · Raven is still reading ${plural(checking.length, 'call')}</span>`
+      : `<span class="build-pill building">Building · nothing waiting on anyone</span>`;
   const done = settled.length + answered.length;
-  const order = d => ({review: 0, waiting: 1, corrected: 2, answered: 3, settled: 4})[js.get(d.id).kind];
+  const order = d => ({review: 0, waiting: 1, checking: 2, corrected: 3, answered: 4, settled: 5})[js.get(d.id).kind];
   const rows = [...ds].sort((a, b) => order(a) - order(b) || String(a.created_at).localeCompare(String(b.created_at)));
   return `<article class="build-card">
     <div class="build-top">${pill}<span class="ask-agent">${esc(run.agent || 'Coding agent')}${run.requester ? ' · for ' + esc(run.requester) : ''}</span><span class="ask-when">${esc(ago(run.updated_at))}</span></div>
@@ -216,7 +229,7 @@ function buildCard(run) {
       <div class="past"><b>${settled.length}</b><span>settled by Raven from earlier calls, nobody asked</span></div>
       <div class="person"><b>${answered.length + asked.length}</b><span>reached a person${reached.length ? ': ' + esc(reached.map(askFirst).join(', ')) : ''}</span></div>
     </div>
-    <div class="build-bar" role="img" aria-label="${done} of ${ds.length} settled">${settled.map(() => '<i class="past"></i>').join('')}${answered.map(() => '<i class="person"></i>').join('')}${asked.map(() => '<i class="open"></i>').join('')}<em>${done} of ${ds.length} settled</em></div>
+    <div class="build-bar" role="img" aria-label="${done} of ${ds.length} settled">${settled.map(() => '<i class="past"></i>').join('')}${answered.map(() => '<i class="person"></i>').join('')}${asked.map(() => '<i class="open"></i>').join('')}${checking.map(() => '<i class="checking"></i>').join('')}<em>${done} of ${ds.length} settled${checking.length ? ` · ${checking.length} still being read` : ''}</em></div>
     ${spared.length ? `<p class="build-spared">Not asked: ${spared.map(x => `<span>${avatar(x.name)}${esc(askFirst(x.name))}</span> (${esc(askFirst(x.name))}’s ${x.when ? esc(x.when) + ' ' : ''}call already covered it)`).join(', ')}.</p>` : ''}
     <ul class="build-tiles">${rows.map(d => buildTile(d, js.get(d.id))).join('')}</ul>
   </article>`;

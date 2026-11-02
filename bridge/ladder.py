@@ -1452,13 +1452,17 @@ def _kind_for(status: str, source: str = "", mkind: str = "") -> str:
 
 def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
              decisions: list[dict] | None = None,
-             run_id: str | None = None, keep_draft: bool = False, scratch: bool = False) -> RunResult:
+             run_id: str | None = None, keep_draft: bool = False, scratch: bool = False,
+             provisional: bool = False) -> RunResult:
     """Run the ladder for one task. decisions: the decisions to resolve
     (dicts with question, category, and optionally context, path,
     options). run_id: an existing inbox run to attach the decisions to;
     otherwise a run is created. Each decision is written as a draft and
     published when it is resolved or routed; with keep_draft the caller
-    publishes, once it has finished placing the node on its tree."""
+    publishes, once it has finished placing the node on its tree.
+    `provisional` is the static first pass of a node a model pass will
+    read again: a memory match that is not the same question is published
+    as a check in progress (a prediction, unsigned), never as settled."""
     client = llm_mod.Client(cfg)
     task_id = run_id or store.create_task(title, repo=repo or "local")
     result = RunResult(task_id=task_id, title=title)
@@ -1886,7 +1890,24 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 break
             if candidate.id not in {item.id for _, item in memory_choices.values()}:
                 memory_choices[f"m{len(memory_choices) + 1}"] = ("memory", candidate)
-        if mem_pick is not None and rec_best is not None:
+        # A standing rule that covers the question is the organization's
+        # own declaration; a record that agrees with it corroborates it and
+        # is cited beside it, it does not compete with it. Measured on the
+        # Harborline dry run: "What counts as one billable use of Pilot"
+        # had Raj's rule (scope any) and the merge that recorded it, and
+        # the record won the arbitration, so the call wanted a signature.
+        agreeing_record = None
+        if mem_pick is not None and rec_best is not None and _is_settled(rec_best) and not _void(rec_best) \
+                and _current_grant(store, mem_pick[2], question, d_context, d_path, d_facts, repo)[0] \
+                and not _numeric_clash(mem_pick[2].answer or "", _row_text(rec_best)) \
+                and not _disagrees(cfg, question, mem_pick[2].answer or "", rec_best):
+            pick, mem_lex = ("memory", mem_pick[2]), True
+            agreeing_record = rec_best
+            pick_note = (f"a standing rule covers this, and {rec_best['kind']} {_ref(rec_best)} agrees with it")
+            store.append_event("rule_over_record", {"task_id": task_id, "decision_id": did,
+                                                    "memory": mem_pick[2].id,
+                                                    "record": f"{rec_best['kind']} {_ref(rec_best)}"})
+        elif mem_pick is not None and rec_best is not None:
             if cfg.semantic_retrieval:
                 choice = _selector_pick(cfg, question, {**memory_choices, "r1": ("record", rec_best)}, **selector_scope)
                 if choice is None:
@@ -2237,6 +2258,11 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                 if rule_ok:
                     other_scope = ""
                     evidence = f"covered by {covered}; {attribution} it ({detail})"
+                    if mem_partial:
+                        # The rule covers the question; the answer settles
+                        # only part of it. Status, sign-off and the fit
+                        # reason all say so, not one of them "nobody asked".
+                        evidence += "; answers this only in part, so a person signs it"
                 elif rule_why:
                     # The rule was nominated and did not fit: the node says
                     # so where the person reads it, not only in the log.
@@ -2264,16 +2290,41 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
                     who = "settled by the agent" if item.source == "agent" else f"from {item.evidence or item.source}"
                     evidence = (f"prediction: reused from decision {item.id}, {who}, which no human has signed "
                                 f"({detail}); confirm with the owner before acting on it")
+                same_question = (mem_lex and mem_pick is not None and question == asked_q and mem_pick[1] >= 0.95)
+                if provisional and signed and not same_question:
+                    # The static first pass of a node the model pass reads
+                    # next: a match that is not the same question is a check
+                    # in progress. Published as an unsigned prediction, so
+                    # nothing shows it as settled and nobody is told, until
+                    # the model pass confirms it or withdraws it. Measured on
+                    # the Harborline dry run: "per-use rate" was settled from
+                    # "which plans are metered" at term overlap 0.80 and shown
+                    # as settled until the model pass withdrew it a minute later.
+                    checking = (f"checking: a static match to decision {item.id} ({detail}); the model pass "
+                                "confirms it or withdraws it, and nobody is asked until then")
+                    store.publish_evidence(did, [_as_record(item)], status="proposed", source=origin,
+                                           answer=item.answer, prediction=item.answer, kind="prediction",
+                                           source_id=item.id, source_revision=revision, evidence=checking)
+                    store.add_link(did, item.id, "derived", "a static match the model pass checks")
+                    store.append_event("checking", {"task_id": task_id, "decision_id": did, "cited": item.id,
+                                                    "kind": mkind})
+                    result.proposed.append({"id": did, "question": question, "source": origin, "by": "",
+                                            "answer": item.answer, "conflict": "", "partial": False,
+                                            "reused_from": item.id, "reused_q": item.question,
+                                            "cited": f"earlier decision {item.id}", "state": "checking"})
+                    continue
                 status = ("partial" if mem_partial else "resolved") if signed else "proposed"
                 store.publish_evidence(
-                    did, (memory_used_rows or [_as_record(item)]) + ([_evidence_role(rival, 'contradiction')] if mem_conflict and rival is not None else []),
+                    did, (memory_used_rows or [_as_record(item)])
+                    + ([_evidence_role(agreeing_record, 'support')] if agreeing_record is not None else [])
+                    + ([_evidence_role(rival, 'contradiction')] if mem_conflict and rival is not None else []),
                     status=status, source=origin, answer=item.answer,
                     answered_by=item.answered_by if signed else "",
                     prediction=None if signed else item.answer,
                     kind=_kind_for(status, origin, mkind) if signed else "prediction",
                     source_id=item.id, source_revision=revision,
                     fit_reason=(fit_reason(item, mkind, rule_ok, terms, when=ts_to_iso(item.updated_at)[:10]
-                                           if item.updated_at else "") if signed else ""),
+                                           if item.updated_at else "", partial=mem_partial) if signed else ""),
                     evidence=evidence + (f"; conflict: {mem_conflict}" if mem_conflict else "")
                     + (f"; {pick_note}" if mem_lex and pick_note else "")
                     + (f"; {rule_note}" if rule_note else ""),
@@ -2851,7 +2902,8 @@ def _wide_select(store: Graph, cfg: Config, question: str, emb: list[float], ter
 def ask(store, cfg: Config, run_id: str, question: str, context: str = "",
         path: str = "unknown", category: str = "", owner_id: str | None = None,
         requester: str = "", hints: list[str] | None = None, facts=None,
-        keep_draft: bool = False, also_paths: list[str] | None = None, scratch: bool = False) -> dict:
+        keep_draft: bool = False, also_paths: list[str] | None = None, scratch: bool = False,
+        provisional: bool = False) -> dict:
     """Run one question through the ladder in front of the inbox. Returns
     the inbox's decision record with the ladder's outcome: kind evidence
     (resolved or partial, citation in evidence), prediction (assumed or
@@ -2867,6 +2919,7 @@ def ask(store, cfg: Config, run_id: str, question: str, context: str = "",
     repo = graph.resolve_repo(repo_key(run["repo"]))
     with graph.source_scope(run_id):
         result = run_task(graph, cfg, run["title"], repo=repo, run_id=run_id, keep_draft=True, scratch=scratch,
+                          provisional=provisional,
                           decisions=[{"question": question, "category": category, "context": context,
                                       "path": path or "unknown", "requester": requester or "",
                                       "hints": list(hints or []), "facts": facts or {},

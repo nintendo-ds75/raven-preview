@@ -62,10 +62,13 @@ def received_via(db, source, actor=None) -> str:
     return ""
 
 
-def fit_reason(item, match_kind: str, rule_ok: bool, conditions=(), *, when: str = "") -> str:
+def fit_reason(item, match_kind: str, rule_ok: bool, conditions=(), *, when: str = "", partial: bool = False) -> str:
     """One plain sentence on why a precedent fits the question it settled:
     how close the match was, whose call it was and when, and the standing
-    its owner gave it. `item` is the memory row the ladder picked."""
+    its owner gave it. `item` is the memory row the ladder picked. With
+    `partial` the answer settles only part of the question, so a person
+    still signs it, rule or no rule: the reason says that, so it never
+    reads "nobody needed to be asked" beside a sign-off that is required."""
     who = item.answered_by or item.signed_by or "its owner"
     first = who.split()[0]
     if match_kind == "direct":
@@ -82,7 +85,8 @@ def fit_reason(item, match_kind: str, rule_ok: bool, conditions=(), *, when: str
         standing = f"{first} said that answer applies {scope}"
         if terms:
             standing += " when " + "; ".join(terms[:3])
-        standing += ", so nobody needed to be asked"
+        standing += (", but it settles this only in part, so a person still signs it here" if partial
+                     else ", so nobody needed to be asked")
     else:
         standing = f"{first} did not make it a standing rule, so a person still signs it here"
     return f"{how}; {standing}."
