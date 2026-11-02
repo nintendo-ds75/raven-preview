@@ -75,6 +75,50 @@ async function interviewWrite(action = 'draft', extra = {}) {
 // end that they confirm in one tap. The form underneath is the same draft.
 const interviewCanListen = () => RavenVoice.canListen();
 const interviewCanSpeak = () => RavenVoice.canSpeak();
+// The task beside the call, the way a control tower shows it: every call the
+// agent hit, settled ones green with their source, the ones this person is
+// answering turning green as they are recorded. Drawn from /api/state, so a
+// personal task link (no app state) gets the call alone.
+function interviewTower(session) {
+  if (window.ravenInterviewBridge || typeof taskStory !== 'function' || !state?.runs) return '';
+  const run = (state.runs || []).find(r => r.id === session.row.task_id);
+  if (!run) return '';
+  const {ds, js} = taskStory(run);
+  if (!ds.length) return '';
+  const me = interviewUser()?.name || '';
+  const first = name => String(name || '').split(/\s+/)[0];
+  const order = d => ({settled: 0, corrected: 1, answered: 1, checking: 2, review: 3, waiting: 3})[js.get(d.id).kind];
+  const rows = [...ds].sort((a, b) => order(a) - order(b) || String(a.created_at).localeCompare(String(b.created_at)));
+  const recorded = ds.filter(d => js.get(d.id).kind === 'answered' && (d.answered_by || '') === me && d.answered_via === 'voice call').length;
+  const cards = rows.map(d => {
+    const j = js.get(d.id);
+    const current = d.id === session.row.decision_id;
+    let line, tone = j.kind;
+    if (j.kind === 'settled') { const src = (typeof buildSources === 'function' ? buildSources(d) : [])[0]; line = d.answered_via === 'meeting' ? (typeof buildMeeting === 'function' ? buildMeeting(d) : 'From a meeting') : src ? src.label : `${first(j.priorBy) || 'An earlier'}’s ${j.priorWhen ? buildWhen(j.priorWhen) + ' ' : ''}call`; }
+    else if (j.kind === 'answered' || j.kind === 'corrected') line = `${first(j.by)} · ${d.answered_via === 'voice call' ? 'call' : d.answered_via === 'meeting' ? 'meeting' : 'answered'} · ${ago(d.updated_at).replace(/ ago$/, '')}`;
+    else if (j.kind === 'checking') { line = 'Raven is reading this'; }
+    else if (current) { line = 'on this call'; tone = 'current'; }
+    else line = j.owner ? `waiting on ${first(j.owner)}` : 'finding the owner';
+    return `<li class="tower-card ${esc(tone)} ${current ? 'is-current' : ''}" data-id="${esc(d.id)}"><span class="tower-q">${esc(typeof buildClip === 'function' ? buildClip(d.question, 96) : d.question)}</span><span class="tower-line">${esc(line)}</span></li>`;
+  }).join('');
+  const done = ds.filter(d => js.get(d.id).done).length;
+  return `<aside class="voice-tower" aria-label="The task this call is for">
+    <div class="tower-head"><span class="ask-label">Being built</span><span class="tower-live"><i></i>Live</span></div>
+    <p class="tower-title">${esc(run.title)}</p>
+    <p class="tower-sub">${esc(run.agent || 'Coding agent')}${run.requester ? ' · for ' + esc(first(run.requester)) : ''} · ${done} of ${ds.length} settled</p>
+    <ul class="tower-cards">${cards}</ul>
+    ${recorded ? `<p class="tower-recorded">✓ ${recorded} decision${recorded === 1 ? '' : 's'} recorded on this call</p>` : ''}
+  </aside>`;
+}
+// The call so far, as a transcript: what Raven asked and what the person said,
+// across every call answered in this sitting.
+function interviewTranscript(session) {
+  const first = String(interviewUser()?.name || 'You').split(' ')[0];
+  const lines = [...(session.log || [])];
+  for (const [i, t] of session.turns.entries()) lines.push({who: 'Raven', text: session.row.prompts[i] || ''}, {who: first, text: t.response});
+  const shown = lines.filter(l => l.text).slice(-8);
+  return shown.length ? `<div class="voice-transcript"><span class="ask-label">Transcript</span>${shown.map(l => `<p><b class="${l.who === 'Raven' ? 'raven' : ''}">${esc(l.who)}</b>${esc(l.text)}</p>`).join('')}</div>` : '';
+}
 function interviewOrb(mode) {
   return RavenVoice.orb((mode === 'speaking' && !RavenVoice.usesServer().tts ? 'speaking pulse' : mode) + ' small');
 }
@@ -134,7 +178,9 @@ function interviewBody(session, reviewing = false) {
     </div>`;
   }
   interviewDialog.classList?.add?.('voice-dialog');
-  interviewDialog.innerHTML = `<div class="modal-head"><div><h2 id="interview-title">${reviewing ? 'Review your decision' : 'Call with Raven'}</h2></div><button class="icon-button" data-interview-action="close" aria-label="Save draft and close the call"><span aria-hidden="true">×</span></button></div><div class="modal-body">${body}<p class="context" data-interview-status role="status">Draft saved. No decision recorded.</p><p class="error" data-interview-error role="alert" hidden></p></div>`;
+  const tower = interviewTower(session);
+  interviewDialog.classList?.toggle?.('has-tower', !!tower);
+  interviewDialog.innerHTML = `<div class="voice-split">${tower}<div class="voice-pane"><div class="modal-head"><div><h2 id="interview-title">${reviewing ? 'Review your decision' : 'Call with Raven'}</h2></div><button class="icon-button" data-interview-action="close" aria-label="Save draft and close the call"><span aria-hidden="true">×</span></button></div><div class="modal-body">${body}${reviewing ? '' : interviewTranscript(session)}<p class="context" data-interview-status role="status">Draft saved. No decision recorded.</p><p class="error" data-interview-error role="alert" hidden></p></div></div></div>`;
   interviewVoice(session);
 }
 // Raven says each new question (or the readback) once, then listens.
@@ -247,11 +293,31 @@ async function openInterview(task, decision) {
   if (!row) row = await interviewRequest(base, {decision_id: decision, client_key: (typeof ravenUuid === 'function' ? ravenUuid() : crypto.randomUUID())});
   if (generation !== interviewGeneration) return;
   if ($('#modal')?.open) closeModal();
+  const carried = interviewSession?.row.task_id === task ? {log: interviewSession.log || [], typing: interviewSession.typing, muted: interviewSession.muted} : {log: [], typing: false, muted: false};
   interviewSession = {row, base: `${base}/${row.id}`, writes: Promise.resolve(), captureMethod: row.capture_method, turns: row.turns, recognition: null, editVersion: 0,
-    typing: false, muted: false, speaking: false, thinking: false, heard: '', spokenFor: ''};
+    speaking: false, thinking: false, heard: '', spokenFor: '', ...carried};
   interviewBody(interviewSession);
-  interviewDialog.showModal();
+  if (!interviewDialog.open) interviewDialog.showModal();
 }
+// The next call on the same task that waits on this person: one call covers
+// them all, the way a colleague would ask everything at once.
+function interviewNextDecision(session) {
+  if (window.ravenInterviewBridge || typeof taskStory !== 'function') return null;
+  const run = (state.runs || []).find(r => r.id === session.row.task_id);
+  if (!run) return null;
+  const me = interviewUser()?.name || '';
+  const {asked} = taskStory(run);
+  return asked.find(d => d.id !== session.row.decision_id && d.owner_name === me) || null;
+}
+// While a call is open the tower follows the task: a card turns green the
+// moment its answer is recorded, by this person or anyone else.
+setInterval(() => {
+  const session = interviewSession;
+  if (!session || !interviewDialog.open || document.hidden) return;
+  const tower = interviewDialog.querySelector('.voice-tower');
+  const fresh = interviewTower(session);
+  if (tower && fresh && tower.outerHTML !== fresh) tower.outerHTML = fresh;
+}, 2500);
 async function advanceInterview(session) {
   interviewStatus('Preparing a follow-up and draft readback. No answer has been signed.');
   const version = session.row.version, edits = session.editVersion;
@@ -378,9 +444,17 @@ interviewDialog.addEventListener('click', async event => {
         expected_updated_at: review.revision});
       if (interviewSession !== session) return;
       session.row = result;
+      session.log = [...(session.log || []), ...session.turns.flatMap((t, i) => [{who: 'Raven', text: session.row.prompts[i] || ''}, {who: String(interviewUser()?.name || 'You').split(' ')[0], text: t.response}])];
+      await interviewRefresh();
+      if (interviewSession !== session) return;
+      const next = interviewNextDecision(session);
+      if (next) {
+        interviewNotify('Got it, recorded under your name. Next one.');
+        await openInterview(session.row.task_id, next.id);
+        return;
+      }
       interviewSession = null; ++interviewGeneration; interviewDialog.close();
       interviewNotify('Got it. Raven passed your answer to the agent.');
-      await interviewRefresh();
     }
   } catch (error) { interviewError(error); }
   finally { if (button.isConnected && !(action === 'record' && interviewSession?.recognition)) button.disabled = false; }

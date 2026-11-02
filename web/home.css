@@ -211,6 +211,35 @@ body.voice-view .sidebar{opacity:.55}
 
 /* The decision call: the same voice stage, full screen over the page. */
 dialog.voice-dialog{width:min(860px,calc(100vw - 32px));max-width:none;max-height:calc(100vh - 32px);background:var(--bg,#0d0d0d);color:var(--ink,#f5f5f1);border:1px solid var(--line,#2b2e27);border-radius:20px;padding:0}
+dialog.voice-dialog.has-tower{width:min(1480px,calc(100vw - 32px))}
+.voice-split{display:flex;align-items:stretch;min-height:0}
+.voice-pane{flex:1 1 auto;min-width:0}
+.voice-tower{flex:0 0 400px;border-right:1px solid var(--line);padding:16px 18px 18px;display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 34px);overflow:auto}
+.tower-head{display:flex;justify-content:space-between;align-items:center}
+.tower-head .ask-label{margin:0}
+.tower-live{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--green)}
+.tower-live i{width:7px;height:7px;border-radius:50%;background:var(--green);animation:orb-breathe 1.6s infinite}
+.tower-title{margin:2px 0 0;font-size:15px;line-height:1.35;color:var(--ink);font-weight:550;letter-spacing:-.2px}
+.tower-sub{margin:0 0 6px;font-size:12px;color:var(--muted)}
+.tower-cards{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.tower-card{border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:10px 12px;display:flex;flex-direction:column;gap:5px;min-width:0;transition:border-color .4s,background .4s}
+.tower-q{font-size:12.5px;line-height:1.4;color:var(--ink);overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+.tower-line{font-size:11px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tower-card.settled,.tower-card.answered,.tower-card.corrected{border-color:#2f4a2c;background:#101810}
+.tower-card.settled .tower-line{color:#7fae78}
+.tower-card.answered .tower-line,.tower-card.corrected .tower-line{color:var(--green)}
+.tower-card.waiting,.tower-card.review{border-color:#4a2a26;background:#170f0e}
+.tower-card.waiting .tower-line,.tower-card.review .tower-line{color:#e0877c}
+.tower-card.current{border-color:#5a4a1f;background:#17140c}
+.tower-card.current .tower-line{color:#f0c27a}
+.tower-card.is-current{box-shadow:0 0 0 2px rgba(240,194,122,.25)}
+.tower-recorded{margin:8px 0 0;align-self:flex-start;font-size:12.5px;color:var(--green);border:1px solid #2f4a2c;border-radius:999px;padding:6px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.voice-transcript{text-align:left;max-width:680px;margin:14px auto 0;border-top:1px solid var(--line);padding-top:12px}
+.voice-transcript .ask-label{display:block;margin-bottom:6px}
+.voice-transcript p{margin:0 0 6px;font-size:13.5px;line-height:1.5;color:var(--text);display:grid;grid-template-columns:64px minmax(0,1fr);gap:10px}
+.voice-transcript b{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding-top:3px}
+.voice-transcript b.raven{color:var(--green)}
+@media (max-width:1100px){.voice-split{flex-direction:column}.voice-tower{flex-basis:auto;border-right:0;border-bottom:1px solid var(--line);max-height:38vh}}
 dialog.voice-dialog::backdrop{background:rgba(5,6,5,.82);backdrop-filter:blur(6px)}
 dialog.voice-dialog .modal-head{border:0;padding:14px 18px 0}
 dialog.voice-dialog .modal-head h2{font-size:12px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--muted,#92968d)}
