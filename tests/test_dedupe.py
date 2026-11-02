@@ -82,10 +82,10 @@ class SameTaskTwinTests(DedupeCase):
         self.assertNotEqual(second["node_id"], first["node_id"])
         self.assertIn(f"folded into node {first['node_id']}", second["next"])
         self.assertEqual(second["owner"], first["owner"])
-        # The owner is asked once: the stub never runs the ladder or routes.
-        self.assertEqual(self.store.graph.count_events("judgment_requested", decision_id=second["node_id"]), 0)
-        self.assertEqual(self.store.graph.count_events("judgment_requested", decision_id=first["node_id"]), 1)
+        # The owner is asked once: the stub is nobody's question to answer.
         self.assertEqual(self.store.graph.count_events("dedup_open", decision_id=second["node_id"]), 1)
+        self.assertFalse(self.store.graph.db.execute("SELECT 1 FROM notifications WHERE decision_id=?",
+                                                     (second["node_id"],)).fetchone())
         tree = canvas.get_tree(self.store, self.task)
         self.assertEqual(tree["counts"]["pending"], 1)
         self.assertEqual(tree["counts"]["duplicate"], 1)
@@ -164,6 +164,26 @@ class SameTaskTwinTests(DedupeCase):
         self.assertEqual(again["status"], "duplicate")
         self.assertIn(again["duplicate_of"], (rollout["node_id"], policy["node_id"]))
         self.assertGreaterEqual(read.call_count, 1)
+
+    def test_the_shorter_questions_words_all_in_the_longer_one_is_not_the_same_words(self):
+        """Measured live on dry run 8: "Which plans are charged per use for
+        Pilot?" folded into the allowance question at 0.80, because every
+        question on the canvas says Pilot, charge and per use. Words alone
+        fold only the same term set; this pair waits for a model's reading,
+        and a model that reads them as two decisions keeps them apart."""
+        plans = "Which plans are charged per use for Pilot?"
+        allowance = ("How many Pilot uses are included each month before charges start, and is that per seat or "
+                     "per organisation?")
+        self.assertGreaterEqual(dedupe._similarity(plans, allowance), dedupe.SURE)
+        self.assertLess(dedupe._jaccard(plans, allowance), dedupe.SURE)
+        first = self.node(allowance)
+        second = self.node(plans)
+        self.assertEqual(second["status"], "pending")
+        self.assertNotEqual(second["node_id"], first["node_id"])
+        self.with_model(False)
+        third = self.node("Which plans are charged for Pilot per use?")
+        self.assertEqual(third["status"], "duplicate")
+        self.assertEqual(third["duplicate_of"], second["node_id"], "the same words in another order fold without a model")
 
     def test_a_different_figure_is_a_different_question(self):
         self.with_model(True)

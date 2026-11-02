@@ -124,7 +124,11 @@ class OwnerContextStorageTests(OwnerContextFixture, OfflineCase):
             self.assertEqual(set(row['approval_scope_labels']), set(scope))
             self.assertEqual(row['approval_scope_text'], approval_scope.render(raw))
         self.assertEqual(brief['task']['goal'], self.fixture['request'])
-        self.assertEqual(brief['task']['title'], self.fixture['request'][:300])
+        # The title the host sent was the request's first 300 characters;
+        # the task is shown under a short title derived from the goal.
+        from bridge.canvas import task_title
+        self.assertEqual(brief['task']['title'], task_title(self.fixture['request'][:300], self.fixture['request']))
+        self.assertLess(len(brief['task']['title']), 90)
         self.assertEqual(self.raw(), raw)
         after = self.row()
         self.assertEqual(approval_scope.revision(after), revision)

@@ -1182,35 +1182,44 @@ def add_node(store, cfg, data, *, _cached_rule_attempt=False) -> dict:
     did = ""
     try:
         query = _ask_cached_rule if _cached_rule_attempt else ask
-        # The same thing asked again on this canvas, in other words, is
-        # folded into the open node rather than reaching its owner twice.
-        twin = None
-        twin_why: list[str] = []
-        if not _cached_rule_attempt and not adopt:
-            from . import dedupe
-            repo_scope = graph.resolve_repo(repo_key(run["repo"]))
-            twin = dedupe.same_task_twin(store, effective, task_id, question, context=ctx,
-                                         path=paths[0] if paths else "", category=category, facts=facts,
-                                         repo=repo_scope, why=twin_why)
+        own = not _cached_rule_attempt and not adopt
+        repo_scope = graph.resolve_repo(repo_key(run["repo"])) if own else ""
         # What a person with authority said in a meeting settles the call
-        # the way an earlier decision does, or reaches them as Raven's guess.
+        # the way an earlier decision does; words that only bear on it
+        # reach the speaker as Raven's guess once the ladder has had its
+        # turn and left the question open.
         spoken = None
-        if twin is None and not _cached_rule_attempt and not adopt and not owner_id:
+        spoken_why: list[str] = []
+        if own and not owner_id:
             from . import meeting_precedent
-            spoken_why: list[str] = []
             spoken = meeting_precedent.consider(store, effective, run, question, context=ctx, paths=scope_paths,
                                                 category=category, facts=facts, repo=repo_scope, why=spoken_why)
-        if twin is not None:
-            row = dedupe.fold(store, task_id, question, twin, context=ctx, path=paths[0] if paths else "",
-                              category=category, facts=facts, repo=repo_scope, why=twin_why)
-        elif spoken is not None:
-            row = meeting_precedent.write(store, spoken[0], spoken[1], task_id, question, context=ctx,
+        twin = None
+        twin_why: list[str] = []
+        applied = False
+        if spoken is not None and spoken[0] == "settle":
+            row = meeting_precedent.write(store, "settle", spoken[1], task_id, question, context=ctx,
                                           path=paths[0] if paths else "", category=category, facts=facts,
                                           repo=repo_scope, why=spoken_why)
+            applied = True
         else:
             row = query(store, first_pass, task_id, question, context=ctx or "a node on the canvas",
                         path=paths[0] if paths else "unknown", category=category, owner_id=owner_id or None,
                         requester=requester, hints=hints, facts=facts, keep_draft=True, also_paths=paths[1:])
+            if own and row["status"] == "pending" and not row.get("duplicate_stub"):
+                # The same thing asked again on this canvas, in other words,
+                # is folded into the open node rather than reaching its
+                # owner twice; only a question nothing on record settled.
+                from . import dedupe
+                twin = dedupe.same_task_twin(store, effective, task_id, question, context=ctx,
+                                             path=paths[0] if paths else "", category=category, facts=facts,
+                                             repo=repo_scope, why=twin_why, exclude=row["id"])
+                if twin is not None:
+                    row = dedupe.fold_draft(store, row, twin, why=twin_why)
+                    applied = True
+                elif spoken is not None:
+                    row = meeting_precedent.predict_draft(store, row, spoken[1], repo=repo_scope, why=spoken_why)
+                    applied = True
         drafts = list(row.get("drafts") or [])
         # A duplicate comes back as its twin's row, which belongs to another
         # task; the node of this task is the stub, and its view names the
@@ -1219,7 +1228,7 @@ def add_node(store, cfg, data, *, _cached_rule_attempt=False) -> dict:
         view = _place_node(store, graph, run, row, did, task_id, question, context, ctx, category, paths,
                            options, parent_id, client_ref, adopted, depth, scope, related_ids, depends_on,
                            first_pass, requester, hints, drafts, scope_paths=scope_paths,
-                           deferred=(background and twin is None and spoken is None) or _cached_rule_attempt)
+                           deferred=(background and not applied) or _cached_rule_attempt)
     except Exception:
         # A node that could not be placed is still a decision somebody
         # asked: published, not hidden. The claim follows it, so a retry
@@ -1235,7 +1244,7 @@ def add_node(store, cfg, data, *, _cached_rule_attempt=False) -> dict:
         raise
     if client_ref:
         graph.settle_node_ref(task_id, client_ref, did)
-    if background and twin is None and spoken is None:
+    if background and not applied:
         _start_background(('node', did), _model_node_pass, store, effective, did, ctx, paths, hints, requester,
                           owner_id, context, view['updated_at'])
     resolve_scope(graph, task_id, scope_request_key)

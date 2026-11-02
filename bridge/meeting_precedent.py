@@ -25,8 +25,9 @@ the ladder runs, a question is held against the meeting notes:
   the transcript chunk pinned as its source. Being built and For you show
   it as "From the Oct 29 pricing call · nobody asked".
 - when the model is not sure, or there is no model, the words are not
-  applied: the node is a prediction routed to the speaker ("Raven would
-  apply this, but isn't sure"), with the quote as Raven's guess.
+  applied: the ladder runs as usual, and if it leaves the question open
+  the node becomes a prediction routed to the speaker ("Raven would apply
+  this, but isn't sure"), with the quote as Raven's guess.
 
 Nothing here invents an answer: the settled answer is composed from the
 quote alone and may carry no figure the speaker did not say.
@@ -51,7 +52,10 @@ SYSTEM = (
     "a question the speaker asked, or anything that leaves the asked value open do NOT settle it. "
     "When it settles, write the answer in one or two plain sentences using only what the speaker decided, "
     "adding no figure, date or condition the speaker did not say. "
-    "Return ONLY JSON: {\"settles\": true or false, \"answer\": string, \"why\": string (one sentence)}"
+    "Also say whether the words bear on the question at all (the same customer, feature or variable, even if "
+    "they leave the asked value open), so the speaker can be asked rather than someone else. "
+    "Return ONLY JSON: {\"settles\": true or false, \"bears_on\": true or false, \"answer\": string, "
+    "\"why\": string (one sentence)}"
 )
 
 _MONTHS = {m.lower(): m for m in ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")}
@@ -237,13 +241,21 @@ def consider(store, cfg, run, question: str, *, context: str = "", paths: list[s
                 said = " ".join(t.get("text", "") for t in details["turns"]) + " " + n["quote"]
                 if _figures(answer) - _figures(said):
                     _note(why, n, "the model's answer carried a figure the speaker did not say; asked instead")
+                    bears = True
                 else:
                     _note(why, n, f"settles it: {verdict.get('why') or 'the model read it as the same call'}")
                     return "settle", {**details, "answer": answer, "why": str(verdict.get("why") or "")}
-            _note(why, n, "read, and not sure it settles this; the speaker is asked instead")
+            else:
+                bears = bool(verdict and verdict.get("bears_on") is True)
+                _note(why, n, ("read as bearing on this without settling it; the speaker is asked instead" if bears
+                               else "read as not about this question" if verdict is not None
+                               else "the reading failed; the speaker is asked instead"))
+                if verdict is None:
+                    bears = named or score >= MIN_SHARED + 1
         else:
             _note(why, n, "no model to read whether it settles this; the speaker is asked instead")
-        if best_guess is None and (named or score >= MIN_SHARED + 1):
+            bears = named or score >= MIN_SHARED + 1
+        if best_guess is None and bears:
             best_guess = details
     if best_guess is not None:
         return "predict", best_guess
@@ -272,41 +284,69 @@ def _note(why, n, what):
 
 def write(store, kind: str, details: dict, task_id: str, question: str, *, context: str = "", path: str = "",
           category: str = "", facts: dict | None = None, repo: str = "", why: list | None = None) -> dict:
-    """The draft node for a meeting-backed outcome, shaped as ladder.ask
-    returns one so add_node places it: settled from the meeting, or a
-    prediction routed to the speaker."""
-    from . import context_memory as cm
+    """The draft node for a call settled from a meeting, shaped as
+    ladder.ask returns one so add_node places it: resolved, answered by
+    the speaker, standing on their word (signoff 'rule'), the quote as the
+    rationale, the fit reason naming the meeting and date."""
     from .canvas import _DECISION_SELECT
+    if kind != "settle":
+        raise ValueError("write() settles; a prediction converts the ladder's draft with predict_draft()")
     graph = store.graph
     speaker, when, title, quote = details["speaker"]["name"], details["when"], details["title"], details["quote"]
     first = speaker.split()[0]
     where = f"the {when} {title}" if when else f"the {title}"
-    if kind == "settle":
-        fit = (f"From {where}: {speaker}, who decides {details['area']}, said “{quote}”; "
-               "nobody was asked.")
-        did = graph.add_decision(task_id, question, category, "resolved", source="meeting", answer=details["answer"],
-                                 answered_by=speaker, owner=speaker, repo=repo, context=context, path=path or "unknown",
-                                 kind="evidence", draft=True, embedding=llm_mod.embed(question),
-                                 rationale=quote, routing_reason="settled from a meeting",
-                                 owner_evidence=f"spoke for {details['area']} in {where}",
-                                 evidence=(f"meeting {where}, {speaker} said: “{quote}”; {first} decides "
-                                           f"{details['area']}, so the words stand as {first}'s call"
-                                           + (f"; {details['why']}" if details.get("why") else "")))
-        graph.db.execute("UPDATE decisions SET signoff='rule', answered_via='meeting', fit_reason=?, source_revision=?, "
-                         "facts=? WHERE id=?", (fit, details["iso"] or (details["meeting"].get("at") or "")[:10],
-                                               json.dumps(facts) if facts else "", did))
-    else:
-        guess = details["note"]["text"]
-        did = graph.add_decision(task_id, question, category, "proposed", source="meeting", owner=speaker,
-                                 repo=repo, context=context, path=path or "unknown", kind="prediction", draft=True,
-                                 embedding=llm_mod.embed(question), routing_reason="a meeting may have settled this",
-                                 owner_evidence=f"spoke for {details['area']} in {where}",
-                                 evidence=(f"Raven would apply what {speaker} said in {where}, but isn't sure it "
-                                           f"settles this: “{quote}”. {first} confirms or corrects it."))
-        graph.db.execute("UPDATE decisions SET prediction=?, answered_via='meeting', source_revision=?, facts=? WHERE id=?",
-                         (guess, details["iso"] or (details["meeting"].get("at") or "")[:10],
-                          json.dumps(facts) if facts else "", did))
-    # The transcript chunk the quote is in, pinned as the node's source.
+    fit = f"From {where}: {speaker}, who decides {details['area']}, said “{quote}”; nobody was asked."
+    did = graph.add_decision(task_id, question, category, "resolved", source="meeting", answer=details["answer"],
+                             answered_by=speaker, owner=speaker, repo=repo, context=context, path=path or "unknown",
+                             kind="evidence", draft=True, embedding=llm_mod.embed(question),
+                             rationale=quote, routing_reason="settled from a meeting",
+                             owner_evidence=f"spoke for {details['area']} in {where}",
+                             evidence=(f"meeting {where}, {speaker} said: “{quote}”; {first} decides "
+                                       f"{details['area']}, so the words stand as {first}'s call"
+                                       + (f"; {details['why']}" if details.get("why") else "")))
+    graph.db.execute("UPDATE decisions SET signoff='rule', answered_via='meeting', fit_reason=?, source_revision=?, "
+                     "facts=? WHERE id=?", (fit, details["iso"] or (details["meeting"].get("at") or "")[:10],
+                                           json.dumps(facts) if facts else "", did))
+    _pin(store, did, details, repo, kind, task_id, why)
+    row = dict(graph.db.execute(_DECISION_SELECT + " WHERE d.id=?", (did,)).fetchone())
+    row["drafts"] = [did]
+    return row
+
+
+def predict_draft(store, row: dict, details: dict, *, repo: str = "", why: list | None = None) -> dict:
+    """The ladder left this question open and a meeting bears on it: the
+    draft becomes a prediction routed to the speaker, with what they
+    said as Raven's guess ("Raven would apply this, but isn't sure")."""
+    from .canvas import _DECISION_SELECT
+    graph = store.graph
+    did, task_id = row["id"], row["run_id"]
+    speaker, when, title, quote = details["speaker"]["name"], details["when"], details["title"], details["quote"]
+    first = speaker.split()[0]
+    where = f"the {when} {title}" if when else f"the {title}"
+    graph.update_decision(
+        did, status="proposed", kind="prediction", source="meeting", owner=speaker, prediction=details["note"]["text"],
+        owner_evidence=f"spoke for {details['area']} in {where}", routing_reason="a meeting may have settled this",
+        evidence=(f"Raven would apply what {speaker} said in {where}, but isn't sure it settles this: “{quote}”. "
+                  f"{first} confirms or corrects it."
+                  + (f" The ladder left it open: {_short(row.get('evidence') or '', 200)}" if row.get("evidence") else "")))
+    graph.db.execute("UPDATE decisions SET answered_via='meeting', source_revision=? WHERE id=?",
+                     (details["iso"] or (details["meeting"].get("at") or "")[:10], did))
+    _pin(store, did, details, repo, "predict", task_id, why)
+    out = dict(graph.db.execute(_DECISION_SELECT + " WHERE d.id=?", (did,)).fetchone())
+    out["drafts"] = list(row.get("drafts") or [did])
+    return out
+
+
+def _short(text: str, n: int) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= n else text[:n - 1].rsplit(" ", 1)[0] + "…"
+
+
+def _pin(store, did, details, repo, kind, task_id, why):
+    """The transcript chunk the quote is in, pinned as the node's source,
+    and the event that says what happened."""
+    from . import context_memory as cm
+    graph = store.graph
     try:
         chunk = graph.db.execute("SELECT record_id FROM meeting_transcript_chunks WHERE meeting_id=? AND active=1 "
                                  "ORDER BY chunk_key", (details["meeting_id"],)).fetchone()
@@ -317,8 +357,5 @@ def write(store, kind: str, details: dict, task_id: str, question: str, *, conte
     except Invalid:
         pass
     graph.append_event("meeting_precedent", {"task_id": task_id, "decision_id": did, "kind": kind,
-                                             "meeting_id": details["meeting_id"], "speaker": speaker,
+                                             "meeting_id": details["meeting_id"], "speaker": details["speaker"]["name"],
                                              "note_id": details["note"]["id"], "why": list(why or [])[:6]})
-    row = dict(graph.db.execute(_DECISION_SELECT + " WHERE d.id=?", (did,)).fetchone())
-    row["drafts"] = [did]
-    return row

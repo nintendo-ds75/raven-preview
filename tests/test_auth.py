@@ -354,7 +354,8 @@ class RemoteMcpTests(SharedServer):
             "title": "Add usage pricing", "repo": "acme/platform", "client_key": "remote-1"}, wt)["result"]
         self.assertIn("task_id", task)
         self.assertEqual(self.store.graph.get_task(task["task_id"])["requester"], "Wes Chen")
-        self.assertEqual(self.store.graph.get_task(task["task_id"])["agent"], "claude-code")
+        # The token's label names the agent; it is stored as people know it.
+        self.assertEqual(self.store.graph.get_task(task["task_id"])["agent"], "Claude Code")
         missing = self.mcp("bridge_get_tree", {"task_id": "nope"}, wt)
         self.assertTrue(missing["isError"])
         self.assertIn("Task not found", missing["result"])

@@ -91,7 +91,7 @@ class MeetingCase(OfflineCase):
         return mock
 
 
-SETTLES = {"settles": True, "why": "Dana decided Northwind is kept off the public rate pending Legal.",
+SETTLES = {"settles": True, "bears_on": True, "why": "Dana decided Northwind is kept off the public rate pending Legal.",
            "answer": "No: Northwind stays on its contract terms, with no public rate, until Noah clears the MFN clause."}
 
 
@@ -172,10 +172,19 @@ class SafeguardTests(MeetingCase):
 
     def test_an_unsure_model_asks_the_speaker_instead(self):
         self.learned()
-        self.model({"settles": False, "answer": "", "why": "Dana spoke of the public rate, not of whether Northwind is charged at all."})
+        self.model({"settles": False, "bears_on": True, "answer": "",
+                    "why": "Dana spoke of the public rate, not of whether Northwind is charged at all."})
         n = self.node(ModelOn(model_api="claude-cli"))
-        self.assertEqual((n["status"], n["owner"]), ("predicted", "Dana Price"))
-        self.assertEqual(self.graph.count_events("judgment_requested", decision_id=n["node_id"]), 0)
+        self.assertEqual((n["status"], n["owner"], n["prediction"]), ("predicted", "Dana Price", NOTE))
+        self.assertIn("Raven would apply what Dana Price said", n["evidence"])
+        self.assertIn("The ladder left it open", n["evidence"])
+
+    def test_words_the_model_reads_as_not_about_this_question_leave_the_ladders_route(self):
+        self.learned()
+        self.model({"settles": False, "bears_on": False, "answer": "", "why": "Another matter."})
+        n = self.node(ModelOn(model_api="claude-cli"))
+        self.assertEqual(n["status"], "pending")
+        self.assertNotEqual(self.store.get_decision(n["node_id"])["source"], "meeting")
 
     def test_an_answer_with_a_figure_the_speaker_did_not_say_is_not_applied(self):
         self.learned()

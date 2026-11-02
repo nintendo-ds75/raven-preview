@@ -11,9 +11,11 @@ The ladder's open-twin check (bridge/ladder.py, _open_twin) already folds
 a question into an open decision of another task above 0.80 hybrid
 similarity, and asks a model in the 0.45 to 0.80 band when one is on.
 On the same canvas the pool of candidates is small and the context the
-same, so this pass runs first, on the open nodes of this task alone:
+same, so this pass runs on what the ladder leaves open (a question the
+record or memory settles is never folded), against the open nodes of
+this task alone:
 
-- the same words (hybrid similarity 0.80 or more) fold deterministically;
+- the same words (the same term set, in any order) fold deterministically;
 - a near match (0.40 or more) gets the one same-decision reading the
   ladder uses, synchronously, when a model is configured, so the agent
   hears "folded into node X" in the reply rather than after a background
@@ -49,10 +51,19 @@ def _similarity(question: str, other: str, emb: list[float] | None = None) -> fl
     return max(cosine, overlap)
 
 
-def _open_nodes(graph, task_id: str):
+def _jaccard(question: str, other: str) -> float:
+    """Term overlap over both questions' terms together: 1.0 when they
+    are the same words in another order, low when one merely contains
+    the other's words among many of its own."""
+    from .ladder import _meaningful_terms
+    qt, ct = set(_meaningful_terms(question)), set(_meaningful_terms(other))
+    return len(qt & ct) / len(qt | ct) if qt | ct else 0.0
+
+
+def _open_nodes(graph, task_id: str, exclude: str = ""):
     rows = graph.db.execute(
-        "SELECT id FROM decisions WHERE run_id=? AND status='pending' AND draft=0 AND superseded_by='' "
-        "ORDER BY created_at", (task_id,)).fetchall()
+        "SELECT id FROM decisions WHERE run_id=? AND status='pending' AND draft=0 AND superseded_by='' AND id!=? "
+        "ORDER BY created_at", (task_id, exclude or "")).fetchall()
     out = []
     for r in rows:
         cand = graph.get_decision(r["id"], exact=True)
@@ -62,12 +73,13 @@ def _open_nodes(graph, task_id: str):
 
 
 def same_task_twin(store, cfg, task_id: str, question: str, *, context: str = "", path: str = "",
-                   category: str = "", facts: dict | None = None, repo: str = "", why: list | None = None):
+                   category: str = "", facts: dict | None = None, repo: str = "", why: list | None = None,
+                   exclude: str = ""):
     """The open node of this task that asks the same thing, or None. `why`
     collects one line per candidate considered, for the event log."""
     from .ladder import _cited_refs, _facts_of, _numeric_clash, _scope_difference
     graph = store.graph
-    candidates = _open_nodes(graph, task_id)
+    candidates = _open_nodes(graph, task_id, exclude)
     if not candidates:
         return None
     emb = llm_mod.embed(question)
@@ -77,6 +89,13 @@ def same_task_twin(store, cfg, task_id: str, question: str, *, context: str = ""
         score = _similarity(question, cand.question, emb)
         if score < BAND:
             continue
+        # On one canvas every question shares the task's words ("Pilot",
+        # "charge", "per use"), so the shorter question's terms being all
+        # in the longer one proves nothing. Measured live: "Which plans
+        # are charged per use for Pilot?" folded into the allowance
+        # question at 0.80. Words alone fold only the same term set.
+        if score >= SURE and _jaccard(question, cand.question) < SURE:
+            score = SURE - 0.01
         if q_refs - set(_cited_refs(cand.question)):
             _note(why, cand, score, "names a reference the other does not")
             continue
@@ -120,6 +139,33 @@ def same_task_twin(store, cfg, task_id: str, question: str, *, context: str = ""
 def _note(why, cand, score, what):
     if why is not None:
         why.append(f"{cand.id} ({score:.2f}): {what}")
+
+
+def fold_draft(store, row: dict, twin, *, why: list | None = None) -> dict:
+    """The ladder left this question open: turn its draft into the stub
+    of the open node that already asks it. Returns the open node's row
+    the way ladder.ask returns a twin's (duplicate_stub names the stub,
+    drafts holds it), so add_node places it like any other duplicate."""
+    from .canvas import _DECISION_SELECT
+    from .ladder import _excerpt, _word_trunc
+    graph = store.graph
+    did, task_id, question = row["id"], row["run_id"], row["question"]
+    graph.update_decision(
+        did, status="duplicate", superseded_by=twin.id, owner=twin.owner or "", kind="new",
+        owner_evidence=twin.owner_evidence or "", routing_reason="same question already open on this task",
+        answer=(f"Same open question as node {twin.id} on this task, not re-asked"
+                + (f"; waiting on {twin.owner}." if twin.owner else ".")),
+        evidence=(f"folded into open node {twin.id} (asked earlier as \"{_word_trunc(twin.question, 70)}\")"
+                  + (f"; {_excerpt(twin.evidence, 200, 'the open node has the rest')}" if twin.evidence else "")))
+    graph.add_link(did, twin.id, "duplicate", "the same open question on this task; one answer settles both")
+    graph.append_event("dedup_open", {"task_id": task_id, "decision_id": did, "twin": twin.id, "same_task": True,
+                                      "question": _word_trunc(question, 120), "why": list(why or [])[:6]})
+    out = dict(graph.db.execute(_DECISION_SELECT + " WHERE d.id=?", (twin.id,)).fetchone())
+    out["duplicate_stub"] = did
+    out["drafts"] = list(row.get("drafts") or [did])
+    out["note"] = (f"folded into node {twin.id}, already open on this task as \"{_word_trunc(twin.question, 70)}\". "
+                   "One answer settles both; nobody is asked twice.")
+    return out
 
 
 def fold(store, task_id: str, question: str, twin, *, context: str = "", path: str = "", category: str = "",
