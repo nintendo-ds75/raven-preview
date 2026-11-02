@@ -9,8 +9,8 @@ from the authority map). The canvas model pass then ran the contact
 reasoning, whose guard protected only a strong decides match, and the
 model picked Marcus Lee for having written all of plans.py and its last pull
 request. Code authorship is not business authority: a person the map itself
-names as deciding for the call keeps it. A decider learned from a referral is
-not the map's own word and does not.
+names as deciding for the call keeps it, and so does one a hand-on named once
+they accepted it by answering. A referral not yet answered is a candidate.
 """
 import json
 from unittest.mock import patch
@@ -45,10 +45,11 @@ class ConfiguredDeciderKeepsTheCall(OfflineCase):
             guard.start()
             self.addCleanup(guard.stop)
 
-    def decider(self, source):
+    def decider(self, source, accepted=True):
         with self.graph.transaction():
             self.graph.add_authority('category', 'pricing', 'decides', person_id=self.priya, repo=REPO,
-                                     source=source, asserted_by='Sam Ortiz' if source == 'referral' else '')
+                                     source=source, asserted_by='Sam Ortiz' if source == 'referral' else '',
+                                     accepted=accepted)
 
     def authored(self):
         # The PR that touched the file, as semantic retrieval surfaces it.
@@ -83,8 +84,18 @@ class ConfiguredDeciderKeepsTheCall(OfflineCase):
         model.assert_not_called()
         self.assertEqual(self.graph.db.execute("SELECT count(*) FROM events WHERE kind='contact_reasoned'").fetchone()[0], 0)
 
-    def test_a_decider_learned_from_a_referral_is_still_weighed_against_the_record(self):
+    def test_a_hand_on_the_person_accepted_by_answering_keeps_the_call_too(self):
+        # Parcelwise demo, Nov 2: a hand-on promises "Raven routes customer
+        # decisions to Sam from now on"; once Sam has answered, code
+        # authorship does not take the next call from them either.
         self.decider('referral')
+        result, details, model = self.choose()
+        self.assertEqual(result[0][0], 'Priya Shah', result)
+        self.assertEqual(details, {'status': 'fallback'})
+        model.assert_not_called()
+
+    def test_a_referral_not_yet_answered_is_still_weighed_against_the_record(self):
+        self.decider('referral', accepted=False)
         ranked = rank_for_decision(self.graph, REPO, QUESTION, (PATH,), context=CONTEXT)
         self.assertEqual(ranked[0][0], 'Priya Shah', ranked)
         result, details, model = self.choose()

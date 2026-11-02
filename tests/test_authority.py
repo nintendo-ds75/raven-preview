@@ -291,6 +291,33 @@ class AuthorityRoutingTests(OfflineCase):
         marisol = next(ev for name, ev, _score in ranked if name == "Marisol Vega")
         self.assertIn("not yet accepted", "; ".join(marisol))
 
+    def test_an_accepted_hand_on_routes_the_scope_to_that_person_first(self):
+        """Parcelwise demo, Nov 2: Priya (configured decider for customer
+        decisions) handed the Bloom & Co exemption to Sam with a note, Sam
+        answered, and the timeline said "Raven routes customer decisions
+        to Sam from now on". The next customer call went to Priya: her
+        configured row and Sam's accepted referral carried the same weight,
+        and her review history under the files decided it."""
+        with self.graph.transaction():
+            priya = self.graph.add_person("Priya Shah", email="priya@acme.example")
+            sam = self.graph.add_person("Sam Rivera", email="sam@acme.example")
+            self.graph.add_authority("category", "billing", "decides", person_id=priya)
+        question = "Should we bill the usage spike, or exclude it as a load test?"
+        self.assertEqual(route_ranked(self.graph, "qemulike", question, path="hw/riscv/virt.c")[0][0], "Priya Shah")
+        with self.graph.transaction():
+            handed = self.graph.add_authority("category", "billing", "decides", person_id=sam, source="referral",
+                                              asserted_by="Priya Shah", accepted=False, note="You know the contract.")
+        # Not answered yet: a candidate, Priya still first.
+        self.assertEqual(route_ranked(self.graph, "qemulike", question, path="hw/riscv/virt.c")[0][0], "Priya Shah")
+        with self.graph.transaction():
+            self.graph.accept_authority(handed)
+        ranked = route_ranked(self.graph, "qemulike", question, path="hw/riscv/virt.c")
+        self.assertEqual(ranked[0][0], "Sam Rivera", ranked)
+        self.assertIn("verified: Sam Rivera decides for billing decisions (this one speaks of billing) (referral, "
+                      "asserted by Priya Shah)", "; ".join(ranked[0][1]))
+        priya_lines = "; ".join(next(ev for name, ev, _ in ranked if name == "Priya Shah"))
+        self.assertIn("handed on to Sam Rivera since", priya_lines)
+
     def test_a_team_authority_routes_to_its_members(self):
         with self.graph.transaction():
             a = self.graph.add_person("Marisol Vega", email="marisol@acme.example")
