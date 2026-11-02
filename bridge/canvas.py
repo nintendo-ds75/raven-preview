@@ -3751,6 +3751,15 @@ def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, or
                 outcome['owner_evidence'] = '; '.join(ranked[0][1])
         if outcome.get('signoff') == 'rule' and _not_behind_rule(graph, outcome.get('source_id') or '', _json_list(live.get('required_signers'))):
             outcome['signoff'] = 'required'
+        if outcome.get('owner_id') != live.get('owner_id'):
+            # The call moved: the stored reason must say why this owner, not
+            # repeat why the node went to the last one. Measured live on the
+            # Parcelwise demo (main aaa0858): the pass moved a call from the
+            # pricing decider to the file's author and the card still read
+            # "Priya Shah decides for pricing decisions".
+            outcome['routing_reason'] = _reroute_reason(graph, outcome)
+        else:
+            outcome.pop('routing_reason', None)
         if outcome['status'] == 'pending':
             withheld=[]
             outcome['brief'] = compose_brief(cfg, live['question'], original_context, run['title'],
@@ -3772,7 +3781,7 @@ def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, or
                 # The memory target and its observed revision are one piece
                 # of provenance; never infer a new revision at publication.
                 fields = ['status','answer','rationale','source','source_id','source_revision','evidence','kind','prediction','owner_id',
-                          'owner_evidence','answered_by','signoff','signed_by','signed_hash','signed_revision','signatures','brief','superseded_by','source_reuse_state','fit_reason','gaps']
+                          'owner_evidence','routing_reason','answered_by','signoff','signed_by','signed_hash','signed_revision','signatures','brief','superseded_by','source_reuse_state','fit_reason','gaps']
                 fields = [f for f in fields if f in outcome]
                 graph.db.execute('UPDATE decisions SET ' + ','.join(f+'=?' for f in fields) + ', updated_at=? WHERE id=?',
                                  (*[outcome[f] for f in fields], now(), did))
@@ -3800,6 +3809,20 @@ def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, or
         acted = graph.db.execute("SELECT 1 FROM events WHERE decision_id=? AND kind IN (" + ','.join('?' for _ in PEOPLE_EVENTS) + ") AND created_at>=? LIMIT 1", (did, *PEOPLE_EVENTS, live['updated_at'])).fetchone()
         if not acted and (current['updated_at'] == live['updated_at'] or graph.db.execute("SELECT 1 FROM events WHERE decision_id=? AND kind='model_read'", (did,)).fetchone()):
             _notify_model_ready(store, current)
+
+
+def _reroute_reason(graph, outcome):
+    """The one line the card shows for an owner the model pass placed a
+    node with, built from the evidence for that owner the way the ladder
+    builds it for its own routing (ladder._inbox_route). With no owner
+    left, the evidence says why; the previous owner's reason never stays
+    on the node."""
+    from .ladder import _route_summary
+    evidence = outcome.get('owner_evidence') or ''
+    if not outcome.get('owner_id'):
+        return evidence or 'No matching owner. Assign someone in the inbox.'
+    named = graph.db.execute('SELECT name FROM owners WHERE id=?', (outcome['owner_id'],)).fetchone()
+    return 'Routed from the ownership graph: ' + _route_summary(evidence, named['name'] if named else '')
 
 
 def _discard_scratch(graph, sid, did, task_id, adopted):
