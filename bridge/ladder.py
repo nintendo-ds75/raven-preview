@@ -29,7 +29,7 @@ from dataclasses import dataclass, field, replace
 
 from . import llm as llm_mod
 from .config import Config
-from .graph import Graph, applicability_status, iso_to_ts, parse_facts, rule_conditions, rule_status, ts_to_iso
+from .graph import SCRATCH_REF, Graph, applicability_status, iso_to_ts, parse_facts, rule_conditions, rule_status, ts_to_iso
 from .judgment import fit_reason
 from .resolve import resolve_paths
 from .routing import coordinator_route, route_ranked
@@ -1557,7 +1557,7 @@ def _kind_for(status: str, source: str = "", mkind: str = "") -> str:
 
 def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
              decisions: list[dict] | None = None,
-             run_id: str | None = None, keep_draft: bool = False, scratch: bool = False,
+             run_id: str | None = None, keep_draft: bool = False, scratch: bool | str = False,
              provisional: bool = False) -> RunResult:
     """Run the ladder for one task. decisions: the decisions to resolve
     (dicts with question, category, and optionally context, path,
@@ -1604,7 +1604,11 @@ def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
             repo=repo, context=d_context, path=d_path, kind="new", draft=True)
         result.drafts.append(did)
         if scratch:
-            store.db.execute("UPDATE decisions SET client_ref='__model_pass__' WHERE id=?", (did,))
+            # `scratch` is the live decision's id when the caller has one:
+            # a read of this twin is then recorded against that decision,
+            # and a twin left behind is found and removed.
+            store.db.execute("UPDATE decisions SET client_ref=?, scratch_of=? WHERE id=?",
+                             (SCRATCH_REF, scratch if isinstance(scratch, str) else "", did))
         if question != asked_q:
             store.append_event("followup_context", {"task_id": task_id, "decision_id": did,
                                                     "asked": asked_q, "resolved_as": question})
@@ -3120,7 +3124,7 @@ def _wide_select(store: Graph, cfg: Config, question: str, emb: list[float], ter
 def ask(store, cfg: Config, run_id: str, question: str, context: str = "",
         path: str = "unknown", category: str = "", owner_id: str | None = None,
         requester: str = "", hints: list[str] | None = None, facts=None,
-        keep_draft: bool = False, also_paths: list[str] | None = None, scratch: bool = False,
+        keep_draft: bool = False, also_paths: list[str] | None = None, scratch: bool | str = False,
         provisional: bool = False) -> dict:
     """Run one question through the ladder in front of the inbox. Returns
     the inbox's decision record with the ladder's outcome: kind evidence

@@ -28,7 +28,7 @@ import uuid
 import re
 from collections import defaultdict
 
-from .graph import _DECISION_SELECT, _row_to_decision
+from .graph import MODEL_PENDING_STALE, ScratchCleanupFailed, _DECISION_SELECT, _row_to_decision, discard_decision, hide_scratch
 from .host_client import CONTEXT_GUIDANCE
 from .store import Invalid, answer_hash, field, now, repo_key
 
@@ -3604,7 +3604,6 @@ def abandon_task(store, task_id, reason):
 
 _BACKGROUND = {}
 _BACKGROUND_LOCK = threading.Lock()
-MODEL_PENDING_STALE = 600
 
 
 def call_budget():
@@ -3705,6 +3704,7 @@ def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, or
     live = store.get_decision(did)
     run = _task(store, live['run_id'])
     scratch_ids = []
+    adopted = False
     graph._local.model_exclude = did
     try:
         # The revision is captured when inference is scheduled. A person
@@ -3720,7 +3720,7 @@ def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, or
         result = ask(store, cfg, run['id'], live['question'], context=ctx or 'a node on the canvas',
                      path=paths[0] if paths else 'unknown', category=live.get('category') or '', owner_id=owner_id or None,
                      requester=requester, hints=hints, facts=_json_dict(live.get('facts')),
-                     keep_draft=True, also_paths=paths[1:], scratch=True)
+                     keep_draft=True, also_paths=paths[1:], scratch=did)
         scratch_ids = result.get('drafts') or []
         scratch = result.get('duplicate_stub') or result['id']
         outcome = dict(graph.db.execute('SELECT * FROM decisions WHERE id=?', (scratch,)).fetchone())
@@ -3785,20 +3785,40 @@ def _model_node_pass(store, cfg, did, ctx, paths, hints, requester, owner_id, or
                     graph.db.execute('UPDATE events SET decision_id=?, detail=? WHERE id=?', (did, json.dumps(detail), event['id']))
                 graph.append_event('model_read', {'task_id': run['id'], 'decision_id': did})
                 cm.attach(graph.db, did, source_pins, replace=True)
+                adopted = True
     except Exception as error:
         graph.append_event('model_read_failed', {'task_id': run['id'], 'decision_id': did, 'error': type(error).__name__})
     finally:
         graph._local.model_exclude = ''
+        for sid in scratch_ids:
+            _discard_scratch(graph, sid, did, run['id'], adopted)
+        # Whatever became of the twins, the live node is no longer being
+        # read: a page must never show it as such for want of a cleanup.
         with graph.transaction():
-            for sid in scratch_ids:
-                graph.db.execute('DELETE FROM decision_links WHERE decision_id=? OR related_id=?', (sid, sid))
-                graph.db.execute('DELETE FROM events WHERE decision_id=?', (sid,))
-                graph.db.execute('DELETE FROM decisions WHERE id=?', (sid,))
             graph.db.execute('UPDATE decisions SET model_pending=0 WHERE id=?', (did,))
         current = store.get_decision(did)
         acted = graph.db.execute("SELECT 1 FROM events WHERE decision_id=? AND kind IN (" + ','.join('?' for _ in PEOPLE_EVENTS) + ") AND created_at>=? LIMIT 1", (did, *PEOPLE_EVENTS, live['updated_at'])).fetchone()
         if not acted and (current['updated_at'] == live['updated_at'] or graph.db.execute("SELECT 1 FROM events WHERE decision_id=? AND kind='model_read'", (did,)).fetchone()):
             _notify_model_ready(store, current)
+
+
+def _discard_scratch(graph, sid, did, task_id, adopted):
+    """Remove one scratch twin of the pass, in its own transaction. Rows
+    that pointed at the twin (a read recorded against it, a link, a
+    provider call) move to the live node when its outcome was adopted
+    there; whatever cannot be moved goes with the twin. A twin that still
+    cannot be removed is hidden and the failure logged, never raised:
+    the live node must not stay marked as being read because of it."""
+    try:
+        with graph.transaction():
+            discard_decision(graph.db, sid, into=did if adopted else None)
+    except ScratchCleanupFailed as error:
+        try:
+            with graph.transaction():
+                hide_scratch(graph.db, sid, did, task_id, error)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("scratch %s of decision %s could not be hidden", sid, did)
 
 
 def _notify_model_ready(store, row):
