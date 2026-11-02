@@ -62,6 +62,40 @@ def _validation(result, payload):
     return 'selected'
 
 
+def _placed_with_decider(graph, repo, fixed, ranked):
+    """Whether routing placed the call with someone the authority map itself
+    names as deciding for it, however weakly the category matched.
+
+    A category the question only mentions makes its decider a candidate
+    rather than the verified owner, so the ranking may put someone else
+    ahead of them. Once it has placed them first, though, who wrote the
+    file or authored a pull request is not evidence against a configured
+    decider: technical involvement is not business authority. Measured
+    live on the Parcelwise demo (main aaa0858): the ladder sent a label-
+    allowance question to the person who decides pricing ("this one only
+    mentions pricing"), and this pass handed it to whoever had written
+    plans.py and its last pull request. A decider learned from a referral
+    or an answer is not the map's own word and does not hold the call here.
+    """
+    if not ranked:
+        return False
+    from .identity import person_id_of
+    from .signals import _norm_person
+    head = ranked[0][0]
+    head_id, head_key = person_id_of(head), _norm_person(str(head))
+    configured = {r['id'] for r in graph.authority_rows(repo)
+                  if r['accepted'] and r['source'] not in ('referral', 'answer')}
+    for match in fixed:
+        if match.get('role') != 'decides' or match.get('id') not in configured:
+            continue
+        if head_id and match.get('person_id'):
+            if match['person_id'] == head_id:
+                return True
+        elif match.get('key') == head_key:
+            return True
+    return False
+
+
 def choose(graph, cfg, repo, question, *, paths=(), context='', category='', facts=None,
            requester='', task_id='', decision_id='', details=None):
     from .routing import rank_for_decision, contact_for
@@ -78,7 +112,8 @@ def choose(graph, cfg, repo, question, *, paths=(), context='', category='', fac
     # decider, an explicit assignment or any required approver.
     fixed = _authority_matches(graph, repo, [], question, context, category,
                                paths[0] if paths else '', list(paths[1:]))
-    if any(a['strong'] and a['role'] == 'decides' for a in fixed) or not cfg.semantic_retrieval:
+    if (any(a['strong'] and a['role'] == 'decides' for a in fixed) or not cfg.semantic_retrieval
+            or _placed_with_decider(graph, repo, fixed, ranked)):
         return ranked
     learned = candidates(graph, repo, question, paths[0] if paths else '', context, category, facts,
                          task_id=task_id, decision_id=decision_id)

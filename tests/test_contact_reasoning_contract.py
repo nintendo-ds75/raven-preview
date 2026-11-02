@@ -159,9 +159,9 @@ class ContactReasoningContractTests(OfflineCase):
         self.assertEqual(details['status'], 'fallback')
         model.assert_not_called()
 
-    def model_node(self, results, *, explicit=False, semantic=True):
+    def model_node(self, results, *, explicit=False, semantic=True, routing_reason='resolution ladder'):
         did = self.graph.add_decision(self.task, self.question, 'billing', 'pending',
-            owner='Synthetic Maintainer', repo=self.repo, path='usage/meter.py')
+            owner='Synthetic Maintainer', repo=self.repo, path='usage/meter.py', routing_reason=routing_reason)
         required = json.dumps(['Synthetic Approver'])
         self.graph.db.execute('UPDATE decisions SET model_pending=1,required_signers=? WHERE id=?', (required, did))
         current = self.store.get_decision(did)
@@ -210,3 +210,34 @@ class ContactReasoningContractTests(OfflineCase):
                 self.assertEqual(view['owner_name'], 'Synthetic Maintainer')
                 model.assert_not_called()
                 fallback.assert_not_called()
+
+    # The reason the ladder stored when it placed the node with the first
+    # owner, as the Parcelwise demo (main aaa0858) showed it after the
+    # pass had moved the call to someone else.
+    LADDER_REASON = ('Routed from the ownership graph: verified: Synthetic Maintainer decides for '
+                     'billing decisions (this one only mentions billing) (config)')
+
+    def test_canvas_moving_the_call_rewrites_the_reason_for_the_new_owner(self):
+        view, _, fallback = self.model_node([{'candidate': 'c2', 'evidence': ['c2:e1']}],
+                                            routing_reason=self.LADDER_REASON)
+        self.assertEqual(view['owner_name'], 'Synthetic Analyst')
+        self.assertNotIn('Synthetic Maintainer', view['routing_reason'], view['routing_reason'])
+        self.assertIn('Synthetic Analyst', view['routing_reason'], view['routing_reason'])
+        self.assertTrue(view['routing_reason'].startswith('Routed from the ownership graph: '), view['routing_reason'])
+        self.assertIn('inferred first contact selected from cited evidence', view['routing_reason'])
+        self.assertNotIn('Synthetic Maintainer', view['owner_evidence'])
+        self.assertIn(self.ranked[1][1][0], view['owner_evidence'])
+        fallback.assert_not_called()
+
+    def test_canvas_abstention_leaves_no_reason_naming_the_cleared_owner(self):
+        view, _, _ = self.model_node([{'candidate': 'c2', 'evidence': ['c1:e1']}] * 2,
+                                     routing_reason=self.LADDER_REASON)
+        self.assertFalse(view['owner_id'])
+        self.assertNotIn('Synthetic Maintainer', view['routing_reason'], view['routing_reason'])
+        self.assertIn('No evidence-bound first contact', view['routing_reason'])
+
+    def test_canvas_keeping_the_owner_keeps_the_ladders_reason(self):
+        view, model, _ = self.model_node([], semantic=False, routing_reason=self.LADDER_REASON)
+        self.assertEqual(view['owner_name'], 'Synthetic Maintainer')
+        self.assertEqual(view['routing_reason'], self.LADDER_REASON)
+        model.assert_not_called()
