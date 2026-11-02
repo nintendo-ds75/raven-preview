@@ -370,6 +370,10 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     from .sources import report as source_report
                     from .inquiry import repositories as question_repositories
                     current = store.state()
+                    # Each live task carries its timeline, so the Being
+                    # built card draws WHAT'S BEEN DONE from this one poll.
+                    from .timeline import attach as attach_timelines
+                    attach_timelines(store, current["runs"])
                     if auth.enabled and self.me is not None and self.me.id:
                         # Which decisions the signed-in person may act on,
                         # by the same check every write runs: the inbox
@@ -563,6 +567,12 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                 if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "trace":
                     from .canvas import trace
                     return self.send(200, trace(store, parts[2]), etag=True)
+                if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[3] == "timeline":
+                    # What's been done on the task, one sentence per row,
+                    # from its stored events: the Being built card and the
+                    # task page show it under WHAT'S BEEN DONE.
+                    from .timeline import view as timeline_view
+                    return self.send(200, timeline_view(store, parts[2]), etag=True)
                 if url.path == "/api/export":
                     self.require("member")
                     return self.send(200, store.state(full_history=True))
