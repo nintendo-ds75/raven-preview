@@ -378,3 +378,4 @@ body.ask-view .ask-side{height:100%;overflow-y:auto;padding:28px 2px 28px 0}
   body.ask-view .ask-side{height:auto;overflow:visible}
 }
 @media (max-width:760px){.build-total,.build-counts{grid-template-columns:repeat(2,minmax(0,1fr))}.build-tiles{grid-template-columns:1fr}.build-done a{flex-direction:column;gap:2px}}
+@media (max-width:480px){.build-total,.build-counts{grid-template-columns:1fr}.build-total div,.build-counts div{padding:8px 12px}}
