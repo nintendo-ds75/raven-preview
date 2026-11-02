@@ -16,6 +16,7 @@ function harness() {
     esc: v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch])),
     ago: () => '2m ago',
     askDate: value => new Date(value).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'}),
+    callRefs: v => String(v ?? ''),
   };
   vm.createContext(c);
   const start = source.indexOf('const buildTimelineOpen'), end = source.indexOf('function buildCard(run)');

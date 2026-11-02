@@ -139,3 +139,16 @@ class AttentionTests(OfflineCase):
         self.assertEqual(attention._area('verified: Priya Shah decides for pricing decisions (this one speaks of pricing) (config): Plans'),
                          'you decide for pricing decisions')
         self.assertEqual(attention._area(''), '')
+
+    def test_the_closest_earlier_call_is_dated_the_way_people_say_it(self):
+        self.assertEqual(attention._day('2026-10-28T19:05:00+00:00'), 'Oct 28')
+        self.assertEqual(attention._day(''), '')
+        source = {'answered_by': 'Jordan Okafor', 'signed_by': '', 'created_at': '2026-08-20T16:40:00+00:00'}
+        row = {'needs_review': 0, 'kind': 'prediction'}
+        self.assertIn('from Aug 20,', attention._why_reached(row, source, 'Priya Shah'))
+
+    def test_a_needs_item_carries_the_source_review_its_answer_binds(self):
+        self.node()
+        item = attention.overview(self.store, self.owner)['needs_you'][0]
+        self.assertEqual(set(item['review']), {'has_reliance', 'available', 'pins', 'decision_pins'})
+        self.assertFalse(item['review']['has_reliance'])

@@ -42,7 +42,7 @@ function attNeeds(item) {
     <h3>${esc(item.question)}</h3>
     <p class="att-why"><span class="att-k">Why it reached you</span>${esc(item.why)}</p>
     ${item.guess ? `<div class="att-guess"><span class="att-k">Raven would apply this, but isn’t sure: your call</span>
-      <p>“${esc(item.guess)}”</p>${attGaps(item)}
+      <p>“${esc(callRefs(item.guess))}”</p>${attGaps(item)}
       ${guessFrom ? `<small>from ${esc(guessFrom.by === attention.person.name ? 'your' : attFirst(guessFrom.by) + '’s')} ${esc(attDate(guessFrom.when))} call${attVia[guessFrom.answered_via] ? ' ' + esc(attVia[guessFrom.answered_via]) : ''} on <a href="${attHref(guessFrom.run_id, guessFrom.id)}">${esc(guessFrom.task)}</a></small>` : ''}
       <button type="button" class="button small" data-att="apply" data-id="${esc(item.id)}">Use this answer</button></div>` : ''}
     ${item.options.length ? `<div class="att-options"><span class="att-k">The agent’s options</span>${item.options.map((o, i) => `<button type="button" class="att-option" data-att="option" data-id="${esc(item.id)}" data-n="${i}">${esc(o)}</button>`).join('')}</div>` : ''}
@@ -62,7 +62,7 @@ function attNeeds(item) {
 // What the source left open: Raven's own note, never inside the quote.
 function attGaps(item) {
   const gaps = Array.isArray(item.gaps) ? item.gaps.map(g => String(g || '').trim()).filter(Boolean) : [];
-  return gaps.length ? `<p class="att-why att-gaps"><span class="att-k">Raven could not find</span>${esc(gaps.join('; '))}.</p>` : '';
+  return gaps.length ? `<p class="att-why att-gaps"><span class="att-k">Raven could not find</span>${esc(callRefs(gaps.join('; ')))}.</p>` : '';
 }
 
 function attHandled(item) {
@@ -74,7 +74,7 @@ function attHandled(item) {
       <span class="att-from">from ${call.answered_via === 'meeting' ? `what you said in ${esc(call.task || 'a meeting')}` : `your ${esc(attDate(call.when))} call${attVia[call.answered_via] ? ' ' + esc(attVia[call.answered_via]) : ''}`} · <em>${esc(item.task)}</em></span>
     </button>
     ${open ? `<div class="att-detail">
-      <p class="att-a">“${esc(item.answer)}”</p>
+      <p class="att-a">“${esc(callRefs(item.answer))}”</p>
       ${attGaps(item)}
       <p class="att-why"><span class="att-k">Why it fits</span>${esc(item.fit_reason || 'Raven matched it to your earlier call.')}</p>
       <p class="att-call"><span class="att-k">${call.answered_via === 'meeting' ? 'What you said' : 'Your call it used'}</span>${call.answered_via === 'meeting' ? `in ${esc(call.task)}` : `${esc(attDate(call.when))}${attVia[call.answered_via] ? ', ' + esc(attVia[call.answered_via]) : ''}, on <a href="${attHref(call.run_id, call.id)}">${esc(call.task)}</a>`}: “${esc(call.answer)}”</p>
@@ -97,7 +97,7 @@ function attChanged(item) {
   const whose = item.was_mine ? (item.by === me ? 'your' : 'your') : `${esc(attFirst(item.replaced.by))}’s`;
   return `<li class="att-change">
     <p><b>${who} replaced ${whose} ${esc(attDate(item.replaced.when))} call</b> on <a href="${attHref(item.run_id, item.id)}">${esc(item.task)}</a> · ${esc(attDate(item.when))}</p>
-    <p class="att-a">Now: “${esc(item.answer)}”</p>
+    <p class="att-a">Now: “${esc(callRefs(item.answer))}”</p>
     ${item.why ? `<p class="att-why"><span class="att-k">Why</span>${esc(item.why)}</p>` : ''}
     <p class="att-muted">Was: “${esc(item.replaced.answer)}”${item.now_precedent ? ' · The next similar question uses the new call.' : ''}</p>
   </li>`;
@@ -164,7 +164,12 @@ document.addEventListener('submit', async event => {
       attForm.delete(form.dataset.id);
       notify(result.notice || 'Recorded.');
     } else {
-      result = await api(`/api/decisions/${encodeURIComponent(form.dataset.id)}/answer`, {answer: data.answer, ...(data.rationale ? {rationale: data.rationale} : {}), expected_updated_at: form.dataset.updated});
+      // A call that leaned on an earlier call binds the answer to the source versions the card
+      // showed, the way the task page does; without them the answer is refused for review.
+      const review = (attention?.needs_you || []).find(i => i.id === form.dataset.id)?.review;
+      if (review?.has_reliance && !review.available) throw new Error('The earlier call this leans on is not readable right now. Try again in a moment.');
+      result = await api(`/api/decisions/${encodeURIComponent(form.dataset.id)}/answer`, {answer: data.answer, ...(data.rationale ? {rationale: data.rationale} : {}),
+        ...(review?.has_reliance ? {source_evidence: review.pins, source_decision_pins: review.decision_pins} : {}), expected_updated_at: form.dataset.updated});
       notify('Recorded under your name. The coding agent can read it now.');
     }
     attentionKey = '';

@@ -146,9 +146,9 @@ function buildGaps(d) {
 function buildDetail(d, j) {
   const first = askFirst;
   const parts = [];
-  if (d.answer && j.kind !== 'review' && j.kind !== 'checking') parts.push(`<p class="build-answer">${esc(d.answer)}</p>`);
+  if (d.answer && j.kind !== 'review' && j.kind !== 'checking') parts.push(`<p class="build-answer">${esc(callRefs(d.answer))}</p>`);
   // What the source left open is Raven's note, never part of the person's words.
-  if (buildGaps(d).length && j.kind !== 'review') parts.push(`<p class="build-note build-gaps">Raven could not find: ${esc(buildGaps(d).join('; '))}.</p>`);
+  if (buildGaps(d).length && j.kind !== 'review') parts.push(`<p class="build-note build-gaps">Raven could not find: ${esc(callRefs(buildGaps(d).join('; ')))}.</p>`);
   if (j.kind === 'settled') {
     parts.push(`<div class="build-why"><span class="ask-label">Why Raven applied it</span><p>${esc(d.fit_reason || `Raven matched it to a call ${j.priorBy || 'someone'} already made.`)}</p></div>`);
     if (d.answered_via === 'meeting') parts.push(`<div class="build-prior"><span class="ask-label">Settled from this meeting</span>
@@ -192,7 +192,7 @@ function buildPrecedent(j, label) {
   return `<div class="build-prior"><span class="ask-label">${esc(label)}</span>
     <div class="build-prior-head">${avatar(j.priorBy)}<b>${esc(j.priorBy)}</b><span>decided ${esc(buildWhen(j.priorWhen))}${via ? ' ' + esc(via) : ''}${p.run_title ? ' · ' + esc(buildClip(p.run_title, 48)) : ''}</span><a href="${buildHref(p)}" aria-label="Open that call">↗</a></div>
     <p class="build-prior-q">${esc(p.question)}</p>
-    <p class="build-prior-a">“${esc(p.answer || '')}”</p></div>`;
+    <p class="build-prior-a">“${esc(callRefs(p.answer || ''))}”</p></div>`;
 }
 
 function buildCorrectForm(d, j) {
@@ -230,7 +230,7 @@ const BUILD_TL_PILL = new Set(['pr', 'commit', 'ticket', 'doc', 'slack', 'record
 // The sentence with its references marked in place: an earlier call or a
 // flagged question becomes a link to it, a record its pill.
 function buildTimelineText(row) {
-  let html = esc(row.text || ''), from = 0;
+  let html = esc(callRefs(row.text || '')), from = 0;
   const extra = [];
   for (const r of row.refs || []) {
     const label = esc(r.label || '');

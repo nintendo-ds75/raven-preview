@@ -86,13 +86,22 @@ def _call(row, when=""):
             "replaced_by": row["superseded_by"] or ""}
 
 
+def _day(stamp) -> str:
+    """A day as people say it ("Oct 28"), not an ISO date."""
+    try:
+        when = datetime.fromisoformat(str(stamp or "").replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    return f"{when:%b} {when.day}"
+
+
 def _why_reached(row, source, name="") -> str:
     if row["needs_review"]:
         return "An earlier call this leaned on was replaced since, so it needs another look."
     if row["kind"] == "prediction" and source is not None:
         who = source["answered_by"] or source["signed_by"] or "someone"
         whose = "your own" if _same_person(source, name) else f"{who}'s"
-        when = (source["created_at"] or "")[:10]
+        when = _day(source["created_at"])
         return (f"The closest earlier call is {whose}{f', from {when}' if when else ''}, and Raven is not sure it "
                 "carries over to this case, so it asks instead of applying it.")
     if row["kind"] == "prediction":
@@ -133,7 +142,17 @@ def _needs_item(db, row, task_rows, name=""):
         "why": why, "guess": guess, "gaps": _gaps(row),
         "guess_from": _call(source, row["source_revision"]) if source is not None else None,
         "review_reason": row["review_reason"] or "", "meanwhile": meanwhile,
+        "review": _review(db, row["id"]),
     }
+
+
+def _review(db, decision_id) -> dict:
+    """The source versions an answer here binds to, as the task page sends them: a call
+    that leaned on an earlier call needs them, or the answer is refused for review."""
+    from . import context_memory as cm
+    review = cm.source_revalidation(db, decision_id)
+    return {"has_reliance": bool(review.get("has_reliance")), "available": bool(review.get("available")),
+            "pins": review.get("pins") or [], "decision_pins": review.get("decision_pins") or []}
 
 
 def _handled_item(db, row, source, call=None):
