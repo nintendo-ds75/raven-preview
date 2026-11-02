@@ -121,6 +121,7 @@ class Candidate:
     topic: str = ""             # the category this decision is about that they verifiably decide
     topic_explicit: bool = False  # that category is the one the agent named, not one the words matched
     path_authority: bool = False  # verified decider of a file this decision names or resolves to
+    judges: bool = False        # holds a decides-category of their own in the map: a judgment holder, not only a code owner
     primary: bool = False       # verified decider of the agent's primary decision path
     merge_led: bool = False     # their approval here comes mostly from merging
     at: dict[str, float] = field(default_factory=dict)   # their weighted signal under each hit path
@@ -683,6 +684,20 @@ def _authority_matches(store: Graph, repo: str, hits: list[PathHit], question: s
         held = [w for w in worded if w and w in decided]
         if held:
             about = set(held)
+    # Who holds a judgment category of their own (any accepted decides-
+    # category row). A path decider who also judges an area keeps a call
+    # on their files against a category a word of the question matched; a
+    # path-only owner yields it to the decider of that topic.
+    judges: set[str] = set()
+    for r in rows:
+        if r["scope_kind"] == "category" and r["role"] == "decides" and r["accepted"]:
+            for person in ([r["person"]] if r["person"] else []):
+                judges.add(_norm_person(person["name"]))
+            if r["team"]:
+                for m in r["team"].get("members", []):
+                    pm = store.get_person(m)
+                    if pm:
+                        judges.add(_norm_person(pm["name"]))
     probes = [(h.path, h.is_dir) for h in hits]
     # Every path the decision names, not only the first: measured live on
     # eb9d22d, a decision about connectionpool.py and util/retry.py went
@@ -785,6 +800,7 @@ def _authority_matches(store: Graph, repo: str, hits: list[PathHit], question: s
                         "topic": (r["scope_kind"] == "category" and r["scope"] in about and r["scope"]) or area,
                         # The agent's own category, not a word the question happens to use.
                         "topic_explicit": r["scope_kind"] == "category" and r["scope"] == (category or "").strip().lower(),
+                        "judges": _norm_person(person["name"]) in judges,
                         "primary": r["scope_kind"] == "path" and any(
                             p.rstrip("/") == (path or "").strip().strip("/")
                             and _specificity(r["scope"]) >= narrowest[(p, r["role"])]
@@ -1149,6 +1165,7 @@ def _signal_route(store: Graph, repo: str, question: str, context: str = "", pat
                                   for m in verified if m["key"] == key)
         cand.topic_explicit = any(m["topic"] and m["strong"] and m["role"] == "decides" and m.get("topic_explicit")
                                   for m in verified if m["key"] == key)
+        cand.judges = any(m.get("judges") for m in verified if m["key"] == key)
     # You told Raven: a recorded routing answer for a matching path wins;
     # a row recorded with no path is repo-wide.
     for r in user_rows:
@@ -1210,15 +1227,18 @@ def _signal_route(store: Graph, repo: str, question: str, context: str = "", pat
     # diagnostics contain bearer credentials?", category security, went to
     # the person who decides util/*, and the security decider was not even
     # among the signers.
-    # The category has to be the agent's own: a word the question uses
-    # ("billable", "cost") names a topic, and a topic named by a word does
-    # not take the call away from whoever decides the files it names.
-    # Measured on the Harborline dry run: "What counts as one billable use
-    # of Pilot?" on services/usage/events.py went to the billing decider,
-    # past the person who decides services/usage/*.
+    # A topic the question's words name takes the call from a path-only
+    # owner (a pricing question in a billing file is the pricing decider's),
+    # but not from a path decider who holds a judgment category of their
+    # own: "billable" speaks of billing, and the person who decides
+    # services/usage/* and the data category is asked about
+    # services/usage/events.py. A category the agent names itself always
+    # wins. Measured on the Harborline dry run: "What counts as one
+    # billable use of Pilot?" on services/usage/events.py went to the
+    # billing decider, past the person who decides those files and data.
     if winner.verified and not winner.topic:
         topical = next((c for c in ranked[1:] if c.topic), None)
-        if topical is not None and winner.path_authority and not topical.topic_explicit:
+        if topical is not None and winner.path_authority and winner.judges and not topical.topic_explicit:
             note = (f"note: {topical.name} decides {topical.topic} decisions, which this one speaks of; "
                     f"{winner.name} decides the files it names, so Raven asks {winner.name}")
             override = f"{override}; {note}" if override else note

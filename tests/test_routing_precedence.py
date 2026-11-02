@@ -47,7 +47,10 @@ class HarborlineCase(OfflineCase):
 class PathOverWordsTests(HarborlineCase):
     def test_path_authority_over_the_named_files_outranks_a_category_the_words_name(self):
         """'billable' speaks of billing; Raj decides the file the decision
-        names. The call is Raj's, and the billing decider stays a candidate."""
+        names and holds a judgment category of his own (data), so the word
+        does not take the call from him. The billing decider stays a
+        candidate. (A path-only owner still yields to the topic's decider:
+        tests/test_delivery.py, the pricing question in Wes's billing file.)"""
         ranked = self.ranked("What counts as one billable use of Pilot?", "services/usage/events.py")
         self.assertEqual(ranked[0][0], "Raj Patel", ranked[:2])
         self.assertIn("Alex Moreno", [r[0] for r in ranked])
