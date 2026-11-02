@@ -62,8 +62,20 @@ def received_via(db, source, actor=None) -> str:
     return ""
 
 
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _day(iso: str) -> str:
+    """'Jun 9' from an ISO date, or the text as it came."""
+    text = str(iso or "")
+    try:
+        return f"{_MONTHS[int(text[5:7]) - 1]} {int(text[8:10])}" if len(text) >= 10 else text
+    except (ValueError, IndexError):
+        return text
+
+
 def fit_reason(item, match_kind: str, rule_ok: bool, conditions=(), *, when: str = "", partial: bool = False,
-               withheld: str = "") -> str:
+               withheld: str = "", also=()) -> str:
     """One plain sentence on why a precedent fits the question it settled:
     how close the match was, whose call it was and when, and the standing
     its owner gave it. `item` is the memory row the ladder picked. With
@@ -74,21 +86,31 @@ def fit_reason(item, match_kind: str, rule_ok: bool, conditions=(), *, when: str
     disagrees", "the answer combines sources"): the sentence then says so,
     and never blames the owner for not making a rule of a row that is one.
     Measured on the Parcelwise dry run: three signed rules vetoed by a pull
-    request read "Jordan did not make it a standing rule"."""
+    request read "Jordan did not make it a standing rule". `also` holds the
+    dates of the other standing rules of the same owner a compound question
+    was settled from, one per clause: the sentence then names every call
+    ("on Jun 9 and Jun 10") and says both apply."""
     who = item.answered_by or item.signed_by or "its owner"
     first = who.split()[0]
-    if match_kind == "direct":
+    also = [a for a in also if a]
+    if also and rule_ok:
+        count = {2: "two", 3: "three"}.get(len(also) + 1, str(len(also) + 1))
+        days = [d for d in [_day(when), *[_day(a) for a in also]] if d]
+        how = f"The same {count} questions {who} already answered"
+        if days:
+            how += " on " + (", ".join(days[:-1]) + " and " + days[-1] if len(days) > 1 else days[0])
+    elif match_kind == "direct":
         how = f"The same question {who} already answered"
     elif match_kind == "semantic":
         how = f"The same situation, by meaning, that {who} answered"
     else:
         how = f"A close match to a question {who} answered"
-    if when:
+    if when and not (also and rule_ok):
         how += f" on {when}"
     terms = [c for c in conditions if c]
     if rule_ok:
         scope = "anywhere" if item.rule_scope == "any" else "in this same area of the code"
-        standing = f"{first} said that answer applies {scope}"
+        standing = f"{first} said {'both' if len(also) == 1 else 'all of them' if also else 'that answer'} appl{'y' if also else 'ies'} {scope}"
         if terms:
             standing += " when " + "; ".join(terms[:3])
         standing += (", but it settles this only in part, so a person still signs it here" if partial
