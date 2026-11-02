@@ -141,7 +141,7 @@ document.addEventListener('click', event => {
   else if (att === 'apply' || att === 'option') {
     const item = (attention?.needs_you || []).find(x => x.id === id);
     const box = document.querySelector(`.att-answer[data-id="${CSS.escape(id)}"] textarea[name=answer]`);
-    if (item && box) { box.value = att === 'apply' ? item.guess : item.options[+n]; box.focus(); }
+    if (item && box) { box.value = att === 'apply' ? callRefs(item.guess) : item.options[+n]; box.focus(); }
     return;
   }
   attentionKey = ''; render();
