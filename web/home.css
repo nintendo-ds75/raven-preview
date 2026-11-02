@@ -375,9 +375,9 @@ body.ask-view .ask-side{height:100%;overflow-y:auto;padding:28px 2px 28px 0}
 .build-tl-toggle{background:none;border:0;color:var(--muted);font:inherit;font-size:11.5px;cursor:pointer;padding:2px 0;text-decoration:underline dotted;text-underline-offset:3px}
 .build-tl-toggle:hover{color:var(--ink)}
 .build-tl-rows{list-style:none;margin:8px 0 0;padding:0;position:relative}
-.build-tl-rows::before{content:"";position:absolute;left:62px;top:10px;bottom:12px;border-left:1px dotted #454a42}
-.build-tl-row{position:relative;display:grid;grid-template-columns:48px 20px minmax(0,1fr);column-gap:8px;align-items:start;padding:6px 0}
-.build-tl-row time{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;text-align:right;line-height:20px;white-space:nowrap}
+.build-tl-rows::before{content:"";position:absolute;left:11px;top:10px;bottom:12px;border-left:1px dotted #454a42}
+.build-tl-row{position:relative;display:grid;grid-template-columns:22px minmax(0,1fr);column-gap:10px;align-items:start;padding:5px 0}
+.build-tl-row .avatar{width:22px;height:22px;font-size:9.5px;box-shadow:0 0 0 3px var(--bg)}
 .build-tl-dot{width:9px;height:9px;border-radius:50%;background:#454a42;justify-self:center;margin-top:6px;box-shadow:0 0 0 3px var(--bg)}
 .build-tl-row.settled .build-tl-dot,.build-tl-row.settled_record .build-tl-dot,.build-tl-row.settled_meeting .build-tl-dot,.build-tl-row.confirmed .build-tl-dot{background:#4f8a48}
 .build-tl-row.answered .build-tl-dot,.build-tl-row.corrected .build-tl-dot,.build-tl-row.finished .build-tl-dot{background:var(--green)}
@@ -394,6 +394,9 @@ a.build-tl-ref:hover{border-bottom-color:var(--green);color:var(--green)}
 .build-tl-cut{font-style:italic}
 .task-done .build-tl{margin:0;border:0;padding:0;background:transparent}
 .build-tiles{list-style:none;margin:14px 0 0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.build-group{grid-column:1 / -1;margin:6px 0 -4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.build-group span{color:var(--text)}
+.build-group.open{color:#d7b36a}
 .build-tile{border:1px solid var(--line);border-radius:12px;background:var(--bg);min-width:0}
 .build-tile.open{grid-column:1 / -1;border-color:#3f4a3a}
 .build-tile.waiting,.build-tile.review{border-color:#4a4128}

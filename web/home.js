@@ -229,6 +229,8 @@ const BUILD_TL_SHOWN = 2;
 const buildClock = iso => { const d = new Date(iso); return Number.isNaN(+d) ? '' : d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', hourCycle: 'h23'}); };
 const buildDay = iso => { const d = new Date(iso); return Number.isNaN(+d) ? '' : d.toDateString(); };
 const BUILD_TL_PILL = new Set(['pr', 'commit', 'ticket', 'doc', 'slack', 'record', 'graph']);
+// Steps a person took carry that person; the rest are Raven's or the agent's.
+const BUILD_TL_PERSON = new Set(['answered', 'corrected', 'handed', 'confirmed', 'withdrawn']);
 // The sentence with its references marked in place: an earlier call or a
 // flagged question becomes a link to it, a record its pill.
 function buildTimelineText(row) {
@@ -257,11 +259,12 @@ function buildTimeline(id, rows, {all = false, head = true} = {}) {
     const d = buildDay(row.at);
     const marker = d && d !== today && d !== day ? `<li class="build-tl-day">${esc(askDate(row.at))}</li>` : '';
     day = d || day;
-    return `${marker}<li class="build-tl-row ${esc(row.kind || '')}"><time datetime="${esc(row.at || '')}" title="${esc(row.at || '')}">${esc(buildClock(row.at))}</time><i class="build-tl-dot" aria-hidden="true"></i><p>${buildTimelineText(row)}${last ? ` <small class="build-tl-ago">${esc(ago(row.at))}</small>` : ''}</p></li>`;
+    const by = BUILD_TL_PERSON.has(row.kind) ? (row.people || [])[0] : '';
+    return `${marker}<li class="build-tl-row ${esc(row.kind || '')}" title="${esc(buildClock(row.at))}">${by ? avatar(by) : '<i class="build-tl-dot" aria-hidden="true"></i>'}<p>${buildTimelineText(row)}${last ? ` <small class="build-tl-ago">${esc(ago(row.at))}</small>` : ''}</p></li>`;
   }).join('');
   const toggle = all || rows.length <= BUILD_TL_SHOWN + 1 ? '' : `<button type="button" class="build-tl-toggle" data-build="timeline" data-id="${esc(id)}" aria-expanded="${open}">${open ? 'Show less' : `Show all ${rows.length}`}</button>`;
-  return `<section class="build-tl ${open ? 'open' : ''}" aria-label="What’s been done">
-    ${head ? `<div class="build-tl-head"><span class="ask-label">What’s been done</span>${toggle}</div>` : ''}
+  return `<section class="build-tl ${open ? 'open' : ''}" aria-label="How it got here">
+    ${head ? `<div class="build-tl-head"><span class="ask-label">How it got here</span>${toggle}</div>` : ''}
     <ol class="build-tl-rows">${hidden ? `<li class="build-tl-cut">${hidden} earlier</li>` : ''}${items}</ol>
   </section>`;
 }
@@ -278,6 +281,11 @@ function buildCard(run) {
   const done = settled.length + answered.length;
   const order = d => ({review: 0, waiting: 1, checking: 2, corrected: 3, answered: 4, settled: 5})[js.get(d.id).kind];
   const rows = [...ds].sort((a, b) => order(a) - order(b) || String(a.created_at).localeCompare(String(b.created_at)));
+  const groupOf = d => ({review: 'open', waiting: 'open', checking: 'open', corrected: 'person', answered: 'person', settled: 'record'})[js.get(d.id).kind];
+  const groupLabel = {open: 'Open · with people', person: 'Answered by people', record: 'Settled from the record · nobody asked'};
+  const groups = [];
+  for (const d of rows) { const g = groupOf(d); if (!groups.length || groups[groups.length - 1].g !== g) groups.push({g, ds: []}); groups[groups.length - 1].ds.push(d); }
+  const tiles = groups.map(({g, ds: list}) => `<li class="build-group ${g}">${esc(groupLabel[g])} <span>${list.length}</span></li>${list.map(d => buildTile(d, js.get(d.id))).join('')}`).join('');
   return `<article class="build-card">
     <div class="build-top">${pill}<span class="ask-agent">${esc(run.agent || 'Coding agent')}${run.requester ? ' · for ' + esc(run.requester) : ''}</span><span class="ask-when">${esc(ago(run.updated_at))}</span></div>
     <h2><a href="#runs/${encodeURIComponent(run.id)}">${esc(run.title)}</a></h2>
@@ -290,7 +298,7 @@ function buildCard(run) {
     <div class="build-bar" role="img" aria-label="${done} of ${ds.length} settled">${settled.map(() => '<i class="past"></i>').join('')}${answered.map(() => '<i class="person"></i>').join('')}${asked.map(() => '<i class="open"></i>').join('')}${checking.map(() => '<i class="checking"></i>').join('')}<em>${done} of ${ds.length} settled${checking.length ? ` · ${checking.length} still being read` : ''}</em></div>
     ${spared.length ? `<p class="build-spared">Not asked: ${spared.map(x => `<span>${avatar(x.name)}${esc(askFirst(x.name))}</span> (${esc(askFirst(x.name))}’s ${x.when ? esc(x.when) + ' ' : ''}call already covered it)`).join(', ')}.</p>` : ''}
     ${buildTimeline(run.id, run.timeline)}
-    <ul class="build-tiles">${rows.map(d => buildTile(d, js.get(d.id))).join('')}</ul>
+    <ul class="build-tiles">${tiles}</ul>
   </article>`;
 }
 
