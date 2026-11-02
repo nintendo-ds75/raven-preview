@@ -6,7 +6,7 @@
 /* The orb: Raven's presence on every screen. */
 .ask-orb{flex-shrink:0;width:26px;height:26px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#d9f7d3,#83d97a 45%,#244a20 85%);box-shadow:0 0 18px rgba(131,217,122,.35)}
 .ask-orb.small{width:20px;height:20px}
-.ask-orb.big{display:block;width:52px;height:52px;margin:0 auto 16px;box-shadow:0 0 60px rgba(131,217,122,.35);animation:orb-breathe 5s ease-in-out infinite}
+.ask-orb.big{display:block;width:52px;height:52px;margin:0 auto 16px;box-shadow:0 0 28px rgba(131,217,122,.3);animation:orb-breathe 5s ease-in-out infinite}
 .ask-orb.thinking{animation:orb-breathe 1.4s ease-in-out infinite}
 @keyframes orb-breathe{0%,100%{transform:scale(1);filter:brightness(1)}50%{transform:scale(1.08);filter:brightness(1.15)}}
 

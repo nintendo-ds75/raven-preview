@@ -646,9 +646,9 @@ Rules:
   how you produced the answer.
 Format: "answer" is one plain sentence that answers the question. "points" holds the
 detail a colleague would add: steps, the reason, the team's own related choice, who to
-talk to. Use two to four points unless one sentence fully answers it (a greeting, a
-single fact). Each point is one short sentence of at most 20 words. Under 90 words in
-all, not counting code. Plain text: no headings, no bold, no backticks, no markdown.
+talk to. Use two or three points unless one sentence fully answers it (a greeting, a
+single fact). Each point is one short sentence of at most 18 words: write like a busy
+senior colleague in chat. Under 80 words in all, not counting code. Plain text: no headings, no bold, no backticks, no markdown.
 "code": a short code example only when the asker wants code, otherwise "".
 basis: "team" when the answer rests on the records or workspace, "general" when it
 rests mainly on general knowledge, "mixed" when it uses both.
@@ -671,7 +671,7 @@ def read_open(question, evidence, workspace, cfg, actor=None):
     if (not isinstance(raw, dict) or not isinstance(raw.get('answer'), str) or not raw['answer'].strip()
             or raw.get('basis') not in BASES):
         raise ValueError('Malformed open reading')
-    points = [_plain(p) for p in raw.get('points') or [] if isinstance(p, str) and p.strip()][:4]
+    points = [_plain(p) for p in raw.get('points') or [] if isinstance(p, str) and p.strip()][:3]
     answer = '\n'.join([_plain(raw['answer']), *('- ' + p.lstrip('-• ') for p in points)])
     if len(answer) < 2:
         raise ValueError('Empty open reading')
