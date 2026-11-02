@@ -71,6 +71,38 @@ def field(data, key, default=None, limit=12000):
     return value.strip()
 
 
+def _answer_how(db, decisions):
+    """How each answered call's latest answer arrived, read from its events:
+    took_guess (the person took Raven's guess as it stood; None for answers
+    recorded before Raven kept this) and corrected_scope ('here' or
+    'everywhere' when the answer was a correction), so Being built says
+    what the person did rather than what Raven had suggested."""
+    answered = [d["id"] for d in decisions if d.get("status") == "approved"]
+    how: dict = {}
+    for start in range(0, len(answered), 400):
+        chunk = answered[start:start + 400]
+        marks = ",".join("?" * len(chunk))
+        for row in db.execute(f"SELECT decision_id,kind,detail FROM events WHERE decision_id IN ({marks}) "
+                              "AND kind IN ('owner_approved','answer_corrected','precedent_corrected') ORDER BY id", chunk):
+            try:
+                detail = json.loads(row["detail"] or "{}")
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(detail, dict):
+                continue
+            entry = how.setdefault(row["decision_id"], {})
+            if row["kind"] == "precedent_corrected":
+                entry["corrected_scope"] = detail.get("scope") or "everywhere"
+            else:
+                entry["took_guess"] = detail.get("took_guess")
+                entry.pop("corrected_scope", None)
+    for d in decisions:
+        entry = how.get(d["id"], {})
+        d["took_guess"] = entry.get("took_guess")
+        d["corrected_scope"] = entry.get("corrected_scope", "")
+    return decisions
+
+
 def _with_agent_name(row):
     """The agent column as people read it (Claude Code, not 'claude')."""
     if "agent" in row:
@@ -1123,6 +1155,11 @@ class Store:
             if transaction_hook is not None:
                 transaction_hook(db, decision)
             kind = "answer_corrected" if decision["status"] == "approved" else "owner_approved"
+            # Whether the person took Raven's guess as it stood or wrote their
+            # own: an answer to a call Raven had a guess for is not, by itself,
+            # a confirmation of that guess.
+            guess = decision["prediction"] or (decision["answer"] if decision["status"] in ("resolved", "partial", "assumed", "proposed") else "")
+            took_guess = bool(guess) and " ".join(str(guess).split()).lower() == " ".join(answer.split()).lower()
             # A human answer that replaces a different answer nobody signed
             # (a record's, memory's, the agent's) is a correction for every
             # decision that leaned on the old text, even though it is the
@@ -1202,7 +1239,7 @@ class Store:
             db.execute("UPDATE decisions SET answered_via=? WHERE id=?",
                        (received_via(db, data.get("source"), actor), decision_id))
             self.event(db, kind, json.dumps({"answer": answer, "rationale": rationale, "owner": decision["owner_name"],
-                                             "actor": signer, "basis": basis,
+                                             "actor": signer, "basis": basis, "took_guess": took_guess,
                                              **authz.event_provenance(actor, data.get("source")),
                                              "applicability": applicability, "scope": signed_scope}), decision_id, decision["run_id"])
             # Several required approvers: the answer is one signature, and
@@ -1429,8 +1466,8 @@ class Store:
                 # not something the inbox shows; it stays in the export.
                 "runs": [_with_agent_name({k: v for k, v in dict(row).items() if full_history or k != "discovery"})
                          for row in db.execute("SELECT * FROM runs ORDER BY updated_at DESC" + limit)],
-                "decisions": [_with_agent_name({k: v for k, v in dict(row).items() if k != "embedding"})
-                              for row in db.execute(decisions_sql)],
+                "decisions": _answer_how(db, [_with_agent_name({k: v for k, v in dict(row).items() if k != "embedding"})
+                                              for row in db.execute(decisions_sql)]),
                 "events": [dict(row) for row in db.execute("SELECT * FROM events ORDER BY id DESC" + ("" if full_history else " LIMIT 100"))],
                 "graph": graph_summary(db),
                 "counts": inbox_counts(db),

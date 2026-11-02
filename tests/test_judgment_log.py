@@ -171,6 +171,11 @@ class JudgmentLogTests(OfflineCase):
         self.assertEqual(corrected['answer'], CORRECTION)
         self.assertEqual(corrected['supersedes'], '')
         self.assertTrue(corrected['authorized'])
+        # Being built reads the correction from state: a correction for this
+        # case, and not a confirmation of what Raven had applied.
+        listed = next(d for d in self.store.state()['decisions'] if d['id'] == did)
+        self.assertEqual(listed['corrected_scope'], 'here')
+        self.assertIs(listed['took_guess'], False)
 
     def test_a_correction_needs_standing_a_revision_and_a_reason(self):
         _, source = self.precedent()

@@ -83,11 +83,11 @@ function judge(d) {
   // withdrawn by the model pass a minute later.
   if (d.model_pending && d.status !== 'approved') kind = 'checking';
   else if (d.needs_review) kind = 'review';
-  else if (d.status === 'approved' && d.supersedes) kind = 'corrected';
+  else if (d.status === 'approved' && (d.supersedes || d.corrected_scope)) kind = 'corrected';
   else if (['signed', 'rule'].includes(d.signoff) && (d.source_id || d.source === 'meeting') && d.status !== 'approved') kind = 'settled';
   else if (d.status === 'approved') kind = 'answered';
   else kind = 'waiting';
-  return {kind, prior, by, priorBy, priorWhen, guessed: d.kind === 'prediction', via: buildVia[d.answered_via] || '',
+  return {kind, prior, by, priorBy, priorWhen, guessed: d.kind === 'prediction' && d.took_guess !== 0 && d.took_guess !== false, via: buildVia[d.answered_via] || '',
     owner: d.owner_name || '', done: kind !== 'waiting' && kind !== 'review'};
 }
 
@@ -126,7 +126,7 @@ function buildLine(d, j) {
   const first = askFirst;
   if (j.kind === 'settled' && d.answered_via === 'meeting') return `<span class="dot past"></span>${esc(buildMeeting(d))} · nobody asked`;
   if (j.kind === 'settled') return `<span class="dot past"></span>From ${esc(first(j.priorBy) || 'an earlier')}’s call${j.priorWhen ? ' · ' + esc(buildWhen(j.priorWhen)) : ''} · nobody asked`;
-  if (j.kind === 'corrected') return `<span class="dot person"></span>${esc(first(j.by))} corrected this${j.prior ? ` · replaces ${esc(first(j.priorBy))}’s ${esc(buildWhen(j.priorWhen))} call` : ''}`;
+  if (j.kind === 'corrected') return `<span class="dot person"></span>${esc(first(j.by))} corrected ${j.prior ? `this · replaces ${esc(first(j.priorBy))}’s ${esc(buildWhen(j.priorWhen))} call` : `Raven’s call${d.corrected_scope === 'here' ? ' for this case' : ''}`}${j.via ? ' ' + esc(j.via) : ''} · ${esc(ago(d.updated_at))}`;
   if (j.kind === 'answered') return `<span class="dot person"></span>${j.guessed ? `Raven guessed, ${esc(first(j.by))} confirmed` : `${esc(first(j.by))} answered`}${j.via ? ' ' + esc(j.via) : ''} · ${esc(ago(d.updated_at))}`;
   if (j.kind === 'review') return `<span class="dot open"></span>Needs another look · the call this used was replaced`;
   if (j.kind === 'checking') return `<span class="dot checking"></span>Raven is still reading this${j.priorBy ? ` · an earlier call by ${esc(first(j.priorBy))} may cover it` : ''} · nobody asked yet`;
@@ -159,7 +159,9 @@ function buildDetail(d, j) {
   } else if (j.kind === 'corrected') {
     if (d.rationale) parts.push(`<div class="build-why"><span class="ask-label">Why</span><p>${esc(d.rationale)}</p></div>`);
     if (j.prior) parts.push(buildPrecedent(j, 'Replaced this call'));
-    parts.push(`<p class="build-note">From now on the next similar question uses ${esc(first(j.by))}’s correction.</p>`);
+    parts.push(d.corrected_scope === 'here'
+      ? `<p class="build-note">${esc(first(j.by))} said the earlier call does not apply here. It still stands for other cases; this task uses ${esc(first(j.by))}’s answer.</p>`
+      : `<p class="build-note">From now on the next similar question uses ${esc(first(j.by))}’s correction.</p>`);
   } else if (j.kind === 'answered') {
     if (j.guessed) parts.push(`<p class="build-note">Raven had a likely answer from earlier context but was not sure, so it asked ${esc(first(j.by))} rather than apply it.</p>`);
     if (d.rationale) parts.push(`<div class="build-why"><span class="ask-label">Why, in ${esc(first(j.by))}’s words</span><p>${esc(d.rationale)}</p></div>`);
