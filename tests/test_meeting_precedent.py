@@ -255,9 +255,12 @@ MARCUS_QUOTE = "Nothing charges when the merchant asks the question. It goes thr
 MARCUS_NOTE = "Marcus: nothing is charged per assistant answer at question time; assistant charges go through the nightly job."
 PRIYA_QUOTE = "Past the allowance it's two cents an assistant answer, the same on every plan."
 PRIYA_NOTE = "Priya: past the allowance each assistant answer is charged two cents, the same on every plan."
+OPEN_QUOTE = "I still need to land the rate and whether there's a free monthly allowance before it starts counting."
+OPEN_NOTE = "Priya owns deciding the free monthly allowance and rate for assistant metering before it goes live."
 PW_TRANSCRIPT = "\n".join([
     "Priya Shah: Assistant pricing, then. The allowance first: how many answers a month before we charge?",
     "Marcus Lee: I'd rather charge from the first of the month than argue about it in February.",
+    "Priya Shah: " + OPEN_QUOTE,
     "Priya Shah: " + PRIYA_QUOTE,
     "Marcus Lee: " + MARCUS_QUOTE,
 ])
@@ -396,6 +399,67 @@ class DeciderTests(OfflineCase):
         n = self.node(category="")
         self.assertEqual((n["status"], n["owner"], n["prediction"]), ("predicted", "Priya Shah", PRIYA_NOTE))
         self.assertIn("spoke for app/billing/plans.py in the Oct 29", self.store.get_decision(n["node_id"])["owner_evidence"])
+
+    def test_the_deciders_words_that_say_the_call_is_open_are_context_not_a_guess(self):
+        """Dry run 3 (Nov 2): Priya's "I still need to land the rate and
+        whether there's a free monthly allowance" came to her as "Raven
+        would apply this, but isn't sure: your call" with a "Use this
+        answer" button, the guess reading "Priya owns deciding the free
+        monthly allowance and rate ... before it goes live", while Being
+        built said nothing on record settles it. Neither text is an answer:
+        Priya is asked, with her words as context."""
+        self.learned(self.priya, OPEN_NOTE, OPEN_QUOTE)
+        self.model({"settles": False, "bears_on": True, "answer": "", "why": "Priya spoke of the rate but has not landed it."})
+        n = self.node(ModelOn(model_api="claude-cli"))
+        self.assertEqual((n["status"], n["kind"], n["owner"], n["prediction"] or "", n["signoff"] or ""),
+                         ("pending", "new", "Priya Shah", "", ""))
+        self.assertNotIn("Raven would apply", n["evidence"])
+        row = self.store.get_decision(n["node_id"])
+        self.assertNotEqual((row["source"], row["answered_via"]), ("meeting", "meeting"))
+        self.assertTrue(row["owner_evidence"].startswith("verified: Priya Shah decides for pricing decisions"), row["owner_evidence"])
+        self.assertIn("meeting: Priya Shah said in the Oct 29 Assistant pricing sync (founders): “" + OPEN_QUOTE + "”; "
+                      "Priya said the call is still open, so Priya is asked", row["evidence"])
+        self.assertEqual(self.graph.count_events("meeting_context", decision_id=n["node_id"]), 1)
+        self.assertEqual(self.graph.count_events("meeting_precedent", decision_id=n["node_id"]), 0)
+        # For you: no guess, no "Use this answer"; why it reached her says what she said.
+        priya = attention.overview(self.store, Actor(id=self.priya, name="Priya Shah"))
+        self.assertEqual([i["id"] for i in priya["needs_you"]], [n["node_id"]])
+        item = priya["needs_you"][0]
+        self.assertFalse(item["guess"])
+        self.assertEqual(item["why"], "Nothing on record settles this; Priya Shah said in the Oct 29 Assistant pricing sync "
+                                      f"(founders): “{OPEN_QUOTE}”. You decide for pricing decisions.")
+        from bridge.delivery import _found_for_owner
+        self.assertIn(OPEN_QUOTE, _found_for_owner(row["evidence"]))
+        rows = timeline.rows(self.store, self.task)
+        self.assertFalse(any(r["kind"] == "guess" for r in rows), rows)
+        self.assertTrue(any(r["kind"] == "flagged" and "to Priya" in r["text"] for r in rows), rows)
+
+    def test_a_model_reading_the_open_words_as_settling_it_settles_nothing(self):
+        self.learned(self.priya, OPEN_NOTE, OPEN_QUOTE)
+        self.model({"settles": True, "bears_on": True, "quote": OPEN_QUOTE, "answer": OPEN_NOTE,
+                    "why": "Priya owns the call."})
+        n = self.node(ModelOn(model_api="claude-cli"))
+        self.assertEqual((n["status"], n["kind"], n["owner"], n["prediction"] or ""), ("pending", "new", "Priya Shah", ""))
+        row = self.store.get_decision(n["node_id"])
+        self.assertNotEqual(row["source"], "meeting")
+        self.assertIn("Priya said the call is still open, so Priya is asked", row["evidence"])
+
+    def test_without_a_model_the_open_words_are_context_too(self):
+        # The words share enough of the question to bear on it on their own.
+        note = "Priya owns deciding what we charge per assistant answer past the allowance before it goes live."
+        self.learned(self.priya, note, OPEN_QUOTE)
+        n = self.node()
+        self.assertEqual((n["status"], n["kind"], n["owner"], n["prediction"] or ""), ("pending", "new", "Priya Shah", ""))
+        self.assertIn("Priya said the call is still open, so Priya is asked", self.store.get_decision(n["node_id"])["evidence"])
+
+    def test_the_open_words_of_someone_who_does_not_decide_go_along_as_context_too(self):
+        self.learned(self.marcus, "Marcus: what we charge per assistant answer past the allowance is not decided yet; Priya owns pricing.",
+                     "I'd rather charge from the first of the month than argue about it in February.")
+        n = self.node()
+        self.assertEqual((n["status"], n["kind"], n["owner"], n["prediction"] or ""), ("pending", "new", "Priya Shah", ""))
+        row = self.store.get_decision(n["node_id"])
+        self.assertIn("meeting: Marcus Lee said in the Oct 29 Assistant pricing sync (founders): “I'd rather charge", row["evidence"])
+        self.assertIn("the call is still open, and Priya Shah decides pricing, so it is Priya's call", row["evidence"])
 
     def test_the_deciders_words_settle_it_with_the_route_as_the_reason(self):
         self.learned(self.priya, PRIYA_NOTE, PRIYA_QUOTE)
