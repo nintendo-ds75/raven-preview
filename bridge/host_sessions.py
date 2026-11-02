@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS host_activity (
 CREATE TABLE IF NOT EXISTS host_reports (
  message_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, state TEXT NOT NULL, posted INTEGER NOT NULL DEFAULT 0,
  created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS agent_waits (
+ task_id TEXT PRIMARY KEY, idle_waits INTEGER NOT NULL DEFAULT 0, waiting_since TEXT NOT NULL DEFAULT '',
+ updated_at TEXT NOT NULL);
 '''
 # Answers the agent may already have read on the tree (bridge_wait while its
 # Stop hook held it). Those are not a reason to resume it.
@@ -54,6 +57,75 @@ def _stop_hold():
         return timedelta(minutes=max(0.0, float(os.environ.get('BRIDGE_STOP_HOLD_MINUTES', '20'))))
     except ValueError:
         return timedelta(minutes=20)
+
+
+def _wait_cap():
+    """How many bridge_wait calls in a row may come back with nothing new
+    before the agent is let go: past it the Stop hook no longer holds the
+    agent, and the wait itself tells it to stop and report. Measured on
+    Harborline dry run 10: held for the whole 20-minute budget, an agent
+    with nothing independent left called bridge_wait 29 times and wrote
+    nothing; each round was a model turn spent on a 50-second timeout."""
+    import os
+    try:
+        return max(1, int(float(os.environ.get('BRIDGE_STOP_HOLD_WAITS', '6'))))
+    except ValueError:
+        return 6
+
+
+def note_wait(store, task_id, idle, *, db=None):
+    """One bridge_wait finished on the task. An idle wait (timed out with
+    nothing new) counts towards the cap; a wait that returned a change
+    means the agent has something to act on, and the count starts over."""
+    g = store.graph
+    db = g.db if db is None else db
+    at = cm.stamp()
+    row = db.execute('SELECT idle_waits, waiting_since FROM agent_waits WHERE task_id=?', (task_id,)).fetchone()
+    count = (row['idle_waits'] + 1) if (row and idle) else (1 if idle else 0)
+    since = (row['waiting_since'] if row and row['waiting_since'] else at) if idle else ''
+    if row is None:
+        db.execute('INSERT INTO agent_waits(task_id,idle_waits,waiting_since,updated_at) VALUES(?,?,?,?)',
+                   (task_id, count, since, at))
+    else:
+        db.execute('UPDATE agent_waits SET idle_waits=?,waiting_since=?,updated_at=? WHERE task_id=?',
+                   (count, since, at, task_id))
+    return {'idle_waits': count, 'idle_wait_cap': _wait_cap(), 'waiting_since': since}
+
+
+def note_work(store, task_id, *, db=None):
+    """The agent did something other than wait on the task (added or
+    settled a node, resumed, finished): it is building again, so the idle
+    waits start over and the task no longer reads as waiting."""
+    db = store.graph.db if db is None else db
+    db.execute("UPDATE agent_waits SET idle_waits=0,waiting_since='',updated_at=? WHERE task_id=?",
+               (cm.stamp(), task_id))
+
+
+def pace(store, task_id):
+    row = store.graph.db.execute('SELECT idle_waits, waiting_since FROM agent_waits WHERE task_id=?',
+                                 (task_id,)).fetchone()
+    return {'idle_waits': row['idle_waits'] if row else 0, 'idle_wait_cap': _wait_cap(),
+            'waiting_since': row['waiting_since'] if row else ''}
+
+
+def agent_state(db, task_id) -> str:
+    """What the coding agent on a task is doing now, from what Raven can
+    see of it: 'stopped' (its host session's Stop or SessionEnd hook
+    reported it stopped), 'waiting' (held by the Stop hook, or its last
+    bridge_wait came back with nothing new) or 'building' (anything else,
+    including an agent Raven has not heard from). Pages say this instead
+    of a fixed phrase. Measured on dry run 10: the For you cards said the
+    agent kept building the parts that did not depend on the call while
+    it had written nothing and was waiting."""
+    rows = db.execute('SELECT a.state FROM host_sessions s JOIN host_activity a ON a.binding_id=s.id '
+                      'WHERE s.task_id=? ORDER BY a.updated_at DESC', (task_id,)).fetchall()
+    states = [r['state'] for r in rows]
+    if states and states[0] in ('stopped', 'ended'):
+        return 'stopped'
+    if 'holding' in states[:1]:
+        return 'waiting'
+    row = db.execute('SELECT idle_waits FROM agent_waits WHERE task_id=?', (task_id,)).fetchone()
+    return 'waiting' if row and row['idle_waits'] > 0 else 'building'
 
 
 def _activity(g, bid, state, at, held_since=None):
@@ -155,8 +227,10 @@ def event(store, args, principal=None):
         if not seen and action in ('connect', 'prompt', 'new_task'):
             g.db.execute('INSERT INTO host_receipts(binding_id,event_key) VALUES(?,?)', (bid, key))
         if action in ('connect', 'prompt', 'new_task'):
-            # A person typing starts any Stop hold afresh.
+            # A person typing starts any Stop hold afresh, idle waits included.
             _activity(g, bid, 'working', at, '' if action != 'connect' else None)
+            if action != 'connect' and row['task_id']:
+                note_work(store, row['task_id'], db=g.db)
         elif action == 'end':
             _activity(g, bid, 'ended', at, '')
         row = dict(g.db.execute('SELECT * FROM host_sessions WHERE id=?', (bid,)).fetchone())
@@ -266,18 +340,22 @@ def poll(store, binding, worker):
 
 def stop(store, binding):
     """Whether the host may stop now. While a decision on the session's open
-    task waits on a person, the agent is held and told to wait for it, so an
-    answer given in Slack reaches an agent that is still there. The hold
-    has a budget; past it the agent stops and a later answer resumes it.
-    Only counts and ids are returned: human and source text stays on the
-    tree, read through the normal tools."""
+    task waits on a person, the agent is held and told to build what does
+    not depend on the answer and then wait for it, so an answer given in
+    Slack reaches an agent that is still there. The hold has two budgets:
+    time (BRIDGE_STOP_HOLD_MINUTES) and idle waits in a row
+    (BRIDGE_STOP_HOLD_WAITS); past either the agent stops, the task
+    records that it stopped waiting, and a later answer resumes it. Only
+    counts and ids are returned: human and source text stays on the tree,
+    read through the normal tools."""
     from . import canvas
     g, at = store.graph, cm.stamp()
     waiting, observed = [], ''
-    if binding['task_id']:
-        task = g.db.execute('SELECT status FROM runs WHERE id=?', (binding['task_id'],)).fetchone()
+    task_id = binding['task_id']
+    if task_id:
+        task = g.db.execute('SELECT status FROM runs WHERE id=?', (task_id,)).fetchone()
         if task and task['status'] not in ('completed', 'abandoned'):
-            tree = canvas.get_tree(store, binding['task_id'])
+            tree = canvas.get_tree(store, task_id)
             observed = tree['observed_at']
             waiting = [n for n in canvas._flatten(tree['nodes']) if n.get('blocking')]
     with g.transaction():
@@ -285,15 +363,39 @@ def stop(store, binding):
         held = row['held_since'] if row else ''
         if waiting:
             started = held or at
-            if datetime.fromisoformat(started) + _stop_hold() > datetime.now(timezone.utc):
+            idle = pace(store, task_id)
+            in_time = datetime.fromisoformat(started) + _stop_hold() > datetime.now(timezone.utc)
+            if in_time and idle['idle_waits'] < idle['idle_wait_cap']:
                 _activity(g, binding['id'], 'holding', at, started)
-                return {'hold': True, 'task_id': binding['task_id'], 'waiting': len(waiting), 'observed_at': observed,
-                        'reason': (f"Raven: {len(waiting)} decision(s) on task {binding['task_id']} still wait on a "
-                                   f"person. Call bridge_wait with task_id={binding['task_id']} and since={observed}, "
-                                   "act on what changed, and continue. Do not stop while a decision you need is "
-                                   "unanswered.")}
+                return {'hold': True, 'task_id': task_id, 'waiting': len(waiting), 'observed_at': observed,
+                        'idle_waits': idle['idle_waits'], 'idle_wait_cap': idle['idle_wait_cap'],
+                        'reason': _hold_reason(task_id, len(waiting), observed, idle)}
+            why = 'hold budget' if not in_time else 'idle wait cap'
+            g.append_event('host_stopped_waiting', {'task_id': task_id, 'binding_id': binding['id'],
+                'waiting': len(waiting), 'idle_waits': idle['idle_waits'], 'why': why})
         _activity(g, binding['id'], 'stopped', at, held if waiting else '')
-    return {'hold': False, 'task_id': binding['task_id'], 'waiting': len(waiting)}
+    return {'hold': False, 'task_id': task_id, 'waiting': len(waiting)}
+
+
+def _hold_reason(task_id, waiting, observed, idle):
+    """What the held agent is told. An open decision blocks only the code
+    that needs its answer; the first hold says to build the rest, a later
+    one says how many idle waits remain before it may stop. Measured on
+    dry run 10: told only "do not stop while a decision you need is
+    unanswered", the agent read the hook as a loop it could not leave and
+    waited 29 times without building."""
+    head = f"Raven: {waiting} decision(s) on task {task_id} still wait on a person. "
+    call = f"call bridge_wait with task_id={task_id} and since={observed}, act on what changed, and continue"
+    if not idle['idle_waits']:
+        return (head + "They block only the code that needs their answers. If anything independent is left, build "
+                "it now: the mechanism around each open value with the value itself left as a named parameter, "
+                "the tests, the docs; do not settle the open questions yourself. When nothing independent is left, "
+                + call + ".")
+    left = idle['idle_wait_cap'] - idle['idle_waits']
+    return (head + f"Your last {idle['idle_waits']} wait(s) in a row returned nothing new; {left} more allowed. "
+            "If independent work is left (the mechanism around an open value, tests, docs), build it; otherwise "
+            + call + ". After the last idle wait you may stop: report what you built and what waits on whom; the "
+            "task stays open and a person's answer resumes a supervised session.")
 
 
 def _clean(text, limit):

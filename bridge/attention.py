@@ -108,7 +108,13 @@ def _needs_item(db, row, task_rows, name=""):
     settled = [r for r in others if r["status"] == "approved" or (r["signoff"] in ("signed", "rule") and not r["needs_review"])]
     waiting = len(others) - len(settled)
     agent = display_name(row["run_agent"]) if row["run_agent"] else "The coding agent"
-    meanwhile = f"{agent} keeps building the parts that don't depend on this"
+    # What the agent is doing now, from the run's host session and its last
+    # wait, never a fixed phrase: on dry run 10 the card said the agent kept
+    # building while it had written nothing and was waiting.
+    from .host_sessions import agent_state
+    meanwhile = {"stopped": f"{agent} has stopped and is waiting on this",
+                 "waiting": f"{agent} is waiting on this"}.get(
+        agent_state(db, row["run_id"]), f"{agent} keeps building the parts that don't depend on this")
     if settled:
         meanwhile += f"; {len(settled)} other call{'s' if len(settled) != 1 else ''} on this task {'are' if len(settled) != 1 else 'is'} already settled"
     if waiting:
