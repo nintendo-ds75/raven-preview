@@ -146,3 +146,9 @@ class AttentionTests(OfflineCase):
         source = {'answered_by': 'Jordan Okafor', 'signed_by': '', 'created_at': '2026-08-20T16:40:00+00:00'}
         row = {'needs_review': 0, 'kind': 'prediction'}
         self.assertIn('from Aug 20,', attention._why_reached(row, source, 'Priya Shah'))
+
+    def test_a_needs_item_carries_the_source_review_its_answer_binds(self):
+        self.node()
+        item = attention.overview(self.store, self.owner)['needs_you'][0]
+        self.assertEqual(set(item['review']), {'has_reliance', 'available', 'pins', 'decision_pins'})
+        self.assertFalse(item['review']['has_reliance'])

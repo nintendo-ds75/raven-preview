@@ -142,7 +142,17 @@ def _needs_item(db, row, task_rows, name=""):
         "why": why, "guess": guess, "gaps": _gaps(row),
         "guess_from": _call(source, row["source_revision"]) if source is not None else None,
         "review_reason": row["review_reason"] or "", "meanwhile": meanwhile,
+        "review": _review(db, row["id"]),
     }
+
+
+def _review(db, decision_id) -> dict:
+    """The source versions an answer here binds to, as the task page sends them: a call
+    that leaned on an earlier call needs them, or the answer is refused for review."""
+    from . import context_memory as cm
+    review = cm.source_revalidation(db, decision_id)
+    return {"has_reliance": bool(review.get("has_reliance")), "available": bool(review.get("available")),
+            "pins": review.get("pins") or [], "decision_pins": review.get("decision_pins") or []}
 
 
 def _handled_item(db, row, source, call=None):

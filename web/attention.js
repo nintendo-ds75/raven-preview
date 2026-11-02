@@ -164,7 +164,12 @@ document.addEventListener('submit', async event => {
       attForm.delete(form.dataset.id);
       notify(result.notice || 'Recorded.');
     } else {
-      result = await api(`/api/decisions/${encodeURIComponent(form.dataset.id)}/answer`, {answer: data.answer, ...(data.rationale ? {rationale: data.rationale} : {}), expected_updated_at: form.dataset.updated});
+      // A call that leaned on an earlier call binds the answer to the source versions the card
+      // showed, the way the task page does; without them the answer is refused for review.
+      const review = (attention?.needs_you || []).find(i => i.id === form.dataset.id)?.review;
+      if (review?.has_reliance && !review.available) throw new Error('The earlier call this leans on is not readable right now. Try again in a moment.');
+      result = await api(`/api/decisions/${encodeURIComponent(form.dataset.id)}/answer`, {answer: data.answer, ...(data.rationale ? {rationale: data.rationale} : {}),
+        ...(review?.has_reliance ? {source_evidence: review.pins, source_decision_pins: review.decision_pins} : {}), expected_updated_at: form.dataset.updated});
       notify('Recorded under your name. The coding agent can read it now.');
     }
     attentionKey = '';
