@@ -10,13 +10,18 @@ not: it runs through judgment.correct as Jordan, the same path the page's
 "That's wrong" action takes, so the old call is retired and the correction
 is the standing rule exactly as it would be in a real workspace.
 
-Running it again does nothing.
+It also adds one more call to the billing task through the agent's own
+path (canvas.add_node): a question about Bloom & Co's negotiated rate that
+Raven answers with a guess from Priya's earlier call and routes to Priya to
+confirm, so Priya's attention page has a "Raven would apply this, but isn't
+sure" item. Running it again does nothing.
 """
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from bridge import judgment  # noqa: E402
+from bridge import canvas, judgment  # noqa: E402
+from bridge.config import load  # noqa: E402
 from bridge.authz import Actor  # noqa: E402
 from bridge.store import Store  # noqa: E402
 
@@ -53,9 +58,22 @@ CORRECTION = {
 }
 
 
+BLOOM = {
+    'task_id': 'f7ff1366e042', 'client_ref': 'bloom-overage-price', 'path': 'app/billing/contracts.py',
+    'question': ("For Bloom & Co, which buys on its own negotiated USPS rate, must the merchant still see the overage "
+                 "price before Raven buys a label past the allowance?"),
+    'context': ("Bloom & Co is on a negotiated rate (Jira CS-311). app/billing/contracts.py stores a rate override. "
+                "Their labels are priced from the contract, not the public rate card."),
+    'facts': {'customer': 'Bloom & Co'},
+}
+
+
 def main(db_path):
     store = Store(db_path)
     db = store.graph.db
+    if db.execute('SELECT 1 FROM runs WHERE id=?', (BLOOM['task_id'],)).fetchone():
+        node = canvas.add_node(store, load(), dict(BLOOM))
+        print(f"Bloom node {node['node_id']}: {node['status']}, {node.get('kind')} for {node.get('owner')}")
     with store.graph.transaction():
         for prefix, (via, fit) in ROWS.items():
             for row in db.execute('SELECT id, answered_via, fit_reason FROM decisions WHERE question LIKE ?', (prefix + '%',)):

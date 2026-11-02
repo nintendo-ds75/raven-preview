@@ -209,6 +209,36 @@ function buildCard(run) {
   </article>`;
 }
 
+// The top of the page: where the team's attention is going right now, in
+// people, and what Raven kept off their plates.
+function buildAttention(stories) {
+  const waiting = new Map();
+  for (const s of stories) for (const d of s.asked) {
+    const who = s.js.get(d.id).owner; if (!who) continue;
+    const w = waiting.get(who) || {name: who, count: 0, since: d.created_at};
+    w.count += 1; if (String(d.created_at) < String(w.since)) w.since = d.created_at;
+    waiting.set(who, w);
+  }
+  const people = [...waiting.values()].sort((a, b) => String(a.since).localeCompare(String(b.since)));
+  const came = stories.reduce((n, s) => n + s.ds.length, 0);
+  const settled = stories.reduce((n, s) => n + s.settled.length, 0);
+  const answered = stories.reduce((n, s) => n + s.answered.length, 0);
+  const spared = [...new Set(stories.flatMap(s => s.spared.map(x => x.name)))];
+  const unrouted = stories.reduce((n, s) => n + s.asked.filter(d => !s.js.get(d.id).owner).length, 0);
+  return `<div class="build-attn">
+    <div class="build-attn-people">
+      <span class="ask-label">Where the team’s attention is going</span>
+      <p class="build-attn-lead">${people.length ? `<b>${plural(people.reduce((n, p) => n + p.count, 0), 'call')}</b> waiting on <b>${plural(people.length, 'person', 'people')}</b>, out of ${came} the agents hit.` : `<b>Nobody is being asked anything.</b> ${came} calls came in, all settled.`}</p>
+      ${people.length ? `<ul class="build-attn-list">${people.map(p => `<li>${avatar(p.name)}<b>${esc(askFirst(p.name))}</b><span>${p.count === 1 ? 'one call' : plural(p.count, 'call')} · waiting ${esc(ago(p.since)).replace(/ ago$/, '')}</span></li>`).join('')}${unrouted ? `<li><span class="avatar empty" aria-hidden="true"></span><b>Unassigned</b><span>${plural(unrouted, 'call')} · Raven is finding who owns it</span></li>` : ''}</ul>` : ''}
+    </div>
+    <div class="build-attn-kept">
+      <span class="ask-label">Kept off people’s plates</span>
+      <p class="build-attn-lead"><b>${settled}</b> settled by Raven from earlier calls${spared.length ? ` · ${esc(spared.map(askFirst).join(' and '))} ${spared.length === 1 ? 'was' : 'were'} not asked` : ''}</p>
+      <p class="build-attn-sub"><b>${answered}</b> answered by the person who owns them · <b>${came - settled - answered}</b> still open</p>
+    </div>
+  </div>`;
+}
+
 function renderTasks() {
   $('.page-head').hidden = true;
   const live = askBuilding();
@@ -221,19 +251,9 @@ function renderTasks() {
   if (key === askKey && $('#app .build')) return;
   askKey = key;
   const all = live.map(taskStory);
-  const came = all.reduce((n, s) => n + s.ds.length, 0);
-  const settled = all.reduce((n, s) => n + s.settled.length, 0);
-  const answered = all.reduce((n, s) => n + s.answered.length, 0);
-  const waiting = all.reduce((n, s) => n + s.asked.length, 0);
-  const people = [...new Set(all.flatMap(s => s.reached))];
   $('#app').innerHTML = `<div class="build">
-    <header class="build-head"><h1>Being built</h1><p>Every judgment call a coding agent hit while building. Raven settled each one from a call someone already made, or sent it to the one person who has to decide. Click a call to see where its answer came from.</p></header>
-    ${live.length ? `<div class="build-total">
-      <div><b>${came}</b><span>judgment calls came in</span></div>
-      <div class="past"><b>${settled}</b><span>settled by Raven from earlier calls<small>nobody was asked</small></span></div>
-      <div class="person"><b>${answered + waiting}</b><span>reached a person<small>${people.length ? esc(people.map(askFirst).join(', ')) : 'nobody yet'}</small></span></div>
-      <div class="open"><b>${waiting}</b><span>still waiting<small>${waiting ? 'on ' + esc([...new Set(all.flatMap(s => s.asked.map(d => s.js.get(d.id).owner)).filter(Boolean))].map(askFirst).join(', ')) : 'nothing'}</small></span></div>
-    </div>` : ''}
+    <header class="build-head"><h1>Being built</h1><p>Every judgment call a coding agent hit while building, and what Raven did with it: settled from a call someone already made, or sent to the one person who has to decide. Click a call to see where its answer came from.</p></header>
+    ${live.length ? buildAttention(all) : ''}
     ${mine.length ? `<h2 class="ask-label">Yours</h2>${mine.map(buildCard).join('')}` : ''}
     ${rest.length ? `${mine.length ? '<h2 class="ask-label">Across the team</h2>' : ''}${rest.map(buildCard).join('')}` : ''}
     ${live.length ? '' : '<p class="ask-muted">Nothing is being built right now. When Claude Code, Codex or Cursor starts a task, it shows up here.</p>'}

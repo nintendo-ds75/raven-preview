@@ -277,7 +277,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                                                        and self.me.id == link.person["id"])
                     view["viewer"]["interview_decision_id"] = link.decision_id
                     return self.send(200, view)
-                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/favicon.ico", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js", "/presentation.js", "/workbench.js", "/workbench.css", "/objectives.js", "/objectives.css", "/evidence.js", "/intro.js", "/intro.css", "/home.js", "/home.css", "/voice.js", "/people.js"):
+                if url.path in ("/", "/app.js", "/style.css", "/favicon.svg", "/favicon.ico", "/claude.svg", "/cursor.svg", "/openai.svg", "/onboarding.js", "/task.js", "/interview.js", "/presentation.js", "/workbench.js", "/workbench.css", "/objectives.js", "/objectives.css", "/evidence.js", "/intro.js", "/intro.css", "/home.js", "/home.css", "/voice.js", "/people.js", "/attention.js", "/attention.css"):
                     if url.path == "/" and auth.enabled and self.me is None:
                         if parse_qs(url.query).get("github_connect") == ["1"]:
                             cookie = "bridge_github_connect=1; Max-Age=600; Path=/; HttpOnly; SameSite=Lax"
@@ -301,10 +301,16 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     files['/voice.js'] = 'voice.js'
                     files['/people.js'] = 'people.js'
                     files['/home.css'] = 'home.css'
+                    files['/attention.js'] = 'attention.js'
+                    files['/attention.css'] = 'attention.css'
                     file = WEB / files[url.path]
                     return self.send(200, file.read_bytes(), (mimetypes.guess_type(str(file))[0] or "text/plain") + "; charset=utf-8",
                                      etag=True, cache="no-cache")
                 self.require("viewer")
+                if url.path == '/api/attention':
+                    # Where the signed-in person's attention goes: scoped to them.
+                    from .attention import overview as attention_overview
+                    return self.send(200, attention_overview(store, self.me))
                 if url.path == '/api/objectives':
                     from .objectives import overview
                     return self.send(200, overview(store, workbench))
@@ -702,7 +708,8 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     if path == '/auth/password':
                         return self.redirect('/auth/login?message=' + _quote(str(error)))
                     return self.account_page(path, str(error), str(data.get('invite', '')))
-                return self.redirect('/#connect' if path == '/auth/profile' else '/#inbox', {'Set-Cookie': ['bridge_setup=; Path=/auth; HttpOnly; SameSite=Strict; Max-Age=0', auth.session_cookie(pid)]})
+                # A signed-in person lands on their own page: what needs them, what Raven handled for them.
+                return self.redirect('/#connect' if path == '/auth/profile' else '/#you', {'Set-Cookie': ['bridge_setup=; Path=/auth; HttpOnly; SameSite=Strict; Max-Age=0', auth.session_cookie(pid)]})
             if path == "/auth/token":
                 token = str(data.get("token") or "").strip()
                 me = auth.identify({"Authorization": f"Bearer {token}"})

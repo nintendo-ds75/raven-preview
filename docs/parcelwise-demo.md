@@ -46,6 +46,22 @@ in the browser or on a quick call.
 - The database is `fixtures/parcelwise-demo.db`. It was built from the recording's
   database by bridged `demo/raven-video/v5/tools/make_demo_snapshot.py`.
 
+## For you
+
+A signed-in person lands on **For you** (`#you`): one sentence written for them ("Raven
+needs you for 1 thing. It handled 1 for you from calls you already made, without asking."),
+then only what truly waits on them, with why it reached them instead of being settled
+(no earlier call covers it; the closest earlier call may not carry over; they decide for
+the area), Raven's best guess when it has one ("Raven would apply this, but isn't sure:
+your call"), what the agent keeps doing meanwhile, and a way to answer in place or take a
+quick call. Below that, "Handled without you": what Raven settled from this person's own
+calls, each naming the call it used and why it fits, with the one-click correction. Then
+"Your calls that changed". `GET /api/attention` (`bridge/attention.py`) scopes all of it
+to the viewer and the tasks being built now. In the fixture: Priya has a guess to confirm
+(the Bloom & Co overage question, routed through the agent's own path), Ana has one open
+call and one handled from her Jun 2 call, Jordan sees his own correction, Maya sees the
+calm empty state.
+
 ## Being built
 
 The sidebar's **Being built** page (`#tasks`) is the judgment log: every live coding-agent
