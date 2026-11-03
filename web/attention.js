@@ -107,7 +107,7 @@ async function attSendHandOn(row) {
 function attConflict(item) {
   const c = item.conflict;
   if (!c || !c.record) return '';
-  return `<p class="att-why att-gaps"><span class="att-k">But ${esc(c.record)} says</span>“${esc(callRefs(c.claim))}”. Neither is corroborated over the other.</p>`;
+  return `<p class="att-why att-gaps"><span class="att-k">But ${esc(c.record)} says</span>“${esc(callRefs(c.claim))}”${/[.!?]$/.test(c.claim) ? '' : '.'} Neither is corroborated over the other.</p>`;
 }
 
 function attGaps(item) {

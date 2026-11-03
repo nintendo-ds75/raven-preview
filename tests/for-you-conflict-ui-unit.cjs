@@ -33,7 +33,7 @@ const html = c.fns.attNeeds(item);
 const t = text(html);
 assert.ok(!t.includes('CONFLICTED'), 'no composed paragraph on the card');
 assert.match(t, /Two readings disagree: your call “One billable assistant use is one completed answer to one question\.”/);
-assert.match(t, /But pr #216 says “Timeouts are a third of the answers merchants never get\.”\. Neither is corroborated over the other\./);
+assert.match(t, /But pr #216 says “Timeouts are a third of the answers merchants never get\.” Neither is corroborated over the other\./);
 assert.match(t, /from your Jun 1 call on One use of the assistant/);
 assert.match(html, /data-att="apply"/, 'the earlier answer can still be applied');
 const plain = c.fns.attNeeds({...item, conflict: null});

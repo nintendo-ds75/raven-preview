@@ -112,14 +112,38 @@ _CONFLICT_RE = re.compile(
     r"(?:Neither is corroborated over the other; )?[Cc]onfirm with the owner which stands\.?\s*$", re.S)
 
 
-def _conflict(answer: str):
-    """(the earlier answer alone, Raven's note about the record) when the
-    answer is a composed conflict, else (answer, None)."""
-    m = _CONFLICT_RE.match((answer or "").strip())
-    if not m:
-        return (answer or "").strip(), None
-    return m.group("answer").strip(), {"by": m.group("who").strip(), "record": m.group("record").strip(),
-                                       "claim": m.group("claim").strip(), "figure": m.group("how") != "otherwise"}
+# The same conflict after the model pass split it: the answer keeps only the
+# "CONFLICTED ...: X says: ..." head and the "But pr 216 states otherwise: ..."
+# sentence lands in the gaps (split on its semicolons). Measured on the v7
+# dry run (Nov 3): Jordan's card quoted "CONFLICTED, do not act on either side
+# alone: Jordan Okafor says: ..." and listed the record under "could not find".
+_CONFLICT_HEAD_RE = re.compile(r"^CONFLICTED, do not act on either side alone:\s*(?P<who>.+?) says:\s*(?P<answer>.+)$", re.S)
+_CONFLICT_TAIL_RE = re.compile(
+    r"\s*But (?P<record>.+?) states (?P<how>a different figure|otherwise):\s*[\"“](?P<claim>.*?)[\"”]\.?\s*"
+    r"(?:Neither is corroborated over the other;?\s*)?(?:[Cc]onfirm with the owner which stands\.?)?\s*$", re.S)
+
+
+def _conflict(answer: str, gaps: list[str] | None = None):
+    """(the earlier answer alone, Raven's note about the record, the gaps
+    left once the conflict is taken out) when the answer is a composed
+    conflict, else (answer, None, gaps)."""
+    text, gaps = (answer or "").strip(), list(gaps or [])
+    m = _CONFLICT_RE.match(text)
+    if m:
+        return m.group("answer").strip(), {"by": m.group("who").strip(), "record": m.group("record").strip(),
+                                           "claim": m.group("claim").strip(), "figure": m.group("how") != "otherwise"}, gaps
+    head = _CONFLICT_HEAD_RE.match(text)
+    if not head:
+        return text, None, gaps
+    joined = "; ".join(gaps)
+    tail = _CONFLICT_TAIL_RE.search(joined)
+    conflict = {"by": head.group("who").strip(), "record": "", "claim": "", "figure": False}
+    if tail:
+        conflict.update(record=tail.group("record").strip(), claim=tail.group("claim").strip(),
+                        figure=tail.group("how") != "otherwise")
+        rest = joined[:tail.start()].strip().rstrip(".;").strip()
+        gaps = [g.strip() for g in rest.split("; ") if g.strip()] if rest else []
+    return head.group("answer").strip(), conflict, gaps
 
 
 def _said(evidence: str) -> str:
@@ -190,11 +214,11 @@ def _needs_item(db, row, task_rows, name=""):
     if area and not row["needs_review"]:
         why += f" {area[0].upper()}{area[1:]}."
     guess = (row["prediction"] or "").strip() if row["kind"] == "prediction" or not (row["answer"] or "").strip() else (row["answer"] or "").strip()
-    guess, conflict = _conflict(guess)
+    guess, conflict, gaps = _conflict(guess, _gaps(row))
     if conflict:
         mine = source is not None and _same_person(source, name)
         whose = "Your" if mine else conflict["by"] + "'s"
-        why = (f"{whose} earlier call and {conflict['record']} disagree"
+        why = (f"{whose} earlier call and {conflict['record'] or 'a record'} disagree"
                f"{' on the figure' if conflict['figure'] else ''}, so Raven asks you which stands.")
         if area and not row["needs_review"]:
             why += f" {area[0].upper()}{area[1:]}."
@@ -203,7 +227,7 @@ def _needs_item(db, row, task_rows, name=""):
         "requester": row["run_requester"] or "", "question": row["question"], "context": _clip(row["context"], 420),
         "options": _options(row["options"]), "status": row["status"], "kind": row["kind"] or "",
         "created_at": row["created_at"], "updated_at": row["updated_at"],
-        "why": why, "guess": guess, "gaps": _gaps(row), "conflict": conflict,
+        "why": why, "guess": guess, "gaps": gaps, "conflict": conflict,
         "guess_from": _call(source, row["source_revision"]) if source is not None else None,
         "review_reason": row["review_reason"] or "", "meanwhile": meanwhile,
         "review": _review(db, row["id"]),

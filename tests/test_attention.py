@@ -197,7 +197,7 @@ class ConflictedGuessTests(unittest.TestCase):
                 'corroborated over the other; confirm with the owner which stands.')
 
     def test_the_composed_conflict_splits_into_the_call_and_the_record(self):
-        answer, conflict = attention._conflict(self.COMPOSED)
+        answer, conflict, gaps = attention._conflict(self.COMPOSED)
         self.assertEqual(answer, 'One billable assistant use is one completed answer to one question.')
         self.assertEqual(conflict, {'by': 'Jordan Okafor', 'record': 'pr #216', 'figure': False,
                                     'claim': 'Timeouts are a third of the answers merchants never get; one retry with '
@@ -205,4 +205,23 @@ class ConflictedGuessTests(unittest.TestCase):
         figure = self.COMPOSED.replace('states otherwise', 'states a different figure').replace(
             ' Neither is corroborated over the other;', '')
         self.assertTrue(attention._conflict(figure)[1]['figure'])
-        self.assertEqual(attention._conflict('Thirty days.'), ('Thirty days.', None))
+        self.assertEqual(attention._conflict('Thirty days.'), ('Thirty days.', None, []))
+
+    def test_a_conflict_the_model_pass_split_into_the_gaps(self):
+        # Measured on the v7 dry run (Nov 3): the head stayed in the answer and the
+        # record's sentence was split on its semicolons into the gaps.
+        head = ('CONFLICTED, do not act on either side alone: Jordan Okafor says: One billable use is an answer to '
+                'one question, not every model attempt.')
+        gaps = ['Does \'answer\' mean a completed response, or does it include failed attempts. But pr 216 states '
+                'otherwise: "Timeouts are a third of the answers merchants never get',
+                'one retry with the same request id fixes most of them.". Neither is corroborated over the other',
+                'confirm with the owner which stands']
+        answer, conflict, rest = attention._conflict(head, gaps)
+        self.assertEqual(answer, 'One billable use is an answer to one question, not every model attempt.')
+        self.assertEqual(conflict['by'], 'Jordan Okafor')
+        self.assertEqual(conflict['record'], 'pr 216')
+        self.assertTrue(conflict['claim'].startswith('Timeouts are a third'))
+        self.assertEqual(rest, ["Does 'answer' mean a completed response, or does it include failed attempts"])
+        bare, conflict, rest = attention._conflict(head, [])
+        self.assertFalse(bare.startswith('CONFLICTED'))
+        self.assertEqual((conflict['record'], rest), ('', []))
