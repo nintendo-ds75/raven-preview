@@ -113,6 +113,9 @@ function taskStory(run) {
 const buildOpen = new Set(), buildForm = new Set();
 const buildCanAct = d => !!state.me?.name && (state.me.name === d.owner_name || state.me.role === 'admin');
 const buildClip = (text, n) => { text = String(text || ''); return text.length > n ? text.slice(0, n - 1) + '…' : text; };
+// A question as a card or a call shows it: the asides the agent wrote in
+// parentheses for the record are dropped (the full record keeps them).
+const plainQuestion = q => { let t = String(q || '').replace(/\s*\([^()]*\)/g, ''); t = t.replace(/\s+/g, ' ').replace(/\s+([,;:.?!])/g, '$1').replace(/[,;:]+(?=[.?!]?$)/, '').trim(); return t && !/[.?!]$/.test(t) ? t + '?' : t; };
 // The goal under a title, unless it is the title again: an older task
 // registered by a host hook carries the prompt as both.
 const buildGoal = run => { const g = String(run.goal || '').trim(), t = String(run.title || '').trim(); return g && g.toLowerCase() !== t.toLowerCase() ? g : ''; };
@@ -209,12 +212,14 @@ function buildCorrectForm(d, j) {
   </form>`;
 }
 
-function buildTile(d, j) {
+function buildTile(d, j, call) {
   const open = buildOpen.has(d.id);
-  return `<li class="build-tile ${j.kind} ${open ? 'open' : ''}" data-id="${esc(d.id)}">
+  const line = call && !['answered', 'corrected', 'settled'].includes(j.kind)
+    ? `<span class="dot call"></span>On a call with Raven now · ${esc(askFirst(call.person))}` : buildLine(d, j);
+  return `<li class="build-tile ${j.kind} ${open ? 'open' : ''} ${call ? 'on-call' : ''}" data-id="${esc(d.id)}">
     <button type="button" class="build-tile-head" data-build="toggle" data-id="${esc(d.id)}" aria-expanded="${open}">
-      <span class="build-q">${esc(d.question)}</span>
-      <span class="build-line">${buildLine(d, j)}</span>
+      <span class="build-q">${esc(open ? d.question : plainQuestion(d.question))}</span>
+      <span class="build-line">${line}</span>
     </button>
     ${open ? buildDetail(d, j) : ''}
   </li>`;
@@ -260,7 +265,7 @@ function buildTimeline(id, rows, {all = false, head = true} = {}) {
     const marker = d && d !== today && d !== day ? `<li class="build-tl-day">${esc(askDate(row.at))}</li>` : '';
     day = d || day;
     const by = BUILD_TL_PERSON.has(row.kind) ? (row.people || [])[0] : '';
-    return `${marker}<li class="build-tl-row ${esc(row.kind || '')}" title="${esc(buildClock(row.at))}">${by ? avatar(by) : '<i class="build-tl-dot" aria-hidden="true"></i>'}<p>${buildTimelineText(row)}${last ? ` <small class="build-tl-ago">${esc(ago(row.at))}</small>` : ''}</p></li>`;
+    return `${marker}<li class="build-tl-row ${esc(row.kind || '')}" title="${esc(buildClock(row.at))}">${by && typeof avatar === 'function' ? avatar(by) : '<i class="build-tl-dot" aria-hidden="true"></i>'}<p>${buildTimelineText(row)}${last ? ` <small class="build-tl-ago">${esc(ago(row.at))}</small>` : ''}</p></li>`;
   }).join('');
   const toggle = all || rows.length <= BUILD_TL_SHOWN + 1 ? '' : `<button type="button" class="build-tl-toggle" data-build="timeline" data-id="${esc(id)}" aria-expanded="${open}">${open ? 'Show less' : `Show all ${rows.length}`}</button>`;
   return `<section class="build-tl ${open ? 'open' : ''}" aria-label="How it got here">
@@ -285,7 +290,10 @@ function buildCard(run) {
   const groupLabel = {open: 'Open · with people', person: 'Answered by people', record: 'Settled from the record · nobody asked'};
   const groups = [];
   for (const d of rows) { const g = groupOf(d); if (!groups.length || groups[groups.length - 1].g !== g) groups.push({g, ds: []}); groups[groups.length - 1].ds.push(d); }
-  const tiles = groups.map(({g, ds: list}) => `<li class="build-group ${g}">${esc(groupLabel[g])} <span>${list.length}</span></li>${list.map(d => buildTile(d, js.get(d.id))).join('')}`).join('');
+  const calls = Array.isArray(run.calls) ? run.calls : [];
+  const onCall = new Map(calls.map(c => [c.decision_id, c]));
+  const tiles = groups.map(({g, ds: list}) => `<li class="build-group ${g}">${esc(groupLabel[g])} <span>${list.length}</span></li>${list.map(d => buildTile(d, js.get(d.id), onCall.get(d.id))).join('')}`).join('');
+  const live = buildLiveCall(calls[0], ds, js);
   return `<article class="build-card">
     <div class="build-top">${pill}<span class="ask-agent">${esc(run.agent || 'Coding agent')}${run.requester ? ' · for ' + esc(run.requester) : ''}</span><span class="ask-when">${esc(ago(run.updated_at))}</span></div>
     <h2><a href="#runs/${encodeURIComponent(run.id)}">${esc(run.title)}</a></h2>
@@ -298,8 +306,26 @@ function buildCard(run) {
     <div class="build-bar" role="img" aria-label="${done} of ${ds.length} settled">${settled.map(() => '<i class="past"></i>').join('')}${answered.map(() => '<i class="person"></i>').join('')}${asked.map(() => '<i class="open"></i>').join('')}${checking.map(() => '<i class="checking"></i>').join('')}<em>${done} of ${ds.length} settled${checking.length ? ` · ${checking.length} still being read` : ''}</em></div>
     ${spared.length ? `<p class="build-spared">Not asked: ${spared.map(x => `<span>${avatar(x.name)}${esc(askFirst(x.name))}</span> (${esc(askFirst(x.name))}’s ${x.when ? esc(x.when) + ' ' : ''}call already covered it)`).join(', ')}.</p>` : ''}
     ${buildTimeline(run.id, run.timeline)}
-    <ul class="build-tiles">${tiles}</ul>
+    ${live ? `<div class="build-split"><ul class="build-tiles">${tiles}</ul>${live}</div>` : `<ul class="build-tiles">${tiles}</ul>`}
   </article>`;
+}
+
+// The call in progress on this task, beside its cards: who is talking to
+// Raven, what Raven is asking now, the exchange so far, and how many of
+// their answers this call has recorded. From /api/state's `calls` on the
+// task (bridge/interview.py attach_live); nothing here is composed.
+function buildLiveCall(call, ds, js) {
+  if (!call) return '';
+  const who = askFirst(call.person);
+  const recorded = ds.filter(d => ['answered', 'corrected'].includes(js.get(d.id).kind) && (d.answered_by || '') === call.person && d.answered_via === 'voice call').length;
+  const lines = (call.lines || []).filter(l => l && l.text).slice(-6);
+  return `<aside class="build-live-call" aria-label="Call in progress">
+    <div class="tower-head"><span class="ask-label">Call with Raven</span><span class="tower-live"><i></i>Live</span></div>
+    <p class="build-call-who">${avatar(call.person)}<b>${esc(who)}</b> is on a call with Raven about this task</p>
+    ${call.asking ? `<p class="build-call-q">${esc(call.asking)}</p>` : ''}
+    ${lines.length ? `<div class="voice-transcript">${lines.map(l => `<p><b class="${l.who === 'Raven' ? 'raven' : ''}">${esc(l.who)}</b>${esc(l.text)}</p>`).join('')}</div>` : ''}
+    <p class="tower-recorded ${recorded ? '' : 'none'}">✓ ${recorded} decision${recorded === 1 ? '' : 's'} recorded on this call</p>
+  </aside>`;
 }
 
 // The top of the page: where the team's attention is going right now, in

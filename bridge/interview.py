@@ -216,6 +216,50 @@ def create(store, task_id, data, actor=None):
         return _view(_owned(store, task_id, iid, actor, db))
 
 
+LIVE_MINUTES = 15
+
+
+def attach_live(store, runs, minutes: int = LIVE_MINUTES):
+    """Put the calls in progress on each live task under `calls`, for the
+    Being built page to show beside the task's cards: who is on the call,
+    what Raven is asking now, and the exchange so far. A call is live
+    while its draft was touched in the last `minutes`; a confirmed or
+    cancelled one is not. Max, Nov 2: when someone is talking to Raven,
+    the page is split, and the cards go from yellow to green as each
+    answer is recorded."""
+    live = [r for r in runs if r.get("status") not in ("completed", "abandoned")]
+    if not live:
+        return runs
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+    marks = ",".join("?" for _ in live)
+    rows = store.graph.db.execute(
+        f"SELECT i.id, i.task_id, i.decision_id, i.person_id, i.prompts, i.turns, i.pending_response, i.created_at, "
+        f"i.updated_at, p.name AS person FROM interviews i JOIN people p ON p.id=i.person_id "
+        f"WHERE i.task_id IN ({marks}) AND i.status='draft' AND i.updated_at>=? ORDER BY i.updated_at",
+        [r["id"] for r in live] + [cutoff]).fetchall()
+    by_task: dict = {}
+    for row in rows:
+        prompts, turns = json.loads(row["prompts"] or "[]"), json.loads(row["turns"] or "[]")
+        first = str(row["person"] or "").split()[0] if str(row["person"] or "").strip() else "They"
+        lines = []
+        for i, turn in enumerate(turns):
+            lines.append({"who": "Raven", "text": prompts[i] if i < len(prompts) else ""})
+            lines.append({"who": first, "text": turn.get("response", "")})
+        asking = prompts[len(turns)] if len(turns) < len(prompts) else ""
+        if asking:
+            lines.append({"who": "Raven", "text": asking})
+        if (row["pending_response"] or "").strip():
+            lines.append({"who": first, "text": row["pending_response"].strip()})
+        by_task.setdefault(row["task_id"], []).append({
+            "id": row["id"], "decision_id": row["decision_id"], "person": row["person"], "asking": asking,
+            "lines": [line for line in lines if line["text"]], "started_at": row["created_at"],
+            "updated_at": row["updated_at"]})
+    for run in live:
+        run["calls"] = by_task.get(run["id"], [])
+    return runs
+
+
 def list_for_task(store, task_id, actor=None):
     actor = _human(store, actor)
     _task(store, task_id)

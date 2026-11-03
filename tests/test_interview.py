@@ -421,3 +421,40 @@ class InterviewHTTPTests(InterviewTests):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class LiveCallTests(InterviewTests):
+    """The Being built page shows the call in progress beside the task's
+    cards (Max, Nov 2): who is talking to Raven, what Raven is asking, the
+    exchange so far. A draft touched in the last minutes is live; a
+    confirmed or cancelled one is not."""
+
+    def test_a_draft_call_is_attached_to_its_live_task(self):
+        row = self.create()
+        turned = interview.update(self.store, self.task, row['id'], {
+            'expected_version': row['version'], 'pending_response': '',
+            'turns': [{'prompt_id': 0, 'response': 'Five seconds for new clients.', 'capture_method': 'typed'}]}, self.actor)
+        runs = [{'id': self.task, 'status': 'working'}, {'id': 'other', 'status': 'working'}, {'id': 'done', 'status': 'completed'}]
+        interview.attach_live(self.store, runs)
+        self.assertEqual(runs[1]['calls'], [])
+        self.assertNotIn('calls', runs[2])
+        [call] = runs[0]['calls']
+        self.assertEqual((call['id'], call['decision_id'], call['person']), (row['id'], self.node, 'Ada Owner'))
+        self.assertEqual(call['asking'], turned['prompts'][1])
+        self.assertEqual([l['who'] for l in call['lines']], ['Raven', 'Ada', 'Raven'])
+        self.assertTrue(call['lines'][0]['text'].startswith('Hey Ada, quick one.'))
+        self.assertEqual(call['lines'][1]['text'], 'Five seconds for new clients.')
+        self.assertFalse(any('(' in l['text'] for l in call['lines']))
+
+    def test_a_confirmed_or_stale_call_is_not_live(self):
+        row = self.draft(self.create())
+        self.confirm(row)
+        runs = [{'id': self.task, 'status': 'working'}]
+        interview.attach_live(self.store, runs)
+        self.assertEqual(runs[0]['calls'], [])
+        stale = self.create(key='stale')
+        self.store.graph.db.execute("UPDATE interviews SET updated_at='2026-01-01T00:00:00+00:00' WHERE id=?", (stale['id'],))
+        interview.attach_live(self.store, runs)
+        self.assertEqual(runs[0]['calls'], [])
+        interview.attach_live(self.store, runs, minutes=10 ** 9)
+        self.assertEqual([c['id'] for c in runs[0]['calls']], [stale['id']])

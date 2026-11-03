@@ -49,7 +49,7 @@ const rows = [
   assert.equal((html.match(/<li class="build-tl-row/g) || []).length, 2);
   assert.match(html, /Show all 6/);
   assert.match(html, /aria-expanded="false"/);
-  assert.match(html, /What’s been done/);
+  assert.match(html, /How it got here/);
   assert.doesNotMatch(html, /Engaged:/);
   // The sentence is escaped; the newest row says how long ago.
   assert.match(html, /on Slack &lt;b&gt; <small class="build-tl-ago">2m ago<\/small>/);
@@ -81,7 +81,9 @@ const rows = [
   assert.doesNotMatch(full, /build-tl-head|Show less/);
   assert.equal((full.match(/<li class="build-tl-row/g) || []).length, 6);
   // The clock is HH:MM in the viewer's zone; the stored ISO stays on the element.
-  assert.match(html, new RegExp(`<time datetime="${rows[0].at}" title="${rows[0].at}">\\d\\d:\\d\\d</time>`));
+  // No clock column (Max, Nov 2: the times meant nothing); the time is the row's title.
+  assert.ok(!html.includes('<time'), 'no clock column');
+  assert.match(html, /<li class="build-tl-row engaged" title="\d\d:\d\d">/);
 }
 
 // A row from another day carries its date once, above the first of them.

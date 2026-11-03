@@ -374,6 +374,10 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     # built card draws WHAT'S BEEN DONE from this one poll.
                     from .timeline import attach as attach_timelines
                     attach_timelines(store, current["runs"])
+                    # And the calls in progress on it, so the page splits
+                    # beside the cards while someone talks to Raven.
+                    from .interview import attach_live as attach_live_calls
+                    attach_live_calls(store, current["runs"])
                     if auth.enabled and self.me is not None and self.me.id:
                         # Which decisions the signed-in person may act on,
                         # by the same check every write runs: the inbox

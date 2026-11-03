@@ -99,7 +99,7 @@ function interviewTower(session) {
     else if (j.kind === 'checking') { line = 'Raven is reading this'; }
     else if (current) { line = 'on this call'; tone = 'current'; }
     else line = j.owner ? `waiting on ${first(j.owner)}` : 'finding the owner';
-    return `<li class="tower-card ${esc(tone)} ${current ? 'is-current' : ''}" data-id="${esc(d.id)}"><span class="tower-q">${esc(typeof buildClip === 'function' ? buildClip(d.question, 96) : d.question)}</span><span class="tower-line">${esc(line)}</span></li>`;
+    return `<li class="tower-card ${esc(tone)} ${current ? 'is-current' : ''}" data-id="${esc(d.id)}"><span class="tower-q">${esc(typeof buildClip === 'function' ? buildClip(typeof plainQuestion === 'function' ? plainQuestion(d.question) : d.question, 96) : d.question)}</span><span class="tower-line">${esc(line)}</span></li>`;
   }).join('');
   const done = ds.filter(d => js.get(d.id).done).length;
   return `<aside class="voice-tower" aria-label="The task this call is for">
