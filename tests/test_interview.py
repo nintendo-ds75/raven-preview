@@ -458,3 +458,34 @@ class LiveCallTests(InterviewTests):
         self.assertEqual(runs[0]['calls'], [])
         interview.attach_live(self.store, runs, minutes=10 ** 9)
         self.assertEqual([c['id'] for c in runs[0]['calls']], [stale['id']])
+
+
+class CarriedCallTests(InterviewTests):
+    """A call that carries on to the person's next card does not greet
+    them again, and the page shows the read-back while it is read."""
+
+    def test_the_next_card_on_the_same_call_opens_with_next_one(self):
+        first = self.create()
+        self.assertTrue(first['prompts'][0].startswith('Hey Ada, quick one. The agent is working on'))
+        self.confirm(self.draft(first))
+        second = canvas.add_node(self.store, Config(model_api='none'), {'task_id': self.task,
+                    'question': 'Which old clients (the ones on v1) keep ten seconds?', 'context': 'Compat.',
+                    'paths': ['src/client.py'], 'owner_id': self.store.graph.db.execute(
+                        "SELECT owner_id FROM decisions WHERE id=?", (self.node,)).fetchone()[0]})['node_id']
+        row = interview.create(self.store, self.task, {'decision_id': second, 'client_key': 'second'}, self.actor)
+        self.assertTrue(row['scope']['carried'])
+        self.assertEqual(row['prompts'][0], 'Thanks, Ada. Next one: Which old clients keep ten seconds?')
+        self.store.graph.db.execute("UPDATE interviews SET updated_at='2026-01-01T00:00:00+00:00' WHERE id=?", (first['id'],))
+        later = interview.create(self.store, self.task, {'decision_id': second, 'client_key': 'later'}, self.actor)
+        self.assertFalse(later['scope']['carried'])
+        self.assertTrue(later['prompts'][0].startswith('Hey Ada, quick one.'))
+
+    def test_the_page_shows_the_read_back_not_a_skipped_follow_up(self):
+        self.draft(self.create())  # the wrap saved answer and rationale: Raven is reading it back
+        runs = [{'id': self.task, 'status': 'working'}]
+        interview.attach_live(self.store, runs)
+        [call] = runs[0]['calls']
+        self.assertEqual(call['stage'], 'readback')
+        self.assertEqual(call['asking'], "Here's what I'll tell the agent. Use five seconds for new clients; keep ten for old clients.")
+        self.assertEqual(call['lines'][-1]['text'], call['asking'])
+        self.assertFalse(any(l['text'].startswith('Got it.') for l in call['lines']))

@@ -108,6 +108,7 @@ def _owned(store, task_id, interview_id, actor, db=None):
     return dict(row)
 
 
+LIVE_MINUTES = 15
 _ASIDE = re.compile(r"\s*\([^()]*\)")
 
 
@@ -131,9 +132,23 @@ def _opening(scope):
     title is spoken as given; repository names and paths are not."""
     first = str(scope.get("person_name") or "").split()[0] if str(scope.get("person_name") or "").strip() else ""
     title = str(scope.get("task_title") or "").strip().rstrip(".")
+    if scope.get("carried"):
+        # The same person, the same task, minutes after their last answer:
+        # the call carries on, so no second greeting. Measured on the
+        # Parcelwise take 6: every card opened "Hey Jordan, quick one".
+        return f"Thanks{', ' + first if first else ''}. Next one: {spoken_question(scope['question'])}"
     hello = f"Hey {first}, quick one." if first else "Quick one."
     about = f" The agent is working on \u201c{title}.\u201d" if title else ""
     return f"{hello}{about} {spoken_question(scope['question'])}".strip()
+
+
+def _carried(db, task_id, person_id, minutes: int = LIVE_MINUTES) -> bool:
+    """Whether this person confirmed another call on this task in the last
+    minutes, so the new one carries on from it."""
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+    return db.execute("SELECT 1 FROM interviews WHERE task_id=? AND person_id=? AND status='confirmed' AND updated_at>=? LIMIT 1",
+                      (task_id, person_id, cutoff)).fetchone() is not None
 
 
 def _prompts(scope):
@@ -200,7 +215,7 @@ def create(store, task_id, data, actor=None):
         scope = {"task_id": task_id, "task_title": task["title"], "task_goal": task["goal"] or "",
                  "decision_id": decision_id, "repo": decision.get("repo") or "",
                  "question": decision["question"], "context": decision.get("context") or "",
-                 "person_name": actor.name or "",
+                 "person_name": actor.name or "", "carried": _carried(db, task_id, actor.id),
                  "path": decision.get("path") or "", "paths": json.loads(decision.get("scope_paths") or "[]"),
                  "category": decision.get("category") or "",
                  "decision_scope": approval_scope.snapshot(decision),
@@ -215,8 +230,6 @@ def create(store, task_id, data, actor=None):
                                  "interview_id": iid, "actor_id": actor.id, "actor_name": actor.name})
         return _view(_owned(store, task_id, iid, actor, db))
 
-
-LIVE_MINUTES = 15
 
 
 def attach_live(store, runs, minutes: int = LIVE_MINUTES):
@@ -234,7 +247,7 @@ def attach_live(store, runs, minutes: int = LIVE_MINUTES):
     cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
     marks = ",".join("?" for _ in live)
     rows = store.graph.db.execute(
-        f"SELECT i.id, i.task_id, i.decision_id, i.person_id, i.prompts, i.turns, i.pending_response, i.created_at, "
+        f"SELECT i.id, i.task_id, i.decision_id, i.person_id, i.prompts, i.turns, i.pending_response, i.answer, i.created_at, "
         f"i.updated_at, p.name AS person FROM interviews i JOIN people p ON p.id=i.person_id "
         f"WHERE i.task_id IN ({marks}) AND i.status='draft' AND i.updated_at>=? ORDER BY i.updated_at",
         [r["id"] for r in live] + [cutoff]).fetchall()
@@ -246,13 +259,19 @@ def attach_live(store, runs, minutes: int = LIVE_MINUTES):
         for i, turn in enumerate(turns):
             lines.append({"who": "Raven", "text": prompts[i] if i < len(prompts) else ""})
             lines.append({"who": first, "text": turn.get("response", "")})
-        asking = prompts[len(turns)] if len(turns) < len(prompts) else ""
+        # A draft with an answer is being read back: the page shows the
+        # read-back, not the follow-up the person skipped to get there.
+        reading = bool((row["answer"] or "").strip())
+        asking = ("" if reading else prompts[len(turns)] if len(turns) < len(prompts) else "")
         if asking:
             lines.append({"who": "Raven", "text": asking})
         if (row["pending_response"] or "").strip():
             lines.append({"who": first, "text": row["pending_response"].strip()})
+        if reading:
+            lines.append({"who": "Raven", "text": f"Here's what I'll tell the agent. {row['answer'].strip()}"})
         by_task.setdefault(row["task_id"], []).append({
-            "id": row["id"], "decision_id": row["decision_id"], "person": row["person"], "asking": asking,
+            "id": row["id"], "decision_id": row["decision_id"], "person": row["person"],
+            "asking": lines[-1]["text"] if reading else asking, "stage": "readback" if reading else "asking",
             "lines": [line for line in lines if line["text"]], "started_at": row["created_at"],
             "updated_at": row["updated_at"]})
     for run in live:

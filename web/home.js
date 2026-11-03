@@ -284,13 +284,19 @@ function buildCard(run) {
       ? `<span class="build-pill building">Building · Raven is still reading ${plural(checking.length, 'call')}</span>`
       : `<span class="build-pill building">Building · nothing waiting on anyone</span>`;
   const done = settled.length + answered.length;
-  const order = d => ({review: 0, waiting: 1, checking: 2, corrected: 3, answered: 4, settled: 5})[js.get(d.id).kind];
+  const calls = Array.isArray(run.calls) ? run.calls : [];
+  // While a call is live, a card it just answered stays where it was,
+  // green, instead of jumping to "Answered by people" (the flip from
+  // yellow to green happens in place).
+  const recent = d => Date.now() - new Date(d.updated_at).getTime() < 15 * 60 * 1000;
+  const onThisCall = d => calls.length > 0 && ['answered', 'corrected'].includes(js.get(d.id).kind)
+    && d.answered_via === 'voice call' && calls.some(c => (d.answered_by || '') === c.person) && recent(d);
+  const order = d => onThisCall(d) ? 1 : ({review: 0, waiting: 1, checking: 2, corrected: 3, answered: 4, settled: 5})[js.get(d.id).kind];
   const rows = [...ds].sort((a, b) => order(a) - order(b) || String(a.created_at).localeCompare(String(b.created_at)));
-  const groupOf = d => ({review: 'open', waiting: 'open', checking: 'open', corrected: 'person', answered: 'person', settled: 'record'})[js.get(d.id).kind];
+  const groupOf = d => onThisCall(d) ? 'open' : ({review: 'open', waiting: 'open', checking: 'open', corrected: 'person', answered: 'person', settled: 'record'})[js.get(d.id).kind];
   const groupLabel = {open: 'Open · with people', person: 'Answered by people', record: 'Settled from the record · nobody asked'};
   const groups = [];
   for (const d of rows) { const g = groupOf(d); if (!groups.length || groups[groups.length - 1].g !== g) groups.push({g, ds: []}); groups[groups.length - 1].ds.push(d); }
-  const calls = Array.isArray(run.calls) ? run.calls : [];
   const onCall = new Map(calls.map(c => [c.decision_id, c]));
   const tiles = groups.map(({g, ds: list}) => `<li class="build-group ${g}">${esc(groupLabel[g])} <span>${list.length}</span></li>${list.map(d => buildTile(d, js.get(d.id), onCall.get(d.id))).join('')}`).join('');
   const live = buildLiveCall(calls[0], ds, js);
@@ -322,7 +328,7 @@ function buildLiveCall(call, ds, js) {
   return `<aside class="build-live-call" aria-label="Call in progress">
     <div class="tower-head"><span class="ask-label">Call with Raven</span><span class="tower-live"><i></i>Live</span></div>
     <p class="build-call-who">${avatar(call.person)}<b>${esc(who)}</b> is on a call with Raven about this task</p>
-    ${call.asking ? `<p class="build-call-q">${esc(call.asking)}</p>` : ''}
+    ${call.asking ? `<p class="build-call-q ${call.stage === 'readback' ? 'readback' : ''}">${call.stage === 'readback' ? '<span class="ask-label">Raven is reading it back</span>' : ''}${esc(call.asking)}</p>` : ''}
     ${lines.length ? `<div class="voice-transcript">${lines.map(l => `<p><b class="${l.who === 'Raven' ? 'raven' : ''}">${esc(l.who)}</b>${esc(l.text)}</p>`).join('')}</div>` : ''}
     <p class="tower-recorded ${recorded ? '' : 'none'}">✓ ${recorded} decision${recorded === 1 ? '' : 's'} recorded on this call</p>
   </aside>`;
