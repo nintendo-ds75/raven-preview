@@ -190,6 +190,26 @@ class CallWording(unittest.TestCase):
         self.assertIn('pricing', decision_scopes("Should bulk purchases use Bloom's negotiated rate?"))
         self.assertNotIn('pricing', decision_scopes('Should we raise the API rate limit?'))
 
+    def test_the_call_opens_like_a_colleague_and_drops_the_asides(self):
+        """Max, Nov 2: no parentheses on a call; the back and forth should
+        sound like a person asking."""
+        from bridge.interview import _prompts, spoken_question
+        self.assertEqual(spoken_question("On the Orders page, do we reuse the earlier selection design (checkbox per row, "
+                                         "'select all on this page', 'select all N matching'), or build a new one?"),
+                         'On the Orders page, do we reuse the earlier selection design, or build a new one?')
+        self.assertEqual(spoken_question('Is bulk buying for every carrier (USPS and UPS) in v1'),
+                         'Is bulk buying for every carrier in v1?')
+        self.assertEqual(spoken_question('Which rate (per plan)?'), 'Which rate?')
+        prompts = _prompts({'question': 'What is the price per assistant answer past the allowance, per plan?',
+                            'person_name': 'Priya Shah', 'task_title': 'Start charging merchants for the assistant',
+                            'repo': 'acme/app', 'paths': [], 'path': ''})
+        self.assertEqual(prompts[0], 'Hey Priya, quick one. The agent is working on \u201cStart charging merchants for the '
+                                     'assistant.\u201d What is the price per assistant answer past the allowance, per plan?')
+        self.assertEqual(_prompts({'question': 'Which rate?'})[0], 'Quick one. Which rate?')
+        self.assertFalse(any('(' in p for p in prompts))
+        self.assertTrue(prompts[1].startswith('Got it.'))
+        self.assertTrue(prompts[-1].startswith('Last one.'))
+
     def test_spoken_questions_do_not_read_out_paths(self):
         from bridge.interview import _prompts
         prompts = _prompts({'question': 'Which rate?', 'repo': 'acme/app', 'paths': ['app/labels/purchase.py'], 'path': ''})

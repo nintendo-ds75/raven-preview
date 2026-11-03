@@ -8,6 +8,7 @@ revision checks, with interview provenance committed atomically beside it.
 from __future__ import annotations
 
 import json
+import re
 import os
 import secrets
 import time
@@ -107,14 +108,42 @@ def _owned(store, task_id, interview_id, actor, db=None):
     return dict(row)
 
 
+_ASIDE = re.compile(r"\s*\([^()]*\)")
+
+
+def spoken_question(question: str) -> str:
+    """The question as Raven says it on a call: the asides in parentheses
+    the agent wrote for the record are dropped, the spacing and the final
+    punctuation repaired. Measured on the Parcelwise take (Nov 2): "do we
+    reuse the earlier selection design (checkbox per row, 'select all on
+    this page', ...)" was read out aside and all."""
+    text = _ASIDE.sub("", str(question or ""))
+    text = re.sub(r"\s+([,;:.?!])", r"\1", re.sub(r"\s+", " ", text)).strip()
+    text = re.sub(r"[,;:]+(?=[.?!]?$)", "", text).strip()
+    if text and text[-1] not in ".?!":
+        text += "?"
+    return text
+
+
+def _opening(scope):
+    """How Raven opens the call: a greeting by first name, what the agent
+    is on, then the question, the way a colleague would ask it. The task
+    title is spoken as given; repository names and paths are not."""
+    first = str(scope.get("person_name") or "").split()[0] if str(scope.get("person_name") or "").strip() else ""
+    title = str(scope.get("task_title") or "").strip().rstrip(".")
+    hello = f"Hey {first}, quick one." if first else "Quick one."
+    about = f" The agent is working on \u201c{title}.\u201d" if title else ""
+    return f"{hello}{about} {spoken_question(scope['question'])}".strip()
+
+
 def _prompts(scope):
-    return [scope["question"],
+    return [_opening(scope),
             # Spoken aloud on a call: no repository names or file paths.
             # The page shows where it applies under "What this is about".
-            "Where does your answer apply, and is there anything that must stay as it is?",
-            "What exceptions, edge cases or new caveats would change your answer? Say if there are none.",
-            "What implementation constraints, tests or evidence must the agent provide before this is done?",
-            "Why is this the right choice? State the final decision and its conditions in your own words."]
+            "Got it. Where does that apply, and is there anything that has to stay as it is?",
+            "Any exceptions or edge cases that would change that? It's fine if there are none.",
+            "Is there anything the agent has to show before this is done, like a test or a number to check?",
+            "Last one. In your own words, what's the call, and why?"]
 
 
 def _turns(raw, prompts):
@@ -171,6 +200,7 @@ def create(store, task_id, data, actor=None):
         scope = {"task_id": task_id, "task_title": task["title"], "task_goal": task["goal"] or "",
                  "decision_id": decision_id, "repo": decision.get("repo") or "",
                  "question": decision["question"], "context": decision.get("context") or "",
+                 "person_name": actor.name or "",
                  "path": decision.get("path") or "", "paths": json.loads(decision.get("scope_paths") or "[]"),
                  "category": decision.get("category") or "",
                  "decision_scope": approval_scope.snapshot(decision),
