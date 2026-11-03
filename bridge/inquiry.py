@@ -104,28 +104,30 @@ def ask(store, data, actor, *, cfg=None):
                          # anything else (a pull request, a document) as itself.
                          'ref': ('meeting:' + str(source.get('ref', '')).split(':')[1] if str(source.get('ref', '')).startswith('meeting:')
                                  else 'record:' + record_id)})
+    seen = set()
     for item in store.search(question, repo)['matches'][:5]:
-        decision = store.get_decision(item['id'])
-        # Keep attribution and reasoning with the answer. The live customer
-        # loop otherwise recovered the right text but claimed its signer was
-        # unknown, because this packet discarded the graph's human context.
-        author = decision.get('actor_name') or decision.get('answered_by') or ''
-        text = '\n'.join(part for part in (
-            decision.get('answer', ''),
-            'Rationale: ' + decision['rationale'] if decision.get('rationale') else '',
-            'Recorded by: ' + author if author else '',
-            'Signed by: ' + decision['signed_by'] if decision.get('signed_by') else '',
-        ) if part)
-        from .artifacts import call_for
-        call = call_for(store, decision['id'])
-        person = store.graph.find_person(author) if author else None
-        evidence.append({'id': decision['id'], 'version': decision.get('updated_at', ''),
-                         'title': decision['question'], 'text': text, 'kind': 'prior_decision',
-                         'author': author, 'person_id': person['id'] if person else '',
-                         'ref': ('call:' + call) if call else 'decision:' + decision['id'], 'node_id': decision['id'],
-                         'scope': decision.get('applicability', ''), 'facts': decision.get('facts', ''),
-                         'task_id': decision.get('run_id', ''), 'signoff': decision.get('signoff', ''),
-                         'needs_review': bool(decision.get('needs_review')), 'url': ''})
+        try:
+            decision = store.get_decision(item['id'])
+        except Invalid:
+            continue
+        if decision['id'] in seen:
+            continue
+        seen.add(decision['id'])
+        evidence.append(_decision_evidence(store, decision))
+        # A card Raven settled from someone's earlier call carries that
+        # call as its source: the answer is theirs, so the call itself is
+        # evidence too, with its signer and its own words. Measured on the
+        # Parcelwise take 6: Theo's "can they just buy another label" found
+        # the task's card but not Jordan's Aug 20 call that settled it.
+        source_id = decision.get('source_id') or ''
+        if source_id and source_id not in seen:
+            try:
+                source = store.get_decision(source_id)
+            except Invalid:
+                source = None
+            if source is not None and (source.get('answer') or '').strip():
+                seen.add(source_id)
+                evidence.append(_decision_evidence(store, source))
     # What people told Raven (intro calls, notes) answers questions too,
     # attributed to them and marked as what they said, not a decision.
     from .people_context import relevant
@@ -221,6 +223,30 @@ def ask(store, data, actor, *, cfg=None):
         'question': question, 'outcome': result['outcome'], 'model_used': result['model_used'],
         'sources': [{'id': e['id'], 'version': e['version'], 'kind': e['kind']} for e in evidence]})
     return result
+
+
+def _decision_evidence(store, decision):
+    """One prior decision as the packet carries it. Attribution and
+    reasoning stay with the answer: the live customer loop once recovered
+    the right text but claimed its signer was unknown, because the packet
+    had discarded the graph's human context."""
+    author = decision.get('actor_name') or decision.get('answered_by') or ''
+    text = '\n'.join(part for part in (
+        decision.get('answer', ''),
+        'Rationale: ' + decision['rationale'] if decision.get('rationale') else '',
+        'Recorded by: ' + author if author else '',
+        'Signed by: ' + decision['signed_by'] if decision.get('signed_by') else '',
+    ) if part)
+    from .artifacts import call_for
+    call = call_for(store, decision['id'])
+    person = store.graph.find_person(author) if author else None
+    return {'id': decision['id'], 'version': decision.get('updated_at', ''),
+            'title': decision['question'], 'text': text, 'kind': 'prior_decision',
+            'author': author, 'person_id': person['id'] if person else '',
+            'ref': ('call:' + call) if call else 'decision:' + decision['id'], 'node_id': decision['id'],
+            'scope': decision.get('applicability', ''), 'facts': decision.get('facts', ''),
+            'task_id': decision.get('run_id', ''), 'signoff': decision.get('signoff', ''),
+            'needs_review': bool(decision.get('needs_review')), 'url': ''}
 
 
 def _plain_route(line):

@@ -53,6 +53,33 @@ class InquiryTests(OfflineCase):
         self.assertEqual(evidence['task_id'], task)
         self.assertFalse(result['authorized'])
 
+    def test_a_card_settled_from_an_earlier_call_brings_that_call_as_evidence(self):
+        """Measured on the Parcelwise take 6: Theo asked whether a merchant
+        can just buy a second label; the task's card matched, Jordan's Aug
+        20 call that settled it did not, and the answer missed his rule."""
+        from bridge.authz import Actor
+        jordan = self.store.add_person({'name': 'Jordan Okafor', 'role': 'member'})
+        earlier = self.store.add_run({'title': 'Bulk label review', 'repo': 'example/billing'})['id']
+        call = self.store.graph.add_decision(earlier, 'Do synthetic load tests count toward a customer bill?', '',
+                                             'pending', owner=jordan['name'])
+        row = self.store.get_decision(call)
+        self.store.answer(call, {'answer': 'Exclude internal test traffic.',
+            'rationale': 'Nobody pays for our own load tests.',
+            'expected_updated_at': row['updated_at']}, actor=Actor.person(jordan, kind='session'))
+        task = self.store.add_run({'title': 'Billing rollout', 'repo': 'example/billing'})['id']
+        card = self.store.graph.add_decision(task, 'Which traffic is excluded from billing?', '', 'resolved')
+        self.store.graph.db.execute("UPDATE decisions SET source_id=?, answer=?, answered_by=? WHERE id=?",
+                                    (call, 'Exclude internal test traffic.', 'Jordan Okafor', card))
+        self.store.graph.db.commit()
+        result = self.question(cfg=Config(model_api='none'))
+        ids = [e['id'] for e in result['evidence'] if e['kind'] == 'prior_decision']
+        self.assertIn(card, ids)
+        self.assertIn(call, ids, 'the call the card was settled from is evidence too')
+        self.assertEqual(ids.count(call), 1)
+        source = next(e for e in result['evidence'] if e['id'] == call)
+        self.assertIn('Jordan Okafor', source['text'])
+        self.assertIn('Nobody pays for our own load tests.', source['text'])
+
     def test_unverified_support_never_becomes_a_supported_answer(self):
         raw = {'outcome': 'supported_answer', 'answer': 'Internal traffic is excluded.',
                'citations': [{'id': self.source['record_id'], 'quote': 'Internal test traffic is excluded from billing.'}], 'open': []}
