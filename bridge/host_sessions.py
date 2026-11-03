@@ -54,23 +54,25 @@ def _stop_hold():
     before it may stop; a person's answer after that resumes it instead."""
     import os
     try:
-        return timedelta(minutes=max(0.0, float(os.environ.get('BRIDGE_STOP_HOLD_MINUTES', '20'))))
+        return timedelta(minutes=max(0.0, float(os.environ.get('BRIDGE_STOP_HOLD_MINUTES', '480'))))
     except ValueError:
-        return timedelta(minutes=20)
+        return timedelta(minutes=480)
 
 
 def _wait_cap():
     """How many bridge_wait calls in a row may come back with nothing new
-    before the agent is let go: past it the Stop hook no longer holds the
-    agent, and the wait itself tells it to stop and report. Measured on
-    Harborline dry run 10: held for the whole 20-minute budget, an agent
-    with nothing independent left called bridge_wait 29 times and wrote
-    nothing; each round was a model turn spent on a 50-second timeout."""
+    before the agent is let go, or 0 for no cap (the default): the agent is
+    held while a person it asked has not answered, and the hold's time
+    budget alone ends it. Measured on the Parcelwise take 4 (Nov 2): with a
+    cap of 6, the owners took longer than five minutes, the agent stopped,
+    nothing resumed a plain interactive session, and the requester had to
+    type "everyone has answered". A host that would rather spend fewer
+    model turns than wait sets BRIDGE_STOP_HOLD_WAITS."""
     import os
     try:
-        return max(1, int(float(os.environ.get('BRIDGE_STOP_HOLD_WAITS', '6'))))
+        return max(0, int(float(os.environ.get('BRIDGE_STOP_HOLD_WAITS', '0'))))
     except ValueError:
-        return 6
+        return 0
 
 
 def note_wait(store, task_id, idle, *, db=None):
@@ -365,7 +367,7 @@ def stop(store, binding):
             started = held or at
             idle = pace(store, task_id)
             in_time = datetime.fromisoformat(started) + _stop_hold() > datetime.now(timezone.utc)
-            if in_time and idle['idle_waits'] < idle['idle_wait_cap']:
+            if in_time and (not idle['idle_wait_cap'] or idle['idle_waits'] < idle['idle_wait_cap']):
                 _activity(g, binding['id'], 'holding', at, started)
                 return {'hold': True, 'task_id': task_id, 'waiting': len(waiting), 'observed_at': observed,
                         'idle_waits': idle['idle_waits'], 'idle_wait_cap': idle['idle_wait_cap'],
@@ -391,6 +393,11 @@ def _hold_reason(task_id, waiting, observed, idle):
                 "it now: the mechanism around each open value with the value itself left as a named parameter, "
                 "the tests, the docs; do not settle the open questions yourself. When nothing independent is left, "
                 + call + ".")
+    if not idle['idle_wait_cap']:
+        return (head + f"Your last {idle['idle_waits']} wait(s) in a row returned nothing new. People answer minutes "
+                "or hours later; if independent work is left (the mechanism around an open value, tests, docs), "
+                "build it; otherwise " + call + ". You are held until they answer, so keep waiting rather than "
+                "stopping to report.")
     left = idle['idle_wait_cap'] - idle['idle_waits']
     return (head + f"Your last {idle['idle_waits']} wait(s) in a row returned nothing new; {left} more allowed. "
             "If independent work is left (the mechanism around an open value, tests, docs), build it; otherwise "

@@ -72,14 +72,50 @@ class AgentPaceTests(OfflineCase):
         self.assertEqual(result["pace"]["idle_waits"], 0)
         self.assertEqual(result["waiting_on"], [])
 
-    def test_the_cap_is_configured_and_bounded_below(self):
-        with patch.dict(os.environ, {"BRIDGE_STOP_HOLD_WAITS": "0"}):
-            self.assertEqual(hs._wait_cap(), 1)
+    def test_the_cap_is_configured_and_off_by_default(self):
+        with patch.dict(os.environ, {"BRIDGE_STOP_HOLD_WAITS": "2"}):
+            self.assertEqual(hs._wait_cap(), 2)
+        with patch.dict(os.environ, {"BRIDGE_STOP_HOLD_WAITS": "-3"}):
+            self.assertEqual(hs._wait_cap(), 0)
         with patch.dict(os.environ, {"BRIDGE_STOP_HOLD_WAITS": "nonsense"}):
-            self.assertEqual(hs._wait_cap(), 6)
+            self.assertEqual(hs._wait_cap(), 0)
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("BRIDGE_STOP_HOLD_WAITS", None)
-            self.assertEqual(hs._wait_cap(), 6)
+            self.assertEqual(hs._wait_cap(), 0)
+
+    def test_without_a_cap_the_agent_is_held_and_told_to_wait_again(self):
+        """Measured on the Parcelwise take 4 (Nov 2): with a cap of 6 the
+        agent stopped after five minutes, nothing resumed a plain
+        interactive session, and the requester had to type "everyone has
+        answered". By default the hold lasts until the people answer."""
+        self.call("bridge_add_node", {"task_id": self.task, "paths": "hw/net/virtio-net.c", "client_ref": "a",
+                                      "question": "Should hw/net/virtio-net.c drop the legacy header?"})
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("BRIDGE_STOP_HOLD_WAITS", None)
+            os.environ.pop("BRIDGE_STOP_HOLD_MINUTES", None)
+            for n in range(1, 9):
+                result = self.call("bridge_wait", {"task_id": self.task, "timeout": "0"})
+                self.assertEqual((result["pace"]["idle_waits"], result["pace"]["idle_wait_cap"]), (n, 0))
+                self.assertNotIn("Stop now", result["next"])
+                self.assertIn("call bridge_wait again with since, do not stop to report", result["next"])
+            self.store.graph.db.execute(
+                "INSERT INTO host_sessions(id,principal,host,session_id,project,repo,task_id,created_at,updated_at) "
+                "VALUES('b1','agent','claude','s1','/p','qemulike',?,'2026-11-02T20:00:00+00:00','2026-11-02T20:00:00+00:00')",
+                (self.task,))
+            held = hs.stop(self.store, {"id": "b1", "task_id": self.task})
+            self.assertTrue(held["hold"], held)
+            self.assertEqual(held["idle_wait_cap"], 0)
+            self.assertIn("8 wait(s) in a row returned nothing new", held["reason"])
+            self.assertIn("held until they answer", held["reason"])
+            self.assertNotIn("more allowed", held["reason"])
+            self.assertNotIn("you may stop", held["reason"])
+            self.assertEqual(self.store.graph.db.execute(
+                "SELECT count(*) FROM events WHERE run_id=? AND kind='host_stopped_waiting'", (self.task,)).fetchone()[0], 0)
+        with patch.dict(os.environ, {"BRIDGE_STOP_HOLD_MINUTES": "0"}):
+            self.assertFalse(hs.stop(self.store, {"id": "b1", "task_id": self.task})["hold"])
+            why = [json.loads(r["detail"])["why"] for r in self.store.graph.db.execute(
+                "SELECT detail FROM events WHERE run_id=? AND kind='host_stopped_waiting'", (self.task,))]
+            self.assertEqual(why, ["hold budget"])
 
 
 if __name__ == "__main__":

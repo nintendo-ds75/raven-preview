@@ -136,18 +136,22 @@ settled its own way) and, when nothing independent is left, to call
 `bridge_wait` with the task id. The refusal names only the task id and counts;
 question and answer text stays on the tree.
 
-The hold has two budgets. It lasts at most `BRIDGE_STOP_HOLD_MINUTES` in total
-(default 20, set where Raven runs), and it ends after `BRIDGE_STOP_HOLD_WAITS`
-(default 6) `bridge_wait` calls in a row that returned nothing new: each wait
-result carries `pace` (`idle_waits`, `idle_wait_cap`), the refusal says how many
-idle waits remain, and the wait that reaches the cap tells the agent to stop and
-report what it built and what waits on whom. Any other call on the task (a node
-added or settled, a resume, a finish) or a wait that returns a change starts the
-count over, as does a new prompt from the person at the keyboard. Past either
-budget the agent stops, the task records `host_stopped_waiting`, and a later
-answer resumes it as described below. Measured on a dry run before the wait cap:
-an agent with nothing independent left was held for the whole 20 minutes, called
-`bridge_wait` 29 times and wrote nothing. The For you cards read this state
+The hold lasts until the people answer, at most `BRIDGE_STOP_HOLD_MINUTES` in
+total (default 480, set where Raven runs): the agent keeps calling `bridge_wait`
+and continues by itself when an answer lands, with no prompt from the person at
+the keyboard. Each wait result carries `pace` (`idle_waits`, `idle_wait_cap`);
+a host that would rather spend fewer model turns than wait sets
+`BRIDGE_STOP_HOLD_WAITS`, and then the hold also ends after that many
+`bridge_wait` calls in a row that returned nothing new: the refusal says how
+many idle waits remain, and the wait that reaches the cap tells the agent to
+stop and report what it built and what waits on whom. Any other call on the task
+(a node added or settled, a resume, a finish) or a wait that returns a change
+starts the count over, as does a new prompt from the person at the keyboard.
+Past a budget the agent stops, the task records `host_stopped_waiting`, and a
+later answer resumes it as described below. Measured on the Parcelwise take 4
+(Nov 2): with a cap of 6 (about five minutes) the owners took longer, the agent
+stopped, a plain interactive session had no supervisor to resume it, and the
+requester had to type "everyone has answered". The For you cards read this state
 (`agent_state`: building, waiting or stopped) rather than a fixed phrase.
 
 `Stop` and `SessionEnd` fail open. If Raven is unreachable or slow, the hook

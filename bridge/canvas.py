@@ -2979,23 +2979,28 @@ def _waiting_entry(n: dict) -> dict:
 
 
 def _paced(store, result: dict, idle: bool) -> dict:
-    """Record this wait on the task and say where the agent stands against
-    the idle-wait cap. Past the cap the next step is to stop and report,
+    """Record this wait on the task and say where the agent stands. With
+    no idle-wait cap (the default) the next step after a timeout is to
+    wait again: the Stop hook holds the agent while a person it asked has
+    not answered. With a cap, past it the next step is to stop and report,
     not to wait again: the Stop hook lets it go at the same count."""
     from .host_sessions import note_wait
     with store.graph.transaction() as db:
         pace = note_wait(store, result["task_id"], idle, db=db)
     result["pace"] = pace
-    if idle and pace["idle_waits"] >= pace["idle_wait_cap"]:
+    if idle and pace["idle_wait_cap"] and pace["idle_waits"] >= pace["idle_wait_cap"]:
         result["next"] = (f"{pace['idle_waits']} waits in a row returned nothing new (the cap). Stop now and report "
                           "what you built and what waits on whom; do not wait again. The task stays open: resume it "
                           f"with bridge_start_task(task_id={result['task_id']}) and a person's answer resumes a "
                           "supervised session. " + result["next"])
-    elif idle:
+    elif idle and pace["idle_wait_cap"]:
         # No count here: the timeout text must read the same wait after
         # wait, so it cannot reveal whether a private reply exists. The
         # count is in pace.
         result["next"] += "; idle waits in a row are counted in pace, and the wait that reaches the cap says to stop"
+    elif idle:
+        result["next"] += ("; idle waits in a row are counted in pace. People answer minutes or hours later: call "
+                           "bridge_wait again with since, do not stop to report")
     return result
 
 
