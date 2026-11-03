@@ -134,6 +134,21 @@ class Summary(OfflineCase):
         item = next(x for x in pr_summary.summary(self.store, self.task)['items'] if x['node_id'] == other)
         self.assertEqual(item['kind'], 'live')
 
+    def test_taking_raven_s_guess_from_an_earlier_call_is_a_reuse_even_when_the_guess_is_gone(self):
+        import json
+        did = self.g.add_decision(self.task, 'Does the allowance rule cover a bulk run?', 'policy', 'pending',
+                                  repo=REPO, owner='Marcus Lee')
+        with self.g.transaction():
+            self.g.db.execute("INSERT INTO events(kind, detail, decision_id, run_id, created_at) VALUES (?,?,?,?,?)",
+                              ('proposal_composed', json.dumps({'from': self.prior}), did, self.task,
+                               '2026-11-02T10:00:00+00:00'))
+            self.g.db.execute("INSERT INTO events(kind, detail, decision_id, run_id, created_at) VALUES (?,?,?,?,?)",
+                              ('owner_approved', json.dumps({'answer': 'Yes, refuse the whole batch.', 'took_guess': True}),
+                               did, self.task, '2026-11-02T10:05:00+00:00'))
+        self.store.answer(did, {'answer': 'Yes, refuse the whole batch.', 'by': 'Marcus Lee'})
+        item = next(x for x in pr_summary.summary(self.store, self.task)['items'] if x['node_id'] == did)
+        self.assertEqual((item['kind'], item['confirmed_by']), ('cache', 'Marcus Lee'))
+
     def test_over_mcp_and_one_line_per_node(self):
         self.assertIn('bridge_pr_summary', mcp.READ_ONLY_TOOLS)
         out = mcp.call_tool(self.store, 'bridge_pr_summary', {'task_id': self.task})

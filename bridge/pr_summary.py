@@ -180,10 +180,10 @@ def _confirmed_from(store, node):
     that answer. A PR reader should see it as a reuse the owner checked, not
     as a new judgment."""
     rows = store.graph.db.execute(
-        "SELECT kind, detail FROM events WHERE decision_id=? AND kind IN ('proposal_composed','resolve','previous_answer') "
-        "ORDER BY id", (node["node_id"],)).fetchall()
+        "SELECT kind, detail FROM events WHERE decision_id=? AND kind IN "
+        "('proposal_composed','resolve','previous_answer','owner_approved') ORDER BY id", (node["node_id"],)).fetchall()
     row = store.get_decision(node["node_id"]) or {}
-    prior, proposed = "", [node.get("prediction") or "", row.get("prediction") or ""]
+    prior, took, proposed = "", False, [node.get("prediction") or "", row.get("prediction") or ""]
     for row in rows:
         try:
             detail = json.loads(row["detail"] or "{}")
@@ -195,8 +195,14 @@ def _confirmed_from(store, node):
             prior = detail["cited"]
         elif row["kind"] == "previous_answer":
             proposed.append(detail.get("answer") or "")
+        elif row["kind"] == "owner_approved":
+            # Raven's guess is not kept after approval; the approval says
+            # whether the owner sent it as it stood.
+            took = took or detail.get("took_guess") is True
     if not prior or not store.get_decision(prior):
         return ""
+    if took:
+        return prior
     said = _norm(node.get("answer"))[:24]
     return prior if said and any(_norm(p).startswith(said) for p in proposed if p) else ""
 
