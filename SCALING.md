@@ -8,10 +8,10 @@ Last updated: 2026-09-13
 
 Raven is a local, single-operator prototype. Million-decision capacity has **not** been benchmarked or demonstrated.
 
-- Suggestion search scans all approved decisions, filters by owner in Python, calculates keyword overlap, and sorts matches before returning five candidates. The top candidate supplies the suggested answer. See [`Store.candidates`](bridge/store.py).
+- Suggestion search scans all approved decisions, filters by owner in Python, calculates keyword overlap, and sorts matches before returning five candidates. The top candidate supplies the suggested answer. See [`Store.candidates`](raven/store.py).
 - Matching uses question text, not the new task's context or the prior answer's rationale. Word overlap is not a confidence score.
 - Request creation performs retrieval inside a `BEGIN IMMEDIATE` write transaction. Slow retrieval can delay other writers.
-- `/api/state` returns all decisions, runs, and owners. The browser refreshes it every five seconds. See [`server.py`](bridge/server.py) and [`app.js`](web/app.js).
+- `/api/state` returns all decisions, runs, and owners. The browser refreshes it every five seconds. See [`server.py`](raven/server.py) and [`app.js`](web/app.js).
 - Corrections preserve old answers and withdraw pending suggestions derived from the corrected decision. Stale inbox submissions are rejected using the decision's update timestamp.
 - Owners are manually configured. Repository names are recorded, but routing and retrieval do not enforce repository or organization boundaries.
 

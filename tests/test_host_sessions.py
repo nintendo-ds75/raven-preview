@@ -9,10 +9,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase, run_git
-from bridge import host_sessions as hs, host_client as hc
-from bridge.auth import Identity
-from bridge.setup import install_host_hooks
-from bridge.store import Store, Invalid
+from raven import host_sessions as hs, host_client as hc
+from raven.auth import Identity
+from raven.setup import install_host_hooks
+from raven.store import Store, Invalid
 from test_auth import SharedServer, BOOTSTRAP
 
 
@@ -94,7 +94,7 @@ class HostCases:
         self.assertEqual(self.store.graph.db.execute('SELECT count(*) n FROM runs').fetchone()['n'], 1)
 
     def test_interrupted_registration_retry_retains_prompt_in_task_trace(self):
-        from bridge import canvas
+        from raven import canvas
         with patch.object(canvas, 'start_task', side_effect=RuntimeError('interrupted')):
             with self.assertRaises(RuntimeError): self.event()
         resumed = self.event()
@@ -215,7 +215,7 @@ class HostHTTPTests(SharedServer):
         return [sys.executable, '-c', bootstrap, str(script), str(budget)]
 
     def test_installed_hook_deadline_blocks_and_retry_recovers_completed_registration(self):
-        from bridge import canvas
+        from raven import canvas
         original = canvas.start_task
         created, release = threading.Event(), threading.Event()
 
@@ -307,10 +307,10 @@ class HostHTTPTests(SharedServer):
         response = hc.hook(self.config, 'claude', self.payload)
         self.assertIn('do not invent a node', response['hookSpecificOutput']['additionalContext'])
         task = self.store.graph.db.execute('SELECT id FROM runs').fetchone()['id']
-        tree = hc.call(self.config, 'bridge_get_tree', {'task_id': task})
+        tree = hc.call(self.config, 'raven_get_tree', {'task_id': task})
         self.assertEqual(tree['nodes'], [])
         self.assertEqual(tree['counts']['blocking'], 0)
-        done = hc.call(self.config, 'bridge_finish_task', {'task_id': task,
+        done = hc.call(self.config, 'raven_finish_task', {'task_id': task,
             'checks': 'Synthetic no-change inspection; no human judgment requested.'})
         self.assertEqual(done['status'], 'completed')
         self.assertEqual(done['authorized'], [])
@@ -320,19 +320,19 @@ class HostHTTPTests(SharedServer):
     def test_misclassified_code_fact_still_holds_stop_and_finish(self):
         hc.hook(self.config, 'claude', self.payload)
         task = self.store.graph.db.execute('SELECT id FROM runs').fetchone()['id']
-        node = hc.call(self.config, 'bridge_add_node', {'task_id': task,
+        node = hc.call(self.config, 'raven_add_node', {'task_id': task,
             'question': 'What value is currently stored in a.txt?', 'paths': 'a.txt',
             'category': 'data-source', 'client_ref': 'mistaken-observation'})
-        settled = hc.call(self.config, 'bridge_settle_node', {'task_id': task, 'node_id': node['node_id'],
+        settled = hc.call(self.config, 'raven_settle_node', {'task_id': task, 'node_id': node['node_id'],
             'answer': 'The file contains before.', 'rationale': 'Observed in the local checkout a.txt:1.'})
         self.assertFalse(settled['authorized'])
         self.assertEqual(settled['signoff'], 'required')
         held = hc.hook(self.config, 'claude', {**self.payload, 'hook_event_name': 'Stop'})
         self.assertEqual(held['decision'], 'block')
-        self.assertIn('bridge_wait', held['reason'])
-        hc.call(self.config, 'bridge_get_tree', {'task_id': task})
+        self.assertIn('raven_wait', held['reason'])
+        hc.call(self.config, 'raven_get_tree', {'task_id': task})
         with self.assertRaises(ValueError):
-            hc.call(self.config, 'bridge_finish_task', {'task_id': task})
+            hc.call(self.config, 'raven_finish_task', {'task_id': task})
         self.assertEqual(self.store.graph.db.execute('SELECT count(*) n FROM decisions').fetchone()['n'], 1)
 
     def test_real_mailbox_supervisor_releases_failure_and_acks_success(self):

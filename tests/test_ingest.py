@@ -12,11 +12,11 @@ from urllib.request import urlopen
 
 from fixtures import OfflineCase, build_synthco, run_git, synthco_env, template_db
 
-from bridge.config import Config
-from bridge.ingest import index_repo, parse_codeowners
-from bridge.ladder import run_task
-from bridge.mcp import dispatch
-from bridge.routing import route
+from raven.config import Config
+from raven.ingest import index_repo, parse_codeowners
+from raven.ladder import run_task
+from raven.mcp import dispatch
+from raven.routing import route
 from fixtures import ready_server as make_server
 
 
@@ -75,7 +75,7 @@ class IngestTests(OfflineCase):
     def test_codeowners_last_rule_wins_in_file_order(self):
         """Two CODEOWNERS rules cover gateway/app.py; the later one in the
         file wins even though it sorts earlier alphabetically."""
-        from bridge.signals import listed_for
+        from raven.signals import listed_for
         repo = Path(self.temp.name) / "mini"
         repo.mkdir()
         run_git(repo, "init", "-q", "-b", "main")
@@ -124,7 +124,7 @@ class IngestTests(OfflineCase):
         self.assertEqual(len(get("/api/ownership?limit=3")["ownership"]), 3)
         self.assertEqual(get("/api/export")["ownership"], every)
         listed = dispatch(self.store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-            "name": "bridge_list_owners", "arguments": {"repo": "synthco"}}})
+            "name": "raven_list_owners", "arguments": {"repo": "synthco"}}})
         listed = json.loads(listed["result"]["content"][0]["text"])
         self.assertEqual(listed["ownership"], every)
         self.assertEqual(listed["graph"], state["graph"])
@@ -151,7 +151,7 @@ class IngestTests(OfflineCase):
 
 class MachineAuthorTests(unittest.TestCase):
     def test_coding_agents_are_not_people(self):
-        from bridge.ingest import _is_machine_author
+        from raven.ingest import _is_machine_author
         for name in ("Claude", "Claude Code", "Codex", "OpenAI Codex", "Copilot", "dependabot[bot]"):
             self.assertTrue(_is_machine_author(name), name)
         for name in ("Codexa Smith", "Joe Codex", "Claudette Ray"):

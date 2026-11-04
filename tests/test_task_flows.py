@@ -18,12 +18,12 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas, host_sessions as hs, source_docs, sources
-from bridge.auth import Auth, Identity
-from bridge.canvas import wait_for_background
-from bridge.github import GitHubAPI, GitHubError, sync_repo, sync_state
-from bridge.llm import Client, LLMError
-from bridge.server import make_server
+from raven import canvas, host_sessions as hs, source_docs, sources
+from raven.auth import Auth, Identity
+from raven.canvas import wait_for_background
+from raven.github import GitHubAPI, GitHubError, sync_repo, sync_state
+from raven.llm import Client, LLMError
+from raven.server import make_server
 from test_auth import BOOTSTRAP, SharedServer
 from test_delivery import FakeSlack
 from test_github import REPO as GITHUB_REPO, WES, GitHubCase
@@ -65,22 +65,22 @@ class FlowCase(SharedServer):
         return result['result']
 
     def start(self, key='k1', title=PROMPT, **extra):
-        return self.ok('bridge_start_task', {'title': title, 'goal': title, 'repo': REPO, 'client_key': key,
+        return self.ok('raven_start_task', {'title': title, 'goal': title, 'repo': REPO, 'client_key': key,
                                              'paths': 'billing/usage.py', **extra})
 
     def node(self, task, question=QUESTION, **extra):
-        return self.ok('bridge_add_node', {'task_id': task, 'question': question, 'paths': 'billing/usage.py',
+        return self.ok('raven_add_node', {'task_id': task, 'question': question, 'paths': 'billing/usage.py',
                                            **extra})
 
     def settle(self, task, node_id, answer='Bill it, capped at 2x the plan limit'):
-        return self.ok('bridge_settle_node', {'task_id': task, 'node_id': node_id, 'answer': answer,
+        return self.ok('raven_settle_node', {'task_id': task, 'node_id': node_id, 'answer': answer,
                                               'rationale': 'the plan terms'})
 
     def tree(self, task):
-        return self.ok('bridge_get_tree', {'task_id': task})
+        return self.ok('raven_get_tree', {'task_id': task})
 
     def host(self, event, session='session-flow', **extra):
-        return self.ok('bridge_host_event', {'event': event, 'host': 'claude', 'session_id': session,
+        return self.ok('raven_host_event', {'event': event, 'host': 'claude', 'session_id': session,
                                              'project': '/checkout/service', 'repo': REPO, **extra})
 
     # ---- Wes, over the HTTP API ----
@@ -119,15 +119,15 @@ class FinishGateTests(FlowCase):
         n = self.node(task, client_ref='n1')
         self.assertEqual((n['status'], n['owner'], n['blocking']), ('pending', 'Wes Chen', True))
         # An open question waits on its owner.
-        self.assertIn('waiting on Wes Chen', self.refused('bridge_finish_task', {'task_id': task}))
+        self.assertIn('waiting on Wes Chen', self.refused('raven_finish_task', {'task_id': task}))
         # The agent's own proposal is evidence, not sign-off.
         settled = self.settle(task, n['node_id'])
         self.assertEqual((settled['status'], settled['signoff'], settled['authorized']), ('resolved', 'required', False))
-        self.assertIn('sign-off wanted from Wes Chen', self.refused('bridge_finish_task', {'task_id': task}))
+        self.assertIn('sign-off wanted from Wes Chen', self.refused('raven_finish_task', {'task_id': task}))
         # Wes answers; the agent reads it; the task finishes.
         self.assertEqual(self.answer(n['node_id'])['status'], 'approved')
         self.tree(task)
-        self.assertEqual(self.ok('bridge_finish_task', {'task_id': task})['status'], 'completed')
+        self.assertEqual(self.ok('raven_finish_task', {'task_id': task})['status'], 'completed')
         # Wes makes his answer a standing rule: a later twin of the question
         # comes back authorized by the rule, with no signature on its task.
         self.assertTrue(self.rule(n['node_id'])['reusable'])
@@ -137,7 +137,7 @@ class FinishGateTests(FlowCase):
         # The rule ends: what it authorized on the open task wants a person
         # again, and the finish says so.
         self.assertFalse(self.rule(n['node_id'], end=True)['reusable'])
-        refusal = self.refused('bridge_finish_task', {'task_id': second})
+        refusal = self.refused('raven_finish_task', {'task_id': second})
         self.assertIn(covered['node_id'], refusal)
         self.assertIn('needs review', refusal)
         doubted = self.decision(covered['node_id'])
@@ -154,7 +154,7 @@ class FinishGateTests(FlowCase):
                            source_decision_pins=pins)
         self.assertTrue(signed['authorized'])
         self.tree(second)
-        self.assertEqual(self.ok('bridge_finish_task', {'task_id': second})['status'], 'completed')
+        self.assertEqual(self.ok('raven_finish_task', {'task_id': second})['status'], 'completed')
         self.assertEqual(self.count("SELECT count(*) FROM runs WHERE status='completed'"), 2)
 
 
@@ -194,7 +194,7 @@ class AgentCredentialTests(FlowCase):
         tools = self.post('/mcp', {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}, token=self.agent)
         names = {t['name'] for t in tools['result']['tools']}
         self.assertFalse({n for n in names if any(w in n for w in ('answer', 'sign', 'refer', 'invite', 'setting'))})
-        for name in ('bridge_answer', 'bridge_sign_off', 'bridge_refer'):
+        for name in ('raven_answer', 'raven_sign_off', 'raven_refer'):
             self.assertTrue(self.mcp(name, {'task_id': task, 'node_id': did, 'answer': 'Bill it'}, self.agent)['isError'])
         self.assertEqual(self.store.get_decision(did), before)
         self.assertFalse({'owner_approved', 'signoff', 'signature', 'answer_corrected', 'referred', 'followup_added',
@@ -227,12 +227,12 @@ class CorrectionTests(FlowCase):
         self.assertEqual((shown[b['node_id']]['needs_review'], shown[b['node_id']]['blocking'],
                           shown[b['node_id']]['authorized']), (True, True, False))
         self.assertIn('need', tree['next'])
-        refusal = self.refused('bridge_finish_task', {'task_id': task})
+        refusal = self.refused('raven_finish_task', {'task_id': task})
         self.assertIn(b['node_id'], refusal)
         self.assertIn('needs review', refusal)
         # The agent is told on every channel it reads: the wait since its
         # last look, and the host mailbox that resumes a stopped session.
-        waited = self.ok('bridge_wait', {'task_id': task, 'since': observed, 'timeout': '1'})
+        waited = self.ok('raven_wait', {'task_id': task, 'since': observed, 'timeout': '1'})
         changed = {c['node_id']: c for c in waited['changed']}
         self.assertIn(a['node_id'], changed)
         self.assertTrue(changed[b['node_id']]['needs_review'])
@@ -249,7 +249,7 @@ class LateFollowUpTests(FlowCase):
         a = self.node(task, client_ref='a')
         self.answer(a['node_id'])
         self.tree(task)
-        self.assertEqual(self.ok('bridge_finish_task', {'task_id': task})['status'], 'completed')
+        self.assertEqual(self.ok('raven_finish_task', {'task_id': task})['status'], 'completed')
         self.assertFalse(self.host('stop')['hold'])
         # Wes adds a required follow-up after the task finished.
         added = self.post(f'/api/decisions/{a["node_id"]}/followups',
@@ -260,17 +260,17 @@ class LateFollowUpTests(FlowCase):
         self.assertEqual((tree['status'], tree['counts']['blocking']), ('completed', 1))
         self.assertIn('adopt', tree['next'])
         self.assertIsNotNone(self.host('poll', worker='w')['message'])
-        self.assertIn('required follow-up', self.refused('bridge_finish_task', {'task_id': task}))
+        self.assertIn('required follow-up', self.refused('raven_finish_task', {'task_id': task}))
         # A new decision still has no place on a finished task; the
         # follow-up a person added does, and taking it up reopens the task.
-        self.assertIn('finished', self.refused('bridge_add_node', {'task_id': task, 'question': 'Something new?',
+        self.assertIn('finished', self.refused('raven_add_node', {'task_id': task, 'question': 'Something new?',
                                                                    'paths': 'billing/usage.py'}))
         adoption = {'task_id': task, 'adopt': follow['node_id'], 'question': follow['question'],
                     'paths': 'billing/usage.py', 'client_ref': 'f1'}
-        adopted = self.ok('bridge_add_node', adoption)
+        adopted = self.ok('raven_add_node', adoption)
         self.assertEqual((adopted['status'], adopted['owner'], adopted['parent_id'], adopted['origin']),
                          ('pending', 'Wes Chen', a['node_id'], 'human'))
-        self.assertEqual(self.ok('bridge_add_node', adoption)['node_id'], adopted['node_id'])
+        self.assertEqual(self.ok('raven_add_node', adoption)['node_id'], adopted['node_id'])
         tree = self.tree(task)
         # Open again, with the adopted question waiting on Wes.
         self.assertEqual((tree['status'], tree['followups'], tree['counts']['blocking']), ('needs_judgment', [], 1))
@@ -278,10 +278,10 @@ class LateFollowUpTests(FlowCase):
         # The same session, binding and Stop hold carry on: the agent is
         # held while Wes answers, and the finish gate applies afresh.
         self.assertTrue(self.host('stop')['hold'])
-        self.assertIn('waiting on Wes Chen', self.refused('bridge_finish_task', {'task_id': task}))
+        self.assertIn('waiting on Wes Chen', self.refused('raven_finish_task', {'task_id': task}))
         self.answer(adopted['node_id'], 'The 1.26 release note.')
         self.tree(task)
-        self.assertEqual(self.ok('bridge_finish_task', {'task_id': task})['status'], 'completed')
+        self.assertEqual(self.ok('raven_finish_task', {'task_id': task})['status'], 'completed')
         self.assertEqual(self.tree(task)['counts']['blocking'], 0)
         self.assertFalse(self.host('stop')['hold'])
         self.assertEqual(self.count('SELECT count(*) FROM runs'), 1)
@@ -356,7 +356,7 @@ class RestartTests(FlowCase):
         # The queued ask is still in the outbox and goes out once Slack answers.
         recovered = FakeSlack()
         self.store.connect_delivery(recovered, base_url='https://raven.example')
-        with patch('bridge.delivery.time.time', return_value=time.time() + 3600):
+        with patch('raven.delivery.time.time', return_value=time.time() + 3600):
             self.assertEqual(self.store.delivery.deliver_now(), 1)
         self.assertEqual(len(recovered.messages), 1)
         self.assertEqual(self.count("SELECT count(*) FROM notifications WHERE state='queued'"), 0)
@@ -372,7 +372,7 @@ class RestartTests(FlowCase):
         self.assertFalse(self.host('stop')['hold'])
         self.assertIsNotNone(self.host('poll', worker='w')['message'])
         self.tree(task)
-        self.assertEqual(self.ok('bridge_finish_task', {'task_id': task})['status'], 'completed')
+        self.assertEqual(self.ok('raven_finish_task', {'task_id': task})['status'], 'completed')
 
 
 class HostReportTests(OfflineCase):
@@ -445,7 +445,7 @@ class HostReportTests(OfflineCase):
         self.assertEqual(self.report()['queued'], 1)
         self.slack.fail = False
         self.assertEqual(self.delivery.deliver_now(), 0)  # still inside the backoff
-        with patch('bridge.delivery.time.time', return_value=time.time() + 3600):
+        with patch('raven.delivery.time.time', return_value=time.time() + 3600):
             self.assertEqual(self.delivery.deliver_now(), 1)
         self.assertEqual(len(self.slack.messages), 1)
         self.assertEqual(self.rows()[0]['state'], 'sent')
@@ -467,8 +467,8 @@ class ModelOutageTests(FlowCase):
 
     def setUp(self):
         super().setUp()
-        env = patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'test-key-not-real', 'BRIDGE_SEMANTIC': '1',
-                                      'BRIDGE_MODEL_API': 'anthropic', 'BRIDGE_DEEP': '0'})
+        env = patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'test-key-not-real', 'RAVEN_SEMANTIC': '1',
+                                      'RAVEN_MODEL_API': 'anthropic', 'RAVEN_DEEP': '0'})
         env.start()
         self.addCleanup(env.stop)
         self.calls = []
@@ -497,7 +497,7 @@ class ModelOutageTests(FlowCase):
         # The ladder absorbed the failed model call and published its
         # deterministic reading; nothing is left pending on the node.
         self.assertTrue({'model_read', 'model_read_failed'} & set(self.events(task)))
-        waited = self.ok('bridge_wait', {'task_id': task, 'timeout': '1'})
+        waited = self.ok('raven_wait', {'task_id': task, 'timeout': '1'})
         self.assertTrue(waited['timed_out'])
         self.assertLess(waited['waited_seconds'], 5)
         self.answer(n['node_id'])
@@ -507,14 +507,14 @@ class ModelOutageTests(FlowCase):
             discovery['investigation_required'] = True
             self.store.graph.db.execute("UPDATE runs SET verdict='engage', discovery=? WHERE id=?",
                                         (json.dumps(discovery), task))
-        review = self.ok('bridge_review_discovery', {'task_id': task, 'phase': 'finish', 'diff': DIFF,
+        review = self.ok('raven_review_discovery', {'task_id': task, 'phase': 'finish', 'diff': DIFF,
                                                      'paths': ['billing/usage.py'],
                                                      'observations': 'billing/usage.py:1 sets LIMIT; the cap is new.'})
         self.assertTrue(wait_for_background(20))
         reviews = self.tree(task)['discovery_reviews']
         self.assertEqual((reviews[0]['review_id'], reviews[0]['status'], reviews[0]['error'], reviews[0]['unaddressed']),
                          (review['review_id'], 'unavailable', 'LLMError', []))
-        done = self.ok('bridge_finish_task', {'task_id': task, 'diff': DIFF, 'checks': 'unit tests pass'})
+        done = self.ok('raven_finish_task', {'task_id': task, 'diff': DIFF, 'checks': 'unit tests pass'})
         self.assertEqual(done['status'], 'completed')
         self.assertEqual(done['review']['status'], 'failed')
         self.assertIn('did not complete', done['caveat'])

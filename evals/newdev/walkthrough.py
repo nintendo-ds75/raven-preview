@@ -2,7 +2,7 @@
 
 Not a unit test: the commands a person runs from the README, in order,
 against a real repository, with the agent side speaking MCP over stdio
-to a real `bridge_mcp.py` subprocess and the human side replying in
+to a real `raven_mcp.py` subprocess and the human side replying in
 Slack through the real inbound path. Every promise the product makes is
 checked where a new user would meet it, and the ones that do not hold
 print as failures with what happened instead.
@@ -29,15 +29,15 @@ sys.path.insert(0, str(ROOT))
 # subprocess is already pinned to it. Pin this process too: with a model
 # backend merely present on the machine, each kickoff made a live call
 # nothing here reads, which turned a one minute run into many.
-os.environ.setdefault("BRIDGE_MODEL_API", "none")
-os.environ.setdefault("BRIDGE_SEMANTIC", "0")
-os.environ.setdefault("BRIDGE_LIVE", "0")
+os.environ.setdefault("RAVEN_MODEL_API", "none")
+os.environ.setdefault("RAVEN_SEMANTIC", "0")
+os.environ.setdefault("RAVEN_LIVE", "0")
 
-from bridge import canvas  # noqa: E402
-from bridge.authz import Actor  # noqa: E402
-from bridge.config import Config  # noqa: E402
-from bridge.ingest import index_repo  # noqa: E402
-from bridge.store import Invalid, Store  # noqa: E402
+from raven import canvas  # noqa: E402
+from raven.authz import Actor  # noqa: E402
+from raven.config import Config  # noqa: E402
+from raven.ingest import index_repo  # noqa: E402
+from raven.store import Invalid, Store  # noqa: E402
 
 CFG = Config(model_api="none")
 
@@ -100,9 +100,9 @@ class Host:
 
     def __init__(self, db: Path):
         self.proc = subprocess.Popen(
-            [sys.executable, str(ROOT / "bridge_mcp.py"), "--db", str(db)],
+            [sys.executable, str(ROOT / "raven_mcp.py"), "--db", str(db)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
-            env={"PATH": "/usr/bin:/bin", "BRIDGE_MODEL_API": "none", "BRIDGE_SEMANTIC": "0",
+            env={"PATH": "/usr/bin:/bin", "RAVEN_MODEL_API": "none", "RAVEN_SEMANTIC": "0",
                  "HOME": str(Path.home())})
         self.n = 0
         init = self.rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
@@ -160,7 +160,7 @@ class Walkthrough:
 
 
 def run(repo: Path, work: Path, w: Walkthrough) -> int:
-    db = work / "bridge.db"
+    db = work / "raven.db"
 
     # ---------------------------------------------------------------- 1
     w.section("Install and ingest: 'build the ownership map from a repository'")
@@ -196,7 +196,7 @@ def run(repo: Path, work: Path, w: Walkthrough) -> int:
     # The names in the ownership map are whatever the repository holds,
     # and in a large one most of them are CODEOWNERS teams. A team is not
     # somebody a question can be put to, so the people I add are people.
-    from bridge.graph import is_team_handle
+    from raven.graph import is_team_handle
     top = [r["engineer"] for r in graph.db.execute(
         "SELECT engineer, sum(weight) w FROM ownership WHERE valid_to IS NULL AND engineer != '' "
         "GROUP BY engineer ORDER BY w DESC LIMIT 12") if not is_team_handle(r["engineer"])][:2]
@@ -206,7 +206,7 @@ def run(repo: Path, work: Path, w: Walkthrough) -> int:
         for i, name in enumerate(deciders):
             ids[name] = graph.add_person(name, email=f"{name.split()[0].lower()}@example.invalid",
                                          slack_id=f"U{i}NEWDEV")
-        graph.add_authority("path", "bridge/", "decides", person_id=ids[deciders[0]], repo=repo_name)
+        graph.add_authority("path", "raven/", "decides", person_id=ids[deciders[0]], repo=repo_name)
         graph.add_authority("category", "compat", "decides", person_id=ids[deciders[-1]])
         coordinator = graph.add_person("Sam Coordinator", email="sam@example.invalid", slack_id="UCOORD")
         graph.set_setting("coordinator", coordinator)
@@ -215,24 +215,24 @@ def run(repo: Path, work: Path, w: Walkthrough) -> int:
             not ({"no_people", "no_authority", "no_coordinator"} & after), f"still open: {sorted(after)}")
 
     slack = Slack()
-    delivery = store.connect_delivery(slack, base_url="https://bridge.example.invalid")
+    delivery = store.connect_delivery(slack, base_url="https://raven.example.invalid")
 
     # ---------------------------------------------------------------- 4
     w.section("Point my agent at it: 'agent tools, none of which approves anything'")
     probe = Host(db)
-    expected_tools = {"bridge_start_task", "bridge_add_node", "bridge_settle_node", "bridge_get_tree",
-                      "bridge_wait", "bridge_finish_task", "bridge_get_decision", "bridge_search_decisions",
-                      "bridge_list_owners", "bridge_ingest_repo", "bridge_import_record", "bridge_connection_status",
-                      "bridge_export_proof", "bridge_get_record", "bridge_lookup_record",
-                      "bridge_search_context", "bridge_host_event"}
+    expected_tools = {"raven_start_task", "raven_add_node", "raven_settle_node", "raven_get_tree",
+                      "raven_wait", "raven_finish_task", "raven_get_decision", "raven_search_decisions",
+                      "raven_list_owners", "raven_ingest_repo", "raven_import_record", "raven_connection_status",
+                      "raven_export_proof", "raven_get_record", "raven_lookup_record",
+                      "raven_search_context", "raven_host_event"}
     w.check("the MCP server starts and offers the protocol", set(probe.tools) == expected_tools, ", ".join(probe.tools))
     w.check("its instructions tell an agent what to do first",
-            "bridge_start_task" in probe.instructions)
+            "raven_start_task" in probe.instructions)
     probe.close()
     # The rest runs against a shared Raven, because that is the shape a
     # team uses: the server holds the Slack connection, and the agent
     # reaches it over HTTP.
-    from bridge.server import make_server
+    from raven.server import make_server
     server = make_server(store, port=0)
     import threading
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -241,10 +241,10 @@ def run(repo: Path, work: Path, w: Walkthrough) -> int:
 
     # ---------------------------------------------------------------- 5
     w.section("Kick a task off: 'engage or pass, with its reason'")
-    brief = ("Drop the legacy compatibility shim in bridge/store.py. It changes the default for existing "
+    brief = ("Drop the legacy compatibility shim in raven/store.py. It changes the default for existing "
              "databases and breaks compat for anyone still on the old schema, so we need a call on it.")
-    task = host.call("bridge_start_task", title="Drop the legacy compatibility shim", repo=repo_name,
-                     goal=brief, paths="bridge/store.py", requester="New Dev <newdev@example.invalid>",
+    task = host.call("raven_start_task", title="Drop the legacy compatibility shim", repo=repo_name,
+                     goal=brief, paths="raven/store.py", requester="New Dev <newdev@example.invalid>",
                      client_key="newdev-1")
     w.check("a task with a real judgment call in it engages",
             task["verdict"] == "engage", f"{task['verdict']}: {task['why'][:160]}")
@@ -257,19 +257,19 @@ def run(repo: Path, work: Path, w: Walkthrough) -> int:
 
     # ---------------------------------------------------------------- 6
     w.section("Write the decisions down: 'Raven resolves what it can and routes the rest'")
-    first = host.call("bridge_add_node", task_id=task["task_id"], client_ref="d1",
+    first = host.call("raven_add_node", task_id=task["task_id"], client_ref="d1",
                       question="Do existing databases on the old schema have to keep working after the shim goes?",
                       context="The shim has been in for two releases. Dropping it changes what an old database does on open.",
-                      paths="bridge/store.py", options="keep reading the old schema | migrate on open | refuse to open")
+                      paths="raven/store.py", options="keep reading the old schema | migrate on open | refuse to open")
     w.check("a decision routes to a person, with evidence naming the signal",
             bool(first["owner"]) and bool(first["owner_evidence"]),
             f"{first['owner'] or '(unrouted)'}: {(first['owner_evidence'] or '')[:140]}")
     w.check("the person it names is somebody I put in the map",
             first["owner"] in set(deciders) | {"Sam Coordinator"}, first["owner"])
-    second = host.call("bridge_add_node", task_id=task["task_id"], client_ref="d2", parent_id=first["node_id"],
+    second = host.call("raven_add_node", task_id=task["task_id"], client_ref="d2", parent_id=first["node_id"],
                        question="If we migrate on open, is a one-way migration acceptable?",
                        context="A migration that cannot be rolled back means an operator cannot downgrade.",
-                       paths="bridge/store.py")
+                       paths="raven/store.py")
     w.check("a child decision hangs off the one it grew from",
             second["parent_id"] == first["node_id"])
     w.check("nothing is authorized yet",
@@ -315,7 +315,7 @@ def run(repo: Path, work: Path, w: Walkthrough) -> int:
     # ---------------------------------------------------------------- 9
     w.section("The gate: 'nothing ships on an answer nobody signed'")
     try:
-        host.call("bridge_finish_task", task_id=task["task_id"])
+        host.call("raven_finish_task", task_id=task["task_id"])
         w.check("finishing is refused while a decision waits on a person", False, "it was allowed")
     except Invalid as refused:
         w.check("finishing is refused while a decision waits on a person",
@@ -326,11 +326,11 @@ def run(repo: Path, work: Path, w: Walkthrough) -> int:
     # A real process, killed and started again, with nothing carried over.
     host.close()
     restarted = Host(db)
-    again = restarted.call("bridge_start_task", title="Drop the legacy compatibility shim", repo=repo_name,
+    again = restarted.call("raven_start_task", title="Drop the legacy compatibility shim", repo=repo_name,
                       goal=brief, client_key="newdev-1")
     w.check("the same client_key returns the same task, not a second one",
             again["task_id"] == task["task_id"] and again.get("repeated"))
-    tree = restarted.call("bridge_get_tree", task_id=task["task_id"])
+    tree = restarted.call("raven_get_tree", task_id=task["task_id"])
     restarted.close()
     host = HttpHost(base)
     answered = [n for n in tree["nodes"] if n["answer"]]
@@ -350,14 +350,14 @@ def run(repo: Path, work: Path, w: Walkthrough) -> int:
     # The answer landed after I last read the tree: I have not seen it,
     # so Raven holds the finish until I have.
     try:
-        host.call("bridge_finish_task", task_id=task["task_id"])
+        host.call("raven_finish_task", task_id=task["task_id"])
         w.check("finishing waits until I have read an answer that landed since my last read", False,
                 "it was allowed")
     except Invalid as unread:
         w.check("finishing waits until I have read an answer that landed since my last read",
-                second["node_id"] in str(unread) and "bridge_get_tree" in str(unread), str(unread)[:160])
-    host.call("bridge_get_tree", task_id=task["task_id"])
-    done = host.call("bridge_finish_task", task_id=task["task_id"],
+                second["node_id"] in str(unread) and "raven_get_tree" in str(unread), str(unread)[:160])
+    host.call("raven_get_tree", task_id=task["task_id"])
+    done = host.call("raven_finish_task", task_id=task["task_id"],
                      checks="python3 -m unittest discover -s tests: could not run, no go toolchain")
     w.check("the task finishes once every decision is authorized", done["status"] == "completed")
     w.check("finishing says plainly that it did not verify the change",
@@ -371,13 +371,13 @@ def run(repo: Path, work: Path, w: Walkthrough) -> int:
 
     # --------------------------------------------------------------- 12
     w.section("The next task: 'the understanding compounds'")
-    later = host.call("bridge_start_task", title="Remove the old schema reader", repo=repo_name,
+    later = host.call("raven_start_task", title="Remove the old schema reader", repo=repo_name,
                       goal="Take out the code that reads the old schema, now that the shim is gone.",
-                      paths="bridge/store.py", client_key="newdev-2")
-    reuse = host.call("bridge_add_node", task_id=later["task_id"], client_ref="r1",
+                      paths="raven/store.py", client_key="newdev-2")
+    reuse = host.call("raven_add_node", task_id=later["task_id"], client_ref="r1",
                       question="Do existing databases on the old schema have to keep working after the shim goes?",
                       context="The shim has been in for two releases. Dropping it changes what an old database does on open.",
-                      paths="bridge/store.py")
+                      paths="raven/store.py")
     w.check("the same question asked again reuses the answer a person gave",
             first["node_id"] in (reuse["evidence"] or "") or (reuse["answer"] or "").startswith("migrate on open"),
             f"{reuse['status']}/{reuse['kind']}: {(reuse['evidence'] or '')[:160]}")
@@ -408,7 +408,7 @@ def run(repo: Path, work: Path, w: Walkthrough) -> int:
         bare.graph.db.execute(f"DELETE FROM {table}")
     bare.graph._memo.clear()
     blind = canvas.start_task(bare, CFG, {"title": "Drop the legacy compatibility shim", "repo": repo_name,
-                                          "goal": brief, "paths": "bridge/store.py",
+                                          "goal": brief, "paths": "raven/store.py",
                                           "requester": "New Dev <newdev@example.invalid>"})
     w.check("a task in an area nobody owns still engages",
             blind["verdict"] == "engage", f"{blind['verdict']}: {blind['why'][:160]}")

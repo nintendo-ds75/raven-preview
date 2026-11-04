@@ -14,7 +14,7 @@ import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from bridge.store import Store  # noqa: E402
+from raven.store import Store  # noqa: E402
 
 REPO = 'parcelwise/parcelwise-app'
 KEY = 'starter-overage-billing-1'

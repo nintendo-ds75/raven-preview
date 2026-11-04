@@ -64,7 +64,7 @@ def main() -> None:
     parser.add_argument("--since", required=True, help="start of the window, YYYY-MM-DD")
     parser.add_argument("--work", default="", help="where to keep the clones (default: a temporary directory)")
     args = parser.parse_args()
-    work = Path(args.work or tempfile.mkdtemp(prefix="bridge-oss-"))
+    work = Path(args.work or tempfile.mkdtemp(prefix="raven-oss-"))
     work.mkdir(parents=True, exist_ok=True)
     print(json.dumps([measure(repo, args.since, work) for repo in args.repos], indent=1))
 

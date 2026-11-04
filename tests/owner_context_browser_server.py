@@ -6,11 +6,11 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import fixtures  # noqa: F401  (puts the repository root on sys.path)
-from bridge.server import make_server
-from bridge.store import Store
+from raven.server import make_server
+from raven.store import Store
 from owner_context_fixture import seed
 
-for target in ('bridge.llm.Client.complete', 'bridge.llm.Client.complete_json', 'bridge.github.GitHubAPI.get'):
+for target in ('raven.llm.Client.complete', 'raven.llm.Client.complete_json', 'raven.github.GitHubAPI.get'):
     patch(target, side_effect=AssertionError('External calls forbidden')).start()
 store = Store(sys.argv[1])
 assert not store.delivery.enabled

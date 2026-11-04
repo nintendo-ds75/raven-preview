@@ -128,8 +128,8 @@ REPHRASE_SYSTEM = (
 def rephrase_with_model(items: list, cache_path: Path, model: str, log=print) -> dict[str, str]:
     """One model call per item (cached by sha) that writes the decision
     question; falls back to the template on any error."""
-    from bridge.config import Config
-    from bridge.llm import Client, LLMError
+    from raven.config import Config
+    from raven.llm import Client, LLMError
     cache: dict[str, str] = {}
     if cache_path.exists():
         cache = json.loads(cache_path.read_text())

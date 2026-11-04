@@ -11,7 +11,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 (async () => {
   const root = path.resolve(__dirname,'..');
   const temp = fs.mkdtempSync(path.join(os.tmpdir(),'raven-agent-source-browser-'));
-  const child = spawn(process.env.BRIDGE_PYTHON || 'python3',[path.join(root,'tests/agent_source_browser_server.py'),path.join(temp,'sources.db')],{cwd:root});
+  const child = spawn(process.env.RAVEN_PYTHON || 'python3',[path.join(root,'tests/agent_source_browser_server.py'),path.join(temp,'sources.db')],{cwd:root});
   let stderr='',browser;
   child.stderr.on('data',data=>{stderr+=data;});
   try {
@@ -24,10 +24,10 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     const state=await (await fetch(fixture.url+'/api/state')).json();
     const read=async id=>(await fetch(fixture.url+'/api/decisions/'+id)).json();
     const update=async (record,body)=>{
-      const response=await fetch(fixture.url+'/api/records',{method:'POST',headers:{'Content-Type':'application/json','X-Bridge-CSRF':state.csrf_token},body:JSON.stringify({...record.data,body})});
+      const response=await fetch(fixture.url+'/api/records',{method:'POST',headers:{'Content-Type':'application/json','X-Raven-CSRF':state.csrf_token},body:JSON.stringify({...record.data,body})});
       assert.equal(response.status,200);return response.json();
     };
-    browser=await chromium.launch({headless:true,...(process.env.BRIDGE_BROWSER?{executablePath:process.env.BRIDGE_BROWSER}:{})});
+    browser=await chromium.launch({headless:true,...(process.env.RAVEN_BROWSER?{executablePath:process.env.RAVEN_BROWSER}:{})});
     const page=await browser.newPage({viewport:{width:1280,height:900}});
     const errors=[];
     page.on('pageerror',error=>errors.push(error.message));
@@ -42,7 +42,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
       assert.equal(response.status(),status,await response.text());
       return response.request().postDataJSON();
     };
-    const artifacts=process.env.BRIDGE_TEST_ARTIFACTS || path.join(root,'test-results');
+    const artifacts=process.env.RAVEN_TEST_ARTIFACTS || path.join(root,'test-results');
     fs.mkdirSync(artifacts,{recursive:true});
     await open(fixture.support);
     const initial=await read(fixture.support);

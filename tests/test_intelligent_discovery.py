@@ -4,9 +4,9 @@ import threading
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas, investigation, semantic_index as si
-from bridge.config import Config
-from bridge.store import Invalid
+from raven import canvas, investigation, semantic_index as si
+from raven.config import Config
+from raven.store import Invalid
 
 
 class LocalEncoder:
@@ -68,7 +68,7 @@ class ReasoningTests(OfflineCase):
         reading = {'summary': 'One policy question remains.', 'findings': [
             {'kind': 'judgment', 'question': 'Should unused prepaid value survive renewal?',
              'why': 'Resetting it changes the customer contract.', 'basis': ['host'], 'paths': ['billing/credits.py']}]}
-        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('bridge.investigation.Client.complete_json', return_value=reading) as model:
+        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('raven.investigation.Client.complete_json', return_value=reading) as model:
             result = self.review()
             again = self.review()
         self.assertEqual(model.call_count, 1)
@@ -87,7 +87,7 @@ class ReasoningTests(OfflineCase):
 
     def test_fabricated_basis_is_inconclusive_and_cross_task_adoption_is_refused(self):
         reading = {'findings': [{'kind': 'judgment', 'question': 'Invented?', 'why': 'Unknown policy', 'basis': ['made-up']}]}
-        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('bridge.investigation.Client.complete_json', return_value=reading):
+        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('raven.investigation.Client.complete_json', return_value=reading):
             bad = self.review()
         self.assertEqual(bad['status'], 'unavailable')
         self.assertFalse(bad['findings'])
@@ -97,7 +97,7 @@ class ReasoningTests(OfflineCase):
 
     def test_finish_rechecks_changed_diff_and_signed_decision_versions(self):
         self.g.db.execute("UPDATE runs SET verdict='engage',discovery=? WHERE id=?", (json.dumps({"investigation_required": True}), self.task))
-        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('bridge.investigation.Client.complete_json', return_value={'findings': []}):
+        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('raven.investigation.Client.complete_json', return_value={'findings': []}):
             self.assertFalse(investigation.finish_guard(self.store, self.task, 'patch')['finished'])
             self.review(phase='finish', diff='patch')
             self.assertIsNone(investigation.finish_guard(self.store, self.task, 'patch'))
@@ -111,7 +111,7 @@ class ReasoningTests(OfflineCase):
             return {'findings': [{'kind': 'investigate', 'question': 'Is the changelog number a placeholder?',
                 'why': 'The host has no assigned issue number.', 'basis': [basis], 'paths': []}]}
         with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
-                patch('bridge.investigation.Client.complete_json') as model:
+                patch('raven.investigation.Client.complete_json') as model:
             model.return_value = reading(node)
             result = self.review()
             self.assertEqual(result['status'], 'complete')
@@ -123,11 +123,11 @@ class ReasoningTests(OfflineCase):
                 self.assertEqual(rejected['status'], 'unavailable')
 
     def test_contact_model_selects_cited_candidate_and_cannot_invent_person(self):
-        from bridge.contact_reasoning import choose
+        from raven.contact_reasoning import choose
         self.g.add_person('Ari Example', slack_id='UARI')
         self.g.add_person('Bo Example', slack_id='UBO')
         ranked = [('Ari Example', ['Authored many changes'], 1), ('Bo Example', ['Reviewed renewal policy'], .7)]
-        with patch('bridge.routing.rank_for_decision', return_value=ranked), patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('bridge.contact_reasoning.Client.complete_json') as model:
+        with patch('raven.routing.rank_for_decision', return_value=ranked), patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('raven.contact_reasoning.Client.complete_json') as model:
             model.return_value = {'candidate': 'c2', 'evidence': ['c2:e1'], 'why': 'Reviewed this policy'}
             selected = choose(self.g, Config(model_api='none'), 'example/service', 'Who should decide rollover?', task_id=self.task)
             self.assertEqual(selected[0][0], 'Bo Example')
@@ -147,7 +147,7 @@ class ReasoningTests(OfflineCase):
             if not release.wait(5):
                 raise AssertionError('The caller did not release the background review')
             return {'summary': 'No additional question in this supplied context.', 'findings': []}
-        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('bridge.investigation.Client.complete_json', side_effect=read) as model:
+        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('raven.investigation.Client.complete_json', side_effect=read) as model:
             try:
                 pending = investigation.review(self.store, args, Config(model_api='none'), defer=True)
                 self.assertTrue(pending['model_pending'])
@@ -164,7 +164,7 @@ class ReasoningTests(OfflineCase):
         result = canvas.wait(self.store, {'task_id': self.task}, cap=.1, interval=.01)
         self.assertFalse(result['discovery_reviews'][0]['model_pending'])
         self.assertEqual(self.g.count_events('discovery_reviewed', self.task), 1)
-        from bridge.host_sessions import WAKE_EVENTS
+        from raven.host_sessions import WAKE_EVENTS
         self.assertIn('discovery_reviewed', WAKE_EVENTS)
 
     def test_without_a_model_key_the_review_says_once_that_it_is_off_and_repeats_cheaply(self):
@@ -173,7 +173,7 @@ class ReasoningTests(OfflineCase):
         read it again. The kickoff and the first result say it is off on
         this server and not to call again; a second call returns the same
         answer without a new review."""
-        from bridge.investigation import MODEL_REVIEW_OFF
+        from raven.investigation import MODEL_REVIEW_OFF
         # An engaged kickoff; this store has no repository for the rules to read.
         with patch.object(canvas, 'triage', return_value=('engage', 'the task itself poses a question')):
             kickoff = canvas.start_task(self.store, Config(model_api='none'), {
@@ -194,14 +194,14 @@ class ReasoningTests(OfflineCase):
                                            (self.task,)).fetchone()['n'], 1)
         # With a key the kickoff and the result say nothing of the kind.
         with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
-                patch('bridge.investigation.Client.complete_json', return_value={'summary': 'covered', 'findings': []}):
+                patch('raven.investigation.Client.complete_json', return_value={'summary': 'covered', 'findings': []}):
             keyed = self.review(observations='a different investigation of billing/credits.py')
             self.assertEqual(keyed['status'], 'complete')
             self.assertNotIn('model review is off', canvas._task_as_started(self.store, canvas._task(self.store, self.task), Config())['next'].lower())
 
     def test_failed_review_can_be_retried_without_changing_the_investigation(self):
-        from bridge.llm import LLMError
-        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('bridge.investigation.Client.complete_json', side_effect=[LLMError('unavailable'), {'findings': []}]) as model:
+        from raven.llm import LLMError
+        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('raven.investigation.Client.complete_json', side_effect=[LLMError('unavailable'), {'findings': []}]) as model:
             failed = self.review()
             retried = self.review()
         self.assertEqual(failed['status'], 'unavailable')
@@ -220,7 +220,7 @@ class ReasoningTests(OfflineCase):
         args = {'task_id': self.task, 'observations': 'Investigated the retry code.'}
         with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
                 patch.object(investigation, '_retrieve', side_effect=cold), \
-                patch('bridge.investigation.Client.complete_json', return_value={'findings': []}):
+                patch('raven.investigation.Client.complete_json', return_value={'findings': []}):
             try:
                 pending = investigation.review(self.store, args, Config(model_api='none'), defer=True)
                 self.assertTrue(pending['model_pending'])
@@ -237,7 +237,7 @@ class ReasoningTests(OfflineCase):
         reading = {'findings': [{'kind': 'judgment', 'question': 'What should a zero limit do?',
             'why': 'The host found no decided policy.', 'basis': ['host'], 'paths': ['src/retry.py']}]}
         with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
-                patch('bridge.investigation.Client.complete_json', return_value=reading):
+                patch('raven.investigation.Client.complete_json', return_value=reading):
             result = self.review(paths=[])
         self.assertEqual(result['status'], 'complete')
         self.assertEqual(result['findings'][0]['paths'], [])
@@ -245,32 +245,32 @@ class ReasoningTests(OfflineCase):
         self.assertTrue(result['unaddressed'])
 
     def test_killed_worker_becomes_visible_and_can_retry_from_just_review_id(self):
-        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('bridge.canvas._start_background'):
+        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('raven.canvas._start_background'):
             pending = investigation.review(self.store, {'task_id': self.task, 'observations': 'Host checked renewal code.'},
                                            Config(model_api='none'), defer=True)
         self.g.db.execute("UPDATE investigation_reviews SET created_at='2000-01-01T00:00:00+00:00' WHERE id=?", (pending['review_id'],))
         tree = canvas.get_tree(self.store, self.task)
         self.assertFalse(tree['model_pending'])
         self.assertEqual(tree['discovery_reviews'][0]['error'], 'Interrupted')
-        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('bridge.investigation.Client.complete_json', return_value={'findings': []}):
+        with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('raven.investigation.Client.complete_json', return_value={'findings': []}):
             result = investigation.review(self.store, {'task_id': self.task, 'review_id': pending['review_id'], 'retry': True}, Config(model_api='none'))
         self.assertEqual(result['status'], 'complete')
 
     def test_verified_decider_bypasses_contact_model(self):
-        from bridge.contact_reasoning import choose
-        with patch('bridge.routing.rank_for_decision', return_value=[('Ari Example', ['verified'], 1)]), patch('bridge.signals._authority_matches', return_value=[{'strong': True, 'role': 'decides'}]), patch('bridge.contact_reasoning.Client.complete_json') as model:
+        from raven.contact_reasoning import choose
+        with patch('raven.routing.rank_for_decision', return_value=[('Ari Example', ['verified'], 1)]), patch('raven.signals._authority_matches', return_value=[{'strong': True, 'role': 'decides'}]), patch('raven.contact_reasoning.Client.complete_json') as model:
             result = choose(self.g, Config(model_api='none'), 'example/service', 'Who decides?', task_id=self.task)
         self.assertEqual(result[0][0], 'Ari Example')
         model.assert_not_called()
 
     def test_contact_already_nominated_by_history_receives_retrieved_source_text(self):
-        from bridge.contact_reasoning import choose
+        from raven.contact_reasoning import choose
         self.g.add_person('Mira Example', slack_id='UMIRA')
         self.store.add_record({'repo': 'example/service', 'kind': 'doc', 'ref': 'RUNTIME',
             'title': 'Retry delay policy', 'body': 'A zero limit skips sleep but preserves the retry.',
             'author': 'Mira Example', 'status': 'Approved', 'resolved': True})
         ranked = [('Mira Example', ['authored a record for this path'], .2)]
-        with patch('bridge.routing.rank_for_decision', return_value=ranked), patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('bridge.contact_reasoning.Client.complete_json', return_value={'candidate': 'c1', 'evidence': ['c1:e3']}) as model:
+        with patch('raven.routing.rank_for_decision', return_value=ranked), patch.object(Config, 'semantic_retrieval', property(lambda _: True)), patch('raven.contact_reasoning.Client.complete_json', return_value={'candidate': 'c1', 'evidence': ['c1:e3']}) as model:
             result = choose(self.g, Config(model_api='none'), 'example/service', 'What is the retry delay policy?', task_id=self.task)
         payload = json.loads(model.call_args.args[2])
         self.assertIn('A zero limit skips sleep but preserves the retry.', payload['candidates'][0]['evidence'].values())

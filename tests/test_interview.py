@@ -10,12 +10,12 @@ from urllib.request import Request, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase, ready_server
-from bridge import briefing, canvas, interview
-from bridge.auth import Auth
-from bridge.authz import Actor, Refused
-from bridge.config import Config
-from bridge.llm import LLMError
-from bridge.store import Invalid, Store
+from raven import briefing, canvas, interview
+from raven.auth import Auth
+from raven.authz import Actor, Refused
+from raven.config import Config
+from raven.llm import LLMError
+from raven.store import Invalid, Store
 
 
 class InterviewTests(OfflineCase):
@@ -196,7 +196,7 @@ class InterviewTests(OfflineCase):
             self.store.graph.db.execute("UPDATE brief_links SET revoked_at='now' WHERE id=?", (link.id,))
             return self.model_answer()
         with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
-             patch('bridge.llm.Client.complete_json', side_effect=revoke), self.assertRaises(Refused):
+             patch('raven.llm.Client.complete_json', side_effect=revoke), self.assertRaises(Refused):
             interview.advance(self.store, self.task, row['id'], {'expected_version': row['version']}, actor, Config())
         self.assertEqual(interview.get(self.store, self.task, row['id'], self.actor)['guidance'], {})
 
@@ -258,7 +258,7 @@ class InterviewTests(OfflineCase):
     def test_model_followup_and_caveats_are_grounded_unapproved_and_durable(self):
         row = self.draft(self.create(), turns=[{'prompt_id': 0, 'response': 'Keep five seconds, except old clients keep ten.'}])
         with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
-             patch('bridge.llm.Client.complete_json', return_value=self.model_answer()) as model:
+             patch('raven.llm.Client.complete_json', return_value=self.model_answer()) as model:
             row = self.advance(row, Config())
         self.assertEqual(row['guidance']['mode'], 'model-assisted')
         self.assertEqual(row['prompts'][1], 'Which old clients require ten seconds?')
@@ -275,12 +275,12 @@ class InterviewTests(OfflineCase):
                        {**self.model_answer(), 'answer_quotes': []}, {**self.model_answer(), 'caveats': [{'text': 'false', 'quote': 'invented'}]}):
             row = self.draft(self.create(key=str(result))) if len(str(result)) < 100 else self.draft(self.create(key=str(hash(str(result)))))
             with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
-                 patch('bridge.llm.Client.complete_json', return_value=result):
+                 patch('raven.llm.Client.complete_json', return_value=result):
                 output = self.advance(row, Config())
             self.assertEqual(output['guidance']['reason'], 'invalid_model_response')
         row = self.draft(self.create(key='failed-model'))
         with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
-             patch('bridge.llm.Client.complete_json', side_effect=LLMError('provider secret must not leak')):
+             patch('raven.llm.Client.complete_json', side_effect=LLMError('provider secret must not leak')):
             output = self.advance(row, Config())
         self.assertEqual(output['guidance']['reason'], 'model_failed')
         self.assertNotIn('secret', str(output['guidance']))
@@ -295,7 +295,7 @@ class InterviewTests(OfflineCase):
             row = self.draft(self.create(key='validation-' + str(index)),
                              turns=[{'prompt_id': 0, 'response': 'Keep five seconds, except old clients keep ten.'}])
             with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
-                 patch('bridge.llm.Client.complete_json', return_value=raw):
+                 patch('raven.llm.Client.complete_json', return_value=raw):
                 output = self.advance(row, Config())
             self.assertEqual(output['guidance']['reason'], 'invalid_model_response')
             self.assertEqual(output['guidance']['validation_error'], code)
@@ -318,7 +318,7 @@ class InterviewTests(OfflineCase):
         row = self.draft(self.create(), transcript=quote, answer='', rationale='')
         repaired = {**raw, 'proposed_rationale': ''}
         with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
-             patch('bridge.llm.Client.complete_json', side_effect=[raw, repaired]) as model:
+             patch('raven.llm.Client.complete_json', side_effect=[raw, repaired]) as model:
             result = self.advance(row, Config())
         self.assertEqual(model.call_count, 2)
         retry = json.loads(model.call_args_list[1].args[2])
@@ -334,7 +334,7 @@ class InterviewTests(OfflineCase):
             self.confirm(result)
         # An already compliant clarification needs no repair or invented quote.
         with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
-             patch('bridge.llm.Client.complete_json', return_value=repaired) as model:
+             patch('raven.llm.Client.complete_json', return_value=repaired) as model:
             self.advance(result, Config())
         self.assertEqual(model.call_count, 1)
         system = model.call_args.args[1]
@@ -345,7 +345,7 @@ class InterviewTests(OfflineCase):
         row = self.draft(self.create())
         raw = {**self.model_answer(), 'answer_quotes': []}
         with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
-             patch('bridge.llm.Client.complete_json', return_value=raw) as model:
+             patch('raven.llm.Client.complete_json', return_value=raw) as model:
             result = self.advance(row, Config())
         self.assertEqual(model.call_count, 2)
         self.assertEqual(result['guidance']['validation_error'], 'answer_without_quotes')
@@ -358,7 +358,7 @@ class InterviewTests(OfflineCase):
             interview.update(self.store, self.task, row['id'], {'expected_version': row['version']}, self.actor, 'cancel')
             return self.model_answer()
         with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
-             patch('bridge.llm.Client.complete_json', side_effect=model), self.assertRaises(Invalid):
+             patch('raven.llm.Client.complete_json', side_effect=model), self.assertRaises(Invalid):
             self.advance(row, Config())
         self.assertEqual(interview.get(self.store, self.task, row['id'], self.actor)['guidance'], {})
 
@@ -378,7 +378,7 @@ class InterviewHTTPTests(InterviewTests):
         headers = {'Content-Type': 'application/json'}
         if token is not None: headers['Authorization'] = 'Bearer ' + token
         if cookie: headers['Cookie'] = cookie
-        if csrf: headers['X-Bridge-CSRF'] = csrf
+        if csrf: headers['X-Raven-CSRF'] = csrf
         if link: headers['X-Raven-Link'] = link
         req = Request(self.base + path, data=json.dumps(data).encode() if data is not None else None, headers=headers)
         try:

@@ -1,0 +1,1074 @@
+"""From a question to the paths it is about.
+
+Most real questions name no file. The resolver tries, in order of
+confidence: the path the agent is working in; path-like tokens in the
+question (hw/riscv/virt.c, drm/amd/display, bufferiszero.c), matched to
+the tree exactly or by suffix; the question's own words against the
+tree's directory and file names with rarity weighting, including joined
+neighbours (buffer is zero -> bufferiszero, af xdp -> af-xdp); the paths
+of indexed records on the same subject; and the paths of earlier
+decisions. Every hit carries the reason it was chosen, which becomes
+part of the evidence line."""
+
+from __future__ import annotations
+
+import math
+import re
+from dataclasses import dataclass
+
+from .graph import Graph
+
+MAX_HITS = 4
+TERM_FLOOR = 3.0            # idf a matched tree token must reach (df at most N/20)
+UBIQUITOUS_SHARE = 0.05     # a component in more than this share of paths names nothing
+_STOP = {"should", "would", "could", "approve", "approv", "change", "changes", "this", "that", "with", "from",
+         "when", "what", "who", "which", "make", "made", "use", "used", "using", "add", "added", "adding",
+         "remove", "removed", "fix", "fixed", "fixes", "allow", "into", "onto", "than", "then", "them",
+         "their", "there", "these", "those", "have", "has", "had", "does", "not", "and", "the", "for",
+         "our", "your", "you", "are", "was", "were", "will", "can", "also", "only", "just", "more", "less",
+         "new", "old", "all", "any", "some", "same", "after", "before", "over", "under", "via", "per",
+         "off", "out", "set", "get", "let", "put", "run", "yes", "now", "how", "why", "where", "while",
+         "each", "both", "such", "very", "much", "many", "most", "own", "way", "one", "two", "instead",
+         "still", "already", "again", "again", "always", "never", "here", "case", "cases", "support",
+         "supported", "enable", "enabled", "disable", "disabled", "update", "updated", "cleanup", "clean",
+         "avoid", "handle", "handling", "check", "checks", "missing", "unused", "correct", "wrong", "error",
+         "errors", "warning", "warnings", "code", "file", "files", "function", "functions", "call", "calls",
+         "value", "values", "default", "defaults", "option", "options", "type", "types", "name", "names",
+         "size", "sizes", "version", "versions", "return", "returns", "drop", "move", "rename", "convert",
+         "introduce", "implement", "simplify", "refactor", "revert", "bump", "init", "initial", "path",
+         "paths", "directory", "test", "tests", "testing", "doc", "docs", "src", "lib", "include", "common",
+         "core", "util", "utils", "misc", "main", "base", "config", "data", "build", "tools", "scripts"}
+
+VENDORED = {"deps", "vendor", "third_party", "thirdparty", "node_modules", "external", "3rdparty", "subprojects"}
+
+_PATHISH_RE = re.compile(r"(?<![\w/])([A-Za-z0-9_.+-]+(?:/[A-Za-z0-9_.+*-]+)+)/?")
+_FILENAME_RE = re.compile(
+    r"(?<![\w/])([A-Za-z0-9_+-]{2,}\.(?:c|h|cc|cpp|hpp|py|rs|js|mjs|cjs|ts|tsx|md|rst|json|ya?ml|toml|go|sh"
+    r"|nix|dts|dtsi|inc|txt|html|css|sql|pl|java|kt|rb|php|cs|swift|m|mm|el|decode|build))(?![\w/])")
+
+
+_NORM_RE = re.compile(r"[^a-z0-9]")
+_PIECE_RE = re.compile(r"[_\-.]")
+
+
+def _norm(component: str) -> str:
+    return _NORM_RE.sub("", component.lower())
+
+
+def _stem_of(basename: str) -> str:
+    return basename.rsplit(".", 1)[0] if "." in basename and not basename.startswith(".") else basename
+
+
+@dataclass
+class PathHit:
+    path: str
+    weight: float
+    why: str
+
+    @property
+    def is_dir(self) -> bool:
+        return self.path.endswith("/")
+
+
+class Tree:
+    """The tree at the source's revision, indexed by normalized
+    component so words can be matched to paths cheaply."""
+
+    def __init__(self, paths: list[str]):
+        # Every bucket below is built in path order, and the sets are only
+        # ever walked sorted, so what a question resolves to does not
+        # depend on the process's hash seed.
+        paths = sorted(paths)
+        self.files = set(paths)
+        self.dirs: set[str] = set()
+        # Files by their base name and by that name without its extension:
+        # the only files a suffix like virt.c or riscv/virt can end with.
+        self.files_by_base: dict[str, list[str]] = {}
+        self.by_token: dict[str, set[str]] = {}
+        # (token, path) -> the directory whose name the token matched, when
+        # it matched a directory component rather than the file's name.
+        self.dir_of_token: dict[tuple[str, str], str] = {}
+        # (token, path) pairs where the token is only a piece of a component.
+        self.piece: set[tuple[str, str]] = set()
+        for p in paths:
+            parts = p.split("/")
+            for k in range(1, len(parts)):
+                self.dirs.add("/".join(parts[:k]) + "/")
+            self.files_by_base.setdefault(parts[-1], []).append(p)
+            if "." in parts[-1]:
+                self.files_by_base.setdefault(parts[-1].rsplit(".", 1)[0], []).append(p)
+            seen: set[str] = set()
+            for i, comp in enumerate(parts):
+                last = i == len(parts) - 1
+                base = _stem_of(comp) if last else comp
+                toks = [_norm(base)]
+                # node_sqlite.cc is also found by "sqlite"; xlnx-versal-canfd.c by "canfd".
+                pieces = [x for x in _PIECE_RE.split(base) if len(x) >= 3]
+                piece_toks = [_norm(x) for x in pieces] if len(pieces) > 1 else []
+                for tok in toks + piece_toks:
+                    if tok and tok not in seen:
+                        seen.add(tok)
+                        self.by_token.setdefault(tok, set()).add(p)
+                        if tok in piece_toks and tok not in toks:
+                            self.piece.add((tok, p))
+                        if not last:
+                            self.dir_of_token.setdefault((tok, p), "/".join(parts[:i + 1]) + "/")
+        self.n = max(1, len(paths))
+        self.dir_by_base: dict[str, list[str]] = {}
+        for d in sorted(self.dirs):
+            self.dir_by_base.setdefault(_norm(d.rstrip("/").rsplit("/", 1)[-1]), []).append(d)
+
+    @property
+    def floor(self) -> float:
+        """The idf a matched token must reach to count at all."""
+        return min(TERM_FLOOR, max(0.3, math.log(self.n / 4)))
+
+    @property
+    def strong(self) -> float:
+        """The idf of a token that names an area outright: one found in
+        at most five paths of the tree."""
+        return max(self.floor, math.log(self.n / 5))
+
+    def idf(self, tok: str) -> float:
+        df = len(self.by_token.get(tok, ()))
+        if not df or df > max(3, self.n * UBIQUITOUS_SHARE):
+            return 0.0
+        return math.log(self.n / df)
+
+
+def tree_for(store: Graph, repo: str) -> Tree:
+    return store.memo(repo, "tree", (), lambda: store.artifact_paths(repo), Tree)
+
+
+def _dir_of(path: str) -> str:
+    return path.rsplit("/", 1)[0] + "/" if "/" in path else ""
+
+
+def _add(hits: dict[str, PathHit], path: str, weight: float, why: str) -> None:
+    cur = hits.get(path)
+    if cur is None or weight > cur.weight:
+        hits[path] = PathHit(path, weight, why)
+
+
+def _suffix_matches(tree: Tree, token: str) -> tuple[list[str], list[str]]:
+    """Files and directories whose path ends with the token (as whole
+    components), the token given with or without an extension."""
+    t = token.strip("/").rstrip(":,.;")
+    if not t:
+        return [], []
+    files = []
+    if t in tree.files:
+        files.append(t)
+    low = "/" + t
+    for f in tree.files_by_base.get(t.rsplit("/", 1)[-1], ()):
+        if f == t or f.endswith(low):
+            files.append(f)
+        elif "." in f.rsplit("/", 1)[-1]:
+            stem = f.rsplit(".", 1)[0]
+            if stem == t or stem.endswith(low):
+                files.append(f)
+    dirs = [d for d in tree.dirs if d.rstrip("/") == t or d.rstrip("/").endswith(low)]
+    return sorted(set(files))[:6], sorted(set(dirs))[:6]
+
+
+_DOTTED_RE = re.compile(r"(?<![\w/.@])([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)(?![\w/])")
+_MODULE_EXTS = (".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".rb", ".go", ".rs", ".java", ".kt", ".cs", ".php",
+                ".swift", ".scala", ".ex", ".exs")
+
+
+_SOURCE_ROOTS = ("src/", "lib/", "python/")
+
+
+def _module_base(tree: Tree, base: str) -> str:
+    """Where a dotted module path lives: as written from the root, under a
+    usual source root (the src/ layout: packaging.tags is
+    src/packaging/tags.py), or as the one path in the tree ending with it."""
+    def present(b: str) -> bool:
+        return b + "/" in tree.dirs or any(b + ext in tree.files for ext in _MODULE_EXTS)
+    if present(base):
+        return base
+    for root in _SOURCE_ROOTS:
+        if present(root + base):
+            return root + base
+    tail = "/" + base
+    found = {f[: -len(ext)] for f in tree.files for ext in _MODULE_EXTS if f.endswith(tail + ext)}
+    found |= {d.rstrip("/") for d in tree.dirs if d.rstrip("/").endswith(tail)}
+    return found.pop() if len(found) == 1 else base
+
+
+def module_hits(tree: Tree, text: str) -> dict[str, PathHit]:
+    """A dotted module or symbol path (billing.usage.invoice_cents,
+    acme.billing.rates) names the file or package it lives in. Measured
+    live: a task that named `billing.usage.invoice_cents` resolved only
+    to the data file it also mentioned, and the module's author was
+    never a candidate."""
+    hits: dict[str, PathHit] = {}
+    for raw in _DOTTED_RE.findall(text):
+        parts = raw.split(".")
+        if _FILENAME_RE.fullmatch(raw) or len(parts) < 2:
+            continue
+        for k in range(len(parts), 1, -1):
+            base = _module_base(tree, "/".join(parts[:k]))
+            file = next((base + ext for ext in _MODULE_EXTS if base + ext in tree.files), "")
+            if file:
+                _add(hits, file, 0.95, f"the question names {raw}, which is {file}")
+                break
+            if base + "/" in tree.dirs:
+                _add(hits, base + "/", 0.9, f"the question names {raw}, which is {base}/")
+                break
+    return hits
+
+
+def explicit_hits(tree: Tree, text: str) -> dict[str, PathHit]:
+    hits: dict[str, PathHit] = dict(module_hits(tree, text))
+    tokens = [m.group(1) for m in _PATHISH_RE.finditer(text)]
+    tokens += [m.group(1) for m in _FILENAME_RE.finditer(text)]
+    for raw in tokens:
+        if raw.lower().startswith(("http", "https", "git@")) or raw.count("/") > 8:
+            continue
+        tok = raw.strip("/").rstrip(":,.;)")
+        if not tok or re.fullmatch(r"[\d./]+", tok):
+            continue
+        files, dirs = _suffix_matches(tree, tok)
+        exact_file = tok in tree.files
+        exact_dir = tok + "/" in tree.dirs
+        if exact_file:
+            _add(hits, tok, 1.0, f"the question names {tok}")
+            continue
+        if exact_dir:
+            _add(hits, tok + "/", 1.0, f"the question names {tok}/")
+            continue
+        if len(files) == 1:
+            _add(hits, files[0], 0.95, f"the question names {tok}, which is {files[0]}")
+            continue
+        if 1 <= len(dirs) <= 2 and not files:
+            for d in dirs:
+                _add(hits, d, 0.9, f"the question names {tok}, which is {d}")
+            continue
+        if files and len(files) <= 4:
+            # A bare name matching a source and its header names the source.
+            ranked = sorted(files, key=lambda f: (f.startswith("include/") or f.endswith((".h", ".hpp")), f))
+            for i, f in enumerate(ranked):
+                _add(hits, f, 0.9 if i == 0 else 0.6, f"the question names {tok}, matched to {f}")
+            continue
+        if dirs and len(dirs) <= 4:
+            for d in dirs:
+                _add(hits, d, 0.65, f"the question names {tok}, matched to {d}")
+            continue
+        # A path whose head exists even if the tail does not (a renamed
+        # or new file): keep the deepest known directory.
+        parts = tok.split("/")
+        found = False
+        for k in range(len(parts) - 1, 0, -1):
+            cand = "/".join(parts[:k]) + "/"
+            if cand in tree.dirs:
+                _add(hits, cand, 0.55 + 0.05 * k, f"the question names {tok}; {cand} is in the tree")
+                found = True
+                break
+        if found:
+            continue
+        # An area written the way people say it (drm/amdgpu/mes11 for
+        # drivers/gpu/drm/amd/amdgpu/): the longest run of its components
+        # that names at most a few directories.
+        for length in range(len(parts) - 1, 0, -1):
+            for i in range(0, len(parts) - length + 1):
+                chain = "/".join(parts[i:i + length])
+                if len(chain) < 4:
+                    continue
+                dirs = [d for d in tree.dirs if d.rstrip("/").endswith("/" + chain) or d.rstrip("/") == chain]
+                dirs = [d for d in dirs if d.split("/", 1)[0] not in VENDORED] or dirs
+                if 1 <= len(dirs) <= 3:
+                    for d in sorted(dirs):
+                        _add(hits, d, 0.8 if len(dirs) == 1 else 0.6,
+                             f"the question names {tok}; {chain} is {d}")
+                    found = True
+                    break
+            if found:
+                break
+    return hits
+
+
+def _question_tokens(text: str) -> list[tuple[str, bool]]:
+    """(token, name_like): a token is name-like when it came from an
+    identifier (digits, inner capitals, underscores, hyphens, dots), so
+    a plain English word that happens to be a filename does not count
+    on its own."""
+    return [(tok, namey) for tok, namey, _word in _question_token_words(text)]
+
+
+def _question_token_words(text: str) -> list[tuple[str, bool, int]]:
+    """(token, name_like, word): the word index says which word of the
+    text a token came from, so the pieces of one identifier are known to
+    be pieces of the same thing."""
+    words = re.findall(r"[A-Za-z0-9_+.-]+", text)
+    out: list[tuple[str, bool, int]] = []
+    for i, w in enumerate(words):
+        w = w.strip(".")
+        if not w:
+            continue
+        parts = [p for p in re.split(r"[_\-+.]", w) if p]
+        namey = bool(re.search(r"\d|_|-|\.|[a-z][A-Z]", w)) or w.isupper() and len(w) > 2
+        low = w.lower()
+        if len(parts) > 1:
+            out.append((_norm(low), True, i))
+            # A piece of an identifier (open from qemu_open_old) is a plain
+            # word unless the piece itself looks like a name.
+            out.extend((p.lower(), bool(re.search(r"\d|[a-z][A-Z]", p)) or p.isupper() and len(p) > 2, i)
+                       for p in parts)
+        else:
+            out.append((low, namey, i))
+    return out
+
+
+def _whole_words(text: str) -> list[str]:
+    """Words that stand alone in the text, not pieces of identifiers."""
+    return [w.lower() for w in re.findall(r"(?<![\w_.-])[A-Za-z][A-Za-z0-9]*(?![\w_.-])", text)]
+
+
+def term_hits(tree: Tree, text: str, common: set[str] | None = None) -> dict[str, PathHit]:
+    """Words of the question against directory and file names, rarity
+    weighted, with joined neighbours so identifiers split by spaces or
+    underscores still find their file. A single plain word that happens
+    to be a filename (memory, rings, commit) never names an area on its
+    own: a lone match must be name-like, or a rare word that the
+    repository's own records do not use as ordinary language."""
+    toks = _question_token_words(text)
+    common = common or set()
+    cands: dict[str, tuple[float, bool]] = {}
+    # The words of the text each token came from, and the tokens of each
+    # word: the pieces of one identifier all come from one word.
+    words_of: dict[str, set[int]] = {}
+    tokens_of_word: dict[int, set[str]] = {}
+    for t, _namey, word in toks:
+        tokens_of_word.setdefault(word, set()).add(_norm(t))
+    # Tokens that are a word or an identifier of the text in their own
+    # right (the first token of each word), as against a piece of a longer
+    # word (class in CPU_GET_CLASS).
+    whole = {_norm(t) for i, (t, _namey, word) in enumerate(toks) if i == 0 or toks[i - 1][2] != word}
+    for i, (t, namey, word) in enumerate(toks):
+        variants = {(t, namey)}
+        if i + 1 < len(toks):
+            variants.add((t + toks[i + 1][0], True))
+        if i + 2 < len(toks):
+            variants.add((t + toks[i + 1][0] + toks[i + 2][0], True))
+        for v, vn in variants:
+            v = _norm(v)
+            if len(v) < 3 or v in _STOP or v.isdigit():
+                continue
+            idf = tree.idf(v)
+            if idf < tree.floor:
+                continue
+            if len(v) == 3 and len(tree.by_token.get(v, ())) > (10 if vn else 3):
+                continue
+            if v not in cands or idf > cands[v][0]:
+                cands[v] = (idf, vn or cands.get(v, (0, False))[1])
+            words_of.setdefault(v, set()).add(word)
+    if not cands:
+        return {}
+    strong = tree.strong
+    # Tests and docs mention every subsystem's names, and vendored trees
+    # carry a whole other project's names; they are the area only when
+    # the question says so.
+    plain = [t for t, _namey, _word in toks]
+    about_tests = any(t in ("test", "tests", "testing", "qtest", "iotests", "avocado", "fixtures") for t in plain)
+    about_docs = any(t in ("doc", "docs", "documentation", "manual") for t in plain)
+    about_deps = any(t in ("deps", "dep", "vendor", "vendored", "third_party", "thirdparty", "upgrade", "bump",
+                           "update", "node_modules") for t in plain)
+    scored: dict[str, tuple[float, list[str]]] = {}
+    for tok, (idf, _) in cands.items():
+        for p in sorted(tree.by_token[tok]):
+            top = p.split("/", 1)[0]
+            scale = 1.0
+            if not about_deps and (top in VENDORED or "/node_modules/" in p or "/third_party/" in p or "/vendor/" in p):
+                scale = 0.35
+            elif not about_tests and (top in ("tests", "test", "testsuite", "t") or "/tests/" in p or "/test/" in p):
+                scale = 0.5
+            elif not about_docs and top in ("docs", "doc", "Documentation"):
+                scale = 0.5
+            sc, used = scored.get(p, (0.0, []))
+            scored[p] = (sc + idf * scale, used + [tok])
+    # A token that named the file (its stem or a piece of it) credits the
+    # file itself; one that named a directory credits that directory, so
+    # "http2" finds src/node_http2.cc and lib/internal/http2/, never all
+    # of src/. Several files under one directory matching the same rare
+    # word is a strong area signal.
+    dirs: dict[str, tuple[float, set[str]]] = {}
+    for p, (sc, used) in scored.items():
+        if len(used) == 1:
+            t = used[0]
+            # A piece of a file's name is named by a word or an identifier,
+            # never by a lone piece of another identifier.
+            if (t, p) in tree.piece and (not cands[t][1] or t not in whole):
+                continue
+        # The pieces of one identifier that are each only a piece of the
+        # file's name name it when they make up that name (xen-mapcache.c
+        # for xen_ram_addr_from_mapcache_single) and nothing when the name
+        # has pieces of its own: memory_region_init_rom_nomigrate() is not
+        # memory-region-housekeeping.cocci. The identifier itself, or a
+        # piece that is a whole name, still counts.
+        sources = set.union(*(words_of[t] for t in used)) if len(used) > 1 else set()
+        if len(sources) == 1 and all((t, p) in tree.piece for t in used):
+            stem_pieces = {_norm(x) for x in _PIECE_RE.split(_stem_of(p.rsplit("/", 1)[-1])) if len(x) >= 3}
+            if not stem_pieces <= tokens_of_word[next(iter(sources))]:
+                continue
+        named_file = any((t, p) not in tree.dir_of_token for t in used)
+        if named_file:
+            d = p
+        else:
+            d = max((tree.dir_of_token[(t, p)] for t in used), key=len)
+        ds, dt = dirs.get(d, (0.0, set()))
+        dirs[d] = (max(ds, sc), dt | set(used))
+
+    def lone_ok(tok: str) -> bool:
+        idf, namey = cands[tok]
+        if namey:
+            return len(tok) >= 4
+        return len(tok) >= 5 and tok not in common and idf >= strong
+
+    hits: dict[str, PathHit] = {}
+    ranked = sorted(dirs.items(), key=lambda kv: (-kv[1][0], kv[0]))
+    for d, (sc, used) in ranked[:4]:
+        if sc < tree.floor:
+            continue
+        if len(used) == 1 and not lone_ok(next(iter(used))):
+            continue
+        w = 0.8 * min(1.0, sc / strong)
+        namey_used = sum(1 for t in used if cands[t][1])
+        if len(used) >= 2:
+            # Two identifiers name an area firmly; two plain words less so.
+            w = min(0.9 if namey_used else 0.75, w + 0.1)
+        elif not cands[next(iter(used))][1]:
+            w = min(w, 0.35)
+        why = "matched " + ", ".join(sorted(used)[:3]) + f" to {d}"
+        _add(hits, d, w, why)
+    # The single best file, when a rare word names it outright.
+    fp, (fs, fused) = max(scored.items(), key=lambda kv: (kv[1][0], -len(kv[0])))
+    best = max(sc for sc, _ in scored.values())
+    if fs >= best and fs >= tree.floor and _norm(_stem_of(fp.rsplit("/", 1)[-1])) in fused \
+            and (len(fused) >= 2 or lone_ok(next(iter(fused)))):
+        _add(hits, fp, min(0.9, 0.8 * min(1.0, fs / strong) + 0.05), f"matched {', '.join(sorted(fused)[:3])} to {fp}")
+    return hits
+
+
+def root_file_hits(tree: Tree, text: str, common: set[str] | None = None) -> dict[str, PathHit]:
+    """A word that is exactly a root-level file's stem (meson, configure,
+    Makefile) names that file even though the stem is common elsewhere,
+    unless the repository's own records use the word as plain language."""
+    hits: dict[str, PathHit] = {}
+    roots = {_norm(_stem_of(f)): f for f in sorted(tree.files) if "/" not in f}
+    for tok, _ in _question_tokens(text):
+        f = roots.get(_norm(tok))
+        if f and len(tok) >= 4 and tok.lower() not in _STOP and tok.lower() not in (common or set()):
+            _add(hits, f, 0.85, f"the question names {f}")
+    return hits
+
+
+_AREA_RE = re.compile(r"^(?:[^:?]{0,60}:\s*)?Should\s+(?:the\s+)?([A-Za-z0-9_.+/-]+)", re.IGNORECASE)
+# A token shaped like code: a call, an identifier with an underscore or a
+# digit, CamelCase, or an UPPER_CASE macro.
+_CODE_NAME_RE = re.compile(r"\(\)|_|\d|[a-z][A-Z]|^[A-Z][A-Z0-9]{2,}$")
+
+
+def area_word_hits(tree: Tree, text: str) -> dict[str, PathHit]:
+    """The subject of a 'Should X ...' question is its area even when X
+    is an ordinary word (doc, test, src, util): a directory of that name
+    first, else the module files named after it (lib/sqlite.js,
+    src/node_sqlite.cc, doc/api/sqlite.md), each at its own scope."""
+    m = _AREA_RE.match(text.strip())
+    if not m:
+        return {}
+    word = m.group(1).strip(".,;:").lower()
+    if word in ("we", "it", "this", "that", "they", "you", "raven", "there", "all") or len(word) < 3 or "/" in word:
+        return {}
+    hits: dict[str, PathHit] = {}
+    key = _norm(word)
+    vendored_ok = word in VENDORED
+    dirs = [d for d in tree.dir_by_base.get(key, [])
+            if (vendored_ok or d.split("/", 1)[0] not in VENDORED) and not d.startswith(".")]
+    aux = re.compile(r"^(tests?|docs?|Documentation)/")
+    source_dirs = dirs if aux.match(word + "/") else [d for d in dirs if not aux.match(d)]
+    top = [d for d in (source_dirs or dirs) if d.count("/") == 1]
+    chosen = top or source_dirs or dirs
+    for d in chosen[:3]:
+        w = 0.85 if len(chosen) == 1 else 0.6
+        if not source_dirs and dirs:
+            w = 0.5
+        _add(hits, d, w, f"the question is about {d}")
+    if top or len(word) < 4:
+        return hits
+    files = []
+    for f in sorted(tree.by_token.get(key, ())):
+        if (not vendored_ok and f.split("/", 1)[0] in VENDORED) or f.startswith("."):
+            continue
+        stem = _stem_of(f.rsplit("/", 1)[-1])
+        # sqlite names lib/sqlite.js and src/node_sqlite.cc (a piece after a
+        # separator), never test_msa_and_v.c for "and".
+        pieces = [_norm(x) for x in re.split(r"[_\-.]", stem)]
+        if _norm(stem) == key or (len(key) >= 5 and word not in _STOP and key in pieces):
+            files.append(f)
+    source_files = [f for f in files if not re.match(r"^(tests?|docs?|Documentation)/", f)]
+    # Tests and documentation named after the word are its area only when
+    # nothing else is, and then weakly: a function the question names can
+    # still place it.
+    aux_only = bool(files) and not source_files
+    files = source_files or files
+    # The word before a code name is what the question does to it, not
+    # where it lives: "Should extract x86_isa_bios_init() ..." is not about
+    # load-extract-al16-al8.h.inc, "Should rename InvoiceService ..." not
+    # about batch_rename.py. A file named after the word outright still
+    # counts; a label with a colon after it (mapcache: ...) is an area.
+    following = re.match(r"[A-Za-z0-9_().+-]+", text.strip()[m.end():].lstrip(" ,"))
+    if following and _CODE_NAME_RE.search(following.group(0)):
+        files = [f for f in files if _norm(_stem_of(f.rsplit("/", 1)[-1])) == key]
+    if 0 < len(files) <= 6:
+        for f in sorted(files):
+            _add(hits, f, (0.6 if hits else 0.7) * (AUX_AREA_WEIGHT if aux_only else 1.0),
+                 f"the question is about {word}, which is {f}")
+    return hits
+
+
+AUX_AREA_WEIGHT = 0.7
+
+
+_AREA_NOUNS = {"backend", "backends", "frontend", "subsystem", "driver", "drivers", "module", "modules", "layer",
+               "package", "directory", "folder", "component", "area", "code", "support", "tests", "test", "job",
+               "integration", "plugin", "plugins", "port", "target", "machine", "machines", "board", "boards",
+               "device", "devices", "emulation", "emulator", "accelerator", "library", "tree", "stack"}
+# A language or tool named with a capital is usually the language, not
+# the directory that holds the project's own code in it.
+_LANGUAGE_WORDS = {"python", "rust", "java", "perl", "ruby", "javascript", "typescript", "shell", "bash", "make"}
+DIR_NAMED_WEIGHT = 0.85     # "the Emscripten backend": a unique directory named the way people say it
+DIR_WORD_WEIGHT = 0.7       # a plain word that is a unique directory's name
+_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*")
+
+
+def dir_name_hits(tree: Tree, text: str) -> dict[str, PathHit]:
+    """A plain word that is exactly a directory's name (accel, migration,
+    gdbstub) names that directory: one directory of that name is a firm
+    area, a few are candidates, many is no signal. Two words that join
+    into one (af xdp, linux user) count as that name. A unique directory
+    named the way people say an area, with a capital inside the sentence
+    or an area noun beside it (the Emscripten backend, Xen support), is
+    as firm as a path: measured on urllib3, "the Emscripten backend" sat
+    below the floor that lets a named area route."""
+    hits: dict[str, PathHit] = {}
+    stripped = re.sub(r"^(?:Who should approve this change:\s*)?(?:Should\s+)?", "", text.strip(), flags=re.IGNORECASE)
+    raw = [(m.group(0), m.start()) for m in _WORD_RE.finditer(stripped)
+           if m.start() == 0 or stripped[m.start() - 1] not in "_.-/"]
+    raw = [(w, at) for w, at in raw if (at + len(w) == len(stripped) or stripped[at + len(w)] not in "_.-/")]
+    words = [w.lower() for w, _at in raw]
+    about_tests = any(w in ("test", "tests", "testing") for w in words)
+
+    def directories(key: str) -> list[str]:
+        dirs = [d for d in tree.dir_by_base.get(key, []) if d.split("/", 1)[0] not in VENDORED]
+        if not about_tests:
+            dirs = [d for d in dirs if not re.match(r"^(tests?|docs?|Documentation)/", d) and "/tests/" not in d]
+        return dirs
+
+    for i, (word, at) in enumerate(raw):
+        low = word.lower()
+        joined = words[i] + words[i + 1] if i + 1 < len(words) else ""
+        span = 2 if joined and len(joined) >= 6 and len(directories(joined)) == 1 else 1
+        if span == 2:
+            low, key = f"{words[i]} {words[i + 1]}", joined
+        else:
+            key = _norm(low)
+            after = words[i + 1] if i + 1 < len(words) else ""
+            # Three letters name an area only beside an area noun (Xen support).
+            if len(low) < (3 if after in _AREA_NOUNS else 4) or low in _STOP:
+                continue
+        dirs = directories(key)
+        if not dirs or len(dirs) > 3:
+            continue
+        after = words[i + span] if i + span < len(words) else ""
+        capital = (word[0].isupper() and at > 0 and low not in _LANGUAGE_WORDS
+                   and not stripped[:at].rstrip().endswith((":", ".", "?", "!")))
+        named = len(dirs) == 1 and (capital or after in _AREA_NOUNS)
+        # A top-level directory of that name outranks nested ones.
+        ordered = sorted(dirs, key=lambda d: (d.count("/"), d))
+        for k, d in enumerate(ordered):
+            if named:
+                _add(hits, d, DIR_NAMED_WEIGHT, f"the question names the {low} area, which is {d}")
+                continue
+            w = DIR_WORD_WEIGHT if len(dirs) == 1 else (0.6 if k == 0 and ordered[0].count("/") == 1 else 0.45)
+            _add(hits, d, w, f"the question names the directory {d}")
+    return hits
+
+
+def common_words(store: Graph, repo: str, tokens: list[str]) -> set[str]:
+    """Tokens the repository's own records use as ordinary language: a
+    word in more than 2% of the indexed record texts."""
+    if not tokens:
+        return set()
+    n = store.db.execute("SELECT count(*) c FROM intents WHERE repo=?", (repo,)).fetchone()["c"]
+    if n < 20:
+        return set()
+    dfs = store.term_dfs(sorted(set(tokens)), repo=repo)
+    return {t for t, df in dfs.items() if df / n > 0.02}
+
+
+_CALL_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]{3,})\(\)")
+_SNAKE_RE = re.compile(r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b")
+_CAMEL_RE = re.compile(r"\b([A-Z][a-z0-9]*[A-Z][A-Za-z0-9]*)\b")
+_MACRO_RE = re.compile(r"\b([A-Z][A-Z0-9]*_[A-Z0-9_]+)\b")
+# An instruction mnemonic, a register or a constant written in capitals
+# (UQADD, MOVNTI, UFCR): a name the code spells exactly that way.
+_CAPS_RE = re.compile(r"\b([A-Z][A-Z0-9]{3,})\b")
+_CAPS_SKIP = {"TODO", "FIXME", "NULL", "TRUE", "FALSE", "JSON", "YAML", "TOML", "HTTP", "HTTPS", "README",
+              "MAINTAINERS", "CODEOWNERS", "LICENSE", "COPYING", "ASCII", "UTF8", "UUID", "GPL", "GPLV2", "LGPL",
+              "SPDX", "QEMU", "LINUX", "POSIX", "ARM64", "AMD64", "X86", "RISCV", "WIP", "RFC", "NOTE", "WARNING"}
+# The verb before a name that says the question uses it rather than
+# changes it: "use memmove() for ..." is about the caller, whose file
+# the name does not reveal; the definer is then a guess, not the area.
+_USES_RE = re.compile(r"\b(?:use|uses|using|call|calls|calling|via|through|prefer|prefers|invoke|invokes|with)"
+                      r"\s+(?:the\s+|a\s+|an\s+)?[`'\"]?$")
+SYMBOL_DEFINED_WEIGHT = 0.85     # one source file defines the name: as firm as a filename
+SYMBOL_SHARED_WEIGHT = 0.75      # a few files define it (a stub and its real definition)
+SYMBOL_USED_WEIGHT = 0.7         # the question calls or uses it: its definer is a guess at the area
+SYMBOL_MENTION_WEIGHT = 0.8      # nothing defines it, a few files, or one directory, spell it
+SYMBOL_SPLIT_WEIGHT = 0.7        # its mentions split between two directories
+MENTION_DOMINANT_SHARE = 0.6
+MENTION_PAIR_SHARE = 0.8
+_HEADER_RE = re.compile(r"\.(?:h|hpp|hh|hxx)(?:\.inc)?$")
+
+
+def code_names(text: str) -> list[str]:
+    """The code-shaped names a question quotes, at most three: a call,
+    snake_case of six or more characters, CamelCase with an inner
+    capital, an UPPER_CASE macro, or a capitalised mnemonic."""
+    found = (_CALL_RE.findall(text) + [w for w in _SNAKE_RE.findall(text) if len(w) >= 6]
+             + [w for w in _CAMEL_RE.findall(text) if len(w) >= 5 and not w.isupper()] + _MACRO_RE.findall(text)
+             + _CAPS_RE.findall(text))
+    return [n for n in dict.fromkeys(found) if n not in _CAPS_SKIP][:3]
+
+
+def _used_not_changed(text: str, name: str) -> bool:
+    i = text.find(name)
+    return i > 0 and bool(_USES_RE.search(text[:i]))
+
+
+def _sources_first(files: list[str]) -> list[str]:
+    """A header that declares a function beside the source that defines
+    it is not where the function lives; a header alone (a struct, a
+    macro) is."""
+    sources = [f for f in files if not _HEADER_RE.search(f)]
+    return sources or files
+
+
+MENTION_MAX_FILES = 40
+
+
+def mentions_of(store: Graph, repo: str, names: list[str]) -> dict[str, list[str]]:
+    """The files that spell each name as a whole word at the pinned
+    revision, for a name nothing defines (an instruction mnemonic, a
+    register, a field). A name in more than MENTION_MAX_FILES files is
+    everywhere and left out; partial clones are skipped, as for blame."""
+    import subprocess
+    from .ingest import _git_read, _git_rev, _git_source, _partial_clone
+    path = _git_source(store, repo)
+    if not path or not names or _partial_clone(path):
+        return {}
+    try:
+        rev = _git_rev(store, repo)
+    except RuntimeError:
+        return {}
+    out: dict[str, list[str]] = {}
+    for name in names[:3]:
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{3,80}", name):
+            continue
+        try:
+            res = _git_read(path, "grep", "-l", "-w", "-F", "-e", name, rev, "--", timeout=20)
+        except (RuntimeError, subprocess.TimeoutExpired, OSError):
+            continue
+        if res.returncode != 0:
+            continue
+        files = sorted({line.split(":", 1)[1] for line in res.stdout.splitlines() if ":" in line})
+        if 0 < len(files) <= MENTION_MAX_FILES:
+            out[name] = files
+    return out
+
+
+def symbol_hits(store: Graph, repo: str, text: str) -> dict[str, PathHit]:
+    """A name the question quotes is about the file that defines it
+    (sys_tags(), init_excp_4xx_softmmu), read from the pinned checkout;
+    a name nothing defines (an instruction mnemonic, a register, a
+    field) is about the few files, or the one directory, that spell it.
+    Measured on a pathless replay of qemu: the question kept the
+    identifiers after every path word was gone, and the word rungs
+    either found nothing or pre-empted this one with a weaker guess."""
+    names = code_names(text)
+    if not names:
+        return {}
+    from .ingest import definitions_of
+    hits: dict[str, PathHit] = {}
+    defined = definitions_of(store, repo, names)
+    for name, files in defined.items():
+        files = _sources_first(files)
+        if _used_not_changed(text, name):
+            # Measured: "call cpu_openrisc_clock_init() in cpu_realize()"
+            # is decided under hw/openrisc/, where the callee lives, though
+            # the caller is the file that changes.
+            for f in files:
+                _add(hits, f, SYMBOL_USED_WEIGHT,
+                     f"the question uses {name}, defined in {f}; the file that calls it is not named")
+            continue
+        weight = SYMBOL_DEFINED_WEIGHT if len(files) == 1 else SYMBOL_SHARED_WEIGHT
+        for f in files:
+            _add(hits, f, weight, f"the question names {name}, defined in {f}")
+    for name, files in mentions_of(store, repo, [n for n in names if n not in defined]).items():
+        if len(files) <= 3:
+            for f in files:
+                _add(hits, f, SYMBOL_MENTION_WEIGHT,
+                     f"the question names {name}, which appears only in {', '.join(files)}")
+            continue
+        by_dir: dict[str, int] = {}
+        for f in files:
+            by_dir[_dir_of(f)] = by_dir.get(_dir_of(f), 0) + 1
+        ranked = sorted(by_dir.items(), key=lambda kv: (-kv[1], kv[0]))
+        top, n = ranked[0], len(files)
+        if top[0] and top[1] >= MENTION_DOMINANT_SHARE * n:
+            _add(hits, top[0], SYMBOL_MENTION_WEIGHT,
+                 f"the question names {name}; {top[1]} of the {n} files that spell it are under {top[0]}")
+        elif len(ranked) > 1 and all(d for d, _ in ranked[:2]) and ranked[0][1] + ranked[1][1] >= MENTION_PAIR_SHARE * n:
+            for d, k in ranked[:2]:
+                _add(hits, d, SYMBOL_SPLIT_WEIGHT,
+                     f"the question names {name}; {k} of the {n} files that spell it are under {d}")
+    return hits
+
+
+def record_hits(store: Graph, repo: str, text: str) -> dict[str, PathHit]:
+    """Paths of indexed records about the same subject. The subject is
+    carried by rare terms: a record shares the subject when it covers
+    two of the question's rarest terms, at least one of them a name
+    (an identifier, or a word few records use), and the record itself is
+    about one area (few directories), not a tree-wide merge."""
+    from .llm import stem
+    raw = [(w, stem(w.lower())) for w in re.findall(r"[A-Za-z0-9_]{3,}", text)
+           if w.lower() not in _STOP]
+    terms = [t for _, t in raw if t not in _STOP and len(t) >= 4]
+    namey = {t for w, t in raw if re.search(r"\d|_|[a-z][A-Z]", w) and len(t) >= 4}
+    if len(terms) < 2:
+        return {}
+    n = store.db.execute("SELECT count(*) c FROM intents WHERE repo=?", (repo,)).fetchone()["c"]
+    if n < 5:
+        return {}
+    dfs = store.term_dfs(sorted(set(terms)), repo=repo)
+    rare = {t for t in terms if 0 < dfs.get(t, 0) <= max(2, 0.01 * n)}
+    focus = sorted((t for t in terms if 0 < dfs.get(t, 0)), key=lambda t: dfs[t])[:4]
+    if len(focus) < 2 or not (rare | namey) & set(focus):
+        return {}
+    hits: dict[str, PathHit] = {}
+    rows = store.intents_matching(terms, limit=6, repo=repo)
+    paths = store.paths_of_intents(repo, [(r["kind"], r["ref"]) for r in rows])
+    for r in rows:
+        blob = (r["title"] + " " + r["body"]).lower()
+        covered = [t for t in focus if t in blob]
+        # Two rare words, or one identifier, carry a subject; two ordinary
+        # words that happen to recur do not.
+        if len(covered) < 2 or not (sum(1 for t in covered if t in rare) >= 2 or any(t in namey for t in covered)):
+            continue
+        plist = paths.get((r["kind"], r["ref"]), [])
+        dirs = {_dir_of(p) or p for p in plist}
+        if not plist or len(dirs) > 4:
+            continue
+        for d in sorted(dirs):
+            _add(hits, d, 0.5, f"record {r['kind']} {r['ref']} ({', '.join(covered[:2])}) touched {d}")
+    return hits
+
+
+def memory_hits(store: Graph, repo: str, text: str) -> dict[str, PathHit]:
+    hits: dict[str, PathHit] = {}
+    try:
+        items = store.memory_search(text, limit=3, repo=repo, min_score=0.5)
+    except Exception:
+        return {}
+    files = tree_for(store, repo).files
+    for it in items:
+        p = (it.get("path") or "").strip()
+        if not p or p == "unknown":
+            continue
+        _add(hits, p if p in files else _dir_of(p) or p, 0.5,
+             f"earlier decision {it['id']} on the same subject was about {p}")
+    return hits
+
+
+def resolve_paths(store: Graph, repo: str, question: str, context: str = "", path: str = "",
+                  hints: list[str] | None = None, also_paths: list[str] | None = None) -> list[PathHit]:
+    """The paths a question is about, best first. `path` and `also_paths`
+    are where the agent is working (explicit hits, every one of them: a
+    node on "usage.json,billing/usage.py" was once judged under
+    usage.json alone, where nobody held a clear share, while the person
+    who wrote all of billing/usage.py was never looked at). `hints` are
+    paths the question inherits from the decision above it or from its
+    task: they count only when the question itself names no clear area."""
+    tree = tree_for(store, repo)
+    hits: dict[str, PathHit] = {}
+    for named in [path, *(also_paths or [])]:
+        if not named or named == "unknown":
+            continue
+        p = named.lstrip("/")
+        if p in tree.files:
+            _add(hits, p, 1.0, f"the agent is working in {p}")
+        elif p.rstrip("/") + "/" in tree.dirs:
+            _add(hits, p.rstrip("/") + "/", 1.0, f"the agent is working in {p}")
+        else:
+            d = _dir_of(p)
+            if d in tree.dirs:
+                _add(hits, d, 0.8, f"the agent is working in {p}; {d} is in the tree")
+    def best() -> float:
+        return max((h.weight for h in hits.values()), default=0.0)
+
+    # The agent named a path (or a new file whose directory exists): the
+    # question's words refine it, they do not move it to licence boilerplate.
+    anchored = best() >= 0.8
+
+    if tree.files:
+        for k, v in explicit_hits(tree, question).items():
+            _add(hits, k, v.weight, v.why)
+        common = common_words(store, repo, [t for t, _ in _question_tokens(question + " " + (context or ""))])
+        # A question word that happens to be a root file's stem ("license"
+        # and LICENSE.BSD) is a guess at the area; once the agent named a
+        # path that exists, it stays a secondary hit, so a file's sole
+        # author cannot outrank the people who own the code being changed.
+        # Legal boilerplate (LICENSE, COPYING, NOTICE, AUTHORS) is never the
+        # area then: who wrote the licence text says nothing about who
+        # decides code that handles licences.
+        for k, v in root_file_hits(tree, question, common).items():
+            if anchored and _norm(_stem_of(k)) in LEGAL_STEMS:
+                continue
+            _add(hits, k, v.weight * (ROOT_WORD_WHEN_ANCHORED if anchored else 1.0),
+                 v.why + ("; secondary to the path the agent named" if anchored else ""))
+        # A change to MAINTAINERS that names a section ("add myself as a
+        # reviewer of machine core") is decided by that section's people.
+        if "MAINTAINERS" in hits or re.search(r"\bMAINTAINERS\b", question):
+            for k, v in maintainers_section_hits(store, repo, tree, question).items():
+                _add(hits, k, v.weight, v.why)
+    # A quoted identifier names its file more surely than any plain word:
+    # it is read before the word rungs, which can only add to it.
+    if best() < 0.9:
+        for k, v in symbol_hits(store, repo, question).items():
+            _add(hits, k, v.weight, v.why)
+    if tree.files:
+        if best() < 0.9:
+            for k, v in area_word_hits(tree, question).items():
+                _add(hits, k, v.weight, v.why)
+            for k, v in dir_name_hits(tree, question).items():
+                _add(hits, k, v.weight, v.why)
+            for k, v in term_hits(tree, question, common).items():
+                _add(hits, k, v.weight, v.why)
+            if context and best() < 0.6:
+                for k, v in explicit_hits(tree, context).items():
+                    _add(hits, k, v.weight * 0.7, v.why + " (from the context)")
+                for k, v in term_hits(tree, context, common).items():
+                    # A lone word from the body is never an area; two are.
+                    if len(v.why.split("matched ", 1)[-1].split(" to ")[0].split(", ")) >= 2:
+                        _add(hits, k, v.weight * 0.7, v.why + " (from the context)")
+    if anchored:
+        _drop_legal_word_hits(hits, question, path, also_paths)
+    if best() < 0.6:
+        for k, v in record_hits(store, repo, question).items():
+            _add(hits, k, v.weight, v.why)
+        for k, v in memory_hits(store, repo, question).items():
+            _add(hits, k, v.weight, v.why)
+    # Inherited paths count only when the question names no area of its
+    # own worth the name; they never outrank the question's own words.
+    if hints and best() < INHERITED_BELOW:
+        for h in hints[:4]:
+            p = h.strip().lstrip("/")
+            if not p:
+                continue
+            if p in tree.files:
+                _add(hits, p, INHERITED_WEIGHT, f"inherited: the decision above or the task is about {p}")
+            elif p.rstrip("/") + "/" in tree.dirs:
+                _add(hits, p.rstrip("/") + "/", INHERITED_WEIGHT,
+                     f"inherited: the decision above or the task is about {p.rstrip('/')}/")
+            elif not tree.files:
+                # No tree to check it against, as for a path the agent
+                # names: the authority map still reads it. Measured: a node
+                # in a repository Raven had not indexed reached the
+                # reviewer of its task's file but not the person who
+                # decides it.
+                _add(hits, p, INHERITED_WEIGHT, f"inherited: the decision above or the task is about {p}")
+    if best() < 0.8:
+        for k, v in model_area_hits(store, repo, tree, question, context).items():
+            _add(hits, k, v.weight, v.why)
+    # Nothing resolved, but the question names a MAINTAINERS section by
+    # its title: that section's people are asked, and the evidence says
+    # the area is a guess from the title, not a path.
+    if tree.files and best() < INHERITED_BELOW:
+        for k, v in maintainers_section_hits(store, repo, tree, question, guess=True).items():
+            _add(hits, k, v.weight, v.why)
+    out = sorted(hits.values(), key=lambda h: (-h.weight, h.path))
+    return out[:MAX_HITS]
+
+
+_LEGAL_TEXT_RE = re.compile(r"relicens|copyright|\b(?:licen[cs]e|copying|notice)\s+(?:file|text|terms)\b|"
+                            r"\b(?:our|the project'?s|this project'?s)\s+licen[cs]e\b", re.IGNORECASE)
+_LEGAL_NAME_RE = re.compile(r"\b(?:LICEN[CS]E|COPYING|NOTICE|AUTHORS|CONTRIBUTORS)(?:\.[A-Za-z]+)?\b")
+
+
+_SECTION_WORD_RE = re.compile(r"[A-Za-z0-9]+")
+_SECTION_GENERIC = {"and", "or", "the", "of", "for", "a", "an", "support", "devices", "device", "general",
+                    "misc", "other", "common", "core"}
+_AUX_PATH = re.compile(r"^(?:docs?|Documentation|tests?)/")
+SECTION_WEIGHT = 0.9
+SECTION_GUESS_WEIGHT = 0.8
+SECTION_MAX_FILES = 6
+
+
+def maintainers_section_hits(store: Graph, repo: str, tree: Tree, question: str, *,
+                             guess: bool = False) -> dict[str, PathHit]:
+    """The files of the MAINTAINERS section a question names: every title
+    word in the question, two shared words, or one word that only that
+    section's title carries. Patterns expand against the tree, so the area
+    is real files, never a wildcard as wide as hw/.
+
+    As a `guess`, when no path resolved at all, the match must be the
+    whole title of two or more words, or two of its specific words: one
+    word a title happens to share with the question (page, command,
+    record, stub) names nothing. Measured on the pathless qemu replay,
+    where single shared words pointed at the wrong section in every
+    case but one."""
+    import fnmatch
+    rows = store.db.execute("SELECT DISTINCT section, pattern FROM listings WHERE repo=? AND kind='maintainers' "
+                            "AND role != 'exclude' AND section != ''", (repo,)).fetchall()
+    patterns: dict[str, list[str]] = {}
+    for r in rows:
+        patterns.setdefault(r["section"], []).append(r["pattern"])
+    q = {w.lower() for w in _SECTION_WORD_RE.findall(question)} - _STOP
+    words = {sec: {w.lower() for w in _SECTION_WORD_RE.findall(sec)} - _STOP for sec in patterns}
+    words = {sec: ws for sec, ws in words.items() if ws}
+    seen: dict[str, int] = {}
+    for ws in words.values():
+        for w in ws:
+            seen[w] = seen.get(w, 0) + 1
+    scored = []
+    for sec, ws in words.items():
+        shared = (ws & q) - {"maintainers", "reviewer", "reviewers", "myself"}
+        if not shared:
+            continue
+        distinctive = {w for w in shared if seen[w] == 1 and len(w) >= 4 and w not in _SECTION_GENERIC}
+        if guess:
+            if (ws <= q and len(ws) >= 2) or len(shared - _SECTION_GENERIC) >= 2:
+                scored.append((len(shared) / len(ws), len(shared), sec))
+        elif ws <= q or len(shared - _SECTION_GENERIC) >= 2 or distinctive:
+            scored.append((len(shared) / len(ws), len(shared), sec))
+    hits: dict[str, PathHit] = {}
+    ranked = sorted(scored, reverse=True)
+    # The best match only, unless two sections match equally well.
+    chosen = [sec for ratio, n, sec in ranked if ranked and (ratio, n) == ranked[0][:2]][:2]
+    weight = SECTION_GUESS_WEIGHT if guess else SECTION_WEIGHT
+    for sec in chosen:
+        why = (f"no path resolved; the question names the MAINTAINERS section {sec!r}, whose files stand in for the area"
+               if guess else f"the question changes the MAINTAINERS section {sec!r}")
+        found = 0
+        for pat in patterns[sec]:
+            if found >= SECTION_MAX_FILES:
+                break
+            pat = pat.lstrip("/")
+            if pat.endswith("/") and pat in tree.dirs:
+                _add(hits, pat, weight, why)
+                found += 1
+                continue
+            # Source before documentation and tests: they show who owns the code.
+            for f in sorted(tree.files, key=lambda f: (bool(_AUX_PATH.match(f)), f)):
+                if fnmatch.fnmatch(f, pat):
+                    _add(hits, f, weight, why)
+                    found += 1
+                    if found >= SECTION_MAX_FILES:
+                        break
+    return hits
+
+
+def _drop_legal_word_hits(hits, question, path, also_paths):
+    """Root legal files reached through the question's words, while the
+    agent works on code: "license" there is a topic (License-Expression,
+    SPDX ids), not the project's licence text, unless the question says so
+    (relicensing, copyright, the licence file, or the file by name)."""
+    if _LEGAL_TEXT_RE.search(question) or _LEGAL_NAME_RE.search(question):
+        return
+    working = {(n or "").lstrip("/") for n in [path, *(also_paths or [])]}
+    for k in [k for k in hits if "/" not in k and _norm(_stem_of(k)) in LEGAL_STEMS and k not in working]:
+        del hits[k]
+
+
+INHERITED_WEIGHT = 0.8
+ROOT_WORD_WHEN_ANCHORED = 0.4
+LEGAL_STEMS = frozenset({"license", "licence", "copying", "notice", "copyright", "authors", "contributors"})
+INHERITED_BELOW = 0.6
+MODEL_AREA_WEIGHT = 0.75
+MODEL_AREA_MAX_ENTRIES = 600
+
+AREA_SYSTEM = (
+    "You map a question about a code change to the places in a repository it is about. You are given the "
+    "question, optional context, and a list of the repository's directories and top-level files. Return ONLY JSON: "
+    "{\"paths\": [up to 3 entries copied exactly from the list, most specific first], \"confidence\": \"high\" or "
+    "\"low\", \"why\": one short sentence}. Pick only entries that appear in the list, never invent one. Prefer the "
+    "directory that holds the code the question would change over documentation or tests about it. Confidence is "
+    "high only when the question names a subsystem, device, file, function, format or concept that clearly lives in "
+    "those entries; a vague question (a bare verb, generic words like fix, remove, table, context) is low, and a "
+    "low-confidence answer is treated as no answer. If nothing maps, return {\"paths\": [], \"confidence\": \"low\", "
+    "\"why\": \"...\"}."
+)
+MODEL_AREA_MIN_TERMS = 3
+
+
+def _area_candidates(tree: Tree) -> list[str]:
+    """Directories to depth three and the top-level files, the way a
+    person skims a tree: enough to name an area, small enough to read."""
+    depth: dict[str, int] = {}
+    for d in tree.dirs:
+        depth[d] = d.count("/")
+    dirs = sorted((d for d, k in depth.items() if k <= 3), key=lambda d: (depth[d], d))
+    files = sorted(f for f in tree.files if "/" not in f)
+    out = dirs[:MODEL_AREA_MAX_ENTRIES] + files[:60]
+    return out
+
+
+def model_area_hits(store: Graph, repo: str, tree: Tree, question: str, context: str) -> dict[str, PathHit]:
+    """With a model key present, a fast model reads the question and the
+    tree's directories and names the area; cached per question. Off
+    without a backend or with RAVEN_SEMANTIC=0."""
+    from .config import load
+    cfg = load()
+    if not cfg.semantic_retrieval or not tree.files:
+        return {}
+    # A question with almost no words of its own is not worth a guess.
+    words = [t for t, plain in _question_tokens(question) if t not in _STOP and len(t) >= 3]
+    if len(words) < MODEL_AREA_MIN_TERMS:
+        return {}
+    import hashlib
+    import json as _json
+    from . import llm as llm_mod
+    key = hashlib.sha256((question.strip() + "\n" + (context or "").strip()[:800]).encode()).hexdigest()[:24]
+    cached = store.cache_get(repo, "model_area", key)
+    if cached is None:
+        candidates = _area_candidates(tree)
+        prompt = (f"QUESTION: {question.strip()}\n" + (f"CONTEXT: {context.strip()[:800]}\n" if context else "")
+                  + "REPOSITORY ENTRIES:\n" + "\n".join(candidates))
+        try:
+            raw = llm_mod.Client(cfg.fast()).complete_json("area", AREA_SYSTEM, prompt, max_tokens=300)
+        except Exception:
+            return {}
+        paths = raw.get("paths") if isinstance(raw, dict) else []
+        why = str(raw.get("why", "")) if isinstance(raw, dict) else ""
+        confidence = str(raw.get("confidence", "low")).lower() if isinstance(raw, dict) else "low"
+        cached = _json.dumps({"paths": [str(p) for p in (paths or []) if isinstance(p, str)][:3], "why": why[:200],
+                              "confidence": confidence})
+        store.cache_set(repo, "model_area", key, cached)
+    try:
+        data = _json.loads(cached)
+    except ValueError:
+        return {}
+    if data.get("confidence") != "high":
+        return {}
+    out: dict[str, PathHit] = {}
+    for i, p in enumerate(data.get("paths", [])[:3]):
+        p = p.strip().lstrip("/")
+        weight = MODEL_AREA_WEIGHT - 0.1 * i
+        if p in tree.files:
+            _add(out, p, weight, f"the model reads the question as being about {p}: {data.get('why', '')}".rstrip(": "))
+        elif p.rstrip("/") + "/" in tree.dirs:
+            _add(out, p.rstrip("/") + "/", weight,
+                 f"the model reads the question as being about {p.rstrip('/')}/: {data.get('why', '')}".rstrip(": "))
+    return out

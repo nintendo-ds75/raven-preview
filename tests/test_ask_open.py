@@ -10,9 +10,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from bridge import inquiry, llm
-from bridge.config import Config
-from bridge.store import Store
+from raven import inquiry, llm
+from raven.config import Config
+from raven.store import Store
 
 FIXTURE = Path(__file__).resolve().parents[1] / 'fixtures' / 'parcelwise-demo.db'
 REPO = 'parcelwise/parcelwise-app'
@@ -27,7 +27,7 @@ class AskOpenReadingTest(unittest.TestCase):
         self.store = Store(str(Path(self.dir) / 'raven.db'))
         self.me = SimpleNamespace(id='p-maya', name='Maya Chen', kind='operator', role='admin')
         self.enterContext(patch.object(Config, 'has_backend', return_value=True))
-        self.enterContext(patch.dict('os.environ', {'BRIDGE_SEMANTIC': '1'}))
+        self.enterContext(patch.dict('os.environ', {'RAVEN_SEMANTIC': '1'}))
         self.calls = []
         self.strict = {'outcome': 'missing_fact', 'answer': 'The records do not say.', 'citations': [], 'open': []}
         self.open = {'answer': 'Licensed billing charges a fixed fee per seat; metered billing charges for usage.\n'
@@ -62,7 +62,7 @@ class AskOpenReadingTest(unittest.TestCase):
         self.assertFalse(result.get('retry'))
 
     def test_records_that_do_not_answer_hand_over_to_the_open_reading_without_a_claim_check(self):
-        with patch('bridge.llm.check_support', side_effect=AssertionError('no claim check for an unanswered reading')):
+        with patch('raven.llm.check_support', side_effect=AssertionError('no claim check for an unanswered reading')):
             result = self.ask(RECORDED)
         self.assertTrue(result['evidence'])
         self.assertEqual(result['grounding'], 'general')
@@ -75,7 +75,7 @@ class AskOpenReadingTest(unittest.TestCase):
         self.strict = {'outcome': 'supported_answer', 'answer': 'Stripe Billing meters usage.',
                        'citations': [{'id': decision, 'quote': quote}], 'open': []}
         support = {'claims': [{'claim': 'Stripe Billing meters usage.', 'support': 'stated'}]}
-        with patch('bridge.llm.check_support', return_value=support):
+        with patch('raven.llm.check_support', return_value=support):
             result = self.ask(RECORDED)
         self.assertEqual(result['outcome'], 'supported_answer')
         self.assertNotIn('grounding', result)
@@ -92,7 +92,7 @@ class AskOpenReadingTest(unittest.TestCase):
             time.sleep(3)
             return {'claims': [{'claim': 'x', 'support': 'stated'}]}
         started = time.time()
-        with patch.object(inquiry, 'STRICT_GRACE', 0.3), patch('bridge.llm.check_support', side_effect=slow):
+        with patch.object(inquiry, 'STRICT_GRACE', 0.3), patch('raven.llm.check_support', side_effect=slow):
             result = self.ask(RECORDED)
         self.assertLess(time.time() - started, 2.5)
         self.assertEqual(result['answer'], 'Stripe Billing meters usage; Marcus Lee decided it.')
@@ -148,7 +148,7 @@ class AskOpenReadingTest(unittest.TestCase):
                          f'{fence}\nSELECT merchant_id, count(*) FROM labels GROUP BY 1;\n{fence}')
 
     def test_a_cited_pull_request_opens_as_a_record(self):
-        from bridge import artifacts
+        from raven import artifacts
         result = inquiry.ask(self.store, {'question': 'how do Stripe webhooks for plan changes work?', 'repository': REPO},
                              self.me, cfg=Config(model_api='none'))
         record = next(e for e in result['evidence'] if e['kind'] == 'source' and '#65' in e['title'])
@@ -170,9 +170,9 @@ class SettleOnlyTest(unittest.TestCase):
     def test_settle_only_stops_at_an_unanswered_first_reading(self):
         evidence = [{'id': 'a', 'text': 'Something else entirely.', 'kind': 'source'}]
         raw = {'outcome': 'missing_fact', 'answer': 'Not covered.', 'citations': [], 'open': []}
-        with patch.object(Config, 'has_backend', return_value=True), patch.dict('os.environ', {'BRIDGE_SEMANTIC': '1'}), \
+        with patch.object(Config, 'has_backend', return_value=True), patch.dict('os.environ', {'RAVEN_SEMANTIC': '1'}), \
                 patch.object(llm.Client, 'complete_json', return_value=raw) as complete, \
-                patch('bridge.llm.check_support') as support:
+                patch('raven.llm.check_support') as support:
             result = inquiry.read_evidence('q?', evidence, Config(), settle_only=True)
         complete.assert_called_once()
         support.assert_not_called()

@@ -5,13 +5,13 @@ import os
 import unittest
 from unittest.mock import patch
 
-from bridge import llm
+from raven import llm
 from evals.live_provider_smoke import run
 
 
 class LiveProviderSmokeTransportTests(unittest.TestCase):
     def setUp(self):
-        env = patch.dict(os.environ, {"BRIDGE_MODEL_API": "anthropic", "BRIDGE_SEMANTIC": "1",
+        env = patch.dict(os.environ, {"RAVEN_MODEL_API": "anthropic", "RAVEN_SEMANTIC": "1",
                                      "ANTHROPIC_API_KEY": "synthetic-fixture-key"})
         env.start()
         self.addCleanup(env.stop)
@@ -29,7 +29,7 @@ class LiveProviderSmokeTransportTests(unittest.TestCase):
             llm.Client(cfg)._messages("synthetic system", "synthetic prompt", 8)
             return {"kind": "needs_clarification"}
 
-        with patch("bridge.llm._open_model_request", side_effect=self.response) as transport, \
+        with patch("raven.llm._open_model_request", side_effect=self.response) as transport, \
                 patch("evals.live_provider_smoke.slack_chat.reading", side_effect=reading):
             result = run()
         self.assertEqual(result["physical_http_requests"], 1)
@@ -44,7 +44,7 @@ class LiveProviderSmokeTransportTests(unittest.TestCase):
             for _ in range(4):
                 llm.Client(cfg)._messages("synthetic system", "synthetic prompt", 8)
 
-        with patch("bridge.llm._open_model_request", side_effect=self.response) as transport, \
+        with patch("raven.llm._open_model_request", side_effect=self.response) as transport, \
                 patch("evals.live_provider_smoke.slack_chat.reading", side_effect=reading):
             result = run()
         self.assertEqual(result["status"], "failed")
@@ -53,7 +53,7 @@ class LiveProviderSmokeTransportTests(unittest.TestCase):
         self.assertEqual(transport.call_count, 3)
 
     def test_missing_key_remains_blocked_before_transport(self):
-        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}), patch("bridge.llm._open_model_request") as transport:
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}), patch("raven.llm._open_model_request") as transport:
             result = run()
         self.assertEqual(result["status"], "blocked")
         transport.assert_not_called()

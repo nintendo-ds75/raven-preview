@@ -68,13 +68,13 @@ jobs:
       postgres:
         image: postgres:17
         env:
-          POSTGRES_DB: bridge
-          POSTGRES_USER: bridge
-          POSTGRES_PASSWORD: bridge-ci
+          POSTGRES_DB: raven
+          POSTGRES_USER: raven
+          POSTGRES_PASSWORD: raven-ci
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U bridge -d bridge"
+          --health-cmd "pg_isready -U raven -d raven"
           --health-interval 3s
           --health-timeout 3s
           --health-retries 30
@@ -86,8 +86,8 @@ jobs:
       - run: python -m pip install -r requirements-postgres.txt
       - name: Behaviour contracts on PostgreSQL
         env:
-          BRIDGE_TEST_POSTGRES: "1"
-          DATABASE_URL: postgresql://bridge:bridge-ci@localhost:5432/bridge
+          RAVEN_TEST_POSTGRES: "1"
+          DATABASE_URL: postgresql://raven:raven-ci@localhost:5432/raven
         run: python -m unittest discover -s tests -p test_postgres.py -v
 
   web:
@@ -128,7 +128,7 @@ jobs:
           "$RUNNER_TEMP/raven-ui/node_modules/.bin/playwright" install --with-deps chromium
       - name: Native Today interactions and real local API
         env:
-          BRIDGE_TEST_ARTIFACTS: test-results/startup-os
+          RAVEN_TEST_ARTIFACTS: test-results/startup-os
         run: |
           export PLAYWRIGHT_MODULE="$RUNNER_TEMP/raven-ui/node_modules/playwright"
           node tests/browser-objectives.cjs
@@ -161,7 +161,7 @@ jobs:
           node tests/pi-harness-unit.cjs
           node tests/pi-sdk-unit.cjs
           node tests/opencode-guard-unit.cjs
-          python -c "from bridge.opencode_host import installation, VERSION; assert installation() == VERSION"
+          python -c "from raven.opencode_host import installation, VERSION; assert installation() == VERSION"
           PYTHONPATH=tests python -m unittest test_harness_protocol test_workbench_hosts test_opencode_host -v
 
   docker-verification:
@@ -187,11 +187,11 @@ jobs:
       - name: Installed image acceptance with network disabled
         run: |
           docker run --rm --network none --entrypoint node raven-harnesses-ci tests/pi-sdk-unit.cjs
-          docker run --rm --network none --entrypoint python raven-harnesses-ci -c "from bridge.opencode_host import installation, VERSION; assert installation() == VERSION"
+          docker run --rm --network none --entrypoint python raven-harnesses-ci -c "from raven.opencode_host import installation, VERSION; assert installation() == VERSION"
           docker run --rm --network none --entrypoint python raven-harnesses-ci -m unittest discover -s tests -p test_opencode_host.py -v
       - name: Actual isolated behavioral verification receipts
         env:
-          BRIDGE_TEST_DOCKER: "1"
+          RAVEN_TEST_DOCKER: "1"
         run: python -m unittest discover -s tests -p test_artifact_docker.py -v
 
   codex-native:
@@ -218,5 +218,5 @@ jobs:
           python -m pip install zstandard==0.25.0
       - name: Native schema, shell/read/network denial and resumed containment
         env:
-          BRIDGE_TEST_CODEX: "1"
+          RAVEN_TEST_CODEX: "1"
         run: PYTHONPATH=tests python -m unittest test_codex_native -v

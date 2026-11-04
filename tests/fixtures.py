@@ -29,19 +29,19 @@ ROOT = Path(__file__).resolve().parents[1]
 # A shell that runs a Raven (./dev, ./setup, a pilot) exports that
 # deployment's settings; every test here builds its own server and store
 # and must not inherit them. Measured on a reviewer's machine: the running
-# app's BRIDGE_PUBLIC_URL made an isolated test server advertise the app's
+# app's RAVEN_PUBLIC_URL made an isolated test server advertise the app's
 # URL, and one assertion failed for a reason that had nothing to do with
 # the code. The model backend switches stay: OfflineCase turns the model
-# rungs off itself, and a run may pin BRIDGE_MODEL_API=none on purpose.
+# rungs off itself, and a run may pin RAVEN_MODEL_API=none on purpose.
 DEPLOYMENT_ENV = (
-    "BRIDGE_PUBLIC_URL", "BRIDGE_AUTH", "BRIDGE_AUTH_ALLOW_SIGNUP", "BRIDGE_ADMIN_TOKEN", "BRIDGE_SECRET",
-    "BRIDGE_WORKSPACE_NAME", "BRIDGE_DEV_LOGIN", "BRIDGE_LOGIN_FILE", "BRIDGE_DEMO", "BRIDGE_USER_NAME", "BRIDGE_INGEST_REPO",
-    "BRIDGE_INGEST_REPO_DIR", "BRIDGE_GITHUB_REPOS", "BRIDGE_GITHUB_ORG", "BRIDGE_GITHUB_SYNC_MINUTES",
-    "BRIDGE_GITHUB_CLIENT_ID", "BRIDGE_GITHUB_CLIENT_SECRET", "BRIDGE_GITHUB_APP_SLUG", "BRIDGE_GITHUB_APP_FILE",
-    "BRIDGE_GITHUB_APP_CLIENT_ID", "BRIDGE_CONFORMANCE_MODEL", "GITHUB_TOKEN", "GH_TOKEN", "GITHUB_WEBHOOK_SECRET",
+    "RAVEN_PUBLIC_URL", "RAVEN_AUTH", "RAVEN_AUTH_ALLOW_SIGNUP", "RAVEN_ADMIN_TOKEN", "RAVEN_SECRET",
+    "RAVEN_WORKSPACE_NAME", "RAVEN_DEV_LOGIN", "RAVEN_LOGIN_FILE", "RAVEN_DEMO", "RAVEN_USER_NAME", "RAVEN_INGEST_REPO",
+    "RAVEN_INGEST_REPO_DIR", "RAVEN_GITHUB_REPOS", "RAVEN_GITHUB_ORG", "RAVEN_GITHUB_SYNC_MINUTES",
+    "RAVEN_GITHUB_CLIENT_ID", "RAVEN_GITHUB_CLIENT_SECRET", "RAVEN_GITHUB_APP_SLUG", "RAVEN_GITHUB_APP_FILE",
+    "RAVEN_GITHUB_APP_CLIENT_ID", "RAVEN_CONFORMANCE_MODEL", "GITHUB_TOKEN", "GH_TOKEN", "GITHUB_WEBHOOK_SECRET",
     "SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "SLACK_FALLBACK_CHANNEL", "SLACK_API_BASE", "TEAMS_WEBHOOK_URL",
     "OPENAI_API_KEY", "OPENAI_WEBHOOK_SECRET",
-    "BRIDGE_AIRWEAVE_URL", "AIRWEAVE_API_KEY",
+    "RAVEN_AIRWEAVE_URL", "AIRWEAVE_API_KEY",
     "TEAMS_APP_ID", "TEAMS_TENANT_ID", "TEAMS_CHANNEL_ID", "TEAMS_CLIENT_SECRET", "TEAMS_PEOPLE_JSON", "TEAMS_SERVICE_URL",
 )
 for _name in DEPLOYMENT_ENV:
@@ -53,20 +53,20 @@ def ready_server(store, *args, **kwargs):
 
     Onboarding tests deliberately use make_server directly to test the gate.
     """
-    from bridge.server import make_server
+    from raven.server import make_server
     store.graph.set_setting('workspace_name', 'Test workspace')
     return make_server(store, *args, **kwargs)
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from bridge.ingest import index_repo  # noqa: E402
-from bridge.store import Store  # noqa: E402
+from raven.ingest import index_repo  # noqa: E402
+from raven.store import Store  # noqa: E402
 
 
 @functools.cache
 def workdir() -> Path:
     """One temporary directory for the whole process, removed at exit."""
-    temp = tempfile.TemporaryDirectory(prefix="bridge-tests-")
+    temp = tempfile.TemporaryDirectory(prefix="raven-tests-")
     atexit.register(temp.cleanup)
     return Path(temp.name)
 
@@ -387,11 +387,11 @@ class OfflineCase(unittest.TestCase):
         # No model, even a test that turns the semantic rung on: a claude CLI
         # on the PATH would otherwise answer it, slowly and differently each
         # run. A test that wants a reading fakes the client.
-        env = patch.dict(os.environ, {"BRIDGE_SEMANTIC": "0", "BRIDGE_LIVE": "0",
-                                      "BRIDGE_CLAUDE_BIN": "/nonexistent/claude-offline"})
+        env = patch.dict(os.environ, {"RAVEN_SEMANTIC": "0", "RAVEN_LIVE": "0",
+                                      "RAVEN_CLAUDE_BIN": "/nonexistent/claude-offline"})
         env.start()
         self.addCleanup(env.stop)
-        from bridge.canvas import wait_for_background
+        from raven.canvas import wait_for_background
         self.addCleanup(lambda: wait_for_background(10))
         os.environ.pop("ANTHROPIC_API_KEY", None)
 

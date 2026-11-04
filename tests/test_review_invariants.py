@@ -2,8 +2,8 @@
 import unittest
 from unittest.mock import patch
 
-from bridge import llm
-from bridge.config import Config
+from raven import llm
+from raven.config import Config
 
 DIFF = ('diff --git a/processor.py b/processor.py\n--- a/processor.py\n+++ b/processor.py\n'
         '@@ -1 +1,8 @@\n-def apply_events(pending, events): pass\n'

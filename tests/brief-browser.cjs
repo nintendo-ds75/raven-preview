@@ -21,7 +21,7 @@ const {once} = require('node:events');
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 
 const root = path.resolve(__dirname, '..');
-const python = process.env.BRIDGE_PYTHON || 'python3';
+const python = process.env.RAVEN_PYTHON || 'python3';
 const artifacts = path.join(root, 'test-results');
 const WIDTHS = {
   desktop: {viewport: {width: 1440, height: 900}},
@@ -85,9 +85,9 @@ async function startWorld(temp, name) {
 }
 
 (async () => {
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-brief-browser-'));
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'raven-brief-browser-'));
   fs.mkdirSync(artifacts, {recursive: true});
-  const local = process.env.BRIDGE_BROWSER || '/opt/pw-browsers/chromium';
+  const local = process.env.RAVEN_BROWSER || '/opt/pw-browsers/chromium';
   const browser = await chromium.launch({headless: true, ...(fs.existsSync(local) ? {executablePath: local} : {})});
   const worlds = [];
   const covered = [];

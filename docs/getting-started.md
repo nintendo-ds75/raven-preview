@@ -38,7 +38,7 @@ Raven is running.
   Guide:             docs/getting-started.md
 ```
 
-In an interactive terminal the setup credential (`brg_…`) is printed just above
+In an interactive terminal the setup credential (`rvn_…`) is printed just above
 this banner; `./dev login` prints it again, with the page it belongs on.
 
 Windows: run `.\setup.ps1` from PowerShell with Docker Desktop's WSL integration on.
@@ -75,7 +75,7 @@ OpenAI), and Enter skips each. Either way setup writes the MCP configuration for
 client into the project (Git-excluded, with a limited agent credential) and, for
 Claude Code and Codex, installs the task hooks that register each task with Raven
 before the model starts. The hooks name the repository after the checkout's `origin`
-remote; a checkout without one needs `BRIDGE_INGEST_REPO='owner/name'` in Raven's
+remote; a checkout without one needs `RAVEN_INGEST_REPO='owner/name'` in Raven's
 `.env` first, and until then setup writes nothing into the project and says so.
 Restart the agent and trust the project when it asks.
 
@@ -85,7 +85,7 @@ command for your client:
 <details><summary>Claude Code</summary>
 
 ```sh
-claude mcp add --transport http bridge http://localhost:7333/mcp --header 'Authorization: Bearer brg_…'
+claude mcp add --transport http raven http://localhost:7333/mcp --header 'Authorization: Bearer rvn_…'
 ```
 </details>
 
@@ -93,10 +93,10 @@ claude mcp add --transport http bridge http://localhost:7333/mcp --header 'Autho
 
 ```toml
 # ~/.codex/config.toml or .codex/config.toml
-[mcp_servers.bridge]
+[mcp_servers.raven]
 url = "http://localhost:7333/mcp"
 required = true
-http_headers = { Authorization = "Bearer brg_…" }
+http_headers = { Authorization = "Bearer rvn_…" }
 ```
 </details>
 
@@ -112,9 +112,9 @@ never call them:
 ```markdown
 ## Raven
 
-This team uses Raven (the `bridge` MCP server) to route the judgment calls in a task
+This team uses Raven (the `raven` MCP server) to route the judgment calls in a task
 to the person who owns them. At the start of every task, before reading or editing
-anything, call `bridge_start_task`, then follow what Raven returns for the rest of
+anything, call `raven_start_task`, then follow what Raven returns for the rest of
 the task.
 ```
 
@@ -129,7 +129,7 @@ Raven routes decisions using evidence, not a hand-built map. Give it at least on
 | --- | --- | --- |
 | GitHub | Pull requests, reviews, CODEOWNERS; keeps syncing | **Settings → Context → Connect GitHub**, choose repositories |
 | Local clone | Commit history, blame, CODEOWNERS | `./setup --repo /path/to/checkout --repo-name owner/name` |
-| Slack channels, Jira projects, docs sites | Evidence the agent can cite | `./dev shell`, then `python -m bridge.sources scan --repo owner/name` suggests them (the command runs inside the container, where the database is); an admin connects each one. See [context sources](context-sources.md) |
+| Slack channels, Jira projects, docs sites | Evidence the agent can cite | `./dev shell`, then `python -m raven.sources scan --repo owner/name` suggests them (the command runs inside the container, where the database is); an admin connects each one. See [context sources](context-sources.md) |
 
 ## 5. Run one task
 
@@ -145,7 +145,7 @@ What happens:
    the agent's context, what Raven found in the records, and the person its evidence
    names. If Slack is connected, that person gets a short notification with a link.
 3. The person answers, signs or hands the decision on. The agent is woken with the
-   answer and continues; `bridge_finish_task` is refused while a decision is unsigned.
+   answer and continues; `raven_finish_task` is refused while a decision is unsigned.
 4. **Tasks** shows the whole run: questions, answers, who decided, and the review of
    the submitted diff.
 
@@ -156,12 +156,12 @@ transcripts, notes, connected sources), proposes one bounded piece of work with
 its citations, and a person signs it in the inbox before any coding worker
 starts. Nothing here is needed for the task flow above. To turn it on:
 
-1. A model backend: `BRIDGE_MODEL_API=anthropic` with `ANTHROPIC_API_KEY` (or
-   `BRIDGE_MODEL_API=openai` with `OPENAI_API_KEY`) in Raven's `.env`, and
-   `BRIDGE_MODEL`. `./setup --configure` saves the Anthropic key for you. The
+1. A model backend: `RAVEN_MODEL_API=anthropic` with `ANTHROPIC_API_KEY` (or
+   `RAVEN_MODEL_API=openai` with `OPENAI_API_KEY`) in Raven's `.env`, and
+   `RAVEN_MODEL`. `./setup --configure` saves the Anthropic key for you. The
    `claude-cli` backend works for an explicit **Suggest next steps** click but
    not for background investigation, which needs an enforceable token bound.
-2. Browser execution: `BRIDGE_WORKBENCH=1`, the checkout variables and one
+2. Browser execution: `RAVEN_WORKBENCH=1`, the checkout variables and one
    harness credential from [work directly in Raven](browser-tasks.md#run-in-docker).
    Without it an objective can be saved and reviewed but not dispatched.
 3. Optionally, an admin opts a repository into an evidence watch
@@ -170,7 +170,7 @@ starts. Nothing here is needed for the task flow above. To turn it on:
    exists. With a model backend configured, the worker also re-reads each
    *active objective* on its own whenever its repository's evidence changes
    or a scheduled checkpoint comes due, within the automatic budget; without
-   a backend, or with `BRIDGE_SEMANTIC=0`, investigation runs only when
+   a backend, or with `RAVEN_SEMANTIC=0`, investigation runs only when
    someone clicks **Suggest next steps**.
 
 Without a backend, **Outcomes** shows objectives and says investigation is
@@ -202,7 +202,7 @@ it is installed but not running.
 
 **The browser shows 403 or a blank page.** The address you opened is not the one
 Raven was configured with. Open the URL `./setup` printed, or run
-`./setup --port <port>` so the published port and `BRIDGE_PUBLIC_URL` match.
+`./setup --port <port>` so the published port and `RAVEN_PUBLIC_URL` match.
 
 **The agent has the tools but never calls them.** Add the Raven rule to
 `CLAUDE.md` or `AGENTS.md` (step 3), and for Claude Code or Codex restart the agent so

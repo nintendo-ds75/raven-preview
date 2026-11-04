@@ -6,8 +6,8 @@ shared words (page, command, record, stub) named the wrong section."""
 
 from fixtures import OfflineCase
 
-from bridge.resolve import SECTION_GUESS_WEIGHT, resolve_paths
-from bridge.routing import route
+from raven.resolve import SECTION_GUESS_WEIGHT, resolve_paths
+from raven.routing import route
 
 
 class SectionGuessTests(OfflineCase):

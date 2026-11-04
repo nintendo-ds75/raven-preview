@@ -6,10 +6,10 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase
-from bridge import intro
-from bridge.authz import Actor, Refused
-from bridge.config import Config
-from bridge.store import Invalid, Store
+from raven import intro
+from raven.authz import Actor, Refused
+from raven.config import Config
+from raven.store import Invalid, Store
 
 OFF = Config(model_api='none')
 

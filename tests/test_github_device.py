@@ -5,9 +5,9 @@ import unittest
 from unittest.mock import patch
 from urllib.parse import urlsplit
 
-from bridge.github import GitHubError
-from bridge.github_device import GitHubDeviceConnector, connection_for, DEFAULT_CLIENT_ID, DEFAULT_APP_SLUG
-from bridge.store import Store
+from raven.github import GitHubError
+from raven.github_device import GitHubDeviceConnector, connection_for, DEFAULT_CLIENT_ID, DEFAULT_APP_SLUG
+from raven.store import Store
 
 
 class Response:
@@ -29,17 +29,17 @@ class Response:
 class DeviceTests(unittest.TestCase):
     def test_connection_defaults_and_overrides(self):
         path = Path(self.temp.name) / "github-app.json"
-        for env in ({}, {"BRIDGE_GITHUB_APP_CLIENT_ID": "", "BRIDGE_GITHUB_APP_SLUG": ""}):
+        for env in ({}, {"RAVEN_GITHUB_APP_CLIENT_ID": "", "RAVEN_GITHUB_APP_SLUG": ""}):
             connector = connection_for(self.store.graph, path, env)
             self.assertEqual(connector.client_id, DEFAULT_CLIENT_ID)
             self.assertEqual(connector.slug, DEFAULT_APP_SLUG)
-        custom = {"BRIDGE_GITHUB_APP_CLIENT_ID": "custom-id", "BRIDGE_GITHUB_APP_SLUG": "custom-app"}
+        custom = {"RAVEN_GITHUB_APP_CLIENT_ID": "custom-id", "RAVEN_GITHUB_APP_SLUG": "custom-app"}
         self.assertEqual(connection_for(self.store.graph, path, custom).client_id, "custom-id")
-        for env in ({"BRIDGE_GITHUB_APP_CLIENT_ID": "custom-id"}, {"BRIDGE_GITHUB_APP_SLUG": "custom-app"}):
+        for env in ({"RAVEN_GITHUB_APP_CLIENT_ID": "custom-id"}, {"RAVEN_GITHUB_APP_SLUG": "custom-app"}):
             with self.assertRaises(ValueError):
                 connection_for(self.store.graph, path, env)
-        with patch("bridge.github_app.GitHubAppConnector.credentials", return_value={"app_id": 123}):
-            from bridge.github_app import GitHubAppConnector
+        with patch("raven.github_app.GitHubAppConnector.credentials", return_value={"app_id": 123}):
+            from raven.github_app import GitHubAppConnector
             self.assertIsInstance(connection_for(self.store.graph, path, {}), GitHubAppConnector)
             self.assertIsInstance(connection_for(self.store.graph, path, custom), GitHubDeviceConnector)
 
@@ -53,7 +53,7 @@ class DeviceTests(unittest.TestCase):
         self.repos = ["acme/platform"]
         self.token_result = {"error": "authorization_pending"}
         self.connector = GitHubDeviceConnector(self.store.graph, Path(self.temp.name) / "tokens.json",
-            "Iv1.public", "bridge-test", self.fetch, lambda: self.now)
+            "Iv1.public", "raven-test", self.fetch, lambda: self.now)
 
     def fetch(self, request, timeout=30):
         path = urlsplit(request.full_url).path
@@ -68,7 +68,7 @@ class DeviceTests(unittest.TestCase):
                 return Response({"access_token": "refreshed", "refresh_token": "rotated", "expires_in": 28800})
             return Response(self.token_result)
         if path == "/user/installations":
-            return Response({"installations": [{"id": 12, "app_slug": "bridge-test"},
+            return Response({"installations": [{"id": 12, "app_slug": "raven-test"},
                                                {"id": 13, "app_slug": "another-app"}]})
         if path == "/user/installations/12/repositories":
             return Response({"repositories": [{"full_name": repo} for repo in self.repos]})

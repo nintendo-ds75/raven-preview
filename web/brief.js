@@ -774,7 +774,7 @@ setInterval(() => load({quiet: true}), 30000);
 
 // Interview requests keep the same non-ambient task-link credential. The
 // adapter never signs in, creates an account or requests workspace-wide APIs.
-window.ravenInterviewBridge = {
+window.ravenInterviewEmbed = {
   user: () => data?.viewer || {},
   notify: toast,
   refresh: () => load(),

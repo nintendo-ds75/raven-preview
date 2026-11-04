@@ -1,9 +1,9 @@
 from unittest.mock import patch
 from test_meeting_records import FakeVexa
 from fixtures import OfflineCase
-from bridge import meeting_records as mr, meeting_worker as mw
-from bridge.auth import OPERATOR, Identity
-from bridge.store import Invalid
+from raven import meeting_records as mr, meeting_worker as mw
+from raven.auth import OPERATOR, Identity
+from raven.store import Invalid
 
 
 class Observer(OfflineCase):

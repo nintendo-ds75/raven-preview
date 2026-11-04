@@ -9,7 +9,7 @@ Direct database tools and local stdio MCP are operator-level access, not web log
 Existing completed workspaces remain ready without re-onboarding. Claiming the workspace
 requires an existing admin session or setup credential; it is never first-visitor
 wins. For local Docker installs, `./dev login` supplies that one-time bootstrap
-credential. A deployment may instead provision `BRIDGE_ADMIN_TOKEN` securely.
+credential. A deployment may instead provision `RAVEN_ADMIN_TOKEN` securely.
 
 The two steps are linked by a private, one-hour setup cookie; only the original
 creator can finish the profile. If it expires, re-enter that creator's setup
@@ -99,7 +99,7 @@ To exercise PostgreSQL contracts, including account HTTP flows, using temporary
 schemas in the configured Docker database:
 
 ```sh
-docker compose run --rm -T --entrypoint sh app -c 'BRIDGE_TEST_POSTGRES=1 PYTHONPATH=tests:. python -m unittest test_postgres -q'
+docker compose run --rm -T --entrypoint sh app -c 'RAVEN_TEST_POSTGRES=1 PYTHONPATH=tests:. python -m unittest test_postgres -q'
 ```
 
 The PostgreSQL harness creates uniquely named test schemas and removes only those

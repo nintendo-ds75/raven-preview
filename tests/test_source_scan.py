@@ -15,10 +15,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase, git_env, run_git
-from bridge import source_scan, sources
-from bridge.ingest import index_repo
-from bridge.sources import SourceError
-from bridge.store import Invalid, Store
+from raven import source_scan, sources
+from raven.ingest import index_repo
+from raven.sources import SourceError
+from raven.store import Invalid, Store
 
 NOW = datetime(2026, 10, 1, tzinfo=timezone.utc)
 FILES = {
@@ -173,7 +173,7 @@ class SourceScanTests(OfflineCase):
         self.assertEqual(refused, {'OPS': 'on another Jira site (other.atlassian.net)'})
 
     def test_documentation_sites_come_from_package_metadata_and_links_and_are_not_fetched(self):
-        with patch('bridge.source_docs.HTTPClient.get', side_effect=AssertionError('the scan fetched a URL')):
+        with patch('raven.source_docs.HTTPClient.get', side_effect=AssertionError('the scan fetched a URL')):
             result = self.scan()
         self.assertEqual(self.rows(result, 'docs'), [('https://billing.readthedocs.io/en/latest/', 90, True),
                                                      ('https://docs.billing.example.invalid/guide/start', 70, True)])
@@ -254,7 +254,7 @@ class SourceScanTests(OfflineCase):
 
         def run(*argv):
             out = io.StringIO()
-            with patch('sys.argv', ['bridge.sources', *argv, '--db', str(db)]), contextlib.redirect_stdout(out), \
+            with patch('sys.argv', ['raven.sources', *argv, '--db', str(db)]), contextlib.redirect_stdout(out), \
                     patch.dict(os.environ, {'SLACK_BOT_TOKEN': '', 'JIRA_BASE_URL': ''}):
                 sources.main()
             return json.loads(out.getvalue())

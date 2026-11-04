@@ -10,13 +10,13 @@ from unittest.mock import patch
 
 from fixtures import OfflineCase, git_env, run_git, workdir
 
-from bridge import resolve
-from bridge.ingest import index_repo
-from bridge.resolve import (SYMBOL_DEFINED_WEIGHT, SYMBOL_MENTION_WEIGHT, SYMBOL_SHARED_WEIGHT, SYMBOL_USED_WEIGHT,
+from raven import resolve
+from raven.ingest import index_repo
+from raven.resolve import (SYMBOL_DEFINED_WEIGHT, SYMBOL_MENTION_WEIGHT, SYMBOL_SHARED_WEIGHT, SYMBOL_USED_WEIGHT,
                             code_names,
                             mentions_of, resolve_paths, symbol_hits)
-from bridge.routing import route
-from bridge.store import Store
+from raven.routing import route
+from raven.store import Store
 
 CHAR = ("Char Maintainer", "char@example.test")
 ARM = ("Arm Maintainer", "arm@example.test")

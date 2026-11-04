@@ -3,7 +3,7 @@ does when they act, never by display name."""
 import json
 from urllib.error import HTTPError
 
-from bridge.accounts import Accounts
+from raven.accounts import Accounts
 from test_auth import BOOTSTRAP, SharedServer
 
 
@@ -18,9 +18,9 @@ class NamesakeInbox(SharedServer):
                                      "role": "decides"}, token=BOOTSTRAP)
         requester = self.post("/api/people", {"name": "Req Uester", "email": "req@example.test"}, token=BOOTSTRAP)
         agent = self.post("/api/tokens", {"person_id": requester["id"], "label": "codex"}, token=BOOTSTRAP)["token"]
-        task = self.mcp("bridge_start_task", {"title": "Usage pricing", "repo": "acme/platform",
+        task = self.mcp("raven_start_task", {"title": "Usage pricing", "repo": "acme/platform",
                                               "paths": "billing/usage.py"}, agent)["result"]
-        self.node = self.mcp("bridge_add_node", {"task_id": task["task_id"], "question": "Bill the spike?",
+        self.node = self.mcp("raven_add_node", {"task_id": task["task_id"], "question": "Bill the spike?",
                                                  "paths": "billing/usage.py"}, agent)["result"]
         self.assertEqual(self.node["owner"], "Alex Morgan")
         invite = self.post("/api/invitations", {"email": "alex.other@example.test", "role": "member"}, token=BOOTSTRAP)

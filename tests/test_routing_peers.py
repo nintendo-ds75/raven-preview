@@ -5,9 +5,9 @@ import unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase
-from bridge.config import Config
-from bridge.routing import route, route_ranked
-from bridge import canvas
+from raven.config import Config
+from raven.routing import route, route_ranked
+from raven import canvas
 REPO = 'acme/billing'
 NOW = datetime.datetime(2026, 6, 30, tzinfo=datetime.timezone.utc)
 
@@ -77,7 +77,7 @@ class NamedPathsTests(OfflineCase):
         self.assertEqual(node["owner"], WES[0], node.get("owner_evidence"))
 
     def test_a_dotted_module_name_resolves_to_its_file(self):
-        from bridge.resolve import resolve_paths
+        from raven.resolve import resolve_paths
         hits = resolve_paths(self.graph, REPO, "Implement billing.usage.invoice_cents(records, rate_cents) for every account")
         self.assertEqual(hits[0].path, "billing/usage.py", [(h.path, h.weight) for h in hits])
         self.assertIn("billing.usage.invoice_cents", hits[0].why)
@@ -88,7 +88,7 @@ class NamedPathsTests(OfflineCase):
         self.assertFalse([h for h in none if h.weight >= 0.9], [(h.path, h.why) for h in none])
 
     def test_an_initial_and_surname_handle_joins_the_person(self):
-        from bridge.signals import _resolve_handle
+        from raven.signals import _resolve_handle
         display = {"wes chen": "Wes Chen", "priya natarajan": "Priya Natarajan", "marisol vega": "Marisol Vega"}
         self.assertEqual(_resolve_handle("@wchen-acme", display), "wes chen")
         self.assertEqual(_resolve_handle("@wchen", display), "wes chen")

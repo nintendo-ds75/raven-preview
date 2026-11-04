@@ -6,9 +6,9 @@ of a "Should <verb> ..." question taken for an area."""
 
 from fixtures import OfflineCase
 
-from bridge.resolve import Tree, area_word_hits, term_hits
-from bridge.routing import route
-from bridge.signals import MERGE_BASE_WEIGHT, _scope_signals
+from raven.resolve import Tree, area_word_hits, term_hits
+from raven.routing import route
+from raven.signals import MERGE_BASE_WEIGHT, _scope_signals
 
 NOW = "2026-06-20T00:00:00+00:00"
 

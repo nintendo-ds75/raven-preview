@@ -87,10 +87,10 @@ refused. Retain the returned hash externally before running.
 ## Record calls and interventions
 
 The existing `evals/real_oss_remote/mcp_proxy.py` preserves its ordinary trace
-format and accepts `BRIDGE_EVAL_AUDIT=/evaluator/audit.jsonl`. It appends the exact
+format and accepts `RAVEN_EVAL_AUDIT=/evaluator/audit.jsonl`. It appends the exact
 JSON protocol observations after credential redaction, with a unique proxy
-session ID. It uses the existing `BRIDGE_EVAL_URL`, `BRIDGE_EVAL_TRACE` and
-`BRIDGE_TOKEN` settings. Give the proxy those values through the trusted launcher,
+session ID. It uses the existing `RAVEN_EVAL_URL`, `RAVEN_EVAL_TRACE` and
+`RAVEN_TOKEN` settings. Give the proxy those values through the trusted launcher,
 not the host prompt. A separate proxy container/sidecar is required if the host
 must not read its files or credential-bearing process environment.
 

@@ -4,14 +4,14 @@ from unittest.mock import patch
 
 from fixtures import OfflineCase, PEOPLE
 from test_delivery import FakeSlack
-from bridge import canvas
-from bridge.authz import Actor, Refused
-from bridge.config import Config
-from bridge.delivery import SlackTransport
-from bridge.mcp import call_tool
-from bridge.routing import route_ranked
-from bridge.store import Store, Invalid
-from bridge.bootstrap import initialize_workspace
+from raven import canvas
+from raven.authz import Actor, Refused
+from raven.config import Config
+from raven.delivery import SlackTransport
+from raven.mcp import call_tool
+from raven.routing import route_ranked
+from raven.store import Store, Invalid
+from raven.bootstrap import initialize_workspace
 
 CFG = Config(model_api='none')
 
@@ -55,10 +55,10 @@ class DiscoveryTests(OfflineCase):
         return self.delivery.sync_directory()
 
     def node(self, question='Should we change the default interrupt controller?', repo='qemulike', paths='hw/riscv/virt.c'):
-        task = call_tool(self.store, 'bridge_start_task', {'title': 'Change default interrupt controller',
+        task = call_tool(self.store, 'raven_start_task', {'title': 'Change default interrupt controller',
                           'goal': 'Change the interrupt controller default without breaking compatibility.',
                           'repo': repo, 'paths': paths, 'client_key': question})['task_id']
-        node = call_tool(self.store, 'bridge_add_node', {'task_id': task, 'question': question, 'paths': paths})
+        node = call_tool(self.store, 'raven_add_node', {'task_id': task, 'question': question, 'paths': paths})
         return task, node
 
     def test_directory_does_not_create_accounts_or_authority(self):
@@ -75,7 +75,7 @@ class DiscoveryTests(OfflineCase):
         self.assertEqual(node['owner'], 'Oriel Vance', node)
         self.assertEqual(node['delivery']['notifications'][0]['state'], 'queued')
         with self.assertRaises(Invalid):
-            call_tool(self.store, 'bridge_finish_task', {'task_id': task})
+            call_tool(self.store, 'raven_finish_task', {'task_id': task})
         self.delivery.deliver_now()
         message = self.slack.messages[0]
         self.assertEqual(message['channel'], 'DUORIEL')
@@ -86,10 +86,10 @@ class DiscoveryTests(OfflineCase):
         with self.assertRaisesRegex(Invalid, 'reused with different'):
             self.delivery.receive(message['channel'], message['ts'], 'UORIEL',
                                  'answer: Different because retry', event_id='answer-1')
-        result = call_tool(self.store, 'bridge_wait', {'task_id': task, 'timeout': '0'})
+        result = call_tool(self.store, 'raven_wait', {'task_id': task, 'timeout': '0'})
         self.assertFalse(result['timed_out'])
-        call_tool(self.store, 'bridge_get_tree', {'task_id': task})
-        finished = call_tool(self.store, 'bridge_finish_task', {'task_id': task, 'checks': 'fixture check'})
+        call_tool(self.store, 'raven_get_tree', {'task_id': task})
+        finished = call_tool(self.store, 'raven_finish_task', {'task_id': task, 'checks': 'fixture check'})
         self.assertFalse(finished.get('verified', False))
         self.assertEqual(self.g.db.execute('SELECT count(*) AS n FROM account_passwords').fetchone()['n'], 0)
 
@@ -195,7 +195,7 @@ class DiscoveryTests(OfflineCase):
 
     def test_cited_jira_author_and_topic_records_are_routing_signals(self):
         self.sync()
-        call_tool(self.store, 'bridge_import_record', {'repo': 'acme/hr', 'kind': 'ticket', 'ref': 'HR-102',
+        call_tool(self.store, 'raven_import_record', {'repo': 'acme/hr', 'kind': 'ticket', 'ref': 'HR-102',
                     'title': 'Contractor holiday allowance', 'body': 'This is an open question for discussion.',
                     'author': 'UKWAME', 'status': 'Open', 'url': 'https://jira.example/HR-102'})
         for question in ['Who should decide HR-102?', 'Should the contractor holiday allowance cover weekends?']:
@@ -218,15 +218,15 @@ class DiscoveryTests(OfflineCase):
         self.assertEqual(self.slack.messages[0]['channel'], 'DUORIEL')
 
     def test_headless_workspace_is_idempotent_and_has_no_personal_account(self):
-        with patch.dict('os.environ', {'BRIDGE_ADMIN_TOKEN': 'operator-test-token'}):
+        with patch.dict('os.environ', {'RAVEN_ADMIN_TOKEN': 'operator-test-token'}):
             initialize_workspace(self.store, 'Test team')
             initialize_workspace(self.store, 'Different team')
         self.assertEqual(self.g.get_setting('workspace_name'), 'Test team')
         self.assertEqual(self.g.db.execute('SELECT count(*) AS n FROM account_passwords').fetchone()['n'], 0)
 
     def test_first_browser_profile_can_adopt_an_imported_contact(self):
-        from bridge.accounts import Accounts
-        from bridge.auth import Auth, Identity
+        from raven.accounts import Accounts
+        from raven.auth import Auth, Identity
         self.sync()
         contact = self.g.find_person('UORIEL')
         accounts = Accounts(Auth(self.store, enabled=True))

@@ -1,7 +1,7 @@
 """Read-only run provenance from existing rows; no new authority or identity rules."""
 
 from fixtures import OfflineCase
-from bridge import canvas
+from raven import canvas
 
 
 class RunObservabilityContractTests(OfflineCase):

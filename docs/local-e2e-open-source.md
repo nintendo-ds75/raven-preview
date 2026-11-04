@@ -68,7 +68,7 @@ with `python3 evals/newdev/oss_candidates.py owner/name --since YYYY-MM-DD`.
 ## 3. Get the code
 
 ```sh
-git clone https://github.com/nintendo-ds75/raven-preview.git ~/bridge
+git clone https://github.com/nintendo-ds75/raven-preview.git ~/raven
 git clone https://github.com/prometheus/prometheus.git ~/oss/prometheus
 ```
 
@@ -79,7 +79,7 @@ Use a full clone: history is the signal, so not `--depth`. Use a standalone clon
 This takes about 15 minutes and needs no Docker.
 
 ```sh
-cd ~/bridge
+cd ~/raven
 python3 evals/newdev/oss_routing_probe.py --checkout ~/oss/prometheus --repo prometheus/prometheus \
     --probes evals/newdev/oss_probes/prometheus.json --db /tmp/prometheus-probe.db
 ```
@@ -105,7 +105,7 @@ Keep this output on your machine: it names real people.
 ### Configure and start
 
 ```sh
-cd ~/bridge
+cd ~/raven
 cp .env.example .env
 ```
 
@@ -114,7 +114,7 @@ reads any public one.
 
 ```dotenv
 GITHUB_TOKEN=github_pat_...
-BRIDGE_GITHUB_REPOS=prometheus/prometheus
+RAVEN_GITHUB_REPOS=prometheus/prometheus
 ```
 
 Then:
@@ -168,18 +168,18 @@ then keep it out of commits with `echo CLAUDE.md >> ~/oss/prometheus/.git/info/e
 ```markdown
 ## Raven
 
-This team uses Raven (the `bridge` MCP server) to route the judgment calls in a task to the person who owns them.
-At the start of every task, before reading or editing anything, call `bridge_start_task`, then follow what Raven
+This team uses Raven (the `raven` MCP server) to route the judgment calls in a task to the person who owns them.
+At the start of every task, before reading or editing anything, call `raven_start_task`, then follow what Raven
 returns for the rest of the task.
 ```
 
-Start `claude` in `~/oss/prometheus`, approve the project's `bridge` server when asked, and check `/mcp` shows it
+Start `claude` in `~/oss/prometheus`, approve the project's `raven` server when asked, and check `/mcp` shows it
 connected. If it does not, **Settings → Connect your coding agent → Claude Code** gives a
-`claude mcp add --transport http bridge …` command to run instead.
+`claude mcp add --transport http raven …` command to run instead.
 
 ## 6. Run the tasks
 
-Work on a local branch: `git -C ~/oss/prometheus switch -c bridge-e2e`. Run each task as its own Claude Code
+Work on a local branch: `git -C ~/oss/prometheus switch -c raven-e2e`. Run each task as its own Claude Code
 session, typed in as the task, with no list of decisions or owners.
 
 - **Interactive:** run `claude`, paste the task, and watch `/cost`.
@@ -188,7 +188,7 @@ session, typed in as the task, with no list of decisions or owners.
 ```sh
 cd ~/oss/prometheus
 claude -p "$(cat ~/tasks/task1.txt)" --mcp-config .mcp.json --permission-mode acceptEdits \
-  --allowedTools "mcp__bridge" "Bash(go test:*)" "Bash(go build:*)" "Bash(git diff:*)" "Bash(git status:*)" \
+  --allowedTools "mcp__raven" "Bash(go test:*)" "Bash(go build:*)" "Bash(git diff:*)" "Bash(git status:*)" \
   --max-budget-usd 10 --output-format stream-json --verbose > ~/tasks/task1-host.jsonl
 ```
 
@@ -229,7 +229,7 @@ should have known without asking.
 
 ## 8. Finish and check
 
-The agent finishes with `bridge_finish_task`, passing its diff and what it ran. The finish is refused while anything
+The agent finishes with `raven_finish_task`, passing its diff and what it ran. The finish is refused while anything
 still waits on a person, and, on an engaged task, while the diff changes a file someone else decides that nothing
 on the task was put to: note whether the agent then writes that decision for them or explains why the change
 settles nothing (`uncovered`). Then:
@@ -249,7 +249,7 @@ settles nothing (`uncovered`). Then:
 | Right questions | How many were asked, how many were needed, any asked twice, and any asked that records or earlier answers already settled. |
 | Reuse | In tasks 3 and 4: what came back as evidence, what as a prediction, and what as a new question. Unsafe reuse, meaning anything authorized across a changed release or scope, must be zero. |
 | Owner messages | Was the brief faithful? Were the options whole? Were any briefs withheld (a `brief_withheld` event says why)? |
-| The agent | Cost, turns, number of `bridge_wait` calls, and any "no response or progress" aborts. |
+| The agent | Cost, turns, number of `raven_wait` calls, and any "no response or progress" aborts. |
 | Finish | Each refusal and why; the diff reading time; whether reasons were whole. |
 
 `evals/newdev/core-e2e-prompt.md` has the full checklist and scoreboard if you want the complete version.

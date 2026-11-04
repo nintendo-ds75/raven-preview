@@ -6,9 +6,9 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from bridge import inquiry, people_context
-from bridge.config import Config
-from bridge.store import Invalid, Store
+from raven import inquiry, people_context
+from raven.config import Config
+from raven.store import Invalid, Store
 
 FIXTURE = Path(__file__).resolve().parents[1] / 'fixtures' / 'parcelwise-demo.db'
 REPO = 'parcelwise/parcelwise-app'

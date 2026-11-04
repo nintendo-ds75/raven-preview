@@ -1,12 +1,12 @@
 from concurrent.futures import ThreadPoolExecutor
 
 from fixtures import OfflineCase
-from bridge.auth import Identity
-from bridge.config import Config
-from bridge import host_sessions
-from bridge.host_notifications import handle
-from bridge.inquiry import ask_task
-from bridge.store import Store, Invalid
+from raven.auth import Identity
+from raven.config import Config
+from raven import host_sessions
+from raven.host_notifications import handle
+from raven.inquiry import ask_task
+from raven.store import Store, Invalid
 
 
 class HostNotificationTests(OfflineCase):
@@ -137,7 +137,7 @@ class TaskInquiryTests(HostNotificationTests):
                      cfg=Config(model_api='none'), revalidate=revoked)
 
 from test_auth import SharedServer, BOOTSTRAP  # noqa: E402
-from bridge import briefing  # noqa: E402
+from raven import briefing  # noqa: E402
 
 
 class TaskInquiryHTTPTests(SharedServer):
@@ -180,22 +180,22 @@ class TaskInquiryHTTPTests(SharedServer):
 
     def test_workspace_access_revocation_during_read_withholds_result(self):
         from unittest.mock import patch
-        from bridge.inquiry import read_evidence
+        from raven.inquiry import read_evidence
         def revoke(question, evidence, cfg, **kwargs):
             result = read_evidence(question, evidence, cfg, **kwargs)
             self.store.graph.db.execute('UPDATE people SET active=0 WHERE id=?', (self.person['id'],))
             return result
-        with patch('bridge.inquiry.read_evidence', side_effect=revoke):
+        with patch('raven.inquiry.read_evidence', side_effect=revoke):
             self.assertEqual(self.status_of('POST', '/api/tasks/' + self.task + '/inquiry',
                                            {'question': 'What is pending?'}, token=self.human), 401)
 
     def test_decision_change_during_read_withholds_result(self):
         from unittest.mock import patch
-        from bridge.inquiry import read_evidence
+        from raven.inquiry import read_evidence
         def change(question, evidence, cfg, **kwargs):
             result = read_evidence(question, evidence, cfg, **kwargs)
             self.store.graph.db.execute("UPDATE decisions SET answer='Changed concurrently' WHERE id=?", (self.node,))
             return result
-        with patch('bridge.inquiry.read_evidence', side_effect=change):
+        with patch('raven.inquiry.read_evidence', side_effect=change):
             self.assertEqual(self.status_of('POST', '/api/tasks/' + self.task + '/inquiry',
                                            {'question': 'What is pending?'}, token=self.human), 400)

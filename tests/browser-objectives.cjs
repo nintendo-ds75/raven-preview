@@ -3,9 +3,9 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path');
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 (async () => {
-  const root = path.resolve(__dirname,'..'), artifacts = process.env.BRIDGE_TEST_ARTIFACTS || path.join(root,'test-results');
+  const root = path.resolve(__dirname,'..'), artifacts = process.env.RAVEN_TEST_ARTIFACTS || path.join(root,'test-results');
   fs.mkdirSync(artifacts,{recursive:true});
-  const browser = await chromium.launch({headless:true,...(process.env.BRIDGE_BROWSER ? {executablePath:process.env.BRIDGE_BROWSER} : {})});
+  const browser = await chromium.launch({headless:true,...(process.env.RAVEN_BROWSER ? {executablePath:process.env.RAVEN_BROWSER} : {})});
   try {
     const page = await browser.newPage({viewport:{width:1280,height:900}}), errors=[];
     page.on('pageerror',error=>errors.push(error.message));

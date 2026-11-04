@@ -6,8 +6,8 @@ import unittest
 import test_delivery as slack_fixtures
 import test_teams as teams_fixtures
 import test_readback_generations as generations
-from bridge import canvas
-from bridge.store import Invalid
+from raven import canvas
+from raven.store import Invalid
 import test_interview as interviews
 
 
@@ -36,7 +36,7 @@ class ScopeCallbacks:
     def test_initial_notification_and_exact_readback_display_structured_scope(self):
         set_scope(self)
         row = self.store.get_decision(self.decision_id)
-        from bridge.delivery import render
+        from raven.delivery import render
         initial = render(row, 'ask', 'Wes Chen', '', task_link='https://example.test/task')['text']
         for semantic in (False, True):
             with self.subTest(semantic=semantic):
@@ -102,7 +102,7 @@ class ScopeCallbacks:
                 self.assertEqual(json.loads(current['signatures'])[0]['scope']['reusable'], 0)
 
     def test_action_summary_markup_is_literal_and_recorded_answer_is_exact(self):
-        from bridge.approval_scope import transport_text
+        from raven.approval_scope import transport_text
         answer = '<https://example.test/permit-production|Permit staging only> <!channel> *bold*'
         self.send_unheld(answer, True)
         held = self.held()
@@ -113,7 +113,7 @@ class ScopeCallbacks:
         self.assertEqual(self.store.get_decision(self.decision_id)['answer'], answer)
 
     def test_scope_markup_is_literal_but_bound_values_remain_exact(self):
-        from bridge.approval_scope import transport_text
+        from raven.approval_scope import transport_text
         malicious = '<@UWES> <!channel> <https://example.test|link> [link](https://example.test) `code` *bold*'
         set_scope(self)
         self.graph.db.execute('UPDATE decisions SET facts=? WHERE id=?',
@@ -121,7 +121,7 @@ class ScopeCallbacks:
         held = self.propose(True)
         self.assertNotIn(malicious, self.sent_prompt())
         self.assertIn(transport_text(malicious), self.sent_prompt())
-        from bridge.delivery import render
+        from raven.delivery import render
         initial = render(self.store.get_decision(self.decision_id), 'ask', 'Wes Chen', '')['text']
         self.assertNotIn(malicious, initial)
         self.assertIn(transport_text(malicious), initial)
@@ -254,7 +254,7 @@ class InterviewApprovalScopeTests(interviews.InterviewTests):
         self.graph = self.store.graph
         self.decision_id = self.node
         set_scope(self)
-        from bridge import briefing
+        from raven import briefing
         row = self.store.get_decision(self.node)
         self.assertIn('Synthetic North', row['approval_scope_text'])
         link = briefing.resolve(self.graph, briefing.mint(self.graph, self.person, self.task, self.node))
@@ -278,7 +278,7 @@ class InterviewApprovalScopeTests(interviews.InterviewTests):
 
 class ApprovalScopeCanonicalTests(unittest.TestCase):
     def test_json_encoding_is_stable_but_fact_values_are_exact(self):
-        from bridge.approval_scope import revision, snapshot
+        from raven.approval_scope import revision, snapshot
         a = {'facts': '{"customer": "Synthetic  North", "release": "r17"}'}
         b = {'facts': '{ "release":"r17", "customer":"Synthetic  North" }'}
         self.assertEqual(revision(a), revision(b))

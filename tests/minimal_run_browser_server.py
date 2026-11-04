@@ -6,11 +6,11 @@ import sys
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from bridge import canvas
-from bridge.authz import Actor
-from bridge.config import Config
-from bridge.server import make_server
-from bridge.store import Store
+from raven import canvas
+from raven.authz import Actor
+from raven.config import Config
+from raven.server import make_server
+from raven.store import Store
 
 
 def seed(store):
@@ -58,9 +58,9 @@ def seed(store):
 
 
 if __name__ == '__main__':
-    os.environ['BRIDGE_MODEL_API'] = 'none'
-    for target in ('bridge.llm.Client.complete', 'bridge.llm.Client.complete_json',
-                   'bridge.github.GitHubAPI.get', 'urllib.request.urlopen'):
+    os.environ['RAVEN_MODEL_API'] = 'none'
+    for target in ('raven.llm.Client.complete', 'raven.llm.Client.complete_json',
+                   'raven.github.GitHubAPI.get', 'urllib.request.urlopen'):
         patch(target, side_effect=AssertionError('External provider calls forbidden in minimal UI fixture')).start()
     store = Store(sys.argv[1])
     assert not store.delivery.enabled

@@ -6,9 +6,9 @@ import threading
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas, context_connectors as cc, context_memory as cm
-from bridge.config import Config
-from bridge.store import Invalid
+from raven import canvas, context_connectors as cc, context_memory as cm
+from raven.config import Config
+from raven.store import Invalid
 
 REPO = 'example/service'
 
@@ -255,7 +255,7 @@ class ConnectorCases:
         self.assertTrue(self.store.get_decision(did)['needs_review'])
 
     def test_cancelled_jira_resolution_survives_generic_excerpt_import(self):
-        from bridge.ladder import _void
+        from raven.ladder import _void
         self.client.results[0]['raw_source_fields'] = {'fields': {'status': {'name': 'Closed'}, 'resolution': {'name': "Won't Do"}}}
         self.search()
         row = dict(self.g.db.execute('SELECT * FROM intents').fetchone())

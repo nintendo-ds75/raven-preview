@@ -1,6 +1,6 @@
 ---
 name: conventional-commits
-description: Use when creating or updating Git commits or pull requests in Bridge; format their subject lines as Conventional Commit headers.
+description: Use when creating or updating Git commits or pull requests in Raven; format their subject lines as Conventional Commit headers.
 ---
 
 # Conventional commits and PR titles

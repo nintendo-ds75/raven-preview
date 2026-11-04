@@ -15,8 +15,8 @@ import datetime
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas, ladder, llm
-from bridge.config import Config
+from raven import canvas, ladder, llm
+from raven.config import Config
 
 REPO = "harborline/harborline-app"
 RULE_Q = "What counts as one billable use of Pilot: a request, a completed response, or tokens?"
@@ -95,10 +95,10 @@ class RuleOverRecordTests(RuleCase):
         arbitration when the record agrees."""
         source = self.precedent(RULE_Q, RULE_A, "Raj Patel", "services/usage/")
         self.record()
-        with semantic_on(), patch("bridge.ladder._selector_pick") as selector, \
-                patch("bridge.ladder._disagrees", return_value=False), \
-                patch("bridge.ladder._compose_answer", return_value=RULE_A), \
-                patch("bridge.ladder._record_contradicting", return_value=None):
+        with semantic_on(), patch("raven.ladder._selector_pick") as selector, \
+                patch("raven.ladder._disagrees", return_value=False), \
+                patch("raven.ladder._compose_answer", return_value=RULE_A), \
+                patch("raven.ladder._record_contradicting", return_value=None):
             row = self.ask(ASKED, cfg=Config())
         selector.assert_not_called()
         self.assertEqual((row["status"], row["source"], row["signoff"]), ("resolved", "memory", "rule"), row["evidence"])
@@ -108,15 +108,15 @@ class RuleOverRecordTests(RuleCase):
     def test_a_record_that_disagrees_keeps_the_arbitration(self):
         self.precedent(RULE_Q, RULE_A, "Raj Patel", "services/usage/")
         self.record()
-        with semantic_on(), patch("bridge.ladder._selector_pick", return_value=None) as selector, \
-                patch("bridge.ladder._disagrees", return_value=True), \
-                patch("bridge.ladder._record_contradicting", return_value=None), \
-                patch("bridge.ladder._compose_answer", return_value=None), \
-                patch("bridge.ladder._expand_query", return_value=[]), \
-                patch("bridge.ladder._wide_select", return_value=None), \
-                patch("bridge.ladder._compose_joint", return_value=None), \
-                patch("bridge.ladder._open_twin", return_value=None), \
-                patch("bridge.ladder._how_they_decide", return_value=("", "", "")):
+        with semantic_on(), patch("raven.ladder._selector_pick", return_value=None) as selector, \
+                patch("raven.ladder._disagrees", return_value=True), \
+                patch("raven.ladder._record_contradicting", return_value=None), \
+                patch("raven.ladder._compose_answer", return_value=None), \
+                patch("raven.ladder._expand_query", return_value=[]), \
+                patch("raven.ladder._wide_select", return_value=None), \
+                patch("raven.ladder._compose_joint", return_value=None), \
+                patch("raven.ladder._open_twin", return_value=None), \
+                patch("raven.ladder._how_they_decide", return_value=("", "", "")):
             row = self.ask(ASKED, cfg=Config())
         selector.assert_called()
         self.assertNotEqual(row["signoff"], "rule")
@@ -129,11 +129,11 @@ class SettledFromRuleConsistencyTests(RuleCase):
         to be asked"."""
         self.precedent(RULE_Q, RULE_A, "Raj Patel", "services/usage/")
         hedged = RULE_A + " The record does not specify whether a streamed chunk that times out counts."
-        with semantic_on(), patch("bridge.ladder._selector_pick", side_effect=pick_memory), \
-                patch("bridge.ladder._compose_answer", return_value=hedged), \
-                patch("bridge.ladder._disagrees", return_value=False), \
-                patch("bridge.ladder._record_contradicting", return_value=None), \
-                patch("bridge.ladder._compose_joint", return_value=None):
+        with semantic_on(), patch("raven.ladder._selector_pick", side_effect=pick_memory), \
+                patch("raven.ladder._compose_answer", return_value=hedged), \
+                patch("raven.ladder._disagrees", return_value=False), \
+                patch("raven.ladder._record_contradicting", return_value=None), \
+                patch("raven.ladder._compose_joint", return_value=None):
             row = self.ask(NEAR, cfg=Config())
         self.assertEqual(row["status"], "partial", row["evidence"])
         # The canvas marks the sign-off required when it places the node;
@@ -147,10 +147,10 @@ class SettledFromRuleConsistencyTests(RuleCase):
 
     def test_a_rule_covered_whole_answer_is_settled_everywhere(self):
         source = self.precedent(RULE_Q, RULE_A, "Raj Patel", "services/usage/")
-        with semantic_on(), patch("bridge.ladder._selector_pick", side_effect=pick_memory), \
-                patch("bridge.ladder._compose_answer", return_value=RULE_A), \
-                patch("bridge.ladder._disagrees", return_value=False), \
-                patch("bridge.ladder._record_contradicting", return_value=None):
+        with semantic_on(), patch("raven.ladder._selector_pick", side_effect=pick_memory), \
+                patch("raven.ladder._compose_answer", return_value=RULE_A), \
+                patch("raven.ladder._disagrees", return_value=False), \
+                patch("raven.ladder._record_contradicting", return_value=None):
             row = self.ask(NEAR, cfg=Config())
         self.assertEqual((row["status"], row["signoff"], row["source_id"]), ("resolved", "rule", source))
         self.assertTrue(row["authorized"])
@@ -194,7 +194,7 @@ class StaticFirstPassTests(RuleCase):
             "title": "Charge Enterprise for Pilot", "repo": REPO, "agent": "test", "requester": "Alex Moreno",
             "goal": "Charge Enterprise customers for Pilot by use.", "paths": "app/billing/plans.py"})["task_id"]
         scheduled = []
-        with semantic_on(), patch("bridge.canvas._start_background", side_effect=lambda key, fn, *a: scheduled.append((fn, a))):
+        with semantic_on(), patch("raven.canvas._start_background", side_effect=lambda key, fn, *a: scheduled.append((fn, a))):
             node = canvas.add_node(self.store, Config(), {"task_id": task, "question": RATE_Q,
                                                            "paths": "app/billing/plans.py", "category": "policy"})
         self.assertEqual(node["status"], "predicted", node)
@@ -209,7 +209,7 @@ class StaticFirstPassTests(RuleCase):
         fn, args = scheduled[-1]
         with semantic_on(), patch.object(llm.Client, "complete", side_effect=llm.LLMError("offline")), \
                 patch.object(llm.Client, "complete_json", side_effect=llm.LLMError("offline")), \
-                patch("bridge.ladder._disagrees", return_value=False):
+                patch("raven.ladder._disagrees", return_value=False):
             fn(*args)
         after = self.store.get_decision(node["node_id"])
         self.assertEqual(after["status"], "pending", after["evidence"])

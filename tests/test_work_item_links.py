@@ -5,9 +5,9 @@ from unittest.mock import patch
 
 from fixtures import OfflineCase
 from test_auth import SharedServer
-from bridge import canvas, context_memory as cm, github, host_client, mcp, proof
-from bridge.config import Config
-from bridge.store import Invalid, Store
+from raven import canvas, context_memory as cm, github, host_client, mcp, proof
+from raven.config import Config
+from raven.store import Invalid, Store
 
 REPO = 'synthetic/work-items'
 
@@ -24,8 +24,8 @@ class WorkItemLinksTests(OfflineCase):
         self.did = canvas.add_node(self.store, Config(model_api='none'), {'task_id': self.task,
             'question': 'How long should archived rows remain?', 'category': 'policy',
             'paths': 'policy/archive.py', 'facts': 'work_item=CASE-1'})['node_id']
-        for target in ('bridge.llm.Client.complete', 'bridge.llm.Client.complete_json',
-                       'bridge.github.GitHubAPI.get', 'bridge.mcp.index_repo'):
+        for target in ('raven.llm.Client.complete', 'raven.llm.Client.complete_json',
+                       'raven.github.GitHubAPI.get', 'raven.mcp.index_repo'):
             guard = patch(target, side_effect=AssertionError('External calls forbidden'))
             guard.start()
             self.addCleanup(guard.stop)
@@ -55,12 +55,12 @@ class WorkItemLinksTests(OfflineCase):
         source = self.source()
         before = self.frozen(('decisions', 'decision_versions', 'decision_source_edges', 'decision_links',
                               'source_records', 'source_versions', 'source_identities', 'authority', 'notifications'))
-        found = mcp.call_tool(self.store, 'bridge_lookup_record', {'repo': REPO, 'ref': 'CASE-1'})
-        read = mcp.call_tool(self.store, 'bridge_get_record', {'repo': REPO, 'record_id': found['source']['record_id']})
-        linked = mcp.call_tool(self.store, 'bridge_link_work_item', self.args(read['source']))
+        found = mcp.call_tool(self.store, 'raven_lookup_record', {'repo': REPO, 'ref': 'CASE-1'})
+        read = mcp.call_tool(self.store, 'raven_get_record', {'repo': REPO, 'record_id': found['source']['record_id']})
+        linked = mcp.call_tool(self.store, 'raven_link_work_item', self.args(read['source']))
         self.assertTrue(linked['changed'])
         self.assertEqual(linked['relation'], 'task_anchor')
-        tree = mcp.call_tool(self.store, 'bridge_get_tree', {'task_id': self.task})
+        tree = mcp.call_tool(self.store, 'raven_get_tree', {'task_id': self.task})
         self.assertEqual(tree['work_item_association']['status'], 'linked')
         self.assertEqual(tree['nodes'][0]['work_item_association']['status'], 'linked')
         self.assertEqual(tree['source_anchors'][0]['source_version_id'], source['source_version_id'])
@@ -83,7 +83,7 @@ class WorkItemLinksTests(OfflineCase):
         source = self.source()
         tree = canvas.get_tree(self.store, self.task)
         self.assertEqual(tree['work_item_association']['status'], 'unlinked')
-        self.assertIn('bridge_link_work_item', tree['next'])
+        self.assertIn('raven_link_work_item', tree['next'])
         node = canvas.node_view(self.store, self.did)
         self.assertEqual(node['work_item_association']['status'], 'unlinked')
         with self.graph.transaction() as db:
@@ -103,13 +103,13 @@ class WorkItemLinksTests(OfflineCase):
     def test_exact_record_version_without_locator_selects_one_record_and_retries(self):
         source = self.source()
         other = self.source(external_id='object-2')
-        source = mcp.call_tool(self.store, 'bridge_get_record',
+        source = mcp.call_tool(self.store, 'raven_get_record',
                                {'record_id': source['record_id'], 'repo': REPO})['source']
         args = self.record_id_args(source)
         before = self.frozen(('decisions', 'decision_versions', 'decision_source_edges',
                               'decision_links', 'source_records', 'source_versions', 'source_identities',
                               'authority', 'notifications'))
-        linked = mcp.call_tool(self.store, 'bridge_link_work_item', args)
+        linked = mcp.call_tool(self.store, 'raven_link_work_item', args)
         self.assertTrue(linked['changed'])
         self.assertEqual(linked['source'], {**source, 'role': 'work_item'})
         self.assertEqual(before, self.frozen(before.keys()))
@@ -226,7 +226,7 @@ class WorkItemLinksTests(OfflineCase):
 
     def test_existing_settle_work_item_is_decision_association_not_task_anchor(self):
         source = self.source()
-        mcp.call_tool(self.store, 'bridge_settle_node', {'task_id': self.task, 'node_id': self.did,
+        mcp.call_tool(self.store, 'raven_settle_node', {'task_id': self.task, 'node_id': self.did,
             'answer': 'Proposed archive setting, with this issue as context.',
             'source_evidence': [{'record_id': source['record_id'],
                 'source_version_id': source['source_version_id'], 'role': 'work_item'}]})
@@ -270,7 +270,7 @@ class WorkItemLinksTests(OfflineCase):
         tree = canvas.get_tree(self.store, self.task)
         self.assertEqual(tree['work_item_association']['status'], 'ambiguous')
         self.assertIn('Inspect work_item_association.links', tree['next'])
-        self.assertNotIn('use bridge_link_work_item', tree['next'])
+        self.assertNotIn('use raven_link_work_item', tree['next'])
         association = tree['nodes'][0]['work_item_association']
         self.assertEqual(association['status'], 'ambiguous')
         self.assertEqual({s['record_id'] for s in association['links']}, {source['record_id'], other['record_id']})
@@ -386,14 +386,14 @@ class WorkItemLinksTests(OfflineCase):
         tree = canvas.get_tree(self.store, self.task)
         self.assertTrue(tree['work_item_association']['historical'])
         self.assertIn('start a new task', tree['next'])
-        self.assertNotIn('bridge_link_work_item', tree['next'])
+        self.assertNotIn('raven_link_work_item', tree['next'])
         for projected in (tree['work_item_association'], tree['nodes'][0]['work_item_association'],
                           canvas.node_view(self.store, self.did)['work_item_association'],
                           self.store.get_decision(self.did)['work_item_association'],
                           canvas.trace(self.store, self.task)['work_item_association']):
             self.assertTrue(projected['historical'])
             self.assertIn('start a new task', projected['notice'])
-            self.assertNotIn('bridge_link_work_item', projected['notice'])
+            self.assertNotIn('raven_link_work_item', projected['notice'])
         self.assertEqual(cm.anchors(self.graph.db, self.task), [])
         exported = proof.export(self.store, {'task_id': self.task})
         self.assertEqual(bundle, exported['bundle'])
@@ -521,15 +521,15 @@ class WorkItemLinksTests(OfflineCase):
         self.assertFalse(self.store.link_work_item(self.args(other))['changed'])
 
     def test_schema_and_hook_describe_existing_record_flow(self):
-        schema = next(t for t in mcp.TOOLS if t['name'] == 'bridge_link_work_item')
+        schema = next(t for t in mcp.TOOLS if t['name'] == 'raven_link_work_item')
         self.assertNotIn(schema['name'], mcp.READ_ONLY_TOOLS)
-        self.assertIn('bridge_link_work_item', mcp.INSTRUCTIONS)
-        tools = ['bridge_link_work_item', 'bridge_get_tree']
+        self.assertIn('raven_link_work_item', mcp.INSTRUCTIONS)
+        tools = ['raven_link_work_item', 'raven_get_tree']
         with patch.object(host_client, 'verify_project'), patch.object(host_client, 'capabilities', return_value=tools), \
              patch.object(host_client, 'call', return_value={'task_id': self.task}), patch.object(host_client, 'binding', return_value={}):
             out = host_client.hook({'project': self.temp.name}, 'claude', {'hook_event_name': 'SessionStart', 'session_id': 'synthetic'})
         text = out['hookSpecificOutput']['additionalContext']
-        for token in ('bridge_lookup_record', 'bridge_get_record', 'bridge_link_work_item', 'facts.work_item alone remains unlinked'):
+        for token in ('raven_lookup_record', 'raven_get_record', 'raven_link_work_item', 'facts.work_item alone remains unlinked'):
             self.assertIn(token, text)
 
 
@@ -540,7 +540,7 @@ class WorkItemTransportTests(SharedServer):
         self.addCleanup(self.store.graph.close)
         member = self.store.add_person({'name': 'Synthetic Host', 'role': 'member'})
         self.agent = self.auth.create_token(member['id'], label='synthetic')['token']
-        self.task = self.mcp('bridge_start_task', {'repo': REPO, 'title': 'A synthetic work item',
+        self.task = self.mcp('raven_start_task', {'repo': REPO, 'title': 'A synthetic work item',
                                                   'facts': 'work_item=CASE-1'}, self.agent)['result']['task_id']
         self.source = self.store.add_record({'repo': REPO, 'provider': 'jira', 'namespace': 'site-a',
             'kind': 'jira', 'ref': 'CASE-1', 'external_id': 'object-1', 'title': 'Synthetic issue'})['source']
@@ -550,7 +550,7 @@ class WorkItemTransportTests(SharedServer):
         self.route = '/api/tasks/' + self.task + '/work-items'
 
     def test_mcp_rest_same_checks_and_idempotency(self):
-        first = self.mcp('bridge_link_work_item', self.args, self.agent)
+        first = self.mcp('raven_link_work_item', self.args, self.agent)
         self.assertFalse(first['isError'], first)
         retry = self.post(self.route, self.args, token=self.agent)
         self.assertEqual({**first['result'], 'changed': False}, retry)
@@ -558,14 +558,14 @@ class WorkItemTransportTests(SharedServer):
                     {'provider': ''}, {'ref': 'CASE-1'}, {'namespace': 'site-b'},
                     {'repo': 'https://github.com/' + REPO}, {'record_id': []}, {'role': []}):
             with self.subTest(bad=bad):
-                self.assertTrue(self.mcp('bridge_link_work_item', {**self.args, **bad}, self.agent)['isError'])
+                self.assertTrue(self.mcp('raven_link_work_item', {**self.args, **bad}, self.agent)['isError'])
                 self.assertEqual(self.status_of('POST', self.route, {**self.args, **bad}, token=self.agent), 400)
         self.assertEqual(self.status_of('POST', self.route, {**self.args, 'task_id': 'different'}, token=self.agent), 400)
         self.assertEqual(self.store.graph.count_events('work_item_linked', task_id=self.task), 1)
 
     def test_mcp_rest_accept_exact_record_version_without_locator(self):
         args = {key: value for key, value in self.args.items() if key != 'external_id'}
-        first = self.mcp('bridge_link_work_item', args, self.agent)
+        first = self.mcp('raven_link_work_item', args, self.agent)
         self.assertFalse(first['isError'], first)
         retry = self.post(self.route, {key: value for key, value in args.items() if key != 'task_id'}, token=self.agent)
         self.assertEqual({**first['result'], 'changed': False}, retry)
@@ -575,7 +575,7 @@ class WorkItemTransportTests(SharedServer):
         viewer = self.store.add_person({'name': 'Synthetic Viewer', 'role': 'viewer'})
         token = self.auth.create_token(viewer['id'], label='synthetic-viewer')['token']
         request = {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
-                   'params': {'name': 'bridge_link_work_item', 'arguments': self.args}}
+                   'params': {'name': 'raven_link_work_item', 'arguments': self.args}}
         self.assertEqual(self.status_of('POST', '/mcp', request, token=token), 403)
         self.assertEqual(self.status_of('POST', self.route, self.args, token=token), 403)
         self.assertEqual(self.status_of('POST', self.route, self.args, token='invalid'), 401)

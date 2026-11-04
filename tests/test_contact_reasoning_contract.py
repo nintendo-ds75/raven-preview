@@ -3,10 +3,10 @@ import json
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas
-from bridge.config import Config
-from bridge.contact_reasoning import choose
-from bridge.llm import LLMError
+from raven import canvas
+from raven.config import Config
+from raven.contact_reasoning import choose
+from raven.llm import LLMError
 
 
 class ContactReasoningContractTests(OfflineCase):
@@ -23,7 +23,7 @@ class ContactReasoningContractTests(OfflineCase):
         self.ranked = [('Synthetic Maintainer', ['Committed many mechanical changes; on call'], .9),
                        ('Synthetic Analyst', ['Investigated batch retry metering and customer invoices; policy still open'], .4)]
         self.task = self.store.add_run({'title': 'Review synthetic usage', 'repo': self.repo})['id']
-        for target in ('socket.socket.connect', 'socket.create_connection', 'bridge.llm.Client.complete'):
+        for target in ('socket.socket.connect', 'socket.create_connection', 'raven.llm.Client.complete'):
             guard = patch(target, side_effect=AssertionError('Live inference/network forbidden'))
             guard.start()
             self.addCleanup(guard.stop)
@@ -34,11 +34,11 @@ class ContactReasoningContractTests(OfflineCase):
 
     def choose(self, results, *, semantic=True, fixed=()):
         details = {}
-        with patch('bridge.routing.rank_for_decision', return_value=self.ranked), \
-                patch('bridge.signals._authority_matches', return_value=fixed), \
-                patch('bridge.semantic_index.sources', return_value=([], {'backend': 'synthetic'})), \
+        with patch('raven.routing.rank_for_decision', return_value=self.ranked), \
+                patch('raven.signals._authority_matches', return_value=fixed), \
+                patch('raven.semantic_index.sources', return_value=([], {'backend': 'synthetic'})), \
                 patch.object(Config, 'semantic_retrieval', property(lambda _: semantic)), \
-                patch('bridge.contact_reasoning.Client.complete_json', side_effect=results) as model:
+                patch('raven.contact_reasoning.Client.complete_json', side_effect=results) as model:
             result = choose(self.graph, Config(model_api='none'), self.repo, self.question,
                             task_id=self.task, details=details)
         return result, details, model
@@ -171,14 +171,14 @@ class ContactReasoningContractTests(OfflineCase):
                 owner='Synthetic Maintainer', repo=self.repo, path='usage/meter.py')
             return {'id': sid, 'drafts': [sid]}
 
-        with patch('bridge.routing.rank_for_decision', return_value=self.ranked), \
-                patch('bridge.signals._authority_matches', return_value=[]), \
-                patch('bridge.semantic_index.sources', return_value=([], {})), \
+        with patch('raven.routing.rank_for_decision', return_value=self.ranked), \
+                patch('raven.signals._authority_matches', return_value=[]), \
+                patch('raven.semantic_index.sources', return_value=([], {})), \
                 patch.object(Config, 'semantic_retrieval', property(lambda _: semantic)), \
-                patch('bridge.contact_reasoning.Client.complete_json', side_effect=results) as model, \
-                patch('bridge.ladder.ask', side_effect=scratch), \
-                patch('bridge.llm.compose_brief', return_value=''), \
-                patch('bridge.canvas._route_signer', return_value=self.ranked) as fallback:
+                patch('raven.contact_reasoning.Client.complete_json', side_effect=results) as model, \
+                patch('raven.ladder.ask', side_effect=scratch), \
+                patch('raven.llm.compose_brief', return_value=''), \
+                patch('raven.canvas._route_signer', return_value=self.ranked) as fallback:
             canvas._model_node_pass(self.store, Config(model_api='none'), did, '', ['usage/meter.py'], [], '',
                 current['owner_id'] if explicit else None, '', current['updated_at'])
         view = self.store.get_decision(did)

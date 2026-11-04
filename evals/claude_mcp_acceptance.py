@@ -47,11 +47,11 @@ PRIOR_ANSWER = 'All sandbox internal-load traffic is excluded. Production is not
 PRIOR_APPLICABILITY = {'requires': {'environment': 'sandbox'}}
 DEFAULT_INQUIRY_QUESTION = 'What is the signed production invoice policy, including the exact cohort and call-count boundary?'
 READABLE = {POLICY, 'README.md', 'CODEOWNERS'}
-RAVEN_TOOLS = {'bridge_start_task', 'bridge_add_node', 'bridge_get_tree', 'bridge_get_decision',
-               'bridge_wait', 'bridge_settle_node', 'bridge_finish_task', 'bridge_export_proof',
-               'bridge_search_decisions', 'bridge_search_context', 'bridge_get_record',
-               'bridge_lookup_record', 'bridge_list_owners', 'bridge_context_sources',
-               'bridge_review_discovery', 'bridge_connection_status'}
+RAVEN_TOOLS = {'raven_start_task', 'raven_add_node', 'raven_get_tree', 'raven_get_decision',
+               'raven_wait', 'raven_settle_node', 'raven_finish_task', 'raven_export_proof',
+               'raven_search_decisions', 'raven_search_context', 'raven_get_record',
+               'raven_lookup_record', 'raven_list_owners', 'raven_context_sources',
+               'raven_review_discovery', 'raven_connection_status'}
 FIXTURE_TOOLS = {'read_file', 'write_file', 'run_checks', 'read_changes'}
 PROMPT = '''Implement the current production invoice policy for internal load-test traffic, preserving
 real customer billing. Inspect the tiny checkout with fixture tools and the recorded Raven
@@ -59,14 +59,14 @@ context/prior decisions. Discover the unresolved policy judgment yourself; do no
 historical or another environment's answer is approval. Start one Raven task with
 repo=contract/billing, client_key=claude-mcp-acceptance, and the complete request as goal.
 Keep all work on that task. Use current facts environment=production on policy nodes.
-Read source evidence and prior decisions before asking the routed owner. Use bridge_wait
+Read source evidence and prior decisions before asking the routed owner. Use raven_wait
 with timeout=60 when blocked. The evaluator will simulate a human in Raven only after
 you wait. Slack is notification-only. Never attempt to act as a human or self-authorize.
 Your first host process may stop while waiting; resume the existing task and read its tree.
 Implement the final explicitly signed answer in billing/usage.py as one function:
 is_billable(is_internal, cohort, calls), containing only a single return expression of
 booleans/comparisons/constants. No calls, imports, attributes, helpers, or side effects.
-Use fixture run_checks and read_changes. Finish via bridge_finish_task with the exact
+Use fixture run_checks and read_changes. Finish via raven_finish_task with the exact
 diff returned by read_changes and honest checks. Do not invent hidden test results.
 '''
 
@@ -393,20 +393,20 @@ class OfflineSDKTranscript:
             if ids:
                 self.task_id = ids[0]
         steps = [
-            ('bridge_start_task', {'title': 'Production internal load-test invoice policy', 'goal': PROMPT,
+            ('raven_start_task', {'title': 'Production internal load-test invoice policy', 'goal': PROMPT,
                                   'repo': REPO, 'paths': POLICY, 'client_key': 'claude-mcp-acceptance'}),
-            ('bridge_search_context', {'repo': REPO, 'task_id': self.task_id, 'query': 'Production billing context'}),
-            ('bridge_search_decisions', {'repo': REPO, 'query': 'internal load-test traffic billable'}),
-            ('bridge_add_node', {'task_id': self.task_id, 'question': 'Should internal load-test traffic count on production customer invoices?',
+            ('raven_search_context', {'repo': REPO, 'task_id': self.task_id, 'query': 'Production billing context'}),
+            ('raven_search_decisions', {'repo': REPO, 'query': 'internal load-test traffic billable'}),
+            ('raven_add_node', {'task_id': self.task_id, 'question': 'Should internal load-test traffic count on production customer invoices?',
                                  'paths': POLICY, 'category': 'policy', 'facts': 'environment=production', 'client_ref': 'production-policy'}),
-            ('bridge_get_tree', {'task_id': self.task_id}),
-            ('bridge_wait', {'task_id': self.task_id, 'timeout': '60'}),
-            ('bridge_get_tree', {'task_id': self.task_id}),
+            ('raven_get_tree', {'task_id': self.task_id}),
+            ('raven_wait', {'task_id': self.task_id, 'timeout': '60'}),
+            ('raven_get_tree', {'task_id': self.task_id}),
             ('fixture:write_file', {}),
             ('fixture:run_checks', {}),
             ('fixture:read_changes', {}),
-            ('bridge_get_tree', {'task_id': self.task_id}),
-            ('bridge_finish_task', {'task_id': self.task_id, 'diff': self.actual_diff,
+            ('raven_get_tree', {'task_id': self.task_id}),
+            ('raven_finish_task', {'task_id': self.task_id, 'diff': self.actual_diff,
                                     'checks': 'Actual fixture run_checks passed 2 public smoke checks. Hidden boundary checks are evaluator-owned.'}),
             ('final', {}),
         ]
@@ -420,7 +420,7 @@ class OfflineSDKTranscript:
             threshold = int(re.search(r'more than (\d+)', self.current_answer)[1])
             args = {'path': POLICY, 'content': 'def is_billable(is_internal, cohort, calls):\n'
                     f'    return not is_internal or (cohort == {cohort!r} and calls > {threshold})\n'}
-        if name == 'bridge_finish_task':
+        if name == 'raven_finish_task':
             require(bool(self.actual_diff), 'offline_finish_missing_actual_tool_diff')
         self.calls += 1
         if name == 'final':
@@ -475,7 +475,7 @@ def offline_sdk_preflight(*, output_dir=None, model='claude-sonnet-4-6', timeout
             with Gateway('synthetic-offline-key', model=model, max_calls=12, max_input_bytes=4000000,
                          max_output_tokens=20000, transport=httpx.MockTransport(transcript)) as gateway:
                 clean = {k: v for k, v in os.environ.items() if not any(x in k for x in ('TOKEN', 'SECRET', 'API_KEY'))
-                         and not k.startswith(('BRIDGE_', 'SLACK_', 'TEAMS_', 'GITHUB_', 'RAVEN_'))}
+                         and not k.startswith(('RAVEN_', 'SLACK_', 'TEAMS_', 'GITHUB_', 'RAVEN_'))}
                 with patch.dict(os.environ, clean, clear=True), Fixture(directory=root / 'fixture') as fixture:
                     fixture.prepare()
                     host = SDKHost(gateway, root, model, max_turns=12)
@@ -486,8 +486,8 @@ def offline_sdk_preflight(*, output_dir=None, model='claude-sonnet-4-6', timeout
                             state if (state := trace_state(read_trace(root / 'mcp-trace.jsonl')))[1] else None),
                             host, deadline, 'offline_sdk_pending_wait')
                         calls = [r['message']['params']['name'] for r, _, _ in completed]
-                        require(all(name in calls for name in ('bridge_start_task', 'bridge_search_context',
-                            'bridge_search_decisions', 'bridge_add_node', 'bridge_get_tree')), 'offline_sdk_missing_mcp_stage')
+                        require(all(name in calls for name in ('raven_start_task', 'raven_search_context',
+                            'raven_search_decisions', 'raven_add_node', 'raven_get_tree')), 'offline_sdk_missing_mcp_stage')
                         require(bool(host.session_id), 'offline_sdk_missing_session')
                         time.sleep(1.2)
                         require(any(w in trace_state(read_trace(root / 'mcp-trace.jsonl'))[1] for w in waits),
@@ -569,9 +569,9 @@ class SDKHost:
         home.mkdir(mode=0o700, exist_ok=True)
         config = {'checkout': str(fixture.root / 'checkout'), 'home': str(home), 'model': self.model,
                   'max_turns': self.max_turns, 'budget_usd': self.budget_usd, 'session_id': self.session_id,
-                  'prompt': PROMPT if phase == 'initial' else 'Resume the same task/client key. Read bridge_get_tree now, then implement only the current signed answer. ' + PROMPT,
-                  'raven_env': {'BRIDGE_TOKEN': fixture.agent_token, 'BRIDGE_EVAL_URL': fixture.url,
-                                'BRIDGE_EVAL_TRACE': str(self.root / 'mcp-trace.jsonl')}}
+                  'prompt': PROMPT if phase == 'initial' else 'Resume the same task/client key. Read raven_get_tree now, then implement only the current signed answer. ' + PROMPT,
+                  'raven_env': {'RAVEN_TOKEN': fixture.agent_token, 'RAVEN_EVAL_URL': fixture.url,
+                                'RAVEN_EVAL_TRACE': str(self.root / 'mcp-trace.jsonl')}}
         self.process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--sdk-worker'],
             cwd=home, env=host_environment(self.gateway, home), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, text=True, start_new_session=True)
@@ -633,8 +633,8 @@ class Fixture(RavenContractHarness):
         self.database = self.root / 'raven.db'
         self.slack = SlackContractServer()
         self.stack.callback(self.slack.close)
-        self.stack.enter_context(patch.dict(os.environ, {'BRIDGE_MODEL_API': 'none', 'BRIDGE_SEMANTIC': '0',
-            'BRIDGE_LIVE': '0', 'BRIDGE_DEEP': '0', 'BRIDGE_PUBLIC_URL': '', 'GITHUB_TOKEN': ''}))
+        self.stack.enter_context(patch.dict(os.environ, {'RAVEN_MODEL_API': 'none', 'RAVEN_SEMANTIC': '0',
+            'RAVEN_LIVE': '0', 'RAVEN_DEEP': '0', 'RAVEN_PUBLIC_URL': '', 'GITHUB_TOKEN': ''}))
         self.rpc_id, self.protocol_version, self.transcript = 0, '', []
         self.server = self.store = None
         self.agent_token = ''
@@ -645,7 +645,7 @@ class Fixture(RavenContractHarness):
             raise
 
     def start(self, *, workers=True):
-        from bridge import server
+        from raven import server
         original = server.make_server
         def with_wait_cap(*args, **kwargs):
             return original(*args, **{**kwargs, 'wait_cap': 65})
@@ -702,8 +702,8 @@ def provider_snapshot(gateway):
 
 def direct_inference_smoke(api_key, workspace_id='', model='claude-sonnet-4-6'):
     """One production logical call; its built-in retry policy permits four attempts."""
-    from bridge import llm
-    from bridge.config import Config
+    from raven import llm
+    from raven.config import Config
     require(callable(getattr(llm, '_open_model_request', None)), 'production_transport_hardening_missing')
     env = {k: v for k, v in os.environ.items() if not k.lower().endswith('_proxy')
            and k not in ('SSL_CERT_FILE', 'SSL_CERT_DIR', 'CURL_CA_BUNDLE', 'REQUESTS_CA_BUNDLE')}
@@ -713,8 +713,8 @@ def direct_inference_smoke(api_key, workspace_id='', model='claude-sonnet-4-6'):
             'Reply exactly RAVEN_DIRECT_OK.', 'Reply with the marker.', 32)
     text = ''.join(b.get('text', '') for b in payload.get('content', []) if b.get('type') == 'text')
     require(text.strip() == 'RAVEN_DIRECT_OK', 'direct_production_inference_marker')
-    return {'status': 'passed', 'transport': 'unmodified bridge.llm.Client._messages',
-            'source_sha256': hashlib.sha256((ROOT / 'bridge/llm.py').read_bytes()).hexdigest(),
+    return {'status': 'passed', 'transport': 'unmodified raven.llm.Client._messages',
+            'source_sha256': hashlib.sha256((ROOT / 'raven/llm.py').read_bytes()).hexdigest(),
             'model': model, 'logical_calls': 1, 'maximum_physical_attempts': 4,
             'max_tokens_per_attempt': 32, 'usage': {k: int(payload.get('usage', {}).get(k, 0))
             for k in ('input_tokens', 'output_tokens')}, 'marker_verified': True}
@@ -749,7 +749,7 @@ def inquiry_response_diagnostic(result):
 
 def inquiry_model_diagnostic(purpose, raw, prompt):
     """Bounded synthetic-test observations; never repair or trust rejected output."""
-    from bridge.inquiry import OUTCOMES
+    from raven.inquiry import OUTCOMES
     result = {'purpose': purpose, 'returned_type': type(raw).__name__}
     if not isinstance(raw, dict):
         result['category'] = 'non_object_json'
@@ -798,7 +798,7 @@ def validated_inquiry_question(question):
 
 
 def live_inquiry(fixture, task, node, gateway, model, *, diagnostics=None, question=DEFAULT_INQUIRY_QUESTION):
-    from bridge import llm
+    from raven import llm
     question = validated_inquiry_question(question)
     diagnostics = diagnostics if diagnostics is not None else {}
     diagnostics.update(status='started', mode='real_production_inference_authenticated_http', model_calls=[], question=question)
@@ -825,10 +825,10 @@ def live_inquiry(fixture, task, node, gateway, model, *, diagnostics=None, quest
             'SELECT id,signed_by,signed_hash,signatures FROM decisions ORDER BY id')]
         return result
     before = counts()
-    env = {'BRIDGE_MODEL_API': 'anthropic', 'BRIDGE_MODEL': model, 'BRIDGE_FAST_MODEL': model,
-           'BRIDGE_SEMANTIC': '1', 'ANTHROPIC_API_KEY': gateway.placeholder}
+    env = {'RAVEN_MODEL_API': 'anthropic', 'RAVEN_MODEL': model, 'RAVEN_FAST_MODEL': model,
+           'RAVEN_SEMANTIC': '1', 'ANTHROPIC_API_KEY': gateway.placeholder}
     try:
-        with patch.dict(os.environ, env), patch('bridge.llm._open_model_request', new=gateway.urllib_open), \
+        with patch.dict(os.environ, env), patch('raven.llm._open_model_request', new=gateway.urllib_open), \
                 patch.object(llm.Client, 'complete_json', new=observe):
             result = fixture.human('/api/tasks/' + task + '/inquiry', {
                 'question': question,
@@ -853,7 +853,7 @@ def live_inquiry(fixture, task, node, gateway, model, *, diagnostics=None, quest
 def freshness_checks():
     """Existing deterministic source-version contracts, never live coverage."""
     env = {k: os.environ[k] for k in ('PATH', 'LANG') if k in os.environ}
-    env.update(PYTHONPATH=str(ROOT / 'tests') + os.pathsep + str(ROOT), BRIDGE_MODEL_API='none', BRIDGE_SEMANTIC='0')
+    env.update(PYTHONPATH=str(ROOT / 'tests') + os.pathsep + str(ROOT), RAVEN_MODEL_API='none', RAVEN_SEMANTIC='0')
     tests = ['test_context_memory.ContextMemoryTests.test_second_support_update_invalidates_signoff_and_descendants',
              'test_context_memory.ContextMemoryTests.test_reapproval_requires_explicit_current_pins_and_fresh_revision',
              'test_context_memory.ContextMemoryTests.test_source_A_B_A_revert_never_revives_the_signature_on_A',
@@ -907,7 +907,7 @@ def observed_evidence_reads(fixture, completed):
     prior_tools, context_tools = set(), set()
     for request, _, response in completed:
         name = request.get('message', {}).get('params', {}).get('name', '')
-        if not name.startswith('bridge_'):
+        if not name.startswith('raven_'):
             continue  # The trace can also contain fixture-tool output.
         for value in objects(response):
             scope = decoded(value.get('applicability'))
@@ -943,7 +943,7 @@ def exercise(fixture, host, gateway, report, *, timeout=180, idle_seconds=2):
     def blocked():
         completed, waits = trace_state(read_trace(trace_path))
         nodes = [(req, value) for req, _, value in completed
-                 if req['message']['params']['name'] == 'bridge_add_node' and isinstance(value, dict) and value.get('node_id')]
+                 if req['message']['params']['name'] == 'raven_add_node' and isinstance(value, dict) and value.get('node_id')]
         return (nodes, waits) if nodes and waits else None
     nodes, waits = wait_until(blocked, host, deadline, 'pending_wait')
     require(len(nodes) == 1, 'unexpected_decision_count')
@@ -971,7 +971,7 @@ def exercise(fixture, host, gateway, report, *, timeout=180, idle_seconds=2):
                (slack_event['event_id'],)).fetchone()['state'] == 'done', host, deadline, 'slack_reply_processed')
     require(fixture.store.get_decision(node)['updated_at'] == before['updated_at'], 'slack_reply_changed_decision')
     try:
-        fixture.call('bridge_finish_task', task_id=task)
+        fixture.call('raven_finish_task', task_id=task)
     except AssertionError:
         pass
     else:
@@ -1035,7 +1035,7 @@ def exercise(fixture, host, gateway, report, *, timeout=180, idle_seconds=2):
         passed.append('same_session_successful_host_receipt')
     report['stage'] = 'independent_patch_checks'
     calls = trace_state(read_trace(trace_path)[offset:])[0]
-    require(any(r['message']['params']['name'] == 'bridge_get_tree' for r, _, _ in calls), 'resume_missing_tree_read')
+    require(any(r['message']['params']['name'] == 'raven_get_tree' for r, _, _ in calls), 'resume_missing_tree_read')
     require(host.session_id == old_session, 'host_session_changed')
     require(len(fixture.store.graph.decisions_for_task(task)) == 1, 'resume_duplicated_nodes')
     report['same_session_resumed'] = True
@@ -1046,7 +1046,7 @@ def exercise(fixture, host, gateway, report, *, timeout=180, idle_seconds=2):
     passed.append('independent_patch_boundary_checks')
     actual = fixture_call(fixture.root / 'checkout', 'read_changes', {})['diff']
     report['actual_patch'] = actual
-    proof = fixture.call('bridge_export_proof', task_id=task)
+    proof = fixture.call('raven_export_proof', task_id=task)
     require(bool(actual) and proof['integrity']['valid'] and proof['bundle']['payload']['change']['diff'] == actual,
             'proof_diff_not_actual_patch')
     report['proof_integrity_valid'] = True
@@ -1098,7 +1098,7 @@ def run(*, run_live=False, gateway=None, model='', output_dir=None, host_factory
             report['freshness'] = freshness_runner()
             # Prevent inherited production connector configuration from entering fixtures.
             clean = {k: v for k, v in os.environ.items() if not any(x in k for x in ('TOKEN', 'SECRET', 'API_KEY'))
-                     and not k.startswith(('BRIDGE_', 'SLACK_', 'TEAMS_', 'GITHUB_', 'RAVEN_'))}
+                     and not k.startswith(('RAVEN_', 'SLACK_', 'TEAMS_', 'GITHUB_', 'RAVEN_'))}
             with patch.dict(os.environ, clean, clear=True):
                 with Fixture(directory=root / 'fixture', model_mode='fixture') as fixture:
                     fixture.prepare()
@@ -1127,9 +1127,9 @@ def run(*, run_live=False, gateway=None, model='', output_dir=None, host_factory
 def copied_inquiry_fixture(run_dir, output_dir):
     """Open a SQLite backup of a completed run; never reseed its checkout or DB."""
     from types import SimpleNamespace
-    from bridge.auth import Auth
-    from bridge.server import make_server
-    from bridge.store import Store
+    from raven.auth import Auth
+    from raven.server import make_server
+    from raven.store import Store
     run_dir, output_dir = Path(run_dir), Path(output_dir)
     saved = json.loads((run_dir / 'result.json').read_text())
     task, node = saved['task_id'], saved['node_id']
@@ -1140,8 +1140,8 @@ def copied_inquiry_fixture(run_dir, output_dir):
             sqlite3.connect(output_dir / 'raven-inquiry.db') as copied:
         original.backup(copied)
     clean = {k: v for k, v in os.environ.items() if not any(x in k for x in ('TOKEN', 'SECRET', 'API_KEY'))
-             and not k.startswith(('BRIDGE_', 'SLACK_', 'TEAMS_', 'GITHUB_', 'RAVEN_'))}
-    clean.update(BRIDGE_MODEL_API='none', BRIDGE_SEMANTIC='0', BRIDGE_LIVE='0', BRIDGE_DEEP='0')
+             and not k.startswith(('RAVEN_', 'SLACK_', 'TEAMS_', 'GITHUB_', 'RAVEN_'))}
+    clean.update(RAVEN_MODEL_API='none', RAVEN_SEMANTIC='0', RAVEN_LIVE='0', RAVEN_DEEP='0')
     with patch.dict(os.environ, clean, clear=True):
         store = Store(output_dir / 'raven-inquiry.db')
         server = thread = None

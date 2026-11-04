@@ -7,8 +7,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from fixtures import OfflineCase
-from bridge import source_docs, sources
-from bridge.store import Invalid
+from raven import source_docs, sources
+from raven.store import Invalid
 
 PAGE = """<html><head><title>Billing guide</title><script>track()</script></head><body>
 <nav>Home | Docs</nav><h1>Billing guide</h1><p>Usage is metered monthly in UTC.</p>

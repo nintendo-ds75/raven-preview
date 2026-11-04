@@ -3,9 +3,9 @@ import hmac
 import json
 from unittest.mock import patch
 from fixtures import OfflineCase
-from bridge import meeting_records as mr
-from bridge.meeting_providers import Vexa, OutcomeUnknown, verify_vexa_signature
-from bridge.store import Invalid
+from raven import meeting_records as mr
+from raven.meeting_providers import Vexa, OutcomeUnknown, verify_vexa_signature
+from raven.store import Invalid
 
 
 class FakeVexa:

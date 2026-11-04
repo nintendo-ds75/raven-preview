@@ -33,7 +33,7 @@ class DocsAgreeTests(unittest.TestCase):
 
     def test_the_reference_names_every_mcp_tool_and_counts_them(self):
         _tracked_text()
-        from bridge.mcp import TOOLS
+        from raven.mcp import TOOLS
         text = (ROOT / "docs" / "reference.md").read_text()
         names = [t["name"] for t in TOOLS]
         for name in names:

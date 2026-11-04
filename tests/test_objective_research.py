@@ -1,7 +1,7 @@
 """Real source retrieval and ACLs; research inference is explicitly scripted."""
 from fixtures import OfflineCase
-from bridge import objective_research as research
-from bridge.store import Invalid
+from raven import objective_research as research
+from raven.store import Invalid
 
 
 class ScriptedResearch:
@@ -107,7 +107,7 @@ class ObjectiveResearchTests(OfflineCase):
                 {'action':'read','record_id':source['record_id']}, finish))
 
     def test_actual_long_meeting_early_chunk_and_partial_coverage_are_explicit(self):
-        from bridge import meeting_records
+        from raven import meeting_records
         meeting = meeting_records.create(self.store, {'repo': self.repo, 'provider': 'import', 'platform': 'import',
             'namespace': 'customer-calls', 'native_meeting_id': 'weekly-room', 'title': 'Weekly customer call'})
         quote = 'Zebra onboarding uses the existing CSV importer.'

@@ -15,17 +15,17 @@ import fixtures  # noqa: E402,F401
 for key in tuple(os.environ):
     if key.startswith(('RAVEN_HOST_', 'VEXA_', 'RAVEN_VEXA_')) or key in ('ANTHROPIC_API_KEY', 'OPENAI_API_KEY'):
         os.environ.pop(key, None)
-os.environ.update(BRIDGE_MODEL_API='none', BRIDGE_SEMANTIC='0', BRIDGE_LIVE='0', BRIDGE_OBJECTIVE_TICK_SECONDS='1')
-from bridge import objectives, meeting_records  # noqa: E402
-from bridge.objective_head import Worker as ObjectiveWorker  # noqa: E402
-from bridge.auth import Identity  # noqa: E402
-from bridge.config import Config  # noqa: E402
-from bridge.server import make_server  # noqa: E402
-from bridge.store import Store  # noqa: E402
-from bridge.workbench import Workbench  # noqa: E402
+os.environ.update(RAVEN_MODEL_API='none', RAVEN_SEMANTIC='0', RAVEN_LIVE='0', RAVEN_OBJECTIVE_TICK_SECONDS='1')
+from raven import objectives, meeting_records  # noqa: E402
+from raven.objective_head import Worker as ObjectiveWorker  # noqa: E402
+from raven.auth import Identity  # noqa: E402
+from raven.config import Config  # noqa: E402
+from raven.server import make_server  # noqa: E402
+from raven.store import Store  # noqa: E402
+from raven.workbench import Workbench  # noqa: E402
 
-for target in ('bridge.llm.Client.complete', 'bridge.llm.Client.complete_json',
-               'bridge.github.GitHubAPI.get', 'bridge.meeting_providers.Vexa._request'):
+for target in ('raven.llm.Client.complete', 'raven.llm.Client.complete_json',
+               'raven.github.GitHubAPI.get', 'raven.meeting_providers.Vexa._request'):
     patch(target, side_effect=AssertionError('External calls forbidden in synthetic UI fixture')).start()
 store = Store(sys.argv[1])
 store.graph.set_setting('workspace_name', 'Raven startup OS · synthetic QA')

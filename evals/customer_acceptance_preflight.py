@@ -99,9 +99,9 @@ def fixture_environment(source: Mapping[str, str], home: Path, root: Path = ROOT
         'PYTHONPATH': os.pathsep.join((str(root / 'tests'), str(root))),
         'PYTHONNOUSERSITE': '1', 'PYTHONDONTWRITEBYTECODE': '1',
         'PYTHONHASHSEED': '0', 'NO_COLOR': '1',
-        'BRIDGE_MODEL_API': 'none', 'BRIDGE_SEMANTIC': '0',
-        'BRIDGE_LIVE': '0', 'BRIDGE_DEEP': '0',
-        'BRIDGE_CLAUDE_BIN': str(home / 'no-claude-host'),
+        'RAVEN_MODEL_API': 'none', 'RAVEN_SEMANTIC': '0',
+        'RAVEN_LIVE': '0', 'RAVEN_DEEP': '0',
+        'RAVEN_CLAUDE_BIN': str(home / 'no-claude-host'),
         'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_SYSTEM': os.devnull,
         'GIT_TERMINAL_PROMPT': '0',
     })

@@ -6,9 +6,9 @@ of them still needs a signature. No model, no key, no network."""
 import json
 
 from fixtures import OfflineCase, ROOT
-from bridge import canvas, objective_head as head, objectives as obj
-from bridge.auth import Identity
-from bridge.config import Config
+from raven import canvas, objective_head as head, objectives as obj
+from raven.auth import Identity
+from raven.config import Config
 
 FIXTURES = ROOT / 'tests' / 'fixtures' / 'proposals'
 CORPUS = json.loads((FIXTURES / 'corpus.json').read_text())

@@ -87,7 +87,7 @@ function inquiryCitations(result, key = 'inquiry-citations') {
 // An objective-scope decision (Review & take point on Today) stores the
 // proposed scope as JSON in its context; the signature binds to that text.
 // A person reads a card instead: the outcome, the question, what the move
-// will and won't do, its bound and the evidence. Mirrors bridge/objective_text.py:
+// will and won't do, its bound and the evidence. Mirrors raven/objective_text.py:
 // nothing is invented, a malformed context gives null and the plain context shows.
 const OBJECTIVE_OPTIONS = ['Yes, take point', 'Not now', 'Change the scope'];
 const OBJECTIVE_CASES = [['positive', 'Will'], ['negative', 'Won’t'], ['boundary', 'Edge'], ['non_implication', 'Does not imply']];

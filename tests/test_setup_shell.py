@@ -43,14 +43,14 @@ class SetupShellTests(unittest.TestCase):
 
     def test_interactive_no_arguments(self):
         calls = self.run_launcher(True, [])
-        self.assertIn("bridge.setup", calls)
-        self.assertNotIn("-T", calls[:calls.index("bridge.setup")])
+        self.assertIn("raven.setup", calls)
+        self.assertNotIn("-T", calls[:calls.index("raven.setup")])
         self.assertIn("http://localhost:7333/#connect", calls)
 
     def test_noninteractive_no_arguments(self):
         calls = self.run_launcher(False, [])
         self.assertIn("-T", calls)
-        self.assertIn("bridge.setup", calls)
+        self.assertIn("raven.setup", calls)
         root = Path(__file__).resolve().parents[1]
         self.assertIn("ANTHROPIC_WORKSPACE_ID: ${ANTHROPIC_WORKSPACE_ID:-}",
                       (root / "compose.yaml").read_text())
@@ -69,8 +69,8 @@ class SetupShellTests(unittest.TestCase):
 
     def test_windows_wrapper_uses_the_same_configuration_wizard(self):
         root = Path(__file__).resolve().parents[1]
-        self.assertIn('& wsl bash "$bridgeRoot/setup" @bridgeArgs', (root / "setup.ps1").read_text())
+        self.assertIn('& wsl bash "$ravenRoot/setup" @ravenArgs', (root / "setup.ps1").read_text())
         calls = self.run_launcher(True, ["--configure"])
-        self.assertIn("bridge.setup", calls)
+        self.assertIn("raven.setup", calls)
         self.assertIn("--configure", calls)
-        self.assertNotIn("--yes", calls[:calls.index("bridge.setup") + 2])
+        self.assertNotIn("--yes", calls[:calls.index("raven.setup") + 2])

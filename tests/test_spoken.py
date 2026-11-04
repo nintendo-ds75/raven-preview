@@ -2,7 +2,7 @@
 a word and "ADR" as "adder" unless the letters are dotted."""
 import unittest
 
-from bridge.voice import spoken
+from raven.voice import spoken
 
 
 class SpokenTests(unittest.TestCase):

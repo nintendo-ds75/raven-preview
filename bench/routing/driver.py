@@ -21,10 +21,10 @@ def init_worker(state: dict) -> None:
     """Runs once per worker (and once in-process for --jobs 1): the
     dataset, clone and conditions the work function reads, and the
     ladder's deterministic rungs only unless the bench was started with
-    --model-rungs (BRIDGE_BENCH_MODEL=1); the key stays in the environment."""
+    --model-rungs (RAVEN_BENCH_MODEL=1); the key stays in the environment."""
     WORKER.clear()
     WORKER.update(state)
-    if os.environ.get("BRIDGE_BENCH_MODEL") != "1":
+    if os.environ.get("RAVEN_BENCH_MODEL") != "1":
         os.environ.pop("ANTHROPIC_API_KEY", None)
 
 
@@ -53,7 +53,7 @@ def run_pool(work, payload: list, jobs: int, state: dict, label: str, log=print)
 
 
 def model_rungs_on() -> bool:
-    return os.environ.get("BRIDGE_BENCH_MODEL") == "1"
+    return os.environ.get("RAVEN_BENCH_MODEL") == "1"
 
 
 def add_common_options(ap: argparse.ArgumentParser, datasets: str, n: int, n_help: str, conditions: tuple) -> None:
@@ -82,15 +82,15 @@ def resolve_common(ap: argparse.ArgumentParser, args: argparse.Namespace, condit
     bad = [c for c in chosen if c not in conditions]
     if bad:
         ap.error(f"unknown condition(s): {', '.join(bad)}")
-    os.environ["BRIDGE_BENCH_MODEL"] = "1" if args.model_rungs else "0"
+    os.environ["RAVEN_BENCH_MODEL"] = "1" if args.model_rungs else "0"
     if args.model_rungs and not os.environ.get("ANTHROPIC_API_KEY", "").strip():
         ap.error("--model-rungs needs ANTHROPIC_API_KEY in the environment")
     if args.model_rungs:
         # The fast points and the selector, on the fast model, so an ask
         # costs seconds; the deep rungs are a different, slower product.
-        from bridge.config import load as load_config
-        os.environ.setdefault("BRIDGE_DEEP", "0")
-        os.environ.setdefault("BRIDGE_MODEL", load_config().fast_model)
+        from raven.config import load as load_config
+        os.environ.setdefault("RAVEN_DEEP", "0")
+        os.environ.setdefault("RAVEN_MODEL", load_config().fast_model)
     out = Path(args.out) if args.out else Path("bench/routing/results") / (out_prefix + datetime.now().strftime("%Y%m%d-%H%M%S"))
     out.mkdir(parents=True, exist_ok=True)
     return names, chosen, out, args.label or out.name

@@ -9,9 +9,9 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from fixtures import OfflineCase, ready_server
-from bridge import canvas, context_memory as cm, proof, slack_capture as capture
-from bridge.delivery import handle_slack_event
-from bridge.store import Invalid, Store
+from raven import canvas, context_memory as cm, proof, slack_capture as capture
+from raven.delivery import handle_slack_event
+from raven.store import Invalid, Store
 
 REPO = 'synthetic/captured'
 TS = '1700000000.000001'
@@ -347,7 +347,7 @@ class CapturedSlackTests(CaptureCase):
             self.assertEqual(event['team_id'], 'TTEST')
             self.g.set_setting('slack_team_id', 'TOTHER')
             return True
-        with patch('bridge.slack_events.accepts_workspace', side_effect=authorize_then_change):
+        with patch('raven.slack_events.accepts_workspace', side_effect=authorize_then_change):
             handle_slack_event(self.delivery, self.original())
         self.assertEqual(self.record()['namespace'], 'TTEST')
         self.assertEqual(self.g.db.execute("SELECT count(*) FROM source_records WHERE namespace='TOTHER'").fetchone()[0], 0)
@@ -526,7 +526,7 @@ class CapturedSlackFreshnessTests(CaptureCase):
     signed = CapturedSlackTests.signed
 
     def assert_uncertain(self, task, did, source, store=None):
-        from bridge.context_connectors import fresh
+        from raven.context_connectors import fresh
         store = store or self.store
         graph = store.graph
         current = store.get_decision(did)

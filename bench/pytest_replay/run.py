@@ -8,10 +8,10 @@ from pathlib import Path
 import subprocess
 import time
 
-from bridge import canvas
-from bridge.config import load
-from bridge.ingest import index_repo
-from bridge.store import Store
+from raven import canvas
+from raven.config import load
+from raven.ingest import index_repo
+from raven.store import Store
 
 
 def main():
@@ -22,7 +22,7 @@ def main():
     cases = json.loads(Path(__file__).with_name('cases.json').read_text())
     # Never reuse a database carrying answers from another run.
     args.out.mkdir(parents=True, exist_ok=False)
-    os.environ.update(BRIDGE_SEMANTIC='0', BRIDGE_MODEL_API='none', BRIDGE_LIVE='0')
+    os.environ.update(RAVEN_SEMANTIC='0', RAVEN_MODEL_API='none', RAVEN_LIVE='0')
     cfg = load()
     results = []
     for case in cases:

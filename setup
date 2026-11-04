@@ -70,12 +70,12 @@ if [ ! -t 0 ] || [ ! -t 1 ]; then setup_tty=(-T); fi
 docker compose run --rm --no-deps ${setup_tty[@]+"${setup_tty[@]}"} --user "$(id -u):$(id -g)" \
   -v "$setup_root:/workspace" \
   -w /workspace --entrypoint python app \
-  -m bridge.setup ${setup_args[@]+"${setup_args[@]}"}
+  -m raven.setup ${setup_args[@]+"${setup_args[@]}"}
 if [ -n "$setup_import" ]; then ./dev import-sqlite "$setup_import"; fi
 ./dev up || { echo 'Startup failed. Run ./dev logs and ./dev status for details; your data is retained.' >&2; exit 1; }
-if grep -Eq "^BRIDGE_MCP_CLIENTS='[^']+" .env; then
+if grep -Eq "^RAVEN_MCP_CLIENTS='[^']+" .env; then
   if [ -z "$setup_agent_project" ]; then
-    setup_agent_project=$(docker compose run --rm --no-deps -T -v "$setup_root:/workspace" -w /workspace --entrypoint python app -c 'from pathlib import Path; from bridge.setup import read_settings; print(read_settings(Path(".env")).get("BRIDGE_AGENT_PROJECT", ""))')
+    setup_agent_project=$(docker compose run --rm --no-deps -T -v "$setup_root:/workspace" -w /workspace --entrypoint python app -c 'from pathlib import Path; from raven.setup import read_settings; print(read_settings(Path(".env")).get("RAVEN_AGENT_PROJECT", ""))')
   fi
   if [ -z "$setup_agent_project" ] && [ -t 0 ] && [ -t 1 ]; then
     read -r -p 'Path to the project your coding agent works in: ' setup_agent_project
@@ -85,11 +85,11 @@ if grep -Eq "^BRIDGE_MCP_CLIENTS='[^']+" .env; then
     exit 0
   fi
   setup_agent_project=$(cd "$setup_agent_project" && pwd)
-  docker compose exec -T -u bridge app cat /data/dev-agent-token | docker compose run --rm --no-deps -T --user "$(id -u):$(id -g)" \
-    -e "BRIDGE_AGENT_PROJECT_HOST=$setup_agent_project" -v "$setup_root:/workspace" -v "$setup_agent_project:/agent-project" \
-    -w /workspace --entrypoint python app -m bridge.setup --connect-mcp
+  docker compose exec -T -u raven app cat /data/dev-agent-token | docker compose run --rm --no-deps -T --user "$(id -u):$(id -g)" \
+    -e "RAVEN_AGENT_PROJECT_HOST=$setup_agent_project" -v "$setup_root:/workspace" -v "$setup_agent_project:/agent-project" \
+    -w /workspace --entrypoint python app -m raven.setup --connect-mcp
 fi
-setup_url=$(docker compose exec -T app printenv BRIDGE_PUBLIC_URL 2>/dev/null | tr -d '\r\n')
+setup_url=$(docker compose exec -T app printenv RAVEN_PUBLIC_URL 2>/dev/null | tr -d '\r\n')
 setup_url="${setup_url%/}"
 echo
 echo 'Raven is running.'
@@ -97,7 +97,7 @@ echo "  Open:              $setup_url"
 if [ "$setup_headless" -eq 0 ]; then
   echo '  First sign-in:     ./dev login   (prints the one-time setup credential the browser asks for)'
 fi
-if ! grep -Eq "^BRIDGE_MCP_CLIENTS='[^']+" .env; then
+if ! grep -Eq "^RAVEN_MCP_CLIENTS='[^']+" .env; then
   echo '  Connect an agent:  ./setup --configure --project /path/to/your/code'
 fi
 echo '  Later:             ./dev status · ./dev logs · ./dev down · ./dev up'

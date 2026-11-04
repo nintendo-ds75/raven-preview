@@ -8,7 +8,7 @@ import subprocess
 import unittest
 
 from fixtures import OfflineCase, ROOT, ready_server
-from bridge import approval_scope, briefing
+from raven import approval_scope, briefing
 from owner_context_fixture import seed
 from test_agent_source_web import HTMLNodes
 
@@ -126,7 +126,7 @@ class OwnerContextStorageTests(OwnerContextFixture, OfflineCase):
         self.assertEqual(brief['task']['goal'], self.fixture['request'])
         # The title the host sent was the request's first 300 characters;
         # the task is shown under a short title derived from the goal.
-        from bridge.canvas import task_title
+        from raven.canvas import task_title
         self.assertEqual(brief['task']['title'], task_title(self.fixture['request'][:300], self.fixture['request']))
         self.assertLess(len(brief['task']['title']), 90)
         self.assertEqual(self.raw(), raw)

@@ -2,7 +2,7 @@
 same pre-T data an item carries: the first human CODEOWNERS or
 MAINTAINERS lists for the touched paths; the person who most recently
 reviewed, accepted or merged under the touched directories; a manual
-map from path prefix to person (BRIDGE_BENCH_MANUAL_MAP, a JSON file).
+map from path prefix to person (RAVEN_BENCH_MANUAL_MAP, a JSON file).
 Every baseline is scored with the metrics Raven is scored with, so
 the summary shows what routing on one signal alone would have done."""
 
@@ -67,7 +67,7 @@ def manual_map(item: dict, mapping: dict[str, str], question: str = "", context:
 
 
 def load_manual_map() -> dict[str, str]:
-    path = os.environ.get("BRIDGE_BENCH_MANUAL_MAP", "").strip()
+    path = os.environ.get("RAVEN_BENCH_MANUAL_MAP", "").strip()
     if not path or not Path(path).exists():
         return {}
     try:

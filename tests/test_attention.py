@@ -4,9 +4,9 @@ import unittest
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import attention, canvas, judgment, ladder
-from bridge.authz import Actor
-from bridge.config import Config
+from raven import attention, canvas, judgment, ladder
+from raven.authz import Actor
+from raven.config import Config
 
 
 REPO = 'background/policy'
@@ -26,7 +26,7 @@ class AttentionTests(OfflineCase):
         self.other = Actor(id=self.store.add_person({'name': 'Billing Owner'})['id'], name='Billing Owner')
         self.graph.set_setting('auto_rules', '1')
         for method in ('complete', 'complete_json'):
-            guard = patch('bridge.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
+            guard = patch('raven.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
             guard.start()
             self.addCleanup(guard.stop)
 
@@ -46,7 +46,7 @@ class AttentionTests(OfflineCase):
     def settle_from_memory(self, did):
         self.graph.db.execute('UPDATE decisions SET model_pending=1 WHERE id=?', (did,))
         current = self.store.get_decision(did)
-        with patch('bridge.ladder.ask', side_effect=ladder.ask):
+        with patch('raven.ladder.ask', side_effect=ladder.ask):
             canvas._model_node_pass(self.store, Config(model_api='none'), did, '',
                                     ['policy/retention.py'], [], '', current['owner_id'], '', current['updated_at'])
 

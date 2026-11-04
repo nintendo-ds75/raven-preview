@@ -4,7 +4,7 @@ spell differently. Measured live: a routing query using SQLite's instr()
 errored on every PostgreSQL contract."""
 import unittest
 
-from bridge.database import postgres_sql
+from raven.database import postgres_sql
 
 
 class TranslationTests(unittest.TestCase):

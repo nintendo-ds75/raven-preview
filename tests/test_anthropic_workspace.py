@@ -5,8 +5,8 @@ import os
 import unittest
 from unittest.mock import PropertyMock, patch
 
-from bridge.config import Config, load
-from bridge.llm import Client, LLMError
+from raven.config import Config, load
+from raven.llm import Client, LLMError
 
 
 class AnthropicWorkspaceTests(unittest.TestCase):
@@ -24,7 +24,7 @@ class AnthropicWorkspaceTests(unittest.TestCase):
             calls.append((request, timeout))
             return io.BytesIO(json.dumps({"content": [{"type": "text", "text": "ok"}]}).encode())
 
-        with patch("bridge.llm._open_model_request", open_request):
+        with patch("raven.llm._open_model_request", open_request):
             (client or self.client)._messages("system", "prompt", 12)
         request, timeout = calls[0]
         return {key.lower(): value for key, value in request.header_items()}, json.loads(request.data), timeout

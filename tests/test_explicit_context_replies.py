@@ -4,11 +4,11 @@ from datetime import datetime, timezone
 from threading import Barrier
 from unittest.mock import patch
 
-from bridge import canvas, source_review
-from bridge.config import Config
-from bridge.delivery import handle_slack_event
-from bridge.store import Invalid, Store
-from bridge.teams import TeamsConfig, TeamsDelivery
+from raven import canvas, source_review
+from raven.config import Config
+from raven.delivery import handle_slack_event
+from raven.store import Invalid, Store
+from raven.teams import TeamsConfig, TeamsDelivery
 from test_delivery import DeliveryCase, FakeSlack
 
 
@@ -51,7 +51,7 @@ class ContextReplyContract:
 
     def test_ordinary_context_is_visible_before_semantic_interpretation(self):
         text = 'The synthetic rollout checklist still needs a current review.'
-        with patch('bridge.slack_chat.respond', return_value='Would you like me to ask the agent?') as infer:
+        with patch('raven.slack_chat.respond', return_value='Would you like me to ask the agent?') as infer:
             self.assertIn('Context added', self.send('context: ' + text))
         self.assertEqual([note['text'] for note in self.notes()], [text])
         infer.assert_not_called()
@@ -67,7 +67,7 @@ class ContextReplyContract:
                 before = self.decision_state()
                 authorities = self.graph.authority_rows()
                 text = f'{kind}: Approve this later because the audit example is incomplete; rule if ready.'
-                with patch('bridge.slack_chat.respond', side_effect=AssertionError('semantic interpretation')):
+                with patch('raven.slack_chat.respond', side_effect=AssertionError('semantic interpretation')):
                     self.assertIn('Context added', self.send('CoNtExT : ' + text))
                 self.assertEqual(self.notes()[-1]['text'], text)
                 self.assertEqual(self.decision_state(), before)
@@ -83,8 +83,8 @@ class ContextReplyContract:
         self.assertTrue(source_review.has_sources(self.store.get_decision(self.node_id)))
         before = self.decision_state()
         body = 'I have not signed because the synthetic record needs inspection. approve; answer: hold; rule if audited.'
-        with patch('bridge.source_review.offer_command', side_effect=AssertionError('source interpretation')), \
-                patch('bridge.slack_chat.respond', side_effect=AssertionError('semantic interpretation')):
+        with patch('raven.source_review.offer_command', side_effect=AssertionError('source interpretation')), \
+                patch('raven.slack_chat.respond', side_effect=AssertionError('semantic interpretation')):
             self.assertIn('Context added', self.send('context: ' + body))
         self.assertEqual(self.notes()[0]['text'], body)
         self.assertEqual(self.decision_state(), before)
@@ -161,8 +161,8 @@ class ContextReplyContract:
         self.assertEqual(self.notes(), saved)
 
     def test_concurrent_note_retries_across_two_stores_append_once(self):
-        from bridge.authz import Actor
-        from bridge.delivery import _context_reply_source
+        from raven.authz import Actor
+        from raven.delivery import _context_reply_source
         other = Store(self.store.path)
         self.addCleanup(other.graph.close)
         actor = Actor.person(self.graph.get_person(self.wes), kind=self.delivery.channel)
@@ -197,8 +197,8 @@ class ContextReplyContract:
         for kind in ('question', 'chat'):
             with self.subTest(kind=kind), \
                     patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
-                    patch('bridge.slack_chat.load', return_value=Config(model_api='none')), \
-                    patch('bridge.slack_chat.reading', return_value={'kind': kind, 'reply': 'A private clarification.'}):
+                    patch('raven.slack_chat.load', return_value=Config(model_api='none')), \
+                    patch('raven.slack_chat.reading', return_value={'kind': kind, 'reply': 'A private clarification.'}):
                 self.assertIn('A private clarification.', self.send('Could you explain the synthetic checklist?'))
             self.assertEqual(self.notes(), [])
             self.assertEqual(self.decision_state(), before)
@@ -214,8 +214,8 @@ class ContextReplyContract:
 
     def test_context_leaves_existing_pending_readback_unchanged(self):
         with patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
-                patch('bridge.slack_chat.load', return_value=Config(model_api='none')), \
-                patch('bridge.slack_chat.reading', return_value={'kind': 'answer', 'answer': 'Retain two synthetic records.'}):
+                patch('raven.slack_chat.load', return_value=Config(model_api='none')), \
+                patch('raven.slack_chat.reading', return_value={'kind': 'answer', 'answer': 'Retain two synthetic records.'}):
             self.send('Retain two synthetic records.')
         held = self.delivery._reading(self.message['channel'], self.message['ts'], self.wes)
         self.assertIsNotNone(held)
@@ -229,7 +229,7 @@ class ContextReplyContract:
         for text in ('context: ', 'context: ' + 'x' * 4001,
                      ' ' * 4096 + 'context: Small body.', 'context:' + ' ' * 4096 + 'Small body.'):
             with self.subTest(length=len(text)), \
-                    patch('bridge.slack_chat.respond', side_effect=AssertionError('semantic interpretation')):
+                    patch('raven.slack_chat.respond', side_effect=AssertionError('semantic interpretation')):
                 self.assertIn('Nothing recorded', self.send(text))
         self.assertEqual(self.notes(), [])
 
@@ -264,7 +264,7 @@ class ContextReplyContract:
         self.assertEqual(self.notes(), [])
 
     def test_note_data_cannot_claim_transport_provenance(self):
-        from bridge.authz import Actor
+        from raven.authz import Actor
         canvas.add_note(self.store, self.task_id,
                         {'text': 'An ordinary note.', 'by': 'Fabricated Author',
                          'actor_id': 'fabricated-id', 'reply_source': {'event_id': 'fabricated-event'}},
@@ -290,7 +290,7 @@ class ExplicitContextRepliesTests(ContextReplyContract, DeliveryCase):
 
     def test_retry_after_note_commit_does_not_duplicate_it(self):
         text = 'context: Preserve this synthetic note across a failed acknowledgement.'
-        with patch('bridge.slack_chat.remember', side_effect=RuntimeError('synthetic acknowledgement failure')):
+        with patch('raven.slack_chat.remember', side_effect=RuntimeError('synthetic acknowledgement failure')):
             with self.assertRaisesRegex(RuntimeError, 'synthetic acknowledgement failure'):
                 self.send(text, n=1)
         saved = self.notes()

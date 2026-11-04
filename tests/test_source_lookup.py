@@ -7,8 +7,8 @@ import json
 from urllib.parse import urlencode
 from unittest.mock import patch
 
-from bridge import canvas, context_memory as cm, github, mcp, proof
-from bridge.store import Store
+from raven import canvas, context_memory as cm, github, mcp, proof
+from raven.store import Store
 from test_auth import SharedServer
 
 REPO = 'synthetic/handover'
@@ -23,7 +23,7 @@ class SourceLookupTests(SharedServer):
         self.agent = self.auth.create_token(viewer['id'], label='synthetic-fresh-host')['token']
         self.owner = self.store.add_owner({'name': 'Handover Owner', 'team': 'Synthetic', 'patterns': 'policy/*'})
         self.task = self.store.add_run({'title': 'Synthetic work item', 'repo': REPO})['id']
-        for target in ('bridge.github.GitHubAPI.get', 'bridge.mcp.index_repo'):
+        for target in ('raven.github.GitHubAPI.get', 'raven.mcp.index_repo'):
             blocker = patch(target, side_effect=AssertionError('Lookup must not fetch providers or ingest'))
             blocker.start()
             self.addCleanup(blocker.stop)
@@ -51,7 +51,7 @@ class SourceLookupTests(SharedServer):
     def lookup(self, **args):
         args = {'repo': REPO, **args}
         before = self.frozen_state()
-        mcp = self.mcp('bridge_lookup_record', args, self.agent)
+        mcp = self.mcp('raven_lookup_record', args, self.agent)
         self.assertFalse(mcp['isError'], mcp)
         rest = self.get('/api/records/lookup?' + urlencode(args), token=self.agent)
         self.assertEqual(mcp['result'], rest)
@@ -93,16 +93,16 @@ class SourceLookupTests(SharedServer):
         self.assertIn('every relevant linked decision and its history', found['notice'])
         self.assertIn('grant no authority', links['notice'])
         wire = self.post('/mcp', {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
-            'params': {'name': 'bridge_lookup_record', 'arguments': {'repo': REPO, 'external_id': 'opaque-123'}}},
+            'params': {'name': 'raven_lookup_record', 'arguments': {'repo': REPO, 'external_id': 'opaque-123'}}},
             token=self.agent)['result']['content'][0]['text']
         for key in ('versions', 'task_anchors', 'decision_sources', 'task_decisions'):
             self.assertLess(wire.index('"linked_decisions"'), wire.index('"' + key + '"'), key)
         self.assertEqual(before, self.frozen_state())
         self.assertFalse(self.store.get_decision(premise)['authorized'])
         # The new host can now follow supported decision and exact-record APIs.
-        decision = self.mcp('bridge_get_decision', {'decision_id': premise}, self.agent)['result']
+        decision = self.mcp('raven_get_decision', {'decision_id': premise}, self.agent)['result']
         self.assertEqual(decision['answer'], 'Keep thirty days.')
-        exact = self.mcp('bridge_get_record', {'repo': REPO, 'record_id': found['source']['record_id']}, self.agent)
+        exact = self.mcp('raven_get_record', {'repo': REPO, 'record_id': found['source']['record_id']}, self.agent)
         self.assertFalse(exact['isError'])
         self.assertEqual(exact['result'], self.get('/api/records?' + urlencode({'repo': REPO, 'record_id': source['record_id']}), token=self.agent))
 
@@ -286,7 +286,7 @@ class SourceLookupTests(SharedServer):
         self.assertEqual(ambiguous['status'], 'ambiguous')
         self.assertEqual({r['availability'] for r in ambiguous['candidates']['items']}, {'available', 'inaccessible'})
         self.assertEqual(self.lookup(namespace='site-b', external_id='opaque-123')['source']['record_id'], b['record_id'])
-        self.assertTrue(self.mcp('bridge_get_record', {'repo': REPO, 'record_id': a['record_id']}, self.agent)['isError'])
+        self.assertTrue(self.mcp('raven_get_record', {'repo': REPO, 'record_id': a['record_id']}, self.agent)['isError'])
         self.assertEqual(self.status_of('GET', '/api/records?' + urlencode({'repo': REPO, 'record_id': a['record_id']}), token=self.agent), 404)
         self.source(availability='deleted')
         self.assertEqual(self.lookup(namespace='site-a', external_id='opaque-123')['status'], 'unavailable')
@@ -310,14 +310,14 @@ class SourceLookupTests(SharedServer):
                         captured.append(json.dumps(result))
                         self.source(availability='inaccessible')
                         return result
-                    params = ({'name': 'bridge_wait', 'arguments': {'task_id': self.task, 'timeout': '0'},
+                    params = ({'name': 'raven_wait', 'arguments': {'task_id': self.task, 'timeout': '0'},
                                '_meta': {'progressToken': 'visibility-test'}} if streamed else
-                              {'name': 'bridge_get_decision', 'arguments': {'decision_id': other}})
+                              {'name': 'raven_get_decision', 'arguments': {'decision_id': other}})
                     request = {'jsonrpc': '2.0', 'id': source['record_id'], 'method': 'tools/call', 'params': params}
                     headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + self.agent,
                                'MCP-Protocol-Version': version,
                                'Accept': 'text/event-stream' if streamed else 'application/json'}
-                    with patch('bridge.mcp.call_tool', side_effect=revoke_after_read):
+                    with patch('raven.mcp.call_tool', side_effect=revoke_after_read):
                         status, response_headers, raw = self.raw('POST', '/mcp', headers, json.dumps(request).encode())
                     self.assertEqual(status, 200)
                     self.assertIn(canary, captured[0])
@@ -511,19 +511,19 @@ class SourceLookupTests(SharedServer):
         for external_id, cursor in (('other-source', node), ('opaque-123', hidden), ('opaque-123', 'missing')):
             args = {'repo': REPO, 'external_id': external_id, 'linked_cursor': cursor}
             before = self.frozen_state()
-            self.assertTrue(self.mcp('bridge_lookup_record', args, self.agent)['isError'])
+            self.assertTrue(self.mcp('raven_lookup_record', args, self.agent)['isError'])
             self.assertEqual(self.status_of('GET', '/api/records/lookup?' + urlencode(args), token=self.agent), 400)
             self.assertEqual(before, self.frozen_state())
         self.assertEqual(self.lookup(external_id='other-source')['source']['record_id'], foreign['record_id'])
         with self.store.graph.transaction():
             self.store.graph.db.execute('UPDATE decisions SET draft=1 WHERE id=?', (node,))
         args = {'repo': REPO, 'external_id': 'opaque-123', 'linked_cursor': node}
-        self.assertTrue(self.mcp('bridge_lookup_record', args, self.agent)['isError'])
+        self.assertTrue(self.mcp('raven_lookup_record', args, self.agent)['isError'])
         self.assertEqual(self.lookup(external_id='opaque-123')['linked_decisions']['total'], 0)
 
     def test_contract_validation_and_read_only_viewer_access(self):
         listed = self.post('/mcp', {'jsonrpc': '2.0', 'id': 4, 'method': 'tools/list'}, token=self.agent)['result']['tools']
-        self.assertIn('bridge_lookup_record', [tool['name'] for tool in listed])
+        self.assertIn('raven_lookup_record', [tool['name'] for tool in listed])
         self.assertEqual(self.status_of('GET', '/api/records/lookup?' + urlencode({'repo': REPO, 'ref': 'POL-7'})), 401)
         for args in ({'repo': REPO}, {'repo': REPO, 'ref': 'POL-7', 'external_id': 'opaque-123'},
                      {'repo': '', 'ref': 'POL-7'}, {'repo': 'https://github.com/' + REPO, 'ref': 'POL-7'},
@@ -531,11 +531,11 @@ class SourceLookupTests(SharedServer):
                      {'repo': REPO, 'ref': 'POL-7', 'linked_cursor': ' x'},
                      {'repo': REPO, 'ref': 'POL-7', 'linked_cursor': 'x' * 201},
                      {'repo': REPO, 'ref': 'POL-7', 'unknown': 'ignored'}, {'repo': REPO, 'ref': 'POL-7', 'limit': 'many'}):
-            self.assertTrue(self.mcp('bridge_lookup_record', args, self.agent)['isError'], args)
+            self.assertTrue(self.mcp('raven_lookup_record', args, self.agent)['isError'], args)
             self.assertEqual(self.status_of('GET', '/api/records/lookup?' + urlencode(args), token=self.agent), 400, args)
         self.assertEqual(self.status_of('GET', '/api/records/lookup?repo=' + REPO + '&ref=A&ref=B', token=self.agent), 400)
         self.assertEqual(self.status_of('POST', '/mcp', {'jsonrpc': '2.0', 'id': 7, 'method': 'tools/call',
-            'params': {'name': 'bridge_import_record', 'arguments': {'repo': REPO, 'kind': 'jira', 'ref': 'NEW-1', 'title': 'not allowed'}}}, token=self.agent), 403)
+            'params': {'name': 'raven_import_record', 'arguments': {'repo': REPO, 'kind': 'jira', 'ref': 'NEW-1', 'title': 'not allowed'}}}, token=self.agent), 403)
         self.assertEqual(self.lookup(ref='NEW-1')['status'], 'unknown')
 
     def test_restart_retains_exact_external_handover(self):

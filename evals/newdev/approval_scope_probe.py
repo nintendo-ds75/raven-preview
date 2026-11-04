@@ -5,12 +5,12 @@ No model, network, shared database or production data.
 """
 import json,os,sys,tempfile
 from pathlib import Path
-os.environ['BRIDGE_MODEL_API']='none';os.environ['BRIDGE_SEMANTIC']='0'
+os.environ['RAVEN_MODEL_API']='none';os.environ['RAVEN_SEMANTIC']='0'
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
-from bridge import canvas
-from bridge.authz import Actor
-from bridge.config import Config
-from bridge.store import Store
+from raven import canvas
+from raven.authz import Actor
+from raven.config import Config
+from raven.store import Store
 out=[]
 for mode in ('explicit_single','inherited_task','inherited_parent','explicit_multiple'):
  with tempfile.TemporaryDirectory() as temp:

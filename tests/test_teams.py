@@ -16,10 +16,10 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from fixtures import OfflineCase, ready_server
-from bridge import canvas
-from bridge.config import Config
-from bridge.store import Invalid, Store
-from bridge.teams import (ConnectorAuth, ISSUER, KEYS_URL, METADATA_URL, TeamsAuthError,
+from raven import canvas
+from raven.config import Config
+from raven.store import Invalid, Store
+from raven.teams import (ConnectorAuth, ISSUER, KEYS_URL, METADATA_URL, TeamsAuthError,
                           TeamsBotTransport, TeamsConfig, TeamsDelivery, TeamsUnavailable)
 try:
     import jwt
@@ -248,7 +248,7 @@ class TeamsTests(OfflineCase):
 
     def test_natural_language_readback_then_confirmation(self):
         read = {"kind":"answer", "answer":"Exclude the load test", "rationale":"it was ours", "to":""}
-        with patch("bridge.llm.read_reply", return_value=read):
+        with patch("raven.llm.read_reply", return_value=read):
             self.submit(self.activity("We should leave that one out"))
         self.assertEqual(self.decision()["status"], "pending")
         prompt = self.graph.db.execute("SELECT text FROM teams_replies").fetchone()[0]
@@ -259,7 +259,7 @@ class TeamsTests(OfflineCase):
 
     def test_stale_readback_cannot_sign_new_question(self):
         read = {"kind":"answer", "answer":"Exclude the load test", "rationale":"", "to":""}
-        with patch("bridge.llm.read_reply", return_value=read):
+        with patch("raven.llm.read_reply", return_value=read):
             self.submit(self.activity("Leave that one out"))
         with self.graph.transaction():
             self.graph.db.execute("UPDATE decisions SET question='Different question?' WHERE id=?", (self.node,))
@@ -358,7 +358,7 @@ class TeamsTests(OfflineCase):
     def test_failed_readback_delivery_blocks_confirmation_until_sent(self):
         read = {"kind":"answer", "answer":"Exclude the load test", "rationale":"", "to":""}
         self.microsoft.fail = True
-        with patch("bridge.llm.read_reply", return_value=read):
+        with patch("raven.llm.read_reply", return_value=read):
             self.submit(self.activity("Leave that one out"))
         self.submit(self.activity("yes"))
         self.assertEqual(self.decision()["status"], "pending")
@@ -443,7 +443,7 @@ class TeamsTests(OfflineCase):
     def test_independent_stdio_store_enqueues_without_credentials(self):
         independent = Store(self.store.path)
         self.addCleanup(independent.graph.close)
-        with patch.dict("os.environ", {}, clear=True), patch("bridge.teams.ConnectorAuth", side_effect=AssertionError("stdio tried authentication")):
+        with patch.dict("os.environ", {}, clear=True), patch("raven.teams.ConnectorAuth", side_effect=AssertionError("stdio tried authentication")):
             delivery = independent.delivery
             self.assertTrue(delivery.enabled)
             self.assertEqual(delivery.channel, "teams")
@@ -465,11 +465,11 @@ class TeamsTests(OfflineCase):
         self.assertEqual(restarted.get(notification["id"])["state"], "sent")
 
     def test_real_stdio_mcp_process_enqueues_with_jwt_unavailable(self):
-        request = {"jsonrpc":"2.0", "id":2, "method":"tools/call", "params":{"name":"bridge_add_node", "arguments":{
+        request = {"jsonrpc":"2.0", "id":2, "method":"tools/call", "params":{"name":"raven_add_node", "arguments":{
             "task_id":self.task, "question":"Should the monthly billing ceiling be fixed?", "paths":"billing/usage.py", "options":"Fixed | Flexible"}}}
         env = {key:value for key,value in os.environ.items() if not key.startswith(("TEAMS_", "SLACK_"))}
-        env["BRIDGE_MODEL_API"] = "none"
-        script = "import sys; sys.modules['jwt'] = None; from bridge.__main__ import main; main()"
+        env["RAVEN_MODEL_API"] = "none"
+        script = "import sys; sys.modules['jwt'] = None; from raven.__main__ import main; main()"
         result = subprocess.run([sys.executable, "-c", script, "mcp", "--db", str(self.store.path)],
             cwd=Path(__file__).resolve().parents[1], env=env, input=json.dumps(request)+"\n",
             capture_output=True, text=True, timeout=30)
@@ -518,7 +518,7 @@ class TeamsTests(OfflineCase):
         for endpoint in endpoints:
             with self.subTest(endpoint=endpoint), self.assertRaises(Invalid):
                 TeamsConfig(APP, TENANT, CHANNEL, "secret", {OWNER:self.wes}, endpoint)
-        from bridge.teams import _NoRedirect
+        from raven.teams import _NoRedirect
         with self.assertRaises(TeamsUnavailable):
             _NoRedirect().redirect_request(Request(self.config.service_url), None, 307, "redirect", {}, "https://evil.test/")
 

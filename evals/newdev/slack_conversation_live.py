@@ -18,10 +18,10 @@ import time
 from urllib.request import Request, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from bridge.ingest import index_repo
-from bridge.mcp import call_tool
-from bridge.server import make_server
-from bridge.store import Store
+from raven.ingest import index_repo
+from raven.mcp import call_tool
+from raven.server import make_server
+from raven.store import Store
 
 
 def main():
@@ -52,9 +52,9 @@ def main():
             messages.append({'channel': channel, 'text': text, 'ts': ts, 'thread_ts': thread_ts})
             return ts
 
-    os.environ['BRIDGE_MODEL_API'] = 'anthropic' if os.environ.get('ANTHROPIC_API_KEY') else 'claude-cli'
-    os.environ['BRIDGE_SEMANTIC'] = '0'
-    os.environ['BRIDGE_DEEP'] = '0'
+    os.environ['RAVEN_MODEL_API'] = 'anthropic' if os.environ.get('ANTHROPIC_API_KEY') else 'claude-cli'
+    os.environ['RAVEN_SEMANTIC'] = '0'
+    os.environ['RAVEN_DEEP'] = '0'
     store = Store(out / 'workspace.db')
     store.graph.set_setting('workspace_name', 'Isolated natural conversation evaluation')
     print('Ingesting public repository history', flush=True)
@@ -86,13 +86,13 @@ def main():
 
     def call(name, **kwargs):
         # Keep ladder decisions deterministic to isolate live conversation behavior.
-        os.environ['BRIDGE_SEMANTIC'] = '0'
+        os.environ['RAVEN_SEMANTIC'] = '0'
         try:
             result = call_tool(store, name, kwargs)
             trace.append({'tool': name, 'args': kwargs, 'result': result})
             return result
         finally:
-            os.environ['BRIDGE_SEMANTIC'] = '1'
+            os.environ['RAVEN_SEMANTIC'] = '1'
 
     def say(msg, uid, text, repeat=False):
         eid = secrets.token_hex(12)
@@ -123,11 +123,11 @@ def main():
 
     try:
         start()
-        task = call('bridge_start_task', title='Cap retry delays without breaking compatibility',
+        task = call('raven_start_task', title='Cap retry delays without breaking compatibility',
                     goal='Add an optional retry delay cap. Preserve existing defaults and keep server Retry-After semantics explicit.',
                     repo='urllib3/urllib3', client_key='natural-one', paths='src/urllib3/util/retry.py')['task_id']
         question = 'Should the retry delay cap apply to Retry-After as well as exponential backoff?'
-        node = call('bridge_add_node', task_id=task, question=question, paths='src/urllib3/util/retry.py', client_ref='cap',
+        node = call('raven_add_node', task_id=task, question=question, paths='src/urllib3/util/retry.py', client_ref='cap',
                     context='This is an opt-in cap; existing applications keep their current behavior. A server may request 120 seconds with Retry-After.')
         store.delivery.deliver_now()
         msg = next(m for m in messages if question in m['text'])
@@ -157,12 +157,12 @@ def main():
         ack = say(msg, uid, 'yes', repeat=True)
         d = store.get_decision(node['node_id'])
         check('Restart and duplicate delivery preserve one confirmed answer', d['authorized'] and 'zero' in d['answer'].lower(), d['answer'])
-        call('bridge_wait', task_id=task, timeout='0')
-        call('bridge_get_tree', task_id=task)
-        done = call('bridge_finish_task', task_id=task, checks='Conversation and routing evaluation; no implementation patch.')
+        call('raven_wait', task_id=task, timeout='0')
+        call('raven_get_tree', task_id=task)
+        done = call('raven_finish_task', task_id=task, checks='Conversation and routing evaluation; no implementation patch.')
         check('Host receives the decision and can finish honestly', done.get('verified') is False)
-        sibling = call('bridge_start_task', title='Reuse retry cap policy', repo='urllib3/urllib3', client_key='natural-two', paths='src/urllib3/util/retry.py')['task_id']
-        reuse = call('bridge_add_node', task_id=sibling, question=question, paths='src/urllib3/util/retry.py', client_ref='same-policy')
+        sibling = call('raven_start_task', title='Reuse retry cap policy', repo='urllib3/urllib3', client_key='natural-two', paths='src/urllib3/util/retry.py')['task_id']
+        reuse = call('raven_add_node', task_id=sibling, question=question, paths='src/urllib3/util/retry.py', client_ref='same-policy')
         check('A new task reaches the person who ultimately answered', reuse['owner'] == next_member['real_name'], reuse['owner'])
         reused = store.get_decision(reuse['node_id'])
         check('Answer is reused but needs a fresh signature', bool(reused['answer']) and not reused['authorized'], reused['answer'])

@@ -1,7 +1,7 @@
 """What Raven saved, measured from the ledger: proposal outcomes, time to
 answer and to signature, re-asks, reuse, hand-ons and the agent wait
 avoided, per workspace and per repository, over a window; readable by a
-member over HTTP and in bridge_connection_status."""
+member over HTTP and in raven_connection_status."""
 import json
 import sys
 from datetime import datetime, timedelta, timezone
@@ -11,9 +11,9 @@ from urllib.error import HTTPError
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase  # noqa: E402
 
-from bridge import canvas, metrics  # noqa: E402
-from bridge.config import Config  # noqa: E402
-from bridge.store import Invalid  # noqa: E402
+from raven import canvas, metrics  # noqa: E402
+from raven.config import Config  # noqa: E402
+from raven.store import Invalid  # noqa: E402
 
 REPO = "acme/platform"
 QUESTION = "Should we bill the usage spike?"
@@ -283,8 +283,8 @@ class MetricsSurfaceTests(SharedServer):
         with self.assertRaises(HTTPError) as refused:
             self.get("/api/metrics?days=soon", token=token)
         self.assertEqual(refused.exception.code, 400)
-        from bridge.mcp import call_tool
-        status = call_tool(self.store, "bridge_connection_status", {})
+        from raven.mcp import call_tool
+        status = call_tool(self.store, "raven_connection_status", {})
         self.assertEqual(status["metrics"]["decisions"], 1)
         self.assertEqual(status["metrics"]["window_days"], 30)
 

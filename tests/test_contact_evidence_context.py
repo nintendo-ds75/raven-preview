@@ -4,11 +4,11 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from test_contact_learning import ContactFixture
-from bridge import context_memory, source_access, visibility
-from bridge.config import Config
-from bridge.contact_reasoning import SYSTEM, choose
-from bridge.routing import route_ranked
-from bridge.routing_memory import (CONTACT_QUESTION_CHARS, CONTACT_REFERRAL_CHARS,
+from raven import context_memory, source_access, visibility
+from raven.config import Config
+from raven.contact_reasoning import SYSTEM, choose
+from raven.routing import route_ranked
+from raven.routing_memory import (CONTACT_QUESTION_CHARS, CONTACT_REFERRAL_CHARS,
                                    CONTACT_REFERRALS, candidates)
 
 
@@ -41,7 +41,7 @@ class ContactEvidenceContextTests(ContactFixture):
         return {'path': self.path, 'facts': {**self.facts, 'work_item': 'SCOPE-2'}, 'task_id': task, **extra}
 
     def ranked(self, task, **extra):
-        with patch('bridge.signals.signal_route', return_value=[]):
+        with patch('raven.signals.signal_route', return_value=[]):
             return route_ranked(self.graph, self.repo, self.question, **self.args(task, **extra))
 
     def capture_prompt(self, task, *, question=None, during_model=None, during_retrieval=None,
@@ -64,10 +64,10 @@ class ContactEvidenceContextTests(ContactFixture):
                 during_retrieval()
             return [], {'backend': 'synthetic'}
 
-        with patch('bridge.signals.signal_route', return_value=[('ContactDelta', ['Current independent contact'], .3)]), \
-                patch('bridge.semantic_index.sources', side_effect=retrieve), \
+        with patch('raven.signals.signal_route', return_value=[('ContactDelta', ['Current independent contact'], .3)]), \
+                patch('raven.semantic_index.sources', side_effect=retrieve), \
                 patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
-                patch('bridge.contact_reasoning.Client.complete_json', side_effect=model):
+                patch('raven.contact_reasoning.Client.complete_json', side_effect=model):
             result = choose(self.graph, Config(model_api='none'), self.repo, question or self.question, **args)
         self.assertEqual(bool(prompts), expect_model)
         return result, prompts[-1] if prompts else {}
@@ -100,7 +100,7 @@ class ContactEvidenceContextTests(ContactFixture):
                 _, prompt = self.capture_prompt(task, **change)
                 self.assertNotIn(self.referral_reason, json.dumps(prompt))
                 self.assertFalse(any(p['name'] == 'ContactBeta' for p in prompt['candidates']))
-        with patch('bridge.signals.signal_route', return_value=[]):
+        with patch('raven.signals.signal_route', return_value=[]):
             self.assertEqual(route_ranked(self.graph, 'other/repo', self.question, **self.args(north)), [])
 
     def test_optout_review_and_expired_contacts_withhold_all_learned_evidence(self):
@@ -111,7 +111,7 @@ class ContactEvidenceContextTests(ContactFixture):
         self.assertEqual(self.ranked(task), [])
         self.graph.db.execute('UPDATE decisions SET needs_review=0 WHERE id=?', (did,))
         future = (datetime.now(timezone.utc) + timedelta(days=181)).isoformat()
-        with patch('bridge.routing_memory.now_iso', return_value=future):
+        with patch('raven.routing_memory.now_iso', return_value=future):
             _, prompt = self.capture_prompt(task)
             self.assertNotIn(self.referral_reason, json.dumps(prompt))
             self.assertEqual(self.ranked(task), [])
@@ -155,7 +155,7 @@ class ContactEvidenceContextTests(ContactFixture):
                 self.assertEqual(self.ranked(task), [])
 
     def test_unreadable_original_task_cannot_launder_legacy_contact_context(self):
-        from bridge.routing_memory import record
+        from raven.routing_memory import record
         did = self.decision()
         record(self.graph, did, self.people['ContactBeta'], 'answered')
         source = self.anchor(self.task_for(did), 'OTHER-READ')
@@ -200,7 +200,7 @@ class ContactEvidenceContextTests(ContactFixture):
         self.assertEqual(result, [])
 
     def test_revocation_after_ranking_cannot_hide_behind_empty_new_candidates(self):
-        from bridge.routing import rank_for_decision
+        from raven.routing import rank_for_decision
         _, source = self.history()
         task = self.current()
 
@@ -209,7 +209,7 @@ class ContactEvidenceContextTests(ContactFixture):
             self.withhold(source)
             return ranked
 
-        with patch('bridge.routing.rank_for_decision', side_effect=rank_then_revoke):
+        with patch('raven.routing.rank_for_decision', side_effect=rank_then_revoke):
             result, _ = self.capture_prompt(task, expect_model=False)
         self.assertEqual(result, [])
 
@@ -263,7 +263,7 @@ class ContactEvidenceContextTests(ContactFixture):
             (self.graph.owner_id_for_person(self.people['ContactDelta']), did))
         self.refer(did, 'ContactGamma', note='VALID_REFERRAL_CANARY')
         self.answer(did)
-        with patch('bridge.signals.signal_route', return_value=[]):
+        with patch('raven.signals.signal_route', return_value=[]):
             ranked = route_ranked(self.graph, self.repo, self.question, path=self.path, facts=self.facts)
         text = ' '.join(ranked[0][1])
         self.assertIn('VALID_REFERRAL_CANARY', text)

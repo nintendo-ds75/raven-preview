@@ -6,10 +6,10 @@ from test_delivery import confirmation
 import json
 from unittest.mock import patch
 
-from bridge import canvas, llm
-from bridge.approval_scope import transport_text
-from bridge.config import Config
-from bridge.human_answers import (ANSWER_FORM_GUIDANCE, ANSWER_INTERPRETATION_REQUEST,
+from raven import canvas, llm
+from raven.approval_scope import transport_text
+from raven.config import Config
+from raven.human_answers import (ANSWER_FORM_GUIDANCE, ANSWER_INTERPRETATION_REQUEST,
                                   COMPLETE_ANSWER_REQUEST, INLINE_RATIONALE,
                                   CompleteAnswerRequired, preserve_complete_answer)
 from fixtures import OfflineCase
@@ -43,7 +43,7 @@ class AuthoredAnswerTests(DeliveryCase):
         self.addCleanup(self.delivery.close)
         enabled = patch.object(Config, 'semantic_retrieval', property(lambda self: True))
         enabled.start(); self.addCleanup(enabled.stop)
-        cfg = patch('bridge.slack_chat.load', return_value=Config(model_api='none'))
+        cfg = patch('raven.slack_chat.load', return_value=Config(model_api='none'))
         cfg.start(); self.addCleanup(cfg.stop)
 
     def row(self):
@@ -54,7 +54,7 @@ class AuthoredAnswerTests(DeliveryCase):
 
     def offer(self, text, action=None, event_id=''):
         action = action or {'kind': 'answer', 'answer_form': 'complete'}
-        with patch('bridge.slack_chat.Client.complete_json', return_value=action) as model:
+        with patch('raven.slack_chat.Client.complete_json', return_value=action) as model:
             result = self.reply(self.message, 'UWES', text, event_id)
         return result, model
 
@@ -119,7 +119,7 @@ class AuthoredAnswerTests(DeliveryCase):
     def test_repair_for_partial_amendment_does_not_request_model_composition(self):
         self.offer('Exclude rejected requests; bill completed customer requests.')
         message = 'Please amend my answer: except for trial accounts.'
-        with patch('bridge.slack_chat.Client.complete_json', side_effect=[
+        with patch('raven.slack_chat.Client.complete_json', side_effect=[
                 {'kind': 'reframe', 'answer': 'Which accounts are trials?'},
                 {'kind': 'answer', 'answer_form': 'partial'}]) as model:
             result = self.reply(self.message, 'UWES', message)
@@ -178,7 +178,7 @@ class AuthoredAnswerTests(DeliveryCase):
 
     def test_missing_answer_classification_gets_one_repair_without_paraphrase_fallback(self):
         text = 'Hold the rollout until measured error counts are trustworthy. This preserves audit evidence.'
-        with patch('bridge.slack_chat.Client.complete_json', side_effect=[
+        with patch('raven.slack_chat.Client.complete_json', side_effect=[
                 {'kind': 'answer', 'answer': 'Emit the error counter.'},
                 {'kind': 'answer', 'answer_form': 'complete', 'answer': 'Emit the error counter.'}]) as model:
             result = self.reply(self.message, 'UWES', text)
@@ -210,8 +210,8 @@ class AuthoredAnswerTests(DeliveryCase):
 
     def test_compatibility_readback_and_confirmation_store_complete_original(self):
         text = 'Hold until actual counts are trustworthy. This protects acceptance evidence; never infer counts.'
-        with patch('bridge.slack_chat.respond', return_value=None), \
-                patch('bridge.llm.Client.complete_json', return_value={
+        with patch('raven.slack_chat.respond', return_value=None), \
+                patch('raven.llm.Client.complete_json', return_value={
                     'kind': 'answer', 'answer_form': 'complete', 'confident': True,
                     'answer': 'Emit a count field.'}):
             result = self.reply(self.message, 'UWES', text)
@@ -225,7 +225,7 @@ class AuthoredAnswerTests(DeliveryCase):
 
     def test_repeated_missing_form_clears_old_readback_without_applying_model_text(self):
         self.offer('Hold rollout for this task only.')
-        with patch('bridge.slack_chat.Client.complete_json', return_value={
+        with patch('raven.slack_chat.Client.complete_json', return_value={
                 'kind': 'answer', 'answer': 'A model-written replacement.'}) as model:
             result = self.reply(self.message, 'UWES', 'Keep complete trustworthy counts; no exceptions.')
         self.assertEqual(model.call_count, 2)
@@ -317,8 +317,8 @@ class AuthoredAnswerTests(DeliveryCase):
 
     def test_compatibility_conflict_records_same_bounded_reason(self):
         text = 'Retain these rows only for the current task. This protects the audit record.'
-        with patch('bridge.slack_chat.respond', return_value=None), \
-                patch('bridge.llm.Client.complete_json', return_value={
+        with patch('raven.slack_chat.respond', return_value=None), \
+                patch('raven.llm.Client.complete_json', return_value={
                     'kind': 'answer', 'answer_form': 'complete', 'confident': True,
                     'conditions': 'private-model-condition-value'}):
             result = self.reply(self.message, 'UWES', text)
@@ -331,10 +331,10 @@ class AuthoredAnswerTests(DeliveryCase):
         self.assertFalse(self.row()['authorized'])
 
     def test_rule_control_fields_remain_on_the_rule_path(self):
-        from bridge.slack_chat import reading
+        from raven.slack_chat import reading
         action = {'kind': 'rule', 'conditions': 'customer=Acme', 'scope_kind': 'none',
                   'expires': '2099-01-01'}
-        with patch('bridge.slack_chat.Client.complete_json', return_value=action):
+        with patch('raven.slack_chat.Client.complete_json', return_value=action):
             result = reading(Config(model_api='none'), {'message': 'Make this my rule only for this task.'})
         self.assertEqual(result['kind'], 'rule')
         for key in ('conditions', 'scope_kind', 'expires'):
@@ -346,7 +346,7 @@ class AuthoredAnswerTests(DeliveryCase):
 class CompatibilityAuthoredAnswerTests(OfflineCase):
     def read(self, text, action):
         with patch.object(Config, 'semantic_retrieval', property(lambda self: True)), \
-                patch('bridge.llm.Client.complete_json', return_value=action) as model:
+                patch('raven.llm.Client.complete_json', return_value=action) as model:
             result = llm.read_reply(Config(model_api='none'), 'May this proceed?', 'Old proposal.', text)
         return result, model
 

@@ -49,7 +49,7 @@ class BaselineTests(unittest.TestCase):
         self.assertEqual(sorted(outcomes), ["baseline-codeowners", "baseline-manual-map", "baseline-recent-reviewer"])
         self.assertEqual(baseline_outcomes(it, "q", "c", mapping={}).keys(), {"baseline-codeowners", "baseline-recent-reviewer"})
 
-    def test_baselines_are_scored_like_bridge(self):
+    def test_baselines_are_scored_like_raven(self):
         it = item()
         scored = {k: score(it, v) for k, v in baseline_outcomes(it, "q", "c", mapping={}).items()}
         self.assertTrue(scored["baseline-codeowners"]["hit1"])

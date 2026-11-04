@@ -1,7 +1,7 @@
 /* Fresh synthetic Chromium QA. Run explicitly; never part of unittest discovery.
  * Uses the real loopback HTTP/Store fixture plus explicit browser API failure doubles.
  * node tests/browser-minimal-run-ui.cjs
- * Optional: PLAYWRIGHT_MODULE, BRIDGE_BROWSER, BRIDGE_PYTHON, BRIDGE_TEST_ARTIFACTS. */
+ * Optional: PLAYWRIGHT_MODULE, RAVEN_BROWSER, RAVEN_PYTHON, RAVEN_TEST_ARTIFACTS. */
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {spawn}=require('node:child_process'),readline=require('node:readline'),{once}=require('node:events');
@@ -216,7 +216,7 @@ async function responseCases(browser,fixture,screenshot,errors) {
 }
 (async()=>{
   const root=path.resolve(__dirname,'..'),temp=fs.mkdtempSync(path.join(os.tmpdir(),'raven-minimal-run-'));
-  const child=spawn(process.env.BRIDGE_PYTHON||'python3',[path.join(__dirname,'minimal_run_browser_server.py'),path.join(temp,'qa.db')],{cwd:root});
+  const child=spawn(process.env.RAVEN_PYTHON||'python3',[path.join(__dirname,'minimal_run_browser_server.py'),path.join(temp,'qa.db')],{cwd:root});
   let stderr='',browser;child.stderr.on('data',chunk=>stderr+=chunk);
   try {
     const lines=readline.createInterface({input:child.stdout});
@@ -225,11 +225,11 @@ async function responseCases(browser,fixture,screenshot,errors) {
       lines.on('line',line=>{try{const value=JSON.parse(line);clearTimeout(timer);resolve(value);}catch{}});
       child.once('exit',code=>{clearTimeout(timer);reject(new Error('Fixture exited '+code+': '+stderr));});
     });
-    browser=await chromium.launch({headless:true,...(process.env.BRIDGE_BROWSER?{executablePath:process.env.BRIDGE_BROWSER}:{})});
+    browser=await chromium.launch({headless:true,...(process.env.RAVEN_BROWSER?{executablePath:process.env.RAVEN_BROWSER}:{})});
     const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(10000);
     await page.route('**/*',route=>new URL(route.request().url()).origin===fixture.url?route.continue():route.abort());
     const errors=[];page.on('pageerror',error=>errors.push(error.message));
-    const artifacts=process.env.BRIDGE_TEST_ARTIFACTS||path.join(root,'test-results');fs.mkdirSync(artifacts,{recursive:true});
+    const artifacts=process.env.RAVEN_TEST_ARTIFACTS||path.join(root,'test-results');fs.mkdirSync(artifacts,{recursive:true});
     const screenshots=[];const screenshot=async(name,target=page)=>{const file='fresh-minimal-run-'+name+'.png';
       await target.evaluate(async()=>{window.scrollTo(0,0);document.querySelectorAll('dialog,.modal-body').forEach(el=>el.scrollTo(0,0));
         await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});

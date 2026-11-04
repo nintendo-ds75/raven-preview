@@ -15,7 +15,7 @@ python -m unittest discover -s tests -p 'test_*.py'
 times the Python suite file by file and lists the slowest tests.
 
 PostgreSQL contracts run in CI against a real server. To run them locally,
-start PostgreSQL and set `BRIDGE_TEST_POSTGRES=1` and `DATABASE_URL`
+start PostgreSQL and set `RAVEN_TEST_POSTGRES=1` and `DATABASE_URL`
 (`make test-postgres` does this inside Docker).
 
 The Playwright browser suites (`tests/browser*.cjs`, `tests/brief-browser.cjs`)

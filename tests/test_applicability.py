@@ -7,10 +7,10 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from bridge.config import Config
-from bridge.graph import parse_applicability
-from bridge.ladder import run_task
-from bridge.store import Invalid, Store
+from raven.config import Config
+from raven.graph import parse_applicability
+from raven.ladder import run_task
+from raven.store import Invalid, Store
 
 
 CFG = Config(model_api="none")
@@ -118,7 +118,7 @@ class ApplicabilityTests(unittest.TestCase):
         decision = self.store.request({"run_id": run["id"], "question": QUESTION,
                                        "context": "Invoice rounding", "path": "billing/rates.py"})
         err = io.StringIO()
-        with patch("bridge.ladder.close_open_twins", side_effect=RuntimeError("twin store unavailable")), \
+        with patch("raven.ladder.close_open_twins", side_effect=RuntimeError("twin store unavailable")), \
                 contextlib.redirect_stderr(err):
             self.store.answer(decision["id"], {"answer": "Round half up", "rationale": "Invoice policy"})
         self.assertEqual(self.store.get_decision(decision["id"])["answer"], "Round half up")
@@ -141,7 +141,7 @@ class ApplicabilityTests(unittest.TestCase):
                                "body": "Approved current policy: retain retry error summaries for 19 days, not 11 days.",
                                "status": "Done", "created_at": "2030-01-01T00:00:00+00:00",
                                "paths": ["billing/retention.py"]})
-        with patch("bridge.ladder._disagrees", return_value=True):
+        with patch("raven.ladder._disagrees", return_value=True):
             result = run_task(self.store.graph, CFG, "Retention again", repo=REPO,
                               decisions=[{"question": question, "path": "billing/retention.py"}])
         self.assertFalse(result.resolved)
@@ -156,7 +156,7 @@ class ApplicabilityTests(unittest.TestCase):
                                "title": "Retry error summary retention decision",
                                "body": "Decision: retry error summaries are retained for 11 days.", "status": "Done",
                                "created_at": "2030-01-01T00:00:00+00:00", "paths": ["billing/retention.py"]})
-        with patch("bridge.ladder._disagrees", return_value=True):
+        with patch("raven.ladder._disagrees", return_value=True):
             again = run_task(self.store.graph, CFG, "Retention once more", repo=REPO,
                              decisions=[{"question": question, "path": "billing/retention.py"}])
         self.assertEqual(len(again.resolved), 1)

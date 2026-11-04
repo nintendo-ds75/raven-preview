@@ -4,7 +4,7 @@ Use the [conventional-commits skill](.agents/skills/conventional-commits/SKILL.m
 
 ## Raven
 
-This team uses Raven (the `bridge` MCP server) to route the judgment calls in a task
+This team uses Raven (the `raven` MCP server) to route the judgment calls in a task
 to the person who owns them. At the start of every task, before reading or editing
-anything, call `bridge_start_task`, then follow what Raven returns for the rest of
+anything, call `raven_start_task`, then follow what Raven returns for the rest of
 the task.

@@ -4,7 +4,7 @@ reproduction for R1 in reviews/main-a397f1c-live-retest.md."""
 import json
 from pathlib import Path
 
-from bridge.llm import swapped_outcome
+from raven.llm import swapped_outcome
 
 LIVE = Path(__file__).parent / "results" / "main-a397f1c-live-retest" / "cap-brief-reversal.json"
 OPTIONS = ["clamp after jitter: min(retry_after_max, delay + jitter) — matches get_backoff_time precedent, "

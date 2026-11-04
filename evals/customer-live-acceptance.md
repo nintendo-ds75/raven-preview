@@ -37,7 +37,7 @@ Gateway defaults: at most 24 physical requests, 1,500,000 serialized input bytes
 - Actual host reads static source context and a differently scoped prior judgment before escalating.
 - The first question routes to the seeded authorized owner.
 - Optional Slack fixture sends a notification and deep link; Slack replies do not answer or sign the request.
-- The host is genuinely blocked in `bridge_wait`; provider usage remains unchanged during the observed pending window.
+- The host is genuinely blocked in `raven_wait`; provider usage remains unchanged during the observed pending window.
 - The host process is stopped, Raven restarts, and the durable task remains intact without blocked polling inference.
 - An agent credential cannot sign as the human. A test-controlled human explicitly signs a revision-bound production judgment.
 - The same Claude session resumes, reads current state and implements the signed judgment in the actual fixture file.

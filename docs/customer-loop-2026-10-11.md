@@ -47,17 +47,17 @@ An oracle was written before the host ran and was not changed. Its hash is in `a
 
 ### H1 · P1 · Lost source access leaves authorization intact
 
-With the root decision signed against NET-101, the fixture returned Jira HTTP 403 and made the imported Slack channel private. Both native sync calls correctly reported errors. However, `bridge_get_record` still returned the Jira source as `availability: available`, `current: true`, and the dependent decision remained `authorized: true`.
+With the root decision signed against NET-101, the fixture returned Jira HTTP 403 and made the imported Slack channel private. Both native sync calls correctly reported errors. However, `raven_get_record` still returned the Jira source as `availability: available`, `current: true`, and the dependent decision remained `authorized: true`.
 
 This is not a claim that the shared workspace leaked a newly imported private record: the initial restricted-record test passed. It is a failure to withdraw current evidence eligibility after access was explicitly lost. Previously imported bodies also remain readable under Raven's workspace-wide model.
 
-`bridge/sources.py::_failed` only records the connection error. The Slack private-channel branch and Jira permission-error branch never produce an unavailable source observation. Treat explicit revocation separately from transient outages, invalidate affected premises, preserve historical snapshots, and require deliberate current-source review after recovery. Do not erase audit history or silently reauthorize on a successful poll.
+`raven/sources.py::_failed` only records the connection error. The Slack private-channel branch and Jira permission-error branch never produce an unavailable source observation. Treat explicit revocation separately from transient outages, invalidate affected premises, preserve historical snapshots, and require deliberate current-source review after recovery. Do not erase audit history or silently reauthorize on a successful poll.
 
 Evidence: `source-permission-probe.json`, including before/after state and the exact sync errors. By contrast, `revision-probe.json` and `source-reapproved.json` show the content-change path working.
 
 ### H2 · P1 · A late required follow-up becomes an unresolvable blocker
 
-The initial task `f07804519b5e` completed. While its host was finishing its report, the browser accepted a required zero-delay follow-up, `ce6a2d6a372c`. The tree now correctly showed one blocker, but `bridge_add_node(adopt=...)` refused: “This task is finished; start a new one with bridge_start_task.” `bridge_settle_node` could not settle the suggested node either.
+The initial task `f07804519b5e` completed. While its host was finishing its report, the browser accepted a required zero-delay follow-up, `ce6a2d6a372c`. The tree now correctly showed one blocker, but `raven_add_node(adopt=...)` refused: “This task is finished; start a new one with raven_start_task.” `raven_settle_node` could not settle the suggested node either.
 
 The shipped supervisor successfully resumed the actual session. Claude tried the documented adoption flow, hit the refusal, and created `0b57d4a93abf` as a workaround. Its owner eventually signed through the browser. A subsequent supervisor poll returned “No new human or source events”: the session remained bound to the original task. The original blocker was still present.
 
@@ -71,7 +71,7 @@ One of three initial decisions completed entirely in Slack. The other two answer
 
 The refusal is safe: Raven does not sign evidence it silently truncated. But three of four substantive replies needing the browser is far from the advertised low-friction Slack workflow. Full serialized decision snapshots include duplicated context, options, source state and signature metadata; this grows rapidly with related decisions.
 
-Design a concise, lossless human review representation tied to exact stored revisions, with an explicit safe continuation for long source sets. Retain the complete audit snapshot separately. Do not fix this by silently clipping or removing the exact-revision requirement. Source review size is enforced in `bridge/source_review.py`.
+Design a concise, lossless human review representation tied to exact stored revisions, with an explicit safe continuation for long source sets. Retain the complete audit snapshot separately. Do not fix this by silently clipping or removing the exact-revision requirement. Source review size is enforced in `raven/source_review.py`.
 
 Evidence: outbound replies in `slack.jsonl`. The computer-use recovery succeeded for all three cases.
 
@@ -105,7 +105,7 @@ A failed inbound referral from the same outage was retained and successfully rep
 
 Eight of nine browser suites passed. `browser-agent-source-proposals.cjs:83` failed because an unscoped `.source-snapshot-body` locator matched two elements. The sign-off handler asynchronously refreshes and reopens a dialog, while the test waits for the HTTP response and can inspect a still-open earlier dialog. The failing log establishes a synchronization/selector problem to investigate; it is not proof that source authorization failed. No production or test fix was applied during this frozen run.
 
-The deterministic walkthrough passed 36/37. Its exact expected-tool set omits `bridge_correct_node_facts`, `bridge_link_work_item` and `bridge_context_sources`. These extra tools explain that failure. This walkthrough still constructs an ownership map, so it is not the evidence for automatic cold start; the separate live loop is.
+The deterministic walkthrough passed 36/37. Its exact expected-tool set omits `raven_correct_node_facts`, `raven_link_work_item` and `raven_context_sources`. These extra tools explain that failure. This walkthrough still constructs an ownership map, so it is not the evidence for automatic cold start; the separate live loop is.
 
 ## Validation and practical recommendation
 

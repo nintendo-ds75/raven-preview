@@ -1,5 +1,5 @@
 from test_delivery import confirmation
-from bridge.approval_scope import transport_text
+from raven.approval_scope import transport_text
 """Conversation, durable callbacks and scoped routing learned from real human actions."""
 import json
 import time
@@ -7,19 +7,19 @@ import threading
 from unittest.mock import patch
 from fixtures import OfflineCase
 from test_delivery import DeliveryCase
-from bridge import canvas
-from bridge.authz import Actor
-from bridge.config import Config
-from bridge.delivery import handle_slack_event, SlackTransport
-from bridge.llm import LLMError
-from bridge.routing import route_ranked
-from bridge.store import Invalid, Store
+from raven import canvas
+from raven.authz import Actor
+from raven.config import Config
+from raven.delivery import handle_slack_event, SlackTransport
+from raven.llm import LLMError
+from raven.routing import route_ranked
+from raven.store import Invalid, Store
 
 
 class ConversationTests(DeliveryCase):
     def test_polite_not_me_referral_is_interpreted_before_legacy_command_parser(self):
         text = 'Not me, please ask Marisol Vega just this one.'
-        with patch('bridge.slack_chat.reading', return_value={
+        with patch('raven.slack_chat.reading', return_value={
                 'kind': 'handoff', 'to': 'Marisol Vega', 'scope_kind': '', 'scope': '',
                 'reply': 'Ask Marisol for this question only.'}) as model:
             response = self.reply(self.message, 'UWES', text)
@@ -35,14 +35,14 @@ class ConversationTests(DeliveryCase):
         self.delivery.deliver_now()
         self.message=self.slack.messages[0]
         # Offline tests patch only model output; no CLI/API access is possible.
-        self.cfg=patch('bridge.slack_chat.load',return_value=Config(model_api='none'))
+        self.cfg=patch('raven.slack_chat.load',return_value=Config(model_api='none'))
         self.cfg.start();self.addCleanup(self.cfg.stop)
         self.enabled=patch.object(Config,'semantic_retrieval',property(lambda self:True))
         self.enabled.start();self.addCleanup(self.enabled.stop)
         self.addCleanup(self.delivery.close)
 
     def say(self,text,model=None,who='UWES',event_id=''):
-        with patch('bridge.slack_chat.reading',return_value=model or {'kind':'chat','reply':'Tell me more.'}):
+        with patch('raven.slack_chat.reading',return_value=model or {'kind':'chat','reply':'Tell me more.'}):
             return self.reply(self.message,who,text,event_id)
 
     def assert_source_clarification_passes(self, model):
@@ -57,7 +57,7 @@ class ConversationTests(DeliveryCase):
     def test_schema_repaired_policy_still_requires_a_fresh_human_yes(self):
         policy = ('Add a boolean accessor. Missing values return the exact default object unchanged. '
                   'Invalid values raise ValueError. This approval is for this task only; it is not a standing rule.')
-        with patch('bridge.slack_chat.Client.complete_json', side_effect=[
+        with patch('raven.slack_chat.Client.complete_json', side_effect=[
                 {'kind': 'answer', 'answer': {'text': policy}},
                 {'kind': 'answer', 'answer_form': 'complete', 'answer': policy}]) as model:
             response = self.reply(self.message, 'UWES', policy)
@@ -76,7 +76,7 @@ class ConversationTests(DeliveryCase):
     def test_repeated_malformed_schema_clears_old_readback_without_recording_model_content(self):
         self.say('Bill one unit.', {'kind': 'answer', 'answer': 'Bill one unit.'})
         canary = {'not-for-error-or-storage': 'synthetic-rejected-content'}
-        with patch('bridge.slack_chat.Client.complete_json', side_effect=[
+        with patch('raven.slack_chat.Client.complete_json', side_effect=[
                 {'kind': 'answer', 'answer': canary}, {'kind': 'answer', 'rationale': canary}]) as model:
             response = self.reply(self.message, 'UWES', 'Bill two units.')
         self.assertEqual(model.call_count, 2)
@@ -98,7 +98,7 @@ class ConversationTests(DeliveryCase):
         calls = iter([{'kind': 'answer', 'answer': []}, None])
         def model(*args, **kwargs):
             return next(calls) or repaired(*args, **kwargs)
-        with patch('bridge.slack_chat.Client.complete_json', side_effect=model) as read:
+        with patch('raven.slack_chat.Client.complete_json', side_effect=model) as read:
             response = self.reply(self.message, 'UWES', 'Bill two units.')
         self.assertEqual(read.call_count, 2)
         self.assertIn('Another reply arrived', response)
@@ -133,7 +133,7 @@ class ConversationTests(DeliveryCase):
         self.invalidate_review(parent)
         for repair in ({'kind': 'answer', 'answer': policy}, {'kind': 'signoff'}):
             with self.subTest(kind=repair['kind']):
-                with patch('bridge.slack_chat.reading', side_effect=[
+                with patch('raven.slack_chat.reading', side_effect=[
                         {'kind': 'chat', 'reply': 'That decision is already recorded and signed.'}, repair]) as model:
                     result = self.reply(self.message, 'UWES', policy)
                 self.assertEqual(model.call_count, 2)
@@ -207,7 +207,7 @@ class ConversationTests(DeliveryCase):
         policy = 'Bill two units for this task only.'
         parent = self.review_source(policy)
         self.invalidate_review(parent)
-        with patch('bridge.slack_chat.reading', return_value={
+        with patch('raven.slack_chat.reading', return_value={
                 'kind': 'question', 'reply': 'You already have a signed answer.'}) as model:
             result = self.reply(self.message, 'UWES', policy)
         self.assertEqual(model.call_count, 2)
@@ -219,7 +219,7 @@ class ConversationTests(DeliveryCase):
         policy = 'Bill two units.'
         parent = self.review_source(policy)
         self.invalidate_review(parent)
-        with patch('bridge.slack_chat.reading', return_value={
+        with patch('raven.slack_chat.reading', return_value={
                 'kind': 'question', 'reply': 'The upstream constraint changed, so fresh review is needed.'}) as model:
             result = self.reply(self.message, 'UWES', 'Why am I being asked to review this again?')
         self.assert_source_clarification_passes(model)
@@ -230,7 +230,7 @@ class ConversationTests(DeliveryCase):
     def test_still_authorized_repeat_does_not_require_new_confirmation(self):
         policy = 'Bill two units.'
         self.review_source(policy)
-        with patch('bridge.slack_chat.reading', return_value={
+        with patch('raven.slack_chat.reading', return_value={
                 'kind': 'chat', 'reply': 'The current answer is already signed.'}) as model:
             result = self.reply(self.message, 'UWES', policy)
         self.assert_source_clarification_passes(model)
@@ -267,7 +267,7 @@ class ConversationTests(DeliveryCase):
         self.assertEqual(after['signatures'], before['signatures'])
 
     def test_invalidation_epoch_stays_stable_across_normal_cosignatures(self):
-        from bridge.delivery import _what_it_says
+        from raven.delivery import _what_it_says
         policy = 'Bill two units.'
         parent = self.review_source(policy)
         self.invalidate_review(parent)
@@ -288,7 +288,7 @@ class ConversationTests(DeliveryCase):
         policy = 'Bill two units.'
         parent = self.review_source(policy)
         self.invalidate_review(parent)
-        with patch('bridge.slack_chat.reading', side_effect=[
+        with patch('raven.slack_chat.reading', side_effect=[
                 {'kind': 'chat', 'reply': 'It is already signed.'}, {'kind': 'answer', 'answer': policy}]):
             response = self.reply(self.message, 'UMAR', policy)
         self.assertNotIn('reply `confirm ', response)
@@ -342,7 +342,7 @@ class ConversationTests(DeliveryCase):
         canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': self.n['node_id'],
                                       'answer': 'No additional constraint beyond the signed parent.', 'rationale': 'Host summary'})
         self.delivery.deliver_now()
-        with patch('bridge.slack_chat.reading', return_value={'kind': 'answer', 'answer': scoped}) as model:
+        with patch('raven.slack_chat.reading', return_value={'kind': 'answer', 'answer': scoped}) as model:
             offered = self.reply(self.message, 'UWES', scoped)
         model.assert_called_once()
         self.assertIsNone(model.call_args.args[1]['pending_readback'])
@@ -365,7 +365,7 @@ class ConversationTests(DeliveryCase):
         self.say('Bill two units.', {'kind': 'answer', 'answer': 'Bill two units.'})
         canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': self.n['node_id'],
                                       'answer': 'Bill three units.', 'rationale': 'New unseen proposal'})
-        with patch('bridge.slack_chat.reading') as model:
+        with patch('raven.slack_chat.reading') as model:
             response = self.reply(self.message, 'UWES', 'Bill two units for this task only.')
         model.assert_not_called()
         self.assertIn('show you its current state', response)
@@ -378,14 +378,14 @@ class ConversationTests(DeliveryCase):
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
 
     def test_confirmation_revision_race_after_snapshot_retirement_fails_closed(self):
-        from bridge.slack_chat import apply
+        from raven.slack_chat import apply
         self.say('Bill two units.', {'kind': 'answer', 'answer': 'Bill two units.'})
         def race(delivery, decision, person, action, actor):
             self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
             canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': self.n['node_id'],
                                           'answer': 'Hold the invoice.', 'rationale': 'Concurrent revision'})
             return apply(delivery, decision, person, action, actor)
-        with patch('bridge.slack_chat.apply', side_effect=race):
+        with patch('raven.slack_chat.apply', side_effect=race):
             response = self.say('yes')
         self.assertIn('Nothing recorded', response)
         row = self.store.get_decision(self.n['node_id'])
@@ -401,7 +401,7 @@ class ConversationTests(DeliveryCase):
         canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': self.n['node_id'],
                                       'answer': 'Bill everything.', 'rationale': 'New agent proposal'})
         self.delivery.deliver_now()
-        with patch('bridge.slack_chat.reading') as model:
+        with patch('raven.slack_chat.reading') as model:
             response = self.reply(self.message, 'UWES', 'yes')
         model.assert_not_called()
         self.assertIn('changed since my read-back', response)
@@ -411,7 +411,7 @@ class ConversationTests(DeliveryCase):
     def test_captured_historical_policy_noop_repaired_with_review_flag_retained(self):
         policy = self.recovery_policy
         self.resettle_review(policy, 'Same answer as the signed parent: never extend expiration; include fallback keys.')
-        with patch('bridge.slack_chat.reading', side_effect=[
+        with patch('raven.slack_chat.reading', side_effect=[
                 {'kind': 'chat', 'reply': "I see you're restating the same answer. The most recent confirmation was recorded just now."},
                 {'kind': 'answer', 'answer': policy}]) as model:
             offered = self.reply(self.message, 'UWES', policy)
@@ -434,7 +434,7 @@ class ConversationTests(DeliveryCase):
         self.resettle_review(policy, 'Bill three units.')
         for repair in ({'kind': 'signoff'}, {'kind': 'answer', 'answer': 'Bill two units.'},
                        {'kind': 'confirm'}, LLMError('provider unavailable')):
-            with self.subTest(repair=repair), patch('bridge.slack_chat.reading', side_effect=[
+            with self.subTest(repair=repair), patch('raven.slack_chat.reading', side_effect=[
                     {'kind': 'chat', 'reply': 'Already signed.'}, repair]) as model:
                 response = self.reply(self.message, 'UWES', policy)
             self.assertEqual(model.call_count, 2)
@@ -445,7 +445,7 @@ class ConversationTests(DeliveryCase):
     def test_historical_answer_is_not_signoff_of_the_new_summary(self):
         policy = 'Bill two units for this task only.'
         self.resettle_review(policy, 'Bill three units.')
-        with patch('bridge.slack_chat.reading', side_effect=[
+        with patch('raven.slack_chat.reading', side_effect=[
                 {'kind': 'signoff'}, {'kind': 'answer', 'answer': policy}]) as model:
             response = self.reply(self.message, 'UWES', policy)
         self.assertEqual(model.call_count, 2)
@@ -454,7 +454,7 @@ class ConversationTests(DeliveryCase):
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
 
     def test_repair_for_invalid_confirm_can_remain_a_genuine_question(self):
-        with patch('bridge.slack_chat.reading', side_effect=[
+        with patch('raven.slack_chat.reading', side_effect=[
                 {'kind': 'confirm'}, {'kind': 'question', 'reply': 'An earlier summary changed.'}]) as model:
             response = self.reply(self.message, 'UWES', 'Why are you asking for confirmation again?')
         self.assertEqual(model.call_count, 2)
@@ -465,7 +465,7 @@ class ConversationTests(DeliveryCase):
     def test_repeated_genuine_question_after_resettle_is_not_forced_into_answer(self):
         self.resettle_review('Bill two units.', 'Bill three units.')
         for _ in range(2):
-            with patch('bridge.slack_chat.reading', return_value={
+            with patch('raven.slack_chat.reading', return_value={
                     'kind': 'question', 'reply': 'The agent supplied a different summary.'}) as model:
                 response = self.reply(self.message, 'UWES', 'Why does this need a signature again?')
             self.assert_source_clarification_passes(model)
@@ -478,7 +478,7 @@ class ConversationTests(DeliveryCase):
         canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': self.n['node_id'],
                                       'answer': policy, 'rationale': 'Proposal'})
         self.delivery.deliver_now()
-        with patch('bridge.slack_chat.reading', side_effect=[
+        with patch('raven.slack_chat.reading', side_effect=[
                 {'kind': 'chat', 'reply': 'Already signed.'}, {'kind': 'signoff'}]) as model:
             response = self.reply(self.message, 'UWES', policy)
         self.assertEqual(model.call_count, 2)
@@ -489,7 +489,7 @@ class ConversationTests(DeliveryCase):
         self.assertTrue(self.store.get_decision(self.n['node_id'])['authorized'])
 
     def test_historical_answer_after_human_reframe_needs_fresh_readback_without_review_flag(self):
-        from bridge import reframe
+        from raven import reframe
         policy = 'Bill two units for this task only.'
         self.say(policy, {'kind': 'answer', 'answer': policy})
         self.say('yes')
@@ -508,7 +508,7 @@ class ConversationTests(DeliveryCase):
         self.assertFalse(row['needs_review'])
         self.assertFalse(row['authorized'])
         self.assertEqual(row['signatures'], '[]')
-        with patch('bridge.slack_chat.reading', side_effect=[
+        with patch('raven.slack_chat.reading', side_effect=[
                 {'kind': 'signoff'}, {'kind': 'answer', 'answer': policy}]) as model:
             response = self.reply(self.message, 'UWES', policy)
         self.assertEqual(model.call_count, 2)
@@ -536,7 +536,7 @@ class ConversationTests(DeliveryCase):
         self.say('yes')
         before = self.store.get_decision(self.n['node_id'])
         self.assertFalse(before['authorized'])
-        with patch('bridge.slack_chat.reading', return_value={'kind': 'chat', 'reply': 'Your signature is current.'}) as model:
+        with patch('raven.slack_chat.reading', return_value={'kind': 'chat', 'reply': 'Your signature is current.'}) as model:
             self.reply(self.message, 'UWES', policy)
         model.assert_called_once()
         self.assertTrue(model.call_args.args[1]['speaker_signed_current_answer'])
@@ -551,7 +551,7 @@ class ConversationTests(DeliveryCase):
 
     def test_captured_full_policy_confirm_error_gets_one_bounded_repair(self):
         policy = self.recovery_api_policy
-        with patch('bridge.slack_chat.reading', side_effect=[
+        with patch('raven.slack_chat.reading', side_effect=[
                 {'kind': 'confirm'}, {'kind': 'answer', 'answer': policy}]) as model:
             response = self.reply(self.message, 'UWES', policy)
         self.assertEqual(model.call_count, 2)
@@ -566,7 +566,7 @@ class ConversationTests(DeliveryCase):
     def test_captured_repeated_invalid_confirm_still_fails_closed(self):
         # The live artifact records this error, not the raw model JSON.
         # Repeated confirm is the minimal output reproducing that branch.
-        with patch('bridge.slack_chat.reading', return_value={'kind': 'confirm'}) as model:
+        with patch('raven.slack_chat.reading', return_value={'kind': 'confirm'}) as model:
             response = self.reply(self.message, 'UWES', self.recovery_api_policy)
         self.assertEqual(model.call_count, 2)
         self.assertIn('Nothing was changed', response)
@@ -580,7 +580,7 @@ class ConversationTests(DeliveryCase):
             canvas.settle_node(self.store, {'task_id': self.n['task_id'], 'node_id': self.n['node_id'],
                                           'answer': 'Hold the invoice.', 'rationale': 'New evidence'})
             return {'kind': 'answer', 'answer': 'Bill two units.'}
-        with patch('bridge.slack_chat.reading', side_effect=read) as model:
+        with patch('raven.slack_chat.reading', side_effect=read) as model:
             response = self.reply(self.message, 'UWES', 'Bill two units.')
         model.assert_called_once()
         self.assertIn('changed while I was reading', response)
@@ -591,7 +591,7 @@ class ConversationTests(DeliveryCase):
         def read(cfg, payload):
             self.say('Hold the invoice.', {'kind': 'answer', 'answer': 'Hold the invoice.'})
             return {'kind': 'answer', 'answer': 'Bill two units.'}
-        with patch('bridge.slack_chat.reading', side_effect=read):
+        with patch('raven.slack_chat.reading', side_effect=read):
             response = self.reply(self.message, 'UWES', 'Bill two units.')
         self.assertIn('Another reply arrived', response)
         held = self.delivery._reading(self.message['channel'], self.message['ts'], self.wes)
@@ -604,7 +604,7 @@ class ConversationTests(DeliveryCase):
         def read(cfg, payload):
             self.say('Hold the invoice.', {'kind': 'answer', 'answer': 'Hold the invoice.'})
             raise LLMError('provider unavailable')
-        with patch('bridge.slack_chat.reading', side_effect=read) as model:
+        with patch('raven.slack_chat.reading', side_effect=read) as model:
             response = self.reply(self.message, 'UWES', 'Bill two units.')
         model.assert_called_once()
         self.assertIn('Nothing was changed', response)
@@ -616,7 +616,7 @@ class ConversationTests(DeliveryCase):
             self.say('Hold the invoice.', {'kind': 'answer', 'answer': 'Hold the invoice.'})
             self.say('no')
             return {'kind': 'answer', 'answer': 'Bill two units.'}
-        with patch('bridge.slack_chat.reading', side_effect=read):
+        with patch('raven.slack_chat.reading', side_effect=read):
             response = self.reply(self.message, 'UWES', 'Bill two units.')
         self.assertIn('Another reply arrived', response)
         self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.wes))
@@ -642,7 +642,7 @@ class ConversationTests(DeliveryCase):
         self.say('yes')
         before = self.store.get_decision(self.n['node_id'])
         message = 'I need to correct my earlier answer. The complete replacement decision is: ' + policy
-        with patch('bridge.slack_chat.reading', side_effect=[
+        with patch('raven.slack_chat.reading', side_effect=[
                 {'kind': 'reframe', 'answer': policy}, {'kind': 'answer', 'answer': policy}]) as model:
             offered = self.reply(self.message, 'UWES', message)
         self.assertEqual(model.call_count, 2)
@@ -678,7 +678,7 @@ class ConversationTests(DeliveryCase):
         for repair in invalid:
             with self.subTest(repair=repair):
                 self.say('Bill everything.', {'kind': 'answer', 'answer': 'Bill everything.'})
-                with patch('bridge.slack_chat.reading', side_effect=[
+                with patch('raven.slack_chat.reading', side_effect=[
                         {'kind': 'reframe', 'answer': 'Exclude internal traffic.'}, repair]) as model:
                     response = self.reply(self.message, 'UWES', message)
                 self.assertEqual(model.call_count, 2)
@@ -691,7 +691,7 @@ class ConversationTests(DeliveryCase):
 
     def test_scope_repair_cannot_switch_an_answer_amendment_to_reframe(self):
         self.say('Bill it.', {'kind': 'answer', 'answer': 'Bill it.'})
-        with patch('bridge.slack_chat.reading', side_effect=[
+        with patch('raven.slack_chat.reading', side_effect=[
                 {'kind': 'answer', 'answer': 'Exclude it.'},
                 {'kind': 'reframe', 'answer': 'Exclude it for this task only.'}]) as model:
             response = self.reply(self.message, 'UWES',
@@ -704,7 +704,7 @@ class ConversationTests(DeliveryCase):
         self.say('Bill it.', {'kind': 'answer', 'answer': 'Bill it.'})
         self.say('yes')
         before = self.store.get_decision(self.n['node_id'])
-        with patch('bridge.slack_chat.reading', return_value={
+        with patch('raven.slack_chat.reading', return_value={
                 'kind': 'reframe', 'answer': 'Exclude it.'}) as model:
             response = self.reply(self.message, 'UWES', 'I want to amend my decision: exclude it.')
         self.assertEqual(model.call_count, 2)
@@ -719,7 +719,7 @@ class ConversationTests(DeliveryCase):
         self.say('Bill it.', {'kind': 'answer', 'answer': 'Bill it.'})
         self.say('yes')
         question = 'Should only synthetic traffic be excluded?'
-        with patch('bridge.slack_chat.reading', return_value={'kind': 'reframe', 'answer': question}) as model:
+        with patch('raven.slack_chat.reading', return_value={'kind': 'reframe', 'answer': question}) as model:
             response = self.reply(self.message, 'UWES',
                 'I need to correct my earlier answer. The question is wrong. Replace the question with: ' + question)
         self.assertEqual(model.call_count, 1)
@@ -732,7 +732,7 @@ class ConversationTests(DeliveryCase):
         self.assertFalse(row['authorized'])
 
     def test_answer_amendment_guard_is_narrow_and_message_local(self):
-        from bridge.slack_chat import explicit_answer_amendment
+        from raven.slack_chat import explicit_answer_amendment
         for text in (
                 'I want to update my prior decision. Keep retrying, with jitter.',
                 'Actually, I amend my answer: retries remain disabled.',
@@ -754,7 +754,7 @@ class ConversationTests(DeliveryCase):
         # An earlier amendment in conversation history must not constrain a
         # later genuine question correction.
         self.say('I need to correct my answer: bill real traffic.', {'kind': 'answer', 'answer': 'Bill real traffic.'})
-        with patch('bridge.slack_chat.reading', return_value={
+        with patch('raven.slack_chat.reading', return_value={
                 'kind': 'reframe', 'answer': 'Which traffic is synthetic?'}) as model:
             response = self.reply(self.message, 'UWES', 'Correct the question: Which traffic is synthetic?')
         self.assertEqual(model.call_count, 1)
@@ -762,7 +762,7 @@ class ConversationTests(DeliveryCase):
 
     def test_faithful_answer_amendment_needs_no_repair(self):
         message = 'My complete replacement answer: bill real traffic only.'
-        with patch('bridge.slack_chat.Client.complete_json', return_value={
+        with patch('raven.slack_chat.Client.complete_json', return_value={
                 'kind': 'answer', 'answer_form': 'complete'}) as model:
             response = self.reply(self.message, 'UWES', message)
         self.assertEqual(model.call_count, 1)
@@ -772,13 +772,13 @@ class ConversationTests(DeliveryCase):
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
 
     def test_repaired_answer_keeps_authority_and_stale_readback_checks(self):
-        with patch('bridge.slack_chat.reading', side_effect=[
+        with patch('raven.slack_chat.reading', side_effect=[
                 {'kind': 'reframe', 'answer': 'Bill real traffic only.'},
                 {'kind': 'answer', 'answer': 'Bill real traffic only.'}]):
             response = self.reply(self.message, 'UPRI', 'I amend my answer: bill real traffic only.')
         self.assertIn('Nothing recorded', response)
         self.assertIsNone(self.delivery._reading(self.message['channel'], self.message['ts'], self.priya))
-        with patch('bridge.slack_chat.reading', side_effect=[
+        with patch('raven.slack_chat.reading', side_effect=[
                 {'kind': 'reframe', 'answer': 'Bill real traffic only.'},
                 {'kind': 'answer', 'answer': 'Bill real traffic only.'}]):
             self.reply(self.message, 'UWES', 'I amend my answer: bill real traffic only.')
@@ -797,7 +797,7 @@ class ConversationTests(DeliveryCase):
                   'Signature integrity is mandatory. Apply the same checks to rotated/fallback signing keys. '
                   'No internal, test, or staging exemption. This approval is for this task only; it is not a standing rule.')
         omitted = policy.rsplit(' This approval', 1)[0]
-        with patch('bridge.slack_chat.reading', side_effect=[
+        with patch('raven.slack_chat.reading', side_effect=[
                 {'kind': 'answer', 'answer': omitted}, {'kind': 'answer', 'answer': policy}]) as model:
             offered = self.reply(self.message, 'UWES', policy)
         self.assertEqual(model.call_count, 2)
@@ -811,7 +811,7 @@ class ConversationTests(DeliveryCase):
 
     def test_repeated_scope_omission_discards_old_confirmable_readback(self):
         self.say('Keep the old limit', {'kind': 'answer', 'answer': 'Keep the old limit.'})
-        with patch('bridge.slack_chat.reading', return_value={
+        with patch('raven.slack_chat.reading', return_value={
                 'kind': 'answer', 'answer': 'Keep the old limit.'}) as model:
             reply = self.reply(self.message, 'UWES',
                 'Keep the old limit for this task only. It is not a reusable rule.')
@@ -824,27 +824,27 @@ class ConversationTests(DeliveryCase):
     def test_faithful_scope_restrictions_do_not_trigger_a_repair(self):
         text = 'Keep the limit only for this task. This is not a standing rule.'
         answer = 'Keep the limit for this task only. It is not a reusable rule.'
-        with patch('bridge.slack_chat.reading', return_value={'kind': 'answer', 'answer': answer}) as model:
+        with patch('raven.slack_chat.reading', return_value={'kind': 'answer', 'answer': answer}) as model:
             reply = self.reply(self.message, 'UWES', text)
         self.assertEqual(model.call_count, 1)
         self.assertIn(answer, reply)
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
 
     def test_context_then_answer_amendment_and_confirmation(self):
-        with patch('bridge.slack_chat.reading',return_value={'kind':'question','reply':'The task says enterprise-two had an 11x usage spike.'}) as model:
+        with patch('raven.slack_chat.reading',return_value={'kind':'question','reply':'The task says enterprise-two had an 11x usage spike.'}) as model:
             said=self.reply(self.message,'UWES','Which account was affected?')
             self.assertIn('enterprise-two',said)
             self.assertIn('11x',model.call_args.args[1]['context'])
         self.say('Exclude that one, it was internal testing',{'kind':'answer','answer':'Exclude the spike.','rationale':'internal testing'})
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
-        with patch('bridge.slack_chat.Client.complete_json',return_value={'kind':'answer','answer_form':'partial'}) as model:
+        with patch('raven.slack_chat.Client.complete_json',return_value={'kind':'answer','answer_form':'partial'}) as model:
             offered=self.reply(self.message,'UWES','Actually keep the real customer traffic billable')
             payload=json.loads(model.call_args.args[2])
             self.assertTrue(payload['pending_readback'])
             self.assertGreater(len(payload['history']),1)
             self.assertIn('complete answer or replacement',offered)
             self.assertIsNone(self.delivery._reading(self.message['channel'],self.message['ts'],self.wes))
-        with patch('bridge.slack_chat.Client.complete_json',return_value={'kind':'answer','answer_form':'complete'}):
+        with patch('raven.slack_chat.Client.complete_json',return_value={'kind':'answer','answer_form':'complete'}):
             self.reply(self.message,'UWES','Exclude internal traffic only; bill real customer traffic.')
         self.say('yes',event_id='signed')
         d=self.store.get_decision(self.n['node_id'])
@@ -853,7 +853,7 @@ class ConversationTests(DeliveryCase):
 
     def test_model_cannot_treat_an_amendment_as_confirmation(self):
         self.say('Exclude internal traffic',{'kind':'answer','answer':'Exclude internal traffic.'})
-        with patch('bridge.slack_chat.Client.complete_json',side_effect=[{'kind':'confirm'},
+        with patch('raven.slack_chat.Client.complete_json',side_effect=[{'kind':'confirm'},
                 {'kind':'answer','answer_form':'partial'}]) as model:
             ack=self.reply(self.message,'UWES','Actually, only for Acme')
         self.assertEqual(model.call_count,2)
@@ -879,7 +879,7 @@ class ConversationTests(DeliveryCase):
         self.delivery.deliver_now()
         message=self.slack.messages[-1]
         self.assertEqual(message['channel'],'DUMAR')
-        with patch('bridge.slack_chat.reading',return_value={'kind':'answer','answer':'Exclude internal test traffic.'}):
+        with patch('raven.slack_chat.reading',return_value={'kind':'answer','answer':'Exclude internal test traffic.'}):
             self.reply(message,'UMAR','Leave the internal test traffic out')
         self.reply(message,'UMAR','yes')
         feedback=[dict(r) for r in self.graph.db.execute('SELECT * FROM routing_feedback')]
@@ -898,7 +898,7 @@ class ConversationTests(DeliveryCase):
         canvas.settle_node(self.store, {'task_id':self.n['task_id'],'node_id':self.n['node_id'],
                                       'answer':'Exclude internal traffic.','rationale':'Internal test accounts'})
         self.delivery.deliver_now()
-        with patch('bridge.slack_chat.reading',return_value={'kind':'question','reply':'Please clarify.'}) as model:
+        with patch('raven.slack_chat.reading',return_value={'kind':'question','reply':'Please clarify.'}) as model:
             ack=self.reply(self.message,'UWES','I confirm that full answer for this task as well.')
         model.assert_not_called()
         self.assertIn('Sign the complete answer',ack)
@@ -910,7 +910,7 @@ class ConversationTests(DeliveryCase):
         canvas.settle_node(self.store, {'task_id':self.n['task_id'],'node_id':self.n['node_id'],
                                       'answer':'Exclude internal traffic.','rationale':'Internal test accounts'})
         self.delivery.deliver_now()
-        with patch('bridge.slack_chat.reading',return_value={'kind':'answer','answer':'Exclude Acme only.'}) as model:
+        with patch('raven.slack_chat.reading',return_value={'kind':'answer','answer':'Exclude Acme only.'}) as model:
             ack=self.reply(self.message,'UWES','I confirm that full answer, but for Acme only.')
         model.assert_called_once()
         self.assertIn('Acme only',ack)
@@ -920,7 +920,7 @@ class ConversationTests(DeliveryCase):
         self.say('Exclude traffic',{'kind':'answer','answer':'Exclude internal traffic.'})
         other=Store(self.store.path);self.addCleanup(other.graph.close)
         delivery=other.connect_delivery(self.slack)
-        with patch('bridge.slack_chat.load',return_value=Config(model_api='none')):
+        with patch('raven.slack_chat.load',return_value=Config(model_api='none')):
             held = delivery._reading(self.message['channel'], self.message['ts'], self.wes)
             said=delivery.receive(self.message['channel'],self.message['ts'],'UWES',confirmation(held),
                 event_id='after-restart', occurrence={'platform':'slack','id':'2000000001.000001',
@@ -928,7 +928,7 @@ class ConversationTests(DeliveryCase):
         self.assertIn('Recorded',said)
 
     def test_model_failure_keeps_gate_closed(self):
-        with patch('bridge.slack_chat.reading',side_effect=LLMError('offline')):
+        with patch('raven.slack_chat.reading',side_effect=LLMError('offline')):
             said=self.reply(self.message,'UWES','Exclude it please')
         self.assertIn('Nothing was changed',said)
         self.assertFalse(self.store.get_decision(self.n['node_id'])['authorized'])
@@ -966,7 +966,7 @@ class ConversationTests(DeliveryCase):
 
     def test_search_context_is_ephemeral_and_token_not_stored(self):
         self.slack.search_context=lambda query,token:[{'text':'transient-source-canary','url':'https://slack.com/archives/C1/p1','author':'UMAR'}]
-        with patch('bridge.slack_chat.reading',return_value={'kind':'question','reply':'transient-source-canary'}):
+        with patch('raven.slack_chat.reading',return_value={'kind':'question','reply':'transient-source-canary'}):
             handle_slack_event(self.delivery,{'type':'event_callback','team_id':'TTEST','event_id':'search-event','event':{
                 'type':'message','channel':self.message['channel'],'thread_ts':self.message['ts'],'user':'UWES',
                 'text':'Search Slack for the reason?','action_token':'transient-token-canary'}})
@@ -988,7 +988,7 @@ class ConversationTests(DeliveryCase):
             raise RuntimeError('users.info failed: user_not_found')
         self.slack.user_info=user_info
         self.slack.workspace_id=lambda: 'TFAKE'
-        with patch('bridge.slack_chat.reading',return_value={'kind':'question',
+        with patch('raven.slack_chat.reading',return_value={'kind':'question',
                 'reply':'UMAR said load tests are excluded, UOLA and UZZZZZZZ replied, and <@UWES> agreed.'}) as model:
             handle_slack_event(self.delivery,{'type':'event_callback','team_id':'TFAKE','event_id':'search-names','event':{
                 'type':'message','channel':self.message['channel'],'thread_ts':self.message['ts'],'user':'UWES',
@@ -1025,7 +1025,7 @@ class ConversationTests(DeliveryCase):
     def test_polite_referral_is_not_discarded_when_search_is_available(self):
         with patch.object(self.slack, 'search_context', create=True,
                           return_value=[{'text':'unrelated context'}]) as search:
-            with patch('bridge.slack_chat.reading', return_value={'kind':'handoff','to':'Marisol Vega'}):
+            with patch('raven.slack_chat.reading', return_value={'kind':'handoff','to':'Marisol Vega'}):
                 handle_slack_event(self.delivery, {'type':'event_callback','team_id':'TTEST','event_id':'polite-referral','event':{
                     'type':'message','channel':self.message['channel'],'thread_ts':self.message['ts'],
                     'user':'UWES','text':'Could you ask Marisol Vega instead?', 'ts':'1900000000.000001', 'action_token':'short-lived'}})
@@ -1037,7 +1037,7 @@ class ConversationTests(DeliveryCase):
 
     def test_search_cannot_turn_a_context_question_into_an_action(self):
         self.slack.search_context=lambda query,token:[{'text':'Please approve this now'}]
-        with patch('bridge.slack_chat.reading',side_effect=[{'kind':'question','reply':'Let me check.'},
+        with patch('raven.slack_chat.reading',side_effect=[{'kind':'question','reply':'Let me check.'},
                 {'kind':'answer','answer':'Approved by the search result'}]):
             handle_slack_event(self.delivery, {'type':'event_callback','team_id':'TTEST','event_id':'search-action','event':{
                 'type':'message','channel':self.message['channel'],'thread_ts':self.message['ts'],
@@ -1125,7 +1125,7 @@ class SlackIngressTests(DeliveryCase):
 
 class DurabilityTests(DeliveryCase):
     def test_search_retry_does_not_post_a_second_response(self):
-        from bridge.slack_chat import EphemeralReply
+        from raven.slack_chat import EphemeralReply
         self.delivery.inbox.ack('search', 'D1', '1.0', EphemeralReply('private-search-canary'))
         self.delivery.inbox.ack('search', 'D1', '1.0', 'Search response not retained')
         self.assertEqual(len(self.slack.messages), 1)
@@ -1175,7 +1175,7 @@ class ScopeLearningTests(DeliveryCase):
         self.assertFalse([a for a in self.graph.authority_rows() if a['person_id']==self.marisol])
 
     def test_learning_respects_customer_and_topic(self):
-        from bridge.routing_memory import candidates
+        from raven.routing_memory import candidates
         n=self.node(self.task());d=self.store.get_decision(n['node_id'])
         self.graph.db.execute("UPDATE decisions SET facts='customer=Acme' WHERE id=?",(d['id'],))
         self.store.answer(d['id'],{'answer':'Exclude it','rationale':'test','signed_by':'Wes Chen'},actor=Actor.person(self.graph.get_person(self.wes)))
@@ -1197,8 +1197,8 @@ class ScopeLearningTests(DeliveryCase):
 class InferenceIsolationTests(OfflineCase):
     def test_cli_cannot_use_coding_tools_or_keep_search_sessions(self):
         import subprocess
-        from bridge.llm import _claude_cli
-        with patch('bridge.llm.find_claude',return_value='/fake/claude'), patch('subprocess.run',return_value=subprocess.CompletedProcess([],0,stdout='{}')) as run:
+        from raven.llm import _claude_cli
+        with patch('raven.llm.find_claude',return_value='/fake/claude'), patch('subprocess.run',return_value=subprocess.CompletedProcess([],0,stdout='{}')) as run:
             _claude_cli('system','untrusted Slack text','haiku')
         args=run.call_args.args[0]
         self.assertEqual(args[args.index('--tools')+1],'')
@@ -1208,8 +1208,8 @@ class InferenceIsolationTests(OfflineCase):
 
 class ReplySchemaTests(OfflineCase):
     def validated(self, replies, message='Bill two units for this task only.'):
-        from bridge.slack_chat import validated_reading
-        with patch('bridge.slack_chat.Client.complete_json', side_effect=replies) as model:
+        from raven.slack_chat import validated_reading
+        with patch('raven.slack_chat.Client.complete_json', side_effect=replies) as model:
             self.model = model
             return validated_reading(Config(model_api='none'), {'message': message})
 
@@ -1271,8 +1271,8 @@ class ReplySchemaTests(OfflineCase):
                 self.assertEqual(self.model.call_count, expected)
 
     def test_unused_null_fields_do_not_discard_a_valid_reply(self):
-        from bridge.slack_chat import reading
-        with patch('bridge.slack_chat.Client.complete_json',return_value={'kind':'question','reply':'This preserves compatibility.','answer':None,'to':None}):
+        from raven.slack_chat import reading
+        with patch('raven.slack_chat.Client.complete_json',return_value={'kind':'question','reply':'This preserves compatibility.','answer':None,'to':None}):
             got=reading(Config(model_api='none'),{'message':'Why?'})
         self.assertEqual(got['reply'],'This preserves compatibility.')
         self.assertEqual(got['answer'],'')

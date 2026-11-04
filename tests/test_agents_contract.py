@@ -8,7 +8,7 @@ import hashlib
 import hmac
 import time
 
-from bridge.agents_api import AgentsAPI, result_event, safe_error
+from raven.agents_api import AgentsAPI, result_event, safe_error
 
 SDK_INSTALLED = bool(importlib.util.find_spec("openai"))
 
@@ -35,7 +35,7 @@ class SDKContractTests(unittest.TestCase):
     def setUp(self):
         import httpx2
         import openai
-        from bridge.validate_agents import sdk_contract
+        from raven.validate_agents import sdk_contract
         self.assertEqual(sdk_contract()["contract"], "passed")
         self.requests = []
         self.responses = []
@@ -54,13 +54,13 @@ class SDKContractTests(unittest.TestCase):
         self.responses = [(200, {"id": "sess_one", "environment": {"type": "none"}}), (200, None)]
         self.api.start_task(model="configured-model", instructions="configured instructions", tools=[],
                             environment={"type": "none"}, task="original task",
-                            metadata={"bridge_run": "run_one"})
+                            metadata={"raven_run": "run_one"})
         action = {"type": "function_call", "turn_id": "turn_one", "call_id": "call_one"}
         self.api.send_events("sess_one", [result_event(action, {"answer": "No"})], "delivery-one")
         create, result = self.requests
         self.assertEqual(create.url.path, "/v1/agents/sessions")
         self.assertEqual(create.headers["OpenAI-Beta"], "agents=v1")
-        self.assertEqual(json.loads(create.content)["metadata"], {"bridge_run": "run_one"})
+        self.assertEqual(json.loads(create.content)["metadata"], {"raven_run": "run_one"})
         self.assertEqual(result.url.path, "/v1/agents/sessions/sess_one/events")
         self.assertEqual(result.headers["Idempotency-Key"], "delivery-one")
         payload = json.loads(result.content)
@@ -70,9 +70,9 @@ class SDKContractTests(unittest.TestCase):
     def test_recovery_search_paginates_and_filters_metadata(self):
         self.responses = [(200, {"data": [{"id": "sess_other", "metadata": {}}], "has_more": True,
                                  "last_id": "sess_other"}),
-                          (200, {"data": [{"id": "sess_match", "metadata": {"bridge_run": "one"}}],
+                          (200, {"data": [{"id": "sess_match", "metadata": {"raven_run": "one"}}],
                                  "has_more": False})]
-        self.assertEqual(self.api.find_sessions({"bridge_run": "one"})[0]["id"], "sess_match")
+        self.assertEqual(self.api.find_sessions({"raven_run": "one"})[0]["id"], "sess_match")
         self.assertEqual(len(self.requests), 2)
         self.assertIn("after=sess_other", str(self.requests[-1].url))
 

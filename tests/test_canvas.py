@@ -18,11 +18,11 @@ from urllib.request import Request, urlopen
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase  # noqa: E402
 
-from bridge import canvas  # noqa: E402
-from bridge.config import Config  # noqa: E402
-from bridge.mcp import dispatch  # noqa: E402
+from raven import canvas  # noqa: E402
+from raven.config import Config  # noqa: E402
+from raven.mcp import dispatch  # noqa: E402
 from fixtures import ready_server as make_server  # noqa: E402
-from bridge.store import Invalid  # noqa: E402
+from raven.store import Invalid  # noqa: E402
 
 
 class CanvasCase(OfflineCase):
@@ -86,7 +86,7 @@ class CandidateTests(CanvasCase):
                                                  "Release decides?")
         self.assertTrue(history[0]["why"].startswith("8 of the last 21 changes to these files also touched "
                                                      "changelog/*"), history[0]["why"])
-        self.assertIn("bridge_finish_task (uncovered)", t["next"])
+        self.assertIn("raven_finish_task (uncovered)", t["next"])
         # A file history never changes with these is not named, unless the
         # task names it; a typo asks nobody anything.
         self.assertNotIn("Nora Docs", str(t["candidates"]))
@@ -120,8 +120,8 @@ class CandidateTests(CanvasCase):
         4 to 6. A candidate is a prompt, so a wrong one costs one read."""
         read = [{"question": "Which tables does the migration have to cover?",
                  "from": "the legacy virtio-net header"}]
-        with patch("bridge.config.Config.semantic_retrieval", property(lambda self: True)), \
-             patch("bridge.llm.name_decisions", return_value=read) as namer:
+        with patch("raven.config.Config.semantic_retrieval", property(lambda self: True)), \
+             patch("raven.llm.name_decisions", return_value=read) as namer:
             t = self.start("Remove the legacy virtio-net header", paths="hw/net/virtio-net.c",
                            goal="Drop the legacy header. It breaks compat for old guests.")
             self.assertTrue(canvas.wait_for_background(10))
@@ -150,7 +150,7 @@ class CandidateTests(CanvasCase):
         tree = canvas.get_tree(self.store, t["task_id"])
         self.assertEqual(tree["nodes"], [])
         self.assertIn("Raven sees", tree["next"])
-        self.assertIn("bridge_add_node", tree["next"])
+        self.assertIn("raven_add_node", tree["next"])
 
     def test_a_task_with_nothing_to_go_on_proposes_nothing(self):
         t = self.start("Fix the typo in the release notes")
@@ -209,7 +209,7 @@ class FinishTests(CanvasCase):
         corrected an answer to three states, the agent reported that its
         change matched, and the diff carried one of them."""
         read = {"verdict": "departs", "why": "the diff sets the default to the old controller"}
-        with patch("bridge.llm.check_conformance", return_value=read):
+        with patch("raven.llm.check_conformance", return_value=read):
             node, done = self.finished(diff="--- a/hw/riscv/virt.c\n+++ b/hw/riscv/virt.c\n+  use_plic = true;")
         self.assertEqual([f["verdict"] for f in done["follows"]], ["departs"])
         self.assertEqual(done["follows"][0]["node_id"], node["node_id"])
@@ -240,7 +240,7 @@ class FinishTests(CanvasCase):
         def read(cfg, question, answer, diff, others=()):
             seen.append((answer, [a for _, a in others]))
             return {"verdict": "follows", "why": "", "requirements": []}
-        with patch("bridge.llm.check_conformance", side_effect=read):
+        with patch("raven.llm.check_conformance", side_effect=read):
             canvas.finish_task(self.store, {"task_id": t["task_id"], "diff": "+  use_aplic = true;"})
         self.assertEqual(sorted(seen), [("Keep it behind a property", ["Use the aplic"]),
                                         ("Use the aplic", ["Keep it behind a property"])])
@@ -262,7 +262,7 @@ class FinishTests(CanvasCase):
 
         def read(cfg, question, answer, diff, others=()):
             return {"verdict": "follows", "why": ""} if answer == "Use the aplic" else {}
-        with patch("bridge.llm.check_conformance", side_effect=read):
+        with patch("raven.llm.check_conformance", side_effect=read):
             done = canvas.finish_task(self.store, {"task_id": t["task_id"], "diff": "+  use_aplic = true;"})
         self.assertEqual([f["node_id"] for f in done["follows"]], [ids[0]])
         self.assertEqual([u["node_id"] for u in done["unread"]], [ids[1]])
@@ -286,15 +286,15 @@ class FinishTests(CanvasCase):
         def read(cfg, question, answer, diff, others=()):
             together.wait()  # only returns once both reads are running
             return {"verdict": "follows", "why": answer}
-        with patch("bridge.llm.check_conformance", side_effect=read):
+        with patch("raven.llm.check_conformance", side_effect=read):
             done = canvas.finish_task(self.store, {"task_id": t["task_id"], "diff": "+  use_aplic = true;"})
         self.assertEqual([f["why"] for f in done["follows"]], ["Use the aplic", "Keep it behind a property"])
 
     def test_a_reason_is_whole_or_cut_at_a_word_and_says_so(self):
         """Measured live on a397f1c: five of seven reasons came back cut at
         300 characters, mid-word ("used by sleep_for_r"), with no mark."""
-        from bridge import llm
-        env = patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1", "BRIDGE_CLAUDE_BIN": "/nonexistent/claude"})
+        from raven import llm
+        env = patch.dict(os.environ, {"RAVEN_SEMANTIC": "1", "RAVEN_CLAUDE_BIN": "/nonexistent/claude"})
         env.start()
         self.addCleanup(env.stop)
         medium = ("The diff adds retry_after_jitter as a trailing keyword argument defaulting to 0.0, validates it "
@@ -323,13 +323,13 @@ class FinishTests(CanvasCase):
         self.store.answer(node["node_id"], {"answer": "Use the aplic", "rationale": "r", "signed_by": "Oriel Vance",
                                             "expected_updated_at": row["updated_at"]})
         reqs = [{"needs": "aplic is the default", "kind": "must", "found": "honored", "state": "ok"}]
-        with patch("bridge.llm.check_conformance", return_value={"verdict": "follows", "why": "w", "requirements": reqs}):
+        with patch("raven.llm.check_conformance", return_value={"verdict": "follows", "why": "w", "requirements": reqs}):
             done = canvas.finish_task(self.store, {"task_id": t["task_id"], "diff": "+  use_aplic = true;"})
         self.assertEqual(done["follows"][0]["requirements"], reqs)
 
     def test_a_reading_with_no_reason_names_what_it_rests_on(self):
-        from bridge import llm
-        env = patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1", "BRIDGE_CLAUDE_BIN": "/nonexistent/claude"})
+        from raven import llm
+        env = patch.dict(os.environ, {"RAVEN_SEMANTIC": "1", "RAVEN_CLAUDE_BIN": "/nonexistent/claude"})
         env.start()
         self.addCleanup(env.stop)
         reply = {"status": "complete", "requirements": [{"needs": "negatives stay invalid", "kind": "must", "found": "honored",
@@ -344,7 +344,7 @@ class FinishTests(CanvasCase):
         self.assertEqual(read["why"], "Read as doing each thing it requires: negatives stay invalid; zero stays the default")
 
     def test_the_conformance_prompt_lists_the_other_answers_and_not_its_own(self):
-        from bridge import llm
+        from raven import llm
         prompts = []
 
         def complete_json(self, purpose, system, prompt, **kw):
@@ -355,7 +355,7 @@ class FinishTests(CanvasCase):
                 return {"status": "complete", "checks": [{"n": 1, "counterexample": "", "at": "", "not_shown": ""}]}
             return {"status": "complete", "requirements": [{"needs": "negatives stay invalid", "kind": "must", "found": "present",
                                       "at": "if value < 0: raise InvalidHeader(value)"}], "why": ""}
-        env = patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1", "BRIDGE_CLAUDE_BIN": "/nonexistent/claude"})
+        env = patch.dict(os.environ, {"RAVEN_SEMANTIC": "1", "RAVEN_CLAUDE_BIN": "/nonexistent/claude"})
         env.start()
         self.addCleanup(env.stop)
         with patch.object(llm.Client, "complete_json", complete_json):
@@ -375,7 +375,7 @@ class FinishTests(CanvasCase):
         """Measured on the hard end-to-end run: "POST/PATCH must not be
         retried after connect" came back as a must_not the diff showed,
         and a change that kept the rule read as departing from it."""
-        from bridge import llm
+        from raven import llm
         replies = []
 
         def complete_json(self, purpose, system, prompt, **kw):
@@ -384,7 +384,7 @@ class FinishTests(CanvasCase):
             if purpose == "counterexample":
                 return {"status": "complete", "checks": []}
             return {"status": "complete", "requirements": replies.pop(0), "why": ""}
-        env = patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1", "BRIDGE_CLAUDE_BIN": "/nonexistent/claude"})
+        env = patch.dict(os.environ, {"RAVEN_SEMANTIC": "1", "RAVEN_CLAUDE_BIN": "/nonexistent/claude"})
         env.start()
         self.addCleanup(env.stop)
         rule = "POST/PATCH are never retried after the socket connected"
@@ -424,12 +424,12 @@ class FinishTests(CanvasCase):
         "+        self._sleep_within_deadline(backoff)\n")
 
     def _conformance_env(self):
-        env = patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1", "BRIDGE_CLAUDE_BIN": "/nonexistent/claude"})
+        env = patch.dict(os.environ, {"RAVEN_SEMANTIC": "1", "RAVEN_CLAUDE_BIN": "/nonexistent/claude"})
         env.start()
         self.addCleanup(env.stop)
 
     def test_missing_callable_outside_diff_is_uncertain_not_a_departure(self):
-        from bridge import llm
+        from raven import llm
         self._conformance_env()
         diff = ('diff --git a/retry.py b/retry.py\n'
                 '@@ -1,2 +1,3 @@ def new(self):\n'
@@ -447,7 +447,7 @@ class FinishTests(CanvasCase):
         self.assertNotIn('does not copy',read['why'])
 
     def test_missing_callable_shown_in_hunk_context_remains_a_departure(self):
-        from bridge import llm
+        from raven import llm
         self._conformance_env()
         diff = ('diff --git a/retry.py b/retry.py\n'
                 '@@ -1,2 +1,3 @@ def increment(self):\n'
@@ -463,7 +463,7 @@ class FinishTests(CanvasCase):
         """Measured live on eb9d22d: "when time left is zero or negative, no
         further retry is permitted" read as honored with nothing located,
         and the change let the next attempt through."""
-        from bridge import llm
+        from raven import llm
         self._conformance_env()
         need = "when time left is zero or negative, no further retry is permitted"
         cases = [
@@ -493,7 +493,7 @@ class FinishTests(CanvasCase):
         """Measured live on 63eb671: "use a descriptive unassigned filename"
         quoted the diff's own `diff --git` header for the new changelog
         fragment, the line was in the diff, and the check said it was not."""
-        from bridge import llm
+        from raven import llm
         self._conformance_env()
         diff = ("diff --git a/changelog/backoff-deadline.feature.rst b/changelog/backoff-deadline.feature.rst\n"
                 "new file mode 100644\n--- /dev/null\n+++ b/changelog/backoff-deadline.feature.rst\n"
@@ -520,7 +520,7 @@ class FinishTests(CanvasCase):
     def test_a_counterexample_makes_a_met_requirement_unclear_and_leads_the_reason(self):
         """The eb9d22d case end to end: read as honored at the new check, and
         broken by the unchanged early return two lines above it."""
-        from bridge import llm
+        from raven import llm
         self._conformance_env()
         need = "When time left is zero or negative, no further retry is permitted"
         first = {"status": "complete", "requirements": [
@@ -571,7 +571,7 @@ class FinishTests(CanvasCase):
         """Measured live on the conformance panel: a path through a branch
         the diff does not show, pinned to a test's name, turned a correct
         reading unclear."""
-        from bridge import llm
+        from raven import llm
         self._conformance_env()
         diff = (self.DEADLINE_DIFF + "diff --git a/test/test_retry.py b/test/test_retry.py\n"
                 "+++ b/test/test_retry.py\n@@ -1,0 +1,2 @@\n+def test_spent_budget_refuses_the_sleep(self):\n"
@@ -593,7 +593,7 @@ class FinishTests(CanvasCase):
         """Measured live: asked for counterexamples in general, the search
         named the zero-backoff return in one run of four. Each listed exit
         now gets its own verdict."""
-        from bridge import llm
+        from raven import llm
         self._conformance_env()
         need = "When time left is zero or negative, no further retry is permitted"
         first = {"status": "complete", "requirements": [
@@ -618,7 +618,7 @@ class FinishTests(CanvasCase):
         self.assertTrue(read["why"].startswith(f'Possible counterexample to "{need}"'), read["why"])
 
     def test_a_failed_counterexample_search_cannot_report_follows(self):
-        from bridge import llm
+        from raven import llm
         self._conformance_env()
         first = {"status": "complete", "requirements": [{"needs": "n", "kind": "must", "found": "honored",
                                    "at": "if remaining is not None and duration >= remaining:"}], "why": "w"}
@@ -636,7 +636,7 @@ class FinishTests(CanvasCase):
         self.assertEqual(read["unexamined"], ["no search for counterexamples: the model did not answer"])
 
     def test_what_a_long_diff_leaves_unread_is_named(self):
-        from bridge import llm
+        from raven import llm
         self._conformance_env()
         diff = self.DEADLINE_DIFF + "+# padding\n" * 3000
         reply = {"status": "complete", "requirements": [{"needs": "n", "kind": "must", "found": "missing"}], "why": "w"}
@@ -659,7 +659,7 @@ class FinishTests(CanvasCase):
                                     "at": "if (!s->aia) {", "located": True}}]
         read = {"verdict": "unclear", "why": "Possible counterexample", "requirements": reqs,
                 "unexamined": ["virt_machine_init, which the diff does not show"]}
-        with patch("bridge.llm.check_conformance", return_value=read):
+        with patch("raven.llm.check_conformance", return_value=read):
             done = canvas.finish_task(self.store, {"task_id": t["task_id"], "diff": "+  use_aplic = true;"})
         self.assertEqual(done["follows"][0]["unexamined"], ["virt_machine_init, which the diff does not show"])
         caveat = done["caveat"]
@@ -690,13 +690,13 @@ class FinishTests(CanvasCase):
             release.wait(10)
             return {"verdict": "departs", "why": "the default stays the plic", "requirements": []}
         diff = "+  use_plic = true;"
-        with patch("bridge.llm.check_conformance", side_effect=slow), patch.object(canvas, "FINISH_WAIT", 0.3):
+        with patch("raven.llm.check_conformance", side_effect=slow), patch.object(canvas, "FINISH_WAIT", 0.3):
             first = canvas.finish_task(self.store, {"task_id": t["task_id"], "diff": diff})
             self.assertEqual(first["status"], "completed")
             self.assertEqual(first["review"]["status"], "running")
             self.assertEqual(first["follows"], [])
             self.assertIn("still reading the diff", first["caveat"])
-            self.assertIn("read it on bridge_get_tree (review)", first["caveat"])
+            self.assertIn("read it on raven_get_tree (review)", first["caveat"])
             running = canvas.get_tree(self.store, t["task_id"])["review"]
             self.assertEqual((running["id"], running["status"]), (first["review"]["id"], "running"))
             # A retry while it runs waits on the same reading; it does not start another.
@@ -717,7 +717,7 @@ class FinishTests(CanvasCase):
         self.assertIn("1 depart from what was signed", later["caveat"])
         self.assertEqual(len(calls), 1)
         # Another diff is another reading.
-        with patch("bridge.llm.check_conformance", return_value={"verdict": "follows", "why": "w", "requirements": []}):
+        with patch("raven.llm.check_conformance", return_value={"verdict": "follows", "why": "w", "requirements": []}):
             changed = canvas.finish_task(self.store, {"task_id": t["task_id"], "diff": "+  use_aplic = true;"})
         self.assertNotEqual(changed["review"]["id"], first["review"]["id"])
         self.assertEqual([f["verdict"] for f in changed["follows"]], ["follows"])
@@ -734,7 +734,7 @@ class FinishTests(CanvasCase):
                                             "expected_updated_at": row["updated_at"]})
         diff = "+  use_aplic = true;"
         follows = {"verdict": "follows", "why": "the aplic is the default", "requirements": []}
-        with patch("bridge.llm.check_conformance", return_value=follows):
+        with patch("raven.llm.check_conformance", return_value=follows):
             done = canvas.finish_task(self.store, {"task_id": t["task_id"], "diff": diff})
         tree = canvas.get_tree(self.store, t["task_id"])
         self.assertEqual(tree["review"]["status"], "done")
@@ -749,11 +749,11 @@ class FinishTests(CanvasCase):
         self.assertEqual([(x["node_id"], x["why"]) for x in review["stale"]],
                          [(node["node_id"], "its signed answer changed after this reading")])
         self.assertTrue(review["follows"][0]["stale"])
-        self.assertIn(f"needs refreshing for 1 decision ({node['node_id']}): call bridge_finish_task again",
+        self.assertIn(f"needs refreshing for 1 decision ({node['node_id']}): call raven_finish_task again",
                       tree["next"])
         # Read again against the answers as they stand: current, not stale.
         departs = {"verdict": "departs", "why": "the diff makes the aplic the default", "requirements": []}
-        with patch("bridge.llm.check_conformance", return_value=departs):
+        with patch("raven.llm.check_conformance", return_value=departs):
             again = canvas.finish_task(self.store, {"task_id": t["task_id"], "diff": diff})
         self.assertNotEqual(again["review"]["id"], done["review"]["id"])
         self.assertEqual([f["verdict"] for f in again["follows"]], ["departs"])
@@ -794,7 +794,7 @@ class FinishTests(CanvasCase):
         self.assertEqual(canvas.get_tree(self.store, t["task_id"])["review"]["status"], "stale")
 
     def test_each_decision_reads_its_own_files_first(self):
-        from bridge import llm
+        from raven import llm
         diff = ("diff --git a/changelog/1.rst b/changelog/1.rst\n+note\n"
                 "diff --git a/test/test_virt.py b/test/test_virt.py\n+def test_x(): pass\n"
                 "diff --git a/hw/riscv/virt.c b/hw/riscv/virt.c\n+  use_aplic = true;\n")
@@ -820,7 +820,7 @@ class FinishTests(CanvasCase):
         diff = ("diff --git a/hw/riscv/virt.c b/hw/riscv/virt.c\n+  use_aplic = true;\n"
                 "diff --git a/docs/about.rst b/docs/about.rst\n+The board now uses the aplic by default.\n"
                 "diff --git a/tests/test_virt.py b/tests/test_virt.py\n+def test_aplic(): pass\n")
-        with patch("bridge.llm.check_conformance", return_value={"verdict": "follows", "why": "w", "requirements": []}):
+        with patch("raven.llm.check_conformance", return_value={"verdict": "follows", "why": "w", "requirements": []}):
             done = canvas.finish_task(self.store, {"task_id": t["task_id"], "diff": diff})
         self.assertEqual(done["uncovered"], [{"path": "docs/about.rst", "decider": "Theo Release", "scope": "docs/*"}])
         self.assertIn("The diff changes 1 file whose decider was asked nothing on this task: docs/about.rst "
@@ -832,7 +832,7 @@ class FinishTests(CanvasCase):
         row = self.store.get_decision(docs_node["node_id"])
         self.store.answer(docs_node["node_id"], {"answer": "Yes", "rationale": "r", "signed_by": "Theo Release",
                                                  "expected_updated_at": row["updated_at"]})
-        with patch("bridge.llm.check_conformance", return_value={"verdict": "follows", "why": "w", "requirements": []}):
+        with patch("raven.llm.check_conformance", return_value={"verdict": "follows", "why": "w", "requirements": []}):
             covered = canvas.finish_task(self.store, {"task_id": t2["task_id"],
                                                       "diff": "diff --git a/docs/about.rst b/docs/about.rst\n+x\n"})
         self.assertEqual(covered["uncovered"], [])
@@ -862,13 +862,13 @@ class FinishTests(CanvasCase):
         number as a guess and stopped, and by then the task was finished: the
         decision could no longer be written."""
         t, diff = self.engaged_with_docs()
-        with patch("bridge.llm.check_conformance", return_value={"verdict": "follows", "why": "w", "requirements": []}):
+        with patch("raven.llm.check_conformance", return_value={"verdict": "follows", "why": "w", "requirements": []}):
             with self.assertRaises(Invalid) as refused:
                 canvas.finish_task(self.store, {"task_id": t["task_id"], "diff": diff})
             said = str(refused.exception)
             self.assertIn("1 file whose decider was asked nothing on this task: docs/about.rst (Theo Release decides "
                           "docs/*)", said)
-            self.assertIn("bridge_add_node (paths=<the file>)", said)
+            self.assertIn("raven_add_node (paths=<the file>)", said)
             self.assertIn("uncovered set to one line per file", said)
             self.assertNotEqual(self.store.graph.get_task(t["task_id"])["status"], "completed")
             # A word is not a reason.
@@ -893,7 +893,7 @@ class FinishTests(CanvasCase):
         row = self.store.get_decision(docs_node["node_id"])
         self.store.answer(docs_node["node_id"], {"answer": "Yes, one sentence", "rationale": "r",
                                                  "signed_by": "Theo Release", "expected_updated_at": row["updated_at"]})
-        with patch("bridge.llm.check_conformance", return_value={"verdict": "follows", "why": "w", "requirements": []}):
+        with patch("raven.llm.check_conformance", return_value={"verdict": "follows", "why": "w", "requirements": []}):
             done = canvas.finish_task(self.store, {"task_id": t["task_id"], "diff": diff})
         self.assertEqual(done["status"], "completed")
         self.assertEqual(done["uncovered"], [])
@@ -937,7 +937,7 @@ class FinishTests(CanvasCase):
     def test_a_diff_with_no_model_to_read_it_is_not_asked_for_again(self):
         """Measured on the Docker install, which has no model by default:
         the agent passed its diff and was told to pass its diff."""
-        with patch("bridge.llm.check_conformance", return_value=None):
+        with patch("raven.llm.check_conformance", return_value=None):
             _, done = self.finished(diff="--- a/hw/riscv/virt.c\n+++ b/hw/riscv/virt.c\n+  use_aplic = true;")
         self.assertEqual(done["follows"], [])
         self.assertIn("did not read the diff you supplied", done["caveat"])
@@ -971,10 +971,10 @@ class ModelTriageTests(CanvasCase):
     not lower one."""
 
     def kickoff(self, title, advice, paths="hw/net/virtio-net.c"):
-        env = patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1", "BRIDGE_CLAUDE_BIN": "/nonexistent/claude"})
+        env = patch.dict(os.environ, {"RAVEN_SEMANTIC": "1", "RAVEN_CLAUDE_BIN": "/nonexistent/claude"})
         env.start()
         self.addCleanup(env.stop)
-        with patch("bridge.llm.model_triage", return_value=advice):
+        with patch("raven.llm.model_triage", return_value=advice):
             result = canvas.start_task(self.store, Config(), {
                 "title": title, "repo": "qemulike", "agent": "test", "paths": paths,
                 "requester": "Tamsin Reed <tamsin@synthco.example>"})
@@ -1019,7 +1019,7 @@ class ModelTriageTests(CanvasCase):
 
 
 class KickoffTests(CanvasCase):
-    def test_a_task_bridge_cannot_place_is_unplaced_and_judged_once_the_agent_names_the_files(self):
+    def test_a_task_raven_cannot_place_is_unplaced_and_judged_once_the_agent_names_the_files(self):
         """Kicked off before any work, as the protocol asks, an agent has no
         paths yet. Measured on a real task, a pass here sent the agent off
         to settle a token lifetime alone in an area whose owner was on the
@@ -1175,7 +1175,7 @@ class KickoffTests(CanvasCase):
         self.assertEqual(t["discovery"]["areas"], [])
         self.assertEqual(t["verdict"], "unplaced", t["why"])
 
-    def test_a_repository_bridge_has_never_read_is_not_a_repository_with_nothing_in_it(self):
+    def test_a_repository_raven_has_never_read_is_not_a_repository_with_nothing_in_it(self):
         """The two read identically: no area, no prior decision, a
         confident pass. Measured on Grafana, a host passed its own
         worktree directory as `repo` and the sibling task passed on a
@@ -1237,7 +1237,7 @@ class KickoffTests(CanvasCase):
         self.assertIn("'Fix InvalidHeader for nonstandard Retry-After values'", str(refused.exception))
         self.assertIn("call again with that title or the goal as it was given", str(refused.exception))
 
-    def test_how_the_work_goes_through_bridge_is_not_a_reason_and_a_behaviour_change_is(self):
+    def test_how_the_work_goes_through_raven_is_not_a_reason_and_a_behaviour_change_is(self):
         """Measured live on urllib3: the rules engaged on "obtain needed
         policy decisions through Raven", the host's process, and missed
         "without unexpectedly changing existing retry behavior", the task."""
@@ -1258,7 +1258,7 @@ class KickoffTests(CanvasCase):
         about the work. What the requester wrote decides it."""
         plain = "Bump the pinned toolchain in scripts/ to the version the build already uses."
         rules = ("\n\nWorkflow instructions:\n"
-                 "1. Call bridge_start_task before you begin.\n"
+                 "1. Call raven_start_task before you begin.\n"
                  "2. You are authorized to change files under scripts/.\n"
                  "3. Do not cut a release; the maintainers handle releases.\n")
         loose = "\n\nYou are authorized to change files. Do not cut a release; the maintainers handle releases."
@@ -1446,7 +1446,7 @@ class NodeTests(CanvasCase):
         """The ranked candidates on the row are the ladder's own route,
         best first: the head is the owner, with evidence and a score, and
         a node carries the same list."""
-        from bridge.ladder import ask
+        from raven.ladder import ask
         run = self.store.add_run({"title": "t", "agent": "test", "repo": "qemulike"})
         row = ask(self.store, self.cfg, run["id"], "Should hw/riscv/virt.c add the imsics compatible string?",
                   context="c", requester="Tamsin Reed <tamsin@synthco.example>")
@@ -1722,7 +1722,7 @@ class TreeReadTests(CanvasCase):
         self.assertEqual((tree["counts"]["resolved"], tree["counts"]["signoff_required"]), (1, 1))
         self.assertEqual(tree["counts"].get("pending", 0) + tree["counts"].get("duplicate", 0), 9)
         self.assertIn("sign-off wanted", tree["next"])
-        self.assertIn("bridge_finish_task is refused", tree["next"])
+        self.assertIn("raven_finish_task is refused", tree["next"])
         self.assertNotIn("discovery", tree)
         self.assertEqual(tree["verdict"], t["verdict"])
         self.assertEqual(tree["verdict_why"], t["why"])
@@ -1785,7 +1785,7 @@ class ClientRefTests(CanvasCase):
 
     def test_a_write_that_produced_nothing_gives_the_ref_back(self):
         t = self.start("Rework hw/riscv/virt.c interrupt routing", paths="hw/riscv/virt.c")
-        with patch("bridge.ladder.ask", side_effect=RuntimeError("the ladder fell over")):
+        with patch("raven.ladder.ask", side_effect=RuntimeError("the ladder fell over")):
             with self.assertRaises(RuntimeError):
                 self.add(t["task_id"])
         self.assertEqual(self.store.list_decisions()["total"], 0)
@@ -1842,10 +1842,10 @@ class BriefTests(CanvasCase):
         # Semantic on, but no backend to reach: the other model rungs fall
         # through to their deterministic ones instead of shelling out to
         # whatever CLI happens to be on this machine's PATH.
-        env = patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1", "BRIDGE_CLAUDE_BIN": "/nonexistent/claude"})
+        env = patch.dict(os.environ, {"RAVEN_SEMANTIC": "1", "RAVEN_CLAUDE_BIN": "/nonexistent/claude"})
         env.start()
         self.addCleanup(env.stop)
-        with patch("bridge.llm.compose_brief", spy):
+        with patch("raven.llm.compose_brief", spy):
             t = self.start("Rework hw/riscv/virt.c interrupt routing, changing the default",
                            paths="hw/riscv/virt.c")
             node = canvas.add_node(self.store, Config(), {
@@ -1868,7 +1868,7 @@ class BriefTests(CanvasCase):
         self.assertIn("interrupt controller", seen["question"])
 
     def test_the_brief_prompt_carries_no_routing_or_approval_facts(self):
-        from bridge import llm
+        from raven import llm
         prompts = []
 
         def complete_json(self, purpose, system, prompt, **kw):
@@ -1876,7 +1876,7 @@ class BriefTests(CanvasCase):
                 return {"conditions": []}
             prompts.append((system, prompt))
             return {"claims": []} if purpose == "brief_check" else {"brief": "Pick the header list."}
-        env = patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1", "BRIDGE_CLAUDE_BIN": "/nonexistent/claude"})
+        env = patch.dict(os.environ, {"RAVEN_SEMANTIC": "1", "RAVEN_CLAUDE_BIN": "/nonexistent/claude"})
         env.start()
         self.addCleanup(env.stop)
         with patch.object(llm.Client, "complete_json", complete_json):
@@ -1915,7 +1915,7 @@ class BriefTests(CanvasCase):
         "backoff retry logic clamps the jittered value to its max, setting a precedent for one approach.")
 
     def brief(self, text, claims):
-        from bridge import llm
+        from raven import llm
         calls = []
 
         def complete_json(self, purpose, system, prompt, **kw):
@@ -1927,7 +1927,7 @@ class BriefTests(CanvasCase):
             if isinstance(claims, Exception):
                 raise claims
             return claims
-        env = patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1", "BRIDGE_CLAUDE_BIN": "/nonexistent/claude"})
+        env = patch.dict(os.environ, {"RAVEN_SEMANTIC": "1", "RAVEN_CLAUDE_BIN": "/nonexistent/claude"})
         env.start()
         self.addCleanup(env.stop)
         why: list = []
@@ -1958,13 +1958,13 @@ class BriefTests(CanvasCase):
             out, why, _ = self.brief(faithful, claims)
             self.assertEqual(out, "", claims)
             self.assertTrue(why, claims)
-        from bridge.llm import LLMError
+        from raven.llm import LLMError
         out, why, _ = self.brief(faithful, LLMError("down"))
         self.assertEqual((out, why), ("", ["the brief could not be checked against the agent's words"]))
 
     def test_a_withheld_brief_leaves_the_agents_words_to_the_owner(self):
-        from bridge import delivery, llm
-        env = patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1", "BRIDGE_CLAUDE_BIN": "/nonexistent/claude"})
+        from raven import delivery, llm
+        env = patch.dict(os.environ, {"RAVEN_SEMANTIC": "1", "RAVEN_CLAUDE_BIN": "/nonexistent/claude"})
         env.start()
         self.addCleanup(env.stop)
 
@@ -2265,7 +2265,7 @@ class RecordGateTests(CanvasCase):
 
 class ProtocolTests(CanvasCase):
     def test_initialize_and_tool_discovery_explain_findings_versus_decisions(self):
-        from bridge.host_client import DECISION_GUIDANCE
+        from raven.host_client import DECISION_GUIDANCE
         init = dispatch(self.store, {"jsonrpc": "2.0", "id": 1, "method": "initialize"})
         instructions = init["result"]["instructions"]
         self.assertIn(DECISION_GUIDANCE, instructions)
@@ -2276,7 +2276,7 @@ class ProtocolTests(CanvasCase):
             self.assertIn(boundary, instructions)
         listed = dispatch(self.store, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         tools = {t['name']: t for t in listed['result']['tools']}
-        add = tools['bridge_add_node']
+        add = tools['raven_add_node']
         self.assertIn('judgment or authorization choice', add['description'])
         fields = add['inputSchema']['properties']
         self.assertIn('static code/test findings', fields['context']['description'])
@@ -2285,8 +2285,8 @@ class ProtocolTests(CanvasCase):
         self.assertIn('Known current applicability facts', fields['facts']['description'])
         self.assertEqual(add['inputSchema']['required'], ['task_id', 'question'])
         self.assertFalse(add['inputSchema']['additionalProperties'])
-        self.assertIn('stays agent-origin, unsigned', tools['bridge_settle_node']['description'])
-        self.assertIn('settlement does not clear it', tools['bridge_settle_node']['description'])
+        self.assertIn('stays agent-origin, unsigned', tools['raven_settle_node']['description'])
+        self.assertIn('settlement does not clear it', tools['raven_settle_node']['description'])
 
     def test_cited_code_findings_stay_context_of_one_real_judgment(self):
         task = self.start('Decide network compatibility', paths='hw/net/virtio-net.c')
@@ -2335,10 +2335,10 @@ class ProtocolTests(CanvasCase):
 
     def test_mcp_tools_carry_the_protocol(self):
         init = dispatch(self.store, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
-        self.assertIn("bridge_start_task the moment a task is kicked off", init["result"]["instructions"])
+        self.assertIn("raven_start_task the moment a task is kicked off", init["result"]["instructions"])
         listed = dispatch(self.store, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
         names = [t["name"] for t in listed["result"]["tools"]]
-        for name in ("bridge_start_task", "bridge_add_node", "bridge_settle_node", "bridge_get_tree", "bridge_finish_task"):
+        for name in ("raven_start_task", "raven_add_node", "raven_settle_node", "raven_get_tree", "raven_finish_task"):
             self.assertIn(name, names)
 
         def call(name, args):
@@ -2347,37 +2347,37 @@ class ProtocolTests(CanvasCase):
             self.assertFalse(r["result"]["isError"], r["result"]["content"][0]["text"])
             return json.loads(r["result"]["content"][0]["text"])
 
-        t = call("bridge_start_task", {"title": "Drop the legacy header from hw/net/virtio-net.c, breaking compat",
+        t = call("raven_start_task", {"title": "Drop the legacy header from hw/net/virtio-net.c, breaking compat",
                                        "repo": "acme/qemulike", "requester": "Tamsin Reed", "paths": "hw/net/virtio-net.c"})
         self.assertEqual(t["verdict"], "engage")
-        n = call("bridge_add_node", {"task_id": t["task_id"], "question": "Should hw/net/virtio-net.c drop the legacy header?",
+        n = call("raven_add_node", {"task_id": t["task_id"], "question": "Should hw/net/virtio-net.c drop the legacy header?",
                                      "context": "old guests", "paths": "hw/net/virtio-net.c", "client_ref": "a"})
         self.assertEqual(n["owner"], "Kwame Asante")
-        tree = call("bridge_get_tree", {"task_id": t["task_id"]})
+        tree = call("raven_get_tree", {"task_id": t["task_id"]})
         self.assertEqual(tree["counts"]["pending"], 1)
-        s = call("bridge_settle_node", {"task_id": t["task_id"], "node_id": n["node_id"], "answer": "keep it"})
+        s = call("raven_settle_node", {"task_id": t["task_id"], "node_id": n["node_id"], "answer": "keep it"})
         self.assertEqual(s["signoff"], "required")
         self.assertFalse(s["authorized"])
         refused = dispatch(self.store, {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
-                                        "params": {"name": "bridge_finish_task", "arguments": {"task_id": t["task_id"]}}})
+                                        "params": {"name": "raven_finish_task", "arguments": {"task_id": t["task_id"]}}})
         self.assertTrue(refused["result"]["isError"])
         self.assertIn("sign-off wanted from Kwame Asante", refused["result"]["content"][0]["text"])
         self.sign(n["node_id"], "Kwame Asante")
         # Kwame signed after the agent last read the tree: it has not seen
         # what he signed, so it reads before it finishes.
         unread = dispatch(self.store, {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
-                                       "params": {"name": "bridge_finish_task", "arguments": {"task_id": t["task_id"]}}})
+                                       "params": {"name": "raven_finish_task", "arguments": {"task_id": t["task_id"]}}})
         self.assertTrue(unread["result"]["isError"])
         self.assertIn("after you last read it", unread["result"]["content"][0]["text"])
         self.assertIn("Kwame Asante", unread["result"]["content"][0]["text"])
-        call("bridge_get_tree", {"task_id": t["task_id"]})
-        done = call("bridge_finish_task", {"task_id": t["task_id"]})
+        call("raven_get_tree", {"task_id": t["task_id"]})
+        done = call("raven_finish_task", {"task_id": t["task_id"]})
         self.assertEqual(done["status"], "completed")
 
     def test_an_answer_a_wait_on_the_node_returned_in_full_counts_as_read(self):
-        """Measured on the demo run: bridge_wait on the node returned the
+        """Measured on the demo run: raven_wait on the node returned the
         owner's signed answer in full, the agent built its change on it,
-        and bridge_finish_task was refused once for an answer it had not
+        and raven_finish_task was refused once for an answer it had not
         seen, costing a re-read of the tree and twenty seconds. What a
         wait returned in full is read; the guard stays for what it did
         not return."""
@@ -2386,23 +2386,23 @@ class ProtocolTests(CanvasCase):
                                       "params": {"name": name, "arguments": args}})
             return r["result"]["isError"], r["result"]["content"][0]["text"]
 
-        _, text = call("bridge_start_task", {"title": "Drop the legacy header from hw/net/virtio-net.c, breaking compat",
+        _, text = call("raven_start_task", {"title": "Drop the legacy header from hw/net/virtio-net.c, breaking compat",
                                              "repo": "acme/qemulike", "paths": "hw/net/virtio-net.c"})
         task = json.loads(text)["task_id"]
-        _, text = call("bridge_add_node", {"task_id": task, "question": "Should hw/net/virtio-net.c drop the legacy header?",
+        _, text = call("raven_add_node", {"task_id": task, "question": "Should hw/net/virtio-net.c drop the legacy header?",
                                            "paths": "hw/net/virtio-net.c", "client_ref": "a"})
         node = json.loads(text)
-        _, text = call("bridge_get_tree", {"task_id": task})
+        _, text = call("raven_get_tree", {"task_id": task})
         since = json.loads(text)["observed_at"]
         row = self.store.get_decision(node["node_id"])
         self.store.answer(node["node_id"], {"answer": "Keep it one more release", "rationale": "old guests",
                                             "signed_by": "Kwame Asante", "expected_updated_at": row["updated_at"]})
-        _, text = call("bridge_wait", {"task_id": task, "node_id": node["node_id"], "since": since, "timeout": "0"})
+        _, text = call("raven_wait", {"task_id": task, "node_id": node["node_id"], "since": since, "timeout": "0"})
         waited = json.loads(text)
         self.assertEqual([c["answer"] for c in waited["changed"]], ["Keep it one more release"])
         self.assertTrue(waited["read_acknowledged"])
-        self.assertNotIn("read bridge_get_tree before finishing", waited["next"])
-        refused, text = call("bridge_finish_task", {"task_id": task})
+        self.assertNotIn("read raven_get_tree before finishing", waited["next"])
+        refused, text = call("raven_finish_task", {"task_id": task})
         self.assertFalse(refused, text)
         self.assertEqual(json.loads(text)["status"], "completed")
 
@@ -2418,15 +2418,15 @@ class ProtocolTests(CanvasCase):
                                       "params": {"name": name, "arguments": args}})
             return r["result"]["isError"], r["result"]["content"][0]["text"]
 
-        _, text = call("bridge_start_task", {"title": "Drop the legacy header from hw/net/virtio-net.c, breaking compat",
+        _, text = call("raven_start_task", {"title": "Drop the legacy header from hw/net/virtio-net.c, breaking compat",
                                              "repo": "acme/qemulike", "paths": "hw/net/virtio-net.c"})
         task = json.loads(text)["task_id"]
-        _, text = call("bridge_add_node", {"task_id": task, "question": "Should hw/net/virtio-net.c drop the legacy header?",
+        _, text = call("raven_add_node", {"task_id": task, "question": "Should hw/net/virtio-net.c drop the legacy header?",
                                            "paths": "hw/net/virtio-net.c", "client_ref": "a"})
         node = json.loads(text)
         self.assertEqual(node["status"], "pending")
         self.assertIn("do not settle this in code yourself", node["next"])
-        _, text = call("bridge_add_node", {"task_id": task, "question": "Should hw/net/virtio-net.c keep the old guest quirk?",
+        _, text = call("raven_add_node", {"task_id": task, "question": "Should hw/net/virtio-net.c keep the old guest quirk?",
                                            "paths": "hw/net/virtio-net.c", "client_ref": "b"})
         other = json.loads(text)
         row = self.store.get_decision(node["node_id"])
@@ -2435,28 +2435,28 @@ class ProtocolTests(CanvasCase):
         row = self.store.get_decision(other["node_id"])
         self.store.answer(other["node_id"], {"answer": "Drop the quirk", "rationale": "nobody runs it",
                                              "signed_by": "Kwame Asante", "expected_updated_at": row["updated_at"]})
-        refused, text = call("bridge_finish_task", {"task_id": task})
+        refused, text = call("raven_finish_task", {"task_id": task})
         self.assertTrue(refused)
         self.assertIn(node["node_id"], text)
-        self.assertIn("Read bridge_get_tree", text)
+        self.assertIn("Read raven_get_tree", text)
         # A wait on one node shows that node only: its answer is read, the
         # other node's is not, and the wait says so.
-        _, text = call("bridge_wait", {"task_id": task, "node_id": node["node_id"], "timeout": "0"})
+        _, text = call("raven_wait", {"task_id": task, "node_id": node["node_id"], "timeout": "0"})
         waited = json.loads(text)
         self.assertTrue(waited["read_acknowledged"])
         self.assertIn("Other decisions on this task changed since you last read it", waited["next"])
-        refused, text = call("bridge_finish_task", {"task_id": task})
+        refused, text = call("raven_finish_task", {"task_id": task})
         self.assertTrue(refused)
         self.assertIn(other["node_id"], text)
         self.assertNotIn(node["node_id"], text)
         # An empty whole-task wait cannot acknowledge answers that arrived
         # before the call and were not returned. A full tree can.
-        _, text = call("bridge_wait", {"task_id": task, "timeout": "0"})
+        _, text = call("raven_wait", {"task_id": task, "timeout": "0"})
         self.assertFalse(json.loads(text)['read_acknowledged'])
-        refused, text = call("bridge_finish_task", {"task_id": task})
+        refused, text = call("raven_finish_task", {"task_id": task})
         self.assertTrue(refused)
-        call('bridge_get_tree', {'task_id': task})
-        refused, text = call("bridge_finish_task", {"task_id": task})
+        call('raven_get_tree', {'task_id': task})
+        refused, text = call("raven_finish_task", {"task_id": task})
         self.assertFalse(refused, text)
         self.assertEqual(json.loads(text)["status"], "completed")
 
@@ -2476,7 +2476,7 @@ class ProtocolTests(CanvasCase):
 
         def post(path, data):
             req = Request(base + path, data=json.dumps(data).encode(), method="POST",
-                          headers={"Content-Type": "application/json", "X-Bridge-CSRF": csrf, "Host": f"127.0.0.1:{port}"})
+                          headers={"Content-Type": "application/json", "X-Raven-CSRF": csrf, "Host": f"127.0.0.1:{port}"})
             with urlopen(req) as r:
                 return json.loads(r.read())
 
@@ -2526,7 +2526,7 @@ class ProtocolTests(CanvasCase):
                 raise Invalid(text)
             return json.loads(text)
 
-        task = call("bridge_start_task", title="Rework hw/riscv/virt.c interrupt routing", repo="qemulike",
+        task = call("raven_start_task", title="Rework hw/riscv/virt.c interrupt routing", repo="qemulike",
                     requester="Tamsin Reed", paths="hw/riscv/virt.c", client_key="http-race")
         out, errors = [], []
         start = threading.Barrier(2)
@@ -2534,7 +2534,7 @@ class ProtocolTests(CanvasCase):
         def write():
             start.wait()
             try:
-                out.append(call("bridge_add_node", task_id=task["task_id"], client_ref="n1",
+                out.append(call("raven_add_node", task_id=task["task_id"], client_ref="n1",
                                 question="Should hw/riscv/virt.c change the default interrupt controller?",
                                 paths="hw/riscv/virt.c")["node_id"])
             except Exception as error:  # noqa: BLE001 - recorded, asserted below
@@ -2547,7 +2547,7 @@ class ProtocolTests(CanvasCase):
             th.join()
         self.assertEqual(errors, [])
         self.assertEqual(len(set(out)), 1, f"one client_ref made two nodes over HTTP: {out}")
-        tree = call("bridge_get_tree", task_id=task["task_id"])
+        tree = call("raven_get_tree", task_id=task["task_id"])
         self.assertEqual(len(tree["nodes"]), 1)
 
 

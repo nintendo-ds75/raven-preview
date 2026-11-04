@@ -8,11 +8,11 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase
-from bridge import canvas, context_memory as cm
-from bridge.config import Config
-from bridge.fact_revisions import correct_node_facts, revision_token
-from bridge.mcp import call_tool, dispatch, TOOLS, READ_ONLY_TOOLS
-from bridge.store import Invalid
+from raven import canvas, context_memory as cm
+from raven.config import Config
+from raven.fact_revisions import correct_node_facts, revision_token
+from raven.mcp import call_tool, dispatch, TOOLS, READ_ONLY_TOOLS
+from raven.store import Invalid
 
 REPO = 'sample/widget'
 QUESTION = 'Should widget queue batching use the bounded window?'
@@ -58,7 +58,7 @@ class FactRevisionTests(OfflineCase):
         self.assertEqual(changed['node_id'], node['node_id'])
         self.assertEqual(changed['facts'], {'environment': 'test'})
         self.assertFalse(changed['facts_applied'])
-        self.assertEqual(changed['facts_correction']['tool'], 'bridge_correct_node_facts')
+        self.assertEqual(changed['facts_correction']['tool'], 'raven_correct_node_facts')
         self.assertEqual(changed['facts_correction']['expected_revision'], changed['fact_revision'])
         self.assertEqual(self.graph.count_events('node_added', task_id=self.task), 1)
 
@@ -112,7 +112,7 @@ class FactRevisionTests(OfflineCase):
         result = correct_node_facts(self.store, request)
         versions = cm.history(self.graph.db, node['node_id'])
         events_before = self.graph.db.execute('SELECT count(*) n FROM events').fetchone()['n']
-        with patch('bridge.ladder.run_task', side_effect=AssertionError('receipt retry must not reevaluate')), \
+        with patch('raven.ladder.run_task', side_effect=AssertionError('receipt retry must not reevaluate')), \
                 patch.object(self.store, 'notify', side_effect=AssertionError('receipt retry must not notify')):
             repeated = correct_node_facts(self.store, request)
         self.assertEqual(self.graph.db.execute('SELECT count(*) n FROM events').fetchone()['n'], events_before)
@@ -135,7 +135,7 @@ class FactRevisionTests(OfflineCase):
         self.assertTrue(corrected['authorized'])
         self.store.make_rule(source, {'by': 'Reviewer One', 'end': True})
         before_events = self.graph.db.execute('SELECT count(*) n FROM events').fetchone()['n']
-        with patch('bridge.ladder.run_task', side_effect=AssertionError('receipt must not reevaluate')), \
+        with patch('raven.ladder.run_task', side_effect=AssertionError('receipt must not reevaluate')), \
                 patch.object(self.store, 'notify', side_effect=AssertionError('receipt must not notify')):
             replayed = correct_node_facts(self.store, request)
         self.assertFalse(replayed['authorized'])
@@ -157,7 +157,7 @@ class FactRevisionTests(OfflineCase):
         with self.assertRaisesRegex(Invalid, 'expected_revision is stale'):
             correct_node_facts(self.store, request)
         current = canvas.node_view(self.store, node['node_id'])
-        with patch('bridge.fact_revisions.now', return_value=current['updated_at']):
+        with patch('raven.fact_revisions.now', return_value=current['updated_at']):
             result = correct_node_facts(self.store, self.request(current, 'environment=new'))
         self.assertGreater(result['updated_at'], current['updated_at'])
         self.assertNotEqual(result['fact_revision'], current['fact_revision'])
@@ -221,7 +221,7 @@ class FactRevisionTests(OfflineCase):
         scheduled = node['updated_at']
         current = canvas.node_view(self.store, node['node_id'])
         result = correct_node_facts(self.store, self.request(current))
-        with patch('bridge.ladder.ask', side_effect=AssertionError('old worker must not evaluate')):
+        with patch('raven.ladder.ask', side_effect=AssertionError('old worker must not evaluate')):
             canvas._model_node_pass(self.store, Config(model_api='none'), node['node_id'], '',
                 ['src/widget.py'], [], '', '', '', scheduled)
         after = canvas.node_view(self.store, node['node_id'])
@@ -286,7 +286,7 @@ class FactRevisionTests(OfflineCase):
                 errors.append(error)
             finally:
                 self.graph.close_thread()
-        with patch('bridge.ladder.ask', side_effect=old_read):
+        with patch('raven.ladder.ask', side_effect=old_read):
             thread = threading.Thread(target=worker)
             thread.start()
             try:
@@ -363,7 +363,7 @@ class FactRevisionTests(OfflineCase):
             self.graph.db.execute('UPDATE decisions SET facts=? WHERE id=?',
                                   ('{"environment":"new"}', decision_id))
             return response
-        with patch('bridge.context_memory.source_revalidation', side_effect=change_while_reading):
+        with patch('raven.context_memory.source_revalidation', side_effect=change_while_reading):
             stale = self.store.get_decision(node['node_id'])
         self.assertEqual(json.loads(stale['facts']), {'environment': 'stage'})
         with self.assertRaisesRegex(Invalid, 'expected_revision is stale'):
@@ -378,13 +378,13 @@ class FactRevisionTests(OfflineCase):
             self.assertEqual(revision_token(self.graph.db, node['node_id']), node['fact_revision'])
 
     def test_mcp_requires_opaque_revision_and_remains_write_restricted(self):
-        schema = next(t['inputSchema'] for t in TOOLS if t['name'] == 'bridge_correct_node_facts')
+        schema = next(t['inputSchema'] for t in TOOLS if t['name'] == 'raven_correct_node_facts')
         self.assertIn('expected_revision', schema['required'])
-        self.assertNotIn('bridge_correct_node_facts', READ_ONLY_TOOLS)
+        self.assertNotIn('raven_correct_node_facts', READ_ONLY_TOOLS)
         node = self.node('environment=stage')
-        current = call_tool(self.store, 'bridge_get_decision', {'decision_id': node['node_id']})
+        current = call_tool(self.store, 'raven_get_decision', {'decision_id': node['node_id']})
         self.assertEqual(current['fact_revision'], node['fact_revision'])
-        result = call_tool(self.store, 'bridge_correct_node_facts', self.request(node))
+        result = call_tool(self.store, 'raven_correct_node_facts', self.request(node))
         self.assertTrue(result['facts_correction']['applied'])
 
 
@@ -399,31 +399,31 @@ class FactRevisionProtocolTests(SharedServer):
         viewer = self.post('/api/people', {'name': 'Sample Reader', 'role': 'viewer'}, token=BOOTSTRAP)
         reader = self.post('/api/tokens', {'person_id': viewer['id']}, token=BOOTSTRAP)['token']
         listed = self.post('/mcp', {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}, token=agent)
-        tool = next(t for t in listed['result']['tools'] if t['name'] == 'bridge_correct_node_facts')
+        tool = next(t for t in listed['result']['tools'] if t['name'] == 'raven_correct_node_facts')
         self.assertIn('expected_revision', tool['inputSchema']['required'])
-        task = self.mcp('bridge_start_task', {'title': 'Choose widget batching', 'repo': REPO}, agent)['result']
-        node = self.mcp('bridge_add_node', {'task_id': task['task_id'], 'question': QUESTION,
+        task = self.mcp('raven_start_task', {'title': 'Choose widget batching', 'repo': REPO}, agent)['result']
+        node = self.mcp('raven_add_node', {'task_id': task['task_id'], 'question': QUESTION,
             'client_ref': 'choice', 'facts': 'environment=stage'}, agent)['result']
         request = {'task_id': task['task_id'], 'node_id': node['node_id'],
             'expected_revision': node['fact_revision'], 'correction_ref': 'fixed-facts',
             'facts': 'environment=test', 'reason': 'The current task says test environment'}
         blocked = self.status_of('POST', '/mcp', {'jsonrpc': '2.0', 'id': 2,
-            'method': 'tools/call', 'params': {'name': 'bridge_correct_node_facts', 'arguments': request}}, token=reader)
+            'method': 'tools/call', 'params': {'name': 'raven_correct_node_facts', 'arguments': request}}, token=reader)
         self.assertEqual(blocked, 403)
-        corrected = self.mcp('bridge_correct_node_facts', request, agent)
+        corrected = self.mcp('raven_correct_node_facts', request, agent)
         self.assertFalse(corrected['isError'], corrected)
         self.assertEqual(corrected['result']['facts'], {'environment': 'test'})
         self.assertFalse(corrected['result']['authorized'])
-        repeated = self.mcp('bridge_correct_node_facts', request, agent)
+        repeated = self.mcp('raven_correct_node_facts', request, agent)
         self.assertFalse(repeated['isError'], repeated)
         self.assertTrue(repeated['result']['facts_correction']['repeated'])
         self.assertEqual(self.store.graph.count_events('node_facts_corrected', task_id=task['task_id']), 1)
 
     def test_stdio_dispatch_lists_and_validates_the_same_correction_contract(self):
         listed = dispatch(self.store, {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'})
-        self.assertIn('bridge_correct_node_facts', [t['name'] for t in listed['result']['tools']])
+        self.assertIn('raven_correct_node_facts', [t['name'] for t in listed['result']['tools']])
         invalid = dispatch(self.store, {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
-            'params': {'name': 'bridge_correct_node_facts', 'arguments': {'task_id': 'unknown'}}})
+            'params': {'name': 'raven_correct_node_facts', 'arguments': {'task_id': 'unknown'}}})
         self.assertTrue(invalid['result']['isError'])
         self.assertIn('Missing required argument', invalid['result']['content'][0]['text'])
 

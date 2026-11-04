@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from bridge.setup import _mcp_clients, configure, connect_mcp, read_settings, save_settings
+from raven.setup import _mcp_clients, configure, connect_mcp, read_settings, save_settings
 
 
 class SetupTests(unittest.TestCase):
@@ -24,42 +24,42 @@ class SetupTests(unittest.TestCase):
             configure(self.args, self.path, interactive)
 
     def test_repeat_preserves_existing_configuration_exactly(self):
-        self.path.write_text("# my settings\nOPENAI_API_KEY='private-value'\nBRIDGE_PORT=7444\n"
-                             "BRIDGE_PUBLIC_URL='http://localhost:7444'\n")
+        self.path.write_text("# my settings\nOPENAI_API_KEY='private-value'\nRAVEN_PORT=7444\n"
+                             "RAVEN_PUBLIC_URL='http://localhost:7444'\n")
         self.run_config()
-        self.assertIn("BRIDGE_DEMO='0'", self.path.read_text())
+        self.assertIn("RAVEN_DEMO='0'", self.path.read_text())
         before = self.path.read_bytes()
         self.run_config()
         self.assertEqual(self.path.read_bytes(), before)
 
     def test_the_published_port_and_the_address_people_open_are_the_same(self):
-        """Docker publishes BRIDGE_PORT and the container always binds
-        7333, so BRIDGE_PUBLIC_URL is the only thing that tells the
+        """Docker publishes RAVEN_PORT and the container always binds
+        7333, so RAVEN_PUBLIC_URL is the only thing that tells the
         server which port people reach it on. When the two disagree the
         printed link returns 403, so setup does not leave them that
         way."""
-        self.path.write_text("BRIDGE_PORT=17433\n")
+        self.path.write_text("RAVEN_PORT=17433\n")
         self.run_config()
-        self.assertIn("BRIDGE_PUBLIC_URL='http://localhost:17433'", self.path.read_text())
+        self.assertIn("RAVEN_PUBLIC_URL='http://localhost:17433'", self.path.read_text())
 
     def test_a_public_hostname_someone_set_is_not_rewritten(self):
         """A name that is not loopback means something terminates in
         front of this port; its address is not ours to correct."""
-        self.path.write_text("BRIDGE_PORT=17433\nBRIDGE_PUBLIC_URL='https://bridge.acme.test'\n")
+        self.path.write_text("RAVEN_PORT=17433\nRAVEN_PUBLIC_URL='https://raven.acme.test'\n")
         self.run_config()
-        self.assertIn("BRIDGE_PUBLIC_URL='https://bridge.acme.test'", self.path.read_text())
+        self.assertIn("RAVEN_PUBLIC_URL='https://raven.acme.test'", self.path.read_text())
 
     def test_repository_and_port_update_without_losing_unrelated_settings(self):
-        self.path.write_text("# retained\nGITHUB_TOKEN=existing-secret\nBRIDGE_PORT=7333\n")
+        self.path.write_text("# retained\nGITHUB_TOKEN=existing-secret\nRAVEN_PORT=7333\n")
         self.args.repo = "/home/developer/My Repos/platform"
         self.args.repo_name = "acme/platform"
         self.args.port = 7444
         self.run_config()
         text = self.path.read_text()
         self.assertIn("GITHUB_TOKEN=existing-secret", text)
-        self.assertIn("BRIDGE_REPOS_DIR='/home/developer/My Repos'", text)
-        self.assertIn("BRIDGE_PUBLIC_URL='http://localhost:7444'", text)
-        self.assertEqual(text.count("BRIDGE_PORT="), 1)
+        self.assertIn("RAVEN_REPOS_DIR='/home/developer/My Repos'", text)
+        self.assertIn("RAVEN_PUBLIC_URL='http://localhost:7444'", text)
+        self.assertEqual(text.count("RAVEN_PORT="), 1)
         self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
 
     def test_missing_keys_do_not_enable_optional_paid_backends(self):
@@ -67,23 +67,23 @@ class SetupTests(unittest.TestCase):
                 patch("getpass.getpass", return_value=""), contextlib.redirect_stdout(io.StringIO()) as output:
             configure(self.args, self.path, interactive=True)
         text = self.path.read_text()
-        self.assertNotIn("BRIDGE_AGENTS", text)
-        self.assertNotIn("BRIDGE_MODEL_API", text)
+        self.assertNotIn("RAVEN_AGENTS", text)
+        self.assertNotIn("RAVEN_MODEL_API", text)
         # The wizard says what Raven does without a key, in the words the pages use.
         self.assertIn("No model key: Raven routes, records, reminds and keeps signed decisions; it will not write briefs "
                       "or propose work. Add a key later with ./setup --configure (or ANTHROPIC_API_KEY / OPENAI_API_KEY in .env) and restart.", output.getvalue())
 
     def test_invalid_configuration_does_not_touch_existing_file(self):
-        self.path.write_text("BRIDGE_PORT=7333\n")
+        self.path.write_text("RAVEN_PORT=7333\n")
         self.args.port = 70000
         with self.assertRaises(ValueError):
             self.run_config()
-        self.assertEqual(self.path.read_text(), "BRIDGE_PORT=7333\n")
+        self.assertEqual(self.path.read_text(), "RAVEN_PORT=7333\n")
 
     def test_multiline_credentials_are_rejected_without_writing(self):
         self.path.write_text("# original\n")
         with self.assertRaises(ValueError):
-            save_settings(self.path, {"GITHUB_TOKEN": "value\nBRIDGE_DEMO=0"})
+            save_settings(self.path, {"GITHUB_TOKEN": "value\nRAVEN_DEMO=0"})
         self.assertEqual(self.path.read_text(), "# original\n")
 
     def test_cancelled_wizard_does_not_save_partial_credentials(self):
@@ -103,7 +103,7 @@ class SetupTests(unittest.TestCase):
         settings = read_settings(self.path)
         self.assertEqual(settings["ANTHROPIC_WORKSPACE_ID"], "wrkspc_fixture_selected")
         self.assertEqual(settings["ANTHROPIC_API_KEY"], key)
-        self.assertEqual(settings["BRIDGE_MODEL_API"], "anthropic")
+        self.assertEqual(settings["RAVEN_MODEL_API"], "anthropic")
         self.assertIn("ANTHROPIC_WORKSPACE_ID='wrkspc_fixture_selected'", self.path.read_text())
         self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
         secret.assert_called_once_with("Anthropic API key: ")
@@ -121,7 +121,7 @@ class SetupTests(unittest.TestCase):
                     patch("getpass.getpass", return_value="synthetic-api-key"):
                 self.run_config(interactive=True)
                 self.assertNotIn("ANTHROPIC_WORKSPACE_ID", read_settings(self.path))
-                self.assertEqual(read_settings(self.path)["BRIDGE_MODEL_API"], "anthropic")
+                self.assertEqual(read_settings(self.path)["RAVEN_MODEL_API"], "anthropic")
 
     def test_blank_anthropic_workspace_keeps_saved_key_and_selection(self):
         original = "# retained\nANTHROPIC_API_KEY='synthetic-saved-key'\nANTHROPIC_WORKSPACE_ID='wrkspc_fixture_saved'\n"
@@ -134,7 +134,7 @@ class SetupTests(unittest.TestCase):
                 self.assertTrue(self.path.read_text().startswith(original))
 
     def test_workspace_can_be_updated_without_reentering_saved_key(self):
-        self.path.write_text("ANTHROPIC_API_KEY='synthetic-saved-key'\nANTHROPIC_WORKSPACE_ID='wrkspc_fixture_old'\nBRIDGE_MODEL_API='anthropic'\n")
+        self.path.write_text("ANTHROPIC_API_KEY='synthetic-saved-key'\nANTHROPIC_WORKSPACE_ID='wrkspc_fixture_old'\nRAVEN_MODEL_API='anthropic'\n")
         with patch.dict(os.environ, {}, clear=True), \
                 patch("builtins.input", side_effect=["", "y", "wrkspc_fixture_new", "n", "n", "n"]), \
                 patch("getpass.getpass", return_value=""):
@@ -142,7 +142,7 @@ class SetupTests(unittest.TestCase):
         settings = read_settings(self.path)
         self.assertEqual(settings["ANTHROPIC_API_KEY"], "synthetic-saved-key")
         self.assertEqual(settings["ANTHROPIC_WORKSPACE_ID"], "wrkspc_fixture_new")
-        self.assertEqual(settings["BRIDGE_MODEL_API"], "anthropic")
+        self.assertEqual(settings["RAVEN_MODEL_API"], "anthropic")
         self.assertEqual(self.path.read_text().count("ANTHROPIC_WORKSPACE_ID="), 1)
 
     def test_workspace_alone_does_not_enable_inference(self):
@@ -153,7 +153,7 @@ class SetupTests(unittest.TestCase):
         settings = read_settings(self.path)
         self.assertEqual(settings["ANTHROPIC_WORKSPACE_ID"], "wrkspc_fixture_only")
         self.assertNotIn("ANTHROPIC_API_KEY", settings)
-        self.assertNotIn("BRIDGE_MODEL_API", settings)
+        self.assertNotIn("RAVEN_MODEL_API", settings)
 
     def test_blank_workspace_keeps_runtime_selection_without_copying_environment(self):
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "synthetic-runtime-key",
@@ -165,10 +165,10 @@ class SetupTests(unittest.TestCase):
         settings = read_settings(self.path)
         self.assertNotIn("ANTHROPIC_WORKSPACE_ID", settings)
         self.assertNotIn("ANTHROPIC_API_KEY", settings)
-        self.assertEqual(settings["BRIDGE_MODEL_API"], "anthropic")
+        self.assertEqual(settings["RAVEN_MODEL_API"], "anthropic")
 
     def test_skipped_and_noninteractive_setup_preserve_anthropic_settings(self):
-        original = "ANTHROPIC_API_KEY='synthetic-saved-key'\nANTHROPIC_WORKSPACE_ID='wrkspc_fixture_saved'\nBRIDGE_MODEL_API='anthropic'\n"
+        original = "ANTHROPIC_API_KEY='synthetic-saved-key'\nANTHROPIC_WORKSPACE_ID='wrkspc_fixture_saved'\nRAVEN_MODEL_API='anthropic'\n"
         for interactive in (False, True):
             self.path.write_text(original)
             with self.subTest(interactive=interactive), \
@@ -195,10 +195,10 @@ class SetupTests(unittest.TestCase):
 
     def test_demo_requires_explicit_flag(self):
         self.run_config()
-        self.assertIn("BRIDGE_DEMO='0'", self.path.read_text())
+        self.assertIn("RAVEN_DEMO='0'", self.path.read_text())
         self.args.demo = True
         self.run_config()
-        self.assertIn("BRIDGE_DEMO='1'", self.path.read_text())
+        self.assertIn("RAVEN_DEMO='1'", self.path.read_text())
 
     def test_selected_clients_preserve_unrelated_servers_and_have_no_secret(self):
         project = Path(self.directory.name) / "project"
@@ -209,29 +209,29 @@ class SetupTests(unittest.TestCase):
         cursor.write_text('{"mcpServers":{"other":{"command":"other"}}}')
         codex = project / ".codex/config.toml"
         codex.parent.mkdir()
-        codex.write_text('[other]\nvalue = 3\n\n[mcp_servers.bridge]\ncommand = "old"\n')
+        codex.write_text('[other]\nvalue = 3\n\n[mcp_servers.raven]\ncommand = "old"\n')
         for _ in range(2):
             _mcp_clients(project, "http://localhost:7333/mcp", "test-agent-secret", ["claude", "cursor", "codex"])
         import json
         for path in (project / ".mcp.json", cursor):
             config = json.loads(path.read_text())["mcpServers"]
             self.assertEqual(config["other"]["command"], "other")
-            self.assertEqual(config["bridge"]["url"], "http://localhost:7333/mcp")
-            self.assertEqual(config["bridge"]["headers"]["Authorization"], "Bearer test-agent-secret")
-            self.assertNotIn("/local/bridge", path.read_text())
+            self.assertEqual(config["raven"]["url"], "http://localhost:7333/mcp")
+            self.assertEqual(config["raven"]["headers"]["Authorization"], "Bearer test-agent-secret")
+            self.assertNotIn("/local/raven", path.read_text())
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         import tomllib
         parsed = tomllib.loads(codex.read_text())
         self.assertEqual(parsed["other"]["value"], 3)
-        self.assertEqual(parsed["mcp_servers"]["bridge"]["url"], "http://localhost:7333/mcp")
-        self.assertEqual(parsed["mcp_servers"]["bridge"]["http_headers"]["Authorization"], "Bearer test-agent-secret")
-        self.assertEqual(codex.read_text().count("[mcp_servers.bridge]"), 1)
+        self.assertEqual(parsed["mcp_servers"]["raven"]["url"], "http://localhost:7333/mcp")
+        self.assertEqual(parsed["mcp_servers"]["raven"]["http_headers"]["Authorization"], "Bearer test-agent-secret")
+        self.assertEqual(codex.read_text().count("[mcp_servers.raven]"), 1)
 
     def test_http_mcp_config_has_no_launcher(self):
         project = Path(self.directory.name) / "project"
         _mcp_clients(project, "http://localhost:7333/mcp", "test-agent-secret", ["claude"])
         import json
-        entry = json.loads((project / ".mcp.json").read_text())["mcpServers"]["bridge"]
+        entry = json.loads((project / ".mcp.json").read_text())["mcpServers"]["raven"]
         self.assertEqual(entry["type"], "http")
         self.assertNotIn("command", entry)
 
@@ -273,14 +273,14 @@ class SetupTests(unittest.TestCase):
                 configure(self.args, self.path, interactive)
             prompt.assert_not_called()
             secret.assert_not_called()
-            self.assertEqual(read_settings(self.path)["BRIDGE_MCP_CLIENTS"], "claude")
+            self.assertEqual(read_settings(self.path)["RAVEN_MCP_CLIENTS"], "claude")
             self.assertNotIn("No terminal is attached", output.getvalue())
             self.assertIn("connected to the Raven URL after startup", output.getvalue())
 
     def test_client_is_repeatable_and_comma_separated_and_checked(self):
         self.args.client = ["Claude", "codex,cursor", "claude"]
         self.run_config()
-        self.assertEqual(read_settings(self.path)["BRIDGE_MCP_CLIENTS"], "claude,codex,cursor")
+        self.assertEqual(read_settings(self.path)["RAVEN_MCP_CLIENTS"], "claude,codex,cursor")
         self.args.client = ["copilot"]
         with self.assertRaisesRegex(ValueError, "Unknown agent client: copilot"):
             self.run_config()
@@ -313,7 +313,7 @@ class SetupTests(unittest.TestCase):
         message named neither. Now nothing is written, and the message says
         so and names the project."""
         project = self._git_project()
-        settings = {"BRIDGE_MCP_CLIENTS": "claude,cursor", "BRIDGE_PUBLIC_URL": "http://localhost:7333"}
+        settings = {"RAVEN_MCP_CLIENTS": "claude,cursor", "RAVEN_PUBLIC_URL": "http://localhost:7333"}
         with self.assertRaisesRegex(ValueError, "no origin remote") as caught:
             connect_mcp(settings, project, "test-agent-secret", "/home/dev/project")
         message = str(caught.exception)
@@ -324,7 +324,7 @@ class SetupTests(unittest.TestCase):
 
     def test_a_checkout_with_a_remote_gets_the_config_and_the_hooks_in_one_go(self):
         project = self._git_project("git@gitlab.example.test:acme/platform.git")
-        settings = {"BRIDGE_MCP_CLIENTS": "claude", "BRIDGE_PUBLIC_URL": "http://localhost:7333"}
+        settings = {"RAVEN_MCP_CLIENTS": "claude", "RAVEN_PUBLIC_URL": "http://localhost:7333"}
         written = connect_mcp(settings, project, "test-agent-secret")
         self.assertEqual([Path(p).relative_to(project).as_posix() for p in written],
                          [".mcp.json", ".raven/host.py", ".raven/host-config.json", ".claude/settings.local.json"])
@@ -336,18 +336,18 @@ class SetupTests(unittest.TestCase):
             self.run_config(interactive=True)
         self.assertFalse(secret.called)
         self.assertNotIn("GITHUB_TOKEN", self.path.read_text())
-        self.assertNotIn("BRIDGE_GITHUB_REPOS", self.path.read_text())
+        self.assertNotIn("RAVEN_GITHUB_REPOS", self.path.read_text())
 
 
 class StartupIngestTests(unittest.TestCase):
     """Measured on a fresh install: a checkout the container could not
     read put Raven in a restart loop, with the reason only in the logs."""
 
-    def test_an_unreadable_checkout_starts_bridge_without_it_and_readiness_says_so(self):
-        from bridge import bootstrap
-        from bridge.store import Store
+    def test_an_unreadable_checkout_starts_raven_without_it_and_readiness_says_so(self):
+        from raven import bootstrap
+        from raven.store import Store
         with tempfile.TemporaryDirectory() as tmp:
-            store = Store(str(Path(tmp) / "bridge.db"))
+            store = Store(str(Path(tmp) / "raven.db"))
             self.addCleanup(store.graph.close)
             broken = Path(tmp) / "repos" / "acme"
             (broken / ".git").mkdir(parents=True)

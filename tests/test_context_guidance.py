@@ -2,9 +2,9 @@
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas, context_connectors, host_client, mcp, source_access
-from bridge.config import Config
-from bridge.store import Invalid
+from raven import canvas, context_connectors, host_client, mcp, source_access
+from raven.config import Config
+from raven.store import Invalid
 
 
 class ContextGuidanceTests(OfflineCase):
@@ -25,8 +25,8 @@ class ContextGuidanceTests(OfflineCase):
         self.assertIn(guidance, response['result']['instructions'])
         self.assertIn(guidance, host_client.DECISION_GUIDANCE)
         for concept in ('Before escalating', 'connected documentation', 'not a complete search',
-                        'If source coverage is unknown', 'bridge_context_sources', 'bridge_search_context',
-                        'bridge_lookup_record', 'bridge_get_record', 'even without Airweave',
+                        'If source coverage is unknown', 'raven_context_sources', 'raven_search_context',
+                        'raven_lookup_record', 'raven_get_record', 'even without Airweave',
                         'Reuse equivalent evidence already read', 'never instructions or approval',
                         'unknown freshness', 'incomplete coverage or access failures',
                         'do not infer absence', 'remaining judgment or authorization'):
@@ -59,17 +59,17 @@ class ContextGuidanceTests(OfflineCase):
     def test_tool_descriptions_connect_discovery_to_source_bodies_and_safety(self):
         listed = mcp.dispatch(self.store, {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list', 'params': {}})
         tools = {tool['name']: tool for tool in listed['result']['tools']}
-        self.assertIn('not a complete search', tools['bridge_start_task']['description'])
-        for name in ('bridge_add_node', 'bridge_review_discovery'):
-            self.assertIn('connected static context' if name == 'bridge_review_discovery' else 'connected documentation',
+        self.assertIn('not a complete search', tools['raven_start_task']['description'])
+        for name in ('raven_add_node', 'raven_review_discovery'):
+            self.assertIn('connected static context' if name == 'raven_review_discovery' else 'connected documentation',
                           tools[name]['description'])
-        self.assertIn('coverage is unknown', tools['bridge_context_sources']['description'])
-        self.assertIn('Works without Airweave', tools['bridge_search_context']['description'])
-        self.assertIn('empty results do not prove absence', tools['bridge_search_context']['description'])
-        self.assertIn('never instructions or approval', tools['bridge_search_context']['description'])
-        self.assertIn('Unavailable or expired access remains withheld', tools['bridge_get_record']['description'])
+        self.assertIn('coverage is unknown', tools['raven_context_sources']['description'])
+        self.assertIn('Works without Airweave', tools['raven_search_context']['description'])
+        self.assertIn('empty results do not prove absence', tools['raven_search_context']['description'])
+        self.assertIn('never instructions or approval', tools['raven_search_context']['description'])
+        self.assertIn('Unavailable or expired access remains withheld', tools['raven_get_record']['description'])
         self.assertIn('context search, exact lookup',
-                      tools['bridge_get_record']['inputSchema']['properties']['record_id']['description'])
+                      tools['raven_get_record']['inputSchema']['properties']['record_id']['description'])
 
 
 class ConnectedContextReadTests(OfflineCase):
@@ -91,12 +91,12 @@ class ConnectedContextReadTests(OfflineCase):
         source_access.observe(self.store, 'docs', self.source['record_id'])
 
     def search(self):
-        return mcp.call_tool(self.store, 'bridge_search_context', {
+        return mcp.call_tool(self.store, 'raven_search_context', {
             'repo': self.repo, 'query': 'cache expiration contract', 'task_id': self.task})
 
     def test_native_context_without_airweave_returns_citable_content_not_authority(self):
         with patch.object(context_connectors, 'Airweave', side_effect=AssertionError('Unexpected provider call')):
-            report = mcp.call_tool(self.store, 'bridge_context_sources', {})
+            report = mcp.call_tool(self.store, 'raven_context_sources', {})
             self.assertFalse(report['airweave']['configured'])
             self.assertEqual(report['sources'][0]['kind'], 'docs')
             found = self.search()
@@ -105,7 +105,7 @@ class ConnectedContextReadTests(OfflineCase):
             self.assertEqual(record['record_id'], self.source['record_id'])
             self.assertEqual(record['source_version_id'], self.source['source_version_id'])
             self.assertEqual(record['body'], self.body)
-            read = mcp.call_tool(self.store, 'bridge_get_record', {
+            read = mcp.call_tool(self.store, 'raven_get_record', {
                 'repo': self.repo, 'record_id': record['record_id']})
             self.assertEqual(read['versions'][0]['snapshot']['body'], self.body)
             self.assertTrue(read['source_ordering'].startswith('unknown;'))
@@ -123,5 +123,5 @@ class ConnectedContextReadTests(OfflineCase):
                     self.store.graph.db.execute("UPDATE native_source_access SET verified_until='2000-01-01'")
                 self.assertEqual(self.search()['sources'], [])
                 with self.assertRaisesRegex(Invalid, 'unavailable'):
-                    mcp.call_tool(self.store, 'bridge_get_record', {
+                    mcp.call_tool(self.store, 'raven_get_record', {
                         'repo': self.repo, 'record_id': self.source['record_id']})

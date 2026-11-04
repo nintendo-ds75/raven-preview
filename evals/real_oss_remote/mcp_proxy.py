@@ -1,7 +1,7 @@
 """Transparent stdio trace proxy around Raven's HTTP MCP endpoint.
 
 Only tool arguments/results are logged. The local synthetic token travels in
-BRIDGE_TOKEN, never in configuration files, command arguments or traces.
+RAVEN_TOKEN, never in configuration files, command arguments or traces.
 """
 import json
 import os
@@ -13,14 +13,14 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 def main():
-    trace = Path(os.environ["BRIDGE_EVAL_TRACE"])
-    url = os.environ["BRIDGE_EVAL_URL"].rstrip("/") + "/mcp"
-    token = os.environ["BRIDGE_TOKEN"]
+    trace = Path(os.environ["RAVEN_EVAL_TRACE"])
+    url = os.environ["RAVEN_EVAL_URL"].rstrip("/") + "/mcp"
+    token = os.environ["RAVEN_TOKEN"]
     # Keep the existing replay log shape; optionally add a serialized,
     # credential-redacted audit chain shared with evaluator/human events.
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from evals.audit.ledger import Ledger, redact
-    audit_path = os.environ.get('BRIDGE_EVAL_AUDIT')
+    audit_path = os.environ.get('RAVEN_EVAL_AUDIT')
     audit = Ledger(audit_path, secrets=(token,)) if audit_path else None
     session = uuid.uuid4().hex
 

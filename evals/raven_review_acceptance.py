@@ -21,10 +21,10 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
-from bridge import canvas, llm
-from bridge.auth import Auth
-from bridge.server import make_server
-from bridge.store import Store
+from raven import canvas, llm
+from raven.auth import Auth
+from raven.server import make_server
+from raven.store import Store
 from evals.claude_mcp_acceptance import BASELINE, POLICY, REPO, exception_diagnostic, policy_expression
 from evals.live_workflow_acceptance import AcceptanceFailure, check_expression, reuse_scenario
 from evals.slack_contract_harness import REQUESTER
@@ -122,16 +122,16 @@ class ReviewFixture:
                 sqlite3.connect(self.database) as copied:
             original.backup(copied)
         clean = {k: os.environ[k] for k in ('PATH', 'LANG') if k in os.environ}
-        clean.update(HOME=str(self.root), BRIDGE_MODEL_API='anthropic', BRIDGE_MODEL=model,
-            BRIDGE_FAST_MODEL=model, BRIDGE_SEMANTIC='1', BRIDGE_LIVE='0', BRIDGE_DEEP='0',
-            BRIDGE_EMBEDDINGS='disabled', BRIDGE_MCP_CALL_BUDGET='5',
+        clean.update(HOME=str(self.root), RAVEN_MODEL_API='anthropic', RAVEN_MODEL=model,
+            RAVEN_FAST_MODEL=model, RAVEN_SEMANTIC='1', RAVEN_LIVE='0', RAVEN_DEEP='0',
+            RAVEN_EMBEDDINGS='disabled', RAVEN_MCP_CALL_BUDGET='5',
             ANTHROPIC_API_KEY=gateway.placeholder)
         self.stack.enter_context(patch.dict(os.environ, clean, clear=True))
         self.opener = build_opener(ProxyHandler({}), _NoRedirect())
         def transport(request, *args, **kwargs):
             kwargs['timeout'] = min(float(kwargs.get('timeout', 120)), self.remaining())
             return gateway.urllib_open(request, *args, **kwargs)
-        self.stack.enter_context(patch('bridge.llm._open_model_request', new=transport))
+        self.stack.enter_context(patch('raven.llm._open_model_request', new=transport))
         original = llm.Client.complete_json
         def observe(client, purpose, system, prompt, *args, **kwargs):
             self.remaining()
@@ -214,13 +214,13 @@ class ReviewFixture:
 
     def review(self, diff):
         task, node = self.source['task_id'], self.source['node_id']
-        self.tool('bridge_get_tree', task_id=task)
-        result = self.tool('bridge_finish_task', task_id=task, diff=diff, diff_sha256=digest(diff.encode()),
+        self.tool('raven_get_tree', task_id=task)
+        result = self.tool('raven_finish_task', task_id=task, diff=diff, diff_sha256=digest(diff.encode()),
             checks='Separate evaluator checks; model review is advisory and not independent correctness evidence.')
         require(result.get('verified') is False, 'finish_claimed_verified')
         expected_id, expected_diff_hash = canvas._review_key(task, diff, self.signed)
         while True:
-            tree = self.tool('bridge_get_tree', task_id=task)
+            tree = self.tool('raven_get_tree', task_id=task)
             review = tree.get('review') or {}
             if review.get('status') != 'running':
                 break
@@ -237,12 +237,12 @@ class ReviewFixture:
         cache_hit = False
         if review.get('status') == 'done':
             before = self.gateway.snapshot()['physical_requests']
-            result = self.tool('bridge_finish_task', task_id=task, diff=diff, diff_sha256=digest(diff.encode()),
+            result = self.tool('raven_finish_task', task_id=task, diff=diff, diff_sha256=digest(diff.encode()),
                 checks='Separate evaluator checks; model review is advisory and not independent correctness evidence.')
             require(self.gateway.snapshot()['physical_requests'] == before, 'unchanged_review_cache_miss')
             require(result.get('review', {}).get('id') == expected_id, 'unchanged_review_identity_changed')
             cache_hit = True
-        exported = self.tool('bridge_export_proof', task_id=task)
+        exported = self.tool('raven_export_proof', task_id=task)
         require(exported['integrity']['valid'] and exported['bundle']['payload']['change']['diff'] == diff,
                 'review_proof_diff_mismatch')
         require(snapshot_pins(self.store) == self.pins, 'proof_refresh_mutated_signed_state_or_access')
@@ -329,7 +329,7 @@ def run(*, source_run=None, output_dir=None, run_live=False, gateway=None, model
     source = fixture = None
     try:
         report['source_hashes'] = {p: digest((Path(__file__).resolve().parents[1] / p).read_bytes()) for p in
-            ('evals/raven_review_acceptance.py', 'bridge/llm.py', 'bridge/canvas.py', 'evals/customer_provider_gateway.py')}
+            ('evals/raven_review_acceptance.py', 'raven/llm.py', 'raven/canvas.py', 'evals/customer_provider_gateway.py')}
         source = load_source(source_run)
         source_before = database_digest(source['database'])
         report.update(task_id=source['task_id'], node_id=source['node_id'],

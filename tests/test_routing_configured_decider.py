@@ -16,9 +16,9 @@ import json
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge.config import Config
-from bridge.contact_reasoning import choose
-from bridge.routing import rank_for_decision
+from raven.config import Config
+from raven.contact_reasoning import choose
+from raven.routing import rank_for_decision
 
 REPO = 'parcelwise/parcelwise-app'
 PATH = 'app/billing/plans.py'
@@ -40,7 +40,7 @@ class ConfiguredDeciderKeepsTheCall(OfflineCase):
             self.marcus = self.graph.add_person('Marcus Lee', email='marcus@parcelwise.example')
             self.graph.upsert_artifact(REPO, PATH)
         self.task = self.store.add_run({'title': 'Batch label purchase', 'repo': REPO})['id']
-        for target in ('socket.socket.connect', 'socket.create_connection', 'bridge.llm.Client.complete'):
+        for target in ('socket.socket.connect', 'socket.create_connection', 'raven.llm.Client.complete'):
             guard = patch(target, side_effect=AssertionError('Live inference/network forbidden'))
             guard.start()
             self.addCleanup(guard.stop)
@@ -60,9 +60,9 @@ class ConfiguredDeciderKeepsTheCall(OfflineCase):
     def choose(self):
         details = {}
         marcus_first = {'candidate': 'c2', 'evidence': ['c2:e1'], 'why': 'Wrote plans.py and PR #101'}
-        with patch('bridge.semantic_index.sources', return_value=(self.authored(), {'backend': 'synthetic'})), \
+        with patch('raven.semantic_index.sources', return_value=(self.authored(), {'backend': 'synthetic'})), \
                 patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
-                patch('bridge.contact_reasoning.Client.complete_json', return_value=marcus_first) as model:
+                patch('raven.contact_reasoning.Client.complete_json', return_value=marcus_first) as model:
             result = choose(self.graph, Config(model_api='none'), REPO, QUESTION, paths=(PATH,), context=CONTEXT,
                             task_id=self.task, details=details)
         return result, details, model

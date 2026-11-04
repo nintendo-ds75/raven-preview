@@ -15,9 +15,9 @@ from unittest.mock import patch
 
 from fixtures import OfflineCase, git_env, run_git
 
-from bridge import bootstrap
-from bridge.ingest import _git, _git_quiet, _git_rev, _read_at, blame_counts, index_repo, read_log
-from bridge.store import Store
+from raven import bootstrap
+from raven.ingest import _git, _git_quiet, _git_rev, _read_at, blame_counts, index_repo, read_log
+from raven.store import Store
 
 
 class MountedIngestTests(OfflineCase):
@@ -300,7 +300,7 @@ class MountedIngestTests(OfflineCase):
                 protected_commands.append(command)
             return real_run(command, **kwargs)
 
-        with patch("bridge.ingest.subprocess.run", side_effect=older_run):
+        with patch("raven.ingest.subprocess.run", side_effect=older_run):
             yield protected_commands
 
     def test_older_git_rejects_promisor_reads_before_object_access_or_writes(self):

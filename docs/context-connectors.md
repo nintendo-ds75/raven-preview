@@ -46,14 +46,14 @@ regardless of its access fields.
 
 1. Create a collection containing material shared with **every reader of this
    Raven workspace**, including people who receive personal task links.
-2. In Raven's private `.env`, set `BRIDGE_AIRWEAVE_URL` to the API base URL and
+2. In Raven's private `.env`, set `RAVEN_AIRWEAVE_URL` to the API base URL and
    `AIRWEAVE_API_KEY` to its credential. Use HTTPS outside a local test. The API
    base must include any deployment-specific prefix. Restart with `./dev up`.
 3. Register the collection. Supply the source principal IDs used in the returned
    ACLs, not display names or Raven IDs:
 
 ```sh
-docker compose exec -T app python -m bridge.context_connectors \
+docker compose exec -T app python -m raven.context_connectors \
   --repo your-org/your-repository --collection team-context \
   --workspace-shared --audience member-id-a,member-id-b
 ```
@@ -66,8 +66,8 @@ separately scoped workspace; do not enter the group as a substitute for readers.
 The operator must update the audience before adding readers. This is a
 workspace-sharing contract, not automatic per-user permission synchronization.
 
-4. Ask the host to call `bridge_connection_status`, then
-   `bridge_search_context(repo=..., task_id=..., query=...)`. The result names
+4. Ask the host to call `raven_connection_status`, then
+   `raven_search_context(repo=..., task_id=..., query=...)`. The result names
    imported and rejected observations, current sources and related decisions.
    Kickoff and decision creation also search a configured collection automatically.
 5. Check a result before the pilot. It must contain the expected text, source
@@ -122,9 +122,9 @@ upstream synchronization.
 
 ## What is visible
 
-`bridge_search_context` records the query, selected source versions, related
+`raven_search_context` records the query, selected source versions, related
 answers, rejected-result count and failure state. The task graph and source
-history show which evidence an answer relied on. `bridge_connection_status`
+history show which evidence an answer relied on. `raven_connection_status`
 reports the collection, generation, last successful search and errors.
 
 Connection state distinguishes `configured_unverified`, `search_observed`,

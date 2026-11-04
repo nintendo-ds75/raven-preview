@@ -1,7 +1,7 @@
 """A resume must not silently pretend to repair an existing task's repository."""
-from bridge import canvas
-from bridge.config import Config
-from bridge.store import Invalid
+from raven import canvas
+from raven.config import Config
+from raven.store import Invalid
 from test_contract import ContractCase
 
 

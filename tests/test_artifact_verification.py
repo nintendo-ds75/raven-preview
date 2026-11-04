@@ -6,9 +6,9 @@ import unittest
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import artifact_verification as av, workbench_fs as fs
-from bridge.auth import Identity
-from bridge.store import Store, Invalid
+from raven import artifact_verification as av, workbench_fs as fs
+from raven.auth import Identity
+from raven.store import Store, Invalid
 
 
 class Sandbox:
@@ -165,8 +165,8 @@ class VerificationTests(OfflineCase):
         self.assertEqual(self.sandbox.calls, [])
 
     def test_unsigned_core_judgment_refuses_verification(self):
-        from bridge import canvas
-        from bridge.config import Config
+        from raven import canvas
+        from raven.config import Config
         self.store.graph.db.execute("UPDATE runs SET status='working' WHERE id=?", (self.task,))
         canvas.add_node(self.store, Config(model_api='none'), {'task_id': self.task,
             'question': 'Which limit should apply?', 'paths': 'module.py'})
@@ -175,8 +175,8 @@ class VerificationTests(OfflineCase):
         self.assertEqual(self.sandbox.calls, [])
 
     def test_new_core_judgment_during_command_invalidates_receipt(self):
-        from bridge import canvas
-        from bridge.config import Config
+        from raven import canvas
+        from raven.config import Config
         def change(root):
             self.store.graph.db.execute("UPDATE runs SET status='working' WHERE id=?", (self.task,))
             canvas.add_node(self.store, Config(model_api='none'), {'task_id': self.task,
@@ -185,7 +185,7 @@ class VerificationTests(OfflineCase):
         self.assertEqual(self.verify()['status'], 'stale')
 
     def test_source_revocation_withholds_receipt_and_output(self):
-        from bridge import context_memory as cm
+        from raven import context_memory as cm
         data = {'repo': 'sample', 'kind': 'note', 'ref': 'customer', 'body': 'Customer constraint'}
         source = self.store.add_record(data)['source']
         cm.add_anchor(self.store.graph.db, self.task, source['record_id'], source['source_version_id'], 'context')
@@ -197,7 +197,7 @@ class VerificationTests(OfflineCase):
             self.verify()
 
     def test_source_revoked_during_check_does_not_return_copied_output(self):
-        from bridge import context_memory as cm
+        from raven import context_memory as cm
         data = {'repo': 'sample', 'kind': 'note', 'ref': 'customer', 'body': 'Customer constraint'}
         source = self.store.add_record(data)['source']
         cm.add_anchor(self.store.graph.db, self.task, source['record_id'], source['source_version_id'], 'context')

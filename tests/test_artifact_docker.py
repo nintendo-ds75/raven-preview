@@ -1,6 +1,6 @@
 """Opt-in actual Docker acceptance, never replaced with a fake sandbox.
 
-Run after pre-pulling the image: BRIDGE_TEST_DOCKER=1 python -m unittest
+Run after pre-pulling the image: RAVEN_TEST_DOCKER=1 python -m unittest
  discover -s tests -p test_artifact_docker.py -v
 """
 import os
@@ -8,19 +8,19 @@ import shutil
 import unittest
 from unittest.mock import patch
 
-from bridge.workbench_fs import DockerSandbox
+from raven.workbench_fs import DockerSandbox
 
 
-@unittest.skipUnless(os.environ.get('BRIDGE_TEST_DOCKER') == '1', 'actual Docker acceptance is opt-in')
+@unittest.skipUnless(os.environ.get('RAVEN_TEST_DOCKER') == '1', 'actual Docker acceptance is opt-in')
 class DockerVerificationTests(unittest.TestCase):
     def setUp(self):
         import test_artifact_verification as fixtures
-        self.assertIsNotNone(shutil.which('docker'), 'BRIDGE_TEST_DOCKER=1 requires an actual Docker CLI/daemon')
+        self.assertIsNotNone(shutil.which('docker'), 'RAVEN_TEST_DOCKER=1 requires an actual Docker CLI/daemon')
         self.fixture = fixtures.VerificationTests()
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
         self.addCleanup(self.fixture.tearDown)
-        self.fixture.workbench.sandbox = DockerSandbox(os.environ.get('BRIDGE_TEST_DOCKER_IMAGE', 'python:3.13-slim-bookworm'))
+        self.fixture.workbench.sandbox = DockerSandbox(os.environ.get('RAVEN_TEST_DOCKER_IMAGE', 'python:3.13-slim-bookworm'))
 
     def test_real_container_observes_behavior_and_no_network_secret_or_host_mount(self):
         fixture = self.fixture
@@ -69,8 +69,8 @@ print('Observed exact behavior; unprivileged, no network, no host key/socket, re
         self.assertEqual((self.fixture.candidate / 'module.py').read_text(), 'VALUE = 1\n')
 
     def test_signed_behavior_case_is_checked_independently_of_candidate_tests(self):
-        from bridge import canvas
-        from bridge.config import Config
+        from raven import canvas
+        from raven.config import Config
         fixture = self.fixture
         fixture.store.add_owner({'name': 'Policy Owner', 'team': 'Policy', 'patterns': 'module.py'})
         fixture.store.graph.db.execute("UPDATE runs SET status='working' WHERE id=?", (fixture.task,))

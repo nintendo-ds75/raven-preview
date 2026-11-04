@@ -93,7 +93,7 @@ if (/^\d{1,5}$/.test(pairing.get('launcher_port') || '') && pairing.get('launche
 async function localLauncher(path, data = {}) {
   if (!launcherPair) throw new Error('Start the local launcher in your project first. See Local launcher below.');
   const response = await fetch(`http://127.0.0.1:${launcherPair.port}/${path}`, {
-    method: 'POST', headers: {'Content-Type': 'application/json', 'X-Bridge-Launcher': launcherPair.key},
+    method: 'POST', headers: {'Content-Type': 'application/json', 'X-Raven-Launcher': launcherPair.key},
     body: JSON.stringify(data), signal: AbortSignal.timeout(10000),
   });
   const result = await response.json();
@@ -116,23 +116,23 @@ function markAgentConnected() {
   if (prompt) prompt.hidden = true;
 }
 
-const AGENT_RULE = '## Raven\n\nThis team uses Raven (the `bridge` MCP server) to route the judgment calls in a task to the person who owns them. '
-  + 'At the start of every task, before reading or editing anything, call `bridge_start_task`, then follow what Raven returns for the rest of the task.';
+const AGENT_RULE = '## Raven\n\nThis team uses Raven (the `raven` MCP server) to route the judgment calls in a task to the person who owns them. '
+  + 'At the start of every task, before reading or editing anything, call `raven_start_task`, then follow what Raven returns for the rest of the task.';
 
 async function quickAgent(client) {
   const created = await api('/api/tokens', {label: clientName(client) + ' · quick connect'});
   markAgentConnected();
-  const entry = structuredClone(state.mcp_config.mcpServers.bridge);
+  const entry = structuredClone(state.mcp_config.mcpServers.raven);
   entry.headers = {Authorization: 'Bearer ' + created.token};
   let content;
   if (client === 'cursor') {
     const config = {url: entry.url, headers: entry.headers};
     const encoded = btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(config))));
-    content = `<a class="button primary" href="cursor://anysphere.cursor-deeplink/mcp/install?name=bridge&amp;config=${encodeURIComponent(encoded)}">Open Cursor and approve</a><p>This passes a limited Raven credential directly to Cursor. Do not share the installation link.</p>`;
+    content = `<a class="button primary" href="cursor://anysphere.cursor-deeplink/mcp/install?name=raven&amp;config=${encodeURIComponent(encoded)}">Open Cursor and approve</a><p>This passes a limited Raven credential directly to Cursor. Do not share the installation link.</p>`;
   } else {
     const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
-    const command = client === 'claude' ? 'claude mcp add --transport http bridge ' + quote(entry.url) + ' --header ' + quote(entry.headers.Authorization.replace('Bearer ', 'Authorization: Bearer ')) : null;
-    content = command ? `<p>Run once in your project terminal, then restart or reconnect MCP in Claude Code.</p><pre id="mcp-config">${esc(command)}</pre>` : `<p>Add this entry in your Codex MCP configuration. Preserve other existing settings.</p><pre id="mcp-config">${esc('[mcp_servers.bridge]\nurl = ' + JSON.stringify(entry.url) + '\nrequired = true\nhttp_headers = { Authorization = ' + JSON.stringify(entry.headers.Authorization) + ' }')}</pre>`;
+    const command = client === 'claude' ? 'claude mcp add --transport http raven ' + quote(entry.url) + ' --header ' + quote(entry.headers.Authorization.replace('Bearer ', 'Authorization: Bearer ')) : null;
+    content = command ? `<p>Run once in your project terminal, then restart or reconnect MCP in Claude Code.</p><pre id="mcp-config">${esc(command)}</pre>` : `<p>Add this entry in your Codex MCP configuration. Preserve other existing settings.</p><pre id="mcp-config">${esc('[mcp_servers.raven]\nurl = ' + JSON.stringify(entry.url) + '\nrequired = true\nhttp_headers = { Authorization = ' + JSON.stringify(entry.headers.Authorization) + ' }')}</pre>`;
     content += '<button class="button" data-action="copy">Copy setup</button>';
   }
   // Connected is not the same as used. Measured on a real task, Claude
@@ -196,7 +196,7 @@ async function fetchState() {
 // request then carries If-None-Match, answers 304 with null, and a body
 // that does come back carries its own ETag as a non-enumerable `etag`.
 async function api(path, data, {signal, conditional} = {}) {
-  const headers = data === undefined ? {} : {'Content-Type': 'application/json', 'X-Bridge-CSRF': state.csrf_token};
+  const headers = data === undefined ? {} : {'Content-Type': 'application/json', 'X-Raven-CSRF': state.csrf_token};
   if (conditional) headers['If-None-Match'] = conditional;
   // Everything that fails between here and a parsed body is a connection
   // problem, marked so the poll can tell it from an error while drawing.
@@ -858,9 +858,9 @@ async function agentCredential(target) {
   target.disabled = true;
   const created = await api('/api/tokens', {label: target.dataset.client + ' · web setup'});
   markAgentConnected();
-  const config = structuredClone(state.mcp_config.mcpServers.bridge);
+  const config = structuredClone(state.mcp_config.mcpServers.raven);
   config.headers = {Authorization: 'Bearer ' + created.token};
-  $('#agent-details').innerHTML = `<p>Keep these details private. The credential is shown only in this dialog; Raven stores its hash.</p><label>HTTP MCP endpoint</label><pre>${esc(config.url)}</pre><label>Authorization header</label><pre>${esc(config.headers.Authorization)}</pre><p>For clients accepting an MCP JSON configuration:</p><pre id="mcp-config">${esc(JSON.stringify({mcpServers: {bridge: config}}, null, 2))}</pre><button class="button" data-action="copy">Copy configuration</button><p>Save the connection in your agent, then return here. Clients with another configuration format use the same endpoint and header.</p>`;
+  $('#agent-details').innerHTML = `<p>Keep these details private. The credential is shown only in this dialog; Raven stores its hash.</p><label>HTTP MCP endpoint</label><pre>${esc(config.url)}</pre><label>Authorization header</label><pre>${esc(config.headers.Authorization)}</pre><p>For clients accepting an MCP JSON configuration:</p><pre id="mcp-config">${esc(JSON.stringify({mcpServers: {raven: config}}, null, 2))}</pre><button class="button" data-action="copy">Copy configuration</button><p>Save the connection in your agent, then return here. Clients with another configuration format use the same endpoint and header.</p>`;
   target.textContent = 'Credential created';
 }
 
@@ -1376,7 +1376,7 @@ function showRun(id) {
 async function exportWorkspace() {
   const result = await api('/api/export');
   const url = URL.createObjectURL(new Blob([JSON.stringify(result, null, 2)], {type:'application/json'}));
-  const link = document.createElement('a'); link.href = url; link.download = `bridge-workspace-${new Date().toISOString().slice(0,10)}.json`; link.click();
+  const link = document.createElement('a'); link.href = url; link.download = `raven-workspace-${new Date().toISOString().slice(0,10)}.json`; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   notify('Workspace history exported.');
 }
@@ -1699,7 +1699,7 @@ function workbenchSetupCard() {
   const reported = typeof objectiveCapabilities === 'function' ? objectiveCapabilities() : null;
   const hosts = Array.isArray(reported) ? reported : (config.hosts || []);
   const rows = hosts.map(host => `<p class="host-row">${esc(host.name || host.id)} · ${host.ready ? 'Ready' : 'Set up'}</p>`).join('');
-  return `<details class="history" id="browser-tasks"><summary>Run tasks from the browser</summary>${rows}${config.ready ? '<p><a class="button" href="#work">Start a task</a></p>' : '<pre>python -m bridge serve --workbench \\\n  --managed-repo your-org/project=/path/to/checkout</pre><p>Set ANTHROPIC_API_KEY and BRIDGE_MODEL_API=anthropic on the server.</p>'}<p><a href="https://github.com/nintendo-ds75/raven-preview/blob/main/docs/browser-tasks.md" target="_blank" rel="noopener">Browser setup and isolated tests ↗</a></p></details>`;
+  return `<details class="history" id="browser-tasks"><summary>Run tasks from the browser</summary>${rows}${config.ready ? '<p><a class="button" href="#work">Start a task</a></p>' : '<pre>python -m raven serve --workbench \\\n  --managed-repo your-org/project=/path/to/checkout</pre><p>Set ANTHROPIC_API_KEY and RAVEN_MODEL_API=anthropic on the server.</p>'}<p><a href="https://github.com/nintendo-ds75/raven-preview/blob/main/docs/browser-tasks.md" target="_blank" rel="noopener">Browser setup and isolated tests ↗</a></p></details>`;
 }
 
 document.addEventListener('submit', async event => {

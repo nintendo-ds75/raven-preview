@@ -17,9 +17,9 @@ from unittest.mock import patch
 
 from fixtures import BUILDERS, OfflineCase, git_env, run_git
 
-from bridge import ingest
-from bridge.ingest import index_repo
-from bridge.store import Store
+from raven import ingest
+from raven.ingest import index_repo
+from raven.store import Store
 
 # The tables an ingest writes. Random identifiers (uuid hex) and
 # wall-clock columns are masked; the checkout's temporary path is the
@@ -106,7 +106,7 @@ class IngestIdentityTests(OfflineCase):
             for rev in ("", "HEAD"):
                 with self.subTest(fixture=fixture, rev=rev or "unpinned"):
                     batched, stats = self.batched(fixture, rev)
-                    with patch("bridge.ingest._session", return_value=None):
+                    with patch("raven.ingest._session", return_value=None):
                         per_read, per_read_stats = self.ingest(fixture, rev, f"{fixture}-{rev or 'tree'}-per-read.db")
                     for table in TABLES:
                         self.assertEqual(batched[table], per_read[table], table)
@@ -133,7 +133,7 @@ class IngestIdentityTests(OfflineCase):
                     commands.append(command)
                     return real_run(command, *args, **kwargs)
 
-                with patch("bridge.ingest.subprocess.run", side_effect=counting):
+                with patch("raven.ingest.subprocess.run", side_effect=counting):
                     stats = index_repo(store.graph, repo, rev=rev)
                 reads = [c for c in commands if _is_read(c)]
                 self.assertEqual((stats["commits"], stats["files"], stats["owners"]), (1, 2, 1))
@@ -153,7 +153,7 @@ class IngestIdentityTests(OfflineCase):
 
         store = self.fresh_store("probe.db")
         self.addCleanup(store.graph.close)
-        with patch("bridge.ingest.subprocess.run", side_effect=counting):
+        with patch("raven.ingest.subprocess.run", side_effect=counting):
             index_repo(store.graph, BUILDERS["synthco"]())
             index_repo(store.graph, BUILDERS["synthco"](), rev="HEAD")
             ingest._read_at(BUILDERS["synthco"](), "CODEOWNERS", "HEAD")
@@ -165,7 +165,7 @@ class RouteReadIdentityTests(OfflineCase):
     what it answers is what the per-read lookups answered."""
 
     def routes(self, name: str):
-        from bridge.signals import signal_route
+        from raven.signals import signal_route
         store = self.warm_store("qemulike", name)
         self.addCleanup(store.graph.close)
         paths = [r["path"] for r in store.graph.db.execute(
@@ -187,11 +187,11 @@ class RouteReadIdentityTests(OfflineCase):
             spawned.append(command)
             return real_run(command, *args, **kwargs)
 
-        with patch("bridge.ingest.subprocess.run", side_effect=counting):
+        with patch("raven.ingest.subprocess.run", side_effect=counting):
             shared = self.routes("shared.db")
             reads_shared = len([c for c in spawned if _is_read(c)])
             spawned.clear()
-            with patch("bridge.ingest._session", return_value=None):
+            with patch("raven.ingest._session", return_value=None):
                 per_read = self.routes("per-read.db")
             reads_per_read = len([c for c in spawned if _is_read(c)])
         self.assertEqual(shared, per_read)

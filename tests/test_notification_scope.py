@@ -3,9 +3,9 @@ import json
 import threading
 from unittest.mock import patch
 
-from bridge import canvas
-from bridge.authz import Actor
-from bridge.delivery import complete_chat_text
+from raven import canvas
+from raven.authz import Actor
+from raven.delivery import complete_chat_text
 from test_delivery import DeliveryCase
 from test_rules import RuleCase
 
@@ -68,9 +68,9 @@ class NotificationScopeTests(DeliveryCase):
         self.assertTrue(self.store.get_decision(node)['authorized'])
 
     def assert_context_is_exact_before_signoff(self, producer, context):
-        from bridge.approval_scope import transport_text
-        from bridge.config import Config
-        from bridge.ladder import ask
+        from raven.approval_scope import transport_text
+        from raven.config import Config
+        from raven.ladder import ask
         self.addCleanup(self.delivery.close)
         task = self.task('Complete authored context')
         question = 'Can we exclude this test usage?'
@@ -150,7 +150,7 @@ class NotificationScopeTests(DeliveryCase):
         self.assertFalse(self.store.get_decision(node)['authorized'])
 
     def test_chat_sections_preserve_every_character_without_hidden_tail(self):
-        from bridge.delivery import _sections
+        from raven.delivery import _sections
         text = ('a' * 2899 + '  end\n') * 55
         parts = _sections(text, 2900)
         self.assertGreater(len(parts), 50)
@@ -158,7 +158,7 @@ class NotificationScopeTests(DeliveryCase):
         self.assertFalse(complete_chat_text(text))
 
     def test_context_is_complete_or_review_online_not_silently_clipped(self):
-        from bridge.delivery import render
+        from raven.delivery import render
         row = {'id': 'test', 'question': 'Apply policy?', 'context': 'a' * 1700 + ' END OF POLICY', 'facts': '{}'}
         payload = render(row, 'ask', 'Owner', '')
         self.assertTrue(payload['review_complete'])

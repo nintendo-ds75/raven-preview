@@ -4,9 +4,9 @@ import threading
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas, context_memory as cm, mcp, proof
-from bridge.config import Config
-from bridge.store import Invalid, Store
+from raven import canvas, context_memory as cm, mcp, proof
+from raven.config import Config
+from raven.store import Invalid, Store
 
 REPO = 'synthetic/context'
 
@@ -220,10 +220,10 @@ class ContextMemoryTests(OfflineCase):
         self.assertFalse(self.store.get_decision(did)['reusable'])
 
     def test_mcp_returns_canonical_source_and_exact_version_history(self):
-        result = mcp.call_tool(self.store, 'bridge_import_record', {'repo': REPO, 'kind': 'jira', 'ref': 'MCP-1',
+        result = mcp.call_tool(self.store, 'raven_import_record', {'repo': REPO, 'kind': 'jira', 'ref': 'MCP-1',
             'title': 'MCP source', 'provider': 'jira', 'namespace': 'site-a', 'task_id': self.task,
             'status': 'Done', 'resolved': True, 'paths': []})
-        read = mcp.call_tool(self.store, 'bridge_get_record', {'repo': REPO, 'record_id': result['source']['record_id']})
+        read = mcp.call_tool(self.store, 'raven_get_record', {'repo': REPO, 'record_id': result['source']['record_id']})
         self.assertEqual(read['source']['source_version_id'], result['source']['source_version_id'])
         self.assertEqual(len(read['versions']), 1)
 
@@ -301,7 +301,7 @@ class ContextMemoryTests(OfflineCase):
         self.assertTrue(any(json.loads(h['snapshot'])['decision']['signed_by'] == 'Ada Example' for h in cm.history(self.g.db, did)))
 
     def test_joint_composer_pins_only_declared_used_input_objects(self):
-        from bridge import ladder, llm
+        from raven import ladder, llm
         a, b, c = self.source(), self.source('POL-2'), self.source('POL-3')
         rows = [self.row(s) for s in (a, b, c)]
         semantic = patch.object(Config, 'semantic_retrieval', property(lambda _: True))
@@ -322,7 +322,7 @@ class ContextMemoryTests(OfflineCase):
         self.assertFalse(self.store.get_decision(did)['authorized'])
 
     def test_unstructured_joint_cache_output_cannot_acquire_fabricated_links(self):
-        from bridge import ladder, llm
+        from raven import ladder, llm
         rows = [self.row(self.source()), self.row(self.source('POL-2'))]
         semantic = patch.object(Config, 'semantic_retrieval', property(lambda _: True))
         semantic.start()
@@ -366,17 +366,17 @@ class ContextMemoryTests(OfflineCase):
         self.assertTrue(any(json.loads(h['snapshot'])['derivations'] for h in cm.history(self.g.db, child)))
 
     def test_public_mcp_namespace_anchor_disambiguates_the_actual_ladder(self):
-        task = mcp.call_tool(self.store, 'bridge_start_task', {'repo': REPO, 'title': 'Apply record retention policy',
+        task = mcp.call_tool(self.store, 'raven_start_task', {'repo': REPO, 'title': 'Apply record retention policy',
                              'goal': 'Apply retention policy from POL-44', 'paths': 'policy/retention.py', 'client_key': 'selected-anchor'})
         base = {'repo': REPO, 'kind': 'jira', 'ref': 'POL-44', 'title': 'How long should records be retained?',
                 'status': 'Done', 'provider': 'jira', 'paths': ['policy/retention.py']}
-        a = mcp.call_tool(self.store, 'bridge_import_record', {**base, 'namespace': 'site-a', 'external_id': 'opaque-101', 'body': 'Decided: retain records for 30 days.', 'task_id': task['task_id']})
-        b = mcp.call_tool(self.store, 'bridge_import_record', {**base, 'namespace': 'site-b', 'external_id': 'opaque-202', 'body': 'Decided: retain records for 99 years.'})
-        node = mcp.call_tool(self.store, 'bridge_add_node', {'task_id': task['task_id'],
+        a = mcp.call_tool(self.store, 'raven_import_record', {**base, 'namespace': 'site-a', 'external_id': 'opaque-101', 'body': 'Decided: retain records for 30 days.', 'task_id': task['task_id']})
+        b = mcp.call_tool(self.store, 'raven_import_record', {**base, 'namespace': 'site-b', 'external_id': 'opaque-202', 'body': 'Decided: retain records for 99 years.'})
+        node = mcp.call_tool(self.store, 'raven_add_node', {'task_id': task['task_id'],
             'question': 'How long should records be retained under POL-44?', 'paths': 'policy/retention.py', 'category': 'policy'})
         self.assertNotIn('99 years', json.dumps(node))
         self.assertNotIn(b['source']['record_id'], json.dumps(node))
-        tree = mcp.call_tool(self.store, 'bridge_get_tree', {'task_id': task['task_id']})
+        tree = mcp.call_tool(self.store, 'raven_get_tree', {'task_id': task['task_id']})
         self.assertEqual(tree['source_anchors'][0]['record_id'], a['source']['record_id'])
         if node['sources']:
             self.assertEqual({s['record_id'] for s in node['sources']}, {a['source']['record_id']})
@@ -386,11 +386,11 @@ class ContextMemoryTests(OfflineCase):
     def test_public_mcp_slack_message_ids_isolate_workspaces(self):
         base = {'repo': REPO, 'kind': 'slack', 'ref': 'C1:1700000000.000001', 'external_id': 'C1:1700000000.000001',
                 'title': 'Selected conversation', 'body': 'Retention context from the selected message.', 'provider': 'slack'}
-        a = mcp.call_tool(self.store, 'bridge_import_record', {**base, 'namespace': 'TA', 'task_id': self.task, 'anchor_role': 'context'})
-        b = mcp.call_tool(self.store, 'bridge_import_record', {**base, 'namespace': 'TB'})
+        a = mcp.call_tool(self.store, 'raven_import_record', {**base, 'namespace': 'TA', 'task_id': self.task, 'anchor_role': 'context'})
+        b = mcp.call_tool(self.store, 'raven_import_record', {**base, 'namespace': 'TB'})
         self.assertNotEqual(a['source']['record_id'], b['source']['record_id'])
-        self.assertEqual(mcp.call_tool(self.store, 'bridge_get_record', {'repo': REPO, 'record_id': a['source']['record_id']})['source']['namespace'], 'TA')
-        self.assertEqual(mcp.call_tool(self.store, 'bridge_get_tree', {'task_id': self.task})['source_anchors'][0]['role'], 'context')
+        self.assertEqual(mcp.call_tool(self.store, 'raven_get_record', {'repo': REPO, 'record_id': a['source']['record_id']})['source']['namespace'], 'TA')
+        self.assertEqual(mcp.call_tool(self.store, 'raven_get_tree', {'task_id': self.task})['source_anchors'][0]['role'], 'context')
 
     def test_legacy_citation_reuse_surfaces_unknown_without_revoking_human_authority(self):
         did = self.node()
@@ -444,7 +444,7 @@ class ContextMemoryTests(OfflineCase):
         self.assertEqual(len(after['context_history']), count)
 
     def test_joint_second_human_source_correction_invalidates_its_derived_answer(self):
-        from bridge.ladder import _as_record
+        from raven.ladder import _as_record
         first, second = self.node(), self.node()
         for did, answer in ((first, 'First human premise'), (second, 'Second human premise')):
             self.store.answer(did, {'answer': answer, 'signed_by': 'Ada Example'})
@@ -459,7 +459,7 @@ class ContextMemoryTests(OfflineCase):
         self.assertEqual(len([link for link in links if link.get('source_version_id')]), 2)
 
     def test_malformed_joint_source_labels_are_rejected(self):
-        from bridge import ladder, llm
+        from raven import ladder, llm
         semantic = patch.object(Config, 'semantic_retrieval', property(lambda _: True))
         semantic.start()
         self.addCleanup(semantic.stop)
@@ -506,7 +506,7 @@ class ContextMemoryTests(OfflineCase):
         self.assertEqual(self.store.get_decision(child)['parent_id'], parent)
 
     def test_selected_namespace_filters_direct_and_transitive_signed_memory(self):
-        from bridge.ladder import _as_record
+        from raven.ladder import _as_record
         source = self.source(provider='jira', namespace='site-b', body='Retain records for 99 years.')
         prior = self.node([source])
         self.store.answer(prior, {'answer': 'Retain records for 99 years.', 'signed_by': 'Ada Example'})
@@ -520,7 +520,7 @@ class ContextMemoryTests(OfflineCase):
             self.assertNotIn(prior, {r['id'] for r in self.g._memory_rows(('approved', 'resolved'), REPO)})
             self.assertNotIn(derived, {r['id'] for r in self.g._memory_rows(('approved', 'resolved'), REPO)})
             self.assertNotIn(prior, {r.id for r in self.g.recent_answered(REPO)})
-        node = mcp.call_tool(self.store, 'bridge_add_node', {'task_id': later,
+        node = mcp.call_tool(self.store, 'raven_add_node', {'task_id': later,
             'question': 'How many days should records remain?', 'paths': 'policy/retention.py'})
         self.assertNotIn('99 years', json.dumps(node))
 
@@ -628,7 +628,7 @@ class ContextMemoryTests(OfflineCase):
         self.assertEqual(self.g.db.execute("SELECT count(*) FROM notifications WHERE decision_id=? AND kind='review'", (did,)).fetchone()[0], 2)
 
     def test_completed_GH104_history_stays_signed_while_active_GH105_revalidates(self):
-        from bridge.graph import rule_status
+        from raven.graph import rule_status
         source_args = {'kind': 'issue', 'provider': 'github', 'namespace': 'github.com',
                        'external_id': REPO + '/issues/104'}
         source = self.source('GH-104', **source_args)

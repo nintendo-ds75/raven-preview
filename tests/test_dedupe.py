@@ -10,10 +10,10 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase  # noqa: E402
 
-from bridge import attention, canvas, dedupe  # noqa: E402
-from bridge.authz import Actor  # noqa: E402
-from bridge.config import Config  # noqa: E402
-from bridge.llm import LLMError  # noqa: E402
+from raven import attention, canvas, dedupe  # noqa: E402
+from raven.authz import Actor  # noqa: E402
+from raven.config import Config  # noqa: E402
+from raven.llm import LLMError  # noqa: E402
 
 RATE = "What per-use rate does Enterprise pay for Pilot?"
 CENTS = "How many cents does Enterprise pay per completed Pilot response?"
@@ -48,12 +48,12 @@ class DedupeCase(OfflineCase):
                 raise LLMError("offline: only the same-decision reading is faked here")
             q1, q2 = (line.split(": ", 1)[1] for line in prompt.splitlines()[:2])
             return {"same": verdict(q1, q2)}
-        patcher = patch("bridge.llm.Client.complete_json", autospec=True, side_effect=read)
+        patcher = patch("raven.llm.Client.complete_json", autospec=True, side_effect=read)
         mock = patcher.start()
         self.addCleanup(patcher.stop)
         # The background model pass is the ladder's own concern; this suite
         # reads what the add_node reply says.
-        quiet = patch("bridge.canvas._start_background", lambda *a, **k: None)
+        quiet = patch("raven.canvas._start_background", lambda *a, **k: None)
         quiet.start()
         self.addCleanup(quiet.stop)
         return mock

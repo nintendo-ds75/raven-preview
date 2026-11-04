@@ -55,7 +55,7 @@ reachable only by chance (`tests/test_docs_reachable.py` checks that).
 **Design notes and contracts**
 
 - [Versioned context memory](context-memory.md): how records enter Raven and keep their identity and versions.
-- [Record import contract](record-import-contract.md): the identity and version rules `POST /api/records` and `bridge_import_record` share.
+- [Record import contract](record-import-contract.md): the identity and version rules `POST /api/records` and `raven_import_record` share.
 - [Decision source revisions](decision-source-revisions.md): what happens to an answer when the source it leaned on changes.
 - [Fact corrections](fact-corrections.md): replacing an unsigned node's facts explicitly, with audit.
 - [Historical answers and task namespaces](cache-context-classification.md): when a prior answer is evidence and when it is only context.

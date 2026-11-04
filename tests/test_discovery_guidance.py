@@ -11,9 +11,9 @@ import unittest
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas
-from bridge.config import Config
-from bridge.mcp import call_tool
+from raven import canvas
+from raven.config import Config
+from raven.mcp import call_tool
 
 
 PATH = 'src/humanize/number.py'
@@ -315,12 +315,12 @@ class DiscoveryGuidanceTests(OfflineCase):
                 'verdict': 'engage', 'next': 'no node waits on anyone'}
         running = {**tree, 'review': {'status': 'running'}}
         done = {**tree, 'review': {'status': 'done'}}
-        with patch('bridge.canvas.get_tree', side_effect=[running, done]):
+        with patch('raven.canvas.get_tree', side_effect=[running, done]):
             result = canvas.wait(self.store, {'task_id': self.task, 'timeout': 5}, sleep=lambda _: None)
         self.assertEqual(result['task']['status'], 'completed')
         self.assertEqual(result['task']['candidates'], [])
         for guidance in (result['next'], result['task']['next']):
-            self.assertIn('bridge_finish_task', guidance)
+            self.assertIn('raven_finish_task', guidance)
             self.assertIn('same complete diff and checks', guidance)
             self.assertIn('proof', guidance)
         self.assertIn('this same task', result['task']['next'])
@@ -330,7 +330,7 @@ class DiscoveryGuidanceTests(OfflineCase):
         self.store.answer(parent['node_id'], {'answer': ANSWER})
         child = self.node('What monitoring is needed?', parent_id=parent['node_id'], category='ops')
         self.store.answer(child['node_id'], {'answer': 'Record errors only.'})
-        call_tool(self.store, 'bridge_get_tree', {'task_id': self.task})
+        call_tool(self.store, 'raven_get_tree', {'task_id': self.task})
         original_view = canvas._view
         corrected = False
         replacement = 'Correction: keep the existing API; do not add the formatter.'
@@ -342,8 +342,8 @@ class DiscoveryGuidanceTests(OfflineCase):
                 self.store.answer(parent['node_id'], {'answer': replacement})
             return original_view(row, *args, **kwargs)
 
-        with patch('bridge.canvas._view', side_effect=correct_after_snapshot):
-            tree = call_tool(self.store, 'bridge_get_tree', {'task_id': self.task})
+        with patch('raven.canvas._view', side_effect=correct_after_snapshot):
+            tree = call_tool(self.store, 'raven_get_tree', {'task_id': self.task})
         self.assertTrue(corrected)
         self.assertEqual(tree['nodes'][0]['answer'], ANSWER)
         self.assertNotIn('answer', tree['nodes'][0]['children'][0]['parent'])
@@ -352,7 +352,7 @@ class DiscoveryGuidanceTests(OfflineCase):
         self.assertLess(tree['observed_at'], current['updated_at'])
         self.assertIn(parent['node_id'], [n['node_id'] for n in canvas.unread_by_agent(self.store, self.task)])
         # The next complete tree carries the correction and may acknowledge it.
-        reread = call_tool(self.store, 'bridge_get_tree', {'task_id': self.task})
+        reread = call_tool(self.store, 'raven_get_tree', {'task_id': self.task})
         self.assertEqual(reread['nodes'][0]['answer'], replacement)
         self.assertEqual(canvas.unread_by_agent(self.store, self.task), [])
 
@@ -361,11 +361,11 @@ class DiscoveryGuidanceTests(OfflineCase):
             self.graph.add_decision(self.task, f'Other question {i}?', 'ops', 'pending')
         parent = self.node(context=GOAL)
         self.store.answer(parent['node_id'], {'answer': ANSWER})
-        call_tool(self.store, 'bridge_get_tree', {'task_id': self.task})
+        call_tool(self.store, 'raven_get_tree', {'task_id': self.task})
         observed = self.graph.get_task(self.task)['agent_read_at']
         replacement = 'Correction after the first twenty nodes: preserve the original API.'
         self.store.answer(parent['node_id'], {'answer': replacement})
-        resumed = call_tool(self.store, 'bridge_start_task', {'task_id': self.task})
+        resumed = call_tool(self.store, 'raven_start_task', {'task_id': self.task})
         self.assertEqual(len(resumed['existing_nodes']), 20)
         self.assertFalse(resumed['existing_nodes_complete'])
         self.assertNotIn(replacement, json.dumps(resumed))
@@ -377,13 +377,13 @@ class DiscoveryGuidanceTests(OfflineCase):
         self.store.answer(parent['node_id'], {'answer': ANSWER})
         child = self.node('What monitoring is needed?', parent_id=parent['node_id'], category='ops')
         self.store.answer(child['node_id'], {'answer': 'Record errors only.'})
-        call_tool(self.store, 'bridge_get_tree', {'task_id': self.task})
+        call_tool(self.store, 'raven_get_tree', {'task_id': self.task})
         observed = self.graph.get_task(self.task)['agent_read_at']
         replacement = 'Correction: preserve the original API.'
         self.store.answer(parent['node_id'], {'answer': replacement})
         alone = canvas.node_view(self.store, child['node_id'])
         self.assertEqual(alone['parent']['answer'], replacement)
-        waited = call_tool(self.store, 'bridge_wait', {
+        waited = call_tool(self.store, 'raven_wait', {
             'task_id': self.task, 'node_id': child['node_id'], 'timeout': '0', 'since': observed})
         self.assertEqual(waited['changed'][0]['parent']['answer'], replacement)
         self.assertEqual(self.graph.get_task(self.task)['agent_read_at'], observed)
@@ -395,7 +395,7 @@ class DiscoveryGuidanceTests(OfflineCase):
         args = {'task_id': self.task, 'timeout': '0'}
         if since is not None:
             args['since'] = since
-        result = call_tool(self.store, 'bridge_wait', args)
+        result = call_tool(self.store, 'raven_wait', args)
         self.assertEqual(result['changed'], [])
         self.assertEqual(self.graph.get_task(self.task)['agent_read_at'], '')
         self.assertIn(node['node_id'], [n['node_id'] for n in canvas.unread_by_agent(self.store, self.task)])
@@ -414,7 +414,7 @@ class DiscoveryGuidanceTests(OfflineCase):
         def answer_current(_seconds):
             self.store.answer(current['node_id'], {'answer': 'Monitor failures.'})
 
-        result = call_tool(self.store, 'bridge_wait', {'task_id': self.task, 'timeout': '5'},
+        result = call_tool(self.store, 'raven_wait', {'task_id': self.task, 'timeout': '5'},
                            sleep=answer_current)
         self.assertEqual([n['node_id'] for n in result['changed']], [current['node_id']])
         self.assertEqual(self.graph.get_task(self.task)['agent_read_at'], '')
@@ -428,18 +428,18 @@ class DiscoveryGuidanceTests(OfflineCase):
             for i, node in enumerate(nodes):
                 self.store.answer(node['node_id'], {'answer': f'Task-only decision {i}.'})
 
-        result = call_tool(self.store, 'bridge_wait', {'task_id': self.task, 'timeout': '5'}, sleep=answer_both)
+        result = call_tool(self.store, 'raven_wait', {'task_id': self.task, 'timeout': '5'}, sleep=answer_both)
         self.assertEqual({n['node_id'] for n in result['changed']}, {n['node_id'] for n in nodes})
         self.assertTrue(all(n['answer'] for n in result['changed']))
         self.assertEqual(canvas.unread_by_agent(self.store, self.task), [])
 
     def test_same_timestamp_correction_is_still_unread(self):
         stamp = '2026-10-06T10:00:00.000000+00:00'
-        with patch('bridge.store.now', return_value=stamp), patch('bridge.graph.now_iso', return_value=stamp), \
-                patch('bridge.canvas.now', return_value=stamp):
+        with patch('raven.store.now', return_value=stamp), patch('raven.graph.now_iso', return_value=stamp), \
+                patch('raven.canvas.now', return_value=stamp):
             node = self.node()
             self.store.answer(node['node_id'], {'answer': ANSWER})
-            first = call_tool(self.store, 'bridge_get_tree', {'task_id': self.task})
+            first = call_tool(self.store, 'raven_get_tree', {'task_id': self.task})
             self.assertEqual(canvas.unread_by_agent(self.store, self.task), [])
             self.store.answer(node['node_id'], {'answer': 'Correction at the same timestamp.'})
             self.assertEqual(self.store.get_decision(node['node_id'])['updated_at'], first['observed_at'])
@@ -453,7 +453,7 @@ class DiscoveryGuidanceTests(OfflineCase):
         insert = 'INSERT INTO events(id,decision_id,run_id,kind,detail,created_at) VALUES(?,?,?,?,?,?)'
         # Simulate PostgreSQL allocating N before N+1 but committing N later.
         self.graph.db.execute(insert, (highest + 2, node['node_id'], self.task, 'answer_corrected', '{}', stamp))
-        before = call_tool(self.store, 'bridge_get_tree', {'task_id': self.task})['observed_revision'][node['node_id']]
+        before = call_tool(self.store, 'raven_get_tree', {'task_id': self.task})['observed_revision'][node['node_id']]
         self.graph.db.execute(insert, (highest + 1, node['node_id'], self.task, 'answer_corrected', '{}', stamp))
         after = canvas.human_revisions(self.store, self.task)[node['node_id']]
         self.assertEqual(after['max_event_id'], before['max_event_id'])

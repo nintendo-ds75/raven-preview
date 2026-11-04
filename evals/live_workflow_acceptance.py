@@ -27,8 +27,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from bridge import llm
-from bridge.config import load
+from raven import llm
+from raven.config import load
 from evals.slack_contract_harness import (
     OWNER, REFERRED, RavenContractHarness, eventually, http_json,
 )
@@ -323,7 +323,7 @@ def exercise_interview(h, task, node_id, scenario, report):
     guided = human_post(h, human_token, path + '/' + draft['id'] + '/advance',
                         {'expected_version': draft['version']}, report=report, operation='advance')
     record_interview_guidance(guided['guidance'], scenario, report)
-    if h.call('bridge_get_decision', decision_id=node_id)['authorized']:
+    if h.call('raven_get_decision', decision_id=node_id)['authorized']:
         raise AcceptanceFailure('unapproved_interview_authorized_decision')
     return guided
 
@@ -350,7 +350,7 @@ def run_interview_only(h, agent, scenario, report, timeout=180):
 
 
 def run_workflow(h, agent, scenario, report, timeout=180):
-    """Injectable driver; live callers pass the real bridge.llm.Client."""
+    """Injectable driver; live callers pass the real raven.llm.Client."""
     def stage(name):
         report['stage'] = name
 
@@ -361,10 +361,10 @@ def run_workflow(h, agent, scenario, report, timeout=180):
     h.notify_initialized()
     h.rpc('tools/list')
     rough = 'Make billing treat our sandbox load tests correctly without changing normal customer charges.'
-    started = h.call('bridge_start_task', title=rough, goal=rough, repo='contract/billing',
+    started = h.call('raven_start_task', title=rough, goal=rough, repo='contract/billing',
                      client_key='live-workflow-' + scenario['cohort'])
     task = started['task_id']
-    settled = eventually(lambda: (r if not (r := h.call('bridge_start_task', task_id=task)).get('model_pending') else None),
+    settled = eventually(lambda: (r if not (r := h.call('raven_start_task', task_id=task)).get('model_pending') else None),
                          'live kickoff model discovery', timeout=timeout)
     discovery = settled.get('discovery') or {}
     if not discovery.get('named_decisions') or discovery.get('model_error'):
@@ -381,16 +381,16 @@ def run_workflow(h, agent, scenario, report, timeout=180):
         raise AcceptanceFailure('host_discovery_wrong_fixture_path')
     report['discovery'] = {'question': proposed['question'], 'path': proposed['path'],
                            'raven_candidates': discovery['named_decisions']}
-    node = h.call('bridge_add_node', task_id=task, question=proposed['question'],
+    node = h.call('raven_add_node', task_id=task, question=proposed['question'],
                  context=proposed.get('context', ''), paths=proposed['path'], client_ref='live-policy')
     node_id = node['node_id']
-    eventually(lambda: not h.call('bridge_get_decision', decision_id=node_id).get('model_pending'),
+    eventually(lambda: not h.call('raven_get_decision', decision_id=node_id).get('model_pending'),
                'live node inference', timeout=timeout)
     message = eventually(lambda: h.slack.matching_messages(channel='D' + OWNER[1:]), 'inferred owner DM', timeout=timeout)[0]
     stage('natural_referral')
     h.say(message, 'I built the meter, but Marisol Contract handles invoice policy. Could you bring this to her?',
           expected='Pass this question to Marisol Contract')
-    if h.call('bridge_get_decision', decision_id=node_id)['authorized']:
+    if h.call('raven_get_decision', decision_id=node_id)['authorized']:
         raise AcceptanceFailure('referral_proposal_authorized_decision')
     h.say(message, 'yes', expected='Marisol Contract')
     referred = eventually(lambda: h.slack.matching_messages(channel='D' + REFERRED[1:]),
@@ -400,7 +400,7 @@ def run_workflow(h, agent, scenario, report, timeout=180):
     _, readback = h.say(referred, scenario['caveat_message'], user=REFERRED, expected='Record your decision as:')
     if scenario['cohort'] not in readback['text'] or str(scenario['threshold']) not in readback['text']:
         raise AcceptanceFailure('amended_readback_missing_novel_condition')
-    before = h.call('bridge_get_decision', decision_id=node_id)
+    before = h.call('raven_get_decision', decision_id=node_id)
     if before['authorized']:
         raise AcceptanceFailure('unconfirmed_amendment_authorized_decision')
     report['readback'] = readback['text']
@@ -408,9 +408,9 @@ def run_workflow(h, agent, scenario, report, timeout=180):
     exercise_interview(h, task, node_id, scenario, report)
     stage('explicit_confirmation_and_agent_resume')
     h.say(referred, 'yes', user=REFERRED, expected='Recorded')
-    h.call('bridge_wait', task_id=task, timeout='0')
-    tree = h.call('bridge_get_tree', task_id=task)
-    signed = h.call('bridge_get_decision', decision_id=node_id)
+    h.call('raven_wait', task_id=task, timeout='0')
+    tree = h.call('raven_get_tree', task_id=task)
+    signed = h.call('raven_get_decision', decision_id=node_id)
     if not signed['authorized'] or signed['signed_by'] != 'Marisol Contract':
         raise AcceptanceFailure('explicit_confirmation_missing_attributed_signature')
     report['signed_answer'] = signed['answer']
@@ -433,19 +433,19 @@ def run_workflow(h, agent, scenario, report, timeout=180):
                     fromfile='a/' + proposed['path'], tofile='b/' + proposed['path']))
     diff = 'diff --git a/' + proposed['path'] + ' b/' + proposed['path'] + '\n' + diff
     stage('finish_and_proof')
-    h.call('bridge_get_tree', task_id=task)
+    h.call('raven_get_tree', task_id=task)
     checks = f'Live generated policy: {len(cases)} boundary cases executed and passed by acceptance host.'
-    finished = h.call('bridge_finish_task', task_id=task, diff=diff, checks=checks)
+    finished = h.call('raven_finish_task', task_id=task, diff=diff, checks=checks)
     if finished.get('status') != 'completed':
         raise AcceptanceFailure('approved_task_not_completed')
     if (finished.get('review') or {}).get('status') == 'running':
-        eventually(lambda: (t if (t := h.call('bridge_get_tree', task_id=task)).get('review', {}).get('status') != 'running' else None),
+        eventually(lambda: (t if (t := h.call('raven_get_tree', task_id=task)).get('review', {}).get('status') != 'running' else None),
                    'live advisory diff review', timeout=timeout)
         # Same diff/checks reuse the cached review and refresh the proof snapshot.
-        finished = h.call('bridge_finish_task', task_id=task, diff=diff, checks=checks)
+        finished = h.call('raven_finish_task', task_id=task, diff=diff, checks=checks)
     report['advisory_review'] = {'status': (finished.get('review') or {}).get('status'),
                                  'follows': finished.get('follows') or []}
-    proof = h.call('bridge_export_proof', task_id=task)
+    proof = h.call('raven_export_proof', task_id=task)
     if not proof['integrity']['valid'] or proof['bundle']['payload']['change']['diff'] != diff:
         raise AcceptanceFailure('proof_missing_exact_generated_change')
     report['proof'] = {'id': proof['bundle']['id'], 'integrity_valid': True,
@@ -490,7 +490,7 @@ def run(*, run_live=False, max_calls=None, timeout=180, interview_only=False, pr
             scenario = novel_scenario()
         report['scenario'] = scenario
         with redirect_stdout(diagnostics), redirect_stderr(diagnostics), \
-             patch('bridge.llm._open_model_request', side_effect=budget.open), observe_interview_model(report):
+             patch('raven.llm._open_model_request', side_effect=budget.open), observe_interview_model(report):
             with harness_factory(model_mode='live', request_timeout=timeout, event_timeout=timeout) as h:
                 try:
                     workflow(h, llm.Client(load().fast()), scenario, report, timeout=timeout)
@@ -498,7 +498,7 @@ def run(*, run_live=False, max_calls=None, timeout=180, interview_only=False, pr
                     # Stop further provider attempts before teardown, including retry/background paths.
                     budget.stop()
                     if hasattr(h, 'store'):
-                        from bridge import canvas
+                        from raven import canvas
                         h.store.delivery.close()
                         inbox = h.store.delivery.inbox.thread
                         if inbox is not None:

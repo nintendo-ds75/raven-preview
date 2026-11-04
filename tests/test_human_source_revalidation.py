@@ -5,10 +5,10 @@ from unittest.mock import patch
 
 from fixtures import OfflineCase
 from test_auth import SharedServer, BOOTSTRAP
-from bridge import canvas, context_memory as cm, ladder
-from bridge.graph import ts_to_iso
-from bridge.config import Config
-from bridge.store import Invalid, Store
+from raven import canvas, context_memory as cm, ladder
+from raven.graph import ts_to_iso
+from raven.config import Config
+from raven.store import Invalid, Store
 
 REPO = 'synthetic/human-pins'
 
@@ -21,7 +21,7 @@ class HumanSourceRevalidationTests(OfflineCase):
         self.addCleanup(self.g.close)
         self.store.add_owner({'name': 'Policy Owner', 'team': 'Policy', 'patterns': 'policy/*'})
         for method in ('complete', 'complete_json'):
-            guard = patch('bridge.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
+            guard = patch('raven.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
             guard.start()
             self.addCleanup(guard.stop)
 
@@ -313,7 +313,7 @@ class HumanSourceRevalidationTests(OfflineCase):
             observations[source] = observed
             self.correction(source)
             return 'Thirty days.', source, 'Observed the old policy before composition.'
-        with patch('bridge.ladder._how_they_decide', side_effect=raced) as compose:
+        with patch('raven.ladder._how_they_decide', side_effect=raced) as compose:
             node = canvas.add_node(self.store, Config(model_api='none'), {'task_id': task,
                 'question': 'Which phrase belongs on the archive receipt?', 'paths': 'policy/receipt.py'})
         self.assertEqual(compose.call_count, 1)
@@ -327,7 +327,7 @@ class HumanSourceRevalidationTests(OfflineCase):
 class AuthenticatedSourceLifecycleTests(SharedServer):
     def test_typed_import_pure_signoff_superseded_rejects_mcp_finish_and_preserves_completed_proof(self):
         for method in ('complete', 'complete_json'):
-            guard = patch('bridge.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
+            guard = patch('raven.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
             guard.start(); self.addCleanup(guard.stop)
         person = self.post('/api/people', {'name': 'Policy Owner', 'role': 'member'}, token=BOOTSTRAP)
         agent = self.post('/api/tokens', {'person_id': person['id']}, token=BOOTSTRAP)['token']
@@ -336,7 +336,7 @@ class AuthenticatedSourceLifecycleTests(SharedServer):
         data = {'repo': REPO, 'kind': 'jira', 'provider': 'jira', 'namespace': 'policy.example',
             'external_id': 'POL-104', 'ref': 'POL-104', 'title': 'Retention period',
             'body': 'Decided: retain policy records for thirty days.', 'status': 'Done', 'paths': ['policy/retention.py']}
-        imported = self.mcp('bridge_import_record', data, agent)
+        imported = self.mcp('raven_import_record', data, agent)
         self.assertFalse(imported['isError'], imported)
         record = imported['result']['source']
         g = self.store.graph
@@ -350,20 +350,20 @@ class AuthenticatedSourceLifecycleTests(SharedServer):
             self.post('/api/decisions/' + did + '/signoff', {'expected_updated_at': self.store.get_decision(did)['updated_at']}, token=human)
             self.assertTrue(self.store.get_decision(did)['authorized'])
             self.assertEqual(g.blocking_nodes(task), [])
-            tree = self.mcp('bridge_get_tree', {'task_id': task}, agent)
+            tree = self.mcp('raven_get_tree', {'task_id': task}, agent)
             self.assertFalse(tree['isError'])
             self.assertEqual(canvas.unread_by_agent(self.store, task), [])
             return task, did
         historical_task, historical = candidate('GH104 completed')
-        finished = self.mcp('bridge_finish_task', {'task_id': historical_task, 'checks': 'Synthetic provider-free lifecycle', 'diff': 'diff --git a/policy/retention.py b/policy/retention.py\n+retention = 30\n'}, agent)
+        finished = self.mcp('raven_finish_task', {'task_id': historical_task, 'checks': 'Synthetic provider-free lifecycle', 'diff': 'diff --git a/policy/retention.py b/policy/retention.py\n+retention = 30\n'}, agent)
         self.assertFalse(finished['isError'], finished)
-        saved = self.mcp('bridge_export_proof', {'task_id': historical_task}, agent)['result']['bundle']
+        saved = self.mcp('raven_export_proof', {'task_id': historical_task}, agent)['result']['bundle']
         historical_before = self.store.get_decision(historical)
         task, did = candidate('GH105 active')
-        changed = self.mcp('bridge_import_record', {**data, 'status': 'Superseded'}, agent)
+        changed = self.mcp('raven_import_record', {**data, 'status': 'Superseded'}, agent)
         self.assertFalse(changed['isError'], changed)
         self.assertIn(did, changed['result']['affected_decisions'])
-        tree = self.mcp('bridge_get_tree', {'task_id': task}, agent)
+        tree = self.mcp('raven_get_tree', {'task_id': task}, agent)
         self.assertFalse(tree['isError'], tree)
         node = next(n for n in canvas._flatten(tree['result']['nodes']) if n['node_id'] == did)
         self.assertFalse(node['authorized'])
@@ -372,7 +372,7 @@ class AuthenticatedSourceLifecycleTests(SharedServer):
         blockers = g.blocking_nodes(task)
         self.assertEqual([n['id'] for n in blockers], [did])
         self.assertIn('POL-104', blockers[0]['why'])
-        refused = self.mcp('bridge_finish_task', {'task_id': task}, agent)
+        refused = self.mcp('raven_finish_task', {'task_id': task}, agent)
         self.assertTrue(refused['isError'], refused)
         self.assertIn(did, refused['result'])
         self.assertIn('POL-104', refused['result'])
@@ -380,7 +380,7 @@ class AuthenticatedSourceLifecycleTests(SharedServer):
         after = self.store.get_decision(historical)
         for key in ('signatures', 'signed_by', 'signed_revision', 'signed_hash'):
             self.assertEqual(after[key], historical_before[key])
-        exported = self.mcp('bridge_export_proof', {'task_id': historical_task}, agent)['result']
+        exported = self.mcp('raven_export_proof', {'task_id': historical_task}, agent)['result']
         self.assertEqual(exported['bundle'], saved)
         self.assertTrue(exported['integrity']['valid'])
         self.assertTrue(exported['stale'])

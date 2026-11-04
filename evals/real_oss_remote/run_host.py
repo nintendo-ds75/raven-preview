@@ -17,12 +17,12 @@ import threading
 import time
 from pathlib import Path
 
-from bridge import canvas
-from bridge.auth import Auth
-from bridge.authz import Actor
-from bridge.config import Config
-from bridge.server import make_server
-from bridge.store import Invalid, Store
+from raven import canvas
+from raven.auth import Auth
+from raven.authz import Actor
+from raven.config import Config
+from raven.server import make_server
+from raven.store import Invalid, Store
 
 HERE = Path(__file__).resolve().parent
 
@@ -91,7 +91,7 @@ def trace_state(records):
                         continue
                     completed.append((request, record, value))
                     break
-    waits = [r for r in pending.values() if r["message"]["params"]["name"] == "bridge_wait"]
+    waits = [r for r in pending.values() if r["message"]["params"]["name"] == "raven_wait"]
     return completed, waits
 
 
@@ -99,7 +99,7 @@ def host_prompt(case, phase):
     recovery = ("Your previous host process stopped while waiting. Recover the existing task with the same client_key; "
                 "use the durable canvas to learn what happened. Do not create replacement copies of existing nodes.\n"
                 if phase == "resume" else "")
-    return f"""You are the coding host in a local evaluation of Bridge on the real Grafana repository.
+    return f"""You are the coding host in a local evaluation of Raven on the real Grafana repository.
 The workspace is an exported, pre-change source snapshot with no future git history.
 Work only in this workspace. Do not read evaluator files, other directories, future commits,
 public PRs, or answer keys. Do not contact external people/services, spawn agents, push,
@@ -111,7 +111,7 @@ Task: {case['title']}
 {case['brief']}
 Relevant starting areas: {', '.join(case['scope'])}.
 
-Use the installed Bridge MCP tools as the host workflow. Start with bridge_start_task,
+Use the installed Raven MCP tools as the host workflow. Start with raven_start_task,
 repo=grafana/grafana, client_key=real-oss-{case['id']}, agent=codex-host,
 requester=Evaluation Developer, and goal containing the complete task brief above.
 Discover the actual decisions yourself from the brief,
@@ -122,11 +122,11 @@ questions. Use parent/child or dependency relationships when one decision genuin
 depends on another. Avoid making an arbitrary question for every implementation detail.
 
 Keep doing independent investigation/test preparation while waiting. Human replies are
-simulated through the real Bridge inbox/Slack receiver. Use bridge_wait with timeout=60
+simulated through the real Raven inbox/Slack receiver. Use raven_wait with timeout=60
 when waiting, then re-read the tree, adopt relevant human follow-ups, and incorporate the
 answers in your work. You cannot sign your own proposals or call human REST endpoints.
 The simulator does not answer until you reach a wait. Use tree state before final action;
-only finish the task when every required decision is authorized. If Bridge fails, report
+only finish the task when every required decision is authorized. If Raven fails, report
 the actual failure without bypassing it. Write EVALUATION_IMPLEMENTATION.md describing
 your patch, decisions, and validation. This is a reviewable patch, not a production release.
 {recovery}"""
@@ -135,21 +135,21 @@ your patch, decisions, and validation. This is a reviewable patch, not a product
 def command(workspace, out, phase, host):
     if host == "claude":
         mcp = out / "mcp-config.json"
-        dump(mcp, {"mcpServers": {"bridge": {"command": sys.executable,
+        dump(mcp, {"mcpServers": {"raven": {"command": sys.executable,
                                           "args": [str(HERE / "mcp_proxy.py")]}}})
         return ["claude", "-p", "--output-format", "stream-json", "--verbose",
                 "--tools", "Read,Grep,Glob,Edit,Write", "--setting-sources", "",
                 "--permission-mode", "acceptEdits",
                 "--max-turns", "60", "--strict-mcp-config", "--mcp-config", str(mcp),
-                "--allowedTools", "mcp__bridge"]
+                "--allowedTools", "mcp__raven"]
     config = {
-        "mcp_servers.bridge.command": sys.executable,
-        "mcp_servers.bridge.args": [str(HERE / "mcp_proxy.py")],
-        "mcp_servers.bridge.env_vars": ["BRIDGE_TOKEN", "BRIDGE_EVAL_URL", "BRIDGE_EVAL_TRACE", "BRIDGE_EVAL_AUDIT"],
-        "mcp_servers.bridge.required": True,
-        "mcp_servers.bridge.startup_timeout_sec": 20,
-        "mcp_servers.bridge.tool_timeout_sec": 120,
-        "mcp_servers.bridge.default_tools_approval_mode": "approve",
+        "mcp_servers.raven.command": sys.executable,
+        "mcp_servers.raven.args": [str(HERE / "mcp_proxy.py")],
+        "mcp_servers.raven.env_vars": ["RAVEN_TOKEN", "RAVEN_EVAL_URL", "RAVEN_EVAL_TRACE", "RAVEN_EVAL_AUDIT"],
+        "mcp_servers.raven.required": True,
+        "mcp_servers.raven.startup_timeout_sec": 20,
+        "mcp_servers.raven.tool_timeout_sec": 120,
+        "mcp_servers.raven.default_tools_approval_mode": "approve",
         "web_search": "disabled",
         "features.multi_agent": False,
         "approval_policy": "never",
@@ -163,10 +163,10 @@ def command(workspace, out, phase, host):
 
 
 def run(prepared, case_id, timeout, host="codex", restart=False):
-    os.environ.update(BRIDGE_MODEL_API="none", BRIDGE_SEMANTIC="0", BRIDGE_LIVE="0")
+    os.environ.update(RAVEN_MODEL_API="none", RAVEN_SEMANTIC="0", RAVEN_LIVE="0")
     # Explicitly prevent inherited real connector credentials from enabling a
     # production transport. Codex auth remains its existing local login.
-    for key in ("SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "TEAMS_WEBHOOK_URL", "GITHUB_TOKEN", "GH_TOKEN", "BRIDGE_ADMIN_TOKEN"):
+    for key in ("SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "TEAMS_WEBHOOK_URL", "GITHUB_TOKEN", "GH_TOKEN", "RAVEN_ADMIN_TOKEN"):
         os.environ.pop(key, None)
     spec = json.loads((HERE / "cases.json").read_text())
     case = next(c for c in spec["cases"] if c["id"] == case_id)
@@ -174,7 +174,7 @@ def run(prepared, case_id, timeout, host="codex", restart=False):
         case = {**case, "recovery": "restart"}
     out = prepared / "runs" / case_id
     out.mkdir(parents=True, exist_ok=True)
-    if (out / "bridge.db").exists():
+    if (out / "raven.db").exists():
         raise RuntimeError("Case already exists; use a fresh prepared fixture for an independent rerun")
     workspace = prepared / "workspaces" / case_id
     shutil.copytree(prepared / "snapshot", workspace)
@@ -182,9 +182,9 @@ def run(prepared, case_id, timeout, host="codex", restart=False):
     subprocess.run(["git", "-C", str(workspace), "add", "."], check=True)
     subprocess.run(["git", "-C", str(workspace), "-c", "user.name=Raven Evaluation", "-c", "user.email=eval@example.test",
                     "-c", "core.hooksPath=/dev/null", "commit", "-qm", "Frozen public source snapshot"], check=True)
-    with sqlite3.connect(prepared / "baseline.db") as source, sqlite3.connect(out / "bridge.db") as dest:
+    with sqlite3.connect(prepared / "baseline.db") as source, sqlite3.connect(out / "raven.db") as dest:
         source.backup(dest)
-    store = Store(out / "bridge.db")
+    store = Store(out / "raven.db")
     g = store.graph
     pid = g.add_person("Evaluation Developer", slack_id="UDEVELOPER", source="eval fixture")
     auth = Auth(store, enabled=True)
@@ -194,8 +194,8 @@ def run(prepared, case_id, timeout, host="codex", restart=False):
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     trace_path = out / "mcp-trace.jsonl"
-    env = {**os.environ, "BRIDGE_TOKEN": token, "BRIDGE_EVAL_URL": f"http://127.0.0.1:{server.server_port}",
-           "BRIDGE_EVAL_TRACE": str(trace_path), "BRIDGE_EVAL_AUDIT": str(out / 'audit.jsonl')}
+    env = {**os.environ, "RAVEN_TOKEN": token, "RAVEN_EVAL_URL": f"http://127.0.0.1:{server.server_port}",
+           "RAVEN_EVAL_TRACE": str(trace_path), "RAVEN_EVAL_AUDIT": str(out / 'audit.jsonl')}
     from evals.audit.ledger import Ledger, ActionLog, TaskObserver
     audit = Ledger(out / 'audit.jsonl', secrets=(token,))
     audit.append('run_started', {'case': case_id, 'host': host,
@@ -239,7 +239,7 @@ def run(prepared, case_id, timeout, host="codex", restart=False):
                         had_wait = True
                     for request, response, node in completed:
                         params = request["message"]["params"]
-                        if params["name"] != "bridge_add_node" or not isinstance(node, dict) or not node.get("node_id"):
+                        if params["name"] != "raven_add_node" or not isinstance(node, dict) or not node.get("node_id"):
                             continue
                         if node["node_id"] not in first_routes:
                             first_routes[node["node_id"]] = {"question": node["question"], "owner": node.get("owner"),
@@ -347,7 +347,7 @@ def run(prepared, case_id, timeout, host="codex", restart=False):
         (out / "workspace-status.txt").write_text(status)
         summary = {"case": case_id, "task_id": task_id, "host_waited": had_wait, "host_interrupted": interrupted,
                    "host": host, "host_version": subprocess.check_output([host, "--version"], text=True).strip(),
-                   "bridge_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=HERE, text=True).strip(),
+                   "raven_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=HERE, text=True).strip(),
                    "first_route_count": len(first_routes), "owner_replies": len(replied), "elapsed_seconds": round(time.time() - started, 1),
                    "patch_bytes": len(patch.encode()), "task_count": g.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0],
                    "task_status": g.db.execute("SELECT status FROM runs WHERE id=?", (task_id,)).fetchone()[0] if task_id else "missing",

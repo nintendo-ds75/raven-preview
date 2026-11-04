@@ -18,11 +18,11 @@ from unittest.mock import patch
 
 from fixtures import OfflineCase, ready_server
 
-from bridge import briefing, canvas
-from bridge.auth import Auth
-from bridge.authz import Actor, Refused
-from bridge.config import Config
-from bridge.store import Invalid
+from raven import briefing, canvas
+from raven.auth import Auth
+from raven.authz import Actor, Refused
+from raven.config import Config
+from raven.store import Invalid
 
 CFG = Config(model_api="none")
 BASE = "https://raven.acme.test"
@@ -653,12 +653,12 @@ class AuthOnCase(BriefCase, Http):
 
     def setUp(self):
         super().setUp()
-        env = patch.dict(os.environ, {"BRIDGE_ADMIN_TOKEN": BOOTSTRAP, "BRIDGE_SECRET": "brief-test-secret"})
+        env = patch.dict(os.environ, {"RAVEN_ADMIN_TOKEN": BOOTSTRAP, "RAVEN_SECRET": "brief-test-secret"})
         env.start()
         self.addCleanup(env.stop)
         self.auth = Auth(self.store, enabled=True)
         self.graph.set_setting("workspace_name", "Acme")
-        from bridge.server import make_server
+        from raven.server import make_server
         self.serve(make_server(self.store, port=0, auth=self.auth))
         self.t = self.task()
         self.a = self.node(self.t)
@@ -679,12 +679,12 @@ class AccountTests(AuthOnCase):
         status, body, headers = self.claim(self.token)
         self.assertEqual(status, 200)
         self.assertEqual(body["redirect"], f"/#runs/{self.t}")
-        cookie = SimpleCookie(headers["Set-Cookie"])["bridge_session"].value
-        status, me, _ = self.request("GET", "/api/me", {"Cookie": f"bridge_session={cookie}"})
+        cookie = SimpleCookie(headers["Set-Cookie"])["raven_session"].value
+        status, me, _ = self.request("GET", "/api/me", {"Cookie": f"raven_session={cookie}"})
         self.assertEqual(status, 200)
         self.assertEqual((me["me"]["id"], me["me"]["name"], me["me"]["role"]), (self.wes, "Wes Chen", "member"))
         # The login is theirs: email and password sign in from now on.
-        from bridge.accounts import Accounts
+        from raven.accounts import Accounts
         self.assertEqual(Accounts(self.auth).login("wes@acme.example", self.password), self.wes)
         _, page, _ = self.brief(self.token)
         self.assertTrue(page["viewer"]["has_account"])
@@ -745,8 +745,8 @@ class AccountTests(AuthOnCase):
         token = self.mint(self.val, self.t)
         status, _, headers = self.claim(token)
         self.assertEqual(status, 200)
-        cookie = SimpleCookie(headers["Set-Cookie"])["bridge_session"].value
-        me = self.request("GET", "/api/me", {"Cookie": f"bridge_session={cookie}"})[1]["me"]
+        cookie = SimpleCookie(headers["Set-Cookie"])["raven_session"].value
+        me = self.request("GET", "/api/me", {"Cookie": f"raven_session={cookie}"})[1]["me"]
         self.assertEqual(me["role"], "viewer")
 
 
@@ -835,7 +835,7 @@ class OperatorPreviewTests(BriefCase, Http):
         t = self.task()
         a = self.node(t)
         csrf = self.request("GET", "/api/state")[1]["csrf_token"]
-        headers = {"X-Bridge-CSRF": csrf}
+        headers = {"X-Raven-CSRF": csrf}
         status, body, _ = self.request("POST", f"/api/tasks/{t}/link", headers,
                                        {"person": "Wes Chen", "decision_id": a["node_id"]})
         self.assertEqual(status, 200)
@@ -890,7 +890,7 @@ class PlainWordsTests(BriefCase):
         for internal in (earlier["node_id"], "0.38", "assumption", "cut here", "inbox", "_["):
             self.assertNotIn(internal, said)
         # Slack keeps its own cut, without the assumption glued to it.
-        from bridge.delivery import _found_for_owner
+        from raven.delivery import _found_for_owner
         self.assertNotIn("assumption", _found_for_owner(evidence))
         self.assertIn(earlier["node_id"], _found_for_owner(evidence))
 
@@ -933,9 +933,9 @@ class PlainWordsTests(BriefCase):
         # A note holding "; " of its own is one line, whole; what is for
         # an administrator, or already on the page, is left out.
         long = ("verified: Wes Chen decides for billing/* (matches billing/usage.py) (config); note: CODEOWNERS lists "
-                "dana here; the organization's authority map names Wes Chen, so Bridge routes to Wes Chen; dana "
+                "dana here; the organization's authority map names Wes Chen, so Raven routes to Wes Chen; dana "
                 "still holds the CODEOWNERS listing; area: the agent is working in billing/usage.py; GitHub not "
-                "synced for acme/platform: Bridge knows past reviews only from git trailers")
+                "synced for acme/platform: Raven knows past reviews only from git trailers")
         with self.graph.transaction():
             self.graph.db.execute("UPDATE decisions SET owner_evidence=? WHERE id=?", (long, n["node_id"]))
         details = self.page(self.wes, t, n["node_id"])["focus"]["why"]["details"]

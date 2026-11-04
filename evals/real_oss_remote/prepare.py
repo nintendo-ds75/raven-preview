@@ -15,9 +15,9 @@ import tarfile
 from collections import Counter
 from pathlib import Path
 
-from bridge.github import _store_pull, apply_pull
-from bridge.ingest import index_repo
-from bridge.store import Store
+from raven.github import _store_pull, apply_pull
+from raven.ingest import index_repo
+from raven.store import Store
 
 HERE = Path(__file__).resolve().parent
 
@@ -45,7 +45,7 @@ def distribution(repo, revision, limit):
 
 
 def prepare(repo, public, out):
-    os.environ.update(BRIDGE_MODEL_API="none", BRIDGE_SEMANTIC="0", BRIDGE_LIVE="0")
+    os.environ.update(RAVEN_MODEL_API="none", RAVEN_SEMANTIC="0", RAVEN_LIVE="0")
     spec = json.loads((HERE / "cases.json").read_text())
     base = spec["baseline"]
     out.mkdir(parents=True, exist_ok=True)
@@ -129,11 +129,11 @@ def prepare(repo, public, out):
         tar.extractall(snapshot, filter="data")
     archive.unlink()
     manifest = {"repository": spec["repository"], "baseline": base, "baseline_time": spec["baseline_time"],
-                "bridge_revision": git(HERE.parents[1], "rev-parse", "HEAD"), "ingest": stats,
+                "raven_revision": git(HERE.parents[1], "rev-parse", "HEAD"), "ingest": stats,
                 "observed_distribution": distribution(repo, spec["observed_head"], 1600),
                 "baseline_distribution": distribution(repo, base, spec["history_limit"]),
                 "imported_prs": imported, "snapshot_files": len(list(snapshot.rglob("*"))),
-                "mode": {"bridge_semantic": False, "bridge_live": False, "host": "codex exec", "people": "simulated"},
+                "mode": {"raven_semantic": False, "raven_live": False, "host": "codex exec", "people": "simulated"},
                 "directory_logins": sorted(mapping)}
     manifest = scrub.scrub_json(manifest)
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2))

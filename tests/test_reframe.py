@@ -1,7 +1,7 @@
 from test_contract import ContractCase
-from bridge import canvas, reframe
-from bridge.authz import Actor, Refused
-from bridge.store import Invalid
+from raven import canvas, reframe
+from raven.authz import Actor, Refused
+from raven.store import Invalid
 
 
 class ReframeTests(ContractCase):

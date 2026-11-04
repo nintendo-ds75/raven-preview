@@ -6,7 +6,7 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
-from bridge.harness_worker import _codex_transport as codex
+from raven.harness_worker import _codex_transport as codex
 
 
 class Process:
@@ -69,11 +69,11 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
             if command_lines:
                 return command_lines.pop(0)
             await asyncio.Future()
-        with patch('bridge.harness_worker.asyncio.to_thread', side_effect=no_commands), \
-                patch('bridge.harness_worker.asyncio.create_subprocess_exec', return_value=process), \
-                patch('bridge.harness_worker.sys.stdin', io.StringIO('')), \
+        with patch('raven.harness_worker.asyncio.to_thread', side_effect=no_commands), \
+                patch('raven.harness_worker.asyncio.create_subprocess_exec', return_value=process), \
+                patch('raven.harness_worker.sys.stdin', io.StringIO('')), \
                 patch.dict('os.environ', {'RAVEN_CODEX_BIN': 'fake'}), \
-                patch('bridge.harness_worker.emit') as emit:
+                patch('raven.harness_worker.emit') as emit:
             await asyncio.wait_for(codex(config), 1)
             return [call.args[0] for call in emit.call_args_list]
 
@@ -146,17 +146,17 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
 
 class CapabilityTests(unittest.TestCase):
     def test_codex_worker_and_capability_require_exact_qualified_model_and_binary(self):
-        from bridge import harness_worker, workbench_hosts
+        from raven import harness_worker, workbench_hosts
         from types import SimpleNamespace
         from unittest.mock import AsyncMock
         pin = workbench_hosts.CODEX_VERSION
         model = workbench_hosts.CODEX_MODEL
         with patch.dict('os.environ', {'RAVEN_HOST_CODEX_API_KEY':'fixture', 'RAVEN_HOST_CODEX_MODEL':model,
-                                       'RAVEN_CODEX_BIN':'fixture', 'BRIDGE_HOST_PROBE_SECONDS':'0'}):
+                                       'RAVEN_CODEX_BIN':'fixture', 'RAVEN_HOST_PROBE_SECONDS':'0'}):
             for version, returncode, ready in ((pin,0,True), ('different',0,False), (pin,1,False)):
                 result = SimpleNamespace(stdout='codex-cli ' + version, returncode=returncode)
-                with patch('bridge.workbench_hosts.subprocess.run', return_value=result), \
-                     patch('bridge.harness_worker._codex_transport', new_callable=AsyncMock) as transport:
+                with patch('raven.workbench_hosts.subprocess.run', return_value=result), \
+                     patch('raven.harness_worker._codex_transport', new_callable=AsyncMock) as transport:
                     # Capability additionally checks native probe exit status.
                     self.assertEqual(workbench_hosts.capability('codex')['ready'], ready)
                     if ready:
@@ -167,20 +167,20 @@ class CapabilityTests(unittest.TestCase):
                             asyncio.run(harness_worker.codex({'model':model}))
                         transport.assert_not_awaited()
             for error in (OSError('missing'), subprocess.TimeoutExpired('fixture', 5)):
-                with patch('bridge.harness_worker.subprocess.run', side_effect=error), \
-                     patch('bridge.harness_worker._codex_transport', new_callable=AsyncMock) as transport:
+                with patch('raven.harness_worker.subprocess.run', side_effect=error), \
+                     patch('raven.harness_worker._codex_transport', new_callable=AsyncMock) as transport:
                     with self.assertRaisesRegex(RuntimeError, 'unqualified_binary'):
                         asyncio.run(harness_worker.codex({'model':model}))
                     transport.assert_not_awaited()
-            with patch('bridge.harness_worker.subprocess.run', side_effect=AssertionError('No binary call')):
+            with patch('raven.harness_worker.subprocess.run', side_effect=AssertionError('No binary call')):
                 with self.assertRaisesRegex(RuntimeError, 'unqualified_model'):
                     asyncio.run(harness_worker.codex({'model':'different'}))
             with patch.dict('os.environ', {'RAVEN_HOST_CODEX_MODEL':'different'}), \
-                 patch('bridge.workbench_hosts.subprocess.run', return_value=SimpleNamespace(stdout='codex-cli '+pin,returncode=0)):
+                 patch('raven.workbench_hosts.subprocess.run', return_value=SimpleNamespace(stdout='codex-cli '+pin,returncode=0)):
                 self.assertFalse(workbench_hosts.capability('codex')['ready'])
 
     def test_pi_requires_explicit_credential_model_and_provider(self):
-        from bridge.workbench_hosts import capability
+        from raven.workbench_hosts import capability
         with patch.dict('os.environ', {'RAVEN_HOST_PI_API_KEY': '', 'RAVEN_HOST_PI_MODEL': '',
                                        'RAVEN_HOST_PI_PROVIDER': '', 'OPENAI_API_KEY': 'do-not-borrow'}):
             result = capability('pi')
@@ -190,13 +190,13 @@ class CapabilityTests(unittest.TestCase):
         self.assertIn('RAVEN_HOST_PI_PROVIDER', ' '.join(result['blockers']))
 
     def test_unknown_harness_never_selects_codex(self):
-        from bridge.workbench_hosts import capability
-        from bridge.store import Invalid
+        from raven.workbench_hosts import capability
+        from raven.store import Invalid
         with self.assertRaises(Invalid):
             capability('unknown')
 
     def test_pi_custom_endpoint_rejects_insecure_remote_and_embedded_credentials(self):
-        from bridge.workbench_hosts import capability
+        from raven.workbench_hosts import capability
         for endpoint in ('https://[malformed', 'http://remote.example/v1', 'https://key:secret@example.com/v1', 'https://example.com/v1?key=x'):
             with self.subTest(endpoint=endpoint), patch.dict('os.environ', {'RAVEN_HOST_PI_BASE_URL': endpoint}):
                 self.assertIn('without credentials', ' '.join(capability('pi')['blockers']))
@@ -206,17 +206,17 @@ class ProcessGroupTests(unittest.TestCase):
     def test_cleanup_targets_dedicated_group_even_if_leader_already_exited(self):
         import signal
         from types import SimpleNamespace
-        from bridge.workbench_hosts import stop_process_group
+        from raven.workbench_hosts import stop_process_group
         process = SimpleNamespace(pid=123456, wait=lambda **kwargs: 0)
-        with patch('bridge.workbench_hosts.os.killpg') as kill:
+        with patch('raven.workbench_hosts.os.killpg') as kill:
             stop_process_group(process)
         self.assertEqual(kill.call_args_list[0].args, (123456, signal.SIGTERM))
         self.assertEqual(kill.call_args_list[1].args, (123456, signal.SIGKILL))
 
     def test_already_gone_group_is_harmless(self):
         from types import SimpleNamespace
-        from bridge.workbench_hosts import stop_process_group
-        with patch('bridge.workbench_hosts.os.killpg', side_effect=ProcessLookupError):
+        from raven.workbench_hosts import stop_process_group
+        with patch('raven.workbench_hosts.os.killpg', side_effect=ProcessLookupError):
             stop_process_group(SimpleNamespace(pid=123456, wait=lambda **kwargs: 0))
 
 
@@ -243,11 +243,11 @@ class SupervisorTests(unittest.TestCase):
         return SimpleNamespace(stdin=Input(), stdout=io.StringIO(output), pid=123456)
 
     def run_host(self, process):
-        from bridge.workbench_hosts import Harness
+        from raven.workbench_hosts import Harness
         return Harness().run(self.service, self.task, 'Fixture task')
 
     def test_startup_broken_pipe_still_stops_worker_group(self):
-        from bridge import workbench_hosts as hosts
+        from raven import workbench_hosts as hosts
         process = self.process(broken=True)
         with patch.object(hosts, 'capability', return_value={'ready': True, 'version': '1.4.0'}), \
                 patch.object(hosts.subprocess, 'Popen', return_value=process) as spawn, \
@@ -259,7 +259,7 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(state, 'stopped')
 
     def test_receipt_and_pi_cost_are_recorded_together(self):
-        from bridge import workbench_hosts as hosts
+        from raven import workbench_hosts as hosts
         process = self.process(json.dumps({'kind':'result', 'status':'completed', 'is_error':False, 'cost_usd':0.25})+'\n')
         with patch.object(hosts, 'capability', return_value={'ready': True, 'version': '1.4.0'}), \
                 patch.object(hosts.subprocess, 'Popen', return_value=process), patch.object(hosts, 'stop_process_group'):
@@ -270,7 +270,7 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(row['turns'], 1)
 
     def test_opencode_uses_native_driver_and_only_explicit_host_key(self):
-        from bridge import workbench_hosts as hosts
+        from raven import workbench_hosts as hosts
         self.service.store.graph.db.execute("UPDATE browser_hosts SET provider='opencode' WHERE task_id=?", (self.task,))
         process = self.process(json.dumps({'kind':'result', 'status':'completed', 'is_error':False, 'cost_usd':0.5})+'\n')
         with patch.object(hosts, 'capability', return_value={'ready': True, 'version': '1.19.4'}), \
@@ -278,7 +278,7 @@ class SupervisorTests(unittest.TestCase):
                 patch.dict('os.environ', {'OPENAI_API_KEY':'internal-do-not-borrow',
                                          'RAVEN_HOST_OPENCODE_API_KEY':'dedicated-fixture', 'RAVEN_HOST_OPENCODE_PROVIDER':'anthropic'}):
             self.run_host(process)
-        self.assertEqual(spawn.call_args.args[0][-1], 'bridge.opencode_host')
+        self.assertEqual(spawn.call_args.args[0][-1], 'raven.opencode_host')
         environment = spawn.call_args.kwargs['env']
         self.assertEqual(environment['RAVEN_OPENCODE_API_KEY'], 'dedicated-fixture')
         self.assertNotIn('OPENAI_API_KEY', environment)
@@ -287,7 +287,7 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(row['cost_usd'], 0.5)
 
     def test_queued_tools_are_not_dispatched_after_wait_or_timeout_interrupt(self):
-        from bridge import workbench_hosts as hosts
+        from raven import workbench_hosts as hosts
         for status, timeout in (('waiting','900'), ('running','0.000000001')):
             with self.subTest(status=status):
                 self.service.update(self.task, status=status)

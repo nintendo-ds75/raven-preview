@@ -12,7 +12,7 @@ assert.match(html,/data-action="invite-person"/);
 c.state.me.role='member';assert.equal(c.workspaceAccountCard(),'');
 c.state.me.role='admin';c.state.auth.enabled=false;assert.equal(c.workspaceAccountCard(),'');
 // Keep the customer-facing expiry tied to the real invitation implementation.
-const accounts=fs.readFileSync(path.join(__dirname,'../bridge/accounts.py'),'utf8');
+const accounts=fs.readFileSync(path.join(__dirname,'../raven/accounts.py'),'utf8');
 assert.match(accounts,/int\(time\.time\(\)\) \+ 172800/);
 assert.match(accounts,/'expires_in': 172800/);
 console.log('Account setup copy: authenticated notification links, invite expiry and admin-only control checks passed.');

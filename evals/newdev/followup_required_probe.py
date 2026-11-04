@@ -6,13 +6,13 @@ import os
 import tempfile
 from pathlib import Path
 
-os.environ["BRIDGE_MODEL_API"] = "none"
-os.environ["BRIDGE_SEMANTIC"] = "0"
+os.environ["RAVEN_MODEL_API"] = "none"
+os.environ["RAVEN_SEMANTIC"] = "0"
 
-from bridge import canvas  # noqa: E402
-from bridge.authz import Actor  # noqa: E402
-from bridge.config import Config  # noqa: E402
-from bridge.store import Invalid, Store  # noqa: E402
+from raven import canvas  # noqa: E402
+from raven.authz import Actor  # noqa: E402
+from raven.config import Config  # noqa: E402
+from raven.store import Invalid, Store  # noqa: E402
 
 QUESTION = "Before release, which option will handle redirects: apply jitter there too, or explicitly exclude redirects?"
 

@@ -42,7 +42,7 @@ class SeedGenericTest(OfflineCase):
         stats = seed.seed(db, repo, company="Acme", repo_name="acme/acme-app", people=PEOPLE, teams=TEAMS,
                           authority=AUTHORITY, records=RECORDS, decisions=DECISIONS, notes=NOTES)
         self.assertEqual(stats["commits"], 3)
-        from bridge.store import Store
+        from raven.store import Store
         store = Store(db)
         graph = store.graph
         self.assertEqual(graph.get_setting("workspace_name"), "Acme")
@@ -68,7 +68,7 @@ class SeedGenericTest(OfflineCase):
         db = str(Path(self.temp.name) / "pw.db")
         stats = seed.seed(db, repo)
         self.assertEqual(stats["commits"], len(seed.HISTORY))
-        from bridge.store import Store
+        from raven.store import Store
         store = Store(db)
         self.assertEqual(len(store.graph.people()), len(seed.PEOPLE))
         answered = store.graph.db.execute("SELECT count(*) FROM decisions WHERE answered_by!='' AND reusable=1").fetchone()[0]

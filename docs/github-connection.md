@@ -36,8 +36,8 @@ no override is configured.
    into the deployment's `.env`:
 
    ```dotenv
-   BRIDGE_GITHUB_APP_CLIENT_ID=Iv1.your_public_client_id
-   BRIDGE_GITHUB_APP_SLUG=your-bridge-app-slug
+   RAVEN_GITHUB_APP_CLIENT_ID=Iv1.your_public_client_id
+   RAVEN_GITHUB_APP_SLUG=your-raven-app-slug
    ```
 
 7. Run `./setup`, or open **Settings** in the running app.

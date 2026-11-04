@@ -16,9 +16,9 @@ import re
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import ladder, llm, timeline
-from bridge.config import Config
-from bridge.judgment import fit_reason
+from raven import ladder, llm, timeline
+from raven.config import Config
+from raven.judgment import fit_reason
 
 REPO = "parcelwise/parcelwise-app"
 TABLE_Q = "Which table does billing read usage from: usage_daily or the raw usage_events?"

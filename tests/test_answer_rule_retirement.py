@@ -2,7 +2,7 @@
 import json
 from unittest.mock import patch
 
-from bridge import canvas, proof
+from raven import canvas, proof
 from test_rules import RuleCase
 import test_rule_invalidation as invalidation_fixtures
 

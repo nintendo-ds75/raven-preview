@@ -7,8 +7,8 @@ from urllib.request import urlopen
 from unittest.mock import Mock
 
 from fixtures import OfflineCase
-from bridge import canvas, mcp, source_access, visibility
-from bridge.store import Invalid
+from raven import canvas, mcp, source_access, visibility
+from raven.store import Invalid
 
 
 class VisibilityTests(OfflineCase):
@@ -50,10 +50,10 @@ class VisibilityTests(OfflineCase):
         with self.assertRaisesRegex(Invalid, 'withheld'):
             visibility.require_task(self.store, self.task)
         with self.assertRaisesRegex(Invalid, 'withheld'):
-            mcp.call_tool(self.store, 'bridge_get_tree', {'task_id': self.task})
+            mcp.call_tool(self.store, 'raven_get_tree', {'task_id': self.task})
         other = self.store.add_run({'title': 'Unrelated work', 'repo': self.repo})['id']
         visibility.require_task(self.store, other)
-        self.assertEqual(mcp.call_tool(self.store, 'bridge_get_tree', {'task_id': other})['task_id'], other)
+        self.assertEqual(mcp.call_tool(self.store, 'raven_get_tree', {'task_id': other})['task_id'], other)
 
     def test_cached_answer_read_contaminates_a_new_session_even_without_a_new_decision(self):
         other = self.store.add_run({'title': 'Read prior reasoning', 'repo': self.repo})['id']
@@ -65,7 +65,7 @@ class VisibilityTests(OfflineCase):
     def test_withheld_historical_version_blocks_copied_answers_even_when_issue_is_readable(self):
         self.g.db.execute('INSERT INTO withheld_source_versions VALUES(?,?,?)',
                           (self.source['source_version_id'], 'Comment restricted', source_access.stamp()))
-        from bridge.context_connectors import blocked_decisions, fresh
+        from raven.context_connectors import blocked_decisions, fresh
         self.assertTrue(fresh(self.g.db, self.source['record_id']))
         self.assertIn(self.node, blocked_decisions(self.g.db, self.repo))
         with self.assertRaisesRegex(Invalid, 'withheld'):

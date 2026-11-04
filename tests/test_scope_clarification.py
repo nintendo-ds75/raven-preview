@@ -3,10 +3,10 @@ from unittest.mock import patch
 
 from test_delivery import DeliveryCase, CFG
 from test_contract import ContractCase
-from bridge import canvas
-from bridge.authz import Actor
-from bridge.routing_memory import pending_scopes
-from bridge.store import Invalid, Store
+from raven import canvas
+from raven.authz import Actor
+from raven.routing_memory import pending_scopes
+from raven.store import Invalid, Store
 
 
 class ScopeClarificationTests(DeliveryCase):
@@ -63,7 +63,7 @@ class ScopeClarificationTests(DeliveryCase):
 
     def test_conflicting_customer_never_reuses_scoped_contact(self):
         self.source()
-        from bridge.routing_memory import candidates
+        from raven.routing_memory import candidates
         task = self.task('Other customer')
         result = self.node(task, facts='customer=Globex, release=2026-Q4')
         self.assertIn('node_id', result)  # independent verified path authority may still route

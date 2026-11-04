@@ -3,7 +3,7 @@
 # through sherpa-onnx for transcripts and Kokoro for Raven's voice. About
 # 450 MB, all from GitHub releases. Nothing leaves the machine at run time.
 set -e
-DIR="${RAVEN_VOICE_DIR:-.bridge/voice}"
+DIR="${RAVEN_VOICE_DIR:-.raven/voice}"
 mkdir -p "$DIR"
 cd "$DIR"
 if [ ! -f sherpa-onnx-whisper-base.en/base.en-encoder.int8.onnx ]; then

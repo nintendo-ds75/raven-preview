@@ -2,8 +2,8 @@
 import json
 from unittest.mock import patch
 
-from bridge import sources, source_access
-from bridge.store import Invalid
+from raven import sources, source_access
+from raven.store import Invalid
 import test_sources_jira as jira
 import test_sources_docs as docs
 
@@ -49,12 +49,12 @@ class JiraAccessTests(jira.JiraSourceTests):
     def test_older_issue_outside_incremental_results_gets_an_exact_refresh(self):
         connection, record = self.ingest()
         self.store.graph.db.execute("UPDATE native_source_access SET verified_until='2000-01-01'")
-        with patch('bridge.source_jira.collect', return_value=sources.Batch()):
+        with patch('raven.source_jira.collect', return_value=sources.Batch()):
             sources.sync(self.store, connection['id'])
         self.assertFalse(source_access.blocked_records(self.store.graph.db, 'example/service'))
         self.jira.issues[0]['fields']['security'] = {'name': 'Now private'}
         self.store.graph.db.execute("UPDATE native_source_access SET verified_until='2000-01-01'")
-        with patch('bridge.source_jira.collect', return_value=sources.Batch()):
+        with patch('raven.source_jira.collect', return_value=sources.Batch()):
             sources.sync(self.store, connection['id'])
         with self.assertRaises(Invalid):
             self.store.get_record(record, 'example/service')

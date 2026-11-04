@@ -9,7 +9,7 @@ in fact landed, and the person who in fact made it.
 
     python3 -m evals.real_oss.fetch --repo /path/to/grafana --out evals/real_oss
 
-Writes `<out>/bridge.db` (ingested and mapped) and `<out>/tasks.json`
+Writes `<out>/raven.db` (ingested and mapped) and `<out>/tasks.json`
 (the briefs, the paths, and the key). The database is disposable and
 git-ignored; the task file is committed so a run can be repeated.
 """
@@ -25,8 +25,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from bridge.ingest import index_repo, parse_codeowners_text  # noqa: E402
-from bridge.store import Store  # noqa: E402
+from raven.ingest import index_repo, parse_codeowners_text  # noqa: E402
+from raven.store import Store  # noqa: E402
 from evals.real_oss import spec  # noqa: E402
 
 # How much of a team's area someone has to have touched before the
@@ -78,7 +78,7 @@ def email_of(repo: Path, rev: str, author: str) -> str:
 
 def build(repo: Path, out: Path, cutoff: str) -> dict:
     rev = cutoff_commit(repo, cutoff)
-    db = out / "bridge.db"
+    db = out / "raven.db"
     if db.exists():
         db.unlink()
     store = Store(db)

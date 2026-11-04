@@ -19,8 +19,8 @@ import re
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import ladder, llm
-from bridge.config import Config
+from raven import ladder, llm
+from raven.config import Config
 
 REPO = "parcelwise/parcelwise-app"
 USE_Q = "What counts as one billable use of the assistant: a question, a completed answer, or tokens?"

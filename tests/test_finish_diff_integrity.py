@@ -9,9 +9,9 @@ import unittest
 from unittest.mock import patch
 
 from test_contract import ContractCase
-from bridge import proof
-from bridge.mcp import INSTRUCTIONS, TOOLS, call_tool
-from bridge.store import Invalid
+from raven import proof
+from raven.mcp import INSTRUCTIONS, TOOLS, call_tool
+from raven.store import Invalid
 
 
 DIFF = ("diff --git a/billing/usage.py b/billing/usage.py\n"
@@ -28,20 +28,20 @@ class FinishDiffIntegrityTests(ContractCase):
         task = self.start()
         node = self.node(task)
         self.answer(node["node_id"], "Bill at two cents per call.")
-        call_tool(self.store, "bridge_get_tree", {"task_id": task})
+        call_tool(self.store, "raven_get_tree", {"task_id": task})
         return task
 
     def finish(self, task, **args):
-        with patch("bridge.llm.check_conformance", return_value=None):
-            return call_tool(self.store, "bridge_finish_task", {"task_id": task, **args})
+        with patch("raven.llm.check_conformance", return_value=None):
+            return call_tool(self.store, "raven_finish_task", {"task_id": task, **args})
 
     def assert_rejected_without_completion(self, task, message, **args):
         before = dict(self.store.graph.get_task(task))
         events = [row["id"] for row in self.store.graph.db.execute(
             "SELECT id FROM events WHERE run_id=? ORDER BY id", (task,))]
         with patch.object(self.store, "update_run", wraps=self.store.update_run) as update, \
-                patch("bridge.canvas._review") as review, \
-                patch("bridge.proof.create") as create:
+                patch("raven.canvas._review") as review, \
+                patch("raven.proof.create") as create:
             with self.assertRaisesRegex(Invalid, message):
                 self.finish(task, **args)
             update.assert_not_called()
@@ -143,7 +143,7 @@ class FinishDiffIntegrityTests(ContractCase):
                 self.assertEqual(change["sha256"], sha256(fragment))
 
     def test_mcp_guidance_describes_transport_integrity_without_attestation(self):
-        tool = next(t for t in TOOLS if t["name"] == "bridge_finish_task")
+        tool = next(t for t in TOOLS if t["name"] == "raven_finish_task")
         props = tool["inputSchema"]["properties"]
         self.assertNotIn("diff_sha256", tool["inputSchema"]["required"])
         self.assertEqual(props["diff_sha256"]["type"], "string")

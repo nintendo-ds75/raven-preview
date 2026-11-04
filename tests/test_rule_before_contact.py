@@ -6,9 +6,9 @@ from unittest.mock import patch
 from fixtures import OfflineCase
 import test_rule_candidates as rule_fixtures
 from test_rule_candidates import CFG, REPO, QUESTION, FACTS, ANSWER, CONDITIONS
-from bridge import canvas, context_memory as cm
-from bridge.config import Config
-from bridge import llm
+from raven import canvas, context_memory as cm
+from raven.config import Config
+from raven import llm
 
 
 class RuleBeforeContactTests(OfflineCase):
@@ -113,7 +113,7 @@ class RuleBeforeContactTests(OfflineCase):
         task = self.task()
         before = self.persisted()
         future = (datetime.now(timezone.utc) + timedelta(days=11)).timestamp()
-        with patch('bridge.graph.time.time', return_value=future):
+        with patch('raven.graph.time.time', return_value=future):
             result = self.add(task)
         self.assertEqual(result['status'], 'needs_scope_clarification')
         self.assertEqual(self.persisted(), before)
@@ -165,7 +165,7 @@ class RuleBeforeContactTests(OfflineCase):
         source = self.grant()
         task = self.task()
         before = self.persisted()
-        with patch('bridge.context_connectors.blocked_decisions', return_value={source}):
+        with patch('raven.context_connectors.blocked_decisions', return_value={source}):
             result = self.add(task)
         self.assertEqual(result['status'], 'needs_scope_clarification')
         self.assertEqual(self.persisted(), before)
@@ -174,8 +174,8 @@ class RuleBeforeContactTests(OfflineCase):
         self.grant()
         task = self.task()
         before = self.persisted()
-        with patch('bridge.canvas._approvers', return_value=['Existing required reviewer']), \
-                patch('bridge.canvas._not_behind_rule', return_value=['Existing required reviewer']), \
+        with patch('raven.canvas._approvers', return_value=['Existing required reviewer']), \
+                patch('raven.canvas._not_behind_rule', return_value=['Existing required reviewer']), \
                 patch.object(self.store, 'notify', side_effect=AssertionError('Probe must not notify')):
             result = self.add(task)
         self.assertEqual(result['status'], 'needs_scope_clarification')
@@ -208,7 +208,7 @@ class RuleBeforeContactTests(OfflineCase):
         task = self.task()
         self.graph.claim_node_ref(task, 'current-review')
         before = self.persisted()
-        with patch('bridge.canvas._await_node_ref', side_effect=AssertionError('No lock-held wait')):
+        with patch('raven.canvas._await_node_ref', side_effect=AssertionError('No lock-held wait')):
             result = self.add(task)
         self.assertEqual(result['status'], 'needs_scope_clarification')
         self.assertEqual(self.persisted(), before)
@@ -219,7 +219,7 @@ class RuleBeforeContactTests(OfflineCase):
         self.graph.claim_node_ref(task, 'current-review')
         self.graph.db.execute("UPDATE node_claims SET created_at='2000-01-01T00:00:00+00:00' "
                               'WHERE run_id=?', (task,))
-        with patch('bridge.canvas._await_node_ref', side_effect=AssertionError('No lock-held wait')):
+        with patch('raven.canvas._await_node_ref', side_effect=AssertionError('No lock-held wait')):
             result = self.add(task)
         self.assertTrue(result['authorized'], result)
         claim = self.graph.db.execute('SELECT decision_id,created_at FROM node_claims WHERE run_id=?',
@@ -256,10 +256,10 @@ class RuleBeforeContactTests(OfflineCase):
     def test_qualified_local_reuse_never_calls_models_connectors_or_background(self):
         self.grant()
         task = self.task()
-        with patch.dict('os.environ', {'BRIDGE_LIVE': '1'}), \
-                patch('bridge.context_connectors.search', side_effect=AssertionError('No connector call')), \
-                patch('bridge.ingest.live_probe', side_effect=AssertionError('No live lookup')), \
-                patch('bridge.canvas._start_background', side_effect=AssertionError('No speculative worker')):
+        with patch.dict('os.environ', {'RAVEN_LIVE': '1'}), \
+                patch('raven.context_connectors.search', side_effect=AssertionError('No connector call')), \
+                patch('raven.ingest.live_probe', side_effect=AssertionError('No live lookup')), \
+                patch('raven.canvas._start_background', side_effect=AssertionError('No speculative worker')):
             result = self.add(task, cfg=Config(model_api='anthropic', deterministic=False))
         self.assertTrue(result['authorized'], result)
         self.assertFalse(result['model_pending'])

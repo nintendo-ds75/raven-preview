@@ -12,7 +12,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 (async () => {
   const root = path.resolve(__dirname, '..');
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'raven-work-item-browser-'));
-  const child = spawn(process.env.BRIDGE_PYTHON || 'python3',
+  const child = spawn(process.env.RAVEN_PYTHON || 'python3',
     [path.join(root, 'tests/work_item_browser_server.py'), path.join(temp, 'context.db')], {cwd:root});
   let stderr = '', browser;
   child.stderr.on('data', chunk => { stderr += chunk; });
@@ -26,7 +26,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     const state = await (await fetch(fixture.url + '/api/state')).json();
     const post = async (route, data) => {
       const response = await fetch(fixture.url + route, {method:'POST', headers:{'Content-Type':'application/json',
-        'X-Bridge-CSRF':state.csrf_token}, body:JSON.stringify(data)});
+        'X-Raven-CSRF':state.csrf_token}, body:JSON.stringify(data)});
       assert.equal(response.status, 200, await response.clone().text());
       return response.json();
     };
@@ -44,12 +44,12 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.equal(initial.authorized, false);
     assert.deepEqual(initial.sources, []);
     browser = await chromium.launch({headless:true,
-      ...(process.env.BRIDGE_BROWSER ? {executablePath:process.env.BRIDGE_BROWSER} : {})});
+      ...(process.env.RAVEN_BROWSER ? {executablePath:process.env.RAVEN_BROWSER} : {})});
     const page = await browser.newPage({viewport:{width:1280,height:900}});
     page.setDefaultTimeout(10000);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    const artifacts = process.env.BRIDGE_TEST_ARTIFACTS || path.join(root, 'test-results');
+    const artifacts = process.env.RAVEN_TEST_ARTIFACTS || path.join(root, 'test-results');
     fs.mkdirSync(artifacts, {recursive:true});
     const screenshot = name => page.screenshot({path:path.join(artifacts, name), fullPage:true});
     const taskPage = async (taskId = fixture.task_id) => {
@@ -81,21 +81,21 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.deepEqual(decisionState(await decision()), initial);
 
     // Read-only lookup and exact read preserve the unlinked state.
-    const ambiguousLookup = await tool('bridge_lookup_record', {repo:fixture.repo, ref:'CASE-1'});
+    const ambiguousLookup = await tool('raven_lookup_record', {repo:fixture.repo, ref:'CASE-1'});
     assert.equal(ambiguousLookup.status, 'ambiguous');
     const lookupIdentity = {repo:fixture.repo, provider:fixture.source.provider, namespace:fixture.source.namespace,
       object_kind:fixture.source.kind, external_id:fixture.source.external_id};
-    const found = await tool('bridge_lookup_record', lookupIdentity);
+    const found = await tool('raven_lookup_record', lookupIdentity);
     assert.equal(found.status, 'matched');
-    const record = await tool('bridge_get_record', {repo:fixture.repo, record_id:found.source.record_id});
-    assert.equal((await tool('bridge_get_tree', {task_id:fixture.task_id})).work_item_association.status, 'unlinked');
+    const record = await tool('raven_get_record', {repo:fixture.repo, record_id:found.source.record_id});
+    assert.equal((await tool('raven_get_tree', {task_id:fixture.task_id})).work_item_association.status, 'unlinked');
     const s = record.source;
     const args = {task_id:fixture.task_id, repo:fixture.repo, record_id:s.record_id, source_version_id:s.source_version_id,
       provider:s.provider, namespace:s.namespace, object_kind:s.kind, external_id:s.external_id};
-    assert.equal((await tool('bridge_link_work_item', args)).changed, true);
+    assert.equal((await tool('raven_link_work_item', args)).changed, true);
     const retry = await post('/api/tasks/' + fixture.task_id + '/work-items', args);
     assert.equal(retry.changed, false);
-    const linked = await tool('bridge_lookup_record', lookupIdentity);
+    const linked = await tool('raven_lookup_record', lookupIdentity);
     assert.equal(linked.task_anchors.items.filter(a => a.task_id === fixture.task_id).length, 1);
     assert.equal(linked.task_decisions.items.find(d => d.task_id === fixture.task_id).relation, 'task_anchor_association');
     assert.deepEqual(linked.decision_sources.items.filter(d => d.task_id === fixture.task_id), []);
@@ -125,7 +125,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     // A newer source observation never silently moves the old association.
     const updated = await post('/api/records', {...fixture.source_data, body:'A newer work-item observation.'});
     assert.notEqual(updated.source.source_version_id, s.source_version_id);
-    const tree = await tool('bridge_get_tree', {task_id:fixture.task_id});
+    const tree = await tool('raven_get_tree', {task_id:fixture.task_id});
     assert.equal(tree.work_item_association.status, 'linked');
     assert.equal(tree.source_anchors[0].source_version_id, s.source_version_id);
     assert.equal(tree.source_anchors[0].current, false);

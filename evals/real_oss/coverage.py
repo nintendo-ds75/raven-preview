@@ -2,7 +2,7 @@
 
 The reviewer's largest remaining gap: Raven cannot route a decision the
 agent never writes down, and a less cooperative host could register none
-and finish. `bridge_start_task` answers that with `candidates`, the
+and finish. `raven_start_task` answers that with `candidates`, the
 decisions it thinks the task contains, as prompts for the agent. Nothing
 measured whether they are the right ones.
 
@@ -13,7 +13,7 @@ anything, and how many candidates are named that no real decision
 corresponds to.
 
     python3 -m evals.real_oss.coverage
-    BRIDGE_MODEL_API=claude-cli python3 -m evals.real_oss.coverage --semantic
+    RAVEN_MODEL_API=claude-cli python3 -m evals.real_oss.coverage --semantic
 
 Coverage is the number worth moving. Noise is the cost: a candidate the
 agent has to read and dismiss. Neither is a gate, because a candidate is
@@ -50,13 +50,13 @@ def covers(text: str, decision: dict) -> bool:
 
 
 def run(semantic: bool, db: Path) -> dict:
-    os.environ["BRIDGE_SEMANTIC"] = "1" if semantic else "0"
-    os.environ.setdefault("BRIDGE_LIVE", "0")
+    os.environ["RAVEN_SEMANTIC"] = "1" if semantic else "0"
+    os.environ.setdefault("RAVEN_LIVE", "0")
     if not semantic:
-        os.environ["BRIDGE_MODEL_API"] = "none"
-    from bridge import canvas  # noqa: E402
-    from bridge.config import load  # noqa: E402
-    from bridge.store import Store  # noqa: E402
+        os.environ["RAVEN_MODEL_API"] = "none"
+    from raven import canvas  # noqa: E402
+    from raven.config import load  # noqa: E402
+    from raven.store import Store  # noqa: E402
     from evals.real_oss import spec  # noqa: E402
 
     store = Store(db)
@@ -69,7 +69,7 @@ def run(semantic: bool, db: Path) -> dict:
         # What the kickoff does, in the same order: read the task, then
         # build the candidate list from that and from Raven's signals.
         if cfg.semantic_retrieval:
-            from bridge.llm import name_decisions  # noqa: E402
+            from raven.llm import name_decisions  # noqa: E402
             read = name_decisions(cfg, task["title"], canvas.task_statement(task["brief"]),
                                   [a.get("path", "") for a in (discovery.get("areas") or [])],
                                   [p.get("name", "") for p in (discovery.get("people") or [])])
@@ -98,7 +98,7 @@ def run(semantic: bool, db: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--semantic", action="store_true", help="let the model name candidates too")
-    parser.add_argument("--db", type=Path, default=Path(__file__).resolve().parent / "bridge.db")
+    parser.add_argument("--db", type=Path, default=Path(__file__).resolve().parent / "raven.db")
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
     if not args.db.exists():

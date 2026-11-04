@@ -5,8 +5,8 @@ from urllib.parse import urlencode
 from unittest.mock import patch
 
 from test_auth import SharedServer, BOOTSTRAP
-from bridge.accounts import Accounts
-from bridge.store import Invalid
+from raven.accounts import Accounts
+from raven.store import Invalid
 
 
 class AccountFlowTests(SharedServer):
@@ -87,7 +87,7 @@ class AccountFlowTests(SharedServer):
         read "Docker local MCP agent · Waiting for first use" under Your agent
         connections. That is the credential the bootstrap mints for
         ./setup --configure, not a connection they made."""
-        from bridge.auth import SETUP_AGENT_LABEL
+        from raven.auth import SETUP_AGENT_LABEL
         cookie = self.setup_owner()
         owner = self.get('/api/state', cookie=cookie)['me']['id']
         wizard = self.auth.create_token(owner, label=SETUP_AGENT_LABEL)
@@ -111,9 +111,9 @@ class AccountFlowTests(SharedServer):
         dana = self.store.graph.add_person('Dana Okafor')
         self.store.graph.add_authority('path', 'fetchkit/retry.py', 'decides', person_id=dana, repo='acme/fetchkit')
         agent = self.auth.create_token(admin, label='Claude Code')['token']
-        task = self.mcp('bridge_start_task', {'title': 'Make the retry limit configurable', 'repo': 'acme/fetchkit',
+        task = self.mcp('raven_start_task', {'title': 'Make the retry limit configurable', 'repo': 'acme/fetchkit',
                                               'paths': 'fetchkit/retry.py'}, agent)['result']
-        node = self.mcp('bridge_add_node', {'task_id': task['task_id'], 'paths': 'fetchkit/retry.py',
+        node = self.mcp('raven_add_node', {'task_id': task['task_id'], 'paths': 'fetchkit/retry.py',
                                             'question': 'What should the default retry limit be?'}, agent)['result']
         self.assertEqual(node['owner'], 'Dana Okafor')
         detail = self.get(f"/api/decisions/{node['node_id']}", cookie=cookie)
@@ -122,7 +122,7 @@ class AccountFlowTests(SharedServer):
         self.assertNotIn('assign', detail['allowed_actions'])
         tree = self.get(f"/api/tasks/{task['task_id']}/tree", cookie=cookie)
         self.assertEqual(tree['nodes'][0]['owner_account']['state'], 'none')
-        self.assertNotIn('owner_account', self.mcp('bridge_get_tree', {'task_id': task['task_id']}, agent)['result']['nodes'][0])
+        self.assertNotIn('owner_account', self.mcp('raven_get_tree', {'task_id': task['task_id']}, agent)['result']['nodes'][0])
         invitation = self.post('/api/invitations', {'email': 'dana@example.test', 'role': 'member', 'person_id': dana},
                                cookie=cookie, csrf=csrf)
         self.assertEqual(self.get(f"/api/decisions/{node['node_id']}", cookie=cookie)['owner_account']['state'], 'invited')
@@ -165,7 +165,7 @@ class AccountFlowTests(SharedServer):
         self.assertTrue(self.accounts.ready())
 
     def test_pending_setup_survives_restart_and_rejects_another_admin(self):
-        from bridge.auth import Identity
+        from raven.auth import Identity
         first = self.store.graph.add_person('First', role='admin')
         second = self.store.graph.add_person('Second', role='admin')
         secret = self.accounts.create_workspace({'workspace': 'Pending'}, Identity(first, 'First', 'admin', 'session'))
@@ -174,7 +174,7 @@ class AccountFlowTests(SharedServer):
         self.assertIsNone(restarted.profile_identity('bad'))
         with self.assertRaises(Invalid):
             restarted.setup(self.owner_data, Identity(second, 'Second', 'admin', 'session'))
-        with patch('bridge.accounts.time.time', return_value=time.time() + 3601):
+        with patch('raven.accounts.time.time', return_value=time.time() + 3601):
             self.assertIsNone(restarted.profile_identity(secret))
         restarted.setup(self.owner_data, Identity(first, 'First', 'admin', 'session'))
         self.assertIsNone(restarted.profile_identity(secret))
@@ -189,7 +189,7 @@ class AccountFlowTests(SharedServer):
         data = dict(name='Viewer', password='long-viewer-password')
         with self.assertRaises(Invalid):
             self.accounts.accept(dict(data, invite=first['token']))
-        with patch('bridge.accounts.time.time', return_value=time.time() + 172801):
+        with patch('raven.accounts.time.time', return_value=time.time() + 172801):
             with self.assertRaises(Invalid):
                 self.accounts.accept(dict(data, invite=second['token']))
         pid = self.accounts.accept(dict(data, invite=second['token'], role='admin'))
@@ -202,13 +202,13 @@ class AccountFlowTests(SharedServer):
         actor = self.auth.identify({'Authorization': 'Bearer ' + BOOTSTRAP})
         graph = self.store.graph
         atij = graph.add_person('Atij Mahesh', email='atij@example.test', role='viewer')
-        graph.add_authority('path', 'bridge/*', 'decides', person_id=atij, repo='acme/bridge')
+        graph.add_authority('path', 'raven/*', 'decides', person_id=atij, repo='acme/raven')
         invite = self.accounts.invite('Atij@Example.test', 'member', actor)
         pid = self.accounts.accept(dict(name='Someone Else', password='atij-long-password', invite=invite['token']))
         self.assertEqual(pid, atij)
         self.assertEqual(graph.get_person(pid)['name'], 'Atij Mahesh')
         self.assertEqual(graph.get_person(pid)['role'], 'member')
-        self.assertEqual([r['person_id'] for r in graph.deciders('acme/bridge')], [atij])
+        self.assertEqual([r['person_id'] for r in graph.deciders('acme/raven')], [atij])
         self.assertEqual(self.accounts.login('atij@example.test', 'atij-long-password'), atij)
         self.assertEqual(len([p for p in graph.people() if 'Atij' in p['name']]), 1)
         # Once they have a login, nobody can be invited into it again.
@@ -227,13 +227,13 @@ class AccountFlowTests(SharedServer):
         with graph.transaction():
             alex = graph.add_person('Alex Morgan', role='viewer')
             namesake = graph.add_person('Alex Morgan', merge=False)
-            graph.add_authority('path', 'billing/*', 'decides', person_id=alex, repo='acme/bridge')
+            graph.add_authority('path', 'billing/*', 'decides', person_id=alex, repo='acme/raven')
         # Without naming anyone, an invitation makes a new person; the name is not a link.
         plain = self.accounts.invite('alex@example.test', 'member', actor)
         self.assertIsNone(plain['person'])
         pid = self.accounts.accept(dict(name='Alex Morgan', password='alex-long-password', invite=plain['token']))
         self.assertNotIn(pid, (alex, namesake))
-        self.assertEqual([r['person_id'] for r in graph.deciders('acme/bridge')], [alex])
+        self.assertEqual([r['person_id'] for r in graph.deciders('acme/raven')], [alex])
         # Naming the person links the invitation to them, and only to them.
         with self.assertRaisesRegex(Invalid, 'belongs to Alex Morgan'):
             self.accounts.invite('alex@example.test', 'member', actor, person_id=alex)
@@ -245,7 +245,7 @@ class AccountFlowTests(SharedServer):
         self.assertEqual(pid, alex)
         linked = graph.get_person(alex)
         self.assertEqual((linked['name'], linked['email'], linked['role']), ('Alex Morgan', 'a.morgan@example.test', 'member'))
-        self.assertEqual([r['person_id'] for r in graph.deciders('acme/bridge')], [alex])
+        self.assertEqual([r['person_id'] for r in graph.deciders('acme/raven')], [alex])
         self.assertEqual(self.accounts.login('a.morgan@example.test', 'alex-long-password'), alex)
         self.assertEqual(graph.get_person(namesake)['email'], '')
         # A person with a login, an inactive person, or one on the map with
@@ -297,7 +297,7 @@ class AccountFlowTests(SharedServer):
                 self.accounts.login('owner@example.test', 'wrong-password')
         with self.assertRaisesRegex(Invalid, 'Too many'):
             self.accounts.login('owner@example.test', self.owner_data['password'])
-        with patch('bridge.accounts.time.time', return_value=time.time() + 901):
+        with patch('raven.accounts.time.time', return_value=time.time() + 901):
             pid = self.accounts.login('owner@example.test', self.owner_data['password'])
         self.store.graph.db.execute('UPDATE people SET active=0 WHERE id=?', (pid,))
         with self.assertRaises(Invalid):
@@ -306,7 +306,7 @@ class AccountFlowTests(SharedServer):
         self.assertEqual(status, 403)
 
     def test_existing_dev_account_is_preserved(self):
-        pid = self.store.graph.add_person('Local developer', email='developer@bridge.local', role='admin')
+        pid = self.store.graph.add_person('Local developer', email='developer@raven.local', role='admin')
         human = self.auth.create_token(pid, label='Docker development login', kind='human')['token']
         status, _, _ = self.form('/auth/setup', dict(self.owner_data, setup_token=human))
         self.assertEqual(status, 302)

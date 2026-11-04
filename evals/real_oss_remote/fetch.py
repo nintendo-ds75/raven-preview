@@ -17,7 +17,7 @@ def fetch(out):
         obj = {}
         for suffix in ("", "/reviews", "/files"):
             url = f"https://api.github.com/repos/{spec['repository']}/pulls/{number}{suffix}"
-            request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "bridge-real-oss-evaluation"})
+            request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "raven-real-oss-evaluation"})
             with urllib.request.urlopen(request, timeout=30) as response:
                 obj[suffix or "pr"] = json.load(response)
         path.write_text(json.dumps(obj, indent=2))

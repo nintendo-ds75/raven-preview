@@ -6,10 +6,10 @@ import uuid
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import objectives as obj, objective_head as head, canvas
-from bridge.auth import Identity
-from bridge.config import Config
-from bridge.store import Invalid, now
+from raven import objectives as obj, objective_head as head, canvas
+from raven.auth import Identity
+from raven.config import Config
+from raven.store import Invalid, now
 
 
 class FakeWorkbench:
@@ -260,11 +260,11 @@ class DispatchBackoffTests(GovernanceCase):
         objective = self.accepted()
         worker = head.Worker(self.store, None, Config(model_api='none'), allow_operator=True)
         with patch.object(head.obj, 'act', wraps=obj.act) as act:
-            with patch('bridge.objective_head.time.time', return_value=10000):
+            with patch('raven.objective_head.time.time', return_value=10000):
                 worker.dispatch_signed_moves()
                 worker.dispatch_signed_moves()
             self.assertEqual(act.call_count, 1)
-            with patch('bridge.objective_head.time.time', return_value=10061):
+            with patch('raven.objective_head.time.time', return_value=10061):
                 worker.dispatch_signed_moves()
             self.assertEqual(act.call_count, 2)
         current = obj.get(self.store, objective['id'])
@@ -287,7 +287,7 @@ class CompletionHookTests(GovernanceCase):
         seen, real = [], builtins.__import__
 
         def importer(name, globals=None, locals=None, fromlist=(), level=0):
-            if (globals or {}).get('__name__') == 'bridge.store' and name in ('objectives', 'bridge.objectives'):
+            if (globals or {}).get('__name__') == 'raven.store' and name in ('objectives', 'raven.objectives'):
                 seen.append(name)
             return real(name, globals, locals, fromlist, level)
         return seen, patch('builtins.__import__', importer)

@@ -59,7 +59,7 @@ git history can tell you, not a labelled ground truth from the team.
 
 1. A worktree of the repository at the commit before the real change.
 2. A fresh copy of the ingested database, and an MCP config pointing the
-   host at `bridge_mcp.py` over stdio.
+   host at `raven_mcp.py` over stdio.
 3. **Phase one.** The host gets the brief and the house rule (the
    paragraph a pilot puts in its own instructions; it names no decision,
    owner or answer). Nobody replies during this phase: it ends with
@@ -107,7 +107,7 @@ back carrying the answer a person gave on the first task.
 ## Decision coverage: `coverage.py`
 
 The reviewer's largest remaining gap is that Raven cannot route a
-decision the agent never writes down, and `bridge_start_task` answers it
+decision the agent never writes down, and `raven_start_task` answers it
 with `candidates`. Nothing measured whether they are the right ones.
 `coverage.py` asks how many of the decisions each held-out change in
 fact turned on are named before any agent has looked at anything, and
@@ -115,7 +115,7 @@ how many candidates are named that no real decision corresponds to.
 
 ```sh
 python3 -m evals.real_oss.coverage                                  # templates only
-BRIDGE_MODEL_API=claude-cli python3 -m evals.real_oss.coverage --semantic
+RAVEN_MODEL_API=claude-cli python3 -m evals.real_oss.coverage --semantic
 ```
 
 | | real decisions named | candidates | matching none |
@@ -302,7 +302,7 @@ handed on rather than trusted.
 ### 2026-09-21, after the assisted-pilot fixes
 
 `results/grafana-2026-09-21-candidates/results.json`, same three tasks,
-same host, model rungs on, after `bridge_start_task` began returning
+same host, model rungs on, after `raven_start_task` began returning
 candidates, asking for the task as it was given, and refusing to let the
 model lower an engage verdict:
 
@@ -402,14 +402,14 @@ try, and it is a design question rather than a bug.
 
 | task | arm | kickoff first | registered | routed | first contact | team contact | gate held | resumed | followed |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `toggle-handling` | bridge | yes | 1 | 1 | 0 | 1 of 52 | yes | yes | **no** |
+| `toggle-handling` | raven | yes | 1 | 1 | 0 | 1 of 52 | yes | yes | **no** |
 | `toggle-handling` | alone | — | 0 | — | — | — | — | — | no |
-| `smallint-overflow` | bridge | yes | 1 | 1 | 0 | 1 of 12 | yes | yes | **no** |
+| `smallint-overflow` | raven | yes | 1 | 1 | 0 | 1 of 12 | yes | yes | **no** |
 | `smallint-overflow` | alone | — | 0 | — | — | — | — | — | yes |
-| `retire-toggle` | bridge | yes | **0** | — | — | — | n/a | yes | yes |
+| `retire-toggle` | raven | yes | **0** | — | — | — | n/a | yes | yes |
 | `retire-toggle` | alone | — | 0 | — | — | — | — | — | yes |
 
-The loop itself held. The host called `bridge_start_task` before doing
+The loop itself held. The host called `raven_start_task` before doing
 any work on all three tasks. Where it wrote a decision to the canvas,
 Raven routed it to a real person with real evidence, the finish was
 refused while that person had not acted, a fresh process with no memory
@@ -466,8 +466,8 @@ From the 2026-09-21 run and its probes:
   the first call wrote a second node and both blocked the task. The ref
   is now claimed before the ladder runs, an overlapping write waits for
   the node the first one produces, and a claim left behind by a write
-  that died is taken over after two minutes. (`bridge/graph.py`,
-  `bridge/canvas.py`, `tests/test_canvas.py`, in process and over HTTP.)
+  that died is taken over after two minutes. (`raven/graph.py`,
+  `raven/canvas.py`, `tests/test_canvas.py`, in process and over HTTP.)
   Found by the reviewer running concurrent MCP calls, not by this
   evaluation; fixed here.
 - **"Who decides about X" was answered with a pull request title.** The
@@ -475,7 +475,7 @@ From the 2026-09-21 run and its probes:
   accountable", but not the present tense an agent actually writes, so
   the question fell through to the records rung and came back
   `resolved`, with a PR subject as the answer. A confident wrong answer
-  to the one question the product exists for. (`bridge/ladder.py`,
+  to the one question the product exists for. (`raven/ladder.py`,
   `tests/test_ladder.py`.)
 - **The model triage silently downgraded engage verdicts.** With a key
   set, the fast model advises the kickoff verdict and could overrule it
@@ -483,12 +483,12 @@ From the 2026-09-21 run and its probes:
   verdicts into `pass`, calling a schema migration and a feature-toggle
   removal routine cleanup. The two mistakes are not the same size, so it
   may now raise a verdict and not lower one, and its dissent is recorded
-  on the run. (`bridge/canvas.py`, `tests/test_canvas.py`.)
+  on the run. (`raven/canvas.py`, `tests/test_canvas.py`.)
 - **A pass formed from a one-line title did not say so.** The same task
   engages on the requester's wording and passes on the terse title an
   agent writes for itself, and the agent sent no `goal` at all on two of
   three tasks. The verdict now says when it was formed from a title
-  alone, and `bridge_start_task` asks for the task as it was given. The
+  alone, and `raven_start_task` asks for the task as it was given. The
   agent then passed a goal on three of three, and one kickoff flipped
   from `pass` to `engage` on the same task as a result.
 
@@ -500,13 +500,13 @@ From the 2026-09-20 run:
   belongs to the alerting squad, but the rule for the directory above it
   won and the node went to search-and-storage. A person named by several
   rules also had their weight summed, so being on four teams made
-  somebody four times the owner. (`bridge/signals.py`,
+  somebody four times the owner. (`raven/signals.py`,
   `tests/test_authority.py`.)
 - **A node Raven could not route was a dead end.** A node the ladder
   answered and could not route waits on a person nobody named. It did
   not appear in the unrouted count, and `assign` refused it because it
   was not an open question, so there was no way to put it in front of
-  anybody from the inbox. (`bridge/store.py`, `web/app.js`,
+  anybody from the inbox. (`raven/store.py`, `web/app.js`,
   `tests/test_canvas.py`.)
 - The harness's own gate probe completed the task it was probing, which
   corrupted the second phase of a run. Fixed in `run_host.py`.
@@ -540,11 +540,11 @@ python3 -m evals.real_oss.run_host --out evals/real_oss/results/<name> --work /t
 is the configuration a pilot with a key has; without it the deterministic
 rungs run alone.
 
-`fetch.py` writes `bridge.db` (git-ignored, disposable) and `tasks.json`
+`fetch.py` writes `raven.db` (git-ignored, disposable) and `tasks.json`
 (committed, so a run can be repeated). `run_host.py` needs the `claude`
 CLI on PATH and authenticated; checkouts, databases and the full
 stream-json transcripts go under `--work`, and only `results.json` is
-kept. `--only <task>` and `--arm bridge` narrow a run; `--rescore`
+kept. `--only <task>` and `--arm raven` narrow a run; `--rescore`
 regrades the results already in `--out` against the current checks
 without running anything. Every run records the host version, the cutoff
 commit and the head it was cut from.

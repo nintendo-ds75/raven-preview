@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 from test_rules import CFG, RuleCase
 from test_proof import DIFF
-from bridge import canvas, proof
-from bridge.store import Invalid, Store
+from raven import canvas, proof
+from raven.store import Invalid, Store
 
 
 class RuleInvalidationTests(RuleCase):
@@ -53,7 +53,7 @@ class RuleInvalidationTests(RuleCase):
     def test_structured_applicability_expiry_invalidates_existing_reuse(self):
         expiry = datetime.now(timezone.utc) + timedelta(hours=1)
         _, task, node = self.covered({"valid_until": expiry.isoformat()})
-        with patch("bridge.graph.time.time", return_value=(expiry + timedelta(seconds=1)).timestamp()):
+        with patch("raven.graph.time.time", return_value=(expiry + timedelta(seconds=1)).timestamp()):
             self.assert_invalidated(task, node)
         self.assertIn("expired", canvas.node_view(self.store, node["node_id"])["review_reason"])
 
@@ -65,7 +65,7 @@ class RuleInvalidationTests(RuleCase):
         reopened = Store(self.store.path)
         self.addCleanup(reopened.graph.close)
         self.assertEqual(reopened.graph.get_setting("rule_checks_needed"), "1")
-        with patch("bridge.graph.time.time", return_value=(expiry + timedelta(seconds=1)).timestamp()):
+        with patch("raven.graph.time.time", return_value=(expiry + timedelta(seconds=1)).timestamp()):
             self.assertFalse(canvas.node_view(reopened, node["node_id"])["authorized"])
             with self.assertRaises(Invalid):
                 canvas.finish_task(reopened, {"task_id": task})
@@ -80,7 +80,7 @@ class RuleInvalidationTests(RuleCase):
         reopened = Store(self.store.path)
         self.addCleanup(reopened.graph.close)
         self.assertEqual(reopened.graph.get_setting("rule_checks_needed"), "1")
-        with patch("bridge.graph.time.time", return_value=(expiry + timedelta(seconds=1)).timestamp()):
+        with patch("raven.graph.time.time", return_value=(expiry + timedelta(seconds=1)).timestamp()):
             self.assertFalse(canvas.node_view(reopened, node["node_id"])["authorized"])
             with self.assertRaises(Invalid):
                 canvas.finish_task(reopened, {"task_id": task})
@@ -171,7 +171,7 @@ class RuleInvalidationTests(RuleCase):
 
     def save_proof(self, task):
         canvas.get_tree(self.store, task)
-        with patch("bridge.llm.check_conformance", return_value=None):
+        with patch("raven.llm.check_conformance", return_value=None):
             canvas.finish_task(self.store, {"task_id": task, "diff": DIFF})
         return proof.export(self.store, {"task_id": task})["bundle"]
 

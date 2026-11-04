@@ -6,13 +6,13 @@ import sys
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-os.environ.update(BRIDGE_MODEL_API='none', BRIDGE_SEMANTIC='0', BRIDGE_LIVE='0')
-from bridge import canvas
-from bridge.config import Config
-from bridge.server import make_server
-from bridge.store import Store
+os.environ.update(RAVEN_MODEL_API='none', RAVEN_SEMANTIC='0', RAVEN_LIVE='0')
+from raven import canvas
+from raven.config import Config
+from raven.server import make_server
+from raven.store import Store
 
-for target in ('bridge.llm.Client.complete', 'bridge.llm.Client.complete_json', 'bridge.github.GitHubAPI.get'):
+for target in ('raven.llm.Client.complete', 'raven.llm.Client.complete_json', 'raven.github.GitHubAPI.get'):
     patch(target, side_effect=AssertionError('External calls forbidden')).start()
 store = Store(sys.argv[1])
 assert not store.delivery.enabled

@@ -33,7 +33,7 @@ class ObjectiveHTTPTests(unittest.TestCase):
                 def post(path, data, csrf=True):
                     headers = {'Content-Type': 'application/json'}
                     if csrf:
-                        headers['X-Bridge-CSRF'] = state['csrf_token']
+                        headers['X-Raven-CSRF'] = state['csrf_token']
                     request = Request(base + path, json.dumps(data).encode(), headers=headers)
                     with urlopen(request, timeout=10) as response:
                         return json.loads(response.read())

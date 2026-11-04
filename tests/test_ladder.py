@@ -11,14 +11,14 @@ from unittest.mock import patch
 
 from fixtures import OfflineCase
 
-from bridge import ladder as ladder_mod
-from bridge import llm as llm_mod
-from bridge.config import Config
-from bridge.ladder import (
+from raven import ladder as ladder_mod
+from raven import llm as llm_mod
+from raven.config import Config
+from raven.ladder import (
     _canned_misfit, _cited_refs, _display_terms, _meaningful_terms, _open_twin, _ref_variants, run_task,
 )
-from bridge.routing import route
-from bridge.store import Store
+from raven.routing import route
+from raven.store import Store
 
 
 def seed_changes(graph, repo, rows):
@@ -47,7 +47,7 @@ class LadderCase(OfflineCase):
         self.cfg = Config()
 
     def semantic(self, on=True):
-        os.environ["BRIDGE_SEMANTIC"] = "1" if on else "0"
+        os.environ["RAVEN_SEMANTIC"] = "1" if on else "0"
 
     def patch(self, target, name, value):
         p = patch.object(target, name, value)
@@ -109,7 +109,7 @@ class SupportedAnswerTests(LadderCase):
     def setUp(self):
         super().setUp()
         self.semantic()
-        self.addCleanup(os.environ.pop, "BRIDGE_SEMANTIC", None)
+        self.addCleanup(os.environ.pop, "RAVEN_SEMANTIC", None)
         self.graph.upsert_intent("lib", "ticket", "NET-201", "Retry-After jitter hard total ceiling",
                                  "Settled library decision: Retry-After jitter must never exceed retry_after_max. Add "
                                  "nonnegative jitter to the existing capped base and clamp the total to "
@@ -151,7 +151,7 @@ class SupportedAnswerTests(LadderCase):
         option got an answer saying that was not established, a signed rule's
         reuse asked whether the decision it came from was real, and a
         who-and-why answer gained questions about motives nobody asked."""
-        from bridge.ladder import _supported
+        from raven.ladder import _supported
         prompts = []
 
         def support(reply):
@@ -212,7 +212,7 @@ class SupportedAnswerTests(LadderCase):
         region are approved?" got a prediction to use retry_normal_total "in
         the standard evaluation region", which no answer of theirs names, and
         it was labelled the same policy as their signed answer."""
-        from bridge.ladder import _how_they_decide
+        from raven.ladder import _how_they_decide
         task = self.graph.create_task("prior")
         prior = "Which retry metrics suffix should normal customers use?"
         self.graph.add_decision(task, prior, "policy", "approved", source="human", answered_by="Mira Runtime",
@@ -267,7 +267,7 @@ class SupportedAnswerTests(LadderCase):
         """Measured live on 63eb671: a joint answer naming the approved
         stopped-retry label was thrown away because it said the records do
         not name a rollout region."""
-        from bridge.ladder import _compose_joint
+        from raven.ladder import _compose_joint
         rows = [{"kind": "ticket", "ref": "DONE-8", "title": "Retry audit metric label",
                  "body": "The approved metric label for a stopped retry is retry_stopped_total.",
                  "author": "Mira Runtime", "created_at": "2026-09-29", "status": "Done", "resolved": 1},
@@ -285,7 +285,7 @@ class SupportedAnswerTests(LadderCase):
         self.assertIsNone(_compose_joint(Config(), "Which retry metric label and rollout region are approved?", rows))
 
     def test_a_proposal_must_take_one_of_the_offered_alternatives(self):
-        from bridge.ladder import _how_they_decide, _offered_choices
+        from raven.ladder import _how_they_decide, _offered_choices
         self.assertEqual(_offered_choices("Must the trace exporter flush every 11 or 13 events?"), ["11", "13"])
         task = self.graph.create_task("prior")
         prior = "Must the new retry trace exporter reject negative event counts?"
@@ -828,7 +828,7 @@ class RecordTests(LadderCase):
         self.assertIn(d.status, ("partial", "resolved"))
         self.assertTrue("5242" in (d.answer or "") or "5242" in d.evidence)
         self.assertFalse(r.open)
-        from bridge.context_memory import edges
+        from raven.context_memory import edges
         self.assertEqual([(source['ref'], source['role']) for source in edges(g.db, d.id)], [('5242', 'context')])
 
     def test_retro_pointer_requires_topical_record(self):
@@ -1132,7 +1132,7 @@ class ModelRungTests(LadderCase):
         self.assertEqual(d.status, "partial")
         self.assertTrue(d.answer.startswith("CONFLICTED"))
         self.assertIn("AVOPS-455", d.answer)
-        from bridge.context_memory import edges
+        from raven.context_memory import edges
         self.assertEqual([(source['ref'], source['role']) for source in edges(g.db, d.id)], [('AVOPS-455', 'contradiction')])
 
     def test_followup_ref_in_prior_answer_reaches_memory(self):
@@ -1264,14 +1264,14 @@ class TwinClosingTests(LadderCase):
 
 class NoBackendTests(LadderCase):
     def test_semantic_off_without_key_or_cli(self):
-        os.environ.pop("BRIDGE_SEMANTIC", None)
+        os.environ.pop("RAVEN_SEMANTIC", None)
         self.patch(llm_mod, "find_claude", lambda: None)
         self.assertFalse(Config().semantic_retrieval)
         with self.assertRaises(llm_mod.NoAPIKey):
             llm_mod.Client(Config()).complete("x", "s", "p")
 
     def test_semantic_on_with_key(self):
-        os.environ.pop("BRIDGE_SEMANTIC", None)
+        os.environ.pop("RAVEN_SEMANTIC", None)
         os.environ["ANTHROPIC_API_KEY"] = "test-only-not-a-real-key"
         try:
             self.assertTrue(Config().semantic_retrieval)
@@ -1346,7 +1346,7 @@ class ThinkingModelTests(unittest.TestCase):
 
 
 class DeepModeTests(LadderCase):
-    """BRIDGE_DEEP=0 keeps the fast model points (the selector confirming
+    """RAVEN_DEEP=0 keeps the fast model points (the selector confirming
     a record, the area mapping) and skips the slow rungs (query
     expansion with its wide selection, the same-decision check on
     near-twins, follow-up rewriting), so a node comes back in seconds.
@@ -1356,18 +1356,18 @@ class DeepModeTests(LadderCase):
     QUESTION = "What batch size should the metering exporter use per request?"
 
     def test_deep_retrieval_needs_semantic_retrieval(self):
-        os.environ["BRIDGE_DEEP"] = "1"
+        os.environ["RAVEN_DEEP"] = "1"
         self.assertFalse(Config().semantic_retrieval)
         self.assertFalse(Config().deep_retrieval)
         self.semantic(True)
         self.assertTrue(Config().deep_retrieval)
-        os.environ.pop("BRIDGE_DEEP", None)
+        os.environ.pop("RAVEN_DEEP", None)
         self.assertTrue(Config().deep_retrieval)
-        os.environ["BRIDGE_DEEP"] = "0"
+        os.environ["RAVEN_DEEP"] = "0"
         self.assertTrue(Config().semantic_retrieval)
         self.assertFalse(Config().deep_retrieval)
-        os.environ.pop("BRIDGE_SEMANTIC", None)
-        os.environ["BRIDGE_DEEP"] = "1"
+        os.environ.pop("RAVEN_SEMANTIC", None)
+        os.environ["RAVEN_DEEP"] = "1"
         self.patch(llm_mod, "find_claude", lambda: None)
         self.assertFalse(Config().semantic_retrieval)
         self.assertFalse(Config().deep_retrieval)
@@ -1399,7 +1399,7 @@ class DeepModeTests(LadderCase):
         self.patch(llm_mod.Client, "complete_json", fake_json)
         self.patch(llm_mod.Client, "complete", lambda self_, purpose, system, prompt, **kw:
                    "RECORDS DO NOT ANSWER" if purpose == "compose_joint" else "RECORD DOES NOT ANSWER")
-        with patch.dict(os.environ, {"BRIDGE_DEEP": "1" if deep else "0"}):
+        with patch.dict(os.environ, {"RAVEN_DEEP": "1" if deep else "0"}):
             r = run_task(g, Config(), "batch", repo="meter",
                          decisions=[{"question": self.QUESTION, "category": "definition"}])
         self.assertEqual(g.decisions_for_task(r.task_id)[0].status, "pending")
@@ -1436,11 +1436,11 @@ class DeepModeTests(LadderCase):
         self.patch(llm_mod.Client, "complete_json", fake_json)
         self.patch(llm_mod.Client, "complete", lambda self_, purpose, system, prompt, **kw: "RECORD DOES NOT ANSWER")
         q = "Does that same ceiling apply to night dives?"
-        with patch.dict(os.environ, {"BRIDGE_DEEP": "0"}):
+        with patch.dict(os.environ, {"RAVEN_DEEP": "0"}):
             run_task(g, Config(), "check", repo="sub", decisions=[{"question": q, "category": "ops"}])
         self.assertNotIn("followup", seen)
         self.assertEqual(g.count_events("followup_context"), 0)
-        with patch.dict(os.environ, {"BRIDGE_DEEP": "1"}):
+        with patch.dict(os.environ, {"RAVEN_DEEP": "1"}):
             run_task(g, Config(), "check again", repo="sub", decisions=[{"question": q, "category": "ops"}])
         self.assertIn("followup", seen)
         self.assertEqual(g.count_events("followup_context"), 1)
@@ -1649,8 +1649,8 @@ class ParcelwiseOpenValueTests(LadderCase):
         self.assertIn("say only that the call is still open, not what it is", d.evidence)
         self.assertNotIn("composed across records", d.evidence)
         # The owner's page shows the note, and no guess to apply.
-        from bridge import attention
-        from bridge.authz import Actor
+        from raven import attention
+        from raven.authz import Actor
         view = attention.overview(self.store, Actor(id=self.priya, name="Priya Shah"))
         self.assertEqual([i["id"] for i in view["needs_you"]], [d.id])
         item = view["needs_you"][0]
@@ -1658,12 +1658,12 @@ class ParcelwiseOpenValueTests(LadderCase):
         self.assertEqual(item["gaps"], d.gaps)
         self.assertTrue(item["why"].startswith("Nothing on record settles this."), item["why"])
         # Being built: no proposal event, so the timeline has no guess and no "Settled".
-        from bridge import timeline
+        from raven import timeline
         rows = timeline.rows(self.store, d.task_id)
         self.assertFalse(any(r["kind"] in ("guess", "settled_record") for r in rows), rows)
         self.assertTrue(any(r["kind"] == "flagged" and "to Priya" in r["text"] for r in rows), rows)
         # The message to Priya carries the note.
-        from bridge.delivery import render
+        from raven.delivery import render
         import json
         row = self.graph.db.execute("SELECT * FROM decisions WHERE id=?", (d.id,)).fetchone()
         self.assertEqual(json.loads(row["gaps"]), d.gaps)

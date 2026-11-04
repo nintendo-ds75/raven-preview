@@ -63,20 +63,20 @@ class ScriptedHost:
                 if self.fail:
                     return
                 if phase == 'initial':
-                    task = self.call(fixture, 'bridge_start_task', title='Production internal load-test invoice policy',
+                    task = self.call(fixture, 'raven_start_task', title='Production internal load-test invoice policy',
                                      goal=a.PROMPT, repo=a.REPO, client_key='claude-mcp-acceptance', paths=a.POLICY)['task_id']
-                    self.call(fixture, 'bridge_search_context', repo=a.REPO, query='Production billing context', task_id=task)
-                    self.call(fixture, 'bridge_search_decisions', repo=a.REPO, query='internal load-test traffic billable')
-                    self.call(fixture, 'bridge_add_node', task_id=task,
+                    self.call(fixture, 'raven_search_context', repo=a.REPO, query='Production billing context', task_id=task)
+                    self.call(fixture, 'raven_search_decisions', repo=a.REPO, query='internal load-test traffic billable')
+                    self.call(fixture, 'raven_add_node', task_id=task,
                               question='Should internal load-test traffic count on production customer invoices?',
                               paths=a.POLICY, category='policy', facts='environment=production', client_ref='production-policy')
                     while not self.stopped.is_set():
-                        self.call(fixture, 'bridge_wait', task_id=task, timeout='1')
+                        self.call(fixture, 'raven_wait', task_id=task, timeout='1')
                 else:
-                    started = self.call(fixture, 'bridge_start_task', title='Production internal load-test invoice policy',
+                    started = self.call(fixture, 'raven_start_task', title='Production internal load-test invoice policy',
                                         repo=a.REPO, client_key='claude-mcp-acceptance')
                     task = started['task_id']
-                    tree = self.call(fixture, 'bridge_get_tree', task_id=task)
+                    tree = self.call(fixture, 'raven_get_tree', task_id=task)
                     answer = tree['nodes'][0]['answer']
                     cohort = re.search(r'pilot_[0-9a-f]{8}', answer)[0]
                     threshold = int(re.search(r'more than (\d+)', answer)[1])
@@ -85,8 +85,8 @@ class ScriptedHost:
                     a.fixture_call(fixture.root / 'checkout', 'write_file', {'path': a.POLICY, 'content': source})
                     a.fixture_call(fixture.root / 'checkout', 'run_checks', {})
                     diff = a.fixture_call(fixture.root / 'checkout', 'read_changes', {})['diff']
-                    self.call(fixture, 'bridge_get_tree', task_id=task)
-                    self.call(fixture, 'bridge_finish_task', task_id=task, diff=diff,
+                    self.call(fixture, 'raven_get_tree', task_id=task)
+                    self.call(fixture, 'raven_finish_task', task_id=task, diff=diff,
                               checks='Fixture public smoke checks: 2 passed.')
             except Exception as error:
                 self.errors.append(error)
@@ -110,7 +110,7 @@ class EvidenceReadTests(unittest.TestCase):
                       'applicability': a.PRIOR_APPLICABILITY}
         self.context = {**self.fixture.source, 'body': a.SOURCE_BODY}
 
-    def observed(self, *responses, name='bridge_start_task', arguments=None):
+    def observed(self, *responses, name='raven_start_task', arguments=None):
         request = {'message': {'params': {'name': name, 'arguments': arguments or {}}}}
         return a.observed_evidence_reads(self.fixture, [(request, {}, response) for response in responses])
 
@@ -118,12 +118,12 @@ class EvidenceReadTests(unittest.TestCase):
         result = self.observed({'discovery': {'prior_decisions': [self.prior], 'context': [self.context]}})
         self.assertTrue(result['prior_content_read'])
         self.assertTrue(result['context_content_read'])
-        self.assertEqual(result['prior_response_tools'], ['bridge_start_task'])
-        self.assertEqual(result['context_response_tools'], ['bridge_start_task'])
+        self.assertEqual(result['prior_response_tools'], ['raven_start_task'])
+        self.assertEqual(result['context_response_tools'], ['raven_start_task'])
 
     def test_any_raven_response_can_deliver_equivalent_nested_json_evidence(self):
         result = self.observed({'content': json.dumps({'prior': self.prior, 'source': self.context})},
-                               name='bridge_get_tree')
+                               name='raven_get_tree')
         self.assertTrue(result['prior_content_read'])
         self.assertTrue(result['context_content_read'])
 
@@ -169,11 +169,11 @@ class EvidenceReadTests(unittest.TestCase):
     def test_real_dedicated_responses_and_bundled_equivalent_both_count(self):
         with a.Fixture() as fixture:
             fixture.prepare()
-            prior = fixture.call('bridge_get_decision', decision_id=fixture.prior_id)
-            source = fixture.call('bridge_get_record', record_id=fixture.source['record_id'], repo=a.REPO)
-            search = fixture.call('bridge_search_context', repo=a.REPO, query='Production billing context')
-            for name, value in [('bridge_start_task', {'discovery': [prior, source]}),
-                                ('bridge_get_tree', {'context': search, 'prior': prior})]:
+            prior = fixture.call('raven_get_decision', decision_id=fixture.prior_id)
+            source = fixture.call('raven_get_record', record_id=fixture.source['record_id'], repo=a.REPO)
+            search = fixture.call('raven_search_context', repo=a.REPO, query='Production billing context')
+            for name, value in [('raven_start_task', {'discovery': [prior, source]}),
+                                ('raven_get_tree', {'context': search, 'prior': prior})]:
                 request = {'message': {'params': {'name': name}}}
                 result = a.observed_evidence_reads(fixture, [(request, {}, value)])
                 self.assertTrue(result['prior_content_read'])
@@ -378,14 +378,14 @@ class DriverTests(unittest.TestCase):
         first = transcript(httpx.Request('POST', 'https://api.anthropic.com/v1/messages',
             json={'model': 'fixture-model', 'stream': True, 'messages': []}))
         self.assertEqual(first.status_code, 200)
-        self.assertIn('mcp__raven__bridge_start_task', first.text)
+        self.assertIn('mcp__raven__raven_start_task', first.text)
         self.assertIn('event: content_block_delta', first.text)
         result = {'role': 'user', 'content': [{'type': 'tool_result', 'content': [
             {'type': 'text', 'text': json.dumps({'task_id': 'actual-task-from-mcp'})}]}]}
         second = transcript(httpx.Request('POST', 'https://api.anthropic.com/v1/messages',
             json={'model': 'fixture-model', 'stream': False, 'messages': [result], 'tools': [{}]}))
         block = second.json()['content'][0]
-        self.assertEqual(block['name'], 'mcp__raven__bridge_search_context')
+        self.assertEqual(block['name'], 'mcp__raven__raven_search_context')
         self.assertEqual(block['input']['task_id'], 'actual-task-from-mcp')
         denied = transcript(httpx.Request('POST', 'https://other.invalid/v1/messages', json={}))
         self.assertEqual(denied.status_code, 403)
@@ -405,7 +405,7 @@ class DriverTests(unittest.TestCase):
             self.assertEqual(a.main(['--run-live', '--model', 'fixture', '--output-dir', '/tmp/uncreated-fixture']), 1)
 
     def test_direct_smoke_uses_production_messages_without_transport_replacement(self):
-        from bridge import llm
+        from raven import llm
         payload = {'content': [{'type': 'text', 'text': 'RAVEN_DIRECT_OK'}],
                    'usage': {'input_tokens': 12, 'output_tokens': 6}}
         with patch.object(llm.Client, '_post_json', return_value=payload) as post:
@@ -417,7 +417,7 @@ class DriverTests(unittest.TestCase):
         self.assertNotIn('synthetic-smoke-key', json.dumps(result))
 
     def test_direct_smoke_drops_inherited_proxy_and_tls_overrides(self):
-        from bridge import llm
+        from raven import llm
         def post(*_):
             self.assertNotIn('HTTPS_PROXY', os.environ)
             self.assertNotIn('https_proxy', os.environ)
@@ -430,7 +430,7 @@ class DriverTests(unittest.TestCase):
     def test_official_sdk_options_have_only_two_bounded_external_mcp_servers(self):
         fake = SimpleNamespace(ClaudeAgentOptions=lambda **kw: SimpleNamespace(**kw),
                                HookMatcher=lambda **kw: kw, PermissionResultDeny=lambda **kw: kw)
-        config = {'raven_env': {'BRIDGE_TOKEN': 'synthetic'}, 'checkout': '/tmp/fixture', 'home': '/tmp/home',
+        config = {'raven_env': {'RAVEN_TOKEN': 'synthetic'}, 'checkout': '/tmp/fixture', 'home': '/tmp/home',
                   'model': 'fixture-model', 'max_turns': 20, 'budget_usd': 1, 'session_id': 'saved'}
         with patch.dict(sys.modules, {'claude_agent_sdk': fake}):
             options = a.sdk_options(config)
@@ -457,12 +457,12 @@ class DriverTests(unittest.TestCase):
     def test_long_wait_really_remains_pending_beyond_old_one_second_cap(self):
         with a.Fixture() as fixture:
             fixture.prepare()
-            task = fixture.call('bridge_start_task', title='Production policy', repo=a.REPO, paths=a.POLICY)['task_id']
-            fixture.call('bridge_add_node', task_id=task, question='Which production billing policy applies?', paths=a.POLICY)
-            fixture.call('bridge_get_tree', task_id=task)
+            task = fixture.call('raven_start_task', title='Production policy', repo=a.REPO, paths=a.POLICY)['task_id']
+            fixture.call('raven_add_node', task_id=task, question='Which production billing policy applies?', paths=a.POLICY)
+            fixture.call('raven_get_tree', task_id=task)
             ended = threading.Event()
             def waiting():
-                fixture.call('bridge_wait', task_id=task, timeout='2')
+                fixture.call('raven_wait', task_id=task, timeout='2')
                 ended.set()
             thread = threading.Thread(target=waiting)
             thread.start()
@@ -471,11 +471,11 @@ class DriverTests(unittest.TestCase):
             self.assertTrue(ended.is_set())
 
     def test_authenticated_inquiry_live_path_with_explicit_offline_model_double(self):
-        from bridge import llm
+        from raven import llm
         with a.Fixture() as fixture:
             fixture.prepare()
-            task = fixture.call('bridge_start_task', title='Production billing policy', repo=a.REPO, paths=a.POLICY)['task_id']
-            node = fixture.call('bridge_add_node', task_id=task, question='Is customer traffic billable?', paths=a.POLICY)['node_id']
+            task = fixture.call('raven_start_task', title='Production billing policy', repo=a.REPO, paths=a.POLICY)['task_id']
+            node = fixture.call('raven_add_node', task_id=task, question='Is customer traffic billable?', paths=a.POLICY)['node_id']
             fixture.human('/api/decisions/' + node + '/signoff', {
                 'answer': 'Real customer traffic is billable.',
                 'expected_updated_at': fixture.store.get_decision(node)['updated_at']})
@@ -494,11 +494,11 @@ class DriverTests(unittest.TestCase):
             self.assertEqual(json.loads(mocked.call_args_list[0].args[3])['question'], a.DEFAULT_INQUIRY_QUESTION)
 
     def test_inquiry_fallback_preserves_response_and_exact_citation_failure(self):
-        from bridge import llm
+        from raven import llm
         with a.Fixture() as fixture:
             fixture.prepare()
-            task = fixture.call('bridge_start_task', title='Production billing policy', repo=a.REPO)['task_id']
-            node = fixture.call('bridge_add_node', task_id=task, question='Is traffic billable?', paths=a.POLICY)['node_id']
+            task = fixture.call('raven_start_task', title='Production billing policy', repo=a.REPO)['task_id']
+            node = fixture.call('raven_add_node', task_id=task, question='Is traffic billable?', paths=a.POLICY)['node_id']
             raw = {'outcome': 'supported_answer', 'answer': 'Unverified answer',
                    'citations': [{'id': node, 'quote': 'This quote is not in the source.'}], 'open': []}
             gateway = SimpleNamespace(placeholder='placeholder', urllib_open=urllib.request.urlopen,
@@ -559,7 +559,7 @@ class DriverTests(unittest.TestCase):
         self.assertFalse(report['live_inquiry']['response']['model_used'])
 
     def test_inquiry_only_uses_authenticated_copy_without_reseeding_original(self):
-        from bridge import llm
+        from raven import llm
         with tempfile.TemporaryDirectory() as tmp:
             source, output = Path(tmp) / 'source', Path(tmp) / 'diagnostic'
             run = a.run(output_dir=source, host_factory=ScriptedHost, idle_seconds=.01, timeout=20,
@@ -657,7 +657,7 @@ class DriverTests(unittest.TestCase):
     def test_missing_static_content_still_fails_after_actual_prior_read(self):
         class MissingStaticHost(ScriptedHost):
             def call(self, fixture, name, **arguments):
-                if name == 'bridge_search_context':
+                if name == 'raven_search_context':
                     return {}  # No response delivered; the prior still uses real Raven.
                 return super().call(fixture, name, **arguments)
         report = a.run(host_factory=MissingStaticHost, idle_seconds=.01, timeout=5,

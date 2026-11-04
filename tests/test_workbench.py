@@ -9,11 +9,11 @@ from urllib.request import Request, urlopen
 from unittest.mock import patch
 
 from fixtures import OfflineCase, ready_server
-from bridge import canvas, workbench_fs as fs
-from bridge.auth import Auth, Identity
-from bridge.config import Config
-from bridge.store import Store, Invalid
-from bridge.workbench import Workbench, TOOLS
+from raven import canvas, workbench_fs as fs
+from raven.auth import Auth, Identity
+from raven.config import Config
+from raven.store import Store, Invalid
+from raven.workbench import Workbench, TOOLS
 
 
 class ScriptedAgent:
@@ -110,9 +110,9 @@ class WorkbenchTests(OfflineCase):
     def test_agent_cannot_approve_or_mutate_another_task(self):
         task = self.submit()
         with self.assertRaises(Invalid):
-            self.service.execute(self.service.row(task), call('bridge_sign_off', {'by': 'Owner'}))
+            self.service.execute(self.service.row(task), call('raven_sign_off', {'by': 'Owner'}))
         other = self.submit(request_key='other')
-        returned = self.service.execute(self.service.row(task), call('bridge_add_node', {
+        returned = self.service.execute(self.service.row(task), call('raven_add_node', {
             'task_id': other, 'question': 'Should the limit be two?', 'paths': 'policy.py'}))
         self.assertEqual(self.store.get_decision(returned['node_id'])['run_id'], task)
         self.assertFalse(returned['authorized'])
@@ -121,7 +121,7 @@ class WorkbenchTests(OfflineCase):
         task = self.submit()
         self.service.step(task)
         node = canvas.add_node(self.store, Config(model_api='none'), {'task_id': task, 'question': 'Who approves two?', 'paths': 'policy.py'})
-        self.service.execute(self.service.row(task), call('bridge_get_tree'))
+        self.service.execute(self.service.row(task), call('raven_get_tree'))
         try:
             result = self.service.execute(self.service.row(task), call('finish_task', {'checks': 'No tests', 'summary': 'Done'}))
             self.assertNotEqual(result.get('status'), 'completed')
@@ -140,10 +140,10 @@ class WorkbenchTests(OfflineCase):
         task = self.submit()
         self.service.step(task)
         fs.file_tool(self.service.root / task, 'edit_file', {'path': 'policy.py', 'old': '1', 'new': '2'})
-        spec = next(t for t in TOOLS if t['name'] == 'bridge_review_discovery')
+        spec = next(t for t in TOOLS if t['name'] == 'raven_review_discovery')
         self.assertNotIn('diff', spec['input_schema']['properties'])
-        with patch('bridge.workbench.mcp.call_tool', return_value={}) as invoke:
-            self.service.execute(self.service.row(task), call('bridge_review_discovery', {'phase': 'finish', 'diff': 'invented patch', 'observations': 'Investigated policy.py', 'paths': ['policy.py']}))
+        with patch('raven.workbench.mcp.call_tool', return_value={}) as invoke:
+            self.service.execute(self.service.row(task), call('raven_review_discovery', {'phase': 'finish', 'diff': 'invented patch', 'observations': 'Investigated policy.py', 'paths': ['policy.py']}))
         sent = invoke.call_args.args[2]
         self.assertEqual(sent['diff'], fs.diff(self.service.root / task))
         self.assertIn('+limit = 2', sent['diff'])
@@ -152,7 +152,7 @@ class WorkbenchTests(OfflineCase):
     def test_finish_review_completed_before_wait_is_not_lost(self):
         task = self.submit()
         self.service.step(task)
-        with patch('bridge.workbench.mcp.call_tool', return_value={'status': 'completed', 'review': {'status': 'running'}}):
+        with patch('raven.workbench.mcp.call_tool', return_value={'status': 'completed', 'review': {'status': 'running'}}):
             self.service.execute(self.service.row(task), call('finish_task', {'summary': 'Ready', 'checks': 'Not run'}))
         # The current tree has no pending review: never subscribe to its already
         # completed state and wait forever for another transition.
@@ -166,7 +166,7 @@ class WorkbenchTests(OfflineCase):
         self.service.agent = ScriptedAgent([call('finish_task', {'checks': 'Tests passed'}, ident='finish')],
                                           [call('present_result', {'summary': 'Tests passed; model review is advisory.'}, ident='present')])
         self.service.update(task, status='queued')
-        with patch('bridge.workbench.mcp.call_tool', return_value={'status': 'completed', 'review': {'status': 'complete', 'concerns': ['Inspect a boundary']}}) as invoke:
+        with patch('raven.workbench.mcp.call_tool', return_value={'status': 'completed', 'review': {'status': 'complete', 'concerns': ['Inspect a boundary']}}) as invoke:
             self.service.step(task)
             self.assertEqual(self.service.row(task)['status'], 'queued')
             # Presentation must recheck a changed patch, not blindly reuse success.
@@ -183,7 +183,7 @@ class WorkbenchTests(OfflineCase):
     def test_incomplete_review_pauses_instead_of_publishing_completion(self):
         task = self.submit()
         self.service.step(task)
-        with patch('bridge.workbench.mcp.call_tool', return_value={'status': 'completed', 'review': {'status': 'failed'}}):
+        with patch('raven.workbench.mcp.call_tool', return_value={'status': 'completed', 'review': {'status': 'failed'}}):
             result = self.service.execute(self.service.row(task), call('finish_task', {'checks': 'Tests passed'}))
         self.assertEqual(result['status'], 'review_required')
         self.assertFalse(result['finished'])
@@ -195,13 +195,13 @@ class WorkbenchTests(OfflineCase):
         self.service.step(task)
         self.service.record(task, 'tool', 'finish_task', {'input': {'checks': 'Tests passed'}, 'result': {'status': 'completed'}})
         canvas.add_node(self.store, self.service.cfg, {'task_id': task, 'question': 'Which policy?', 'paths': 'policy.py'})
-        with patch('bridge.workbench.mcp.call_tool', return_value={'status': 'completed'}):
+        with patch('raven.workbench.mcp.call_tool', return_value={'status': 'completed'}):
             with self.assertRaisesRegex(Invalid, 'changed during completion'):
                 self.service.execute(self.service.row(task), call('present_result', {'summary': 'Done'}))
         self.assertNotEqual(self.service.row(task)['status'], 'completed')
 
     def test_new_factual_evidence_resumes_same_objective_worker_once(self):
-        from bridge import objectives, objective_head
+        from raven import objectives, objective_head
         self.store.graph.db.execute("INSERT INTO people(id,name,role,active) VALUES(?,?,?,1)", (self.actor.id, self.actor.name, 'member'))
         source_data = {'repo': 'sample/project', 'kind': 'note', 'ref': 'pilot', 'body': 'Pilot needs a CSV example.'}
         first = self.store.add_record(source_data)['source']
@@ -237,7 +237,7 @@ class WorkbenchTests(OfflineCase):
         self.assertEqual(self.service.get(task)['pending_messages'], [])
 
     def test_objective_pause_during_presentation_prevents_final_publication(self):
-        from bridge import objectives
+        from raven import objectives
         task = self.submit()
         self.service.step(task)
         objective = objectives.create(self.store, {'request_key': 'owned', 'title': 'Owned outcome',
@@ -249,7 +249,7 @@ class WorkbenchTests(OfflineCase):
         def pause_during_review(*args, **kwargs):
             self.store.graph.db.execute("UPDATE objectives SET lifecycle='paused',revision=revision+1 WHERE id=?", (objective['id'],))
             return {'status': 'completed'}
-        with patch('bridge.workbench.mcp.call_tool', side_effect=pause_during_review):
+        with patch('raven.workbench.mcp.call_tool', side_effect=pause_during_review):
             with self.assertRaisesRegex(Invalid, 'paused or closed'):
                 self.service.execute(self.service.row(task), call('present_result', {'summary': 'Done'}))
         self.assertNotEqual(self.service.row(task)['status'], 'completed')
@@ -262,7 +262,7 @@ class WorkbenchTests(OfflineCase):
                             'result': {'status': 'review_required', 'review': review}})
         with self.assertRaises(Invalid):
             self.service.execute(self.service.row(task), call('present_result', {'summary': 'Done'}))
-        with patch('bridge.workbench.mcp.call_tool', return_value={'status': 'completed', 'review': review}), patch('bridge.workbench.canvas.get_tree', return_value={'nodes': [], 'review': review}):
+        with patch('raven.workbench.mcp.call_tool', return_value={'status': 'completed', 'review': review}), patch('raven.workbench.canvas.get_tree', return_value={'nodes': [], 'review': review}):
             result = self.service.execute(self.service.row(task), call('present_result', {
                 'summary': 'Seven independent checks passed; code review still needed.', 'review_limitations_acknowledged': True}))
         self.assertTrue(result['manual_review_required'])
@@ -273,14 +273,14 @@ class WorkbenchTests(OfflineCase):
         self.service.step(task)
         self.service.record(task, 'tool', 'finish_task', {'input': {'checks': 'Tests passed'},
                             'result': {'status': 'review_required', 'review': {'id': 'old', 'status': 'failed'}}})
-        with patch('bridge.workbench.mcp.call_tool', return_value={'status': 'completed', 'review': {'id': 'new', 'status': 'failed'}}):
+        with patch('raven.workbench.mcp.call_tool', return_value={'status': 'completed', 'review': {'id': 'new', 'status': 'failed'}}):
             result = self.service.execute(self.service.row(task), call('present_result', {
                 'summary': 'Done', 'review_limitations_acknowledged': True}))
         self.assertEqual(self.service.row(task)['status'], 'paused')
         self.assertEqual(result['status'], 'review_required')
 
     def test_wait_sleeps_without_inference_and_wakes_on_a_note(self):
-        self.service.agent = ScriptedAgent([call('wait_for_people', {'reason': 'Waiting for policy'})], [call('bridge_get_tree', ident='read')])
+        self.service.agent = ScriptedAgent([call('wait_for_people', {'reason': 'Waiting for policy'})], [call('raven_get_tree', ident='read')])
         task = self.submit()
         canvas.add_node(self.store, self.service.cfg, {'task_id': task, 'question': 'Which policy should apply?', 'paths': 'policy.py'})
         self.service.step(task)
@@ -301,9 +301,9 @@ class WorkbenchTests(OfflineCase):
         task, other = self.submit(), self.submit(request_key='other')
         node = canvas.add_node(self.store, self.service.cfg, {'task_id': other, 'question': 'Which policy?', 'paths': 'policy.py'})
         with self.assertRaisesRegex(Invalid, 'another task'):
-            self.service.execute(self.service.row(task), call('bridge_settle_node', {'node_id': node['node_id'], 'answer': 'Changed', 'rationale': 'Not allowed'}))
+            self.service.execute(self.service.row(task), call('raven_settle_node', {'node_id': node['node_id'], 'answer': 'Changed', 'rationale': 'Not allowed'}))
         with self.assertRaisesRegex(Invalid, 'another task'):
-            self.service.execute(self.service.row(task), call('bridge_add_node', {'parent_id': node['node_id'], 'question': 'Cross task child'}))
+            self.service.execute(self.service.row(task), call('raven_add_node', {'parent_id': node['node_id'], 'question': 'Cross task child'}))
 
     def test_reply_during_last_inference_is_not_stranded(self):
         task = self.submit()
@@ -430,7 +430,7 @@ class WorkbenchTests(OfflineCase):
             with self.assertRaises(HTTPError) as caught:
                 urlopen(req)
             self.assertEqual(caught.exception.code, 403)
-            req.add_header('X-Bridge-CSRF', state['csrf_token'])
+            req.add_header('X-Raven-CSRF', state['csrf_token'])
             task = json.load(urlopen(req))['task_id']
             self.assertEqual(json.load(urlopen(base + '/api/workbench/' + task))['prompt'], 'Fix the policy')
         finally:
@@ -446,7 +446,7 @@ class SymlinkedRootTests(unittest.TestCase):
     point into /private): only symlinks inside the copy are an escape."""
 
     def test_symlinked_ancestor_of_the_root_is_not_an_escape(self):
-        from bridge import workbench_fs as fs
+        from raven import workbench_fs as fs
         with tempfile.TemporaryDirectory() as temp:
             real = Path(temp) / 'real'
             (real / 'copy').mkdir(parents=True)

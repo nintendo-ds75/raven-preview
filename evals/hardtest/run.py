@@ -1,8 +1,8 @@
 """Condition A: Raven alone, through the MCP surfaces an agent would use
-(bridge_search_decisions, then bridge_add_node, which runs the ladder, and
-bridge_get_decision for the full record). RAW_TAG names the output files.
+(raven_search_decisions, then raven_add_node, which runs the ladder, and
+raven_get_decision for the full record). RAW_TAG names the output files.
 The model key, if any, reaches the
-MCP subprocess through the environment only; run with BRIDGE_MODEL_API=none
+MCP subprocess through the environment only; run with RAVEN_MODEL_API=none
 for the deterministic condition. Grade the output by hand against the
 sealed key in questions.py."""
 import json
@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from mcp_client import BridgeMCP  # noqa: E402
+from mcp_client import RavenMCP  # noqa: E402
 from questions import QUESTIONS  # noqa: E402
 
 HERE = Path(__file__).parent
@@ -25,18 +25,18 @@ for suffix in ("", "-wal", "-shm"):
         p.unlink()
 shutil.copy(HERE / "hardtest.db", DB)
 codes = json.loads((HERE / "codes.json").read_text())
-mcp = BridgeMCP(str(DB))
-run = mcp.call("bridge_start_task", title="Hard test: Raven alone", agent="Evaluator", repo="acme/platform")
+mcp = RavenMCP(str(DB))
+run = mcp.call("raven_start_task", title="Hard test: Raven alone", agent="Evaluator", repo="acme/platform")
 
 results = []
 def ask(item):
     t0 = time.time()
-    search = mcp.call("bridge_search_decisions", query=item["q"], repo="platform")
+    search = mcp.call("raven_search_decisions", query=item["q"], repo="platform")
     matches = [{"code": codes.get(m["id"], m["id"]), "similarity": m["similarity"], "owner": m["owner_name"],
                 "question": m["question"], "answer": m["answer"], "updated_at": m["updated_at"][:10]} for m in search["matches"]]
-    node = mcp.call("bridge_add_node", task_id=run["task_id"], question=item["q"],
+    node = mcp.call("raven_add_node", task_id=run["task_id"], question=item["q"],
                     context="Evaluator question. Answer from org records if settled; otherwise route.", paths=item["path"])
-    req = node if "error" in node else mcp.call("bridge_get_decision", decision_id=node["node_id"])
+    req = node if "error" in node else mcp.call("raven_get_decision", decision_id=node["node_id"])
     if "error" in req:
         return {"id": item["id"], "question": item["q"], "path": item["path"], "error": req["error"], "search_matches": matches}
     return {"id": item["id"], "question": item["q"], "path": item["path"], "search_matches": matches,

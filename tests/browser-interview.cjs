@@ -9,7 +9,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 (async () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'raven-interview-browser-'));
   const root = path.resolve(__dirname, '..');
-  const server = spawn(process.env.BRIDGE_PYTHON || 'python3', ['tests/interview_browser_server.py', path.join(temp, 'test.db')], {cwd:root});
+  const server = spawn(process.env.RAVEN_PYTHON || 'python3', ['tests/interview_browser_server.py', path.join(temp, 'test.db')], {cwd:root});
   let browser;
   server.stderr.on('data', () => {});
   try {
@@ -22,7 +22,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
       });
       server.once('error', reject);
     });
-    browser = await chromium.launch({headless:true, executablePath:process.env.BRIDGE_BROWSER || '/usr/bin/chromium'});
+    browser = await chromium.launch({headless:true, executablePath:process.env.RAVEN_BROWSER || '/usr/bin/chromium'});
     const context = await browser.newContext({viewport:{width:1280,height:1000}});
     const [name, value] = world.cookie.split('=');
     await context.addCookies([{name, value, url:world.url}]);

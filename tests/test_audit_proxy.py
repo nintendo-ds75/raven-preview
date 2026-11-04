@@ -30,9 +30,9 @@ class ProxyTests(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 root=Path(tmp);trace=root/'trace.jsonl';ledger=root/'audit.jsonl'
-                env={**os.environ,'BRIDGE_TOKEN':credential,'BRIDGE_EVAL_URL':f'http://127.0.0.1:{server.server_port}',
-                     'BRIDGE_EVAL_TRACE':str(trace),'BRIDGE_EVAL_AUDIT':str(ledger)}
-                lines='\n'.join(json.dumps({'jsonrpc':'2.0','id':i,'method':'tools/call','params':{'name':'bridge_get_tree','arguments':{'task_id':'one'}}}) for i in (1,2))+'\n'
+                env={**os.environ,'RAVEN_TOKEN':credential,'RAVEN_EVAL_URL':f'http://127.0.0.1:{server.server_port}',
+                     'RAVEN_EVAL_TRACE':str(trace),'RAVEN_EVAL_AUDIT':str(ledger)}
+                lines='\n'.join(json.dumps({'jsonrpc':'2.0','id':i,'method':'tools/call','params':{'name':'raven_get_tree','arguments':{'task_id':'one'}}}) for i in (1,2))+'\n'
                 proc=subprocess.run([sys.executable,'-m','evals.real_oss_remote.mcp_proxy'],input=lines,text=True,capture_output=True,env=env,timeout=15)
                 self.assertEqual(proc.returncode,0,proc.stderr)
                 replies=[json.loads(line) for line in proc.stdout.splitlines()]

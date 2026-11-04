@@ -4,7 +4,7 @@ task.
 
 The host is the Claude Code CLI in print mode, given the brief and
 nothing else: no decision list, no owner names, no answer key. In the
-bridge arm it reaches Raven over MCP stdio, exactly as a pilot's agent
+raven arm it reaches Raven over MCP stdio, exactly as a pilot's agent
 would. It runs twice: once before anyone replies, and then, as a fresh
 process with no memory of the first, after the owners have acted. What
 the second process knows, it gets from Raven.
@@ -15,7 +15,7 @@ person it belongs to if it is not. That is the one thing here that is
 not real, and it is the same simplification `evals/e2e` makes.
 
     python3 -m evals.real_oss.run_host --tasks evals/real_oss/tasks.json \
-        --out evals/real_oss/results/<name> [--only smallint-overflow] [--arm bridge]
+        --out evals/real_oss/results/<name> [--only smallint-overflow] [--arm raven]
 
 Needs the `claude` CLI on PATH and authenticated, and the checkout that
 `fetch.py` read (it takes a worktree of it per run).
@@ -34,18 +34,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from bridge import canvas  # noqa: E402
-from bridge.authz import Actor, Refused  # noqa: E402
-from bridge.store import Invalid, Store  # noqa: E402
+from raven import canvas  # noqa: E402
+from raven.authz import Actor, Refused  # noqa: E402
+from raven.store import Invalid, Store  # noqa: E402
 
 # What a pilot puts in its house rules, and all the host is told about
 # Raven. It does not name a decision, an owner or an answer.
 HOUSE_RULE = (
-    "This team runs Raven. Before you start work on a task, call bridge_start_task with the task as "
+    "This team runs Raven. Before you start work on a task, call raven_start_task with the task as "
     "given. When you hit something that is a judgment call rather than a fact you can look up -- a "
     "default, a policy, what to keep for existing users, what to break -- write it to the canvas with "
-    "bridge_add_node instead of deciding it yourself, and carry on with the parts that do not depend on "
-    "it. Read bridge_get_tree before any irreversible step. Call bridge_finish_task when you are done; "
+    "raven_add_node instead of deciding it yourself, and carry on with the parts that do not depend on "
+    "it. Read raven_get_tree before any irreversible step. Call raven_finish_task when you are done; "
     "it is refused while a decision still waits on a person."
 )
 
@@ -79,7 +79,7 @@ class Host:
         if self.mcp:
             # A pilot pre-approves its own Raven server; without this the
             # host's calls are denied for want of anyone to ask.
-            cmd += ["--mcp-config", str(self.mcp), "--allowedTools", "mcp__bridge",
+            cmd += ["--mcp-config", str(self.mcp), "--allowedTools", "mcp__raven",
                     "--append-system-prompt", HOUSE_RULE]
         if self.model:
             cmd += ["--model", self.model]
@@ -121,7 +121,7 @@ class Host:
                 text = event.get("result", "") or text
                 cost = event.get("total_cost_usd", cost)
         return {"tool_calls": calls, "answer": text, "cost_usd": cost, "turns": turns,
-                "bridge_calls": [c["name"] for c in calls if c["name"].startswith("mcp__bridge__")]}
+                "raven_calls": [c["name"] for c in calls if c["name"].startswith("mcp__raven__")]}
 
 
 def worktree(checkout: Path, commit: str, at: Path) -> Path:
@@ -141,10 +141,10 @@ def mcp_config(db: Path, at: Path, semantic: bool = False) -> Path:
     """The Raven the host talks to. Deterministic rungs only unless the
     run asks for the model-backed ones, which is what a pilot with a key
     actually has."""
-    env = {"BRIDGE_SEMANTIC": "1"} if semantic else {"BRIDGE_MODEL_API": "none", "BRIDGE_SEMANTIC": "0"}
-    at.write_text(json.dumps({"mcpServers": {"bridge": {
+    env = {"RAVEN_SEMANTIC": "1"} if semantic else {"RAVEN_MODEL_API": "none", "RAVEN_SEMANTIC": "0"}
+    at.write_text(json.dumps({"mcpServers": {"raven": {
         "command": sys.executable,
-        "args": [str(ROOT / "bridge_mcp.py"), "--db", str(db)],
+        "args": [str(ROOT / "raven_mcp.py"), "--db", str(db)],
         "env": env}}}, indent=2))
     return at
 
@@ -311,8 +311,8 @@ def score(task: dict, arm: str, run: dict) -> dict:
     owners = [n["owner"] for n in nodes if n["owner"]]
     after = run["canvas_after"]["nodes"]
     out.update(
-        kicked_off="mcp__bridge__bridge_start_task" in run["phase1"]["bridge_calls"],
-        kickoff_first=(run["phase1"]["bridge_calls"] or [""])[0] == "mcp__bridge__bridge_start_task",
+        kicked_off="mcp__raven__raven_start_task" in run["phase1"]["raven_calls"],
+        kickoff_first=(run["phase1"]["raven_calls"] or [""])[0] == "mcp__raven__raven_start_task",
         registered=len(nodes),
         routed=sum(1 for n in nodes if n["owner"]),
         first_contact=sum(1 for o in owners if o == key["owner"]),
@@ -326,7 +326,7 @@ def score(task: dict, arm: str, run: dict) -> dict:
         gate_held=run["finish_before"].startswith("refused") if nodes else None,
         finished=run["finish_after"] == "completed",
         authorized=all(n["authorized"] or not n["blocking"] for n in after),
-        resumed=(run["phase2"]["bridge_calls"] or []) != [] and run["phase2"]["read_same_task"],
+        resumed=(run["phase2"]["raven_calls"] or []) != [] and run["phase2"]["read_same_task"],
         saw_answers=run["phase2"]["saw_answers"],
         followed=checks["followed"],
         checks=checks,
@@ -369,12 +369,12 @@ def run_one(task: dict, arm: str, tasks: dict, out: Path, work_root: Path, model
         run["scores"] = score(task, arm, run)
         return run
 
-    db = work / "bridge.db"
+    db = work / "raven.db"
     shutil.copy(Path(tasks["db"]), db)
     cfg = mcp_config(db, work / "mcp.json", semantic)
     client_key = f"{task['id']}-eval"
 
-    phase1 = (f"{brief}\n\nUse client_key \"{client_key}\" when you call bridge_start_task, so the task "
+    phase1 = (f"{brief}\n\nUse client_key \"{client_key}\" when you call raven_start_task, so the task "
               f"can be picked up again if this session ends.")
     run["phase1"] = Host(wt, phase1, cfg, 40, PHASE1_TIMEOUT, work / "phase1.jsonl", model).run()
 
@@ -392,14 +392,14 @@ def run_one(task: dict, arm: str, tasks: dict, out: Path, work_root: Path, model
     run["canvas_replied"] = canvas_snapshot(store, task_id)
 
     phase2 = ("You are picking up a task a previous session started and did not finish. Call "
-              f"bridge_start_task with client_key \"{client_key}\" to get the task back, read the canvas, "
+              f"raven_start_task with client_key \"{client_key}\" to get the task back, read the canvas, "
               "and finish the work in line with what the people answered. "
               "Do not run any commands.\n\n" + brief)
     result = Host(wt, phase2, cfg, 40, PHASE2_TIMEOUT, work / "phase2.jsonl", model).run()
     result["read_same_task"] = any(
-        task_id in json.dumps(c["input"]) for c in result["tool_calls"] if c["name"].startswith("mcp__bridge__"))
+        task_id in json.dumps(c["input"]) for c in result["tool_calls"] if c["name"].startswith("mcp__raven__"))
     answers = [r for r in run["replies"] if r.get("action") in ("answered", "corrected", "signed")]
-    result["saw_answers"] = bool(answers) and "mcp__bridge__bridge_get_tree" in result["bridge_calls"]
+    result["saw_answers"] = bool(answers) and "mcp__raven__raven_get_tree" in result["raven_calls"]
     run["phase2"] = result
 
     run["canvas_after"] = canvas_snapshot(store, task_id)
@@ -423,7 +423,7 @@ def _followup(task: dict, store, db: Path, cfg: Path, work: Path, model: str, ru
     client_key = f"{task['id']}-followup"
     brief = (f"{key['followup']}\n\nFiles to start from: {', '.join(key['followup_paths'])}.\n"
              "Make the change in this checkout. Do not run any commands.\n\n"
-             f"Use client_key \"{client_key}\" when you call bridge_start_task.")
+             f"Use client_key \"{client_key}\" when you call raven_start_task.")
     host = Host(wt, brief, cfg, 40, PHASE1_TIMEOUT, work / "followup.jsonl", model).run()
     task_id = _task_id(store, client_key)
     out = {"client_key": client_key, "task_id": task_id, "host": host,
@@ -477,7 +477,7 @@ def main(argv=None):
     ap.add_argument("--tasks", default=str(Path(__file__).resolve().parent / "tasks.json"))
     ap.add_argument("--out", required=True)
     ap.add_argument("--only", default="", help="one task id")
-    ap.add_argument("--arm", default="bridge,alone")
+    ap.add_argument("--arm", default="raven,alone")
     ap.add_argument("--model", default="", help="passed to the host CLI")
     ap.add_argument("--work", default="", help="where checkouts and databases go (default: a temp dir)")
     ap.add_argument("--semantic", action="store_true",
@@ -487,7 +487,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     tasks = json.loads(Path(args.tasks).read_text())
-    tasks.setdefault("db", str(Path(args.tasks).resolve().parent / "bridge.db"))
+    tasks.setdefault("db", str(Path(args.tasks).resolve().parent / "raven.db"))
     out = Path(args.out)
     if args.rescore:
         data = rescore(out / "results.json", tasks)

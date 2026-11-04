@@ -49,9 +49,9 @@ does not change them. The shipped paths are:
   diff context directly to the Anthropic Messages API using your key, or through
   your installed Claude CLI/account. These are the currently supported internal
   model backends, not a promise of arbitrary model-endpoint compatibility. The
-  Compose default is `BRIDGE_MODEL_API=none`. Direct Python configuration defaults
+  Compose default is `RAVEN_MODEL_API=none`. Direct Python configuration defaults
   to Anthropic and can fall back to an installed Claude CLI; set
-  `BRIDGE_MODEL_API=none` explicitly when you want Raven's internal model calls off.
+  `RAVEN_MODEL_API=none` explicitly when you want Raven's internal model calls off.
   Local search embeddings are computed inside Raven without an embedding API.
 - **Coding agents and optional managed execution:** a connected Claude Code,
   Codex, Cursor or other MCP host has its own provider and data settings. The
@@ -72,7 +72,7 @@ does not change them. The shipped paths are:
 - **Jira and Airweave:** Raven polls Jira only for projects an administrator adds as a
   [native context source](docs/context-sources.md), with the `JIRA_*` API token you
   set. Records imported by a coding host use that host's connector and provider permissions. Optional
-  Airweave retrieval sends searches to the `BRIDGE_AIRWEAVE_URL` you configure,
+  Airweave retrieval sends searches to the `RAVEN_AIRWEAVE_URL` you configure,
   which may be your own Airweave service or a chosen hosted service. Airweave's
   upstream connectors and processing are part of that separate deployment.
   Enabled retained sources can also be refreshed in the background.
@@ -106,7 +106,7 @@ disable configured integrations or package downloads.
 ./setup --configure --project /path/to/your/code                          # Wizard: clients and optional connections
 ./setup --repo /path/to/platform --repo-name acme/platform
 ./setup --port 7444                          # Change port and local public URL together
-./setup --import-sqlite /path/to/bridge.db    # Explicit migration into an empty destination
+./setup --import-sqlite /path/to/raven.db    # Explicit migration into an empty destination
 ```
 
 The same entry point is available as `./dev setup`; `./dev config` reopens the
@@ -118,7 +118,7 @@ Enter keeps a saved ID or leaves it unset. The same prompt is available through
 the Raven workspace name supplied with `--workspace`.
 Select one or more agent clients to write URL-based Raven entries into their
 project MCP configuration; each keeps unrelated MCP servers. The endpoint is
-`BRIDGE_PUBLIC_URL/mcp` and requires a limited agent token. Setup writes that
+`RAVEN_PUBLIC_URL/mcp` and requires a limited agent token. Setup writes that
 credential into each selected project's local MCP configuration with owner-only
 permissions, and excludes the file from the local Git checkout so it is not
 accidentally committed. It refuses to alter an already-tracked MCP config for
@@ -142,7 +142,7 @@ Raven stores user credentials in `/data/github-user.json` with owner-only
 permissions and automatically refreshes expiring tokens. Protect that file in
 backups. The App polls for changes and needs no public webhook or hosted broker.
 Existing operator-owned App keys and the `GITHUB_TOKEN` plus
-`BRIDGE_GITHUB_REPOS` server settings remain supported. Jira records can be imported through `POST /api/records`;
+`RAVEN_GITHUB_REPOS` server settings remain supported. Jira records can be imported through `POST /api/records`;
 there is no built-in Jira polling connector, so setup does not offer one.
 Repository paths entered in the wizard must be absolute macOS/Linux/WSL paths;
 for Windows paths use the PowerShell wrapper's `--repo` flag. Use a standalone
@@ -161,7 +161,7 @@ The Windows wrapper has not been tested on a Windows host.
 
 The application is reachable at the printed localhost URL, which is the address
 Raven was configured with rather than the port mapping: Docker publishes
-`BRIDGE_PORT` while the container always binds 7333, so `BRIDGE_PUBLIC_URL` is
+`RAVEN_PORT` while the container always binds 7333, so `RAVEN_PUBLIC_URL` is
 the only thing that tells the server which port people reach it on. `./setup`
 keeps the two together and `./dev up` warns if they have drifted apart. Both
 spellings of the loopback address work — `http://localhost:PORT` and
@@ -219,23 +219,23 @@ remain supported for existing local setups.
 Make targets are also available (`make up`, `make login`, `make test-postgres`,
 etc.). The Docker-only `./dev` wrapper avoids host Make/Xcode requirements.
 
-Data persists in `bridge_postgres_data`. The generated development login token
-persists in `bridge_app_data`, readable only by the container user; PostgreSQL
+Data persists in `raven_postgres_data`. The generated development login token
+persists in `raven_app_data`, readable only by the container user; PostgreSQL
 stores its hash. Down/up and repeated seeding preserve both. Docker's
 `docker compose down -v` **deletes these volumes**; none of our commands uses it.
 
 ## Configuration and repository ingestion
 
 Optionally copy `.env.example` to `.env` and edit it. The file is ignored by Git
-and excluded from Docker builds. If changing `BRIDGE_PORT`, also change
-`BRIDGE_PUBLIC_URL` to match. The app is published on host loopback only; PostgreSQL
+and excluded from Docker builds. If changing `RAVEN_PORT`, also change
+`RAVEN_PUBLIC_URL` to match. The app is published on host loopback only; PostgreSQL
 has no host port. The default database password is for local development. Set a
 URL-safe password before initializing a new volume; changing `POSTGRES_PASSWORD`
 later does not rotate an existing PostgreSQL role.
 
-To index your own checkout automatically, set `BRIDGE_REPOS_DIR` to the directory
-containing it, `BRIDGE_INGEST_REPO_DIR` to its directory name, and optionally
-`BRIDGE_INGEST_REPO` to its `owner/repository` identity in `.env`. Then run:
+To index your own checkout automatically, set `RAVEN_REPOS_DIR` to the directory
+containing it, `RAVEN_INGEST_REPO_DIR` to its directory name, and optionally
+`RAVEN_INGEST_REPO` to its `owner/repository` identity in `.env`. Then run:
 
 ```sh
 ./dev up
@@ -255,18 +255,18 @@ clones require a supporting Git version. The installed capability is checked
 before reading objects. A failed history read leaves the previous graph intact.
 Unpinned ownership listings must resolve inside the selected checkout; an
 external symlink is rejected.
-The bundled example remains available when `BRIDGE_DEMO=1`.
+The bundled example remains available when `RAVEN_DEMO=1`.
 
 GitHub and Slack credentials can be supplied through `.env`; Compose passes the
-integration variables to the app. Set `BRIDGE_MODEL_API=anthropic` and
+integration variables to the app. Set `RAVEN_MODEL_API=anthropic` and
 `ANTHROPIC_API_KEY` to enable model-assisted retrieval. Defaults are offline.
 
-For a team deployment, disable `BRIDGE_DEV_LOGIN` and `BRIDGE_DEMO`, configure
+For a team deployment, disable `RAVEN_DEV_LOGIN` and `RAVEN_DEMO`, configure
 GitHub sign-in or a bootstrap admin token, and supply the public URL and TLS proxy.
 This is a local development Compose stack, not a multi-tenant deployment.
 
 For optional managed execution, use `./setup --configure --project /path/to/your/code`, or set
-`BRIDGE_INSTALL_AGENTS=true`, `BRIDGE_AGENTS=1`, and `OPENAI_API_KEY` in `.env`
+`RAVEN_INSTALL_AGENTS=true`, `RAVEN_AGENTS=1`, and `OPENAI_API_KEY` in `.env`
 before running setup. The default image does not install the optional SDK.
 
 ## Import an existing SQLite workspace
@@ -274,7 +274,7 @@ before running setup. The default image does not install the optional SDK.
 Before the first `./dev up`, with an empty PostgreSQL destination:
 
 ```sh
-./dev import-sqlite /absolute/path/to/.bridge/bridge.db
+./dev import-sqlite /absolute/path/to/.raven/raven.db
 ./dev up
 ```
 
@@ -290,14 +290,14 @@ SQLite workspaces are never imported implicitly.
 
 ```sh
 ./dev backup
-./dev restore backups/bridge-YYYYMMDD-HHMMSS.dump bridge_restored
-docker compose exec db psql -U bridge -d bridge_restored
+./dev restore backups/raven-YYYYMMDD-HHMMSS.dump raven_restored
+docker compose exec db psql -U raven -d raven_restored
 ```
 
 Backups use `pg_dump` custom format in the ignored `backups/` directory. Restore
 creates a new database and fails if its name already exists. To serve the restored
-copy, override the app's `DATABASE_URL` to point to `bridge_restored` and recreate
-the app. The SQLite `bridge backup` command refuses PostgreSQL and directs you to
+copy, override the app's `DATABASE_URL` to point to `raven_restored` and recreate
+the app. The SQLite `raven backup` command refuses PostgreSQL and directs you to
 `pg_dump`. JSON history export works on either backend.
 
 ## Backend implementation

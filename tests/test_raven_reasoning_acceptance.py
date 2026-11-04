@@ -247,10 +247,10 @@ class AcceptanceTests(unittest.TestCase):
             self.assertFalse(report['git_fixture']['has_codeowners'])
             self.assertEqual([x['outcome'] for x in report['contact_outcomes']], ['referred', 'answered'])
             trace = json.loads((Path(tmp) / 'run/api-trace.json').read_text())
-            nodes = [e['arguments'] for e in trace if e.get('tool') == 'bridge_add_node']
+            nodes = [e['arguments'] for e in trace if e.get('tool') == 'raven_add_node']
             self.assertTrue(nodes)
             self.assertTrue(all('owner_id' not in node and 'answer' not in node for node in nodes))
-            cold_imports = [e['arguments'] for e in trace if e.get('tool') == 'bridge_import_record' and e['stage'] == 'bootstrap']
+            cold_imports = [e['arguments'] for e in trace if e.get('tool') == 'raven_import_record' and e['stage'] == 'bootstrap']
             self.assertNotIn(a.RESPONDENT, [record['author'] for record in cold_imports])
 
     def test_available_learned_contact_evidence_is_insufficient_without_model_citation(self):
@@ -297,7 +297,7 @@ class AcceptanceTests(unittest.TestCase):
             self.assertTrue(report['warm_cache']['policy_check']['retain_exact_boundary'])
             self.assertEqual(report['warm_cache']['unchanged_node_retry_additional_inference'], 0)
             trace = json.loads((Path(tmp) / 'run/api-trace.json').read_text())
-            heldout = [e['arguments'] for e in trace if e.get('tool') in ('bridge_start_task', 'bridge_add_node')
+            heldout = [e['arguments'] for e in trace if e.get('tool') in ('raven_start_task', 'raven_add_node')
                        and e['stage'] == 'live_memory_reuse']
             for args in heldout:
                 for key in ('title', 'goal', 'question', 'context', 'options'):

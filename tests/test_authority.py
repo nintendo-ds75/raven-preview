@@ -16,13 +16,13 @@ from urllib.request import Request, urlopen
 
 from fixtures import OfflineCase
 
-from bridge import canvas, identity
-from bridge.config import Config
-from bridge.mcp import dispatch
-from bridge.routing import route, route_ranked
-from bridge.scopes import decision_scopes
+from raven import canvas, identity
+from raven.config import Config
+from raven.mcp import dispatch
+from raven.routing import route, route_ranked
+from raven.scopes import decision_scopes
 from fixtures import ready_server as make_server
-from bridge.store import Invalid
+from raven.store import Invalid
 
 CFG = Config(model_api="none")
 
@@ -576,7 +576,7 @@ class SurfaceTests(OfflineCase):
 
         def post(path, data):
             req = Request(base + path, data=json.dumps(data).encode(), method="POST",
-                          headers={"Content-Type": "application/json", "X-Bridge-CSRF": csrf, "Host": f"127.0.0.1:{port}"})
+                          headers={"Content-Type": "application/json", "X-Raven-CSRF": csrf, "Host": f"127.0.0.1:{port}"})
             with urlopen(req) as r:
                 return json.loads(r.read())
 
@@ -606,7 +606,7 @@ class SurfaceTests(OfflineCase):
         self.store.add_authority({"person": "Marisol Vega", "scope_kind": "category", "scope": "billing", "role": "decides"})
         self.store.update_settings({"coordinator": "Marisol Vega"})
         r = dispatch(self.store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                                  "params": {"name": "bridge_list_owners", "arguments": {}}})
+                                  "params": {"name": "raven_list_owners", "arguments": {}}})
         out = json.loads(r["result"]["content"][0]["text"])
         self.assertEqual(out["people"][0]["name"], "Marisol Vega")
         self.assertEqual(out["authority"][0]["role"], "decides")

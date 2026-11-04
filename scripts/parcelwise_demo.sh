@@ -44,9 +44,9 @@ if [ -n "$RESET" ] || [ ! -f "$DB" ]; then
 import json, sys
 root, db, repo, port, password = sys.argv[1:6]
 sys.path.insert(0, root)
-from bridge.accounts import password_hash
-from bridge.auth import Auth
-from bridge.store import Store
+from raven.accounts import password_hash
+from raven.auth import Auth
+from raven.store import Store
 store = Store(db)
 graph = store.graph
 with graph.transaction():
@@ -76,11 +76,11 @@ with open(f"{repo}/.mcp.json", "w") as f:
 # instructions, and a dry run with .mcp.json alone never registered its
 # task (docs/host-adapters.md).
 try:
-    from bridge.setup import install_host_hooks
+    from raven.setup import install_host_hooks
     install_host_hooks(repo, repo, f"http://localhost:{port}/mcp", token, ["claude"], "parcelwise/parcelwise-app")
 except Exception as error:  # the demo still runs; the banner says what is missing
     print(f"Host hooks were not installed ({error}); the kickoff depends on Claude Code calling "
-          "bridge_start_task itself. Run ./setup --configure --client claude to install them.", file=sys.stderr)
+          "raven_start_task itself. Run ./setup --configure --client claude to install them.", file=sys.stderr)
 EOF
   grep -qx '.mcp.json' "$REPO/.git/info/exclude" 2>/dev/null || echo '.mcp.json' >> "$REPO/.git/info/exclude"
 fi
@@ -95,13 +95,13 @@ if [ -n "$VOICE" ]; then
 fi
 
 if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-  export BRIDGE_MODEL_API=anthropic
+  export RAVEN_MODEL_API=anthropic
 elif command -v claude >/dev/null 2>&1; then
-  export BRIDGE_MODEL_API=claude-cli
+  export RAVEN_MODEL_API=claude-cli
 else
   echo "No ANTHROPIC_API_KEY and no claude CLI: Ask Raven will show quotes without written answers." >&2
 fi
-export BRIDGE_CALL_TURN_SECONDS=${BRIDGE_CALL_TURN_SECONDS:-20}
+export RAVEN_CALL_TURN_SECONDS=${RAVEN_CALL_TURN_SECONDS:-20}
 
 cat <<EOF
 
@@ -115,4 +115,4 @@ cat <<EOF
 
 EOF
 cd "$ROOT"
-exec "$PY" -m bridge --db "$DB" serve --port "$PORT" --auth on
+exec "$PY" -m raven --db "$DB" serve --port "$PORT" --auth on

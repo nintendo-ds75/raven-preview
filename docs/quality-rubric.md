@@ -26,7 +26,7 @@ A new person gets from `git clone` to a running workspace following only the REA
 ### 2. Connect a coding agent
 Claude Code, Codex and Cursor each connect from one command, and the first ordinary prompt registers one task.
 - **Measure:** per client: config written correctly, hooks load, one prompt → one task, follow-ups stay on it, a task registered twice is one task.
-- **Target:** all three clients, documented and tested; the agent calls `bridge_start_task` without being reminded.
+- **Target:** all three clients, documented and tested; the agent calls `raven_start_task` without being reminded.
 - **Checks:** `tests/test_host_sessions.py`, `tests/test_setup.py`, `tests/test_context_guidance.py`.
 
 ### 3. Task flow and invariants
@@ -50,9 +50,9 @@ Briefs, Slack messages, proposals, answers to task questions and resume reports 
 
 ### 6. What agents read
 The instructions and tool descriptions an agent receives are enough to use Raven correctly and no longer than that.
-- **Measure:** words injected per prompt by the hook; words of tool descriptions; tool-call sequence in a recorded run (does the agent call `bridge_start_task` first, `bridge_get_tree` before finishing).
+- **Measure:** words injected per prompt by the hook; words of tool descriptions; tool-call sequence in a recorded run (does the agent call `raven_start_task` first, `raven_get_tree` before finishing).
 - **Target:** ≤ 400 words per prompt, ≤ 2,500 words of tool text, no behaviour regression on recorded runs.
-- **Checks:** `tests/test_bridge.py`, `tests/test_context_guidance.py`, recorded MCP transcripts under `evals/`.
+- **Checks:** `tests/test_raven.py`, `tests/test_context_guidance.py`, recorded MCP transcripts under `evals/`.
 
 ### 7. UI correctness and accessibility
 Every page works at desktop and phone width, by keyboard, with a screen reader, and says what to do next.
@@ -116,7 +116,7 @@ Dismissals are honoured, carry a reason and shape the next investigation; signed
 
 ### 17. Positioning clarity
 One sentence a VP of Engineering repeats, identical wherever it appears, with capability boundaries that match the code.
-- **Measure:** README lead equals the positioning sentence; word count; every boundary link in `docs/positioning.md` resolves; every surface under `BRIDGE_MODEL_API=none` carries the fixed no-model notice; documented disagreements.
+- **Measure:** README lead equals the positioning sentence; word count; every boundary link in `docs/positioning.md` resolves; every surface under `RAVEN_MODEL_API=none` carries the fixed no-model notice; documented disagreements.
 - **Target:** identical and under 35 words; 100 % of links resolve; 100 % of no-model surfaces carry the notice; zero disagreements.
 - **Checks:** `tests/test_customer_text.py`, `tests/test_docs_links.py`, `tests/test_docs_reachable.py`, `tests/test_setup.py`, `tests/test_state_budget.py`, `tests/objectives-ui-unit.cjs`.
 

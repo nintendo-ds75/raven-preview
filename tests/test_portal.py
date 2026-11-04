@@ -14,12 +14,12 @@ from urllib.request import Request, urlopen
 
 from fixtures import OfflineCase
 
-from bridge import canvas
-from bridge.authz import Actor
-from bridge.config import Config
-from bridge.delivery import TeamsTransport, handle_slack_event
+from raven import canvas
+from raven.authz import Actor
+from raven.config import Config
+from raven.delivery import TeamsTransport, handle_slack_event
 from fixtures import ready_server as make_server
-from bridge.store import Invalid
+from raven.store import Invalid
 from test_delivery import FakeSlack
 
 CFG = Config(model_api="none")
@@ -34,7 +34,7 @@ class PortalCase(OfflineCase):
         # Exercise the supported opt-in conversational Slack workflow.
         self.graph.set_setting("slack_interaction_mode", "conversation")
         self.slack = FakeSlack()
-        self.delivery = self.store.connect_delivery(self.slack, base_url="https://bridge.acme.test")
+        self.delivery = self.store.connect_delivery(self.slack, base_url="https://raven.acme.test")
         with self.graph.transaction():
             self.priya = self.graph.add_person("Priya Natarajan", email="priya@acme.example", slack_id="UPRI")
             self.wes = self.graph.add_person("Wes Chen", email="wes@acme.example", slack_id="UWES")
@@ -78,8 +78,8 @@ class HowTheyDecideTests(PortalCase):
         self.assertIn("How you decided before: The enterprise rate card", ask["text"])
         self.assertIn("confirm or correct it", ask["text"])
         # Somebody else's answers never speak for this owner.
-        from bridge import llm
-        from bridge.ladder import _how_they_decide
+        from raven import llm
+        from raven.ladder import _how_they_decide
         question = "Which rate applies to Umbrella usage above the included quota?"
         self.assertEqual(_how_they_decide(self.graph, CFG, REPO, question, "", llm.embed(question), "Wes Chen"), ("", "", ""))
         proposal, source, why = _how_they_decide(self.graph, CFG, REPO, question, "", llm.embed(question), "Priya Natarajan")
@@ -102,8 +102,8 @@ class ScopedPredictionTests(PortalCase):
         return node["node_id"]
 
     def test_an_answer_that_excludes_this_request_is_never_proposed_for_it(self):
-        from bridge import llm
-        from bridge.ladder import _how_they_decide
+        from raven import llm
+        from raven.ladder import _how_they_decide
         source = self.signed_for("Which metrics suffix should normal customers use for billing?",
                                  "Use billing_normal_total.", {"excludes": {"customer": "globex"}}, "x1")
         question = "Which metrics suffix should normal customers use for billing?"
@@ -131,11 +131,11 @@ class ScopedPredictionTests(PortalCase):
     def test_a_proposal_that_does_not_answer_the_question_is_not_made(self):
         import os
         from unittest.mock import patch
-        from bridge import llm
-        from bridge.ladder import _how_they_decide
+        from raven import llm
+        from raven.ladder import _how_they_decide
         self.signed_for("What documentation must ship for a new billing feature?",
                         "A changelog fragment and the rate card docstring.", {}, "d1")
-        env = patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1", "BRIDGE_CLAUDE_BIN": "/nonexistent/claude"})
+        env = patch.dict(os.environ, {"RAVEN_SEMANTIC": "1", "RAVEN_CLAUDE_BIN": "/nonexistent/claude"})
         env.start()
         self.addCleanup(env.stop)
         question = "What default value for the billing grace period is approved?"
@@ -354,7 +354,7 @@ class RecordsAndTeamsTests(PortalCase):
                          "https://slack.com/archives/C0BILL/p1700000000000100")
         self.assertEqual(handle_slack_event(self.delivery, event), {"ok": True, "captured": False})
         mention = {"type": "event_callback", "team_id": "TTEST", "event_id": "Ev8", "event": {
-            "type": "app_mention", "channel": "C0BILL", "ts": "1700000000.000200", "user": "UWES", "text": "<@UBRIDGE> hello"}}
+            "type": "app_mention", "channel": "C0BILL", "ts": "1700000000.000200", "user": "UWES", "text": "<@URAVEN> hello"}}
         handle_slack_event(self.delivery, mention)
         self.assertIn("record: <what was decided>", self.slack.messages[-1]["text"])
         # Over HTTP too.
@@ -367,7 +367,7 @@ class RecordsAndTeamsTests(PortalCase):
             csrf = json.load(resp)["csrf_token"]
         req = Request(url + "/api/records", data=json.dumps({"repo": REPO, "kind": "doc", "ref": "pricing-policy",
                                                               "title": "Pricing policy", "body": "Tiers are annual."}).encode(),
-                      headers={"Content-Type": "application/json", "X-Bridge-CSRF": csrf})
+                      headers={"Content-Type": "application/json", "X-Raven-CSRF": csrf})
         with urlopen(req) as resp:
             self.assertEqual(json.load(resp)["ref"], "pricing-policy")
         with urlopen(url + "/api/inbox?overdue=1") as resp:
@@ -395,7 +395,7 @@ class RecordsAndTeamsTests(PortalCase):
             store.graph.add_authority("path", "billing/*", "decides", person_id=pid, repo=REPO, source="config",
                                       asserted_by="test", accepted=True)
         delivery = store.connect_delivery(TeamsTransport("https://acme.webhook.office.com/hook", opener=Opener),
-                                          base_url="https://bridge.acme.test")
+                                          base_url="https://raven.acme.test")
         task = canvas.start_task(store, CFG, {"title": "Add usage-based pricing", "repo": REPO, "paths": "billing/rates.py",
                                               "client_key": "t1"})["task_id"]
         node = canvas.add_node(store, CFG, {"task_id": task, "question": "Which rate applies above the quota?",
@@ -404,7 +404,7 @@ class RecordsAndTeamsTests(PortalCase):
         self.assertEqual(delivery.deliver_now(), 1)
         self.assertEqual(posted[0][0], "https://acme.webhook.office.com/hook")
         self.assertIn("**A decision needs you, Wes Chen.**", posted[0][1]["text"])
-        self.assertIn("https://bridge.acme.test/#inbox", posted[0][1]["text"])
+        self.assertIn("https://raven.acme.test/#inbox", posted[0][1]["text"])
         sent = delivery.list("sent")
         self.assertEqual(sent[0]["destination"], "channel")
         self.assertEqual(sent[0]["channel"], "teams")

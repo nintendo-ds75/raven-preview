@@ -9,8 +9,8 @@ import urllib.response
 from email.message import Message
 from unittest.mock import Mock, call, patch
 
-from bridge import llm
-from bridge.config import Config
+from raven import llm
+from raven.config import Config
 
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
@@ -97,7 +97,7 @@ class ModelTransportTests(unittest.TestCase):
                 "https://api.openai.com/v1/chat/completions",
                 "http://127.0.0.1:8765/v1/messages",
                 "file:///private-canary", " " + ANTHROPIC_URL, "\n" + OPENAI_URL):
-            with self.subTest(url=url), patch("bridge.llm._open_model_request") as transport, \
+            with self.subTest(url=url), patch("raven.llm._open_model_request") as transport, \
                     patch("urllib.request.Request") as request:
                 with self.assertRaisesRegex(llm.LLMError, "destination refused") as caught:
                     self.client._post_json(url, {"x-api-key": "synthetic-key"}, {})
@@ -132,7 +132,7 @@ class ModelTransportTests(unittest.TestCase):
             with self.subTest(status=status):
                 errors = [urllib.error.HTTPError(ANTHROPIC_URL, status, "fixture", {},
                           io.BytesIO(b'{"error":{"message":"fixture failure"}}')) for _ in range(4)]
-                with patch("bridge.llm._open_model_request", side_effect=errors) as transport, \
+                with patch("raven.llm._open_model_request", side_effect=errors) as transport, \
                         patch("time.sleep") as sleep:
                     with self.assertRaisesRegex(llm.LLMError, "Tried 4 times"):
                         self.client._post_json(ANTHROPIC_URL, {}, {})
@@ -142,7 +142,7 @@ class ModelTransportTests(unittest.TestCase):
     def test_retryable_network_errors_recover_without_changing_payload(self):
         for error in (urllib.error.URLError("fixture"), TimeoutError("fixture"), OSError("fixture")):
             with self.subTest(error=type(error).__name__), \
-                    patch("bridge.llm._open_model_request", side_effect=[error, io.BytesIO(b'{"ok":true}')]) as transport, \
+                    patch("raven.llm._open_model_request", side_effect=[error, io.BytesIO(b'{"ok":true}')]) as transport, \
                     patch("time.sleep") as sleep:
                 self.assertEqual(self.client._post_json(OPENAI_URL, {}, {"fixture": True}), {"ok": True})
                 self.assertEqual(transport.call_count, 2)
@@ -153,7 +153,7 @@ class ModelTransportTests(unittest.TestCase):
     def test_nonretryable_http_error_still_raises_llm_error_immediately(self):
         error = urllib.error.HTTPError(OPENAI_URL, 401, "fixture", {},
                                       io.BytesIO(b'{"error":{"message":"fixture auth failure"}}'))
-        with patch("bridge.llm._open_model_request", side_effect=error) as transport, patch("time.sleep") as sleep:
+        with patch("raven.llm._open_model_request", side_effect=error) as transport, patch("time.sleep") as sleep:
             with self.assertRaisesRegex(llm.LLMError, "model API error 401: fixture auth failure"):
                 self.client._post_json(OPENAI_URL, {}, {})
         transport.assert_called_once()

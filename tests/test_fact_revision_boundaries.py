@@ -8,10 +8,10 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase
 from test_delivery import FakeSlack
-from bridge import canvas, context_memory as cm
-from bridge.config import Config
-from bridge.fact_revisions import correct_node_facts
-from bridge.store import Invalid
+from raven import canvas, context_memory as cm
+from raven.config import Config
+from raven.fact_revisions import correct_node_facts
+from raven.store import Invalid
 
 REPO = 'sample/widget'
 QUESTION = 'Should widget queue batching use the bounded window?'
@@ -153,9 +153,9 @@ class AcceptedInteractionCorrectionTests(FactCorrectionBoundaryCase):
         self.assertTrue(result['facts_correction']['applied'])
 
     def test_private_conversation_user_turn_blocks_correction_without_reply_event(self):
-        with patch('bridge.slack_chat.load', return_value=Config(model_api='none')), \
+        with patch('raven.slack_chat.load', return_value=Config(model_api='none')), \
                 patch.object(Config, 'semantic_retrieval', property(lambda self: True)), \
-                patch('bridge.slack_chat.reading', return_value={'kind': 'chat', 'reply': 'Please take your time.'}):
+                patch('raven.slack_chat.reading', return_value={'kind': 'chat', 'reply': 'Please take your time.'}):
             self.receive('PRIVATE_SAMPLE_TEXT: I am still considering the batching behavior.', occurrence=False)
         self.assertIsNotNone(self.graph.db.execute("SELECT 1 FROM slack_conversation WHERE decision_id=? AND role='user'", (self.current['node_id'],)).fetchone())
         self.assertEqual(self.graph.db.execute('SELECT count(*) FROM reply_turns').fetchone()[0], 0)

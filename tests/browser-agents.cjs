@@ -8,9 +8,9 @@ const {once} = require('node:events');
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 
 (async () => {
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-agents-browser-'));
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'raven-agents-browser-'));
   const root = path.resolve(__dirname, '..');
-  const server = spawn(process.env.BRIDGE_PYTHON || 'python3', ['tests/agents_browser_server.py', path.join(temp, 'test.db')], {cwd:root});
+  const server = spawn(process.env.RAVEN_PYTHON || 'python3', ['tests/agents_browser_server.py', path.join(temp, 'test.db')], {cwd:root});
   let browser;
   try {
     const url = await new Promise((resolve, reject) => {
@@ -20,7 +20,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
       server.stderr.on('data', () => {});
       server.once('exit', code => {clearTimeout(timer); reject(new Error(`Server exited ${code}`));});
     });
-    browser = await chromium.launch({headless:true, ...(process.env.BRIDGE_BROWSER ? {executablePath:process.env.BRIDGE_BROWSER} : {})});
+    browser = await chromium.launch({headless:true, ...(process.env.RAVEN_BROWSER ? {executablePath:process.env.RAVEN_BROWSER} : {})});
     const page = await browser.newPage({viewport:{width:1440,height:1050}});
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));

@@ -8,10 +8,10 @@ identity and authority checks.
 
 ## Unsigned agent proposals
 
-`bridge_settle_node` and `POST /api/tasks/:id/settle` accept optional
+`raven_settle_node` and `POST /api/tasks/:id/settle` accept optional
 `source_evidence`: at most 64 objects containing exactly `record_id`,
 `source_version_id`, and `role` (`support`, `contradiction`, `context`, or
-`work_item`). Copy the opaque IDs from an actual `bridge_get_record` reading;
+`work_item`). Copy the opaque IDs from an actual `raven_get_record` reading;
 refs, URLs, citations in rationale, and claims of approval cannot create pins.
 For example:
 
@@ -47,7 +47,7 @@ dependencies are retained even in that mode.
 The proposal stays `source=agent`, `kind=agent`, unsigned, with sign-off required.
 It clears prior partial signatures and answer attribution and supersedes a pending background model
 reading. Neither exact pins nor settling authorizes a task or creates a standing
-grant: use `bridge_wait` for the required human decision. The existing human
+grant: use `raven_wait` for the required human decision. The existing human
 notification contains the scoped answer and task link; the source-review
 readback displays every exact pin, complete source snapshot, and decision scope
 before a generation-specific confirmation. The human web review also shows the
@@ -59,7 +59,7 @@ answer. A new pin set on the same answer creates a fresh notification review epo
 
 ## Import and source identity
 
-`bridge_import_record` and `POST /api/records` share one implementation. Legacy
+`raven_import_record` and `POST /api/records` share one implementation. Legacy
 `(repo, kind, ref)` keys remain unchanged, including distinct `ticket`, `jira`,
 and `issue` kinds. For explicitly scoped imports, supply `provider` (`github`,
 `jira`, `slack`, or `generic`), `namespace` (the stable installation/site or
@@ -83,7 +83,7 @@ explicit source anchor selecting the relevant namespace.
 
 The response includes `source.record_id`, `source.source_version_id`, the local
 sequence, permalink, observation time, source timestamps, provider/namespace,
-and whether the import materially changed the record. `bridge_get_record` and
+and whether the import materially changed the record. `raven_get_record` and
 `GET /api/records?repo=...&record_id=...` read exact immutable observed versions.
 Unavailable sources refuse these content reads. Access-scope metadata is
 preserved, but this is not a new external ACL synchronization service: the
@@ -509,7 +509,7 @@ with the PostgreSQL loader; provider and live transport access are unnecessary.
 ## Exact external-reference handover
 
 A fresh host does not need an internal `record_id` or an import write to find a
-previously stored work item. `bridge_lookup_record` and authenticated
+previously stored work item. `raven_lookup_record` and authenticated
 `GET /api/records/lookup` use the same read-only implementation. Supply `repo` as
 the exact stored repository key (for example `synthetic/platform`), and exactly
 one of:
@@ -530,7 +530,7 @@ The equivalent REST request is
 A host that only knows `POL-7` can supply `ref=POL-7` instead of `external_id`.
 There is no fuzzy text match, URL parsing, basename fallback, installation
 inference, provider fetch, or new connector permission. `client_key` is never
-an external work-item identity. The old `bridge_get_record` and exact
+an external work-item identity. The old `raven_get_record` and exact
 `GET /api/records?repo=...&record_id=...` content/history APIs are unchanged.
 
 Lookup outcomes are explicit:
@@ -576,7 +576,7 @@ source version separately. `pin_matches_latest_observed` reports equality,
 not policy applicability. Decision status/sign-off/review flags and `decision_superseded_by` are explicitly
 current row metadata, even beside historical source edges; they do not rewrite
 or restate an old decision snapshot. Follow returned task/decision handles with
-`bridge_get_tree`/`bridge_get_decision` for scope and authority. Association,
+`raven_get_tree`/`raven_get_decision` for scope and authority. Association,
 source state such as Done or Closed, and a successful lookup never authorize
 anything or acknowledge an agent's decision read.
 
@@ -611,8 +611,8 @@ provider calls are not required.
 ### Link an existing work item
 
 Reading or looking up a source does not attach it to a task. After an exact
-`bridge_lookup_record` match, read the selected record with `bridge_get_record`,
-then call `bridge_link_work_item`. The equivalent authenticated REST operation
+`raven_lookup_record` match, read the selected record with `raven_get_record`,
+then call `raven_link_work_item`. The equivalent authenticated REST operation
 is `POST /api/tasks/{task_id}/work-items`, with the same fields except that
 `task_id` may be omitted; a supplied ID must match the URL.
 
@@ -630,12 +630,12 @@ reimport occurs. Legacy sources also expose the required canonical fields.
 associations. They do not create decision premises, signatures, approval,
 read receipts, notifications, or human authority. Decisions on the task are
 returned by lookup as `task_anchor_association`, not `decision_premise`.
-The existing `bridge_settle_node(source_evidence=...)` route already accepts
+The existing `raven_settle_node(source_evidence=...)` route already accepts
 `role: "work_item"` (or `"context"`) with exact record/version pins, without
 reimporting. That creates a **decision-level association** while recording an
 unsigned answer proposal that still needs human sign-off. It does not create a
 task anchor. Its `work_item` and `context` roles remain informational; only
-`support` and `contradiction` are premises. The new `bridge_link_work_item`
+`support` and `contradiction` are premises. The new `raven_link_work_item`
 operation is for **pure task context**: it leaves the decision answer,
 revision, source edges, and sign-off state untouched. Both routes remain
 supported, and lookup distinguishes `decision_association` from
@@ -652,7 +652,7 @@ task against the same current pin returns `changed: false` without another histo
 newly read version is an additional historical pin, never a replacement.
 
 The new operation rejects completed and abandoned tasks. This is a boundary
-of this API, not a newly universal restriction: existing `bridge_import_record`
+of this API, not a newly universal restriction: existing `raven_import_record`
 with `task_id` and `anchor_role` retains its prior behavior, including explicit
 multiple-namespace anchoring. Old completed rows, decision snapshots,
 signatures and saved proof bundles are not migrated or reconstructed.

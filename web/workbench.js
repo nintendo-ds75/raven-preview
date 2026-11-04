@@ -83,9 +83,9 @@ function workComposer(id, enabled) {
 function workActivityLabel(a) {
   const input = a.detail?.input || {};
   return ({list_files:'Explored the repository', search_files:'Searched the code', read_file:'Read ' + (input.path || 'a file'),
-    write_file:'Updated ' + (input.path || 'a file'), edit_file:'Updated ' + (input.path || 'a file'), run_command:'Ran a command', bridge_review_discovery:'Reviewed the investigation',
-    bridge_add_node:'Asked for a decision', bridge_get_tree:'Read the latest decisions', bridge_search_context:'Searched connected context',
-    bridge_get_record:'Read a source', finish_task:'Checked completion', present_result:'Presented the result', pause:'Paused by ' + (a.detail?.actor || 'a teammate'), resume:'Resumed by ' + (a.detail?.actor || 'a teammate'), wait_for_people:'Saved progress and waited'})[a.label] || a.label.replaceAll('_',' ');
+    write_file:'Updated ' + (input.path || 'a file'), edit_file:'Updated ' + (input.path || 'a file'), run_command:'Ran a command', raven_review_discovery:'Reviewed the investigation',
+    raven_add_node:'Asked for a decision', raven_get_tree:'Read the latest decisions', raven_search_context:'Searched connected context',
+    raven_get_record:'Read a source', finish_task:'Checked completion', present_result:'Presented the result', pause:'Paused by ' + (a.detail?.actor || 'a teammate'), resume:'Resumed by ' + (a.detail?.actor || 'a teammate'), wait_for_people:'Saved progress and waited'})[a.label] || a.label.replaceAll('_',' ');
 }
 
 function workDecision(n) {

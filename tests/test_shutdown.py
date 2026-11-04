@@ -1,7 +1,7 @@
 """Stopping the server is observable to an agent waiting on it.
 
 Measured live on eb9d22d: `docker compose restart` sent Raven SIGTERM
-during a streamed bridge_wait, the process ended without answering, and
+during a streamed raven_wait, the process ended without answering, and
 the host heard nothing until its own idle limit cut the call 329 seconds
 later. On SIGTERM (or Ctrl-C) Raven now answers every open wait first."""
 
@@ -32,17 +32,17 @@ class ShutdownTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.port = free_port()
-        db = Path(self.temp.name) / "bridge.db"
+        db = Path(self.temp.name) / "raven.db"
         sys.path.insert(0, str(ROOT))
-        from bridge.store import Store
+        from raven.store import Store
         # An existing workspace, as the feature tests' ready_server sets up.
         store = Store(db)
         store.graph.set_setting("workspace_name", "Test workspace")
         store.graph.db.close()
-        env = {k: v for k, v in os.environ.items() if not k.startswith(("ANTHROPIC", "BRIDGE_", "SLACK", "GITHUB",
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("ANTHROPIC", "RAVEN_", "SLACK", "GITHUB",
                                                                         "DATABASE_URL", "TEAMS"))}
-        env["BRIDGE_MODEL_API"] = "none"
-        self.proc = subprocess.Popen([sys.executable, "-m", "bridge", "serve", "--port", str(self.port),
+        env["RAVEN_MODEL_API"] = "none"
+        self.proc = subprocess.Popen([sys.executable, "-m", "raven", "serve", "--port", str(self.port),
                                       "--db", str(db)],
                                      cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.addCleanup(self.stop)
@@ -53,7 +53,7 @@ class ShutdownTests(unittest.TestCase):
                     return
             except OSError:
                 time.sleep(0.1)
-        self.fail("bridge serve did not start: " + (self.proc.stderr.read() if self.proc.poll() is not None else ""))
+        self.fail("raven serve did not start: " + (self.proc.stderr.read() if self.proc.poll() is not None else ""))
 
     def stop(self):
         if self.proc.poll() is None:
@@ -71,15 +71,15 @@ class ShutdownTests(unittest.TestCase):
         return json.loads(result["content"][0]["text"])
 
     def test_sigterm_answers_an_open_streamed_wait_before_the_process_ends(self):
-        kick = self.call("bridge_start_task", {"title": "Decide the overage rate", "repo": "acme/ledger",
+        kick = self.call("raven_start_task", {"title": "Decide the overage rate", "repo": "acme/ledger",
                                                "paths": "billing/rates.py"})
-        node = self.call("bridge_add_node", {"task_id": kick["task_id"], "question": "Which rate applies above the quota?",
+        node = self.call("raven_add_node", {"task_id": kick["task_id"], "question": "Which rate applies above the quota?",
                                              "paths": "billing/rates.py"})
         self.assertTrue(node["blocking"], node)
         request = Request(f"http://127.0.0.1:{self.port}/mcp", method="POST",
                           headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"},
                           data=json.dumps({"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {
-                              "name": "bridge_wait", "arguments": {"task_id": kick["task_id"], "timeout": "120"},
+                              "name": "raven_wait", "arguments": {"task_id": kick["task_id"], "timeout": "120"},
                               "_meta": {"progressToken": "t"}}}).encode())
         got = {}
 
@@ -97,7 +97,7 @@ class ShutdownTests(unittest.TestCase):
         events = [json.loads(chunk.split("data: ", 1)[1]) for chunk in got["body"].split("\n\n") if "data: " in chunk]
         waited = json.loads(events[-1]["result"]["content"][0]["text"])
         self.assertEqual(waited["interrupted"], "the Raven server is stopping")
-        self.assertIn("Call bridge_wait again", waited["next"])
+        self.assertIn("Call raven_wait again", waited["next"])
         self.assertEqual(self.proc.wait(timeout=10), 0)
 
 

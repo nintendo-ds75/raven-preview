@@ -28,18 +28,18 @@ import json
 import os
 from pathlib import Path
 
-os.environ.setdefault("BRIDGE_MODEL_API", "none")
-os.environ.setdefault("BRIDGE_SEMANTIC", "0")
-os.environ.setdefault("BRIDGE_LIVE", "0")
+os.environ.setdefault("RAVEN_MODEL_API", "none")
+os.environ.setdefault("RAVEN_SEMANTIC", "0")
+os.environ.setdefault("RAVEN_LIVE", "0")
 
-from bridge.canvas import candidates, triage  # noqa: E402
+from raven.canvas import candidates, triage  # noqa: E402
 from evals.real_oss.spec import TASKS  # noqa: E402
 
 # What a host puts around the task it was given. Both shapes are real:
 # the first is the labelled block a host appends, the second the same
 # rules run together into prose.
 LABELLED = ("\n\nWorkflow instructions:\n"
-            "1. Call bridge_start_task before you begin, and bridge_finish_task when you are done.\n"
+            "1. Call raven_start_task before you begin, and raven_finish_task when you are done.\n"
             "2. You are authorized to edit any file in the repository.\n"
             "3. Do not cut a release; the maintainers handle releases.\n"
             "4. Report what you changed and what you ran.\n")

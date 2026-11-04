@@ -24,7 +24,7 @@ def request(base,path,method='GET',data=None,cookie='',csrf='',form=False,header
         body=urlencode(data) if form else json.dumps(data)
         hs['Content-Type']='application/x-www-form-urlencoded' if form else 'application/json'
     else: body=None
-    if csrf: hs['X-Bridge-CSRF']=csrf
+    if csrf: hs['X-Raven-CSRF']=csrf
     hs.update(headers or {})
     conn.request(method,path,body,hs);res=conn.getresponse();content=res.read().decode();out=(res.status,dict(res.getheaders()),content);conn.close();return out
 

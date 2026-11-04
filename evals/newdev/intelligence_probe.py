@@ -12,12 +12,12 @@ import tempfile
 import time
 from pathlib import Path
 
-from bridge import canvas, investigation, semantic_index
-from bridge.config import load
-from bridge.contact_reasoning import choose
-from bridge.ingest import index_repo
-from bridge.slack_chat import validated_reading
-from bridge.store import Store
+from raven import canvas, investigation, semantic_index
+from raven.config import load
+from raven.contact_reasoning import choose
+from raven.ingest import index_repo
+from raven.slack_chat import validated_reading
+from raven.store import Store
 from evals.pseudonyms import pseudonymize
 
 
@@ -92,7 +92,7 @@ def main():
             "SELECT kind,detail FROM events WHERE run_id=? AND kind IN ('contact_reasoned','discovery_reviewed') ORDER BY id", (task,))]
         graph.close()
     report['seconds'] = round(time.monotonic() - started, 2)
-    report['models'] = {'main': cfg.model, 'fast': cfg.fast_model, 'embeddings': os.environ.get('BRIDGE_EMBEDDING_MODEL', semantic_index.MODEL)}
+    report['models'] = {'main': cfg.model, 'fast': cfg.fast_model, 'embeddings': os.environ.get('RAVEN_EMBEDDING_MODEL', semantic_index.MODEL)}
     Path(args.output).write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report['checks'], indent=2), flush=True)
     raise SystemExit(0 if all(report['checks'].values()) else 1)

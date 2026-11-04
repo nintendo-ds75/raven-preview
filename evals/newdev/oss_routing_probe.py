@@ -33,17 +33,17 @@ def main() -> None:
     parser.add_argument("--commits", type=int, default=None, help="history depth (default 2000, 0 = all)")
     parser.add_argument("--sync", action="store_true", help="also sync pull request reviews (needs GITHUB_TOKEN)")
     args = parser.parse_args()
-    os.environ.setdefault("BRIDGE_SEMANTIC", "0")
-    os.environ.setdefault("BRIDGE_LIVE", "0")
-    from bridge.config import load
-    from bridge.ingest import index_repo
-    from bridge.ladder import ask
-    from bridge.store import Store
-    db = args.db or str(Path(tempfile.mkdtemp(prefix="bridge-probe-")) / "probe.db")
+    os.environ.setdefault("RAVEN_SEMANTIC", "0")
+    os.environ.setdefault("RAVEN_LIVE", "0")
+    from raven.config import load
+    from raven.ingest import index_repo
+    from raven.ladder import ask
+    from raven.store import Store
+    db = args.db or str(Path(tempfile.mkdtemp(prefix="raven-probe-")) / "probe.db")
     store = Store(db)
     stats = index_repo(store.graph, os.path.expanduser(args.checkout), max_commits=args.commits, repo_name=args.repo)
     if args.sync:
-        from bridge.github import GitHubAPI, sync_repo
+        from raven.github import GitHubAPI, sync_repo
         stats["github"] = sync_repo(store.graph, GitHubAPI(os.environ["GITHUB_TOKEN"]), args.repo)
     from evals.pseudonyms import pseudonymize
     pseudonymize(store.graph)

@@ -65,10 +65,10 @@ in your own words. The decisions it finds appear in your inbox. Full walkthrough
 In the browser, **Settings → Connect your coding agent → Connect** mints a limited credential and shows one command per client, for example:
 
 ```sh
-claude mcp add --transport http bridge http://localhost:7333/mcp --header 'Authorization: Bearer brg_…'
+claude mcp add --transport http raven http://localhost:7333/mcp --header 'Authorization: Bearer rvn_…'
 ```
 
-Add the Raven rule it offers to `CLAUDE.md` or `AGENTS.md`, so the agent calls `bridge_start_task` at the start of every task.
+Add the Raven rule it offers to `CLAUDE.md` or `AGENTS.md`, so the agent calls `raven_start_task` at the start of every task.
 </details>
 
 ## What you get
@@ -79,7 +79,7 @@ Add the Raven rule it offers to `CLAUDE.md` or `AGENTS.md`, so the agent calls `
 - **Decisions, not tickets.** The agent writes each judgment call as a node on the task's tree: the question, its context, the options and what each leads to. [How a task unfolds](docs/overview.md#the-decisions-inside-a-task)
 - **Routing from evidence.** CODEOWNERS, commit and review history, imported records and earlier answers decide who is asked, and every message says why. No ownership spreadsheet to maintain. [Who does Raven ask?](docs/overview.md#who-does-raven-ask)
 - **Answers from memory, signed by people.** When the records or a past decision already answer the question, Raven proposes that answer with its citation. The owner still signs; a cache hit is not approval. [How answers are reused](docs/overview.md#less-coordination-more-useful-autonomy)
-- **A finish gate.** `bridge_finish_task` is refused while a decision is unsigned, and a corrected answer puts the work that leaned on it up for review. [Change proof](docs/change-proof.md)
+- **A finish gate.** `raven_finish_task` is refused while a decision is unsigned, and a corrected answer puts the work that leaned on it up for review. [Change proof](docs/change-proof.md)
 - **People answer where they are.** In the Raven inbox, or from a Slack notification that links to the task. Replies are read back before anything is recorded. [Slack](docs/slack.md)
 - **Context the agent can cite.** GitHub sync plus opt-in Slack channels, Jira projects and documentation sites; Raven can scan a repository and suggest which to connect. [Context sources](docs/context-sources.md)
 - **Agents keep working.** A hook holds the agent while a person answers, or a local supervisor resumes the same session later. [Host adapters](docs/host-adapters.md)
@@ -140,5 +140,5 @@ follow conventional commits.
 
 [Raven Source Available License 1.0](LICENSE). Free for personal and noncommercial
 use. Commercial use gets one 90-day trial per organization, then needs a team
-license. Not an OSI-approved open-source license; the `bridge` package, `bridge_*`
-tools and `BRIDGE_*` settings keep their names for compatibility.
+license. Not an OSI-approved open-source license; the `raven` package, `raven_*`
+tools and `RAVEN_*` settings keep their names for compatibility.

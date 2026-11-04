@@ -14,8 +14,8 @@ from unittest.mock import patch
 from fixtures import ROOT, ready_server
 from test_agent_source_web import HTMLNodes
 from test_brief import BriefCase, Http
-from bridge import context_memory as cm
-from bridge.store import answer_hash
+from raven import context_memory as cm
+from raven.store import answer_hash
 
 
 ASSUMED = 'Bill all enterprise-two traffic, including retries and internal load tests.'
@@ -90,7 +90,7 @@ class AssumedOwnerCorrectionTests(BriefCase, Http):
         super().setUp()
         self.addCleanup(self.graph.close)
         for method in ('complete', 'complete_json'):
-            guard = patch('bridge.llm.Client.' + method,
+            guard = patch('raven.llm.Client.' + method,
                           side_effect=AssertionError('Provider calls forbidden'))
             guard.start()
             self.addCleanup(guard.stop)

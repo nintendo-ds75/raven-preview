@@ -17,9 +17,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fixtures import OfflineCase
 
-from bridge import canvas
-from bridge.config import Config
-from bridge.store import Invalid, Store, answer_hash, repo_key
+from raven import canvas
+from raven.config import Config
+from raven.store import Invalid, Store, answer_hash, repo_key
 
 CFG = Config(model_api="none")
 

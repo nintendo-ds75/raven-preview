@@ -2,10 +2,10 @@ import json
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge.auth import Identity
-from bridge.config import Config
-from bridge.inquiry import ask
-from bridge.llm import Client, LLMError, NoAPIKey
+from raven.auth import Identity
+from raven.config import Config
+from raven.inquiry import ask
+from raven.llm import Client, LLMError, NoAPIKey
 
 
 class InquiryTests(OfflineCase):
@@ -30,14 +30,14 @@ class InquiryTests(OfflineCase):
     def test_fabricated_citation_is_rejected_before_display(self):
         raw = {'outcome': 'supported_answer', 'answer': 'Invented claim',
                'citations': [{'id': self.source['record_id'], 'quote': 'Bill all internal traffic'}], 'open': []}
-        with patch.object(Config, 'has_backend', return_value=True), patch.dict('os.environ', {'BRIDGE_SEMANTIC': '1'}), \
+        with patch.object(Config, 'has_backend', return_value=True), patch.dict('os.environ', {'RAVEN_SEMANTIC': '1'}), \
              patch.object(Client, 'complete_json', return_value=raw):
             result = self.question(cfg=Config())
         self.assertNotIn('Invented claim', result['answer'])
         self.assertFalse(result['model_used'])
 
     def test_prior_answer_keeps_the_person_and_reason_that_explain_it(self):
-        from bridge.authz import Actor
+        from raven.authz import Actor
         person = self.store.add_person({'name': 'Mira Security', 'role': 'member'})
         task = self.store.add_run({'title': 'Billing rollout', 'repo': 'example/billing'})['id']
         node = self.store.graph.add_decision(task, 'Which traffic is excluded from billing?', '',
@@ -57,7 +57,7 @@ class InquiryTests(OfflineCase):
         """Measured on the Parcelwise take 6: Theo asked whether a merchant
         can just buy a second label; the task's card matched, Jordan's Aug
         20 call that settled it did not, and the answer missed his rule."""
-        from bridge.authz import Actor
+        from raven.authz import Actor
         jordan = self.store.add_person({'name': 'Jordan Okafor', 'role': 'member'})
         earlier = self.store.add_run({'title': 'Bulk label review', 'repo': 'example/billing'})['id']
         call = self.store.graph.add_decision(earlier, 'Do synthetic load tests count toward a customer bill?', '',
@@ -83,8 +83,8 @@ class InquiryTests(OfflineCase):
     def test_unverified_support_never_becomes_a_supported_answer(self):
         raw = {'outcome': 'supported_answer', 'answer': 'Internal traffic is excluded.',
                'citations': [{'id': self.source['record_id'], 'quote': 'Internal test traffic is excluded from billing.'}], 'open': []}
-        with patch.object(Config, 'has_backend', return_value=True), patch.dict('os.environ', {'BRIDGE_SEMANTIC': '1'}), \
-             patch.object(Client, 'complete_json', return_value=raw), patch('bridge.llm.check_support', return_value=None):
+        with patch.object(Config, 'has_backend', return_value=True), patch.dict('os.environ', {'RAVEN_SEMANTIC': '1'}), \
+             patch.object(Client, 'complete_json', return_value=raw), patch('raven.llm.check_support', return_value=None):
             result = self.question(cfg=Config())
         self.assertFalse(result['model_used'])
         self.assertEqual(result['outcome'], 'missing_fact')
@@ -93,16 +93,16 @@ class InquiryTests(OfflineCase):
         raw = {'outcome': 'supported_answer', 'answer': 'Internal traffic is excluded.',
                'citations': [{'id': self.source['record_id'],
                               'quote': 'Internal test traffic is\nexcluded from billing.'}], 'open': []}
-        with patch.object(Config, 'has_backend', return_value=True), patch.dict('os.environ', {'BRIDGE_SEMANTIC': '1'}), \
+        with patch.object(Config, 'has_backend', return_value=True), patch.dict('os.environ', {'RAVEN_SEMANTIC': '1'}), \
              patch.object(Client, 'complete_json', return_value=raw), \
-             patch('bridge.llm.check_support', return_value={'claims': [{'claim': 'Internal traffic is excluded.', 'support': 'applied'}]}):
+             patch('raven.llm.check_support', return_value={'claims': [{'claim': 'Internal traffic is excluded.', 'support': 'applied'}]}):
             self.assertTrue(self.question(cfg=Config())['model_used'])
             raw['citations'][0]['quote'] = 'Internal test traffic is not excluded from billing.'
             self.assertFalse(self.question(cfg=Config())['model_used'])
 
     def test_missing_api_key_does_not_borrow_cli_login(self):
-        with patch.dict('os.environ', {'ANTHROPIC_API_KEY': ''}), patch('bridge.llm.find_claude', return_value='/fake/claude'), \
-             patch('bridge.llm._claude_cli', side_effect=AssertionError('implicit fallback')):
+        with patch.dict('os.environ', {'ANTHROPIC_API_KEY': ''}), patch('raven.llm.find_claude', return_value='/fake/claude'), \
+             patch('raven.llm._claude_cli', side_effect=AssertionError('implicit fallback')):
             self.assertFalse(Config().has_backend())
             with self.assertRaises(NoAPIKey):
                 Client(Config()).complete('test', 'system', 'prompt')
@@ -130,8 +130,8 @@ class InquiryTests(OfflineCase):
         for checked in ({'claims': []}, {'claims': ['bad']}, {'claims': [{'support': 'unsupported'}]},
                         {'claims': [{'support': 'stated'}]}, {'claims': [{'claim': 'Approval', 'support': 'invented'}]}):
             with self.subTest(checked=checked), patch.object(Config, 'has_backend', return_value=True), \
-                 patch.dict('os.environ', {'BRIDGE_SEMANTIC': '1'}), patch.object(Client, 'complete_json', return_value=raw), \
-                 patch('bridge.llm.check_support', return_value=checked):
+                 patch.dict('os.environ', {'RAVEN_SEMANTIC': '1'}), patch.object(Client, 'complete_json', return_value=raw), \
+                 patch('raven.llm.check_support', return_value=checked):
                 result = self.question(cfg=Config())
             self.assertFalse(result['model_used'])
             self.assertNotIn('Ship without review', result['answer'])

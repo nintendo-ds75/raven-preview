@@ -5,9 +5,9 @@ import json
 
 from fixtures import OfflineCase
 from test_auth import BOOTSTRAP, SharedServer
-from bridge import objective_research as research, objectives as obj
-from bridge.authz import Actor
-from bridge.store import Invalid
+from raven import objective_research as research, objectives as obj
+from raven.authz import Actor
+from raven.store import Invalid
 
 REPO = "acme/app"
 

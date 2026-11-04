@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 from urllib.request import urlopen
 
-from bridge.server import make_server
-from bridge.store import Invalid, Store
+from raven.server import make_server
+from raven.store import Invalid, Store
 
 
 class FreshNativeTests(unittest.TestCase):

@@ -2,7 +2,7 @@
 
 Raven gates authorization. It has never been able to say whether the
 code that came out the other end follows what a person authorized, and
-`bridge_finish_task` says so in as many words. Given the diff it can now
+`raven_finish_task` says so in as many words. Given the diff it can now
 read each signed answer against it and report. This panel is what that
 report has to get right.
 
@@ -19,7 +19,7 @@ confidence about the one thing Raven has always been careful to say it
 cannot check. A false "follows" fails this panel; a false "departs" is
 counted and reported but does not.
 
-    BRIDGE_MODEL_API=claude-cli python3 -m evals.newdev.conformance
+    RAVEN_MODEL_API=claude-cli python3 -m evals.newdev.conformance
 """
 import argparse
 import json
@@ -244,11 +244,11 @@ def main() -> int:
     parser.add_argument("--repeat", type=int, default=1)
     args = parser.parse_args()
     if args.model:
-        os.environ["BRIDGE_CONFORMANCE_MODEL"] = args.model
-    os.environ.setdefault("BRIDGE_MODEL_API", "claude-cli")
-    os.environ["BRIDGE_SEMANTIC"] = "1"
-    from bridge.config import load  # noqa: E402
-    from bridge.llm import check_conformance  # noqa: E402
+        os.environ["RAVEN_CONFORMANCE_MODEL"] = args.model
+    os.environ.setdefault("RAVEN_MODEL_API", "claude-cli")
+    os.environ["RAVEN_SEMANTIC"] = "1"
+    from raven.config import load  # noqa: E402
+    from raven.llm import check_conformance  # noqa: E402
 
     cfg = load()
     if not cfg.has_backend():

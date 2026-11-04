@@ -3,8 +3,8 @@ import json
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas, context_memory as cm, mcp, proof
-from bridge.store import Invalid
+from raven import canvas, context_memory as cm, mcp, proof
+from raven.store import Invalid
 
 REPO = 'synthetic/observation'
 
@@ -82,8 +82,8 @@ class SourceObservationTests(OfflineCase):
     def test_current_receipt_is_exposed_separately_by_both_read_tools(self):
         source = self.source(source_version='v1')
         changed = self.source(source_version='v2', updated_at='2026-02-01T00:00:00Z')
-        exact = mcp.call_tool(self.store, 'bridge_get_record', {'record_id': source['source']['record_id'], 'repo': REPO})
-        lookup = mcp.call_tool(self.store, 'bridge_lookup_record', {'repo': REPO, 'provider': 'jira',
+        exact = mcp.call_tool(self.store, 'raven_get_record', {'record_id': source['source']['record_id'], 'repo': REPO})
+        lookup = mcp.call_tool(self.store, 'raven_lookup_record', {'repo': REPO, 'provider': 'jira',
             'namespace': 'test-site', 'external_id': 'item-7'})
         self.assertEqual(exact['latest_observation'], changed['latest_observation'])
         self.assertEqual(exact['source_ordering'], 'provided')

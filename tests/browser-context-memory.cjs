@@ -11,7 +11,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 (async () => {
   const root = path.resolve(__dirname, '..');
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'raven-context-browser-'));
-  const child = spawn(process.env.BRIDGE_PYTHON || 'python3', [path.join(root, 'tests/context_browser_server.py'), path.join(temp, 'context.db')], {cwd:root});
+  const child = spawn(process.env.RAVEN_PYTHON || 'python3', [path.join(root, 'tests/context_browser_server.py'), path.join(temp, 'context.db')], {cwd:root});
   let stderr = '';
   child.stderr.on('data', data => { stderr += data; });
   let browser;
@@ -25,10 +25,10 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     const state = await (await fetch(fixture.url + '/api/state')).json();
     const read = async () => (await fetch(fixture.url + '/api/decisions/' + fixture.decision_id)).json();
     const update = async body => {
-      const result = await fetch(fixture.url + '/api/records', {method:'POST',headers:{'Content-Type':'application/json','X-Bridge-CSRF':state.csrf_token},body:JSON.stringify({...fixture.source_data,body})});
+      const result = await fetch(fixture.url + '/api/records', {method:'POST',headers:{'Content-Type':'application/json','X-Raven-CSRF':state.csrf_token},body:JSON.stringify({...fixture.source_data,body})});
       assert.equal(result.status,200); return result.json();
     };
-    browser = await chromium.launch({headless:true,...(process.env.BRIDGE_BROWSER ? {executablePath:process.env.BRIDGE_BROWSER}: {})});
+    browser = await chromium.launch({headless:true,...(process.env.RAVEN_BROWSER ? {executablePath:process.env.RAVEN_BROWSER}: {})});
     const page = await browser.newPage({viewport:{width:1280,height:900}});
     const errors = [];
     page.on('pageerror',error => errors.push(error.message));
@@ -126,7 +126,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
 
     assert.deepEqual(errors,[]);
-    const artifacts = process.env.BRIDGE_TEST_ARTIFACTS || path.join(root,'test-results');
+    const artifacts = process.env.RAVEN_TEST_ARTIFACTS || path.join(root,'test-results');
     fs.mkdirSync(artifacts,{recursive:true});
     await page.screenshot({path:path.join(artifacts,'context-revalidated-owner.png'),fullPage:true});
     console.log(JSON.stringify({ok:true,checks:['complete current source display','close is not approval','deliberate bound revalidation','retains source dependence','source race refused','reopen and revalidate current head','human-only independent owner replacement','pure-human complete scope display','exact human version rebound','accountless full source review on phone'],decision_id:fixture.decision_id}));

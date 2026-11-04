@@ -61,11 +61,11 @@ A reviewer, an acker or a merger is a proxy for technical involvement, not proof
 
 ## Baselines, separate rates, strata
 
-Every run scores three baselines on the same items, each from one signal and no ladder: `baseline-codeowners` (the first human the listing names for the touched paths), `baseline-recent-reviewer` (whoever reviewed, accepted or merged in the touched directories most recently before T, never the author) and, when `BRIDGE_BENCH_MANUAL_MAP` names a JSON file mapping path prefixes to people, `baseline-manual-map`. The summary reports, apart from the headline metrics, coverage (somebody named at all), precision among routed, acceptable contact among routed (a label or a listing) and authorized signer (a strong label whose approval counted), and per condition the same numbers by stratum: team-only listings, labels without trailers (the committer or merger alone), aliases (a label known by another name than history uses), new files (nobody touched them before) and stale listings (the listed people inactive for a year at T).
+Every run scores three baselines on the same items, each from one signal and no ladder: `baseline-codeowners` (the first human the listing names for the touched paths), `baseline-recent-reviewer` (whoever reviewed, accepted or merged in the touched directories most recently before T, never the author) and, when `RAVEN_BENCH_MANUAL_MAP` names a JSON file mapping path prefixes to people, `baseline-manual-map`. The summary reports, apart from the headline metrics, coverage (somebody named at all), precision among routed, acceptable contact among routed (a label or a listing) and authorized signer (a strong label whose approval counted), and per condition the same numbers by stratum: team-only listings, labels without trailers (the committer or merger alone), aliases (a label known by another name than history uses), new files (nobody touched them before) and stale listings (the listed people inactive for a year at T).
 
 ## GitHub-flow labels
 
-A squash-merged repository carries no trailer; its approvers are known to GitHub. With `BRIDGE_BENCH_GITHUB_DB` pointing at a Raven database that synced the repository (`bridge sync owner/name`), the approving reviewers and the merger of the pull request a commit merged are added to the strong labels, by the name Raven knows them by.
+A squash-merged repository carries no trailer; its approvers are known to GitHub. With `RAVEN_BENCH_GITHUB_DB` pointing at a Raven database that synced the repository (`raven sync owner/name`), the approving reviewers and the merger of the pull request a commit merged are added to the strong labels, by the name Raven knows them by.
 
 ## Datasets
 
@@ -83,7 +83,7 @@ numbers are recorded per iteration.
 ## Running
 
 ```sh
-export BRIDGE_BENCH_SCRATCH=~/.cache/bridge-bench   # clones, item caches, work dirs
+export RAVEN_BENCH_SCRATCH=~/.cache/raven-bench   # clones, item caches, work dirs
 python3 -m bench.routing.replay --datasets qemu,linux-drm,node --n 150 --stale --out bench/routing/results/my-run
 python3 -m bench.routing.replay --datasets git,nixpkgs-nixos --n 150 --out bench/routing/results/my-run-holdout
 ```
@@ -99,17 +99,17 @@ sparse for the kernel and nixpkgs, and cached. The warm database for
 each base is cached under the scratch dir keyed by the ingest code, so a
 rerun pays no ingest; the cache drops databases from an older ingest
 first and the least recently used after, staying under
-`BRIDGE_BENCH_WARM_CACHE_GB` (default 4). A run writes
+`RAVEN_BENCH_WARM_CACHE_GB` (default 4). A run writes
 `<dataset>.json` (every row), `summary.json` and `summary.md`; the
 repository keeps the summaries.
 
 ## The tree exam
 
 `tree_exam.py` replays a merged single-author series (2 to 8 commits
-inside one merge) as one task on the canvas: `bridge_start_task` with the
+inside one merge) as one task on the canvas: `raven_start_task` with the
 first subject as the title, the first body as the goal, the series author
 as the requester and the touched directories as the paths, then one
-`bridge_add_node` per commit, each grown from the previous node, with the
+`raven_add_node` per commit, each grown from the previous node, with the
 commit's subject as a decision ("Should X do Y?") and its body as context.
 Two conditions: `tree` and `tree-pathless` (every path stripped from the
 node questions; the kickoff paths stay).

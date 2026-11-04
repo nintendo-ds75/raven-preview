@@ -1,8 +1,8 @@
 """Regressions from the f48189b real-host run, with scope controls."""
 
 from fixtures import OfflineCase
-from bridge import canvas, ladder
-from bridge.config import Config
+from raven import canvas, ladder
+from raven.config import Config
 
 
 class PreviewRegressions(OfflineCase):
@@ -92,8 +92,8 @@ class PreviewRegressions(OfflineCase):
     def test_explicit_id_lookup_ignores_model_selector_and_composer(self):
         from unittest.mock import patch
         source = self.seed("What is the jitter default?", "Default to zero.")
-        with patch("bridge.config.Config.semantic_retrieval", property(lambda self: True)), \
-             patch("bridge.llm.Client.complete", side_effect=AssertionError("No model needed for ID lookup")):
+        with patch("raven.config.Config.semantic_retrieval", property(lambda self: True)), \
+             patch("raven.llm.Client.complete", side_effect=AssertionError("No model needed for ID lookup")):
             node = self.ask(f"Who decided decision {source.id} and why?")
         self.assertEqual(node.source_id, source.id)
         self.assertIn("Mira Runtime", node.answer)
@@ -108,10 +108,10 @@ class PreviewRegressions(OfflineCase):
             path="docs/user-guide.rst", applicability={"requires": {"release": "library-next"}})
         # Exercise scope handling after a composer maps a general policy to
         # the new feature, without asking a live model to grade itself.
-        with patch("bridge.config.Config.semantic_retrieval", property(lambda self: True)), \
-             patch("bridge.ladder._compose_answer", return_value=source.answer), \
-             patch("bridge.llm.rerank_memories", return_value=(source.id, "same release-wide documentation policy")), \
-             patch("bridge.ladder._selector_pick", return_value=("memory", source)):
+        with patch("raven.config.Config.semantic_retrieval", property(lambda self: True)), \
+             patch("raven.ladder._compose_answer", return_value=source.answer), \
+             patch("raven.llm.rerank_memories", return_value=(source.id, "same release-wide documentation policy")), \
+             patch("raven.ladder._selector_pick", return_value=("memory", source)):
             node = self.ask(question, path="changelog/", facts={"release": "library-next"})
         self.assertEqual(node.status, "resolved", node)
         self.assertEqual(node.source_id, source.id)

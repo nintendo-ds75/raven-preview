@@ -8,9 +8,9 @@ import os
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas, context_memory as cm, github, mcp, proof
-from bridge.authz import Actor
-from bridge.config import Config
+from raven import canvas, context_memory as cm, github, mcp, proof
+from raven.authz import Actor
+from raven.config import Config
 
 
 class CacheNamespaceApplicabilityTests(OfflineCase):
@@ -22,13 +22,13 @@ class CacheNamespaceApplicabilityTests(OfflineCase):
     def setUp(self):
         super().setUp()
         self.cfg = Config(model_api='none')
-        for target in ('bridge.llm.Client.complete', 'bridge.llm.Client.complete_json',
-                       'bridge.github.GitHubAPI.get', 'bridge.mcp.index_repo',
+        for target in ('raven.llm.Client.complete', 'raven.llm.Client.complete_json',
+                       'raven.github.GitHubAPI.get', 'raven.mcp.index_repo',
                        'socket.socket.connect', 'socket.create_connection'):
             guard = patch(target, side_effect=AssertionError('No provider or network calls'))
             guard.start()
             self.addCleanup(guard.stop)
-        env = patch.dict(os.environ, {'BRIDGE_MODEL_API': 'none', 'BRIDGE_DEEP': '0'})
+        env = patch.dict(os.environ, {'RAVEN_MODEL_API': 'none', 'RAVEN_DEEP': '0'})
         env.start()
         self.addCleanup(env.stop)
         self.store = self.fresh_store('cache.db')
@@ -39,7 +39,7 @@ class CacheNamespaceApplicabilityTests(OfflineCase):
         self.actor = Actor.person(self.g.find_person(person), kind='synthetic_test')
 
     def task(self, namespace='synthetic-north', ref='SYN-1', role='work_item', facts=None):
-        task = mcp.call_tool(self.store, 'bridge_start_task', {
+        task = mcp.call_tool(self.store, 'raven_start_task', {
             'repo': self.repo, 'title': 'Review synthetic metering', 'paths': 'usage/meter.py',
             'facts': json.dumps(self.facts if facts is None else facts)})['task_id']
         if namespace:
@@ -47,14 +47,14 @@ class CacheNamespaceApplicabilityTests(OfflineCase):
         return task
 
     def anchor(self, task, namespace, ref, role='work_item'):
-        source = mcp.call_tool(self.store, 'bridge_import_record', {
+        source = mcp.call_tool(self.store, 'raven_import_record', {
             'repo': self.repo, 'kind': 'jira', 'provider': 'jira', 'namespace': namespace,
             'external_id': 'synthetic-' + ref, 'ref': ref, 'title': 'Open synthetic investigation',
             'body': 'No policy answer or approval is recorded here.', 'status': 'Open'})['source']
         return self.link_source(task, source, role)
 
     def link_source(self, task, source, role='work_item'):
-        return mcp.call_tool(self.store, 'bridge_link_work_item', {
+        return mcp.call_tool(self.store, 'raven_link_work_item', {
             'repo': self.repo, 'task_id': task, 'record_id': source['record_id'],
             'source_version_id': source['source_version_id'], 'provider': source['provider'],
             'namespace': source['namespace'], 'object_kind': source['kind'],
@@ -67,12 +67,12 @@ class CacheNamespaceApplicabilityTests(OfflineCase):
             'No policy answer or approval is recorded here.', '', '', metadata={
                 'provider': 'git', 'namespace': self.repo, 'object_kind': 'pr',
                 'external_id': '42', 'display_ref': '42'})
-        found = mcp.call_tool(self.store, 'bridge_lookup_record', {'repo': self.repo,
+        found = mcp.call_tool(self.store, 'raven_lookup_record', {'repo': self.repo,
             'provider': 'git', 'namespace': self.repo, 'object_kind': 'pr', 'external_id': '42'})
         record_id = found['source']['record_id']
         if alias:
             self.alias_pull()
-        return mcp.call_tool(self.store, 'bridge_get_record', {
+        return mcp.call_tool(self.store, 'raven_get_record', {
             'repo': self.repo, 'record_id': record_id})['source']
 
     def alias_pull(self):
@@ -82,7 +82,7 @@ class CacheNamespaceApplicabilityTests(OfflineCase):
             'files': [], 'reviews': []})
 
     def imported_context(self, provider, namespace):
-        return mcp.call_tool(self.store, 'bridge_import_record', {
+        return mcp.call_tool(self.store, 'raven_import_record', {
             'repo': self.repo, 'kind': 'note', 'provider': provider, 'namespace': namespace,
             'external_id': 'synthetic-context-77', 'ref': '77', 'title': 'Open synthetic investigation',
             'body': 'No policy answer or approval is recorded here.', 'status': 'Open'})['source']

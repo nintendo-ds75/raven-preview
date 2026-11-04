@@ -22,12 +22,12 @@ from urllib.request import Request, urlopen
 
 from fixtures import OfflineCase, git_env, run_git, workdir
 
-from bridge.github import (GitHubError, Syncer, apply_pulls, sync_note, sync_pull, sync_repo,
+from raven.github import (GitHubError, Syncer, apply_pulls, sync_note, sync_pull, sync_repo,
                            sync_state, verify_signature)
-from bridge.ingest import index_repo
-from bridge.routing import route
+from raven.ingest import index_repo
+from raven.routing import route
 from fixtures import ready_server as make_server
-from bridge.store import Store
+from raven.store import Store
 
 REPO = "acme/platform"
 PRIYA = ("Priya Natarajan", "priya@acme.example")
@@ -174,8 +174,8 @@ class SyncTests(GitHubCase):
     def test_a_repository_is_exactly_owner_and_name_before_it_reaches_the_api_path(self):
         """The name is spliced into the request path: a query, a fragment,
         an encoded slash or a further path never gets there."""
-        from bridge.github import register, sync_states
-        from bridge.store import Invalid
+        from raven.github import register, sync_states
+        from raven.store import Invalid
         for repo in ("acme/platform?per_page=1&x=", "https://api.github.com/user#", "acme/platform%2F..%2F..%2Fuser",
                      "acme", "acme/platform/pulls", "acme/plat form", ""):
             with self.subTest(repo=repo), self.assertRaises(Invalid):
@@ -302,14 +302,14 @@ class SyncTests(GitHubCase):
         ranked = route(self.graph, REPO, "Should the tiers apply to partner accounts?", path="billing/rates.py", notes=notes)
         self.assertTrue(any("GitHub not synced" in n for n in notes), notes)
         # The operator's instructions go to the agent's notes and to
-        # bridge_connection_status. The line on the evidence, which a
+        # raven_connection_status. The line on the evidence, which a
         # person reads under "Why you" in Slack, says only what is known.
         self.assertTrue(any("GITHUB_TOKEN" in n for n in notes), notes)
         evidence = " | ".join(ranked[1])
         self.assertIn("GitHub not synced", evidence)
         self.assertNotIn("GITHUB_TOKEN", evidence)
-        self.assertNotIn("bridge sync", evidence)
-        from bridge.mcp import _github_status
+        self.assertNotIn("raven sync", evidence)
+        from raven.mcp import _github_status
         status = _github_status(self.store)
         self.assertEqual(status["synced"], [])
         self.assertIn(REPO, [r["repo"] for r in status["not_synced"]])
@@ -326,7 +326,7 @@ class SyncTests(GitHubCase):
 
     def test_the_scheduler_registers_and_ticks(self):
         syncer = Syncer(self.graph, self.api, repos=[REPO], minutes=1)
-        self.assertEqual([s["repo"] for s in __import__("bridge.github", fromlist=["sync_states"]).sync_states(self.graph)], [REPO])
+        self.assertEqual([s["repo"] for s in __import__("raven.github", fromlist=["sync_states"]).sync_states(self.graph)], [REPO])
         results = syncer.tick()
         self.assertEqual(results[0]["pulls"], 1)
         self.assertTrue(sync_state(self.graph, REPO)["last_success_at"])
@@ -409,7 +409,7 @@ class WebhookTests(GitHubCase):
         answered 502, and GitHub's redelivery was ignored as a duplicate."""
         merged = {"action": "closed", "repository": {"full_name": "acme/platform"},
                   "pull_request": {"number": 42, "merged": True}}
-        with patch("bridge.github.sync_pull", side_effect=GitHubError("GitHub 502 on /repos/acme/platform/pulls/42")):
+        with patch("raven.github.sync_pull", side_effect=GitHubError("GitHub 502 on /repos/acme/platform/pulls/42")):
             status, body = self.post("pull_request", merged, delivery="retry-me")
         self.assertEqual(status, 502, body)
         status, body = self.post("pull_request", merged, delivery="retry-me")
@@ -424,7 +424,7 @@ class WebhookTests(GitHubCase):
         """With no GITHUB_TOKEN nothing is fetched, and a delivery kept as
         received would make GitHub's redelivery, once the token is set, a
         duplicate of a delivery that did nothing."""
-        from bridge.github import handle_webhook
+        from raven.github import handle_webhook
         merged = {"action": "closed", "repository": {"full_name": "acme/platform"},
                   "pull_request": {"number": 42, "merged": True}}
         first = handle_webhook(self.graph, None, "pull_request", "before-token", merged)

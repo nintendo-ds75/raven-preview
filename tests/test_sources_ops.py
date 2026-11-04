@@ -11,8 +11,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import source_docs, sources
-from bridge.store import Store
+from raven import source_docs, sources
+from raven.store import Store
 from test_sources_docs import PAGE, Site
 
 
@@ -74,7 +74,7 @@ class SourceOperationsTests(OfflineCase):
 
     def run_cli(self, *argv):
         out = io.StringIO()
-        with patch("sys.argv", ["bridge.sources", *argv, "--db", str(self.db)]), contextlib.redirect_stdout(out):
+        with patch("sys.argv", ["raven.sources", *argv, "--db", str(self.db)]), contextlib.redirect_stdout(out):
             sources.main()
         return json.loads(out.getvalue())
 
@@ -92,7 +92,7 @@ class SourceOperationsTests(OfflineCase):
 
     def test_the_command_line_refuses_without_the_attestation(self):
         err = io.StringIO()
-        with patch("sys.argv", ["bridge.sources", "add", "docs", "--repo", "example/service", "--target",
+        with patch("sys.argv", ["raven.sources", "add", "docs", "--repo", "example/service", "--target",
                                 self.good.origin + "/", "--db", str(self.db)]), contextlib.redirect_stderr(err):
             with self.assertRaises(SystemExit) as stopped:
                 sources.main()

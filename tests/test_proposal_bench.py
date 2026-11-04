@@ -11,9 +11,9 @@ import json
 import time
 
 from fixtures import OfflineCase, ROOT
-from bridge import canvas, objective_head as head, objective_text, objectives as obj
-from bridge.auth import Identity
-from bridge.store import Invalid
+from raven import canvas, objective_head as head, objective_text, objectives as obj
+from raven.auth import Identity
+from raven.store import Invalid
 
 FIXTURES = ROOT / 'tests' / 'fixtures' / 'proposals'
 CORPUS = json.loads((FIXTURES / 'corpus.json').read_text())

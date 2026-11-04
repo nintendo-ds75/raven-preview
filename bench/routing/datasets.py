@@ -5,7 +5,7 @@ and the MAINTAINERS or CODEOWNERS listing for the touched paths as of the
 parent revision.
 
 Clones are cached under a scratch directory outside the repository
-(BRIDGE_BENCH_SCRATCH, default ~/.cache/bridge-bench). Every sample is
+(RAVEN_BENCH_SCRATCH, default ~/.cache/raven-bench). Every sample is
 deterministic for a given seed."""
 
 from __future__ import annotations
@@ -101,8 +101,8 @@ class Item:
 
 
 def scratch_dir() -> Path:
-    env = os.environ.get("BRIDGE_BENCH_SCRATCH")
-    base = Path(env) if env else Path.home() / ".cache" / "bridge-bench"
+    env = os.environ.get("RAVEN_BENCH_SCRATCH")
+    base = Path(env) if env else Path.home() / ".cache" / "raven-bench"
     base.mkdir(parents=True, exist_ok=True)
     return base
 
@@ -380,7 +380,7 @@ def approval_labels(c: Commit, catch_all: set[str]) -> tuple[str, list[tuple[str
 
 def github_labels(db_path: str, repo: str, sha: str) -> list[tuple[str, Person]]:
     """Approval labels from a Raven database that synced the repository
-    from GitHub (bridge sync): the reviewers who approved the pull request
+    from GitHub (raven sync): the reviewers who approved the pull request
     the commit merged and the person who merged it, by the name Raven
     knows them by (the verified person, else GitHub's display name, else
     the login). The GitHub-flow dataset: squash merges carry no trailer,
@@ -424,7 +424,7 @@ def sample_trailer_items(ds: Dataset, repo: Path, n: int, seed: int, log=print) 
     if catch_all:
         log(f"[{ds.name}] integrator excluded as a committer label: "
             + ", ".join(next(c.committer.name for c in commits if c.committer.key == k) for k in catch_all))
-    github_db = os.environ.get("BRIDGE_BENCH_GITHUB_DB", "").strip()
+    github_db = os.environ.get("RAVEN_BENCH_GITHUB_DB", "").strip()
     if github_db:
         log(f"[{ds.name}] approval labels also from the GitHub sync in {github_db}")
     eligible = []

@@ -8,8 +8,8 @@ services:
       dockerfile: docker/Dockerfile.workbench
     user: root
     environment:
-      BRIDGE_WORKBENCH: '1'
-      BRIDGE_WORKBENCH_SANDBOX: docker
+      RAVEN_WORKBENCH: '1'
+      RAVEN_WORKBENCH_SANDBOX: docker
       RAVEN_HOST_CLAUDE_API_KEY: ${RAVEN_HOST_CLAUDE_API_KEY:-}
       RAVEN_HOST_CLAUDE_MODEL: ${RAVEN_HOST_CLAUDE_MODEL:-}
       RAVEN_HOST_CLAUDE_WORKSPACE_ID: ${RAVEN_HOST_CLAUDE_WORKSPACE_ID:-}

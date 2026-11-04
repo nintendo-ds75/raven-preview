@@ -12,7 +12,7 @@ This document records the design and evaluation criteria. The follow-on implemen
 Raven already has Git history ingestion, GitHub synchronization, Slack directory
 and conversational delivery, record imports, versioned external sources, linked
 human decisions, source-change invalidation, task history and saved proofs.
-`bridge/context_memory.py`, `bridge/source_lookup.py`, `bridge/canvas.py:trace`
+`raven/context_memory.py`, `raven/source_lookup.py`, `raven/canvas.py:trace`
 and the task UI are the foundations to extend. The graph is already shared;
 external evidence and interactions should not become two competing knowledge stores.
 

@@ -6,11 +6,11 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from bridge.config import Config
-from bridge.execution import ExecutionService
+from raven.config import Config
+from raven.execution import ExecutionService
 from fixtures import ready_server as make_server
-from bridge.store import Store
-from bridge.webhooks import make_webhook_server
+from raven.store import Store
+from raven.webhooks import make_webhook_server
 from test_execution import FakeAPI
 
 
@@ -38,7 +38,7 @@ class ExecutionHTTPTests(unittest.TestCase):
     def submit(self):
         data = {"task": "Add usage pricing", "repository": "billing-fixture", "submission_key": "one"}
         request = Request(self.url + "/api/tasks", data=json.dumps(data).encode(),
-                          headers={"Content-Type": "application/json", "X-Bridge-CSRF": self.token})
+                          headers={"Content-Type": "application/json", "X-Raven-CSRF": self.token})
         with urlopen(request) as response:
             return json.load(response)
 
@@ -127,8 +127,8 @@ class ExecutionHTTPTests(unittest.TestCase):
 
     def test_webhook_ingress_needs_the_secret_and_verifies_with_the_client(self):
         from types import SimpleNamespace
-        from bridge.store import Invalid
-        from bridge.webhooks import start_webhooks
+        from raven.store import Invalid
+        from raven.webhooks import start_webhooks
         seen = []
 
         def verify(*, payload, headers):
@@ -159,7 +159,7 @@ class ExecutionHTTPTests(unittest.TestCase):
         from types import SimpleNamespace
         from unittest.mock import patch
         from http.server import ThreadingHTTPServer
-        from bridge.webhooks import start_webhooks
+        from raven.webhooks import start_webhooks
         polls = []
         original = ThreadingHTTPServer.serve_forever
 

@@ -9,12 +9,12 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 import http.client
 
-from bridge.auth import Auth
-from bridge.github import Syncer, sync_state
-from bridge.github_app import GitHubAppConnector
-from bridge.github_app import manifest_state
+from raven.auth import Auth
+from raven.github import Syncer, sync_state
+from raven.github_app import GitHubAppConnector
+from raven.github_app import manifest_state
 from fixtures import ready_server as make_server
-from bridge.store import Store
+from raven.store import Store
 
 
 class Response:
@@ -41,7 +41,7 @@ class FakeGitHub:
         url = urlsplit(request.full_url)
         self.calls.append((request.get_method(), url.path))
         if url.path.endswith("/conversions"):
-            return Response({"id": 777, "slug": "bridge-test-app", "pem": "-----BEGIN PRIVATE KEY-----\ntest\n"})
+            return Response({"id": 777, "slug": "raven-test-app", "pem": "-----BEGIN PRIVATE KEY-----\ntest\n"})
         if url.path == "/app/installations/12":
             return Response({"app_id": self.installation_app_id, "account": {"login": "octo"}, "suspended_at": None})
         if url.path == "/app/installations/12/access_tokens":
@@ -57,7 +57,7 @@ class GitHubAppJourney(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.store = Store(Path(self.temp.name) / "bridge.db")
+        self.store = Store(Path(self.temp.name) / "raven.db")
         self.fake = FakeGitHub()
         self.connector = GitHubAppConnector(self.store.graph, Path(self.temp.name) / "github-app.json", self.fake)
         self.syncer = Syncer(self.store.graph, self.connector.api_for_repo)
@@ -74,7 +74,7 @@ class GitHubAppJourney(unittest.TestCase):
         headers = {"Host": f"127.0.0.1:{self.server.server_port}"}
         if data is not None:
             headers["Content-Type"] = "application/json"
-            headers["X-Bridge-CSRF"] = csrf
+            headers["X-Raven-CSRF"] = csrf
         connection.request(method, path, body=json.dumps(data).encode() if data is not None else None, headers=headers)
         response = connection.getresponse()
         status, location, body = response.status, response.getheader("Location"), response.read()
@@ -97,10 +97,10 @@ class GitHubAppJourney(unittest.TestCase):
         self.assertFalse(self.connector.credentials())
         status, install_url, _ = self.request("GET", "/auth/github-app/created?code=abcdef123456&state=" + state)
         self.assertEqual(status, 302)
-        self.assertIn("github.com/apps/bridge-test-app/installations/new", install_url)
+        self.assertIn("github.com/apps/raven-test-app/installations/new", install_url)
         self.assertEqual(self.connector.path.stat().st_mode & 0o777, 0o600)
         install_state = parse_qs(urlsplit(install_url).query)["state"][0]
-        with patch("bridge.github_app._jwt", return_value="signed-app-jwt"):
+        with patch("raven.github_app._jwt", return_value="signed-app-jwt"):
             status, location, _ = self.request("GET", "/auth/github-app/installed?installation_id=12&state=bad")
             self.assertEqual(status, 302)
             self.assertIn("github_error=", location)

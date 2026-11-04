@@ -11,8 +11,8 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 from fixtures import OfflineCase
-from bridge import source_jira, sources
-from bridge.store import Invalid
+from raven import source_jira, sources
+from raven.store import Invalid
 
 AUTH = 'Basic ' + base64.b64encode(b'bot@example.invalid:secret-token').decode()
 

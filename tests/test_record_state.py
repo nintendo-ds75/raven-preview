@@ -4,9 +4,9 @@ import threading
 from urllib.request import Request, urlopen
 
 from fixtures import OfflineCase, ready_server
-from bridge import mcp
-from bridge.ladder import _is_settled
-from bridge.store import Invalid
+from raven import mcp
+from raven.ladder import _is_settled
+from raven.store import Invalid
 
 
 class RecordStateTests(OfflineCase):
@@ -59,7 +59,7 @@ class RecordStateTests(OfflineCase):
         self.assertEqual(paths(), [])
 
     def test_mcp_typed_schema_and_rest_have_same_import_state_contract(self):
-        schema = next(t['inputSchema'] for t in mcp.TOOLS if t['name'] == 'bridge_import_record')
+        schema = next(t['inputSchema'] for t in mcp.TOOLS if t['name'] == 'raven_import_record')
         self.assertIn('boolean', schema['properties']['resolved']['type'])
         self.assertIn('array', schema['properties']['paths']['type'])
         server = ready_server(self.store, host='127.0.0.1', port=0)
@@ -72,10 +72,10 @@ class RecordStateTests(OfflineCase):
         for route in ('mcp', 'rest'):
             data = {**self.base, 'ref': route, 'status': 'Open', 'resolved': 'FALSE', 'paths': ['new/a.py']}
             if route == 'mcp':
-                mcp.call_tool(self.store, 'bridge_import_record', data)
+                mcp.call_tool(self.store, 'raven_import_record', data)
             else:
                 request = Request(f'http://127.0.0.1:{server.server_port}/api/records', data=json.dumps(data).encode(),
-                                  headers={'Content-Type': 'application/json', 'X-Bridge-CSRF': csrf}, method='POST')
+                                  headers={'Content-Type': 'application/json', 'X-Raven-CSRF': csrf}, method='POST')
                 with urlopen(request) as response:
                     self.assertEqual(response.status, 200)
             self.assertFalse(_is_settled(self.row(route)))

@@ -32,10 +32,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from bridge import canvas  # noqa: E402
-from bridge.authz import Actor  # noqa: E402
-from bridge.config import Config  # noqa: E402
-from bridge.store import Store  # noqa: E402
+from raven import canvas  # noqa: E402
+from raven.authz import Actor  # noqa: E402
+from raven.config import Config  # noqa: E402
+from raven.store import Store  # noqa: E402
 
 # Deterministic rungs only by default. --semantic runs the same panel
 # with the model rungs on, which is the configuration a pilot has.
@@ -46,8 +46,8 @@ REQUESTER = "Eval Harness <eval@example.invalid>"
 def use_semantic() -> None:
     global CFG
     import os
-    os.environ["BRIDGE_SEMANTIC"] = "1"
-    os.environ.pop("BRIDGE_MODEL_API", None)
+    os.environ["RAVEN_SEMANTIC"] = "1"
+    os.environ.pop("RAVEN_MODEL_API", None)
     CFG = Config()
 
 
@@ -210,7 +210,7 @@ def main(argv=None):
         use_semantic()
 
     tasks = json.loads(Path(args.tasks).read_text())
-    db = Path(args.db or (Path(args.tasks).resolve().parent / "bridge.db"))
+    db = Path(args.db or (Path(args.tasks).resolve().parent / "raven.db"))
     import tempfile
     work = Path(args.work or tempfile.mkdtemp(prefix="real-oss-probes-"))
     result = run(tasks, db, work)

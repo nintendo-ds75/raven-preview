@@ -6,13 +6,13 @@ import sys
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-os.environ.update(BRIDGE_MODEL_API='none', BRIDGE_SEMANTIC='0', BRIDGE_LIVE='0')
-from bridge import briefing, canvas, context_memory as cm
-from bridge.server import make_server
-from bridge.store import Store
+os.environ.update(RAVEN_MODEL_API='none', RAVEN_SEMANTIC='0', RAVEN_LIVE='0')
+from raven import briefing, canvas, context_memory as cm
+from raven.server import make_server
+from raven.store import Store
 
 for method in ('complete', 'complete_json'):
-    patch('bridge.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden')).start()
+    patch('raven.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden')).start()
 store = Store(sys.argv[1])
 graph = store.graph
 graph.set_setting('workspace_name', 'Fresh source browser fixture')

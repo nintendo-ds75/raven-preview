@@ -9,8 +9,8 @@ from urllib.request import urlopen
 
 from fixtures import OfflineCase
 
-from bridge import graph as graph_mod
-from bridge.llm import embed
+from raven import graph as graph_mod
+from raven.llm import embed
 from fixtures import ready_server as make_server
 
 REPO = "acme/platform"

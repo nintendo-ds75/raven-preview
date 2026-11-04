@@ -30,7 +30,7 @@ def cases(suite):
 
 class PostgresRegistrationTests(unittest.TestCase):
     def discover(self, enabled):
-        with patch.dict('os.environ', {'BRIDGE_TEST_POSTGRES': '1' if enabled else '0'}), \
+        with patch.dict('os.environ', {'RAVEN_TEST_POSTGRES': '1' if enabled else '0'}), \
                 patch.object(test_postgres.PostgresIsolation, 'setUp', side_effect=AssertionError('Discovery only')), \
                 patch.object(test_postgres.database, 'connect', side_effect=AssertionError('No database')), \
                 patch('socket.create_connection', side_effect=AssertionError('No network')), \

@@ -5,9 +5,9 @@ import json
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import owner_discovery
-from bridge.mcp import TOOLS, _list_owners, dispatch
-from bridge.store import Invalid, graph_summary, ownership_rows
+from raven import owner_discovery
+from raven.mcp import TOOLS, _list_owners, dispatch
+from raven.store import Invalid, graph_summary, ownership_rows
 
 
 class OwnerDiscoveryTests(OfflineCase):
@@ -31,7 +31,7 @@ class OwnerDiscoveryTests(OfflineCase):
 
     def listing(self, **args):
         response = dispatch(self.store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-            "params": {"name": "bridge_list_owners", "arguments": args}})
+            "params": {"name": "raven_list_owners", "arguments": args}})
         self.assertFalse(response["result"]["isError"], response)
         output = json.loads(response["result"]["content"][0]["text"])
         self.assertLessEqual(len(json.dumps(response["result"]["content"][0]["text"]).encode()), owner_discovery.MAX_CONTENT_BYTES)
@@ -115,8 +115,8 @@ class OwnerDiscoveryTests(OfflineCase):
         self.assertEqual(out["pagination"]["collections"]["people"]["total"], 0)
         self.assertEqual(out["pagination"]["collections"]["people"]["available"], 3)
         self.assertIn("absent rows never establish", out["notice"])
-        self.assertIn("bridge_get_tree", out["notice"])
-        self.assertIn("bridge_add_node", out["notice"])
+        self.assertIn("raven_get_tree", out["notice"])
+        self.assertIn("raven_add_node", out["notice"])
 
     def test_cursor_binding_validation_and_deterministic_replay(self):
         self.seed()
@@ -229,7 +229,7 @@ class OwnerDiscoveryTests(OfflineCase):
         for args in ({"limit": 0}, {"limit": 201}, {"limit": "2"}, {"limit": True}, {"query": "x" * 201}, {"repo": "x" * 501}, {"query": []}):
             with self.subTest(args=args), self.assertRaises(Invalid):
                 _list_owners(self.store, args)
-        spec = next(t for t in TOOLS if t["name"] == "bridge_list_owners")["inputSchema"]
+        spec = next(t for t in TOOLS if t["name"] == "raven_list_owners")["inputSchema"]
         self.assertEqual(set(spec["properties"]), {"repo", "query", "limit", "cursor"})
         self.assertEqual(spec["properties"]["limit"]["maximum"], 200)
         self.assertFalse(spec["additionalProperties"])

@@ -9,8 +9,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase  # noqa: E402
 
-from bridge.__main__ import sync_banner  # noqa: E402
-from bridge.github import register  # noqa: E402
+from raven.__main__ import sync_banner  # noqa: E402
+from raven.github import register  # noqa: E402
 
 REPO = "acme/platform"
 

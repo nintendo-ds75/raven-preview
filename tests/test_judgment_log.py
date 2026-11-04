@@ -5,10 +5,10 @@ import json
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas, judgment, ladder
-from bridge.authz import Actor, Refused
-from bridge.config import Config
-from bridge.store import Invalid
+from raven import canvas, judgment, ladder
+from raven.authz import Actor, Refused
+from raven.config import Config
+from raven.store import Invalid
 
 
 REPO = 'background/policy'
@@ -26,7 +26,7 @@ class JudgmentLogTests(OfflineCase):
         self.store.add_owner({'name': 'Policy Owner', 'team': 'Policy', 'patterns': 'policy/*'})
         self.graph.set_setting('auto_rules', '1')
         for method in ('complete', 'complete_json'):
-            guard = patch('bridge.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
+            guard = patch('raven.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
             guard.start()
             self.addCleanup(guard.stop)
 
@@ -56,7 +56,7 @@ class JudgmentLogTests(OfflineCase):
             observed.update(result)
             return result
 
-        with patch('bridge.ladder.ask', side_effect=read):
+        with patch('raven.ladder.ask', side_effect=read):
             canvas._model_node_pass(self.store, Config(model_api='none'), did, '',
                                     ['policy/retention.py'], [], '', current['owner_id'], '', current['updated_at'])
         return observed

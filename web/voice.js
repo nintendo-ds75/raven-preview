@@ -6,7 +6,7 @@
 //    voice while it speaks and the microphone while it listens, and that
 //    breathes slowly while Raven thinks;
 //  - speak(): the server's voice (Kokoro, ElevenLabs or OpenAI, see
-//    bridge/voice.py), sentence by sentence so the first words play while
+//    raven/voice.py), sentence by sentence so the first words play while
 //    the rest are made; the browser's speech when the server has none;
 //  - listen(): the microphone with end-of-turn detection. A short pause
 //    after a finished sentence ends the turn; a pause after "and" or "so"
@@ -25,7 +25,7 @@ const RavenVoice = (() => {
 
   const post = (action, body) => fetch(`/api/${link ? 'brief/' : ''}voice/${action}`, {
     method: 'POST', credentials: 'same-origin',
-    headers: {'Content-Type': 'application/json', ...(link ? {'X-Raven-Link': link} : {'X-Bridge-CSRF': (typeof state !== 'undefined' && state.csrf_token) || ''})},
+    headers: {'Content-Type': 'application/json', ...(link ? {'X-Raven-Link': link} : {'X-Raven-CSRF': (typeof state !== 'undefined' && state.csrf_token) || ''})},
     body: JSON.stringify(body || {}),
   });
   const json = async response => {

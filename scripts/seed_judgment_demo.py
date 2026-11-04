@@ -5,7 +5,7 @@ fits, and one real correction, so the page has a replaced call to show.
     python scripts/seed_judgment_demo.py fixtures/parcelwise-demo.db
 
 The channel and fit lines are fixture data for rows the demo seeded by hand
-(a live Raven records them itself: bridge/judgment.py). The correction is
+(a live Raven records them itself: raven/judgment.py). The correction is
 not: it runs through judgment.correct as Jordan, the same path the page's
 "That's wrong" action takes, so the old call is retired and the correction
 is the standing rule exactly as it would be in a real workspace.
@@ -20,10 +20,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from bridge import canvas, judgment  # noqa: E402
-from bridge.config import load  # noqa: E402
-from bridge.authz import Actor  # noqa: E402
-from bridge.store import Store  # noqa: E402
+from raven import canvas, judgment  # noqa: E402
+from raven.config import load  # noqa: E402
+from raven.authz import Actor  # noqa: E402
+from raven.store import Store  # noqa: E402
 
 # question prefix -> (how the answer arrived, why the precedent fits)
 ROWS = {

@@ -7,15 +7,15 @@ a decision list or move their work into Raven's UI.
 
 ## Review the investigation
 
-`bridge_review_discovery` accepts a task ID, `observations` with actual code or
+`raven_review_discovery` accepts a task ID, `observations` with actual code or
 record citations, and the `paths` the host discovered. Raven reads that digest,
 related records and existing decisions. It proposes questions where the evidence
 suggests missing judgment. It separately identifies things the agent can verify
 by inspecting code or running tests.
 
 The model review runs in the background. `model_pending` means it has not
-finished. Read `discovery_reviews` on `bridge_get_tree`, use `bridge_wait`, or read
-the same review through `bridge_review_discovery(task_id, review_id)`.
+finished. Read `discovery_reviews` on `raven_get_tree`, use `raven_wait`, or read
+the same review through `raven_review_discovery(task_id, review_id)`.
 
 For each finding, the host either creates a genuine decision node and records
 its `decision_id`, or supplies a short `reason` describing what it investigated
@@ -55,7 +55,7 @@ uncached repository takes longer. This is an in-process index intended for pilot
 workspaces, not a benchmarked enterprise-scale vector service.
 
 For a Python-only installation, install `requirements-semantic.txt`. Set
-`BRIDGE_EMBEDDINGS=off` to keep lexical search, or build Docker with
+`RAVEN_EMBEDDINGS=off` to keep lexical search, or build Docker with
 `INSTALL_SEMANTIC=false` to omit the runtime. Retrieval responses and traces say
 when learned search is unavailable. Model selection, composition, discovery and
 conversation still use your configured inference backend.
@@ -80,7 +80,7 @@ There are two supported mechanisms:
 
 | Host | Mechanism |
 | --- | --- |
-| Local Claude Code or Codex with the Raven adapter | Hooks, `bridge_wait`, and the explicitly enabled local resume supervisor described in [host adapters](host-adapters.md). |
+| Local Claude Code or Codex with the Raven adapter | Hooks, `raven_wait`, and the explicitly enabled local resume supervisor described in [host adapters](host-adapters.md). |
 | ChatGPT Work cloud chats and dots | MCP Events subscriptions and signed HTTPS callbacks. The user chooses the task to monitor and what to do when it changes. |
 
 OpenAI documents MCP Events for Work cloud and dots. This is not a claim that a

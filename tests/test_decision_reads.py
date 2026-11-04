@@ -7,10 +7,10 @@ import unittest
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas, context_memory as cm, decision_reads
-from bridge.config import Config
-from bridge.mcp import TOOLS, call_tool, dispatch
-from bridge.store import Invalid
+from raven import canvas, context_memory as cm, decision_reads
+from raven.config import Config
+from raven.mcp import TOOLS, call_tool, dispatch
+from raven.store import Invalid
 from test_auth import BOOTSTRAP, SharedServer
 
 REPO = 'synthetic/history-read'
@@ -61,7 +61,7 @@ class DecisionReadTests(OfflineCase):
 
     def read(self, node, **args):
         result = dispatch(self.store, {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
-                          'params': {'name': 'bridge_get_decision', 'arguments': {'decision_id': node, **args}}})
+                          'params': {'name': 'raven_get_decision', 'arguments': {'decision_id': node, **args}}})
         self.assertFalse(result['result']['isError'], result)
         self.assertTrue(result['result']['content'][0]['text'].startswith('{"recorded_history":'),
                         'The overview must lead the actual MCP text, including full bodies')
@@ -401,10 +401,10 @@ class DecisionReadTests(OfflineCase):
         for status, superseded in (('resolved', ''), ('withdrawn', ''), ('resolved', 'synthetic-replacement')):
             self.graph.db.execute('UPDATE decisions SET status=?,superseded_by=?,answer=? WHERE id=?',
                                   (status, superseded, 'Current value differs.', node))
-            self.assertNotIn(node, {r['id'] for r in call_tool(self.store, 'bridge_search_decisions',
+            self.assertNotIn(node, {r['id'] for r in call_tool(self.store, 'raven_search_decisions',
                              {'query': 'quartz', 'repo': REPO})['matches']})
             before = self.frozen()
-            found = call_tool(self.store, 'bridge_search_decisions', {'query': 'quartz', 'repo': REPO, 'mode': 'history'})
+            found = call_tool(self.store, 'raven_search_decisions', {'query': 'quartz', 'repo': REPO, 'mode': 'history'})
             row = next(r for r in found['matches'] if r['id'] == node)
             self.assertTrue(row['matched_version_id'])
             self.assertEqual(row['current_state']['status'], status)
@@ -433,12 +433,12 @@ class DecisionReadTests(OfflineCase):
                {'version_id': version, 'limit': 1}, {'detail': 'full', 'cursor': 'x'})
         for extra in bad:
             with self.subTest(extra=extra), self.assertRaises(Invalid):
-                call_tool(self.store, 'bridge_get_decision', {'decision_id': node, **extra})
-        for name in ('bridge_get_decision', 'bridge_search_decisions'):
+                call_tool(self.store, 'raven_get_decision', {'decision_id': node, **extra})
+        for name in ('raven_get_decision', 'raven_search_decisions'):
             schema = next(tool['inputSchema'] for tool in TOOLS if tool['name'] == name)
-            self.assertEqual(schema['required'], ['decision_id'] if name == 'bridge_get_decision' else ['query'])
+            self.assertEqual(schema['required'], ['decision_id'] if name == 'raven_get_decision' else ['query'])
         with self.assertRaises(Invalid):
-            call_tool(self.store, 'bridge_search_decisions', {'query': 'x', 'mode': 'unknown'})
+            call_tool(self.store, 'raven_search_decisions', {'query': 'x', 'mode': 'unknown'})
 
     def test_history_search_calls_unchanged_visibility_helper(self):
         self.signed()
@@ -462,11 +462,11 @@ class DecisionReadHTTPTests(SharedServer):
         for key, value in full.items():
             self.assertEqual(human[key], value, key)
         self.assertIn('snapshot', human['context_history'][0])
-        mcp_full = call_tool(self.store, 'bridge_get_decision', {'decision_id': node, 'detail': 'full'})
+        mcp_full = call_tool(self.store, 'raven_get_decision', {'decision_id': node, 'detail': 'full'})
         overview = mcp_full.pop('recorded_history')
         self.assertEqual(mcp_full, full)
         self.assertNotIn('recorded_history', human)
-        summary = call_tool(self.store, 'bridge_get_decision', {'decision_id': node})
+        summary = call_tool(self.store, 'raven_get_decision', {'decision_id': node})
         self.assertEqual(summary['recorded_history'], overview)
         self.assertTrue(summary['context_history'][0]['snapshot_omitted'])
 

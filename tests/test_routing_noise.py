@@ -7,9 +7,9 @@ from unittest.mock import patch
 
 from fixtures import OfflineCase
 
-from bridge.resolve import ROOT_WORD_WHEN_ANCHORED, resolve_paths
-from bridge.routing import route, route_ranked
-from bridge.signals import _MECHANICAL
+from raven.resolve import ROOT_WORD_WHEN_ANCHORED, resolve_paths
+from raven.routing import route, route_ranked
+from raven.signals import _MECHANICAL
 
 NOW = "2026-06-20T00:00:00+00:00"
 CODE = "src/pkg/metadata.py"
@@ -111,7 +111,7 @@ class DominantBlameTests(OfflineCase):
                               subject="Document metadata")
         lines = {"Module Builder": 700, "Passer By 0": 30, "Passer By 1": 30, "Passer By 2": 40}
         blame = {CODE: {name: (name, "", n / 800) for name, n in lines.items()}}
-        with patch("bridge.ingest.fetch_blame", return_value=blame):
+        with patch("raven.ingest.fetch_blame", return_value=blame):
             picked = route(self.graph, "app", "How should metadata validation treat licence fields?", path=CODE)
         self.assertIsNotNone(picked)
         self.assertEqual(picked[0], "Module Builder")
@@ -275,7 +275,7 @@ class NamedFunctionTests(OfflineCase):
     def setUp(self):
         super().setUp()
         from fixtures import run_git
-        from bridge.ingest import index_repo
+        from raven.ingest import index_repo
         self.repo = Path(self.temp.name) / "proj"
         (self.repo / "src/pkg").mkdir(parents=True)
         (self.repo / "src/pkg/tags.py").write_text("def sys_tags():\n    return []\n\n\ndef mac_platforms():\n    return []\n")

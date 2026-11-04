@@ -16,11 +16,11 @@ from urllib.error import HTTPError
 
 from fixtures import OfflineCase
 
-from bridge import canvas
-from bridge.auth import Auth
-from bridge.authz import Actor, Refused
-from bridge.github import sync_pull, sync_repo, sync_state
-from bridge.store import Invalid
+from raven import canvas
+from raven.auth import Auth
+from raven.authz import Actor, Refused
+from raven.github import sync_pull, sync_repo, sync_state
+from raven.store import Invalid
 from test_auth import BOOTSTRAP, SharedServer
 from test_github import REPO as GH_REPO, GitHubCase
 from test_portal import CFG, REPO, PortalCase
@@ -48,9 +48,9 @@ class WhoMayAct(SharedServer):
     def agent_node(self):
         person = self.post("/api/people", {"name": "Agent Requester", "email": "requester@example.test"}, token=BOOTSTRAP)
         token = self.post("/api/tokens", {"person_id": person["id"], "label": "coding-agent"}, token=BOOTSTRAP)["token"]
-        task = self.mcp("bridge_start_task", {
+        task = self.mcp("raven_start_task", {
             "title": "Change invoice policy", "repo": "acme/platform", "paths": "billing/rates.py"}, token)["result"]
-        node = self.mcp("bridge_add_node", {
+        node = self.mcp("raven_add_node", {
             "task_id": task["task_id"], "question": "Should usage spikes be billed?",
             "paths": "billing/rates.py"}, token)["result"]
         return token, task, node
@@ -75,7 +75,7 @@ class WhoMayAct(SharedServer):
         # The decision is untouched and the task cannot finish.
         row = self.store.get_decision(node["node_id"])
         self.assertEqual((row["status"], row["answer"]), ("pending", None))
-        done = self.mcp("bridge_finish_task", {"task_id": task["task_id"]}, token)
+        done = self.mcp("raven_finish_task", {"task_id": task["task_id"]}, token)
         self.assertTrue(done["isError"])
         self.assertIn("wait", done["result"])
 
@@ -96,8 +96,8 @@ class WhoMayAct(SharedServer):
         self.assertEqual((row["signed_by"], row["answered_by"]), ("Policy Owner", "Policy Owner"))
         self.assertEqual(row["actor_basis"], "owner")
         agent = self.post("/api/tokens", {"person_id": self.owner["id"]}, token=BOOTSTRAP)["token"]
-        self.mcp("bridge_get_tree", {"task_id": task["task_id"]}, agent)
-        done = self.mcp("bridge_finish_task", {"task_id": task["task_id"]}, agent)
+        self.mcp("raven_get_tree", {"task_id": task["task_id"]}, agent)
+        done = self.mcp("raven_finish_task", {"task_id": task["task_id"]}, agent)
         self.assertEqual(done["result"]["status"], "completed")
 
     def test_an_admin_decides_for_someone_only_by_saying_so(self):
@@ -498,7 +498,7 @@ class WhatAHandOnGrants(PortalCase):
         return node, self.store.refer(node["node_id"], {"person": self.dana, **extra}, actor=self.as_person(self.priya))
 
     def may_answer(self, person_id, node_id):
-        from bridge.authz import basis_for
+        from raven.authz import basis_for
         return basis_for(self.graph, self.as_person(person_id), self.store.get_decision(node_id), "answer")[0]
 
     def answer_as(self, person_id, node_id, text):
@@ -738,7 +738,7 @@ class WhoMustApprove(OfflineCase):
         self.assertIn("inherited", node["owner_evidence"])
 
     def test_standing_reads_every_path_the_decision_is_about(self):
-        from bridge.authz import _scope_holders
+        from raven.authz import _scope_holders
         decision = {"repo": self.REPO, "path": "public/docs.rst", "question": self.QUESTION, "category": "compat",
                     "scope_paths": json.dumps(["public/docs.rst", "protected/retry.py"])}
         self.assertIn(self.reviewer, [p["id"] for p in _scope_holders(self.graph, decision)])
@@ -795,7 +795,7 @@ class WhatAFollowUpHolds(OfflineCase):
         self.assertIn("marked it required", added["next"])
         self.assertIn("required: the task cannot finish", canvas.get_tree(self.store, self.task)["next"])
         refused = finish(self.store, self.task)
-        self.assertIn(f"bridge_add_node(adopt={added['node_id']})", refused)
+        self.assertIn(f"raven_add_node(adopt={added['node_id']})", refused)
         adopted = canvas.add_node(self.store, CFG, {"task_id": self.task, "question": self.QUESTION,
                                                     "adopt": added["node_id"]})
         self.assertTrue(finish(self.store, self.task).startswith("refused"))

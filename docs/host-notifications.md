@@ -11,11 +11,11 @@ never copies its credentials and cannot invoke tools merely because the host
 has them. The host must retain its own permission checks and verify the current
 employee identity, workspace, and intended recipient using the connector.
 
-1. Register the session with `bridge_host_event`, including reported tool names.
+1. Register the session with `raven_host_event`, including reported tool names.
    Keep the returned `binding_id` and `task_id`.
-2. Persist the expert request with `bridge_add_node`. It exists in Raven before
+2. Persist the expert request with `raven_add_node`. It exists in Raven before
    notification. Read its exact current revision and linked owner.
-3. Call `bridge_host_notification` with `action=capabilities` for the binding.
+3. Call `raven_host_notification` with `action=capabilities` for the binding.
    Tool inventories are host-reported, never proof of available permissions.
 4. Verify the recipient's Slack ID and email through the existing connector.
    The email must match the request's exact active Raven owner, and a known

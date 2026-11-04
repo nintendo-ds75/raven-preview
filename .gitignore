@@ -1,6 +1,8 @@
 __pycache__/
 *.pyc
+.raven/
 .bridge/
+.venv/
 test-results/
 .DS_Store
 .env

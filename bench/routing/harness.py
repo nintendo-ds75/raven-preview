@@ -21,12 +21,12 @@ import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-import bridge.graph
-import bridge.ingest
-from bridge.config import load as load_config
-from bridge.ingest import MAX_COMMITS, index_repo
-from bridge.ladder import ask
-from bridge.store import Store
+import raven.graph
+import raven.ingest
+from raven.config import load as load_config
+from raven.ingest import MAX_COMMITS, index_repo
+from raven.ladder import ask
+from raven.store import Store
 
 from .datasets import Dataset, Item, scratch_dir
 from .questions import TreeTokens, context_from_body, routing_form, template_question
@@ -66,13 +66,13 @@ def ingest_at(store: Store, ds: Dataset, clone: Path, base: str, depth: int = MA
 
 def _ingest_hash() -> str:
     h = hashlib.sha256()
-    for mod in (bridge.ingest, bridge.graph):
+    for mod in (raven.ingest, raven.graph):
         h.update(Path(mod.__file__).read_bytes())
     h.update(str(MAX_COMMITS).encode())
     return h.hexdigest()[:12]
 
 
-WARM_CACHE_BYTES = int(float(os.environ.get("BRIDGE_BENCH_WARM_CACHE_GB", "4")) * 1024 ** 3)
+WARM_CACHE_BYTES = int(float(os.environ.get("RAVEN_BENCH_WARM_CACHE_GB", "4")) * 1024 ** 3)
 
 
 def _trim_warm_cache(root: Path, keep: Path) -> None:
@@ -143,12 +143,12 @@ def requester_of(item: Item) -> str:
     return f"{name} <{email}>" if name and email else name or email
 
 
-def ask_bridge(store: Store, ds: Dataset, question: str, context: str, live: bool,
+def ask_raven(store: Store, ds: Dataset, question: str, context: str, live: bool,
                condition: str, requester: str = "") -> Outcome:
     # The model rungs run only when the bench was started with
-    # --model-rungs (BRIDGE_BENCH_MODEL=1); the key stays in the environment.
-    os.environ["BRIDGE_SEMANTIC"] = "1" if os.environ.get("BRIDGE_BENCH_MODEL") == "1" else "0"
-    os.environ["BRIDGE_LIVE"] = "1" if live else "0"
+    # --model-rungs (RAVEN_BENCH_MODEL=1); the key stays in the environment.
+    os.environ["RAVEN_SEMANTIC"] = "1" if os.environ.get("RAVEN_BENCH_MODEL") == "1" else "0"
+    os.environ["RAVEN_LIVE"] = "1" if live else "0"
     cfg = load_config()
     out = Outcome(condition=condition, question=question, context=context)
     t0 = time.time()
@@ -200,7 +200,7 @@ def run_item(ds: Dataset, item: Item, clone: Path, conditions: tuple[str, ...], 
             else:
                 shutil.copyfile(warm_path, db)
                 store = _fresh_store(db)
-            outcomes[cond] = asdict(ask_bridge(store, ds, q, ctx, live, cond, requester_of(item)))
+            outcomes[cond] = asdict(ask_raven(store, ds, q, ctx, live, cond, requester_of(item)))
             store.graph.close()
         # The baselines see the same item: one signal each, no ladder.
         from .baselines import baseline_outcomes
@@ -232,7 +232,7 @@ def run_stale_series(ds: Dataset, items: list[Item], clone: Path, questions: dic
             db = tmp / "ask.db"
             shutil.copyfile(base_db, db)
             s = _fresh_store(db)
-            out = ask_bridge(s, ds, routing_form(decision), context_from_body(it.body), False, "stale",
+            out = ask_raven(s, ds, routing_form(decision), context_from_body(it.body), False, "stale",
                              requester_of(it))
             s.graph.close()
             rows.append({"sha": it.sha, "ts": it.ts, "outcome": asdict(out)})

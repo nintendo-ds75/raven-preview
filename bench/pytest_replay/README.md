@@ -13,7 +13,7 @@ reversal. The other cases are unchanged. See
 `after-retrieval-fix.json` (not included in this preview) and the
 gate audit (internal planning document). The original baseline below is
 preserved. Complete new responses are in
-`.bridge/pytest-replay/after-retrieval-fix/results.json`.
+`.raven/pytest-replay/after-retrieval-fix/results.json`.
 
 The subsequent merge-weighting change (internal planning document) gives all
 six nodes owners while retaining the same questions and path discount.
@@ -54,7 +54,7 @@ answer identified an owner; it did not approve the implementation.
    because the routing threshold finds no clear owner. This is an abstention,
    not evidence that these people were absent from the graph.
 3. **“Undo” is mistaken for reverting a change.** Both monkeypatch questions
-   hit the blanket revert-question gate in `bridge/ladder.py`. That prevents
+   hit the blanket revert-question gate in `raven/ladder.py`. That prevents
    record retrieval even for the explicit reference to the older setattr
    fix, #14209. Its commit `47ed628df` exists before the case's base.
 4. **One useful route.** Ronny is selected for the cross-area node-ID question,
@@ -72,10 +72,10 @@ It does **not** demonstrate that an agent or Raven discovered it.
 From the Raven checkout, with Python 3.10+ and git:
 
 ```sh
-git clone --single-branch --branch main https://github.com/pytest-dev/pytest.git .bridge/pytest-replay/source
+git clone --single-branch --branch main https://github.com/pytest-dev/pytest.git .raven/pytest-replay/source
 python3 -m bench.pytest_replay.run \
-  --repo .bridge/pytest-replay/source \
-  --out .bridge/pytest-replay/my-run
+  --repo .raven/pytest-replay/source \
+  --out .raven/pytest-replay/my-run
 ```
 
 Skip cloning if the checkout exists. Choose a new output directory each
@@ -84,9 +84,9 @@ writes complete task/node/tree responses to `results.json`. No dependencies,
 model keys, maintainer messages or upstream writes are required.
 
 The local pilot's databases and full responses are in
-`.bridge/pytest-replay/run-03/`. Public PR metadata, changed-file patches,
+`.raven/pytest-replay/run-03/`. Public PR metadata, changed-file patches,
 reviews and issue comments were collected separately under
-`.bridge/pytest-replay/heldout/`; the runner never reads that directory.
+`.raven/pytest-replay/heldout/`; the runner never reads that directory.
 
 ## Scope and limits
 

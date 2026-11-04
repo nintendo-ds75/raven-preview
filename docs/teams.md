@@ -3,7 +3,7 @@
 Raven is Slack-first. There are two separate Teams modes:
 
 - `TEAMS_WEBHOOK_URL`: existing outbound-only incoming-webhook transport. It sends a channel notification; people decide in the Raven inbox. A successful webhook post does not enable Teams replies.
-- The optional Teams bot adapter in `bridge/teams.py`: notifications and verified replies in one explicitly configured commercial-cloud tenant and standard channel. This code is covered by offline signed-fixture tests. It has **not been registered, installed, or verified in a live customer Teams tenant**. Do not describe it as full or production-certified Teams support.
+- The optional Teams bot adapter in `raven/teams.py`: notifications and verified replies in one explicitly configured commercial-cloud tenant and standard channel. This code is covered by offline signed-fixture tests. It has **not been registered, installed, or verified in a live customer Teams tenant**. Do not describe it as full or production-certified Teams support.
 
 This preview uses the published Bot Connector REST protocol, not an invented shared-secret callback. It does not install the retired Bot Framework SDK. It does not implement personal DMs, group chats, private/shared channels, Microsoft Graph, Teams meeting calls, Teams SSO, message edits, Adaptive Card actions, or sovereign-cloud endpoints. It never provisions cloud resources or credentials automatically.
 
@@ -18,7 +18,7 @@ This preview uses the published Bot Connector REST protocol, not an invented sha
 
 ```sh
 python -m pip install -r requirements-teams.txt
-# Docker instead: BRIDGE_INSTALL_TEAMS=true, then docker compose build app
+# Docker instead: RAVEN_INSTALL_TEAMS=true, then docker compose build app
 
 TEAMS_APP_ID=11111111-1111-4111-8111-111111111111
 TEAMS_TENANT_ID=22222222-2222-4222-8222-222222222222
@@ -44,7 +44,7 @@ Other action read-backs use `confirm <code>`, or a bare confirmation when Teams 
 
 Initial routing of unassigned questions uses the Raven inbox. New unsolicited threads are acknowledged and ignored. An unknown or inactive mapped person, different tenant/channel/bot, stale activity timestamp, or invalid authentication is refused. Message updates and other activity types do not alter decisions.
 
-In an existing assigned task thread, `context: <note>` follows the same deterministic task-note path as Slack, including ask, reassignment, sign-off, and escalation notifications. Approval-looking words or `because` remain context; no decision, signature, assignment, or rule changes. The note retains its authenticated author, original command, originating decision, and verified activity occurrence. The body is limited to 4,000 characters and the full command including whitespace to 4,096. Private question/chat is not automatically forwarded. `bridge_get_tree.notes` includes these notes, and `bridge_wait` returns new notes while waiting or since the prior `observed_at` cursor. Timeout guidance says “no new decision or forwarded task note is observable” and “this does not prove that nobody replied privately”; it reveals no particular private reply.
+In an existing assigned task thread, `context: <note>` follows the same deterministic task-note path as Slack, including ask, reassignment, sign-off, and escalation notifications. Approval-looking words or `because` remain context; no decision, signature, assignment, or rule changes. The note retains its authenticated author, original command, originating decision, and verified activity occurrence. The body is limited to 4,000 characters and the full command including whitespace to 4,096. Private question/chat is not automatically forwarded. `raven_get_tree.notes` includes these notes, and `raven_wait` returns new notes while waiting or since the prior `observed_at` cursor. Timeout guidance says “no new decision or forwarded task note is observable” and “this does not prove that nobody replied privately”; it reveals no particular private reply.
 
 All notifications go to the pinned channel and address the intended person by name. This is a shared-channel deployment: install it only where the task details may be shared with channel members. No person-specific sign-in link is embedded in these channel messages.
 

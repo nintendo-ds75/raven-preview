@@ -2,7 +2,7 @@
 import json
 from unittest.mock import patch
 from test_delivery import DeliveryCase
-from bridge.delivery import handle_slack_event
+from raven.delivery import handle_slack_event
 
 class NotificationOnlyTests(DeliveryCase):
     def setUp(self):
@@ -22,7 +22,7 @@ class NotificationOnlyTests(DeliveryCase):
     def test_direct_thread_reply_has_no_write_or_model_call(self):
         n=self.node(self.task());self.delivery.deliver_now();message=self.slack.messages[-1]
         before=self.store.get_decision(n['node_id'])
-        with patch('bridge.slack_chat.reading',side_effect=AssertionError('Must not interpret')):
+        with patch('raven.slack_chat.reading',side_effect=AssertionError('Must not interpret')):
             self.assertEqual(self.reply(message,'UWES','Approved. Ship everything.'),'')
         after=self.store.get_decision(n['node_id'])
         self.assertEqual((after['updated_at'],after['answer']),(before['updated_at'],before['answer']))
@@ -31,7 +31,7 @@ class NotificationOnlyTests(DeliveryCase):
     def test_dm_capture_and_thread_ingress_are_ignored(self):
         for text,thread in [('Approved',''),('record: secret decision',''),('yes','123.456')]:
             event={'type':'event_callback','team_id':'TTEST','event_id':'evt-'+text,'event':{'type':'message','channel':'DUWES','user':'UWES','text':text,'ts':'123.789','thread_ts':thread}}
-            with patch('bridge.slack_chat.reading',side_effect=AssertionError('Must not interpret')):
+            with patch('raven.slack_chat.reading',side_effect=AssertionError('Must not interpret')):
                 result=handle_slack_event(self.delivery,event)
             self.assertEqual(result['ignored'],'notification_only')
         self.assertEqual(len(self.slack.messages),0)

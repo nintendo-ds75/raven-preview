@@ -8,11 +8,11 @@ Grades: 0 harmful (a confident wrong answer, a fabricated citation, an open tick
 
 ```sh
 python3 evals/hardtest/load.py
-BRIDGE_MODEL_API=none RAW_TAG=nokey python3 evals/hardtest/run.py
-ANTHROPIC_API_KEY=... BRIDGE_MODEL=claude-sonnet-5 RAW_TAG=key python3 evals/hardtest/run.py
+RAVEN_MODEL_API=none RAW_TAG=nokey python3 evals/hardtest/run.py
+ANTHROPIC_API_KEY=... RAVEN_MODEL=claude-sonnet-5 RAW_TAG=key python3 evals/hardtest/run.py
 ```
 
-The loader writes `hardtest.db` and `codes.json` (decision id to record code) next to itself; both are ignored by git. The runner copies the database, opens one run, and puts every question through `bridge_search_decisions` and then `bridge_request_judgment` over the MCP stdio server, exactly as an agent would. It prints a transcript and writes `results/<RAW_TAG>.json`. Grading is by hand against the key; the runner records outputs verbatim and does not score.
+The loader writes `hardtest.db` and `codes.json` (decision id to record code) next to itself; both are ignored by git. The runner copies the database, opens one run, and puts every question through `raven_search_decisions` and then `raven_request_judgment` over the MCP stdio server, exactly as an agent would. It prints a transcript and writes `results/<RAW_TAG>.json`. Grading is by hand against the key; the runner records outputs verbatim and does not score.
 
 The key, if any, reaches the MCP subprocess through the environment only. Nothing in this directory reads or writes it.
 

@@ -1,0 +1,3660 @@
+"""The resolution ladder: memory, records, assumption, human. Ported.
+
+For each question of a task, in order:
+  a. memory: an earlier signed or evidence-resolved decision matches (hybrid
+     of hashed-embedding cosine and stemmed overlap, recency-decayed, with
+     newest-wins conflict handling and numeric-clash escalation).
+  a2/a3. ownership introspection and accountability questions resolve from
+     the ownership graph (blame, CODEOWNERS, reviews reconciled).
+  b. records: merged PRs, commits, tickets in the graph (IDF lexical rung,
+     ref lookup, novelty and focus gates, superseded-by-newer and
+     contested-by-newer checks); then the model-as-selector sweep with query
+     expansion, grounded single-record composition, and joint composition
+     across records and memories.
+  c. assumption: low-stakes categories get a precedent-following default.
+  d. human: dedupe against open twins, then route to the accountable owner.
+
+Outcomes carry a kind: evidence (resolved or partial from a record or a
+direct memory hit), prediction (assumed defaults, proposals from unratified
+tickets, semantic reuse of a neighbouring answer), or new (routed for
+judgment). With no model backend the ladder runs its deterministic rungs
+only; nothing is fabricated.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass, field, replace
+
+from . import llm as llm_mod
+from .config import Config
+from .graph import SCRATCH_REF, Graph, applicability_status, iso_to_ts, parse_facts, rule_conditions, rule_status, ts_to_iso
+from .judgment import fit_reason
+from .resolve import resolve_paths
+from .routing import coordinator_route, route_ranked
+
+RECORD_MIN_TERMS = 3
+RANKED_KEEP = 5
+MEMORY_HALF_LIFE_DAYS = 180.0
+MEMORY_FRESH_DAYS = 90.0
+DIRECT_MEMORY_MIN = 0.85
+NEAR_MEMORY_MIN = 0.60
+# The share of the question's words a past question must repeat to be read
+# as the question asked, give or take a word: "What counts as one use of
+# the assistant: a question, a completed answer, or tokens?" repeats five
+# of the six words of "What counts as one billable assistant use?".
+SAME_WORDS_MIN = 0.80
+# How much less of the question's wording a near-even candidate may repeat
+# and still be a rival answer to it rather than a neighbouring question.
+WORDING_GAP = 0.20
+# How far below the floor a candidate is still worth showing the model
+# when nothing cleared it. Low enough to reach a paraphrase that shares
+# few words with the original, high enough that the model is not asked
+# about noise.
+RERANK_MIN = 0.30
+CONFLICT_MARGIN = 0.05
+
+
+def _excerpt(text, limit: int, rest: str) -> str:
+    """Stored text quoted inside another: spacing folded, whole when it
+    fits, else cut at a word and marked. Never cut inside a word."""
+    return llm_mod.clip_marked(" ".join(str(text or "").split()), limit, rest)
+
+
+def _route_summary(evidence: str, owner_name: str, limit: int = 160) -> str:
+    """The one line the inbox card shows for a routed owner: who and why,
+    from the strongest clause of the owner evidence, whole when it fits
+    and never cut inside a word. The dialog's "Why this owner" has the
+    rest. Measured on a demo run: the card quoted the evidence up to 300
+    characters and stopped inside the git-blame percentages."""
+    text = " ".join(str(evidence or "").split())
+    first = text.split("; ", 1)[0]
+    if owner_name and owner_name.lower() not in first.lower():
+        first = f"{owner_name}: {first}"
+    mark = "the owner evidence has the rest"
+    if len(first) <= limit:
+        return first
+    return llm_mod.clip_marked(first, limit - len(f" … [cut: {mark}]"), mark)
+
+
+OPEN = "pending"
+
+
+def _recency(updated_at: float) -> float:
+    import math
+    import time as _time
+    age_days = max(0.0, (_time.time() - updated_at) / 86400.0)
+    decayed = max(0.0, age_days - MEMORY_FRESH_DAYS)
+    return math.exp(-decayed * math.log(2) / MEMORY_HALF_LIFE_DAYS)
+
+
+@dataclass
+class RunResult:
+    task_id: str
+    title: str
+    resolved: list[dict] = field(default_factory=list)
+    proposed: list[dict] = field(default_factory=list)
+    assumed: list[dict] = field(default_factory=list)
+    open: list[dict] = field(default_factory=list)
+    # The rows created by this run while they were still being built;
+    # published when the run is done, so no reader sees a half-built one.
+    drafts: list[str] = field(default_factory=list)
+
+    @property
+    def counts(self) -> str:
+        whole = [r for r in self.resolved if not r.get("partial")]
+        partial = [r for r in self.resolved if r.get("partial")]
+        parts = [f"{len(whole)} resolved", f"{len(partial)} partial"]
+        if self.proposed:
+            parts.append(f"{len(self.proposed)} proposed")
+        parts += [f"{len(self.assumed)} assumed", f"{len(self.open)} open"]
+        return " · ".join(parts)
+
+    @property
+    def decision_ids(self) -> list[str]:
+        out = []
+        for bucket in (self.resolved, self.proposed, self.assumed, self.open):
+            for item in bucket:
+                if item.get("id") and item["id"] not in out:
+                    out.append(item["id"])
+        return out
+
+
+_FILLER = {"amid", "lately", "currently", "actually", "right", "today",
+           "still", "really", "going", "exactly", "supposed", "officially",
+           "anymore", "these", "those", "there", "where", "should", "would",
+           "could", "about", "since", "after", "before", "already", "suppos"}
+
+_UNRESOLVED_RE = re.compile(
+    r"gathering|investigat|logged for|need a |need to |needs |should we"
+    r"|feature request|requested|due (before|by|next)|complain"
+    r"|before deciding|still waiting|exploring|no decision|would be nice"
+    r"|evaluating|considering|proposed option|proposal|weighing"
+    r"|reports? (of|that|occasional|intermittent)")
+
+_DECIDED_RE = re.compile(
+    r"decided|approved|going with|switched to|revised|raised (to|the)"
+    r"|lowered (to|the)|capped|no longer|now (requires?|uses?|blocks?"
+    r"|excluded?|hard)|adopted|standardized|set to|chose|resolved as"
+    r"|closed as|working as intended|are excluded|is excluded")
+
+_REVERSAL_RE = re.compile(
+    r"\brevert(?:s|ed|ing)?\b|reverses|reversing|supersedes|superseding|replaces the|overturns"
+    r"|no longer (the|a hard|blocked|applies)|instead of the (previous|old)"
+    r"|as of this change|this replaces|rolls back|reinstates|we now allow"
+    r"|previously we|used to (be|require)|is retired|retired\b|narrows")
+
+_GAP_RE = re.compile(
+    r"do(?:es)? not (\w+ly )?(specify|state|say|define|address|indicate"
+    r"|establish|cover|describe|mention|detail|call out|set out|prescribe)"
+    r"|leaves? [^.]{0,40}?(open|unspecified|unanswered|undefined)"
+    r"|is silent on|no guidance on|not addressed (in|by) the record"
+    r"|contains? no information|no information (about|on)"
+    r"|neither record (\w+ly )?(specifies|states|says|defines|addresses|covers"
+    r"|mentions|establishes|settles|distinguishes|ties)"
+    r"|no record (specifies|states|says|defines|addresses|covers|mentions|settles)"
+    r"|not (stated|specified|addressed|covered|settled|distinguished) (in|by) (any|either|the) record"
+    # Measured live: "none of the records show ... or state that ...",
+    # "(not included here)" and "X is supported, but whether ..." read as a
+    # whole answer.
+    r"|none of the records (\w+ )?(show|shows|state|states|say|says|specify|specifies|mention|mentions"
+    r"|establish|establishes|cover|covers|address|addresses|settle|settles)"
+    r"|not included here|(is|are) supported, but whether")
+
+# A question about history itself: why something was dropped, what was
+# once proposed. Only such a question is composed from records that were
+# not adopted.
+_HISTORY_Q_RE = re.compile(
+    r"\b(?:why (?:was|were|did)\b|ever (?:proposed|considered|tried)|(?:was|were) (?:\w+ ){0,4}?"
+    r"(?:proposed|rejected|cancell?ed|dropped|withdrawn|superseded)|history|historically|previously|used to"
+    r"|originally|in the past)", re.IGNORECASE)
+
+_RECENCY_Q_RE = re.compile(
+    r"\b(today|currently|still|now|in effect|as of|reopened|since then"
+    r"|latest|up to date|already been|has (it|that|this|the .{1,30}) been)\b")
+
+_PENDING_RE = re.compile(
+    r"\b(?:is |are )?to be (?:updated|implemented|added|revised|migrated"
+    r"|rolled out|configured)\b|\bwill (?:be|need to be) (?:updated"
+    r"|implemented|added|revised)\b|\bstill needs? to be\b|\bremains? to be\b")
+
+
+def _states_a_gap(text: str) -> bool:
+    return bool(_GAP_RE.search(text.lower()))
+
+
+_CONTRAST_RE = re.compile(r"\b(?:rather than|instead of|as opposed to)\b")
+_CONTRAST_STOP = {"the", "and", "for", "this", "that", "but", "their", "its", "our", "your",
+                  "same", "one", "now", "one", "they", "them", "which", "who", "what"}
+
+
+def _contrast_terms(*questions: str) -> list[str]:
+    """The distinguishing condition a question introduces with 'rather
+    than', 'instead of', or 'as opposed to': the words just before the
+    phrase name the case asked about (month-to-month rather than annual).
+    Numbers are left out, because a threshold is meant to be applied to
+    an amount the record never names."""
+    out: list[str] = []
+    for question in questions:
+        q = question.lower()
+        for m in _CONTRAST_RE.finditer(q):
+            before = q[:m.start()]
+            clause = re.split(r"[,;:.?]|\b(?:is|are|was|were|be|being|on|with|has|have|had|of|to|for|in|at|by|under|from)\b", before)[-1]
+            for t in re.findall(r"[a-z]+", clause)[-4:]:
+                s = llm_mod.stem(t)
+                if len(s) > 2 and s not in _CONTRAST_STOP and s not in _ASK_MACHINERY and s not in out:
+                    out.append(s)
+    return out
+
+
+def _unmet_contrast(questions: list[str], texts: list[str]) -> list[str]:
+    """Contrast terms of the question that none of the texts mention. An
+    answer to the other side of the contrast must not be applied to this
+    side: the rule for annual contracts says nothing about monthly ones."""
+    terms = _contrast_terms(*questions)
+    if not terms:
+        return []
+    have = {llm_mod.stem(t) for t in re.findall(r"[a-z]+", " ".join(texts).lower())}
+
+    def met(term: str) -> bool:
+        # month also matches monthly; the light stemmer keeps them apart.
+        return any(h == term or (len(min(h, term, key=len)) >= 4 and (h.startswith(term) or term.startswith(h)))
+                   for h in have)
+
+    return [t for t in terms if not met(t)]
+
+
+def _row_text(row) -> str:
+    keys = set(row.keys()) if hasattr(row, "keys") else set()
+    return " ".join(str(row[k] or "") for k in ("title", "body", "question", "answer", "rationale", "context")
+                    if k in keys)
+
+
+_NUM_UNIT_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*(mm|cm|km|m|s|sec|seconds|min|minutes|h|hr|hours"
+    r"|days?|%|percent|deg(?:rees)?|kts?|knots)\b")
+
+
+# A figure a text names only to deny or replace it: "19 days, not 11 days",
+# "instead of 11 days", "no longer 90 days", "down from 30 seconds".
+_FORMER_RE = re.compile(r"(?:\b(?:not|no longer|instead of|rather than|replac(?:es|ed|ing)|in place of|previously|"
+                        r"formerly|used to be|superseding)\s+(?:[\w-]+\s+){0,2}|\b(?:down from|up from|from)\s+)$")
+
+
+def _figures(text: str) -> tuple[dict, dict]:
+    """The figures a text states, by unit, as (asserted, denied)."""
+    asserted: dict = {}
+    denied: dict = {}
+    low = (text or "").lower()
+    for m in _NUM_UNIT_RE.finditer(low):
+        n, u = m.group(1), m.group(2)
+        u = {"sec": "s", "seconds": "s", "minutes": "min", "hr": "h",
+             "hours": "h", "percent": "%", "knots": "kt", "kts": "kt",
+             "days": "day", "degrees": "deg"}.get(u, u)
+        clause = re.split(r"[.;!?]\s|,\s", low[max(0, m.start() - 40):m.start()])[-1]
+        (denied if _FORMER_RE.search(clause) else asserted).setdefault(u, set()).add(float(n))
+    return asserted, denied
+
+
+def _numeric_clash(a: str, b: str) -> bool:
+    """Do two texts state different concrete figures for the same unit?
+    Only what each asserts counts, and one denying what the other asserts
+    is a clash. Measured live on 5e967e4: "retain for 19 days, not 11
+    days" shared the 11 with a signed "11 days" and read as agreeing."""
+    aa, ad = _figures(a)
+    ba, bd = _figures(b)
+    for u, vals in aa.items():
+        if (vals & bd.get(u, set())) or (u in ba and not (vals & ba[u])):
+            return True
+    return any(vals & ad.get(u, set()) for u, vals in ba.items())
+
+
+_ENTITY_STOP = {"i", "the", "a", "an", "this", "that", "these", "those", "we", "our", "it", "its", "if", "when",
+                "should", "do", "does", "is", "are", "was", "were", "can", "could", "would", "will", "may",
+                "customer", "customers", "account", "accounts", "user", "users", "team", "teams", "paths",
+                "options", "context", "note", "notes", "see", "also", "and", "or", "but", "for", "with",
+                "from", "into", "not", "yes", "no"}
+_SCOPE_LINE_RE = re.compile(r"^(?:paths|options)\s*:", re.IGNORECASE)
+# API, APIs, URL, TLS, HTTPS: vocabulary, not the name of a customer or a release.
+_ACRONYM_RE = re.compile(r"[A-Z]{2,5}s?")
+
+
+def _scope_entities(text: str) -> set[str]:
+    """The names a context turns on: capitalized words that are not the
+    first word of their sentence, identifiers with digits or separators,
+    references, quoted strings, emails. Two contexts naming different
+    entities are two decisions (customer Alpha and customer Beta), even
+    when the question text is identical."""
+    out: set[str] = set()
+    for line in (text or "").splitlines():
+        if _SCOPE_LINE_RE.match(line.strip()):
+            continue
+        for sentence in re.split(r"[.;:?!\n]+", line):
+            words = sentence.split()
+            for i, raw in enumerate(words):
+                w = raw.strip("\"'()[]{},")
+                if not w:
+                    continue
+                low = w.lower()
+                if re.fullmatch(r"\d+", w):
+                    # A line number, a count, a year: not a name. A dotted
+                    # number (a version) still is.
+                    continue
+                if re.search(r"\d", w) and len(w) >= 3:
+                    out.add(low)
+                elif "@" in w or "#" in w or "_" in w or ("-" in w and len(w) > 4 and w != low):
+                    out.add(low)
+                elif i > 0 and w[0].isupper() and len(w) > 1 and low not in _ENTITY_STOP \
+                        and not _ACRONYM_RE.fullmatch(w):
+                    out.add(low)
+        for quoted in re.findall(r"[\"“]([^\"”]{2,60})[\"”]", line):
+            out.add(quoted.strip().lower())
+    return out
+
+
+def _facts_of(store: Graph, decision_id: str) -> dict[str, str]:
+    row = store.db.execute("SELECT facts FROM decisions WHERE id=?", (decision_id,)).fetchone()
+    return parse_facts(row["facts"]) if row is not None and row["facts"] else {}
+
+
+def _scope_difference(question: str, context: str, path: str, cand, facts: dict | None = None,
+                      their_facts: dict | None = None, repo: str = "") -> tuple[str, bool]:
+    """Why another decision with the same question may not be this one,
+    and whether that is known or only suspected. Known: they are about
+    different files, or both state a fact (customer=..., release=...)
+    with different values. Suspected: their contexts name different
+    things (customer Alpha, customer Beta) and no stated fact settles it.
+    Facts both state alike settle it the other way. A name the other
+    decision also uses, or the repository's own, is no difference.
+    Measured live: a follow-up about the same release and file was
+    called another scope because one context said "follow-up" and
+    "urllib3" and the other "273" and "APIs". Empty when nothing says
+    they differ."""
+    mine = (path or "").strip().lstrip("/")
+    theirs = (cand.path or "").strip().lstrip("/")
+    if mine and theirs and mine != "unknown" and theirs != "unknown" and mine != theirs \
+            and not mine.startswith(theirs.rstrip("/") + "/") and not theirs.startswith(mine.rstrip("/") + "/"):
+        # A different file is a different scope when the answer was declared
+        # for its files, or when a question is about its file. A question
+        # about neither is not scoped by the file it happened to be asked
+        # from. Measured live on eb9d22d: "What documentation must ship for a
+        # new Retry feature?" answered from docs/user-guide.rst read as
+        # another scope for the same question asked from changelog/.
+        spec = getattr(cand, "applicability", None) or {}
+        declared = bool(spec.get("paths"))
+        # A signed policy explicitly scoped by facts can be recorded in
+        # one file and prescribe work in another. The destination naming
+        # its own path does not narrow the source's declared scope.
+        fact_scoped = bool(spec.get("requires")) and cand.authorized and applicability_status(cand, path, facts, repo=repo)[0]
+        if declared or _names_file(cand.question, theirs) or (_names_file(question, mine) and not fact_scoped):
+            return f"this one is about {mine}, decision {cand.id} about {theirs}", True
+    facts = {k.lower(): v for k, v in (facts or {}).items()}
+    their_facts = {k.lower(): v for k, v in (their_facts or {}).items()}
+    shared = [k for k in facts if k in their_facts]
+    clash = [k for k in shared if facts[k].strip().lower() != their_facts[k].strip().lower()]
+    if clash:
+        k = clash[0]
+        return f"this one states {k}={facts[k]}, decision {cand.id} states {k}={their_facts[k]}", True
+    if shared:
+        return "", False
+    repo_words = {w for w in re.split(r"[/\s]+", (repo or "").lower()) if w}
+    text_a = f"{question} {context}".lower()
+    text_b = f"{cand.question} {cand.context or ''} {cand.answer or ''}".lower()
+    ents_a = {e for e in _scope_entities(context) - _scope_entities(question)
+              if e not in repo_words and e not in text_b}
+    ents_b = {e for e in _scope_entities(cand.context or "") - _scope_entities(cand.question)
+              if e not in repo_words and e not in text_a}
+    if ents_a and ents_b:
+        return (f"this one names {', '.join(sorted(ents_a)[:3])}, decision {cand.id} names "
+                f"{', '.join(sorted(ents_b)[:3])}"), False
+    return "", False
+
+
+def _names_file(question: str, path: str) -> bool:
+    """Whether a question is about the file it was asked from: it names
+    the path, or the file's own name."""
+    path = (path or "").strip().strip("/").lower()
+    low = (question or "").lower()
+    if not path or path == "unknown":
+        return False
+    base = path.rsplit("/", 1)[-1]
+    return path in low or ("." in base and base in low)
+
+
+def _memory_namespace_difference(store: Graph, task_id: str, source) -> str:
+    """Explain incompatible recorded context for a new answer reuse only.
+
+    Associations are neither supporting premises nor declared rule scope.
+    Compare explicit canonical namespaces; missing context establishes no
+    conflict. Do not attribute a later-added task link to an older answer.
+    """
+    from .context_memory import citation
+
+    def namespaces(task, through=None):
+        rows = store.db.execute('''SELECT record_id,source_version_id,recorded_at
+            FROM task_source_anchors
+            WHERE task_id=? AND role IN ('work_item','context')''', (task,))
+        found = {}
+        for row in rows:
+            if through is not None and iso_to_ts(row['recorded_at']) > through:
+                continue
+            # Native Git -> GitHub aliases retain the backing row's original
+            # identity. Compare the exact version selected by the task, not
+            # that initial identity or a newer head's canonical namespace.
+            pinned = citation(store.db, row['record_id'], row['source_version_id'])
+            if not pinned:
+                continue
+            provider, namespace = pinned['provider'], pinned['namespace']
+            if not provider or not namespace or provider == 'legacy' or namespace == 'legacy':
+                continue
+            found.setdefault(provider, set()).add(namespace)
+        return found
+
+    current = namespaces(task_id)
+    previous = namespaces(source.task_id, source.updated_at)
+    conflicts = sorted(p for p in current.keys() & previous.keys()
+                       if current[p] != previous[p])
+    if not conflicts:
+        return ''
+    here = ', '.join(f'{p}:{n}' for p in conflicts for n in sorted(current[p]))
+    there = ', '.join(f'{p}:{n}' for p in conflicts for n in sorted(previous[p]))
+    return (f'namespace_conflict: this task is linked to {here}; decision {source.id} '
+            f'was associated with {there}')
+
+
+def _open_twin(store: Graph, cfg, client, question: str, emb: list[float], repo: str,
+               exclude: str = "", context: str = "", path: str = "", related: list | None = None,
+               facts: dict | None = None, skip: set | None = None, category: str = "", task_id: str = ""):
+    """An already-open decision this question duplicates, if any. Above 0.80
+    hybrid similarity the twin is deterministic; the 0.45 to 0.80 band gets
+    one same-decision model check when a backend is on. A candidate whose
+    scope differs (other files, other named entities in its context) is
+    never a twin: it lands in `related` instead, as the same question in
+    another scope."""
+    qt = set(_meaningful_terms(question))
+    q_refs = set(_cited_refs(question))
+    scored: list = []
+    for s, cand in store.similar_open(emb, top_k=12, min_score=0.35, repo=repo, query=question):
+        if cand.id == exclude or (skip and cand.id in skip):
+            continue
+        # A question bound to a managed provider call can be a twin like
+        # any other: the answer that settles the canonical decision is
+        # delivered to every call waiting on it or on its duplicates.
+        if q_refs - set(_cited_refs(cand.question)):
+            continue
+        # The same words about another figure ("30 days" / "90 days") are
+        # two decisions, however close.
+        if _numeric_clash(question, cand.question):
+            continue
+        ct = set(_meaningful_terms(cand.question))
+        ov = len(ct & qt) / min(len(ct), len(qt)) if ct and qt else 0.0
+        hybrid = max(s, ov)
+        # Filed under another category, the same words are a twin only
+        # when the model reads them as one decision, never on words alone.
+        if category and cand.category and category.strip().lower() != cand.category.strip().lower():
+            hybrid = min(hybrid, 0.79)
+        # On one canvas every question shares the task's words, so the
+        # shorter question's terms all being in the longer one proves
+        # nothing: the same term set folds on words alone, the rest only
+        # on the model's reading.
+        if task_id and getattr(cand, "task_id", "") == task_id and len(ct & qt) / max(len(ct | qt), 1) < 0.80:
+            hybrid = min(hybrid, 0.79)
+        why, known = (_scope_difference(question, context, path, cand, facts, _facts_of(store, cand.id), repo)
+                      if hybrid >= 0.45 else ("", False))
+        if why:
+            if related is not None:
+                related.append((cand, why, known))
+            continue
+        scored.append((hybrid, cand))
+    scored.sort(key=lambda x: -x[0])
+    if scored and scored[0][0] >= 0.80:
+        return scored[0][1]
+    nears = [cand for h, cand in scored[:2] if h >= 0.45]
+    if cfg is None or client is None or not cfg.deep_retrieval:
+        return None
+    for near in nears:
+        try:
+            verdict = client.complete_json("same_decision", llm_mod.SAME_DECISION_SYSTEM,
+                                           f"Q1: {question}\nQ2: {near.question}")
+            if isinstance(verdict, dict) and verdict.get("same") is True:
+                return near
+        except llm_mod.LLMError:
+            break
+    return None
+
+
+def _close_open_twins(store: Graph, source_id: str, question: str, repo: str,
+                      answer: str, answered_by: str, source: str = "memory",
+                      context: str = "", path: str = "") -> int:
+    """Resolving a question also closes its still-open twins from other
+    runs; only the deterministic 0.80 bar matches, never a model call.
+    The twin takes the answer as evidence derived from the source
+    decision: it still wants its own owner's sign-off, and a correction
+    of the source reaches it."""
+    emb = llm_mod.embed(question)
+    src = store.get_decision(source_id, exact=True) if source_id else None
+    revision = ts_to_iso(src.updated_at) if src is not None and src.updated_at else ""
+    # The answer reaches only questions inside its own scope: the facts it
+    # was given under, and the boundary its answerer declared (required and
+    # excluded facts, paths, expiry). Measured live on eb9d22d: correcting
+    # an answer declared for customer=acme resolved the same question asked
+    # for customer=globex and for an unnamed customer.
+    facts = _facts_of(store, source_id) if source_id else {}
+    # Every boundary on the way here counts: this decision's own, and those
+    # of the answers it was taken from (a question resolved from memory
+    # carries the remembered answer's boundary, not a declaration of its own).
+    bounds, node, seen = [], src, set()
+    while node is not None and node.id not in seen and len(seen) < 5:
+        seen.add(node.id)
+        if node.applicability:
+            bounds.append(node)
+        node = store.get_decision(node.source_id, exact=True) if getattr(node, "source_id", "") else None
+    unfit: set[str] = set()
+    closed = 0
+    while closed < 3:
+        twin = _open_twin(store, None, None, question, emb, repo, exclude=source_id, context=context, path=path,
+                          facts=facts, skip=unfit)
+        if twin is None:
+            break
+        twin_facts = _facts_of(store, twin.id)
+        if any(not applicability_status(spec, twin.path or "", twin_facts, repo=twin.repo)[0] for spec in bounds):
+            unfit.add(twin.id)
+            continue
+        source_decision = store.get_decision(source_id, exact=True)
+        store.publish_evidence(
+            twin.id, [_as_record(source_decision)] if source_decision else [], status="resolved", source=source, answer=answer, answered_by=answered_by,
+            kind="evidence", signoff="required", source_id=source_id, source_revision=revision,
+            evidence=(f"settled by the same answer as decision {source_id} "
+                      f"(\"{_word_trunc(question, 60)}\"); this question was open in an earlier run"
+                      + ("" if source == "human" else "; no human has signed this")))
+        store.add_link(twin.id, source_id, "derived", "took its answer from this decision")
+        store.append_event("twin_closed", {"task_id": twin.task_id, "decision_id": twin.id,
+                                           "settled_by": source_id})
+        closed += 1
+    return closed
+
+
+def close_open_twins(store: Graph, source_id: str, question: str, repo: str,
+                     answer: str, answered_by: str, *, expected_revision: str = "") -> int:
+    """Public entry used by the inbox after a human signs an answer."""
+    # The caller's answer was captured before its commit. A later human
+    # correction may have won before this post-commit work starts; never
+    # publish that old answer with the newer source's revision. This entry
+    # uses only deterministic local retrieval, with no model/provider call.
+    with store.transaction():
+        src = store.get_decision(source_id, exact=True)
+        if (src is None or not src.authorized or src.superseded_by or src.answer != answer
+                or (expected_revision and ts_to_iso(src.updated_at) != expected_revision)):
+            return 0
+        return _close_open_twins(store, source_id, question, repo, answer, answered_by, source="human",
+                                 context=src.context, path=src.path)
+
+
+_RETRO_MACHINERY = {"reason", "given", "decid", "who", "why", "made",
+                    "call", "happen", "motiv", "was", "chose", "choos",
+                    "explain", "stated", "behind"}
+_TIME_MACHINERY = {"today", "currently", "actual", "actually", "effect",
+                   "still", "latest", "already", "since", "reopen", "reopened", "current"}
+_ASK_MACHINERY = _RETRO_MACHINERY | _TIME_MACHINERY | {
+    "whether", "assume", "assumes", "assum", "claim", "claims",
+    "say", "says", "said", "suppose", "supposed", "exact", "exactly",
+    "versus", "inside", "without"}
+
+_MISFIT_RE = re.compile(r"\b(?:which|what)\b[^?]*\b(?:release|version|milestone)\b")
+_FIT_RES = {
+    "rollout": re.compile(r"\b(?:roll ?out|ship|deploy|launch|stag(?:e|ed|ing)|migrat|flag)"),
+    "ux": re.compile(r"\b(?:screen|command|surface|page|ui|button|cli|flow|menu|prompt)"),
+    "compat": re.compile(r"\b(?:behavio|compat|existing|break|legacy|old|current)"),
+}
+
+
+def _canned_misfit(question: str, category: str = "") -> bool:
+    q = question.lower()
+    if _MISFIT_RE.search(q):
+        return True
+    fit = _FIT_RES.get(category)
+    return bool(fit is not None and not fit.search(q))
+
+
+_PATH_RE = re.compile(r"\b[\w.-]+/[\w./-]*\w\.\w{1,4}\b")
+
+
+def _invented_paths(answer: str, *sources: str) -> list[str]:
+    haystack = " ".join(sources).lower()
+    return [p for p in dict.fromkeys(_PATH_RE.findall(answer)) if p.lower() not in haystack]
+
+
+def _record_contradicting(store: Graph, cfg: Config, repo: str, question: str, answer: str):
+    """A settled record that covers this question but says something else."""
+    terms = _meaningful_terms(question)
+    if len(terms) < 3:
+        return None
+    dfs = store.term_dfs(terms, repo=repo)
+    focus = sorted((t for t in terms if dfs.get(t, 0) > 0), key=lambda t: dfs[t])[:3]
+    if len(focus) < 2:
+        return None
+    ans_terms = set(_meaningful_terms(answer))
+    if not ans_terms:
+        return None
+    for m in store.intents_matching(terms, limit=4, repo=repo):
+        text = (m["title"] + " " + m["body"]).lower()
+        if sum(1 for t in focus if t in text) < 2:
+            continue
+        if _disagrees(cfg, question, answer, m):
+            return m
+    return None
+
+
+RECORD_VERDICTS = ("CONFLICT", "STATUS", "AGREE", "UNRELATED")
+
+
+def _record_verdict(cfg: Config, question: str, answer: str, record) -> str:
+    """The model's one-word reading of a record against an answer on file:
+    CONFLICT (the record decides the same question differently), STATUS
+    (it only describes the state of the code or what shipped), AGREE,
+    UNRELATED, or "" when no model is available. The model reads the
+    record's body: a pull request title is a summary, not a claim."""
+    if not cfg.semantic_retrieval:
+        return ""
+    try:
+        verdict = llm_mod.Client(cfg).complete(
+            "conflict", llm_mod.CONFLICT_SYSTEM,
+            f"Question: {question}\n\nAnswer on file: {answer}\n\n"
+            f"Record {record['kind']} {_ref(record)}: {record['title']}\n{_field(record, 'body')[:1500]}",
+            max_tokens=16).strip().upper()
+    except llm_mod.LLMError:
+        return ""
+    return next((w for w in RECORD_VERDICTS if verdict.startswith(w)), "")
+
+
+def _disagrees(cfg: Config, question: str, answer: str, record) -> bool:
+    """Whether the record decides the question differently from the answer.
+    A record that only describes what shipped so far (STATUS) does not."""
+    return _record_verdict(cfg, question, answer, record) == "CONFLICT"
+
+
+# Wording that reports the state of the code or what has shipped, not a
+# rule: "no charge for those yet", "for now", "this month", "currently".
+_STATUS_RE = re.compile(
+    r"\b(?:yet|for now|today|currently|right now|at the moment|this month|so far|in the meantime"
+    r"|as of (?:now|today|this (?:change|pr|release))|not (?:yet )?(?:built|wired|shipped|charged|billed|metered"
+    r"|implemented|enforced)|still (?:free|unbilled|unmetered|open|manual))\b", re.IGNORECASE)
+_CODE_KINDS = frozenset({"pr", "pull", "pull_request", "merge", "commit"})
+_TRAILER_RE = re.compile(r"^\s*(?:reviewed|signed(?:-off)?|co-authored|acked|tested|approved)-by\s*:", re.IGNORECASE)
+
+
+def _is_code_record(row) -> bool:
+    """A pull request, merge or commit: a record of what changed in the
+    code, which may carry a decision in its body but is not one by kind."""
+    return _field(row, "kind").strip().lower() in _CODE_KINDS
+
+
+def _describes_state(row) -> bool:
+    """A pull request or commit whose text reads as the state of the code or
+    what has shipped, not as a rule about how to decide something.
+    Measured on the Parcelwise dry run: PR #220, "assistant answers (no
+    allowance and no charge for those yet)", vetoed Jordan's signed rule on
+    what counts as one use, and the card quoted the PR title as the
+    contrary statement."""
+    return _is_code_record(row) and bool(_STATUS_RE.search(_field(row, "title") + " " + _field(row, "body")))
+
+
+def _record_claim(record, answer: str, limit: int = 200) -> str:
+    """The sentence of a record's body that bears on `answer`: the one
+    sharing the most terms with it, the first when none does, the title
+    when there is no body. Review trailers are not claims. What a card
+    quotes as the record's statement, so it shows the claim, not the
+    pull request title."""
+    lines = [ln for ln in _field(record, "body").splitlines() if ln.strip() and not _TRAILER_RE.match(ln)]
+    body = " ".join(" ".join(lines).split())
+    if not body:
+        return _excerpt(_field(record, "title"), limit, "the record has the rest")
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", body) if s.strip()]
+    terms = set(_meaningful_terms(answer))
+    scored = [(sum(1 for t in _meaningful_terms(s) if t in terms), -i, s) for i, s in enumerate(sentences)]
+    best = max(scored)[2]
+    return _excerpt(best, limit, "the record has the rest")
+
+
+def _contests_rule(rule, record) -> bool:
+    """Whether a settled record may contest a signed standing rule, once the
+    model has read the two as disagreeing. Different figures always do.
+    Otherwise only a decision record newer than the rule's signature does:
+    its owner signed the rule with everything older in view, and a pull
+    request or commit that describes the state of the code or what shipped
+    never does, whatever words it shares with the rule. A newer ADR, a
+    settled ticket or a pull request whose body states a different rule
+    still contests it."""
+    if _numeric_clash(rule.answer or "", _row_text(record)):
+        return True
+    if not _is_settled(record):
+        return False
+    if _parse_ts(_field(record, "created_at")) <= float(rule.updated_at or 0):
+        return False
+    return not _describes_state(record)
+
+
+def _covers_note(rule, record) -> str:
+    """The note a settled rule carries for a record that covers the same
+    ground without contesting it."""
+    clash = f"{record['kind']} {_ref(record)}{_ticket_state(record)}"
+    why = ("it describes what has shipped, not a different rule" if _describes_state(record)
+           else "the rule is the newer call")
+    return f"{clash} covers this too: \"{_record_claim(record, rule.answer or '', 160)}\"; {why}"
+
+
+def _clauses(body: str) -> list[str]:
+    """A text as the clauses a reader weighs one by one: sentences, the
+    parts of a semicolon list, and what follows a contrasting comma."""
+    return [c.strip() for c in re.split(r"(?<=[.!?])\s+|;\s*|,\s*(?:but|however|although|while)\s+", body) if c.strip()]
+
+
+def _is_pure_refusal(text: str) -> bool:
+    """Whether a composed text only says what the sources do not say:
+    every clause states a gap, or the first does and nothing is decided."""
+    body = text.strip()
+    if not _states_a_gap(body):
+        return False
+    clauses = _clauses(body)
+    if clauses and all(_GAP_RE.search(c.lower()) for c in clauses):
+        return True
+    first = body.split(".")[0].lower()
+    return bool(_GAP_RE.search(first)) and not _DECIDED_RE.search(body.lower())
+
+
+# A text that says the call is still open, or only who makes it, is not an
+# answer, however it is phrased. Measured on the Parcelwise dry run (Nov 2):
+# "Priya owns deciding the free monthly allowance and rate for assistant
+# metering before it goes live" (the model's reading of a Slack line,
+# "Priya owns pricing for Q4, number not decided") and Priya's own "I still
+# need to land the rate and whether there's a free monthly allowance" were
+# served on For you as "Raven would apply this, but isn't sure: your call"
+# with a "Use this answer" button, while Being built said nothing on record
+# settles it. The strong phrases stand on their own; the weak ones, and a
+# clause that only names a known person as the decider, count only when the
+# clause carries no figure, so "$0.04 per answer, confirmed before it goes
+# live" is still an answer.
+_OPEN_RE = re.compile(
+    r"\bowns? (?:deciding|the (?:call|decision|number|rate|allowance|price|figure|choice)|this (?:call|decision|one))\b"
+    r"|(?:\bnot|\bnever|n't)\s+(?:yet\s+|been\s+|formally\s+|finally\s+|fully\s+)*"
+    r"(?:decided|landed|agreed(?: on)?|finali[sz]ed|nailed down|pinned down|worked out)\b"
+    r"|\bundecided\b|\btbd\b|\btbc\b"
+    r"|\bstill (?:needs?|has|have|had) to (?:land|decide|pick|choose|settle|set|work out|figure out|nail down|pin down"
+    r"|confirm|sign off(?: on)?)\b"
+    r"|\b(?:still |yet )?to be (?:decided|landed|agreed(?: on)?|finali[sz]ed|worked out|nailed down|pinned down|confirmed"
+    r"|determined(?! by))\b"
+    r"|\bwill (?:write up|circulate|propose|come back with|get back (?:to|with)|follow up (?:on|with))\b"
+    r"|\bwrites? up (?:the )?options\b"
+    r"|\bnothing (?:is|has been|was) (?:set|decided|agreed|landed|fixed|on record|recorded|written down)\b"
+    r"|\bno (?:\w+ ){0,2}(?:rate|number|figure|price|allowance|date|value|cutoff|threshold|list) (?:is|has been|was) "
+    r"(?:recorded|set|decided|agreed|landed|on record|given|named)\b"
+    r"|\bno (?:\w+ ){0,2}(?:rate|number|figure|price|allowance|date|value|cutoff|threshold|list) on record\b"
+    r"|\bopen question\b|\b(?:is|are|remains?|stays?) still open\b|\bremains? open\b")
+_OPEN_WEAK_RE = re.compile(
+    r"\bbefore (?:it|this|that|we|anything|the \w+) (?:goes|go|is|starts?) (?:live|counting|charging|shipping)\b"
+    r"|\bowns? (?:\w+ ){0,2}(?:pricing|billing|the (?:rate|number|allowance|price|figure|list|cutoff|date))\b"
+    r"|\bwill (?:decide|land|pick|choose|settle)\b"
+    r"|\bis (?:still )?(?:deciding|working (?:it|this|that )?out|landing|on it)\b"
+    r"|\b(?:needs?|has|have) to (?:land|decide|pick|choose|work out|figure out|nail down|pin down)\b")
+# Who decides, said of a named person: "Priya decides the allowance".
+_DECIDER_RE = re.compile(
+    r"\b(?:owns?|decides?|gets? to decide|is deciding|will decide|has to decide|needs? to decide|signs? off(?: on)?"
+    r"|makes? (?:the|that|this) call|is (?:still )?(?:landing|working (?:it|this|that) out|on it)"
+    r"|is (?:the )?(?:one|person) (?:who|to) (?:decides?|lands?|picks?))\b|'s call\b")
+# A figure or amount: a clause that states one is saying something.
+_FIGURE_RE = re.compile(
+    r"\d|[$€£%¢]|\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty"
+    r"|forty|fifty|sixty|ninety|hundred|thousand)\s+(?:cents?|dollars?|percent|per|each|days?|hours?|minutes?|weeks?"
+    r"|months?|years?|answers?|uses?|events?)\b")
+_WHO_Q_RE = re.compile(r"\bwho(?:m|se|'s)?\b")
+
+
+def _names_a_decider(clause: str, people) -> bool:
+    """The clause names one of `people` (full name or first name) as the
+    one who decides, and nothing else."""
+    if not _DECIDER_RE.search(clause):
+        return False
+    for name in people:
+        name = " ".join(str(name or "").split()).lower()
+        if not name:
+            continue
+        first = name.split()[0]
+        if re.search(rf"\b{re.escape(name)}\b", clause) or (len(first) > 2 and re.search(rf"\b{re.escape(first)}\b", clause)):
+            return True
+    return False
+
+
+def _states_no_answer(text: str, people=(), question: str = "") -> bool:
+    """Whether a candidate answer only says the call is still open, or only
+    names who makes it: every clause states a gap, says the value is not
+    decided or still to be landed, or (with no figure in it) names one of
+    `people` as the decider. Such a text is context for the open call,
+    never a prediction, a proposal or an answer. Conservative: one clause
+    that says anything else, or the question asking who decides, and the
+    text is taken as an answer."""
+    body = " ".join(str(text or "").split())
+    if not body or _WHO_Q_RE.search((question or "").lower()):
+        return False
+    clauses = _clauses(body)
+    if not clauses:
+        return False
+    for clause in clauses:
+        low = clause.lower()
+        if _GAP_RE.search(low) or _OPEN_RE.search(low):
+            continue
+        if _FIGURE_RE.search(low):
+            return False
+        if _OPEN_WEAK_RE.search(low) or _names_a_decider(low, people):
+            continue
+        return False
+    return True
+
+
+def _known_people(store) -> list[str]:
+    """The names Raven knows, for the decider reading; [] when the store
+    has no people table to read."""
+    try:
+        return [p["name"] for p in store.people(active_only=False)]
+    except Exception:
+        return []
+
+
+def _cited_prose(cited: str) -> str:
+    """'pr 220 and slack founders' from the ladder's citation list ('pr 220;
+    slack founders; left out, not adopted: ...')."""
+    parts = [c.strip() for c in (cited or "").split(";") if c.strip() and not c.strip().startswith("left out")]
+    parts = [re.sub(r":\s.*$", "", p) for p in parts]
+    if not parts:
+        return "the records"
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
+def _open_note(cited: str, text: str) -> str:
+    """Raven's note beside an open call, shown as "Raven could not find
+    ...": what the sources that spoke of it said instead of an answer."""
+    says = "say" if ";" in (cited or "").split("left out")[0] else "says"
+    return (f"a settled value: {_cited_prose(cited)} {says} only that the call is still open "
+            f"(“{_word_trunc(text, 160)}”)")
+
+
+def _superseded_by_newer(store: Graph, repo: str, chosen) -> object | None:
+    """Return a newer record that revokes `chosen`, or None."""
+    try:
+        chosen_ref, chosen_ts = chosen["ref"], _parse_ts(chosen["created_at"])
+    except (IndexError, KeyError, TypeError):
+        return None
+    focus = _meaningful_terms(chosen["title"])
+    if len(focus) < 2:
+        return None
+    best, best_ts = None, chosen_ts
+    for m in store.intents_matching(focus, limit=8, repo=repo):
+        if m["ref"] == chosen_ref or not _is_settled(m):
+            continue
+        ts = _parse_ts(m["created_at"])
+        if ts <= best_ts:
+            continue
+        text = (m["title"] + " " + m["body"]).lower()
+        if sum(1 for t in focus if t in text) < 2:
+            continue
+        if not _REVERSAL_RE.search(text):
+            continue
+        best, best_ts = m, ts
+    return best
+
+
+def _contested_by_newer(store: Graph, repo: str, chosen) -> object | None:
+    """Return the newest OPEN or symptom ticket that contests `chosen`."""
+    try:
+        chosen_ref, chosen_ts = chosen["ref"], _parse_ts(chosen["created_at"])
+    except (IndexError, KeyError, TypeError):
+        return None
+    focus = _meaningful_terms(chosen["title"])
+    if len(focus) < 2:
+        return None
+    best, best_ts = None, chosen_ts
+    for m in store.intents_matching(focus, limit=8, repo=repo):
+        # A cancelled ticket on the same subject contests nothing.
+        if m["ref"] == chosen_ref or m["kind"] not in ("ticket", "jira", "issue") or _void(m):
+            continue
+        ts = _parse_ts(m["created_at"])
+        if ts <= best_ts:
+            continue
+        text = (m["title"] + " " + m["body"]).lower()
+        if sum(1 for t in focus if t in text) < 2:
+            continue
+        if not (_non_decision(text) or not _is_settled(m)):
+            continue
+        best, best_ts = m, ts
+    return best
+
+
+_VOID_RE = re.compile(
+    r"\b(?:cancel+ed|won'?t (?:do|fix|implement)|wont ?(?:do|fix)|rejected|declined|obsolete|superseded"
+    r"|withdrawn|abandoned|duplicate|invalid|not (?:planned|doing|adopted)|dropped|discarded|deprecated|retired)\b",
+    re.IGNORECASE)
+_VOID_TITLE_RE = re.compile(
+    r"^\s*[\[(]?\s*(?:obsolete|superseded|cancel+ed|withdrawn|deprecated|rejected|historical)\b", re.IGNORECASE)
+_VOID_BODY_RE = re.compile(
+    r"^\s*resolution\s*:\s*(?P<r>[^\n]{1,40})$|\b(?P<s>superseded|replaced|obsoleted) by\b",
+    re.IGNORECASE | re.MULTILINE)
+
+
+def _field(row, key: str) -> str:
+    try:
+        return str(row[key] or "")
+    except (IndexError, KeyError):
+        return ""
+
+
+def _ref(row) -> str:
+    return _field(row, 'display_ref') or _field(row, 'ref')
+
+
+def _evidence_role(row, role):
+    return {**dict(row), '_evidence_role': role}
+
+
+def _void(row) -> str:
+    """Why a record states something that was not adopted, or empty: its
+    status (cancelled, won't do, rejected, obsolete, superseded), a title
+    that says so ("[OBSOLETE] ..."), or a Jira resolution line or a
+    "superseded by" in its opening. A record like that is history: what
+    was once proposed or once held, never what stands. Measured live: a
+    composed answer read a cancelled Jira proposal as the current policy."""
+    status = _field(row, "status").strip()
+    if status and _VOID_RE.search(status):
+        return status
+    title = _field(row, "title")
+    marker = _VOID_TITLE_RE.match(title)
+    if marker:
+        return marker.group(0).strip(" [(").lower()
+    for m in _VOID_BODY_RE.finditer(_field(row, "body")[:600]):
+        if m.group("s"):
+            return f"{m.group('s').lower()} by a later record"
+        if _VOID_RE.search(m.group("r") or ""):
+            return m.group("r").strip()
+    return ""
+
+
+# A record a question or its context names by its key: a tracker key
+# (NET-102) or a pull request number (#1234).
+_RECORD_KEY_RE = re.compile(r"(?<![\w/-])([A-Z][A-Z0-9]{1,9}-\d{1,7})\b|(?<![\w&])#(\d{1,7})\b")
+
+
+def named_records(graph: Graph, repo: str, *texts: str) -> list[dict]:
+    """The records Raven holds that these texts name by key, each with
+    its status as the record gives it and, for one that was never adopted
+    (cancelled, rejected, superseded), why it is history. Stated in the
+    owner's message as facts rather than left to a brief or the evidence.
+    Measured live on 63eb671: a question asked "as proposed in NET-102",
+    and nothing in the message said NET-102 was cancelled."""
+    keys: list[str] = []
+    for text in texts:
+        for m in _RECORD_KEY_RE.finditer(text or ""):
+            key = m.group(1) or m.group(2)
+            if key not in keys:
+                keys.append(key)
+    if not keys:
+        return []
+    from .store import repo_key
+    scope = graph.resolve_repo(repo_key(repo)) if repo else ""
+    out: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for row in graph.intents_by_ref(keys[:8], scope):
+        kind, ref = _field(row, "kind"), _ref(row)
+        if (kind, ref) in seen or kind in ("commit", "review"):
+            continue
+        seen.add((kind, ref))
+        out.append({"ref": ref if not ref.isdigit() else f"#{ref}", "kind": kind,
+                    "status": _field(row, "status").strip(), "title": _field(row, "title").strip(),
+                    "void": _void(row)})
+    order = {k if not k.isdigit() else f"#{k}": i for i, k in enumerate(keys)}
+    return sorted(out, key=lambda r: order.get(r["ref"], 99))[:4]
+
+
+def records_line(records: list[dict]) -> str:
+    """The named records as one line for a person: key, status, title,
+    and whether it is history."""
+    parts = []
+    for r in records:
+        head = r["ref"] + (f" [{r['status']}]" if r.get("status") else "")
+        title = f" \u201c{r['title']}\u201d" if r.get("title") else ""
+        void = r.get("void") or ""
+        tail = ((": not in force" + (f" ({void})" if void.lower() != (r.get("status") or "").lower() else "")
+                 + ", so it is history, not current policy") if void else "")
+        parts.append(head + title + tail)
+    return "; ".join(parts)
+
+
+def _is_settled(row) -> bool:
+    """Eligible settled evidence, for every source kind; never approval.
+
+    Explicit false and nonterminal/unknown states override optimistic defaults.
+    """
+    from .record_state import resolved_value, state_settled
+    if _void(row) or not state_settled(_field(row, "status")):
+        return False
+    try:
+        return resolved_value(row["resolved"])
+    except (IndexError, KeyError):
+        return True
+    except ValueError:
+        return False
+
+
+def _ticket_state(row) -> str:
+    """A record's status as the reader should see it, for any kind: a
+    Jira issue posted as kind "jira" has a status too."""
+    status = _field(row, "status").strip()
+    return f" [{status}]" if status else ""
+
+
+def _non_decision(text: str) -> bool:
+    return bool(_UNRESOLVED_RE.search(text)) and not _DECIDED_RE.search(text)
+
+
+def _parse_ts(created_at) -> float:
+    return iso_to_ts(created_at)
+
+
+def _norm_name(name: str) -> str:
+    return (name or "").strip().lstrip("@").split()[0].lower() if (name or "").strip() else ""
+
+
+def _memory_body(item) -> str:
+    """What a memory item establishes: its answer plus the recorded
+    rationale, which is where the why of a signed decision lives."""
+    body = item.answer or ""
+    if item.rationale:
+        body += f"\nRationale: {item.rationale}"
+    return body
+
+
+def _as_record(item) -> dict:
+    """A memory decision viewed as a record, for joint composition: kind
+    'decision', its id as the reference, the signer as author."""
+    return {"kind": "decision", "ref": item.id, "title": item.question,
+            "decision_source_id": item.id, "decision_source_revision": ts_to_iso(item.updated_at),
+            "body": _memory_body(item), "author": item.answered_by or "",
+            "created_at": ts_to_iso(item.updated_at) if item.updated_at else "",
+            "status": "", "resolved": 1}
+
+
+def _current_grant(store: Graph, item, question: str, context: str, path: str,
+                   facts: dict | None, repo: str) -> tuple[bool, str]:
+    """Current grant eligibility, separate from relevance and answerability.
+
+    Reuse the existing conditions, scope and opaque source-review guards;
+    historical facts only compare scope and never supply current facts.
+    """
+    eligible, reason = rule_status(item, question, context, facts=facts, repo=repo)
+    if not eligible:
+        return False, reason or "no current authorized standing grant"
+    applies, reason = applicability_status(item, path, facts, repo=repo)
+    if not applies:
+        return False, reason
+    if item.rule_scope != "any":
+        other, _ = _scope_difference(question, context, path, item, facts, _facts_of(store, item.id), repo)
+        if other:
+            return False, f"the standing grant is limited to its own scope: {other}"
+    from .context_connectors import blocked_decisions
+    if item.id in blocked_decisions(store.db, repo):
+        return False, "standing grant source requires a successful observation refresh"
+    reason = store.source_review_reason(item.id)
+    return (False, reason) if reason else (True, "current grant conditions, scope and source checks pass")
+
+
+def _same_answer_grant(store: Graph, picked, candidates: list, question: str, context: str,
+                       path: str, facts: dict | None, repo: str):
+    """Keep eligible authority for the selected answer among relevant matches.
+
+    This never arbitrates differing answers or promotes an unrelated rule.
+    Call before entailment, so changing the source cannot skip that gate.
+    """
+    if guess_category(question) == "data-source" or _current_grant(
+            store, picked, question, context, path, facts, repo)[0]:
+        return picked
+    terms = set(_meaningful_terms(picked.question))
+    for eff, _sim, candidate in candidates:
+        if eff < NEAR_MEMORY_MIN or candidate.id == picked.id or candidate.answer != picked.answer:
+            continue
+        other_terms = set(_meaningful_terms(candidate.question))
+        if not terms or not other_terms or len(terms & other_terms) / min(len(terms), len(other_terms)) < 0.7:
+            continue
+        if _current_grant(store, candidate, question, context, path, facts, repo)[0]:
+            return candidate
+    return picked
+
+
+def _selector_pick(cfg: Config, question: str, cands: dict[str, tuple[str, object]], *,
+                   store: Graph | None = None, context: str = "", path: str = "",
+                   facts: dict | None = None, repo: str = ""):
+    """One selector call over labeled candidates. Returns the picked
+    (kind, item) or None; the model only ever selects from what it is
+    shown."""
+    import time as _time
+    if not cands:
+        return None
+    lines = []
+    for key, (kind, item) in cands.items():
+        if kind == "memory":
+            age = int(max(0, (_time.time() - item.updated_at) / 86400))
+            if item.status == "approved" or item.signoff == "signed":
+                label = f"signed answer, {age}d old, by {item.signed_by or item.answered_by or 'a person'}"
+            elif item.signoff == "rule":
+                label = f"rule-authorized answer, {age}d old; no personal signoff on this answer"
+            else:
+                label = f"earlier resolution from {item.source or 'a record'}, {age}d old, unsigned"
+            applies, applicability_why = applicability_status(item, path, facts, repo=repo)
+            grant, grant_why = (_current_grant(store, item, question, context, path, facts, repo)
+                                if store is not None else (False, "current source and scope checks not performed"))
+            lines.append(f"{key} [{label}; origin={item.source}; authorized={item.authorized}] "
+                         f"Q: {item.question} A: {_memory_body(item)[:400]}\n"
+                         f"  Applicability: {applies}; {applicability_why}\n"
+                         f"  Standing grant: declared={item.reusable}; by={item.rule_by or 'none'}; "
+                         f"scope={item.rule_scope or 'same'}; conditions={item.rule_conditions or 'none'}; "
+                         f"expires={item.rule_expires or 'none'}\n"
+                         f"  Current grant eligible={grant}: {grant_why}")
+        else:
+            text = (item["title"] + " " + item["body"]).lower()
+            void = _void(item)
+            if void:
+                status = f" [{void}, NOT ADOPTED: history of what was proposed or once held, not a decision]"
+            elif not _is_settled(item):
+                status = f" [{item['status'] or 'not done'}, STILL OPEN: this records a question, not a decision]"
+            elif item["kind"] == "ticket" and _non_decision(text):
+                status = " [status only]"
+            else:
+                status = _ticket_state(item)
+            by = item["author"] or "unknown"
+            lines.append(f"{key} [{item['kind']} {_ref(item)}, {item['created_at'] or 'undated'}, "
+                         f"by/assignee {by}]{status} {item['title']}: {item['body'][:300]}")
+    try:
+        raw = llm_mod.Client(cfg).complete_json(
+            "select", llm_mod.SELECTOR_SYSTEM,
+            f"Question: {question}\nCurrent repository: {repo or 'unknown'}\nCurrent path: {path or 'unknown'}\n"
+            + _given(context, facts) + "\n\nCandidates:\n" + "\n".join(lines))
+    except llm_mod.LLMError:
+        return None
+    if not isinstance(raw, dict):
+        return None
+    return cands.get(str(raw.get("pick", "none")).strip().lower())
+
+
+# The longest composed answer Raven will store. Composition is asked for
+# one or two sentences (two to four across records); past these it is not
+# an answer to sign, and it is never cut to fit.
+COMPOSED_MAX = 1500
+COMPOSED_JOINT_MAX = 2400
+
+
+# A statement or open point about where the source came from rather than
+# what it decided. Measured live on 63eb671: "Is record 5a1dba95d9eb a real
+# reference or assumed" made a correct reuse of a signed rule partial.
+_PROVENANCE_Q_RE = re.compile(r"\b(?:source|record|reference|citation|decision|ticket|author)\b[^.?]{0,80}\b(?:real|"
+                              r"exist|genuine|assumed|authentic|from (?:another|which|whom)|written by|wrote|"
+                              r"signed by|came from)\b|^(?:what|which|who) is the (?:source|author)\b|"
+                              r"^(?:this|the) (?:rule|answer|policy|decision) (?:comes|came|is) from\b", re.IGNORECASE)
+_SAYS_MISSING_RE = re.compile(r"\b(?:is|are) not (?:stated|established|specified|said|covered)\b|"
+                              r"\bdoes not (?:establish|state|say|specify)\b|\bdo not (?:establish|state|say)\b",
+                              re.IGNORECASE)
+
+
+# Words that carry no concrete detail of their own in a prediction.
+_PLAIN_WORDS = {"use", "uses", "using", "apply", "applies", "applied", "follow", "follows", "following", "followed",
+                "choose", "chose", "chosen", "same", "keep", "keeps", "set", "make", "makes", "also", "like", "per",
+                "pattern", "earlier", "answer", "answers", "decision", "decisions", "prior", "previous", "likely",
+                "probably", "would", "should", "could", "consistent", "consistently", "similar", "similarly", "here",
+                "case", "cases", "new", "this", "that", "these", "those", "their", "them", "they", "with", "from",
+                "for", "and", "the", "its", "was", "were", "has", "have", "had", "been", "into", "onto", "over",
+                "under", "both", "each", "every", "all", "any", "only", "just", "too", "than", "then", "there"}
+
+
+def _novel_words(claim: str, *texts: str) -> list[str]:
+    """The words of a claim that none of the texts contain, stemmed, less
+    the ones that carry no concrete detail."""
+    token = r"[a-z0-9_]+(?:\.[a-z0-9_]+)*"
+    have = {llm_mod.stem(w) for t in texts for w in re.findall(token, (t or "").lower())}
+    return [w for w in re.findall(token, (claim or "").lower())
+            if len(w) > 2 and w not in _PLAIN_WORDS and llm_mod.stem(w) not in have]
+
+
+def _given(context: str = "", facts: dict | None = None, also: str = "") -> str:
+    """What the question's own context and stated facts establish, for the
+    support check: an answer may rely on them."""
+    parts = []
+    if (context or "").strip():
+        parts.append("Context: " + " ".join(context.split())[:1500])
+    if facts:
+        parts.append("Stated facts: " + ", ".join(f"{k}={v}" for k, v in sorted(facts.items())))
+    if also:
+        parts.append(also)
+    return "\n".join(parts)
+
+
+def _supported(cfg: Config, question: str, source: str, text: str, what: str = "the record",
+               given: str = "", prediction: bool = False) -> str | None:
+    """The composed answer with what its source does not establish split
+    out and named, so it reads as answered in part; None when the source
+    supports none of it; the text unchanged when the check cannot run.
+    What the question, its context and stated facts say, and who wrote
+    the source, are given: measured live on 63eb671, a question that
+    called timeout_slack a numeric option got an answer saying that was
+    not established, and a signed rule's reuse asked whether the decision
+    it came from was real."""
+    if not cfg.semantic_retrieval or not (text or "").strip():
+        return text
+    checked = llm_mod.check_support(cfg, question, source, text, given, prediction=prediction)
+    if checked is None:
+        return text
+    inferred = [str(c.get("claim") or "").strip() for c in checked["claims"]
+                if isinstance(c, dict) and str(c.get("support") or "").strip().lower() == "inferred"]
+    inferred = [c for c in inferred if c]
+    if prediction and inferred and not _novel_words(text, source, question, given):
+        # A prediction made only of what their answers, the question and the
+        # given already contain carries their pattern over and invents
+        # nothing. Measured live: "Use retry_normal_total" for enterprise
+        # customers, from their answer for normal customers, was sometimes
+        # called invented. One that brings in a new word keeps the verdicts.
+        inferred = []
+    # One open point per statement taken out, and only those; when the
+    # model wrote more or fewer, the statements themselves are named.
+    # Measured live on 63eb671: a who-and-why answer came back with two new
+    # questions about motives nobody asked. Provenance is never open.
+    open_points = [" ".join(str(x).split()).rstrip("?.") for x in (checked.get("open") or []) if str(x).strip()]
+    if len(open_points) == len(inferred):
+        pairs = [(c, o) for c, o in zip(inferred, open_points)
+                 if not (_PROVENANCE_Q_RE.search(c) or _PROVENANCE_Q_RE.search(o))]
+    else:
+        pairs = [(c, c.rstrip(".")) for c in inferred if not _PROVENANCE_Q_RE.search(c)]
+    if not pairs:
+        return text
+    kept = " ".join(str(checked.get("answer") or "").split())
+    # What the source leaves open is named once, below: a statement of what
+    # is missing the check wrote itself is not kept, the answer's own are.
+    original = " ".join((text or "").split()).lower()
+    kept = " ".join(x for x in re.split(r"(?<=[.!?])\s+", kept)
+                    if x and (not _SAYS_MISSING_RE.search(x) or x.lower().rstrip(".") in original))
+    if not kept or llm_mod.looks_meta(kept):
+        return None
+    named = [o for _, o in pairs]
+    verb = "do not" if what.endswith("s") else "does not"
+    return f"{kept.rstrip()} {what[0].upper() + what[1:]} {verb} establish: {'; '.join(named[:4])}."
+
+
+def _compose_answer(cfg: Config, question: str, citation: str, body: str, author: str = "",
+                    given: str = "") -> str | None:
+    """Grounded composition. None when the composer reports the record
+    does not answer. Without a backend, retrieval alone cannot establish
+    that a record body answers the question, so it remains context."""
+    if not cfg.semantic_retrieval:
+        return None
+    try:
+        text = llm_mod.Client(cfg).complete(
+            "compose", llm_mod.COMPOSER_SYSTEM,
+            f"Question: {question}\n\nRecord ({citation}, author/assignee: {author or 'unknown'}):\n{body}").strip()
+        # A refusal, not an answer that says what it leaves open. Measured
+        # live on 63eb671: any answer containing "the records do not" was
+        # thrown away, and a supported partial answer with it.
+        if "RECORD DOES NOT ANSWER" in text or "RECORDS DO NOT ANSWER" in text or _is_pure_refusal(text):
+            return None
+        if not text or llm_mod.looks_meta(text):
+            return None
+        # Whole or not at all. Measured live: answers were cut at 700
+        # characters, mid-sentence, and stored as the answer; a cut can drop
+        # the very condition that makes an answer right. One that runs this
+        # long has stopped being the one or two sentences asked for.
+        if len(text) > COMPOSED_MAX:
+            return None
+        return _supported(cfg, question, f"({citation}, author/assignee: {author or 'unknown'})\n{body}", text,
+                          "the earlier answer" if citation.startswith("earlier answer") else "the record", given)
+    except llm_mod.LLMError:
+        return None
+
+
+ASSUME_GAP = "NO PATTERN"
+
+_GAP_ASSUME_RE = re.compile(
+    r"no assumption|cannot be (?:derived|inferred)|can't be (?:derived"
+    r"|inferred)|does(?:n't| not) set a pattern|(?:cannot|can't) infer|assumption gap")
+
+
+def _compose_assumption(cfg: Config, question: str, citation: str, body: str) -> str:
+    if not cfg.semantic_retrieval:
+        return ""
+    try:
+        text = llm_mod.Client(cfg).complete(
+            "assume", llm_mod.ASSUME_COMPOSER_SYSTEM,
+            f"Question: {question}\n\nPrecedent ({citation}):\n{body}").strip()
+        if text.upper().startswith(ASSUME_GAP) or _GAP_ASSUME_RE.search(text.lower()):
+            return ASSUME_GAP
+        if not text or llm_mod.looks_meta(text) or len(text) > 420:
+            return ""
+        return text
+    except llm_mod.LLMError:
+        return ""
+
+
+_OWNERSHIP_Q_RE = re.compile(
+    r"\b(?:blame|code ?owners?)\b[^?]*\b(?:share|percent|%|largest|hold"
+    r"|holds|split|belong)|\b(?:share|percent|%|largest|holds?|split)"
+    r"\b[^?]*\b(?:blame|code ?owners?)\b")
+_OWNERSHIP_PROPOSAL_RE = re.compile(r"\bshould\b|\bupdat|\bchang|\badd(?:ing)?\b|\bremov|\brewrit")
+_OWNERSHIP_STATUS_RE = re.compile(
+    r"\bticket|assign|closed|sign(?:ed)? ?off|reviewer|open ticket|status|fix|nuisance|whose call\b")
+_ROUTING_Q_RE = re.compile(
+    r"\bwho(?:m|se)?\b[^?]*\bshould\b[^?]*\b(?:route|own|owns|decide|"
+    r"decides|approve|approves|sign|signs|handle|handles|escalat)"
+    r"|\bshould\b[^?]*\broute\b[^?]*\bto\b|\bwhose\s+call\b|\bwho\s+should\s+(?:raven|raven)\b")
+_ACCOUNTABILITY_Q_RE = re.compile(
+    r"\bwho(?:'?s| is| are| holds?| has)\b[^?]*\b(?:accountable|responsib|the call|on the hook)"
+    r"|\bwhose\b[^?]*\b(?:call|responsib|accountab)"
+    r"|\bwho\b[^?]*\bowns\b"
+    # The present tense of the same question, which is how an agent
+    # usually puts it. The past tense ("who decided", "who approved") is
+    # retrospective and belongs to the decision it asks about, so only
+    # the present forms are here.
+    r"|\bwho\b[^?]*\b(?:decides|approves|signs?\s+off|has\s+the\s+final\s+say)\b"
+    r"|\bwho\b[^?]*\b(?:do|should)\s+(?:i|we)\s+(?:ask|talk\s+to|check\s+with)\b"
+    r"|\bwho\s+to\s+ask\b"
+    r"|\baccountable\s+(?:owner|human|person|party|engineer)\b"
+    r"|\bwho\b[^?]*\b(?:most active|go-?to|primary|lead)\s+reviewer\b"
+    r"|\bwho\b[^?]*\breviews\s+(?:the\s+)?(?:most|these)\b"
+    r"|\bcan\b[^?]*\bapprove\b[^?]*\balone\b")
+_STATUS_CLAUSE_RE = re.compile(
+    r"\bhas\b[^?]*\bbeen\b|\bhave\b[^?]*\bbeen\b|\bcleaned up\b"
+    r"|\bis it (?:done|complete|resolved|closed|fixed|ready)\b"
+    r"|\b(?:been )?completed?\b|\bshipped\b|\brolled out\b"
+    r"|\bsigned off yet\b|\bstill open\b|\bclosed yet\b")
+
+
+def _ownership_answer(store: Graph, repo: str, question: str) -> str:
+    qlow = question.lower()
+    qterms = {llm_mod.stem(t) for t in re.findall(r"[a-z0-9]+", qlow) if len(t) > 2}
+    all_rows = list(store.db.execute("SELECT * FROM ownership WHERE repo=? AND valid_to IS NULL", (repo,)))
+    if not all_rows:
+        return ""
+
+    def _p_tokens(prefix: str) -> list[str]:
+        return [llm_mod.stem(t) for t in re.split(r"[/_.\-]", prefix.lower()) if len(t) > 2]
+
+    named = [r for r in all_rows if r["path_prefix"] not in ("", "*")
+             and (r["path_prefix"].strip("/").lower() in qlow
+                  or any(t in qterms for t in _p_tokens(r["path_prefix"])))]
+    verbatim = [r for r in named if r["path_prefix"].strip("/").lower() in qlow]
+    rows = verbatim or named
+    if not rows:
+        return ""
+    rows.sort(key=lambda r: -(r["weight"] or 0))
+    parts, seen = [], set()
+    for r in rows[:12]:
+        key = (r["engineer"], r["source"], r["path_prefix"])
+        if key in seen:
+            continue
+        seen.add(key)
+        where = r["path_prefix"] or "repo-wide"
+        if r["source"] == "blame":
+            parts.append(f"{r['engineer']}: {round((r['weight'] or 0) * 100)}% blame under {where}")
+        elif r["source"] == "blame_recent":
+            parts.append(f"{r['engineer']}: {round((r['weight'] or 0) * 100)}% recent blame under {where}")
+        elif r["source"] == "codeowners":
+            parts.append(f"{r['engineer']}: CODEOWNERS-listed for {where}")
+        elif r["source"] == "review":
+            parts.append(f"{r['engineer']}: {round((r['weight'] or 0) * 100)}% of reviews")
+        elif r["source"] == "user":
+            parts.append(f"{r['engineer']}: recorded owner for {where} (told to Raven directly)")
+    if not parts:
+        return ""
+    scope = rows[0]["path_prefix"] or "the repo"
+    return f"From the indexed ownership graph for {scope}: " + "; ".join(parts[:8]) + "."
+
+
+_FOLLOWUP_REF_RE = re.compile(
+    r"\byour (?:first |previous |earlier |own |latest )?answer"
+    r"|\byou (?:just |previously |earlier )?(?:said|cited|answered|claimed|stated|recommended|gave|named)"
+    r"|\bthe answer (?:above|you|raven|raven)|\b(?:raven|raven)(?:'s)? (?:answer|claim)"
+    r"|\b(?:that|this|the) same\b|\bthe above\b|\bif so\b|\bgiven (?:that|this|your)\b"
+    r"|\b(?:does|is|was|would|will) (?:that|it|this)\b"
+    r"|\bwhat if\b|\binstead\b|\bthat (?:pause|rule|change|policy|decision|exception|ceiling|cap)\b"
+    r"|\bsame (?:customer|rule|rounding)\b|\bstill in effect\b")
+
+
+def _contextualize(cfg: Config, question: str, recent: list) -> str:
+    if not recent:
+        return ""
+    ctx = "\n".join(f"- Q: {p.question[:200]} A: {(p.answer or '')[:300]}" for p in recent)
+    try:
+        raw = llm_mod.Client(cfg).complete_json(
+            "followup", llm_mod.FOLLOWUP_CONTEXT_SYSTEM,
+            f"Raven's recent answers, newest first:\n{ctx}\n\nNew question: {question}")
+    except llm_mod.LLMError:
+        return ""
+    if not isinstance(raw, dict) or not raw.get("needs_context"):
+        return ""
+    rewritten = str(raw.get("question", "")).strip()
+    if (not rewritten or rewritten == question or len(rewritten) > 600 or llm_mod.looks_meta(rewritten)):
+        return ""
+    return rewritten
+
+
+def _expand_query(cfg: Config, question: str) -> list[str]:
+    try:
+        raw = llm_mod.Client(cfg).complete_json("expand", llm_mod.EXPAND_SYSTEM, f"Question: {question}")
+    except llm_mod.LLMError:
+        return []
+    if isinstance(raw, dict):
+        raw = raw.get("phrases", [])
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for p in raw[:8]:
+        p = str(p).strip()
+        if p and len(p) < 60 and p not in out:
+            out.append(p)
+    return out
+
+
+def _compose_joint(cfg: Config, question: str, rows: list, given: str = ""):
+    """Grounded composition across several records (and memories viewed as
+    records) at once. Returns (answer, citation, partial) or None; partial
+    is true when the answer leaves part of the question open."""
+    rows = [r for r in rows if r is not None]
+    left_out: list[str] = []
+    if not _HISTORY_Q_RE.search(question):
+        # What was not adopted is history, left out unless the question
+        # asks about history. Measured live: given a cancelled proposal
+        # marked NOT ADOPTED, the composer still reversed which option it
+        # had rejected, and the owner was asked to sign that.
+        left_out = [f"{r['kind']} {_ref(r)}{_ticket_state(r)}" for r in rows if _void(r)]
+        rows = [r for r in rows if not _void(r)]
+    rows = rows[:4]
+    if len(rows) < 2 or not cfg.semantic_retrieval:
+        return None
+    if _ROUTING_Q_RE.search(question.lower()):
+        return None
+    labeled, cits = [], []
+    for i, r in enumerate(rows, 1):
+        cit = f"{r['kind']} {_ref(r)}{_ticket_state(r)}"
+        cits.append(cit)
+        labeled.append(
+            f"r{i} ({cit}, author/assignee {r['author'] or 'unknown'}, {r['created_at'] or 'undated'}"
+            + (f", NOT ADOPTED ({_void(r)}): history only" if _void(r) else "" if _is_settled(r) else ", STILL OPEN")
+            + f"): {r['title']}\n{(r['body'] or '')[:900]}")
+    try:
+        text = llm_mod.Client(cfg).complete(
+            "compose_joint", llm_mod.JOINT_COMPOSER_SYSTEM + "\nBefore COVERAGE, output USED_SOURCES: r1,r2 listing exactly the input records actually used. Omit rejected or irrelevant records.",
+            f"Question: {question}\n\nRecords:\n" + "\n\n".join(labeled)).strip()
+    except llm_mod.LLMError:
+        return None
+    if (not text or "RECORDS DO NOT ANSWER" in text or "RECORD DOES NOT ANSWER" in text
+            or _is_pure_refusal(re.sub(r"\s*COVERAGE:\s*(?:FULL|PARTIAL)\W*$", "", text, flags=re.IGNORECASE))
+            or llm_mod.looks_meta(text)):
+        return None
+    # The composer says whether the records answer every part. Measured
+    # live: an answer that qualified its own conclusion was stored as
+    # resolved.
+    coverage = re.search(r"\s*COVERAGE:\s*(FULL|PARTIAL)\W*$", text, re.IGNORECASE)
+    partial = False
+    if coverage:
+        partial = coverage.group(1).upper() == "PARTIAL"
+        text = text[:coverage.start()].rstrip()
+    if not text:
+        return None
+    used = re.search(r"(?:^|\n)USED_SOURCES:\s*([r0-9, ]+)\s*(?:$|\n)", text)
+    if not used:
+        return None
+    if not re.fullmatch(r'r[1-9]\d*(?:\s*,\s*r[1-9]\d*)*', used.group(1).strip()):
+        return None
+    labels = re.findall(r"r(\d+)", used.group(1))
+    if not labels or any(not 1 <= int(n) <= len(rows) for n in labels):
+        return None
+    selected = sorted({int(n) - 1 for n in labels})
+    text = (text[:used.start()] + text[used.end():]).strip()
+    if _is_pure_refusal(text):
+        return None
+    rows = [rows[i] for i in selected]
+    cits = [cits[i] for i in selected]
+    labeled = [labeled[i] for i in selected]
+    text = re.sub(r"\s*\((?:r\d)(?:,\s*r\d)*\)", "", text)
+    text = re.sub(r"\s*\([^()]*\br\d\b[^()]*\)", "", text)
+    text = re.sub(r"\s*\b(?:and |in |per |from )?r\d\b", "", text)
+    # Whole or not at all, as for one record (it was cut at 800).
+    if len(text) > COMPOSED_JOINT_MAX:
+        return None
+    # Measured live on 5e967e4: a metric label and a rollout region were
+    # asked, the records named the label only, and the composition proposed
+    # a primary region none of them names.
+    text = _supported(cfg, question, "\n\n".join(labeled), text, "the records", given)
+    if text is None:
+        return None
+    cited = "; ".join(cits) + (f"; left out, not adopted: {', '.join(left_out)}" if left_out else "")
+    return text, cited, partial or _states_a_gap(text), rows
+
+
+# A question that asks two things at once splits at "and how", "and
+# which", a semicolon or a second question mark. "A or B" is one question
+# with two options, and "X and Y" inside a clause is one subject.
+_CLAUSE_SPLIT_RE = re.compile(
+    r"\s*;\s*|,?\s+and\s+(?=(?:how|which|what|where|when|who|whom|whose|why|whether|is|are|was|were|does|do|did|"
+    r"should|can|could|must|will|would)\b)|\?\s+(?=\S)", re.IGNORECASE)
+# The share of a clause's own terms an earlier call must repeat to answer
+# that clause; a stem meets another it is a prefix of (paged meets page).
+CLAUSE_MATCH_MIN = 0.6
+
+
+def _compound_clauses(question: str) -> list[str]:
+    """The clauses of a question that asks two things at once ("Which
+    table does billing read usage from, and how are reads paged?"), each
+    with at least two terms of its own; empty for a question that asks one
+    thing, however long. Measured on the Parcelwise dry run: that question
+    had Jordan's standing rule for each half, the nearer half scored 0.54
+    against the whole and was read as not answering it, and the two were
+    never read together."""
+    parts = [re.sub(r"^and\s+", "", p.strip(" ?,;"), flags=re.IGNORECASE) for p in _CLAUSE_SPLIT_RE.split(question or "")]
+    parts = [p for p in parts if len(set(_meaningful_terms(p)) - _ASK_MACHINERY) >= 2]
+    return parts if 2 <= len(parts) <= 3 else []
+
+
+def _clause_candidates(store: Graph, clauses: list[str], scored: list, repo: str) -> list:
+    """One earlier call per clause of a compound question: the memory row
+    whose question and answer repeat most of that clause's own terms, from
+    the rows the whole question already scored, the standing rules and the
+    recent answers. Empty unless every clause has such a row and at least
+    two clauses find different rows: a single row that answers every
+    clause is the ordinary memory match, not a composition."""
+    from .graph import MEMORY_STATUSES
+    pool: dict[str, object] = {p.id: p for _, _, p in scored}
+    for p in store.recent_answered(repo=repo, limit=12):
+        pool.setdefault(p.id, p)
+    for clause in clauses:
+        for _s, p in store.standing_grant_candidates(llm_mod.embed(clause), repo=repo, query=clause, min_score=0.0):
+            pool.setdefault(p.id, p)
+        for hit in store.memory_search(clause, limit=6, repo=repo, min_score=0.2):
+            if hit["id"] not in pool:
+                p = store.get_decision(hit["id"], exact=True)
+                if p is not None:
+                    pool[p.id] = p
+    rows = [p for p in pool.values() if p.status in MEMORY_STATUSES and (p.answer or "").strip()]
+
+    def met(term: str, have: set[str]) -> bool:
+        return any(h == term or (len(min(h, term, key=len)) >= 3 and (h.startswith(term) or term.startswith(h)))
+                   for h in have)
+
+    picks: list = []
+    for clause in clauses:
+        ct = set(_meaningful_terms(clause)) - _ASK_MACHINERY
+        best, best_key = None, (0.0, 0.0, 0.0)
+        for p in rows:
+            have = set(_meaningful_terms(p.question + " " + (p.answer or "")))
+            ov = sum(1 for t in ct if met(t, have)) / len(ct) if ct else 0.0
+            key = (ov, _wording_fit(clause, p.question), p.updated_at)
+            if ov >= CLAUSE_MATCH_MIN and key > best_key:
+                best, best_key = p, key
+        if best is None:
+            return []
+        picks.append(best)
+    return picks if len({p.id for p in picks}) >= 2 else []
+
+
+def _rule_given(p) -> str:
+    """The standing of a rule whose conditions the question meets, as the
+    composer is given it: the answer does not have to establish its own
+    membership again."""
+    return (f"The rule {p.rule_by or p.answered_by or 'its owner'} made of decision {p.id} covers this question: "
+            f"its conditions ({'; '.join(rule_conditions(p.rule_conditions)) or 'none'}) are met here.")
+
+
+def _owner_rules(item, candidates: list, question: str, context: str, facts: dict | None, repo: str,
+                 limit: int = 3) -> list:
+    """The other signed standing rules of the owner of `item`, with the same
+    scope and their conditions met here, best score first: what completes a
+    rule that answers a question in part. A question that offers two
+    alternatives ("a completed answer, or every model attempt?") is one
+    question, so `_compound_clauses` does not split it, while one rule of
+    the owner may settle each side. Measured on the Parcelwise dry run
+    (Nov 2, 6ee6ac89dcf7): Jordan's Jun 1 rule (one answer is one use) and
+    his Sep 15 rule (every attempt counts in usage_daily) each answered a
+    half, and neither was read with the other."""
+    out, seen = [], {item.id}
+    for _eff, _sim, p in candidates:
+        if p.id in seen or not p.reusable or not p.authorized:
+            continue
+        seen.add(p.id)
+        if _norm_name(p.answered_by) != _norm_name(item.answered_by) or (p.rule_scope or "") != (item.rule_scope or ""):
+            continue
+        if not rule_status(p, question, context, facts=facts, repo=repo)[0]:
+            continue
+        out.append(p)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _compound_joint(store: Graph, cfg: Config, question: str, clauses: list[str], scored: list, repo: str,
+                    context: str = "", facts: dict | None = None):
+    """The joint composition of a compound question from one earlier call
+    per clause, as (joint, rows), or None when no clause has a call, the
+    composer declines, or it used fewer than two of them. The standing of
+    each rule whose conditions the question meets is given to the
+    composer, as it is for one rule. Measured on the Parcelwise dry run:
+    "Which table does assistant billing read usage from, and how are reads
+    paged?" went to Jordan while his Jun 9 and Jun 10 rules answered it."""
+    rows = _clause_candidates(store, clauses, scored, repo)
+    if len(rows) < 2:
+        return None
+    given_rules = [_rule_given(p) for p in rows
+                   if p.reusable and rule_status(p, question, context, facts=facts, repo=repo)[0]]
+    joint = _compose_joint(cfg, question, [_as_record(p) for p in rows], given=_given(context, facts, " ".join(given_rules)))
+    if joint is None or len(joint) < 4 or len(joint[3]) < 2:
+        return None
+    used = {r.get("decision_source_id") for r in joint[3]}
+    return joint, [p for p in rows if p.id in used]
+
+
+def _joint_rule_standing(store: Graph, used_rows: list, item, question: str, context: str, path: str,
+                         facts: dict | None, repo: str) -> list:
+    """The standing rules a composed answer rests on, when every row it
+    used is one: each signed, reusable, with the same owner and the same
+    scope, its conditions met here, and the answer naming no figure and no
+    word the rows do not. Then the composition stays within what those
+    rules say and settles without a fresh signature, as one rule would.
+    Empty for any other combination: a row nobody made a rule of, two
+    owners, a scope the question may be outside, or an answer that adds
+    to its sources, each of which a person signs."""
+    rules: list = []
+    for row in used_rows:
+        d = store.get_decision(row.get("decision_source_id") or "", exact=True) if row.get("decision_source_id") else None
+        if d is None or not d.authorized or not d.reusable or not rule_status(d, question, context, facts=facts, repo=repo)[0]:
+            return []
+        if _norm_name(d.answered_by) != _norm_name(item.answered_by) or (d.rule_scope or "") != (item.rule_scope or ""):
+            return []
+        if d.rule_scope != "any" and _scope_difference(question, context, path, d, facts, _facts_of(store, d.id), repo)[0]:
+            return []
+        rules.append(d)
+    if len(rules) < 2:
+        return []
+    sources = [_row_text(r) for r in used_rows]
+    answer = item.answer or ""
+    if _novel_words(answer, question, *sources):
+        return []
+    have = set(re.findall(r"\d+(?:\.\d+)?", " ".join(sources)))
+    if any(n not in have for n in re.findall(r"\d+(?:\.\d+)?", answer)):
+        return []
+    return rules
+
+
+_CHANGE_VERBS = {"add", "remov", "remove", "fix", "use", "make", "drop", "move", "updat", "update", "chang", "change",
+                 "set", "get", "allow", "avoid", "keep", "enabl", "enable", "disabl", "disable", "support",
+                 "implement", "handl", "handle", "introduc", "introduce", "convert", "replac", "replace", "renam",
+                 "rename", "refactor", "clean", "cleanup", "simplifi", "simplify", "check", "improv", "improve",
+                 "expos", "expose", "extract", "factor", "split", "merg", "merge", "new", "old", "also", "only"}
+
+
+def _background_terms(question: str) -> set[str]:
+    """Words that name where a change is, not what it decides: the
+    components of any path or filename in the question, and the verbs
+    every change record uses."""
+    out: set[str] = set(_CHANGE_VERBS)
+    for tok in re.findall(r"[A-Za-z0-9_./-]*[/.][A-Za-z0-9_./-]*", question or ""):
+        for piece in re.split(r"[/._-]", tok.lower()):
+            if len(piece) > 2:
+                out.add(llm_mod.stem(piece))
+                out.add(piece)
+    return out
+
+
+# An action request, not a mention of an API, undo entry or rollback log.
+# This only limits what retrieved evidence can authorize; never retrieval.
+_REVERSAL_REQUEST_RE = re.compile(
+    r"^\s*(?:(?:should|shall|can|could|may|must)\s+(?:we|i)\s+"
+    r"|do\s+(?:we|i)\s+need\s+to\s+|please\s+)?"
+    r"(?:revert|undo|roll\s?back|back\s+out)\s+\S", re.IGNORECASE)
+_PROPOSAL_Q_RE = re.compile(r"^\s*(?:should|shall|can|could|may|do we|is it (?:ok|fine|safe)|ok to)\b")
+_IDENT_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*(?:[_.][A-Za-z0-9]+)+|[A-Za-z]+\d+[A-Za-z0-9]*|[A-Z]{2,}[A-Z0-9]*(?=\b)")
+_FILE_EXT_RE = re.compile(r"\.(?:c|h|cc|cpp|hpp|inc|py|js|ts|tsx|jsx|rs|go|java|kt|rb|md|rst|json|ya?ml|toml|txt|sh|nix|mjs|cjs)$",
+                          re.IGNORECASE)
+
+
+def _question_identifiers(text: str, display: bool = False) -> list[str]:
+    """The identifiers a question names (FEAT_NMI, PSTATE.ALLINT, HCR_EL2,
+    mark_vs_dirty): a record that decided the question mentions them.
+    Paths and filenames are not identifiers here; a record names a file
+    its own way."""
+    out: list[str] = []
+    for tok in _IDENT_RE.findall(text or ""):
+        if "/" in tok or _FILE_EXT_RE.search(tok) or len(tok) < 4 or tok.upper() == tok and len(tok) < 4:
+            continue
+        key = tok if display else tok.lower()
+        if key not in out:
+            out.append(key)
+    return out[:6]
+
+
+def _meaningful_terms(text: str) -> list[str]:
+    stop = {"the", "and", "for", "this", "that", "does", "with", "from", "are",
+            "what", "which", "when", "how", "who", "into", "get", "one"}
+    out: list[str] = []
+    for t in re.findall(r"[a-z0-9]+", text.lower()):
+        if len(t) > 2 and t not in stop:
+            s = llm_mod.stem(t)
+            if s not in out:
+                out.append(s)
+    return out
+
+
+def _wording_fit(asked: str, candidate: str) -> float:
+    """The share of the asked question's words that the candidate question
+    repeats: every word of three or more letters, stemmed, question words
+    included. 1.0 means the candidate asks this question in its own words,
+    whatever else it adds; the meaningful-term overlap cannot tell that,
+    because it drops the words (what, one) that carry what is asked."""
+    words = {llm_mod.stem(t) for t in re.findall(r"[a-z0-9]{3,}", (asked or "").lower())}
+    if not words:
+        return 0.0
+    have = {llm_mod.stem(t) for t in re.findall(r"[a-z0-9]{3,}", (candidate or "").lower())}
+    return len(words & have) / len(words)
+
+
+def _word_trunc(text: str, n: int) -> str:
+    if len(text) <= n:
+        return text
+    cut = text[:n]
+    if " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return cut + "..."
+
+
+def _display_terms(text: str, stems: list[str]) -> list[str]:
+    orig: dict[str, str] = {}
+    for t in re.findall(r"[a-z0-9]+", text.lower()):
+        orig.setdefault(llm_mod.stem(t), t)
+    return [orig.get(s, s) for s in stems]
+
+
+_REF_RE = re.compile(r"(?:#|\b(?:pr|pull request|issue)\s*#?)(\d{2,6})\b", re.IGNORECASE)
+_REF_TOKEN_RE = re.compile(r"\b([A-Z][A-Za-z0-9]{1,9}-\d{2,6})\b")
+
+
+def _cited_refs(text: str) -> list[str]:
+    seen: list[str] = []
+    for m in _REF_RE.findall(text):
+        if m not in seen:
+            seen.append(m)
+    for m in _REF_TOKEN_RE.findall(text):
+        if m not in seen:
+            seen.append(m)
+    return seen
+
+
+def _ref_variants(refs: list[str]) -> list[str]:
+    out: list[str] = []
+    for r in refs:
+        for v in (r, r.rsplit("-", 1)[-1] if "-" in r else r):
+            if v and v not in out:
+                out.append(v)
+    return out
+
+
+_RETRO_Q_RE = re.compile(r"\b(?:who|why)\b|\bdecided\b|\breason\b|\bwhat was\b", re.IGNORECASE)
+
+_ATTRIBUTION_Q_RE = re.compile(
+    r"\bwho\b[^?]*\b(?:decided|approved|signed|authored|made)\b"
+    r"|\b(?:why|reason)\b[^?]*\bdecision\b", re.IGNORECASE)
+_DECISION_ID_RE = re.compile(r"\b[0-9a-f]{12}\b", re.IGNORECASE)
+
+
+def _historical_decision(store: Graph, question: str, repo: str):
+    """Return a recorded human answer, or an explicit-ID lookup failure.
+
+    Attribution is a read of a specific record, not permission to apply
+    that policy to new work. Never substitute another record for an ID.
+    Natural queries rank the answer and rationale as well as the title.
+    """
+    if not _ATTRIBUTION_Q_RE.search(question):
+        return None, ""
+    refs = list(dict.fromkeys(_DECISION_ID_RE.findall(question.lower())))
+    if refs:
+        if len(refs) != 1:
+            return None, "Ask about one decision ID at a time; no other decision was substituted."
+        item = store.get_decision(refs[0], exact=True)
+        visible = store.db.execute("SELECT draft FROM decisions WHERE id=? AND repo=?", (refs[0], repo)).fetchone()
+        if item is None or item.repo != repo or visible is None or visible["draft"]:
+            return None, "The requested decision is not available in this repository; no other decision was substituted."
+        if not item.authorized or not item.answered_by:
+            return None, "The requested decision has no current authorized human answer; no other decision was substituted."
+        return item, ""
+    terms = set(_meaningful_terms(question)) - _ASK_MACHINERY - _RETRO_MACHINERY
+    if len(terms) < 2:
+        return None, ""
+    ranked = []
+    identifiers = re.findall(r"\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b", question)
+    for _, item in store.similar_answered(llm_mod.embed(question), top_k=64, min_score=0, repo=repo, query=question):
+        if not item.authorized or not item.answered_by or item.source == "memory":
+            continue
+        body = item.question + " " + _memory_body(item)
+        if any(not re.search(r"(?<!\w)" + re.escape(ident) + r"(?!\w)", body, re.IGNORECASE)
+               for ident in identifiers):
+            continue
+        overlap = len(terms & set(_meaningful_terms(body))) / len(terms)
+        if overlap >= 0.75 and not _unmet_contrast([question], [body]):
+            ranked.append((overlap, item))
+    ranked.sort(key=lambda pair: -pair[0])
+    if ranked and (len(ranked) == 1 or ranked[0][0] - ranked[1][0] > CONFLICT_MARGIN):
+        return ranked[0][1], ""
+    return None, ""
+
+
+def guess_category(question: str) -> str:
+    """A category for a question that arrives without one: retrospective
+    who/why questions are data-source, everything else policy."""
+    if _RETRO_Q_RE.search(question) and not _ROUTING_Q_RE.search(question.lower()) \
+            and not _ACCOUNTABILITY_Q_RE.search(question.lower()):
+        return "data-source"
+    return "policy"
+
+
+def _ranked_view(ranked: list[tuple[str, list[str], float]]) -> list[dict]:
+    """The routing candidates as reported: the top few with their first
+    evidence lines, so a caller sees the route that produced the owner."""
+    return [{"owner": o, "evidence": list(ev[:3]), "score": round(s, 4)} for o, ev, s in ranked[:RANKED_KEEP]]
+
+
+def _kind_for(status: str, source: str = "", mkind: str = "") -> str:
+    if status in ("resolved", "partial"):
+        return "prediction" if mkind == "semantic" else "evidence"
+    if status in ("assumed", "proposed"):
+        return "prediction"
+    return "new"
+
+
+def run_task(store: Graph, cfg: Config, title: str, repo: str = "",
+             decisions: list[dict] | None = None,
+             run_id: str | None = None, keep_draft: bool = False, scratch: bool | str = False,
+             provisional: bool = False) -> RunResult:
+    """Run the ladder for one task. decisions: the decisions to resolve
+    (dicts with question, category, and optionally context, path,
+    options). run_id: an existing inbox run to attach the decisions to;
+    otherwise a run is created. Each decision is written as a draft and
+    published when it is resolved or routed; with keep_draft the caller
+    publishes, once it has finished placing the node on its tree.
+    `provisional` is the static first pass of a node a model pass will
+    read again: a memory match that is not the same question is published
+    as a check in progress (a prediction, unsigned), never as settled."""
+    client = llm_mod.Client(cfg)
+    task_id = run_id or store.create_task(title, repo=repo or "local")
+    result = RunResult(task_id=task_id, title=title)
+    decisions = [d for d in (decisions or []) if isinstance(d, dict) and d.get("question")]
+
+    known_people = _known_people(store)
+    for d in decisions:
+        question = d["question"].strip()
+        category = str(d.get("category", "") or "").strip() or guess_category(question)
+        d_context = str(d.get("context", "") or "")
+        d_path = str(d.get("path", "") or "unknown")
+        d_requester = str(d.get("requester", "") or "")
+        # The decision category as the agent named it, for the authority
+        # map; the ladder's own category (policy, definition) is not one.
+        d_category = str(d.get("category", "") or "").strip()
+        d_hints = [str(h) for h in (d.get("hints") or []) if str(h).strip()]
+        # The other paths a decision names beside its first: the authority
+        # map is read for every one of them.
+        d_also = [str(p) for p in (d.get("also_paths") or []) if str(p).strip()]
+        d_facts = parse_facts(d.get("facts"))
+        asked_q = question
+        if cfg.deep_retrieval and _FOLLOWUP_REF_RE.search(question.lower()):
+            rewritten = _contextualize(cfg, question, store.recent_answered(repo=repo))
+            if rewritten:
+                question = rewritten
+        emb = llm_mod.embed(question)
+        # The row exists from here; it stays a draft, which no reader
+        # sees, until it is routed (and, on the canvas, placed on the
+        # tree). Nobody reads a decision that has no owner yet only
+        # because the write is still in flight.
+        did = store.add_decision(
+            task_id, asked_q, category, OPEN,
+            embedding=llm_mod.embed(asked_q) if asked_q != question else emb,
+            options=[str(o).strip() for o in (d.get("options") or []) if str(o).strip()][:4],
+            repo=repo, context=d_context, path=d_path, kind="new", draft=True)
+        result.drafts.append(did)
+        if scratch:
+            # `scratch` is the live decision's id when the caller has one:
+            # a read of this twin is then recorded against that decision,
+            # and a twin left behind is found and removed.
+            store.db.execute("UPDATE decisions SET client_ref=?, scratch_of=? WHERE id=?",
+                             (SCRATCH_REF, scratch if isinstance(scratch, str) else "", did))
+        if question != asked_q:
+            store.append_event("followup_context", {"task_id": task_id, "decision_id": did,
+                                                    "asked": asked_q, "resolved_as": question})
+        if d_facts:
+            store.db.execute("UPDATE decisions SET facts=? WHERE id=?", (json.dumps(d_facts, sort_keys=True), did))
+        historical, missing_history = _historical_decision(store, asked_q, repo)
+        if historical is not None:
+            answer = (f"{historical.answered_by} recorded the answer in decision {historical.id}:\n"
+                      f"{historical.answer}\n\nRecorded rationale: "
+                      f"{historical.rationale or 'No rationale was recorded.'}")
+            evidence = f"historical attribution from decision {historical.id}; not authorization for new work"
+            store.publish_evidence(did, [_as_record(historical)], status="resolved", source="memory", kind="evidence", answer=answer,
+                                  answered_by=historical.answered_by, source_id=historical.id,
+                                  source_revision=ts_to_iso(historical.updated_at), evidence=evidence)
+            store.add_link(did, historical.id, "derived", "historical attribution of this recorded answer")
+            store.append_event("resolve", {"task_id": task_id, "decision_id": did, "source": "memory",
+                                           "cited": historical.id, "kind": "historical-attribution"})
+            result.resolved.append({"id": did, "question": asked_q, "source": "memory", "answer": answer,
+                                    "partial": False, "cited": historical.id})
+            continue
+        if missing_history:
+            store.update_decision(did, evidence=missing_history)
+            result.open.append({"id": did, "question": asked_q, "owner": None, "note": missing_history})
+            continue
+        why_open: list[str] = []
+        # What a source said instead of an answer: that the call is still
+        # open, or only who makes it. Raven's note beside the open node.
+        open_notes: list[str] = []
+        # A signed answer and a settled record that disagree on a figure:
+        # set when that is found, and then neither is served or proposed.
+        conflict = None
+        memory_used_rows = []
+
+        # a. memory
+        mem_pick = None
+        reranked = ""
+        accepted: list = []
+        floor = NEAR_MEMORY_MIN
+        # The asking machinery (who decided, what was the reason, still in
+        # effect) is not subject matter: it must not dilute the overlap
+        # with an answer about the same thing.
+        qt = set(_meaningful_terms(question)) - _ASK_MACHINERY
+        q_ref_res = [re.compile(r"(?<![A-Za-z0-9])" + re.escape(r) + r"(?![0-9])", re.IGNORECASE)
+                     for r in _cited_refs(question)]
+        fup = bool(q_ref_res or _FOLLOWUP_REF_RE.search(question.lower()))
+
+        fit_of: dict[str, float] = {}
+
+        def _fit(p) -> float:
+            if p.id not in fit_of:
+                fit_of[p.id] = _wording_fit(question, p.question)
+            return fit_of[p.id]
+
+        def _asks_this(p) -> bool:
+            """The candidate asks this question in its own words: every
+            meaningful term and every word of it appear in the candidate."""
+            return bool(qt) and qt <= set(_meaningful_terms(p.question)) and _fit(p) >= 1.0
+
+        def _hybrid(sim: float, p) -> float:
+            blob = (p.question + " " + (p.answer or "") if fup else p.question)
+            pt = set(_meaningful_terms(blob))
+            ov = (len(qt & pt) / min(len(qt), len(pt)) if qt and pt else 0.0)
+            pq = set(_meaningful_terms(p.question))
+            if ov >= DIRECT_MEMORY_MIN and qt and qt <= pq and pq - qt and _fit(p) < 1.0:
+                # A superset match: every term of this question sits inside
+                # a longer question that asks about more and does not repeat
+                # these words. A neighbouring question, read as a near match,
+                # never as the question itself. Measured on the Harborline
+                # dry run: "What counts as one Pilot use?" (terms: count,
+                # pilot, use) was settled from "Does a retried Pilot chat
+                # turn count as a second use, and does a failed generation
+                # count?" at "direct, similarity 1.00".
+                ov = min(ov, DIRECT_MEMORY_MIN - 0.01)
+            if q_ref_res and any(rx.search(blob) for rx in q_ref_res):
+                ov = max(ov, 0.85)
+            return max(sim, ov)
+
+        raw = store.similar_answered(emb, top_k=8, min_score=0.25, repo=repo, query=question)
+        if cfg.semantic_retrieval:
+            from .semantic_index import memories
+            from .graph import MEMORY_STATUSES, _row_to_decision
+            semantic, diagnostic = memories(store, question, repo)
+            known = {p.id for _, p in raw}
+            scores = dict(semantic)
+            for row in store._memory_rows(MEMORY_STATUSES, repo, set(scores)) if scores else []:
+                if row['id'] not in known:
+                    # Nomination, never a direct hit or permission. Composition
+                    # and applicability still decide whether this is reusable.
+                    raw.append((min(0.79, max(0.60, scores[row['id']])), _row_to_decision(row)))
+            store.append_event('semantic_retrieval', {'task_id': task_id, 'decision_id': did,
+                               'candidates': [key for key, _ in semantic], **diagnostic})
+        rule_raw = list(raw)
+        seen_rule = {candidate.id for _, candidate in rule_raw}
+        for score, candidate in store.standing_grant_candidates(emb, repo=repo, query=question):
+            if candidate.id not in seen_rule:
+                rule_raw.append((score, candidate))
+                seen_rule.add(candidate.id)
+        if q_ref_res:
+            have = {p.id for _, p in raw}
+            for p in store.recent_answered(repo=repo, limit=12):
+                if p.id not in have and any(rx.search(p.question + " " + (p.answer or "")) for rx in q_ref_res):
+                    raw.append((0.3, p))
+        # A retrospective question (who decided, what was the reason) asks
+        # about a past decision, so its age is no reason to prefer another:
+        # recency ranks what stands now, not what was decided then. Found
+        # when a test's dates aged: an April decision decayed below an
+        # August one on a question about the April decision.
+        retrospective = guess_category(question) == "data-source"
+
+        def aged(p) -> float:
+            # The question asked, in its own words, does not decay either:
+            # age ranks answers to the same question against each other
+            # (the newest wins, below) and never ranks a neighbouring
+            # question above the question itself. Measured on the Harborline
+            # dry run: an eleven-month-old answer to the question asked
+            # decayed to 0.40 while a newer call about retries, a superset of
+            # its three terms, scored 1.00 and was cited in its place.
+            # Nor does a past question that repeats nearly all of its
+            # words: it is the question asked, give or take a qualifier.
+            # Measured on the Parcelwise dry run: "What counts as one
+            # billable assistant use?" shared three terms (count, assistant,
+            # use) with Jordan's Jun 1 "What counts as one use of the
+            # assistant: a question, a completed answer, or tokens?" and
+            # with his Sep 15 call about retried and timed-out attempts;
+            # neither repeats "billable", so both overlapped at 0.75, the
+            # Jun 1 call decayed under the floor and the retry call was
+            # cited for the question it does not answer.
+            if retrospective or _asks_this(p) or _fit(p) >= SAME_WORDS_MIN:
+                return 1.0
+            return _recency(p.updated_at)
+        # An even score goes to the candidate worded closest to the question.
+        scored = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in raw),
+                        key=lambda t: (-t[0], -_fit(t[2])))
+        rule_candidates = sorted(((_hybrid(s, p) * aged(p), _hybrid(s, p), p) for s, p in rule_raw),
+                                 key=lambda t: (-t[0], -_fit(t[2])))
+        accepted = [(eff, s, p) for eff, s, p in scored if eff >= floor]
+        if accepted:
+            eff, sim, past = accepted[0]
+            pt = set(_meaningful_terms(past.question))
+
+            def _same_decision(p2) -> bool:
+                qt2 = set(_meaningful_terms(p2.question))
+                if not pt or not qt2:
+                    return False
+                return len(pt & qt2) / min(len(pt), len(qt2)) >= 0.7
+
+            # A candidate scoring about the same that repeats clearly less
+            # of the question's wording is a neighbouring question, not a
+            # rival answer to this one; it is not preferred for being newer.
+            near_even = {p.id for e2, _, p in accepted[1:]
+                         if eff - e2 <= CONFLICT_MARGIN and _fit(p) >= _fit(past) - WORDING_GAP}
+            rivals = [p for _, _, p in scored
+                      if p.id != past.id and p.answer != past.answer
+                      and (p.id in near_even or _same_decision(p))]
+            # A retrospective question (who decided, what was the reason)
+            # asks about the decision it matched, so a newer answer on
+            # the same subject does not replace it.
+            if rivals and guess_category(question) != "data-source":
+                pool = [past] + rivals
+                pool.sort(key=lambda p: -p.updated_at)
+                winner = pool[0]
+                # A preference for this question, not a retirement: the
+                # others stay approved and unsuperseded. Measured on the
+                # Harborline dry run: the log said Dana's Sep 24 call was
+                # "retired" three times while it stood untouched.
+                others = ", ".join(f"{p.id} ({ts_to_iso(p.updated_at)[:10]})" for p in pool[1:])
+                store.append_event("conflict_resolved", {
+                    "task_id": task_id, "decision_id": did, "preferred": winner.id,
+                    "over": [p.id for p in pool[1:]], "rule": "newest answer preferred for this question",
+                    "summary": (f"preferred {winner.id} ({ts_to_iso(winner.updated_at)[:10]}) over {others} for this "
+                                f"question; {'both' if len(pool) == 2 else 'all'} stand")})
+                past = winner
+            mem_pick = (eff, sim, past)
+        elif scored:
+            # The cheap score decides what is worth reading, not what is
+            # worth reusing. Where nothing clears the floor, the near
+            # misses are shown to the model rather than dropped unseen:
+            # a paraphrase that shares few words with the original scores
+            # below it, and so does a decision about a different column,
+            # and the score alone cannot tell those apart. What comes
+            # back enters as a near match, never as a direct hit, and
+            # still faces the contrast and composition checks below.
+            near = [(eff2, s2, p) for eff2, s2, p in scored if eff2 >= RERANK_MIN][:4]
+            picked_id, picked_why = ("", "")
+            if near and cfg.semantic_retrieval:
+                picked_id, picked_why = llm_mod.rerank_memories(
+                    cfg, question, [{"id": p.id, "score": eff2, "question": p.question, "answer": p.answer}
+                                    for eff2, _s2, p in near])
+            hit = next(((eff2, s2, p) for eff2, s2, p in near if p.id == picked_id), None)
+            if hit is not None:
+                mem_pick = (max(hit[0], floor), hit[1], hit[2])
+                reranked = hit[2].id
+                store.append_event("memory_reranked", {"task_id": task_id, "decision_id": did,
+                                                       "memory": hit[2].id, "scored": round(hit[0], 2),
+                                                       "why": picked_why})
+            else:
+                why_open.append(f"memory: best match scored {scored[0][0]:.2f}, under the {floor} floor"
+                                + ("; read anyway, and it does not answer this" if near and cfg.semantic_retrieval
+                                   else ""))
+        else:
+            why_open.append("memory: nothing similar answered before")
+        # A compound question whose halves each have an earlier call: no
+        # single row scores for the whole, so the halves are read together
+        # before memory gives up on it.
+        compound_joint, compound_rows = None, []
+        if mem_pick is None and cfg.semantic_retrieval:
+            clauses = _compound_clauses(question)
+            compound = (_compound_joint(store, cfg, question, clauses, scored, repo, d_context, d_facts)
+                        if clauses else None)
+            if compound is not None:
+                compound_joint, compound_rows = compound
+                for p in compound_rows:
+                    if all(p.id != row[2].id for row in scored):
+                        scored.append((floor, floor, p))
+                mem_pick = next((max(eff2, floor), s2, p) for eff2, s2, p in scored if p.id == compound_rows[0].id)
+                store.append_event("memory_compound", {"task_id": task_id, "decision_id": did, "clauses": clauses,
+                                                       "memories": [p.id for p in compound_rows]})
+
+        def preserve_grant(picked):
+            candidate = _same_answer_grant(store, picked, rule_candidates, question, d_context, d_path, d_facts, repo)
+            if candidate.id != picked.id:
+                store.append_event("memory_grant_selected", {"task_id": task_id, "decision_id": did,
+                    "memory": candidate.id, "instead_of": picked.id,
+                    "why": "same answer from a relevant current standing grant; entailment and conflicts still checked"})
+            return candidate
+
+        if mem_pick is not None and compound_joint is None:
+            candidate = preserve_grant(mem_pick[2])
+            if candidate.id != mem_pick[2].id:
+                mem_pick = next(row for row in rule_candidates if row[2].id == candidate.id)
+
+        if mem_pick is not None:
+            applies, reason = applicability_status(mem_pick[2], d_path, d_facts, repo=repo)
+            if not applies:
+                why_open.append(f"memory: {reason}; earlier answer {mem_pick[2].id} is context, not an answer here: "
+                                + _excerpt(mem_pick[2].answer, 240, "the earlier answer has the rest"))
+                store.append_event("applicability_unmet", {"task_id": task_id, "decision_id": did,
+                                                            "memory": mem_pick[2].id, "why": reason})
+                mem_pick = None
+
+        # A memory hit preempts the graph rungs only when it is itself an
+        # answer about ownership; a nearby answer about the VALUE of a
+        # setting must not swallow "whose call is it to change it".
+        mem_about_ownership = mem_pick is not None and bool(
+            _ACCOUNTABILITY_Q_RE.search(mem_pick[2].question.lower())
+            or _ROUTING_Q_RE.search(mem_pick[2].question.lower())
+            or _OWNERSHIP_Q_RE.search(mem_pick[2].question.lower()))
+
+        # a2. ownership introspection
+        if ((mem_pick is None or not mem_about_ownership) and repo and _OWNERSHIP_Q_RE.search(question.lower())
+                and not _OWNERSHIP_PROPOSAL_RE.search(question.lower())
+                and not _OWNERSHIP_STATUS_RE.search(question.lower())
+                and not _cited_refs(question)):
+            own_ans = _ownership_answer(store, repo, question)
+            if own_ans:
+                store.update_decision(did, status="resolved", source="record", answer=own_ans,
+                                      kind="evidence",
+                                      evidence="ownership graph (indexed blame and CODEOWNERS)")
+                store.append_event("resolve", {"task_id": task_id, "decision_id": did, "source": "record",
+                                               "cited": "ownership graph", "kind": "ownership-introspection"})
+                result.resolved.append({"id": did, "question": question, "source": "record",
+                                        "answer": own_ans, "partial": False, "cited": "ownership graph"})
+                continue
+
+        # a3. accountability
+        if ((mem_pick is None or not mem_about_ownership) and repo
+                and (_ROUTING_Q_RE.search(question.lower()) or _ACCOUNTABILITY_Q_RE.search(question.lower()))
+                and not _STATUS_CLAUSE_RE.search(question.lower())
+                # A proposal to change the ownership data itself falls
+                # through; "whose call is it to change X" is still an
+                # accountability question about X.
+                and not (_OWNERSHIP_PROPOSAL_RE.search(question.lower())
+                         and re.search(r"code ?owners?|ownership|\bowner\b", question.lower()))
+                and not _cited_refs(question)):
+            acc_notes: list[str] = []
+            acc_ranked = route_ranked(store, repo, question,
+                                      path=d_path if d_path != "unknown" else "", context=d_context,
+                                      notes=acc_notes, requester=d_requester, hints=d_hints,
+                                      category=d_category, also_paths=d_also, facts=d_facts,
+                                      task_id=task_id, decision_id=did)
+            acc = acc_ranked[0] if acc_ranked else None
+            if acc is None and acc_notes:
+                why_open.append("ownership: " + "; ".join(acc_notes))
+            if acc is not None:
+                a_owner, a_ev, a_score = acc
+                approval = ""
+                for ln in a_ev:
+                    m_ap = re.search(r"CODEOWNERS lists ([^;]+?) here", ln)
+                    if m_ap and _norm_name(m_ap.group(1)) != _norm_name(a_owner):
+                        approval = (f" Sign-off per CODEOWNERS rests with {store.resolve_engineer(m_ap.group(1))}; "
+                                    f"{a_owner} is the live author to consult.")
+                        break
+                answer = f"{a_owner} is the accountable owner. " + " ".join(a_ev) + approval
+                store.update_decision(did, status="resolved", source="record", answer=answer,
+                                      owner=a_owner, owner_evidence="; ".join(a_ev), kind="evidence",
+                                      evidence="resolved from the ownership graph (blame, CODEOWNERS, "
+                                               "and review signals reconciled)")
+                store.append_event("resolve", {"task_id": task_id, "decision_id": did, "source": "record",
+                                               "cited": "ownership graph", "kind": "accountability",
+                                               "owner": a_owner})
+                result.resolved.append({"id": did, "question": question, "source": "record",
+                                        "answer": answer, "partial": False, "cited": "ownership graph",
+                                        "ranked": _ranked_view(acc_ranked)})
+                continue
+
+        # b. records. A who-should-approve question the graph could not
+        # route is not answered by a record that shares its words: it
+        # goes to the human rung, which says Raven does not know.
+        rec_best, rec_pool, retro_cand = None, [], None
+        ref_rows: list = []
+        matches: list = []
+        routing_q = bool(_ROUTING_Q_RE.search(question.lower()) or _ACCOUNTABILITY_Q_RE.search(question.lower()))
+        reversal_request = bool(_REVERSAL_REQUEST_RE.search(question))
+        proposal_q = bool(_PROPOSAL_Q_RE.search(question.lower()))
+        if not routing_q:
+            terms = _meaningful_terms(question)
+            required = max(RECORD_MIN_TERMS, min(4, (len(terms) + 1) // 2))
+            if category == "data-source":
+                required = 2
+            live_tried, live_counts = False, {}
+            ref_rows = store.intents_by_ref(_ref_variants(_cited_refs(question)), repo=repo)
+            if ref_rows:
+                rec_pool = [(99, r["created_at"] or "", r) for r in ref_rows]
+                rec_best = ref_rows[0]
+                matches = ref_rows
+            while rec_best is None:
+                dfs = store.term_dfs(terms, repo=repo)
+                known = sorted((t for t in terms if dfs.get(t, 0) > 0), key=lambda t: dfs[t])
+                known = [t for t in known if t not in _ASK_MACHINERY] or known
+                focus = known[:3]
+                focus_need = 2 if len(focus) >= 2 else len(focus)
+                if category == "data-source" and focus:
+                    focus = focus[:2]
+                    focus_need = 1
+                matches = store.intents_matching(terms, limit=5, repo=repo)
+                passing = []
+                max_ov, nd_skipped, focus_failed = 0, False, False
+                idents = _question_identifiers(question)
+                ident_failed, title_failed = False, False
+                # Path components and change verbs are background in a code
+                # repository; what is left is what the question is about.
+                background = _background_terms(question)
+                subject_terms = [t for t in known if t not in background]
+                novel_subject = [t for t in terms if dfs.get(t, 0) == 0 and len(t) >= 4 and t not in _FILLER
+                                 and t not in background and t not in _ASK_MACHINERY]
+                for m in matches:
+                    text = (m["title"] + " " + m["body"]).lower()
+                    if m["kind"] == "ticket" and (_non_decision(text) or not _is_settled(m)):
+                        nd_skipped = True
+                        continue
+                    overlap = sum(1 for t in terms if t in text)
+                    covered = sum(1 for t in focus if t in text)
+                    max_ov = max(max_ov, overlap)
+                    if overlap >= required:
+                        if covered < focus_need:
+                            focus_failed = True
+                            continue
+                        # A record that decided this names what the question
+                        # names: every identifier the question carries, and
+                        # one of its rarest words in the record's own title.
+                        # Shared area words (target, arm, add) are background
+                        # in a code repository, not a match.
+                        if idents and not all(i in text for i in idents):
+                            ident_failed = True
+                            continue
+                        if category != "data-source" and m["kind"] != "decision" and proposal_q:
+                            # A proposal (Should X do Y?) is settled only by a
+                            # record whose own title names it: the rarer half
+                            # of the question's known words. A record that
+                            # merely touched the area decided nothing about it.
+                            rare = subject_terms[:max(2, (len(subject_terms) + 1) // 2)]
+                            title_low = m["title"].lower()
+                            if len(rare) < 2:
+                                # The question's distinctive words are unknown
+                                # to every record: no record settled it.
+                                if novel_subject:
+                                    title_failed = True
+                                    continue
+                            elif sum(1 for t in rare if t in title_low) < max(2, (len(rare) + 1) // 2):
+                                title_failed = True
+                                continue
+                        passing.append((overlap, m["created_at"] or "", m))
+                if passing:
+                    top = max(o for o, _, _ in passing)
+                    rec_pool = [x for x in passing if x[0] >= top - 1]
+                    rec_pool.sort(key=lambda x: x[1], reverse=True)
+                    rec_best = rec_pool[0][2]
+                if rec_best is not None:
+                    repo_tok = llm_mod.stem(repo.lower()) if repo else ""
+                    novel = [t for t in terms if len(t) >= 5 and t not in _FILLER and dfs.get(t, 0) == 0
+                             and t != repo_tok and t not in _ASK_MACHINERY]
+                    if len(novel) >= 2:
+                        why_open.append("records: question introduces terms no record mentions "
+                                        f"({', '.join(_display_terms(question, novel[:4]))})")
+                        rec_best, rec_pool = None, []
+                if rec_best is not None or live_tried or not cfg.live_retrieval:
+                    break
+                live_tried = True
+                from . import ingest as ingest_mod
+                hint = ""
+                if repo:
+                    hits = resolve_paths(store, repo, question, d_context, d_path if d_path != "unknown" else "")
+                    hint = hits[0].path if hits else ""
+                live_counts = ingest_mod.live_probe(store, repo, terms, hint,
+                                                    refs=_cited_refs(question) or _cited_refs(title))
+                store.append_event("live_probe", {"task_id": task_id, "decision_id": did, "hint": hint,
+                                                  **live_counts})
+                if not any(v for v in live_counts.values() if isinstance(v, int)):
+                    break
+            retro_cand = rec_best
+            if retro_cand is None:
+                r_dfs = store.term_dfs(terms, repo=repo)
+                r_focus = [t for t in sorted((t for t in terms if r_dfs.get(t, 0) > 0), key=lambda t: r_dfs[t])
+                           if t not in _ASK_MACHINERY and t not in _RETRO_MACHINERY][:2]
+                for m in matches:
+                    m_text = (m["title"] + " " + m["body"]).lower()
+                    if _is_settled(m) and sum(1 for t in terms if t in m_text) >= 2 \
+                            and (not r_focus or any(t in m_text for t in r_focus)):
+                        retro_cand = m
+                        break
+            if rec_best is None:
+                if not matches:
+                    why_open.append("records: nothing shares this question's terms")
+                elif focus_failed:
+                    why_open.append("records: candidates matched background words but not the "
+                                    f"question's focus terms ({', '.join(_display_terms(question, focus))})")
+                elif ident_failed:
+                    why_open.append("records: no record that shares this question's words mentions "
+                                    f"{', '.join(_question_identifiers(question, display=True)[:3])}")
+                elif title_failed:
+                    if len(subject_terms) < 2 and novel_subject:
+                        why_open.append("records: no record mentions "
+                                        f"{', '.join(_display_terms(question, novel_subject[:3]))}")
+                    else:
+                        why_open.append("records: candidates share words in their bodies, but none names enough of "
+                                        f"{', '.join(_display_terms(question, subject_terms[:3]))} in its title")
+                elif nd_skipped and not passing:
+                    why_open.append("records: only tickets describing unresolved problems matched, "
+                                    "none record a decision")
+                elif not passing:
+                    why_open.append(f"records: best candidate shares {max_ov} terms, {required} needed")
+                fetched = sum(v for k, v in live_counts.items() if k != "blame" and isinstance(v, int))
+                if live_tried and fetched:
+                    why_open.append(f"live: searched {live_counts.get('sources') or 'git history'} on "
+                                    f"demand, {fetched} fresh items cached, none answers this")
+                if live_tried and live_counts.get("failed"):
+                    why_open.append(f"live: lookup FAILED for {live_counts['failed']}, so this search "
+                                    "was incomplete")
+
+        if reversal_request:
+            why_open.append("intent: phrased as a request to reverse a change; "
+                            "retrieved records are context, not approval for the reversal")
+            context_rows = ref_rows or ([rec_best] if rec_best is not None else matches[:3])
+            for row in context_rows[:3]:
+                why_open.append(f"records: retrieved context {row['kind']} {_ref(row)}: "
+                                f"{row['title']}; excerpt: {_excerpt(row['body'], 240, 'the record has the rest')}")
+
+        # arbitration
+        pick, pick_note, mem_lex = None, "", False
+        selector_scope = {"store": store, "context": d_context, "path": d_path, "facts": d_facts, "repo": repo}
+        memory_choices = ({"m1": ("memory", mem_pick[2])} if mem_pick is not None else {})
+        for _, _, candidate in accepted:
+            if len(memory_choices) >= 8:
+                break
+            if candidate.id not in {item.id for _, item in memory_choices.values()}:
+                memory_choices[f"m{len(memory_choices) + 1}"] = ("memory", candidate)
+        # A standing rule that covers the question is the organization's
+        # own declaration; a record that agrees with it corroborates it and
+        # is cited beside it, it does not compete with it. Measured on the
+        # Harborline dry run: "What counts as one billable use of Pilot"
+        # had Raj's rule (scope any) and the merge that recorded it, and
+        # the record won the arbitration, so the call wanted a signature.
+        agreeing_record, agreeing_role = None, "support"
+        covers_notes: list[str] = []
+        context_records: list = []
+        # A record that describes what shipped ("no charge for those yet")
+        # or that is older than the rule's signature covers the same ground
+        # without contesting it, whatever the model made of the two: the
+        # rule settles and the record is noted beside it. Measured on the
+        # Parcelwise dry run: PR #220 sent three signed rules to sign-off.
+        rule_wins = rule_guarded = record_disputes = False
+        rule_current = (mem_pick is not None and mem_pick[2].authorized and bool(mem_pick[2].reusable)
+                        and _current_grant(store, mem_pick[2], question, d_context, d_path, d_facts, repo)[0])
+        if rule_current and rec_best is not None and _is_settled(rec_best) and not _void(rec_best) \
+                and not _numeric_clash(mem_pick[2].answer or "", _row_text(rec_best)):
+            disagrees = _disagrees(cfg, question, mem_pick[2].answer or "", rec_best)
+            rule_guarded = disagrees and bool(mem_pick[2].reusable) and not _contests_rule(mem_pick[2], rec_best)
+            rule_wins = not disagrees or rule_guarded
+            record_disputes = disagrees and not rule_guarded
+        if compound_joint is not None and mem_pick is not None:
+            # A compound question answered one clause per earlier call: the
+            # calls are the answer; a record that disagrees is still found below.
+            pick, mem_lex = ("memory", mem_pick[2]), True
+            pick_note = "a compound question, one earlier call per clause"
+        elif rule_wins:
+            pick, mem_lex = ("memory", mem_pick[2]), True
+            agreeing_record = rec_best
+            if rule_guarded or _describes_state(rec_best):
+                # Read as disagreeing, or worded as a status report: the
+                # record is cited as context, not as support.
+                agreeing_role = "context"
+                pick_note = "a standing rule covers this"
+                covers_notes.append(_covers_note(mem_pick[2], rec_best))
+            else:
+                pick_note = (f"a standing rule covers this, and {rec_best['kind']} {_ref(rec_best)} agrees with it")
+            store.append_event("rule_over_record", {"task_id": task_id, "decision_id": did,
+                                                    "memory": mem_pick[2].id,
+                                                    "record": f"{rec_best['kind']} {_ref(rec_best)}",
+                                                    **({"covers": True} if agreeing_role == "context" else {})})
+        elif mem_pick is not None and rec_best is not None:
+            if cfg.semantic_retrieval:
+                choice = _selector_pick(cfg, question, {**memory_choices, "r1": ("record", rec_best)}, **selector_scope)
+                if choice is None:
+                    why_open.append("semantic: neither the matched memory nor the matched record truly answers")
+                else:
+                    pick = choice
+                    pick_note = "won cross-source arbitration"
+                    mem_lex = choice[0] == "memory"
+            else:
+                if mem_pick[2].updated_at >= _parse_ts(rec_best["created_at"]):
+                    pick, mem_lex = ("memory", mem_pick[2]), True
+                else:
+                    pick = ("record", rec_best)
+                pick_note = "newest source won the cross-source tie"
+        elif mem_pick is not None:
+            if cfg.semantic_retrieval:
+                cands: dict = dict(memory_choices)
+                sel_rows = list(ref_rows)
+                seen_refs2 = {r["ref"] for r in sel_rows}
+                for m in store.intents_matching(_meaningful_terms(question), limit=5, repo=repo):
+                    if m["ref"] not in seen_refs2:
+                        sel_rows.append(m)
+                for i, m in enumerate(sel_rows[:7], 1):
+                    cands[f"r{i}"] = ("record", m)
+                choice = _selector_pick(cfg, question, cands, **selector_scope)
+                if choice is None:
+                    why_open.append("semantic: neither the matched memory nor any record answers this "
+                                    "question's actual ask")
+                elif choice[0] == "memory":
+                    pick, mem_lex = choice, True
+                    if choice[1].id != mem_pick[2].id:
+                        mem_pick = (mem_pick[0], mem_pick[1], choice[1])
+                else:
+                    pick = choice
+                    pick_note = "a record outranked the matched memory"
+            else:
+                pick, mem_lex = ("memory", mem_pick[2]), True
+        elif rec_best is not None:
+            if cfg.semantic_retrieval:
+                terms2 = _meaningful_terms(question)
+                sel_rows2 = list(ref_rows)
+                seen_refs3 = {r["ref"] for r in sel_rows2}
+                for m in store.intents_matching(terms2, limit=6, repo=repo):
+                    if m["ref"] not in seen_refs3:
+                        sel_rows2.append(m)
+                cands = {f"r{i}": ("record", m) for i, m in enumerate(sel_rows2[:8], 1)}
+                choice = _selector_pick(cfg, question, cands, **selector_scope)
+                if choice is None:
+                    why_open.append("records: the selector rejected every candidate as out of scope")
+                else:
+                    pick = choice
+                    pick_note = "scope confirmed by the selector"
+            else:
+                pick = ("record", rec_best)
+        pre_grounded, disputed_record = None, None
+        if pick is None and rule_current and cfg.semantic_retrieval:
+            # The selector set a current standing rule aside because it does
+            # not answer the whole question. The rule is still its owner's
+            # closest call, so the grounded composer reads it before the
+            # records are swept: when it answers, whole or in part, the
+            # owner's other rules complete it (below) and what stays open
+            # goes to that owner to sign, with the records cited as context;
+            # a partial answer from a signed rule outranks a partial
+            # composition from pull requests. A record the model read as
+            # disagreeing with the rule is read again against the answer as
+            # served. When the rule does not answer at all, the sweep runs
+            # as before. Measured on the Parcelwise dry run (Nov 2,
+            # 6ee6ac89dcf7): "a completed answer, or every model attempt?"
+            # had Jordan's Jun 1 rule for one side and his Sep 15 rule for
+            # the other; the selector rejected the Jun 1 rule and PR #216
+            # alike, three pull requests were composed in their place, and
+            # Jordan was asked to sign what he had already ruled on.
+            rule_row = mem_pick[2]
+            read = _compose_answer(cfg, question, f"earlier answer {rule_row.id}", _memory_body(rule_row),
+                                   rule_row.answered_by, given=_given(d_context, d_facts, _rule_given(rule_row)))
+            if read is not None:
+                pick, mem_lex = ("memory", rule_row), True
+                pre_grounded = (rule_row.id, read)
+                pick_note = "a standing rule is the closest call; read for the part it answers"
+                if rec_best is not None and _is_settled(rec_best) and not _void(rec_best):
+                    if record_disputes:
+                        disputed_record = rec_best
+                    else:
+                        agreeing_record, agreeing_role = rec_best, "context"
+                context_records = [r for r in ref_rows if _is_settled(r) and not _void(r)
+                                   and (rec_best is None or r["ref"] != rec_best["ref"])][:2]
+                store.append_event("rule_read_in_part", {
+                    "task_id": task_id, "decision_id": did, "memory": rule_row.id,
+                    "record": f"{rec_best['kind']} {_ref(rec_best)}" if rec_best is not None else "",
+                    "disputes": disputed_record is not None, "whole": not _states_a_gap(read),
+                    "why": "the selector picked nothing; a current standing rule is read for the part it answers"})
+            else:
+                why_open.append(f"memory: the standing rule from decision {rule_row.id} is the closest call and "
+                                "does not answer this question")
+        sweep_mems: list = []
+        if pick is None and cfg.deep_retrieval:
+            expansion = _expand_query(cfg, question)
+            sweep_rows = list(ref_rows)
+            seen_sweep = {r["ref"] for r in sweep_rows}
+            exp_emb = None
+            exp_added = 0
+            if expansion:
+                exp_text = " ".join(expansion)
+                exp_emb = llm_mod.embed(question + " " + exp_text)
+                for m in store.intents_matching(_meaningful_terms(exp_text), limit=8, repo=repo):
+                    if m["ref"] not in seen_sweep:
+                        sweep_rows.append(m)
+                        seen_sweep.add(m["ref"])
+                        exp_added += 1
+                # The expansion's vocabulary also reaches memory through
+                # the stemmed hybrid search, not only the hashed cosine.
+                for item in store.memory_search(question + " " + exp_text, limit=6, repo=repo, min_score=0.2):
+                    p = store.get_decision(item["id"])
+                    if p is not None and p.status != "pending":
+                        sweep_mems.append(p)
+            for item in store.memory_search(question, limit=6, repo=repo, min_score=0.2):
+                p = store.get_decision(item["id"])
+                if p is not None and p.status != "pending" and p.id not in {x.id for x in sweep_mems}:
+                    sweep_mems.append(p)
+            store.append_event("expand", {"task_id": task_id, "decision_id": did, "phrases": expansion,
+                                          "added_candidates": exp_added})
+            pick = _wide_select(store, cfg, question, emb, _meaningful_terms(question), repo=repo,
+                                extra_rows=sweep_rows, extra_emb=exp_emb, extra_mems=sweep_mems,
+                                context=d_context, path=d_path, facts=d_facts)
+            if pick is None:
+                joint_rows = list(sweep_rows)
+                seen_j = {r["ref"] for r in joint_rows}
+                for m in store.intents_matching(_meaningful_terms(question), limit=6, repo=repo):
+                    if m["ref"] not in seen_j:
+                        joint_rows.append(m)
+                        seen_j.add(m["ref"])
+                for p in sweep_mems[:3]:
+                    joint_rows.append(_as_record(p))
+                unmet_j = _unmet_contrast([asked_q], [_row_text(r) for r in joint_rows])
+                if unmet_j:
+                    why_open.append(f"semantic: no candidate mentions {', '.join(unmet_j)}, "
+                                    "the condition this question turns on")
+                    joint = None
+                elif reversal_request:
+                    joint = None
+                else:
+                    joint = _compose_joint(cfg, question, joint_rows, given=_given(d_context, d_facts))
+                if joint is not None and _states_no_answer(joint[0], known_people, question):
+                    # The records say the call is open, or who makes it: not
+                    # an answer to propose, a note beside the open call.
+                    open_notes.append(_open_note(joint[1], joint[0]))
+                    why_open.append(f"semantic: {_cited_prose(joint[1])} say only that the call is still open, not what it is")
+                    joint = None
+                if joint is not None:
+                    j_answer, j_cited, *j_more = joint
+                    j_partial = bool(j_more and j_more[0]) or _states_a_gap(j_answer)
+                    used_rows = j_more[1] if len(j_more) > 1 else []
+                    joint_open = any(not _is_settled(r) for r in used_rows)
+                    store.publish_evidence(did, used_rows, status="proposed" if joint_open else "partial" if j_partial else "resolved", source="record",
+                                          answer=j_answer, kind="prediction" if joint_open else "evidence",
+                                          evidence=f"composed across records: {j_cited}"
+                                          + ("; answers this only in part" if j_partial else ""))
+                    store.append_event("resolve", {"task_id": task_id, "decision_id": did, "source": "record",
+                                                   "cited": j_cited, "kind": "joint-composition"})
+                    result.resolved.append({"id": did, "question": question, "source": "record",
+                                            "answer": j_answer, "partial": j_partial, "cited": j_cited})
+                    continue
+                why_open.append("semantic: no candidate truly answers this, alone or jointly "
+                                f"(expansion added {exp_added} candidates)")
+            else:
+                pick_note = "selected by the semantic rung"
+
+        if pick is not None and pick[0] == "memory":
+            candidate = preserve_grant(pick[1])
+            pick = ("memory", candidate)
+            if mem_lex:
+                # Similarity belongs to the selected source, including
+                # after newest-answer or semantic arbitration.
+                mem_pick = next((row for row in rule_candidates + scored if row[2].id == candidate.id), None)
+
+        # Selection (including the model sweep) cannot turn a historical
+        # record into approval to reverse it. Keep its citation for the owner.
+        if reversal_request and pick is not None and pick[0] == "record":
+            row = pick[1]
+            why_open.append(f"records: selected {row['kind']} {_ref(row)}: {row['title']}; "
+                            f"excerpt: {_excerpt(row['body'], 240, 'the record has the rest')}; "
+                            "does not authorize the requested reversal")
+            pick = None
+        if reversal_request and pick is not None and pick[0] == "memory":
+            previous = pick[1]
+            if (previous.source == "record" or not previous.answered_by
+                    or not _REVERSAL_REQUEST_RE.search(previous.question)):
+                why_open.append(f"memory: decision {previous.id} is context, not a signed answer "
+                                "to a reversal request")
+                pick, mem_lex = None, False
+
+        # Entailment gate on memory reuse. A neighbouring question's answer
+        # is applied to THIS question through the grounded composer, never
+        # served verbatim, unless the question asked is the same decision
+        # word for word. A rewritten follow-up always composes: the
+        # rewrite carries a prior answer's own words, which then match
+        # that same memory as a false direct hit (a monthly-contract
+        # question was answered with the annual rule, verbatim). When the
+        # composer says the record does not answer, the ladder continues.
+        if pick is not None and pick[0] == "memory":
+            applies, reason = applicability_status(pick[1], d_path, d_facts, repo=repo)
+            if not applies:
+                why_open.append(f"memory: {reason}; earlier answer {pick[1].id} is context, not an answer here: "
+                                + _excerpt(pick[1].answer, 240, "the earlier answer has the rest"))
+                store.append_event("applicability_unmet", {"task_id": task_id, "decision_id": did,
+                                                            "memory": pick[1].id, "why": reason})
+                pick, mem_lex = None, False
+        if pick is not None and pick[0] == "memory":
+            unmet_m = _unmet_contrast([asked_q],
+                                      [pick[1].question, _memory_body(pick[1]), pick[1].context or ""])
+            if unmet_m:
+                why_open.append(f"memory: decision {pick[1].id} never mentions {', '.join(unmet_m)}, "
+                                "the condition this question turns on")
+                store.append_event("contrast_unmet", {"task_id": task_id, "decision_id": did,
+                                                      "memory": pick[1].id, "missing": unmet_m})
+                pick, mem_lex = None, False
+        verbatim_ok = (pick is not None and pick[0] == "memory" and mem_lex and mem_pick is not None
+                       and question == asked_q and mem_pick[1] >= 0.95 and pre_grounded is None)
+        joint_partial = False
+        if pick is not None and pick[0] == "memory" and cfg.semantic_retrieval and not verbatim_ok:
+            # A rule whose conditions this question meets is given: the
+            # answer does not have to establish its own membership again.
+            # Measured live on 63eb671: the rule was found to cover the
+            # question while the composed answer doubted that it applied.
+            rule_given = ""
+            if pick[1].reusable and rule_status(pick[1], question, d_context, facts=d_facts, repo=repo)[0]:
+                rule_given = _rule_given(pick[1])
+            m_given = _given(d_context, d_facts, rule_given)
+            grounded = (None if compound_joint is not None
+                        else pre_grounded[1] if pre_grounded is not None and pre_grounded[0] == pick[1].id
+                        else _compose_answer(cfg, question, f"earlier answer {pick[1].id}", _memory_body(pick[1]),
+                                             pick[1].answered_by, given=m_given))
+            if grounded is None and compound_joint is None and mem_lex:
+                # The closest row does not answer this; a compound question
+                # may still be answered one clause per call.
+                clauses = _compound_clauses(question)
+                compound = (_compound_joint(store, cfg, question, clauses, scored, repo, d_context, d_facts)
+                            if clauses else None)
+                if compound is not None:
+                    compound_joint, compound_rows = compound
+            # A rule that answers in part is read first with its owner's
+            # other standing rules, which may settle the rest; the joint's
+            # standing is checked below (_joint_rule_standing) as for a
+            # compound question.
+            owner_rules = (_owner_rules(pick[1], rule_candidates + scored, question, d_context, d_facts, repo)
+                           if rule_given and mem_lex and compound_joint is None else [])
+            others = ([p for p in compound_rows if p.id != pick[1].id] if compound_joint is not None
+                      else (owner_rules + [p for _, s2, p in scored[1:6] if s2 >= 0.35 and p.id != pick[1].id
+                                           and all(p.id != o.id for o in owner_rules)])[:3] if mem_lex else [])
+            j_given = _given(d_context, d_facts, " ".join([rule_given] + [_rule_given(p) for p in owner_rules]).strip())
+            if grounded is None or (_states_a_gap(grounded) and others):
+                joint = (compound_joint if compound_joint is not None
+                         else _compose_joint(cfg, question, [_as_record(pick[1])] + [_as_record(p) for p in others],
+                                             given=j_given) if others else None)
+                if joint is not None:
+                    joint_partial = len(joint) > 2 and bool(joint[2])
+                    memory_used_rows = joint[3] if len(joint) > 3 else []
+                    primary = next((p for p in [pick[1]] + others if memory_used_rows and p.id == memory_used_rows[0].get('decision_source_id')), pick[1])
+                    pick = ("memory", replace(primary, answer=joint[0]))
+                    pick_note = (pick_note + "; " if pick_note else "") + f"composed with {joint[1]}"
+                elif grounded is not None:
+                    pick = ("memory", replace(pick[1], answer=grounded))
+                else:
+                    why_open.append(f"memory: decision {pick[1].id} is the closest answer but does not "
+                                    "answer this question")
+                    pick, mem_lex = None, False
+            else:
+                pick = ("memory", replace(pick[1], answer=grounded))
+
+        # A signed answer and a settled record that state different figures
+        # for the same thing are a conflict for a person, whichever one the
+        # selector preferred. Measured live on eb9d22d: memory signed 11 days,
+        # a newer record said 19, and the record was served as the answer.
+        pre_rival = None
+        if pick is not None and mem_pick is not None:
+            if pick[0] == "record":
+                mem = mem_pick[2]
+                rival = pick[1] if applicability_status(mem, d_path, d_facts, repo=repo)[0] else None
+            else:
+                mem = store.get_decision(pick[1].id, exact=True) or pick[1]
+                rival = _record_contradicting(store, cfg, repo, question, mem.answer)
+                pre_rival = (rival,)
+            if (mem.authorized and rival is not None and _is_settled(rival)
+                    and _numeric_clash(mem.answer or "", _row_text(rival))):
+                conflict = (mem, rival)
+        if conflict is not None:
+            mem, rival = conflict
+            clash = f"{rival['kind']} {_ref(rival)}{_ticket_state(rival)}"
+            why_open.append(f"conflict: decision {mem.id}, signed by {mem.answered_by or 'a person'}, says \""
+                            f"{_excerpt(mem.answer, 200, 'the decision has the rest')}\", and {clash} says \""
+                            f"{_record_claim(rival, mem.answer or '')}\"; they state "
+                            "different figures, so Raven serves neither and proposes neither: a person decides "
+                            "which stands")
+            store.append_event("memory_record_conflict", {"task_id": task_id, "decision_id": did,
+                                                          "memory": mem.id, "record": clash, "escalated": True,
+                                                          "served": "neither"})
+            pick, mem_lex = None, False
+
+        if (pick is not None and pick[0] == "memory" and not pick[1].authorized
+                and _states_no_answer(pick[1].answer or "", known_people, question)):
+            # An unsigned earlier answer that only says the call is open is
+            # nothing to propose: the call stays open, with the note.
+            open_notes.append(_open_note(f"earlier decision {pick[1].id}", pick[1].answer or ""))
+            why_open.append(f"memory: decision {pick[1].id} says only that the call is still open, not what it is; "
+                            "nothing to propose")
+            pick, mem_lex = None, False
+        if pick is not None:
+            kind, item = pick
+            mem_conflict = ""
+            mem_partial = False
+            noted_record = None
+            if kind == "memory":
+                if mem_lex and mem_pick is not None:
+                    eff, sim, _ = mem_pick
+                    mkind = "direct" if eff >= DIRECT_MEMORY_MIN else "near match"
+                    detail = f"{mkind}, decision {item.id}, similarity {sim:.2f}, decayed score {eff:.2f}"
+                    if reranked and item.id == reranked:
+                        # Say that the text score did not find this, so a
+                        # person reading the evidence knows which part of
+                        # it to disbelieve.
+                        detail = (f"near match, decision {item.id}, below the text-score floor at {sim:.2f} and "
+                                  "read as answering this anyway")
+                    if pick_note and "composed with" in pick_note:
+                        detail += "; " + pick_note.split("composed with", 1)[1].join(["composed with", ""])
+                else:
+                    mkind = "semantic"
+                    detail = f"reused from decision {item.id}, {pick_note}, checked against this question"
+                mem_partial = _states_a_gap(item.answer) or joint_partial or bool(item.gaps)
+                # An answer read from several rows, or one that leaves part
+                # of the question open, is checked as served: a record is
+                # read against the words the person signs, not against the
+                # row they started from. Measured on the Parcelwise dry run:
+                # PR #216 disagreed with Jordan's Jun 1 rule alone and is the
+                # record his Sep 15 rule was made on; read against the two
+                # together it agrees.
+                read_in_part = len(memory_used_rows) > 1 or mem_partial
+                rival = (pre_rival[0] if pre_rival and not read_in_part
+                         else _record_contradicting(store, cfg, repo, question, item.answer))
+                if rival is None and disputed_record is not None:
+                    # The record the model read as disagreeing with the rule
+                    # alone. Against the rule's reading of the whole question
+                    # it still disagrees; against the rules read together, or
+                    # the part the rule settles, it is read again.
+                    clash = f"{disputed_record['kind']} {_ref(disputed_record)}{_ticket_state(disputed_record)}"
+                    if not read_in_part or _disagrees(cfg, question, item.answer, disputed_record):
+                        rival = disputed_record
+                    else:
+                        noted_record = disputed_record
+                        covers_notes.append(f"{clash} covers this too: \"{_record_claim(disputed_record, item.answer, 160)}\"; "
+                                            "read against the answer as served, it does not decide it differently")
+                if rival is not None and _numeric_clash(item.answer, (rival["title"] or "") + " " + (rival["body"] or "")):
+                    # An unsettled record, or an unsigned answer: the figures
+                    # still disagree, and the answer says so rather than one
+                    # side quietly replacing the other.
+                    clash = f"{rival['kind']} {_ref(rival)}{_ticket_state(rival)}"
+                    mem_partial = True
+                    item = replace(item, answer=(
+                        f"CONFLICTED, do not act on either side alone: "
+                        f"{item.answered_by or 'an earlier answer'} says: {item.answer} But {clash} states a "
+                        f"different figure: \"{_record_claim(rival, item.answer)}\". Confirm with the owner which stands."))
+                    mem_conflict = f"{clash} states a different figure; surfaced in the answer itself"
+                    store.append_event("memory_record_conflict", {"task_id": task_id, "decision_id": did,
+                                                                  "memory": item.id, "record": clash,
+                                                                  "surfaced": True})
+                elif rival is not None and _is_settled(rival) and not item.authorized:
+                    clash = f"{rival['kind']} {_ref(rival)}{_ticket_state(rival)}"
+                    store.append_event("memory_record_conflict", {"task_id": task_id, "decision_id": did,
+                                                                  "memory": item.id, "record": clash,
+                                                                  "escalated": True})
+                    kind, item = "record", rival
+                elif rival is not None and _is_settled(rival) and item.authorized and item.reusable \
+                        and not _contests_rule(item, rival):
+                    # A signed standing rule is the organization's own
+                    # declaration. A pull request or commit that describes
+                    # the state of the code, or a record older than the
+                    # rule's signature, covers the same ground without
+                    # deciding it differently: it is noted on the settled
+                    # answer, it does not turn the rule into a CONFLICTED
+                    # sign-off. Measured on the Parcelwise dry run: PR #220
+                    # ("no allowance and no charge for those yet") vetoed
+                    # three signed rules on the strength of its title.
+                    clash = f"{rival['kind']} {_ref(rival)}{_ticket_state(rival)}"
+                    noted_record = rival
+                    if not any(clash in note for note in covers_notes):
+                        covers_notes.append(_covers_note(item, rival))
+                    store.append_event("rule_over_record", {"task_id": task_id, "decision_id": did,
+                                                            "memory": item.id, "record": clash, "covers": True})
+                    rival = None
+                elif rival is not None and _is_settled(rival):
+                    clash = f"{rival['kind']} {_ref(rival)}{_ticket_state(rival)}"
+                    mem_partial = True
+                    item = replace(item, answer=(
+                        f"CONFLICTED, do not act on either side alone: "
+                        f"{item.answered_by or 'an earlier answer'} says: {item.answer} But {clash} states "
+                        f"otherwise: \"{_record_claim(rival, item.answer)}\". Neither is corroborated over the "
+                        f"other; confirm with the owner which stands."))
+                    mem_conflict = f"{clash} covers this too and does not agree; surfaced in the answer itself"
+                    store.append_event("memory_record_conflict", {"task_id": task_id, "decision_id": did,
+                                                                  "memory": item.id, "record": clash,
+                                                                  "surfaced": True})
+                elif rival is not None:
+                    clash = f"{rival['kind']} {_ref(rival)}{_ticket_state(rival)}"
+                    whose = "the signed answer" if item.authorized else "the earlier resolution"
+                    mem_conflict = (f"{clash} covers this too and does not agree; the answer above is {whose}, "
+                                    "check which should stand")
+                    store.append_event("memory_record_conflict", {"task_id": task_id, "decision_id": did,
+                                                                  "memory": item.id, "record": clash})
+            if kind == "memory":
+                # A person stands behind a signed row; the reuse is
+                # evidence (still marked for sign-off here). An unsigned
+                # row, one the agent settled without anyone signing, is a
+                # prediction: shown with its provenance, never served as
+                # evidence, and it closes no open question.
+                signed = item.authorized
+                origin = "memory" if signed else (item.source or "memory")
+                revision = ts_to_iso(item.updated_at) if item.updated_at else ""
+                # A signed answer given for another scope (another named
+                # customer, other files) is a prediction for this one,
+                # not evidence: the owner decides whether it carries over.
+                # A reusable rule whose conditions hold is the one case
+                # that resolves without a fresh signature: its owner said
+                # so, for these conditions, until it expires.
+                other_scope, known_scope = (_scope_difference(question, d_context, d_path, item, d_facts,
+                                                              _facts_of(store, item.id), repo)
+                                            if signed else ("", False))
+                rule_ok, rule_why = (rule_status(item, question, d_context, facts=d_facts, repo=repo)
+                                     if signed and item.reusable else (False, ""))
+                # Why a standing rule was not applied, in the words the fit
+                # reason uses; never "did not make it a standing rule" for a
+                # row that is one. Measured on the Parcelwise dry run: three
+                # rules vetoed by a record were blamed on their owners.
+                withheld = ""
+                joint_rules: list = []
+                if signed and item.reusable and not rule_ok and rule_why:
+                    withheld = ("it has expired" if "expired" in rule_why else "its source needs review"
+                                if "review" in rule_why else "its conditions do not hold here")
+                if mem_conflict:
+                    rule_ok = False
+                    rule_why = 'A record disagrees with the answer; it requires a fresh human sign-off'
+                    withheld = "a record disagrees"
+                elif len(memory_used_rows) > 1:
+                    # Every row a standing rule of the same owner, met here,
+                    # and the answer within what they say: the rules settle
+                    # it together. Anything else is a fresh sign-off.
+                    joint_rules = (_joint_rule_standing(store, memory_used_rows, item, question, d_context, d_path,
+                                                        d_facts, repo) if rule_ok else [])
+                    if joint_rules:
+                        rule_why = (f"the rules {item.rule_by or item.answered_by} made of decisions "
+                                    f"{' and '.join(d.id for d in joint_rules)} together cover this question")
+                    else:
+                        rule_ok = False
+                        rule_why = 'The answer combines or contrasts premises; it requires a fresh human sign-off'
+                        withheld = "the answer combines sources"
+                if rule_ok and other_scope and item.rule_scope != "any":
+                    # Another customer, other files: the rule was made for
+                    # its own scope and its owner did not say anywhere.
+                    rule_ok, rule_why = False, (f"the rule from decision {item.id} applies in its own scope only, and "
+                                                f"this {'is' if known_scope else 'may be'} another ({other_scope}); its "
+                                                "owner did not make it apply anywhere")
+                    withheld = "it applies in its own scope only and this may be another"
+                # Task/context links can explain why ordinary historical
+                # evidence is not established here. They cannot narrow an
+                # explicit rule whose existing declared conditions hold.
+                namespace_scope = (_memory_namespace_difference(store, task_id, item)
+                                   if signed and not rule_ok else '')
+                auto_rules = store.get_setting("auto_rules") == "1"
+                terms = [c for c in rule_conditions(item.rule_conditions)]
+                covered = (f"the rule {item.rule_by or item.answered_by} made of decision {item.id}"
+                           + (f" (conditions: {'; '.join(terms[:3])})" if terms else "")
+                           + (f", until {item.rule_expires[:10]}" if item.rule_expires else ""))
+                if joint_rules:
+                    covered = (f"the rules {item.rule_by or item.answered_by} made of decisions "
+                               f"{' and '.join(d.id for d in joint_rules)}, together")
+                rule_note = ""
+                attribution = (item.answered_by + " answered") if item.answered_by else (item.signed_by + " approved")
+                if rule_ok and not auto_rules:
+                    # The rule fits; the organization keeps every decision
+                    # request-specific until it turns automatic rules on.
+                    rule_ok = False
+                    other_scope = ""
+                    rule_why = ""
+                    withheld = "automatic rules are off"
+                    rule_note = (f"{covered} covers this; automatic rule authorization is off (settings.auto_rules), "
+                                 "so a person signs it")
+                    why_open.append("memory: " + rule_note)
+                if rule_ok:
+                    other_scope = ""
+                    evidence = f"covered by {covered}; {attribution} it ({detail})"
+                    if mem_partial:
+                        # The rule covers the question; the answer settles
+                        # only part of it. Status, sign-off and the fit
+                        # reason all say so, not one of them "nobody asked".
+                        evidence += "; answers this only in part, so a person signs it"
+                elif rule_why:
+                    # The rule was nominated and did not fit: the node says
+                    # so where the person reads it, not only in the log.
+                    rule_note = rule_why + ("; this historical answer still requires fresh sign-off"
+                                           if namespace_scope else "; the answer is evidence to sign, not a rule here")
+                    why_open.append("memory: " + rule_note)
+                if rule_ok:
+                    pass
+                elif signed and namespace_scope and not other_scope:
+                    signed = False
+                    evidence = (f"prediction: {attribution} in decision {item.id}; {namespace_scope}; "
+                                f"historical context, not established evidence for this task ({detail}); "
+                                "confirm applicability with the owner before acting on it")
+                elif signed and other_scope:
+                    signed = False
+                    evidence = ((f"prediction: {attribution} this for another scope, decision "
+                                 f"{item.id} ({other_scope}); it may not carry over" if known_scope else
+                                 f"prediction: {attribution} a question like this in decision {item.id}, "
+                                 f"which may be another scope ({other_scope}); Raven cannot tell whether it carries "
+                                 "over")
+                                + f" ({detail}); confirm with the owner before acting on it")
+                elif signed:
+                    evidence = f"{attribution} this ({detail})"
+                else:
+                    who = "settled by the agent" if item.source == "agent" else f"from {item.evidence or item.source}"
+                    evidence = (f"prediction: reused from decision {item.id}, {who}, which no human has signed "
+                                f"({detail}); confirm with the owner before acting on it")
+                same_question = (mem_lex and mem_pick is not None and question == asked_q and mem_pick[1] >= 0.95)
+                if provisional and signed and not same_question:
+                    # The static first pass of a node the model pass reads
+                    # next: a match that is not the same question is a check
+                    # in progress. Published as an unsigned prediction, so
+                    # nothing shows it as settled and nobody is told, until
+                    # the model pass confirms it or withdraws it. Measured on
+                    # the Harborline dry run: "per-use rate" was settled from
+                    # "which plans are metered" at term overlap 0.80 and shown
+                    # as settled until the model pass withdrew it a minute later.
+                    checking = (f"checking: a static match to decision {item.id} ({detail}); the model pass "
+                                "confirms it or withdraws it, and nobody is asked until then")
+                    store.publish_evidence(did, [_as_record(item)], status="proposed", source=origin,
+                                           answer=item.answer, prediction=item.answer, kind="prediction",
+                                           source_id=item.id, source_revision=revision, evidence=checking)
+                    store.add_link(did, item.id, "derived", "a static match the model pass checks")
+                    store.append_event("checking", {"task_id": task_id, "decision_id": did, "cited": item.id,
+                                                    "kind": mkind})
+                    result.proposed.append({"id": did, "question": question, "source": origin, "by": "",
+                                            "answer": item.answer, "conflict": "", "partial": False,
+                                            "reused_from": item.id, "reused_q": item.question,
+                                            "cited": f"earlier decision {item.id}", "state": "checking"})
+                    continue
+                status = ("partial" if mem_partial else "resolved") if signed else "proposed"
+                store.publish_evidence(
+                    did, (memory_used_rows or [_as_record(item)])
+                    + ([_evidence_role(agreeing_record, agreeing_role)] if agreeing_record is not None else [])
+                    + ([_evidence_role(noted_record, 'context')] if noted_record is not None
+                       and (agreeing_record is None or noted_record["ref"] != agreeing_record["ref"]) else [])
+                    + [_evidence_role(r, 'context') for r in context_records
+                       if noted_record is None or r["ref"] != noted_record["ref"]]
+                    + ([_evidence_role(rival, 'contradiction')] if mem_conflict and rival is not None else []),
+                    status=status, source=origin, answer=item.answer,
+                    answered_by=item.answered_by if signed else "",
+                    prediction=None if signed else item.answer,
+                    kind=_kind_for(status, origin, mkind) if signed else "prediction",
+                    source_id=item.id, source_revision=revision,
+                    fit_reason=(fit_reason(item, mkind, rule_ok, terms, when=ts_to_iso(item.updated_at)[:10]
+                                           if item.updated_at else "", partial=mem_partial, withheld=withheld,
+                                           also=[ts_to_iso(d.updated_at)[:10] for d in joint_rules if d.id != item.id]
+                                           if rule_ok else ())
+                                if signed else ""),
+                    evidence=evidence + (f"; conflict: {mem_conflict}" if mem_conflict else "")
+                    + (f"; {pick_note}" if mem_lex and pick_note else "")
+                    + "".join(f"; {note}" for note in covers_notes)
+                    + (f"; {rule_note}" if rule_note else ""),
+                    **({"signoff": "rule", "signed_by": item.rule_by or item.answered_by} if rule_ok and not mem_partial else {}))
+                store.add_link(did, item.id, "derived", "took its answer from this decision")
+                store.append_event("resolve" if signed else "proposed",
+                                   {"task_id": task_id, "decision_id": did, "source": origin,
+                                    "cited": item.id, "answered_by": item.answered_by if signed else "",
+                                    "kind": mkind, "signed": signed,
+                                    **({"also": [r.get("decision_source_id") for r in memory_used_rows
+                                                 if r.get("decision_source_id") and r.get("decision_source_id") != item.id]}
+                                       if len(memory_used_rows) > 1 else {})})
+                entry = {"id": did, "question": question, "source": origin,
+                         "by": item.answered_by if signed else "", "answer": item.answer,
+                         "conflict": mem_conflict, "partial": mem_partial,
+                         "reused_from": item.id if mkind == "semantic" or not signed else "",
+                         "reused_q": item.question if mkind == "semantic" or not signed else "",
+                         "cited": item.evidence or f"earlier decision {item.id}"}
+                if signed:
+                    result.resolved.append(entry)
+                    if not scratch:
+                        _close_open_twins(store, did, question, repo, item.answer, item.answered_by, source=origin,
+                                      context=d_context, path=d_path)
+                else:
+                    result.proposed.append({**entry, "state": "unsigned"})
+                continue
+            newer = _superseded_by_newer(store, repo, item)
+            if newer is not None:
+                store.append_event("superseded_record", {"task_id": task_id, "decision_id": did,
+                                                         "stale": f"{item['kind']} {_ref(item)}",
+                                                         "current": f"{newer['kind']} {_ref(newer)}"})
+                item = newer
+            citation = f"{item['kind']} {_ref(item)}{_ticket_state(item)}: {item['title']}"
+            body = item["body"].strip() or item["title"].strip()
+            if not cfg.semantic_retrieval:
+                why_open.append(f"records: retrieved {citation} as context; no answerability check is available "
+                                f"without a model. Excerpt: {_excerpt(body, 240, 'the record has the rest')}")
+                if _RECENCY_Q_RE.search(question.lower()):
+                    contest = _contested_by_newer(store, repo, item)
+                    if contest is not None:
+                        why_open.append(f"records: contested by newer {contest['kind']} {_ref(contest)}: "
+                                        f"{contest['title']}; confirm what is in effect")
+                    else:
+                        why_open.append("records: no newer indexed record revisits this; the indexed set may be incomplete")
+            unmet_r = _unmet_contrast([asked_q], [item["title"], body])
+            void = _void(item)
+            if void:
+                why_open.append(f"records: {citation} was {void}: it records something that was not adopted, "
+                                "so it is context, not the answer")
+                answer = None
+            elif reversal_request:
+                # A memory/record conflict can replace the selected memory
+                # after the earlier guard. That record is context too.
+                why_open.append(f"records: {citation} is context, not reversal approval")
+                answer = None
+            elif unmet_r:
+                why_open.append(f"records: {citation} never mentions {', '.join(unmet_r)}, "
+                                "the condition this question turns on")
+                answer = None
+            else:
+                answer = _compose_answer(cfg, question, citation, body, item["author"],
+                                         given=_given(d_context, d_facts))
+            if answer is not None:
+                stray = _invented_paths(answer, body, item["title"], question)
+                if stray:
+                    answer += (f" (note: {', '.join(stray)} {'is' if len(stray) == 1 else 'are'} not named in "
+                               f"the cited record; Raven added that, so check the file before trusting it)")
+                    store.append_event("unsourced_path", {"task_id": task_id, "decision_id": did,
+                                                          "paths": ", ".join(stray), "cited": citation})
+            if answer is not None and _is_pure_refusal(answer):
+                why_open.append(f"records: {citation} does not state an answer to this question")
+                answer = None
+            elif answer is not None and _states_no_answer(answer, known_people, question):
+                open_notes.append(_open_note(citation, answer))
+                why_open.append(f"records: {citation} says only that the call is still open, not what it is")
+                answer = None
+            if not reversal_request and answer is None and category == "data-source" and _is_settled(item) \
+                    and any(t in _RETRO_MACHINERY for t in _meaningful_terms(question)):
+                pointer = (f"Not stated in the indexed record. The change itself is {citation}, by "
+                           f"{item['author']}; the reasoning likely lives in that item's description or "
+                           f"discussion, which Raven could not read from here.")
+                store.publish_evidence(did, [_evidence_role(item, 'context')], status="partial", source="record", answer=pointer,
+                                      answered_by=item["author"], kind="evidence",
+                                      evidence=f"{citation}; states the change, not the reasoning")
+                store.append_event("resolve", {"task_id": task_id, "decision_id": did, "source": "record",
+                                               "cited": citation, "kind": "retro-pointer"})
+                result.resolved.append({"id": did, "question": question, "source": "record",
+                                        "answer": pointer, "partial": True, "cited": citation})
+                continue
+            if answer is None:
+                joint_rows2, seen_j2 = [item], {item["ref"]}
+                for r in ref_rows:
+                    if r["ref"] not in seen_j2:
+                        joint_rows2.append(r)
+                        seen_j2.add(r["ref"])
+                for _, _, r in rec_pool:
+                    if r["ref"] not in seen_j2:
+                        joint_rows2.append(r)
+                        seen_j2.add(r["ref"])
+                for m in store.intents_matching(_meaningful_terms(question), limit=6, repo=repo):
+                    if m["ref"] not in seen_j2:
+                        joint_rows2.append(m)
+                        seen_j2.add(m["ref"])
+                unmet_j2 = _unmet_contrast([asked_q], [_row_text(r) for r in joint_rows2])
+                if reversal_request:
+                    joint2 = None
+                elif unmet_j2:
+                    why_open.append(f"records: no candidate mentions {', '.join(unmet_j2)}, "
+                                    "the condition this question turns on")
+                    joint2 = None
+                else:
+                    joint2 = _compose_joint(cfg, question, joint_rows2, given=_given(d_context, d_facts))
+                if joint2 is not None and _states_no_answer(joint2[0], known_people, question):
+                    open_notes.append(_open_note(joint2[1], joint2[0]))
+                    why_open.append(f"records: {_cited_prose(joint2[1])} say only that the call is still open, not what it is")
+                    joint2 = None
+                if joint2 is not None:
+                    j_answer2, j_cited2, *j_more2 = joint2
+                    j_partial2 = bool(j_more2 and j_more2[0]) or _states_a_gap(j_answer2)
+                    used_rows = j_more2[1] if len(j_more2) > 1 else []
+                    joint_open = any(not _is_settled(r) for r in used_rows)
+                    store.publish_evidence(did, used_rows, status="proposed" if joint_open else "partial" if j_partial2 else "resolved", source="record",
+                                          answer=j_answer2, kind="prediction" if joint_open else "evidence",
+                                          evidence=f"composed across records: {j_cited2}"
+                                          + ("; answers this only in part" if j_partial2 else ""))
+                    store.append_event("resolve", {"task_id": task_id, "decision_id": did, "source": "record",
+                                                   "cited": j_cited2, "kind": "joint-composition"})
+                    result.resolved.append({"id": did, "question": question, "source": "record",
+                                            "answer": j_answer2, "partial": j_partial2, "cited": j_cited2})
+                    continue
+                if cfg.semantic_retrieval:
+                    why_open.append(f"records: {citation} was the best candidate but does not state the answer")
+            elif not _is_settled(item):
+                store.publish_evidence(did, [item], status="proposed", source="record", answer=answer,
+                                      answered_by=item["author"], kind="prediction",
+                                      evidence=f"{citation}; not ratified, the ticket is still {item['status'] or 'open'}")
+                store.append_event("proposed", {"task_id": task_id, "decision_id": did, "cited": citation,
+                                                "ticket_status": item["status"]})
+                result.proposed.append({"id": did, "question": question, "source": "record", "answer": answer,
+                                        "state": item["status"] or "open", "cited": citation})
+                continue
+            else:
+                partial = _states_a_gap(answer)
+                extra_ev = ""
+                record_used_rows = [item]
+                if _RECENCY_Q_RE.search(question.lower()):
+                    contest = _contested_by_newer(store, repo, item)
+                    if contest is not None:
+                        record_used_rows.append(_evidence_role(contest, 'contradiction'))
+                        c_ref = f"{contest['kind']} {_ref(contest)}{_ticket_state(contest)}"
+                        answer += (f" (note: {c_ref}, filed after this change, reports the same subject as "
+                                   f"unsettled: \"{contest['title']}\". Confirm the change still holds.)")
+                        extra_ev = f"; contested by newer {c_ref}"
+                        partial = True
+                    else:
+                        answer += " (no newer indexed record revisits this decision.)"
+                    rec_text = (item["title"] + " " + item["body"]).lower()
+                    pend = _PENDING_RE.search(rec_text)
+                    if pend:
+                        answer += (f" (the record also names follow-up work: \"...{pend.group(0)}...\", "
+                                   f"which may not have landed.)")
+                        extra_ev += "; record names pending follow-up work"
+                        partial = True
+                status = "partial" if partial else "resolved"
+                store.publish_evidence(did, record_used_rows, status=status, source="record", answer=answer,
+                                      answered_by=item["author"], kind="evidence",
+                                      evidence=citation + ("; answers this only in part" if partial else "")
+                                      + extra_ev + (f"; {pick_note}" if pick_note else ""))
+                store.append_event("resolve", {"task_id": task_id, "decision_id": did, "source": "record",
+                                               "cited": citation, "kind": pick_note or "lexical"})
+                result.resolved.append({"id": did, "question": question, "source": "record",
+                                        "answer": answer, "partial": partial, "cited": citation})
+                if not partial:
+                    if not scratch:
+                        _close_open_twins(store, did, question, repo, answer, item["author"], source="record",
+                                      context=d_context, path=d_path)
+                continue
+
+        # c. assumption
+        if reversal_request:
+            why_open.append("assumption: a reversal request requires a decision, not a default")
+        elif conflict is not None:
+            why_open.append("assumption: a conflict between a signed answer and a record is a person's call, "
+                            "not a default")
+        elif category in llm_mod.ASSUMABLE_CATEGORIES:
+            precedent = store.db.execute(
+                "SELECT count(*) c FROM intents" + (" WHERE repo=?" if repo else ""),
+                (repo,) if repo else ()).fetchone()["c"]
+            if precedent > 0:
+                default = llm_mod._ASSUMED_DEFAULTS.get(category, "Follow the repo's existing precedent.")
+                a_terms = _meaningful_terms(question)
+                a_dfs = store.term_dfs(a_terms, repo=repo)
+                a_focus = sorted((t for t in a_terms if a_dfs.get(t, 0) > 0), key=lambda t: a_dfs[t])[:3]
+                need_focus = 2 if len(a_focus) >= 2 else len(a_focus)
+                a_required = max(RECORD_MIN_TERMS, min(4, (len(a_terms) + 1) // 2))
+                cited, assume_gap, chosen_m = "", False, None
+                a_named = [m for m in ref_rows if _is_settled(m)]
+                a_named_refs = {m["ref"] for m in a_named}
+                a_cands = a_named + [
+                    m for m in store.intents_matching(a_terms, limit=6, repo=repo)
+                    if _is_settled(m) and m["ref"] not in a_named_refs
+                    and sum(1 for t in a_terms if t in (m["title"] + " " + m["body"]).lower()) >= a_required]
+                if cfg.semantic_retrieval and a_cands:
+                    labeled = "\n".join(
+                        f"r{i}: {m['kind']} {_ref(m)}{_ticket_state(m)}: {m['title']} | "
+                        + " ".join((m["body"] or "").split())[:200]
+                        for i, m in enumerate(a_cands, 1))
+                    try:
+                        verdict = client.complete_json("precedent", llm_mod.PRECEDENT_SYSTEM,
+                                                       f"Question: {question}\n\nCandidates:\n{labeled}")
+                        pick_s = str((verdict or {}).get("pick", "none"))
+                        if pick_s.startswith("r") and pick_s[1:].isdigit():
+                            idx = int(pick_s[1:]) - 1
+                            if 0 <= idx < len(a_cands):
+                                chosen_m = a_cands[idx]
+                    except llm_mod.LLMError:
+                        chosen_m = None
+                else:
+                    for m in a_cands:
+                        n_text = (m["title"] + " " + m["body"]).lower()
+                        if sum(1 for t in a_focus if t in n_text) >= need_focus:
+                            chosen_m = m
+                            break
+                if chosen_m is not None:
+                    m = chosen_m
+                    newer = _superseded_by_newer(store, repo, m)
+                    if newer is not None:
+                        m = newer
+                    cited = f"{m['kind']} {_ref(m)}{_ticket_state(m)}: {m['title']}"
+                    composed = _compose_assumption(cfg, question, cited, m["body"])
+                    if composed == ASSUME_GAP:
+                        cited, assume_gap = "", True
+                    elif composed:
+                        # The record was read and produced this answer, so
+                        # it is the precedent and says so.
+                        default = composed + f" Nearest precedent here: {cited}."
+                    else:
+                        # Nothing read the record: it only shares words
+                        # with the question. A canned default with a
+                        # record stapled to it reads as though the team
+                        # decided this, and a reviewer approved one that
+                        # cited an unrelated change. The record stays in
+                        # the evidence, out of the answer.
+                        near, cited = cited, ""
+                        why_open.append(f"assumption: {near} shares this question's terms but was not read "
+                                        "into an answer, so it is not cited as precedent")
+                if assume_gap:
+                    why_open.append("assumption: the nearest precedent sets no pattern for this question, "
+                                    "so none was made")
+                elif not cited and ref_rows:
+                    named = ", ".join(sorted({m["ref"] for m in ref_rows}))
+                    why_open.append(f"assumption: the question itself cites {named}; a canned default cannot "
+                                    "stand in for records it names, so none was made")
+                elif not cited and _canned_misfit(question, category):
+                    why_open.append(f"assumption: no relevant precedent, and the generic {category} default "
+                                    "does not answer this specific question, so none was made")
+                else:
+                    if cited:
+                        certainty = f"high certainty, closest precedent {cited}"
+                    else:
+                        certainty = ("no record in this repo clears the relevance bar for this question, so "
+                                     "this is a plain default, not a pattern from your history")
+                        default += (" (no relevant precedent in this repo; this is a default, not something "
+                                    "your team has decided)")
+                    store.publish_evidence(did, [m] if cited else [], status="assumed", source="assumption", answer=default,
+                                          prediction=default, kind="prediction",
+                                          evidence=f"low-stakes {category} decision, {certainty} "
+                                                   f"({precedent} records indexed); confirm or correct in the inbox")
+                    store.append_event("assume", {"task_id": task_id, "decision_id": did, "default": default,
+                                                  "certainty": "high" if cited else "default-only",
+                                                  "precedent_records": precedent, "cited": cited})
+                    result.assumed.append({"id": did, "question": question, "default": default})
+                    continue
+            else:
+                why_open.append("assumption: no records indexed to ground one")
+        elif category:
+            why_open.append(f"assumption: '{category}' is not a low-stakes category")
+
+        # d. human
+        if (not reversal_request and category == "data-source" and retro_cand is not None and _is_settled(retro_cand)
+                and any(t in _RETRO_MACHINERY for t in _meaningful_terms(question))):
+            item2 = retro_cand
+            retro_used_rows = [_evidence_role(item2, 'context')]
+            cit2 = f"{item2['kind']} {_ref(item2)}{_ticket_state(item2)}: {item2['title']}"
+            answer2 = (f"Not stated in the indexed record. The closest recorded change is {cit2}, by "
+                       f"{item2['author']}; the reasoning likely lives in that item's description or "
+                       f"discussion, which Raven could not read from here.")
+            if _RECENCY_Q_RE.search(question.lower()):
+                contest2 = _contested_by_newer(store, repo, item2)
+                if contest2 is not None:
+                    retro_used_rows.append(_evidence_role(contest2, 'context'))
+                    answer2 += (f" Newer {contest2['kind']} {_ref(contest2)}{_ticket_state(contest2)} "
+                                f"revisits this: \"{contest2['title']}\".")
+                else:
+                    answer2 += " No newer indexed record revisits the decision."
+            store.publish_evidence(did, retro_used_rows, status="partial", source="record", answer=answer2,
+                                  answered_by=item2["author"], kind="evidence",
+                                  evidence=cit2 + "; states the change, not the reasoning")
+            store.append_event("resolve", {"task_id": task_id, "decision_id": did, "source": "record",
+                                           "cited": cit2, "kind": "retro-pointer"})
+            result.resolved.append({"id": did, "question": question, "source": "record", "answer": answer2,
+                                    "partial": True, "cited": cit2})
+            continue
+        related_open: list = []
+        twin = _open_twin(store, cfg, client, question, emb, repo, exclude=did,
+                          context=d_context, path=d_path, related=related_open, facts=d_facts,
+                          category=d_category, task_id=task_id)
+        for cand, why, known in related_open[:3]:
+            # The same question is open in another scope: a relationship
+            # to show, never one answer for two decisions.
+            scope = "in another scope" if known else "maybe in another scope"
+            store.add_link(did, cand.id, "related", f"same question, {'different' if known else 'possibly different'} "
+                                                     f"scope: {why}")
+            why_open.append(f"related: decision {cand.id} asks the same question {scope} ({why}); "
+                            "one answer does not settle both")
+        if twin is not None:
+            store.update_decision(
+                did, status="duplicate", superseded_by=twin.id, owner=twin.owner or "",
+                owner_evidence=twin.owner_evidence or "", kind="new",
+                answer=(f"Same open decision as {twin.id}, not re-asked"
+                        + (f"; waiting on {twin.owner}." if twin.owner else ".")),
+                evidence=(f"duplicate of open decision {twin.id}"
+                          + (f"; {_excerpt(twin.evidence, 200, 'the open decision has the rest')}"
+                             if twin.evidence else "")))
+            store.add_link(did, twin.id, "duplicate", "the same open decision; one answer settles both")
+            store.append_event("dedup_open", {"task_id": task_id, "decision_id": did, "twin": twin.id,
+                                              "question": _word_trunc(question, 120)})
+            result.open.append({
+                "id": twin.id, "question": question, "owner": twin.owner or None, "duplicate_of": twin.id,
+                "stub": did,
+                "note": (f"already open as decision {twin.id} (asked earlier as: "
+                         f"\"{_word_trunc(twin.question, 70)}\"), not opened again. One answer settles both.")})
+            continue
+        route_notes: list[str] = []
+        ranked = route_ranked(store, repo, question,
+                              path=d_path if d_path != "unknown" else "", context=d_context,
+                              notes=route_notes, requester=d_requester, hints=d_hints,
+                              category=d_category, also_paths=d_also, facts=d_facts,
+                              task_id=task_id, decision_id=did) if repo else []
+        owner_info = ranked[0] if ranked else None
+        # The pilot mode: only what the organization verified routes on
+        # its own; an inferred route goes to the coordinator with the
+        # candidates named, so nobody is pinged on git history alone.
+        inferred_only = owner_info is not None and not any(ln.startswith("verified:") for ln in owner_info[1])
+        if owner_info is not None and inferred_only and store.get_setting("require_verified_route") == "1":
+            fallback = coordinator_route(store, repo, ["an inferred route is not routed to without a verified owner"],
+                                         ranked)
+            if fallback is not None:
+                owner_info = fallback
+        elif owner_info is not None and inferred_only and store.candidate_person(owner_info[0]) is None:
+            # The strongest signal is someone in the history Raven cannot
+            # reach: not one of its people, so no message gets to them and
+            # nobody can sign in as them. Measured live on 5e967e4: the only
+            # verified owner had expired, the route went to a contributor
+            # from git history, and the delivery failed.
+            fallback = coordinator_route(store, repo, [f"{owner_info[0]} leads on git history but is not one of the "
+                                                       "people in Raven, so nobody could ask them"], ranked)
+            if fallback is not None:
+                owner_info = fallback
+        elif owner_info is None:
+            fallback = coordinator_route(store, repo, route_notes)
+            if fallback is not None:
+                owner_info = fallback
+        if owner_info is not None and category == "data-source" and any(
+                t in ("who", "decid", "author", "made", "responsible") for t in _meaningful_terms(question)):
+            o_owner, o_ev, o_score = owner_info
+            owner_info = (o_owner, ["triage contact from ownership stats; this names who owns the area, NOT "
+                                    "the person this question asks about, which the records did not establish",
+                                    *o_ev], o_score)
+        if owner_info is None:
+            unknown_why = ("Raven does not know who owns this: " + "; ".join(route_notes)
+                           if route_notes else "no routing signal cleared the bar")
+            store.update_decision(did, status=OPEN, owner="", kind="new",
+                                  owner_evidence=unknown_why,
+                                  evidence="; ".join(why_open),
+                                  **({"gaps": json.dumps(open_notes)} if open_notes else {}))
+            store.append_event("route_unknown", {"task_id": task_id, "decision_id": did})
+            result.open.append({"id": did, "question": question, "owner": None, "ranked": [],
+                                "note": "Raven does not know who owns this from the graph."})
+            continue
+        owner, evidence, score = owner_info
+        # How this owner has decided before: their own signed answers on
+        # related decisions, as a prediction they confirm or correct.
+        proposal_observations = {}
+        proposal, proposal_from, proposal_why = (_how_they_decide(store, cfg, repo, question, d_context, emb, owner,
+                                                                  path=d_path if d_path != "unknown" else "",
+                                                                  facts=d_facts, observations=proposal_observations)
+                                                 if conflict is None else ("", "", ""))
+        with store.transaction():
+            from .context_memory import _same_source_revision
+            if proposal:
+                for source_id, observed_revision in proposal_observations.items():
+                    current = store.db.execute('SELECT updated_at,needs_review FROM decisions WHERE id=?', (source_id,)).fetchone()
+                    if not current or current['needs_review'] or not _same_source_revision(observed_revision, current['updated_at']):
+                        proposal, proposal_from, proposal_why = '', '', ''
+                        break
+                if proposal_from not in proposal_observations:
+                    proposal, proposal_from, proposal_why = '', '', ''
+            store.update_decision(did, status=OPEN, owner=owner, kind="prediction" if proposal else "new",
+                                  owner_evidence="; ".join(evidence),
+                                  evidence="; ".join(why_open + ([proposal_why] if proposal_why else [])),
+                                  **({"gaps": json.dumps(open_notes)} if open_notes else {}),
+                                  **({"prediction": proposal, "source_id": proposal_from,
+                                      "source_revision": proposal_observations[proposal_from]} if proposal else {}))
+            if proposal:
+                store.add_link(did, proposal_from, "how-they-decide", "the owner's earlier answer the proposal rests on")
+                store.append_event("proposal_composed", {"task_id": task_id, "decision_id": did, "owner": owner,
+                                                         "from": proposal_from})
+        store.append_event("ask_drafted", {"task_id": task_id, "decision_id": did, "owner": owner,
+                                           "score": score})
+        result.open.append({"id": did, "question": question, "owner": owner, "ranked": _ranked_view(ranked),
+                            "routing": f"-> {owner}: " + "; ".join(evidence) if evidence else f"-> {owner}"})
+
+    store.append_event("run_complete", {
+        "task_id": task_id,
+        "resolved": sum(1 for r in result.resolved if not r.get("partial")),
+        "partial": sum(1 for r in result.resolved if r.get("partial")),
+        "proposed": len(result.proposed), "assumed": len(result.assumed), "open": len(result.open)})
+    if not keep_draft:
+        publish_drafts(store, result.drafts)
+    return result
+
+
+def publish_drafts(store: Graph, ids: list[str]) -> None:
+    """The nodes this run built are now decisions everyone can see."""
+    if not ids:
+        return
+    with store.transaction():
+        for did in ids:
+            store.publish_draft(did)
+
+
+_CHOICE_NUM_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*(?:[a-z%]+\s+)?or\s+(\d+(?:\.\d+)?)\b", re.IGNORECASE)
+
+
+def _offered_choices(question: str, context: str = "") -> list[str]:
+    """The alternatives a question offers in so many words: figures joined
+    by "or" ("11 or 13 events"), and the options the agent listed."""
+    out = [n for pair in _CHOICE_NUM_RE.findall(question or "") for n in pair]
+    for line in (context or "").splitlines():
+        if line.lower().startswith("options:"):
+            for option in line.split(":", 1)[1].split("|"):
+                words = [w for w in re.findall(r"[a-z0-9_.]+", option.lower()) if len(w) > 2][:3]
+                if words:
+                    out.append(" ".join(words))
+    return out
+
+
+def _takes_a_choice(proposal: str, choices: list[str]) -> bool:
+    """Whether a proposal names one of the offered alternatives (an
+    option counts when its leading words are all in it). True when the
+    question offers none."""
+    if not choices:
+        return True
+    low = (proposal or "").lower()
+    for choice in choices:
+        words = choice.split()
+        if (len(words) == 1 and re.search(rf"(?<![\d.]){re.escape(words[0])}(?![\d.])", low)) or \
+                (len(words) > 1 and all(w in low for w in words)):
+            return True
+    return False
+
+
+def _how_they_decide(store: Graph, cfg, repo: str, question: str, context: str, emb: list[float],
+                     owner: str, path: str = "", facts: dict | None = None,
+                     observations: dict | None = None) -> tuple[str, str, str]:
+    """(prediction, source decision id, why): how the routed owner has
+    decided related questions before, from their own signed answers
+    only. The prediction is answer text the owner can confirm as is;
+    the why says where it came from, how it relates to what it leans on
+    (the same policy, or an analogy), and the scope that answer was given
+    for when this request is outside it. With a backend the fast model
+    writes the pattern in two sentences; without one the closest signed
+    answer speaks for itself. Empty when the owner has no bearing
+    answer. A prediction to confirm, never sign-off."""
+    from .signals import _norm_person
+    # A question about who decided or why is answered by the record of
+    # that decision, not by a guess at how its owner would decide now.
+    if set(_meaningful_terms(question)) & _RETRO_MACHINERY:
+        return "", "", ""
+    key = _norm_person(owner)
+    priors: list[tuple[float, object, str]] = []
+    for score, prior in store.similar_answered(emb, top_k=8, min_score=0.35, repo=repo, query=question):
+        if not (prior.authorized and prior.answered_by and _norm_person(prior.answered_by) == key):
+            continue
+        applies, reason = applicability_status(prior, path, facts, repo=repo)
+        scope = "" if applies else reason.replace(f"decision {prior.id} ", "", 1)
+        # An answer its owner said does not hold here is not a basis for
+        # proposing it here. Measured live on eb9d22d: an answer that
+        # excluded customer=globex came back as the prediction for globex.
+        if scope.startswith("excludes "):
+            continue
+        priors.append((score, prior, scope))
+    if not priors:
+        return "", "", ""
+    priors.sort(key=lambda x: -x[0])
+    best_score, best, best_scope = priors[0]
+    if observations is not None:
+        observations.update({prior.id: ts_to_iso(prior.updated_at) for _, prior, _ in priors})
+    # The scope it was given for travels with the prediction, not only in
+    # the evidence around it: measured live, out-of-scope predictions
+    # repeated the answer assertively and left the evidence to explain.
+    scope_note = (f"; prediction scope: decision {best.id}, which it leans on, {best_scope.replace('; ', ' and ')}, "
+                  "so it is an analogy here, not the same decision" if best_scope else "")
+    # A question that offers alternatives is answered by one of them.
+    # Measured live on 5e967e4: "flush every 11 or 13 events?" got a
+    # proposal about validating numeric options.
+    choices = _offered_choices(question, context)
+    if cfg is not None and cfg.semantic_retrieval:
+        text, relation = llm_mod.compose_proposal(cfg, owner, question, context, [
+            {"question": p.question, "answer": p.answer, "rationale": p.rationale, "scope": sc}
+            for _s, p, sc in priors])
+        if text and (not _takes_a_choice(text, choices) or _states_no_answer(text, (owner,), question)):
+            return "", "", ""
+        if text:
+            # A concrete detail none of their answers states is taken out and
+            # named as open, or the prediction is not made.
+            source = "\n\n".join(f"(decision {p.id}, signed by {p.answered_by})\nQ: {p.question}\nA: {p.answer}"
+                                  + (f"\nRationale: {p.rationale}" if p.rationale else "") for _s, p, _sc in priors)
+            checked = _supported(cfg, question, source, text, "their earlier answers", _given(context, facts),
+                                 prediction=True)
+            if checked is None:
+                return "", "", ""
+            trimmed = checked != text
+            text = checked
+            how = ("the same policy as their signed answer" if relation == "same_policy" and not best_scope
+                   and not trimmed else "by analogy with their signed answers")
+            return text, best.id, (f"how they decide ({how}): composed from {len(priors)} of {owner}'s signed "
+                                   f"answers (for example decision {best.id}); a prediction for {owner} to "
+                                   "confirm" + ("; it leaves open what their earlier answers do not settle"
+                                                if trimmed else "") + scope_note)
+        return "", "", ""
+    if not _takes_a_choice(best.answer, choices) or _states_no_answer(best.answer, (owner,), question):
+        return "", "", ""
+    return best.answer, best.id, (f"how they decide: {owner} answered \"{_word_trunc(best.question, 80)}\" "
+                                  f"(decision {best.id}, similarity {best_score:.2f})"
+                                  + (f", because: {_word_trunc(best.rationale, 160)}" if best.rationale else "")
+                                  + f"; a prediction for {owner} to confirm, not their answer here" + scope_note)
+
+
+def _wide_select(store: Graph, cfg: Config, question: str, emb: list[float], terms: list[str], repo: str = "",
+                 extra_rows: list | None = None, extra_emb: list[float] | None = None,
+                 extra_mems: list | None = None, *, context: str = "", path: str = "", facts: dict | None = None):
+    cands: dict[str, tuple[str, object]] = {}
+    from .semantic_index import sources
+    semantic_rows, _ = sources(store, question, repo)
+    linked = store.linked_answers([r['record_id'] for r in semantic_rows if r['record_id']], repo)
+    mems: list = store.anchored_answers(repo)
+    mems.extend(p for p in linked if p.id not in {m.id for m in mems})
+    for _, past in store.similar_answered(emb, top_k=6, min_score=0.02, repo=repo, query=question):
+        if past.id not in {p.id for p in mems}:
+            mems.append(past)
+    seen_m = {p.id for p in mems}
+    if extra_emb is not None:
+        for _, p in store.similar_answered(extra_emb, top_k=4, min_score=0.02, repo=repo, query=question):
+            if p.id not in seen_m:
+                mems.append(p)
+                seen_m.add(p.id)
+    for p in (extra_mems or []):
+        if p.id not in seen_m:
+            mems.append(p)
+            seen_m.add(p.id)
+    for p in store.recent_answered(repo=repo, limit=3):
+        if p.id not in seen_m and p.status != "partial":
+            mems.append(p)
+            seen_m.add(p.id)
+    for i, past in enumerate(mems[:10], 1):
+        cands[f"m{i}"] = ("memory", past)
+    rows: list = list(extra_rows or [])
+    rows.extend(r for r in semantic_rows if r['id'] not in {m['id'] for m in rows})
+    seen = {r["ref"] for r in rows}
+    for m in store.intents_matching(terms, limit=8, repo=repo):
+        if m["ref"] not in seen:
+            rows.append(m)
+            seen.add(m["ref"])
+    recent_rows = sorted((row for row, _ in store._intent_corpus(repo)[0]), key=lambda row: row["created_at"] or "", reverse=True)[:3]
+    for m in recent_rows:
+        if m["ref"] not in seen:
+            rows.append(m)
+            seen.add(m["ref"])
+    for i, m in enumerate(rows[:14], 1):
+        cands[f"r{i}"] = ("record", m)
+    return _selector_pick(cfg, question, cands, store=store, context=context, path=path, facts=facts, repo=repo)
+
+
+# ---------------- inbox integration ----------------
+
+def ask(store, cfg: Config, run_id: str, question: str, context: str = "",
+        path: str = "unknown", category: str = "", owner_id: str | None = None,
+        requester: str = "", hints: list[str] | None = None, facts=None,
+        keep_draft: bool = False, also_paths: list[str] | None = None, scratch: bool | str = False,
+        provisional: bool = False) -> dict:
+    """Run one question through the ladder in front of the inbox. Returns
+    the inbox's decision record with the ladder's outcome: kind evidence
+    (resolved or partial, citation in evidence), prediction (assumed or
+    proposed, to confirm), or new (pending, routed). A question that
+    duplicates an already-pending decision returns that decision.
+    `requester` names who the question is asked for; it is never routed
+    back to them."""
+    from .store import Invalid, repo_key
+    graph = store.graph
+    run = graph.get_task(run_id)
+    if not run or run["status"] in ("completed", "abandoned"):
+        raise Invalid("An active run is required")
+    repo = graph.resolve_repo(repo_key(run["repo"]))
+    with graph.source_scope(run_id):
+        result = run_task(graph, cfg, run["title"], repo=repo, run_id=run_id, keep_draft=True, scratch=scratch,
+                          provisional=provisional,
+                          decisions=[{"question": question, "category": category, "context": context,
+                                      "path": path or "unknown", "requester": requester or "",
+                                      "hints": list(hints or []), "facts": facts or {},
+                                      "also_paths": list(also_paths or [])}])
+    ids = result.decision_ids
+    if not ids:
+        publish_drafts(graph, result.drafts)
+        raise Invalid("The ladder produced no decision")
+    did = ids[0]
+    dup = next((o for o in result.open if o.get("duplicate_of")), None)
+    row = store.get_decision(did)
+    # A duplicate returns its twin's row; the twin was routed in its own
+    # run and is not routed, or asked for judgment, again here.
+    if row["status"] == "pending" and dup is None:
+        _inbox_route(store, graph, row, owner_id, run, repo,
+                     suggest=not (cfg is not None and cfg.semantic_retrieval))
+        row = store.get_decision(did)
+    if not keep_draft:
+        # The canvas keeps the node a draft until it has placed it on the
+        # tree; every other caller publishes here.
+        publish_drafts(graph, result.drafts)
+    row["drafts"] = list(result.drafts)
+    # The route that produced the owner, best first; absent when no rung
+    # routed (a record or memory answered, or the question is a duplicate).
+    routed = next((o for o in result.open + result.resolved if o.get("id") == did and "ranked" in o), None)
+    if routed is not None:
+        row["ranked"] = routed["ranked"]
+    if dup:
+        row["duplicate_stub"] = dup["stub"]
+        row["note"] = dup["note"]
+    return row
+
+
+def _inbox_route(store, graph: Graph, row: dict, owner_id: str | None, run, repo: str, suggest: bool = True) -> None:
+    """The inbox's own routing for a pending decision the graph could not
+    route: an explicit owner, else the configured path patterns, plus a
+    keyword suggestion from the same owner's prior answers."""
+    import fnmatch
+    from .store import Invalid, now
+    with store.connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        chosen, reason = row["owner_id"], row["routing_reason"]
+        if owner_id:
+            if not db.execute("SELECT 1 FROM owners WHERE id=?", (owner_id,)).fetchone():
+                raise Invalid("Owner not found")
+            chosen, reason = owner_id, "Explicitly selected for this request"
+        elif chosen:
+            # One line, whole or cut at a word and marked. Measured live on
+            # eb9d22d: 26 stored reasons ended inside a word ("where a more
+            # sp", "26 mon"); on the demo run the card showed 300 characters
+            # of percentages before the mark.
+            named = db.execute("SELECT name FROM owners WHERE id=?", (chosen,)).fetchone()
+            reason = "Routed from the ownership graph: " + _route_summary(row["owner_evidence"],
+                                                                          named["name"] if named else "")
+        else:
+            for owner in db.execute("SELECT * FROM owners ORDER BY created_at,id"):
+                for pattern in (owner["patterns"] or "").split(","):
+                    pattern = pattern.strip().lstrip("/")
+                    if pattern and fnmatch.fnmatchcase((row["path"] or "").lstrip("/"), pattern):
+                        chosen, reason = owner["id"], f"Path {row['path']} matches {pattern}"
+        prediction, source_id, kind = row["prediction"], row["source_id"], row["kind"] or "new"
+        source_revision = row.get("source_revision") or ""
+        # A suggestion only when a prior answer from the same owner really
+        # matches (the ladder's own memory floor), and never for a who or
+        # why question, whose answer is a name and a reason, not a rule.
+        # With a model, the ladder already read the owner's earlier answers
+        # and proposed one only if it answers this; a keyword match is not
+        # added on top. Measured live on 5e967e4: after the ladder found no
+        # earlier answer that answers "flush every 11 or 13 events?", this
+        # attached one about validating numeric options.
+        if suggest and chosen and not prediction and (row["category"] or "") != "data-source":
+            # Any signed decision in the org is evidence, whoever signed it;
+            # the suggestion names its signer.
+            choices = _offered_choices(row["question"], row["context"] or "")
+            cands = [c for c in store.candidates(db, row["question"], None, repo=repo)
+                     if c["similarity"] >= NEAR_MEMORY_MIN and not c.get("demoted_by")
+                     and _takes_a_choice(c["answer"] or "", choices)]
+            if cands:
+                prediction, source_id, kind = cands[0]["answer"], cands[0]["id"], "prediction"
+                # Pin only this fresh observation, on the same writer snapshot.
+                # Do not manufacture missing revisions on older hints.
+                observed = db.execute("SELECT updated_at FROM decisions WHERE id=?", (source_id,)).fetchone()
+                source_revision = observed['updated_at'] if observed else ''
+                # Same connection as the transaction: a write through the
+                # graph's connection here would wait on our own lock.
+                store.event(db, "prediction_suggested",
+                            f"Unapproved suggestion from decision {cands[0]['id']}; hybrid similarity "
+                            f"{cands[0]['similarity']}", row["id"], run["id"])
+        db.execute("UPDATE decisions SET owner_id=?,routing_reason=?,prediction=?,source_id=?,source_revision=?,kind=?,updated_at=? WHERE id=?",
+                   (chosen, reason if chosen else "No matching owner. Assign someone in the inbox.",
+                    prediction, source_id, source_revision, kind, now(), row["id"]))
+        db.execute("UPDATE runs SET status='needs_judgment',updated_at=? WHERE id=?", (now(), run["id"]))
+        store.event(db, "judgment_requested", reason if chosen else "No matching owner. Assign someone in the inbox.",
+                    row["id"], run["id"])

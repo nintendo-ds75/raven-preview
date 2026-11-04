@@ -5,10 +5,10 @@ from unittest.mock import Mock, patch
 
 from fixtures import OfflineCase
 from test_delivery import DeliveryCase
-from bridge import authz, canvas, conversation_sources
-from bridge.config import Config
-from bridge.llm import LLMError
-from bridge.slack_chat import EphemeralReply
+from raven import authz, canvas, conversation_sources
+from raven.config import Config
+from raven.llm import LLMError
+from raven.slack_chat import EphemeralReply
 
 
 class ProjectionTests(OfflineCase):
@@ -87,16 +87,16 @@ class ProjectionTests(OfflineCase):
         self.assertEqual(result['notice'], 'An exact source snapshot is missing')
 
     def test_internal_caller_exemption_is_not_a_disclosure_entitlement(self):
-        with patch('bridge.authz.check') as check:
+        with patch('raven.authz.check') as check:
             self.assertFalse(conversation_sources.can_disclose(None, None, {'status': 'pending'}))
             self.assertFalse(conversation_sources.can_disclose(None, authz.Actor(), {'status': 'pending'}))
         check.assert_not_called()
 
     def test_source_response_has_a_distinct_model_operation_label(self):
-        from bridge.slack_chat import reading
+        from raven.slack_chat import reading
         for payload, expected in (({'message': 'Clarify'}, 'slack_conversation'),
                 ({'message': 'Clarify', 'bound_source_review': {'available': True}}, 'slack_conversation_sources')):
-            with self.subTest(operation=expected), patch('bridge.slack_chat.Client.complete_json',
+            with self.subTest(operation=expected), patch('raven.slack_chat.Client.complete_json',
                     return_value={'kind': 'question', 'reply': 'Synthetic model response.'}) as model:
                 reading(Config(model_api='none'), payload)
                 self.assertEqual(model.call_args.args[0], expected)
@@ -119,7 +119,7 @@ class ConversationSourceTests(DeliveryCase):
         enabled = patch.object(Config, 'semantic_retrieval', property(lambda _: True))
         enabled.start()
         self.addCleanup(enabled.stop)
-        cfg = patch('bridge.slack_chat.load', return_value=Config(model_api='none'))
+        cfg = patch('raven.slack_chat.load', return_value=Config(model_api='none'))
         cfg.start()
         self.addCleanup(cfg.stop)
 
@@ -142,7 +142,7 @@ class ConversationSourceTests(DeliveryCase):
             if reading:
                 return reading(payload)
             return {'kind': 'question', 'reply': 'Only Cedar preview; production is excluded.'}
-        with patch('bridge.slack_chat.reading', side_effect=read):
+        with patch('raven.slack_chat.reading', side_effect=read):
             reply = self.reply(self.message, 'UWES', text)
         return reply, payloads
 
@@ -182,7 +182,7 @@ class ConversationSourceTests(DeliveryCase):
         def read(payload):
             self.assertEqual(len(checks), 1 if payload.get('response_mode') else 0)
             return {'kind': 'question', 'reply': 'Only the stated preview scope.'}
-        with patch('bridge.authz.check', side_effect=check):
+        with patch('raven.authz.check', side_effect=check):
             self.clarify(read)
         self.assertEqual(len(checks), 2)
         for actor, decision, action in checks:
@@ -195,7 +195,7 @@ class ConversationSourceTests(DeliveryCase):
         before = self.decision()
         pending = {**before, 'status': 'pending'}
         actor = authz.Actor.person(self.graph.get_person(self.wes), kind='slack')
-        with patch('bridge.authz.check', wraps=authz.check) as check:
+        with patch('raven.authz.check', wraps=authz.check) as check:
             self.assertTrue(conversation_sources.can_disclose(self.graph, actor, pending))
         self.assertEqual(check.call_args.args[-1], 'answer')
         self.assert_unchanged(before)
@@ -203,9 +203,9 @@ class ConversationSourceTests(DeliveryCase):
     def test_mocked_gate_refusal_keeps_source_free_clarification_without_search(self):
         before = self.decision()
         self.slack.search_context = Mock(return_value=[{'text': 'must not retrieve'}])
-        with patch('bridge.authz.check', side_effect=authz.Refused('Synthetic disclosure refusal')), \
-                patch('bridge.conversation_sources.project') as project, \
-                patch('bridge.slack_chat.reading', return_value={'kind': 'question', 'reply': 'Source-free clarification.'}) as model:
+        with patch('raven.authz.check', side_effect=authz.Refused('Synthetic disclosure refusal')), \
+                patch('raven.conversation_sources.project') as project, \
+                patch('raven.slack_chat.reading', return_value={'kind': 'question', 'reply': 'Source-free clarification.'}) as model:
             reply = self.delivery.receive(self.message['channel'], self.message['ts'], 'UWES',
                 'Please clarify privately.', action_token='synthetic-token')
         self.assertEqual(model.call_count, 1)
@@ -227,7 +227,7 @@ class ConversationSourceTests(DeliveryCase):
             return real_check(*args)
         def read(payload):
             return {'kind': 'question', 'reply': 'source-response-canary' if payload.get('response_mode') else 'Source-free clarification.'}
-        with patch('bridge.authz.check', side_effect=check):
+        with patch('raven.authz.check', side_effect=check):
             reply, payloads = self.clarify(read)
         self.assertEqual(len(payloads), 2)
         self.assertIn('Source-free clarification.', reply)
@@ -249,14 +249,14 @@ class ConversationSourceTests(DeliveryCase):
             self.assertIn('source review is unavailable', reply)
 
     def test_response_serializes_current_review_and_signature_projection(self):
-        from bridge.slack_chat import _decision_context
-        from bridge.delivery import _what_it_says
+        from raven.slack_chat import _decision_context
+        from raven.delivery import _what_it_says
         before = self.decision()
         projected = {**before, 'authorized': False, 'needs_review': True,
             'review_reason': 'Synthetic current review notice', 'signoff': 'required',
             'signed_by': 'Synthetic recorded label'}
         self.assertEqual(_what_it_says(projected), _what_it_says(before))
-        with patch('bridge.delivery._signed_as_it_stands', return_value=True):
+        with patch('raven.delivery._signed_as_it_stands', return_value=True):
             context = _decision_context(projected, self.graph.get_person(self.wes), 'Please clarify.')
         for key in ('authorized', 'needs_review', 'review_reason', 'signoff', 'signed_by'):
             self.assertEqual(context[key], projected[key])
@@ -264,7 +264,7 @@ class ConversationSourceTests(DeliveryCase):
         self.assert_unchanged(before)
 
     def test_response_pass_refreshes_authorization_without_an_answer_revision_change(self):
-        from bridge.delivery import _what_it_says
+        from raven.delivery import _what_it_says
         before = self.decision()
         projected = {**before, 'authorized': True, 'review_reason': 'Synthetic current notice',
             'signoff': 'signed', 'signed_by': before['owner_name'], '_test_current_signature': True}
@@ -283,14 +283,14 @@ class ConversationSourceTests(DeliveryCase):
                 self.assertTrue(payload['speaker_signed_current_answer'])
             return {'kind': 'question', 'reply': 'Current projected state.'}
         with patch.object(self.store, 'get_decision', side_effect=get), \
-                patch('bridge.delivery._signed_as_it_stands', side_effect=lambda d, p: bool(d.get('_test_current_signature'))):
+                patch('raven.delivery._signed_as_it_stands', side_effect=lambda d, p: bool(d.get('_test_current_signature'))):
             reply, payloads = self.clarify(read)
         self.assertEqual(len(payloads), 2)
         self.assertIn('Current projected state.', reply)
         self.assert_unchanged(before)
 
     def test_response_rechecks_authorization_projection_without_signing_anything(self):
-        from bridge.delivery import _what_it_says
+        from raven.delivery import _what_it_says
         before = self.decision()
         projected = {**before, 'authorized': True, 'signoff': 'signed',
             'signed_by': before['owner_name'], '_test_current_signature': True}
@@ -304,7 +304,7 @@ class ConversationSourceTests(DeliveryCase):
                 state['current'] = True
             return {'kind': 'question', 'reply': 'stale-status-canary'}
         with patch.object(self.store, 'get_decision', side_effect=get), \
-                patch('bridge.delivery._signed_as_it_stands', side_effect=lambda d, p: bool(d.get('_test_current_signature'))):
+                patch('raven.delivery._signed_as_it_stands', side_effect=lambda d, p: bool(d.get('_test_current_signature'))):
             reply, payloads = self.clarify(read)
         self.assertEqual(len(payloads), 2)
         self.assertIn('changed while I was reading', reply)
@@ -374,7 +374,7 @@ class ConversationSourceTests(DeliveryCase):
         def read(cfg, payload):
             payloads.append(copy.deepcopy(payload))
             return {'kind': 'question', 'reply': 'I can explain the existing task context.'}
-        with patch('bridge.slack_chat.reading', side_effect=read):
+        with patch('raven.slack_chat.reading', side_effect=read):
             reply = self.delivery.receive(self.message['channel'], self.message['ts'], 'UWES',
                 'Please explain the evidence.', action_token='synthetic-token')
         self.assertEqual(len(payloads), 2)
@@ -425,7 +425,7 @@ class ConversationSourceTests(DeliveryCase):
         def read(cfg, payload):
             payloads.append(copy.deepcopy(payload))
             return {'kind': 'question', 'reply': canary}
-        with patch('bridge.slack_chat.reading', side_effect=read):
+        with patch('raven.slack_chat.reading', side_effect=read):
             reply = self.delivery.receive(self.message['channel'], self.message['ts'], 'UWES',
                 'Can you explain the source context?', action_token='synthetic-transient-token',
                 event_id='synthetic-source-search', occurrence={'platform': 'slack',
@@ -478,7 +478,7 @@ class ConversationSourceTests(DeliveryCase):
         def read(cfg, payload):
             payloads.append(payload)
             return {'kind': 'question', 'reply': 'The attached ADR applies to Cedar preview only.'}
-        with patch('bridge.slack_chat.reading', side_effect=read):
+        with patch('raven.slack_chat.reading', side_effect=read):
             reply = self.delivery.receive(self.message['channel'], self.message['ts'], 'UWES',
                 'Please explain the source.', action_token='synthetic-token')
         self.assertEqual(len(payloads), 2)

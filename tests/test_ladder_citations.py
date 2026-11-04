@@ -7,9 +7,9 @@ import unittest
 
 from fixtures import OfflineCase
 
-from bridge.config import Config
-from bridge.graph import split_gaps
-from bridge.ladder import run_task
+from raven.config import Config
+from raven.graph import split_gaps
+from raven.ladder import run_task
 
 REPO = "harborline/harborline-app"
 

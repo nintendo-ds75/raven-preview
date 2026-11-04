@@ -8,19 +8,19 @@ const {once} = require('node:events');
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 
 (async () => {
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-browser-'));
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'raven-browser-'));
   const db = path.join(temp, 'test.db');
   const root = path.resolve(__dirname, '..');
-  const python = process.env.BRIDGE_PYTHON || 'python3';
+  const python = process.env.RAVEN_PYTHON || 'python3';
   // These checks exercise an existing workspace, not the first-run account flow.
   const initialized = spawnSync(python, ['-c',
-    'import sys; from bridge.store import Store; s = Store(sys.argv[1]); s.graph.set_setting("workspace_name", "Browser test workspace"); s.add_record({"repo":"test/platform","provider":"generic","namespace":"browser-fixture","kind":"doc","external_id":"scope","ref":"BROWSER-SCOPE","title":"Synthetic repository scope","body":"An invented repository registered for the browser regression."})', db],
+    'import sys; from raven.store import Store; s = Store(sys.argv[1]); s.graph.set_setting("workspace_name", "Browser test workspace"); s.add_record({"repo":"test/platform","provider":"generic","namespace":"browser-fixture","kind":"doc","external_id":"scope","ref":"BROWSER-SCOPE","title":"Synthetic repository scope","body":"An invented repository registered for the browser regression."})', db],
     {cwd:root, encoding:'utf8'});
   assert.equal(initialized.status, 0, initialized.stderr);
   // The UI checks are deterministic: the model rungs stay off whatever
   // backend the machine has (a key or a logged-in claude CLI).
-  const server = spawn(python, ['-m', 'bridge', '--port', '0', '--demo', '--db', db],
-                       {cwd:root, env:{...process.env, BRIDGE_SEMANTIC:'0', BRIDGE_LIVE:'0'}});
+  const server = spawn(python, ['-m', 'raven', '--port', '0', '--demo', '--db', db],
+                       {cwd:root, env:{...process.env, RAVEN_SEMANTIC:'0', RAVEN_LIVE:'0'}});
   let browser;
   const artifacts = path.join(root, 'test-results');
   fs.mkdirSync(artifacts, {recursive:true});
@@ -37,7 +37,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
       server.once('exit', code => { clearTimeout(timer); reject(new Error(`Server exited: ${code}`)); });
       server.stderr.on('data', () => {});
     });
-    browser = await chromium.launch({headless:true, ...(process.env.BRIDGE_BROWSER ? {executablePath:process.env.BRIDGE_BROWSER} : {})});
+    browser = await chromium.launch({headless:true, ...(process.env.RAVEN_BROWSER ? {executablePath:process.env.RAVEN_BROWSER} : {})});
     const context = await browser.newContext({viewport:{width:1440,height:1050}, permissions:['clipboard-read','clipboard-write']});
     const page = await context.newPage();
     const errors = [];
@@ -161,7 +161,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     // Measured live: a docs hand-on taught security authority nobody chose.
     await page.evaluate(async () => {
       const s = await (await fetch('/api/state')).json();
-      await fetch('/api/people', {method:'POST', headers:{'Content-Type':'application/json','X-Bridge-CSRF':s.csrf_token},
+      await fetch('/api/people', {method:'POST', headers:{'Content-Type':'application/json','X-Raven-CSRF':s.csrf_token},
         body:JSON.stringify({name:'Riley Handon', email:'riley@example.test'})});
     });
     await page.reload();
@@ -242,8 +242,8 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     const state = await (await fetch(`${url}/api/state`)).json();
     const decision = state.decisions.find(d => d.question === 'Should payment retries stop after three attempts?');
     assert.equal(decision.answered_by, 'Jamie Test');
-    const message = {jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'bridge_get_decision',arguments:{decision_id:decision.id}}};
-    const command = state.mcp_config.mcpServers.bridge;
+    const message = {jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'raven_get_decision',arguments:{decision_id:decision.id}}};
+    const command = state.mcp_config.mcpServers.raven;
     const mcp = await (await fetch(command.url, {method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(message)})).json();
     const answer = JSON.parse(mcp.result.content[0].text);
@@ -296,7 +296,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     // Escape HTML in stored user/agent content; never insert it into the DOM as markup.
     await page.evaluate(async () => {
       const s = await (await fetch('/api/state')).json();
-      await fetch('/api/owners', {method:'POST',headers:{'Content-Type':'application/json','X-Bridge-CSRF':s.csrf_token},body:JSON.stringify({name:'<img src=x onerror=alert(1)>',team:'Escaping test',patterns:'xss/*'})});
+      await fetch('/api/owners', {method:'POST',headers:{'Content-Type':'application/json','X-Raven-CSRF':s.csrf_token},body:JSON.stringify({name:'<img src=x onerror=alert(1)>',team:'Escaping test',patterns:'xss/*'})});
     });
     await page.reload();
     await page.waitForSelector('.decision-card');
@@ -310,7 +310,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     // nowhere.
     await page.evaluate(async () => {
       const s = await (await fetch('/api/state')).json();
-      const head = {'Content-Type':'application/json','X-Bridge-CSRF':s.csrf_token};
+      const head = {'Content-Type':'application/json','X-Raven-CSRF':s.csrf_token};
       await fetch('/api/people', {method:'POST',headers:head,
         body:JSON.stringify({name:'Robin Past',email:'robin@test.example'})});
       await fetch('/api/authority', {method:'POST',headers:head,
@@ -329,7 +329,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     // node finished on its owner's answer alone.
     const ledger = await page.evaluate(async () => {
       const s = await (await fetch('/api/state')).json();
-      const head = {'Content-Type':'application/json','X-Bridge-CSRF':s.csrf_token};
+      const head = {'Content-Type':'application/json','X-Raven-CSRF':s.csrf_token};
       const post = async (to, body) => (await fetch(to, {method:'POST',headers:head,body:JSON.stringify(body)})).json();
       await post('/api/people', {name:'Lee Ledger',email:'lee@test.example'});
       await post('/api/people', {name:'Zoe Reviewer',email:'zoe@test.example'});
@@ -352,7 +352,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.waitForSelector('#modal:not([open])', {state:'attached'});
     await page.waitForFunction(() => /Signed by Lee Ledger, waiting on Zoe Reviewer/.test(document.querySelector('#app').textContent));
     assert.equal(await closing.locator('.pill').innerText(), 'Signed by Lee Ledger, waiting on Zoe Reviewer');
-    const finishCall = {jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'bridge_finish_task',arguments:{task_id:ledger.task}}};
+    const finishCall = {jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'raven_finish_task',arguments:{task_id:ledger.task}}};
     const early = await (await fetch(`${url}/mcp`, {method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(finishCall)})).json();
     assert.match(JSON.stringify(early), /sign-off wanted from Zoe Reviewer/);
@@ -369,15 +369,15 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.waitForFunction(() => /1 follow-up question added/.test(document.querySelector('#toast')?.textContent || ''));
     const held = await (await fetch(`${url}/mcp`, {method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(finishCall)})).json();
-    assert.match(JSON.stringify(held), /a follow-up a person marked required; adopt it with bridge_add_node/);
+    assert.match(JSON.stringify(held), /a follow-up a person marked required; adopt it with raven_add_node/);
     await page.keyboard.press('Escape');
 
     await nav('Settings').click();
     await page.getByRole('button', {name:'Copy configuration'}).click();
     const copied = await page.evaluate(() => navigator.clipboard.readText());
-    const copiedBridge = JSON.parse(copied).mcpServers.bridge;
-    assert.equal(copiedBridge.type, 'http');
-    assert.equal(copiedBridge.url, `${url}/mcp`);
+    const copiedRaven = JSON.parse(copied).mcpServers.raven;
+    assert.equal(copiedRaven.type, 'http');
+    assert.equal(copiedRaven.url, `${url}/mcp`);
 
     // Every view fits a mobile viewport, and dialogs remain operable.
     await page.setViewportSize({width:390,height:844});

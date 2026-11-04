@@ -15,9 +15,9 @@ from urllib.error import HTTPError
 
 from fixtures import OfflineCase, ready_server
 import test_delivery as slack
-from bridge import canvas, context_memory as cm, mcp
-from bridge.config import Config
-from bridge.store import Invalid
+from raven import canvas, context_memory as cm, mcp
+from raven.config import Config
+from raven.store import Invalid
 
 REPO = 'synthetic/agent-sources'
 ANSWER = 'Keep the scoped archive for thirty days.'
@@ -33,7 +33,7 @@ class AgentSourceProposalTests(OfflineCase):
         self.task = self.store.add_run({'title': 'Scoped retention', 'repo': REPO})['id']
         self.did = self.node()
         for method in ('complete', 'complete_json'):
-            guard = patch('bridge.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
+            guard = patch('raven.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
             guard.start()
             self.addCleanup(guard.stop)
 
@@ -124,7 +124,7 @@ class AgentSourceProposalTests(OfflineCase):
             self.pin(one) | {'record_id': 'missing'}, self.pin(one) | {'source_version_id': 'missing'}, self.pin(foreign)]
         before = self.state()
         for pin in invalid:
-            with self.subTest(pin=pin), self.assertRaisesRegex(Invalid, 'bridge_get_record'):
+            with self.subTest(pin=pin), self.assertRaisesRegex(Invalid, 'raven_get_record'):
                 self.settle(source_evidence=[pin])
             self.assertEqual(self.state(), before)
 
@@ -250,23 +250,23 @@ class AgentSourceProposalTests(OfflineCase):
 
     def test_mcp_advertises_and_accepts_typed_pins_with_optional_manual_mode(self):
         listed = mcp.dispatch(self.store, {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'})['result']['tools']
-        spec = next(t for t in listed if t['name'] == 'bridge_settle_node')
+        spec = next(t for t in listed if t['name'] == 'raven_settle_node')
         schema = spec['inputSchema']
         self.assertNotIn('source_evidence', schema['required'])
         self.assertEqual(schema['properties']['source_evidence']['maxItems'], cm.AGENT_SOURCE_LIMIT)
         self.assertEqual(schema['properties']['source_evidence']['items']['required'], ['record_id', 'source_version_id', 'role'])
         self.assertFalse(schema['properties']['source_evidence']['items']['additionalProperties'])
-        self.assertIn('bridge_wait', spec['description'])
+        self.assertIn('raven_wait', spec['description'])
         pins = [self.pin(self.source())]
         args = {'task_id': self.task, 'node_id': self.did, 'answer': ANSWER, 'source_evidence': pins}
-        result = mcp.dispatch(self.store, {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {'name': 'bridge_settle_node', 'arguments': args}})['result']
+        result = mcp.dispatch(self.store, {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {'name': 'raven_settle_node', 'arguments': args}})['result']
         self.assertFalse(result['isError'], result)
         self.assert_unsigned(json.loads(result['content'][0]['text']))
         self.assertEqual(self.active(), pins)
         for value in ([pins[0]] * 65, ['a'], [{**pins[0], 'role': 'approval'}]):
             args['source_evidence'] = value
             before = self.state()
-            result = mcp.dispatch(self.store, {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': {'name': 'bridge_settle_node', 'arguments': args}})['result']
+            result = mcp.dispatch(self.store, {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': {'name': 'raven_settle_node', 'arguments': args}})['result']
             self.assertTrue(result['isError'])
             self.assertEqual(self.state(), before)
 
@@ -281,7 +281,7 @@ class AgentSourceProposalTests(OfflineCase):
         def post(pins):
             request = Request(f'http://127.0.0.1:{server.server_port}/api/tasks/{self.task}/settle',
                 data=json.dumps({'node_id': self.did, 'answer': ANSWER, 'source_evidence': pins}).encode(),
-                method='POST', headers={'Content-Type': 'application/json', 'X-Bridge-CSRF': csrf})
+                method='POST', headers={'Content-Type': 'application/json', 'X-Raven-CSRF': csrf})
             with urlopen(request, timeout=5) as response:
                 return json.loads(response.read())
         result = post([self.pin(source)])
@@ -361,12 +361,12 @@ class AgentSourceProposalTests(OfflineCase):
                 failures.append(error)
             finally:
                 self.g.close_thread()
-        with patch('bridge.ladder.ask', side_effect=ask):
+        with patch('raven.ladder.ask', side_effect=ask):
             worker = threading.Thread(target=background)
             worker.start()
             self.assertTrue(entered.wait(5))
             # Even timestamp collision does not let the old result win.
-            with patch('bridge.graph.now_iso', return_value=scheduled):
+            with patch('raven.graph.now_iso', return_value=scheduled):
                 result = self.settle(source_evidence=[self.pin(source)])
             self.assertFalse(result['model_pending'])
             self.assertIn('do not ship', result['next'])
@@ -377,7 +377,7 @@ class AgentSourceProposalTests(OfflineCase):
         self.assertEqual(self.decision()['answer'], ANSWER)
         self.assertEqual(self.active(), [self.pin(source)])
         self.assert_unsigned(canvas.node_view(self.store, self.did))
-        with patch('bridge.ladder.ask', side_effect=AssertionError('Superseded model must not start')) as infer:
+        with patch('raven.ladder.ask', side_effect=AssertionError('Superseded model must not start')) as infer:
             background()
         infer.assert_not_called()
         self.assertEqual(failures, [])
@@ -408,7 +408,7 @@ class AgentSourceSlackReadbackTests(slack.DeliveryCase):
         threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True).start()
         self.counter = 0
         for method in ('complete', 'complete_json'):
-            guard = patch('bridge.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
+            guard = patch('raven.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
             guard.start()
             self.addCleanup(guard.stop)
 
@@ -439,7 +439,7 @@ class AgentSourceSlackReadbackTests(slack.DeliveryCase):
 
     def test_signed_local_slack_reads_every_pin_and_full_scope_before_approval(self):
         notification = next(m for m in self.slack.messages if m['ts'] == self.thread)
-        from bridge.approval_scope import transport_text
+        from raven.approval_scope import transport_text
         for value in (self.answer, 'scope-customer', 'billing/rollout.py'):
             self.assertIn(transport_text(value), notification['text'])
         self.assertFalse(self.store.get_decision(self.node_id)['authorized'])

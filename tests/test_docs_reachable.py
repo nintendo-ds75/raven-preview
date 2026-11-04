@@ -57,7 +57,7 @@ def _documented(route, reference):
 
 
 def _require_checkout():
-    if not DOCS.is_dir() or not (ROOT / "bridge" / "server.py").exists():
+    if not DOCS.is_dir() or not (ROOT / "raven" / "server.py").exists():
         raise unittest.SkipTest("requires the source checkout and documentation")
 
 
@@ -99,16 +99,16 @@ class DocsReachableTests(unittest.TestCase):
 class RoutesDocumentedTests(unittest.TestCase):
     def test_every_dispatched_route_is_in_the_reference(self):
         _require_checkout()
-        server = (ROOT / "bridge" / "server.py").read_text()
+        server = (ROOT / "raven" / "server.py").read_text()
         reference = (DOCS / "reference.md").read_text()
         routes = sorted({match.rstrip("/") for match in _ROUTE.findall(server)} - _INTERNAL_ROUTES)
         self.assertGreater(len(routes), 30, "the dispatch table should yield dozens of routes")
         missing = [route for route in routes if route not in reference]
-        self.assertEqual(missing, [], f"routes bridge/server.py dispatches that docs/reference.md does not name: {missing}")
+        self.assertEqual(missing, [], f"routes raven/server.py dispatches that docs/reference.md does not name: {missing}")
 
     def test_the_split_path_routes_are_in_the_reference(self):
         _require_checkout()
-        server = (ROOT / "bridge" / "server.py").read_text()
+        server = (ROOT / "raven" / "server.py").read_text()
         reference = (DOCS / "reference.md").read_text()
         routes = sorted(_split_routes(server))
         self.assertGreater(len(routes), 15, "the split-path dispatch should yield more than a dozen routes")

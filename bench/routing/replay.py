@@ -59,7 +59,7 @@ def run_dataset(ds: Dataset, n: int, seed: int, conditions: tuple, jobs: int, qu
     conds = list(conditions) + sorted({k for r in rows for k in r["scores"] if k not in conditions})
     summary = {cond: summarize([r["scores"][cond] for r in rows if cond in r["scores"]]) for cond in conds}
     strata = {cond: summarize_strata(rows, cond) for cond in conditions}
-    from bridge.config import load as _load_cfg
+    from raven.config import load as _load_cfg
     model_rungs = driver.model_rungs_on()
     result = {"dataset": ds.name, "role": ds.role, "n": len(rows), "seed": seed, "conditions": list(conditions),
               "questions": questions_mode, "model_rungs": model_rungs,

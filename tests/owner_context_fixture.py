@@ -1,8 +1,8 @@
 """New synthetic UI data only; never reads the recovered customer screenshots."""
 import json
 
-from bridge import briefing, canvas
-from bridge.config import Config
+from raven import briefing, canvas
+from raven.config import Config
 
 
 REQUEST = ("Review the retention settings for build-cache inspection records in synthetic/release-policy. "

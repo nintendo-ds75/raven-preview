@@ -9,13 +9,13 @@ import os
 import tempfile
 from pathlib import Path
 
-os.environ["BRIDGE_MODEL_API"] = "none"
-os.environ["BRIDGE_SEMANTIC"] = "0"
+os.environ["RAVEN_MODEL_API"] = "none"
+os.environ["RAVEN_SEMANTIC"] = "0"
 
-from bridge import canvas
-from bridge.authz import Actor, basis_for
-from bridge.config import Config
-from bridge.store import Store
+from raven import canvas
+from raven.authz import Actor, basis_for
+from raven.config import Config
+from raven.store import Store
 
 
 def main():

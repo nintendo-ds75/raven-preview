@@ -8,9 +8,9 @@ from unittest.mock import patch
 
 from fixtures import OfflineCase
 
-from bridge.ingest import parse_codeowners_text
-from bridge.routing import route_ranked
-from bridge.signals import listed_for
+from raven.ingest import parse_codeowners_text
+from raven.routing import route_ranked
+from raven.signals import listed_for
 
 NOW = "2026-08-10T00:00:00+00:00"
 RETRY = "fetchkit/retry.py"
@@ -52,7 +52,7 @@ class SpecificCodeownerTests(OfflineCase):
         self.graph.add_change("app", sha, ts, paths, [(who[0], who[1], "author")], subject=subject)
 
     def ranked(self, **kw):
-        with patch("bridge.ingest.fetch_blame", return_value=self.blame):
+        with patch("raven.ingest.fetch_blame", return_value=self.blame):
             return route_ranked(self.graph, "app", QUESTION, **kw)
 
     def test_the_last_matching_rule_owns_the_file(self):
@@ -95,9 +95,9 @@ class SpecificCodeownerTests(OfflineCase):
         self.assertEqual(self.ranked(path=RETRY, also_paths=[CLIENT])[0][0], LIOR[0])
 
     def test_kickoff_discovery_and_node_routing_name_the_same_first_contact(self):
-        from bridge.canvas import discover
-        from bridge.config import load
-        with patch("bridge.ingest.fetch_blame", return_value=self.blame):
+        from raven.canvas import discover
+        from raven.config import load
+        with patch("raven.ingest.fetch_blame", return_value=self.blame):
             found = discover(self.store, load(), "app", "Raise the retry limit",
                              "Raise MAX_RETRIES from 3 to 5 in the fetch client", [RETRY, CLIENT], "")
             node = route_ranked(self.graph, "app", QUESTION, path=RETRY, also_paths=[CLIENT])

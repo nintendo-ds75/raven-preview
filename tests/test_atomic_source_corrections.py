@@ -5,9 +5,9 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas, proof
-from bridge.graph import ts_to_iso
-from bridge.store import Invalid, Store
+from raven import canvas, proof
+from raven.graph import ts_to_iso
+from raven.store import Invalid, Store
 
 
 class AtomicSourceCorrectionTests(OfflineCase):
@@ -20,7 +20,7 @@ class AtomicSourceCorrectionTests(OfflineCase):
         self.other = Store(self.store.path)
         self.addCleanup(self.other.graph.close)
         for method in ('complete', 'complete_json'):
-            guard = patch('bridge.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
+            guard = patch('raven.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
             guard.start()
             self.addCleanup(guard.stop)
 
@@ -267,7 +267,7 @@ class AtomicSourceCorrectionTests(OfflineCase):
         self.assertEqual(self.store.get_decision(dependent), before)
 
     def test_managed_terminal_publication_checks_legacy_sources_on_its_writer(self):
-        from bridge.execution import ExecutionService
+        from raven.execution import ExecutionService
         _, source = self.source()
         task, dependent = self.derived(source)
         self.sign(dependent)
@@ -380,7 +380,7 @@ class AtomicSourceCorrectionTests(OfflineCase):
         self.assertFalse(self.store.get_decision(dependent)['needs_review'])
 
     def test_delayed_twin_settlement_cannot_pin_old_answer_to_new_revision(self):
-        from bridge.ladder import close_open_twins
+        from raven.ladder import close_open_twins
         _, source = self.source()
         old_revision = self.store.get_decision(source)['updated_at']
         self.correct(source)

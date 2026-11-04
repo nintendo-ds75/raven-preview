@@ -17,11 +17,11 @@ from fixtures import ready_server
 from test_delivery import DeliveryCase
 import test_teams
 import test_readback_generations
-from bridge import canvas, proof
-from bridge.authz import Actor, Refused
-from bridge.config import Config
-from bridge.mcp import call_tool
-from bridge.store import Store, answer_hash
+from raven import canvas, proof
+from raven.authz import Actor, Refused
+from raven.config import Config
+from raven.mcp import call_tool
+from raven.store import Store, answer_hash
 
 
 class ProvenanceAssertions:
@@ -61,9 +61,9 @@ class ProvenanceAssertions:
 
     def confirm_conversational_answer(self):
         action = {'kind': 'answer', 'answer': 'Exclude only internal load tests.', 'rationale': ''}
-        with patch('bridge.slack_chat.load', return_value=Config(model_api='none')), \
+        with patch('raven.slack_chat.load', return_value=Config(model_api='none')), \
                 patch.object(Config, 'semantic_retrieval', property(lambda _: True)), \
-                patch('bridge.slack_chat.reading', return_value=action):
+                patch('raven.slack_chat.reading', return_value=action):
             source = self.say(action['answer'])
             self.assertFalse(self.store.get_decision(self.node_id)['authorized'])
             held, visible = self.readback()
@@ -251,12 +251,12 @@ class AnswerEventProvenanceTests(DeliveryCase):
         history = canvas.trace(self.store, self.task_id)
         self.assertIn(detail, [e['detail'] for e in history['events']])
         self.assertIn(json.loads(legacy), [e['detail'] for e in history['events']])
-        decision = call_tool(self.store, 'bridge_get_decision', {'decision_id': self.node_id, 'detail': 'full'})
+        decision = call_tool(self.store, 'raven_get_decision', {'decision_id': self.node_id, 'detail': 'full'})
         self.assertIn(detail, [json.loads(e['detail']) for e in decision['events']
                                if e['kind'] == 'owner_approved'])
         canvas.get_tree(self.store, self.task_id)
         diff = 'diff --git a/billing/usage.py b/billing/usage.py\n--- a/billing/usage.py\n+++ b/billing/usage.py\n@@ -1 +1 @@\n-rate = 1\n+rate = 2\n'
-        with patch('bridge.llm.check_conformance', return_value=None):
+        with patch('raven.llm.check_conformance', return_value=None):
             canvas.finish_task(self.store, {'task_id': self.task_id, 'diff': diff})
         exported = proof.export(self.store, {'task_id': self.task_id})
         saved = exported['bundle']

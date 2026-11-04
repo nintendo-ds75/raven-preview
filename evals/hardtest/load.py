@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).parent))
-from bridge.store import Store  # noqa: E402
+from raven.store import Store  # noqa: E402
 import org  # noqa: E402
 
 DB = Path(__file__).parent / "hardtest.db"

@@ -8,11 +8,11 @@ from unittest.mock import patch
 
 from fixtures import OfflineCase
 
-from bridge import canvas, proof
-from bridge.config import Config
-from bridge.graph import applicability_status, condition_facts, rule_status
-from bridge.ladder import run_task
-from bridge.store import Invalid
+from raven import canvas, proof
+from raven.config import Config
+from raven.graph import applicability_status, condition_facts, rule_status
+from raven.ladder import run_task
+from raven.store import Invalid
 
 
 CFG = Config(model_api="none")
@@ -252,7 +252,7 @@ class RepositoryRuleTests(OfflineCase):
         task = self.task("completed-work")
         completed = self.node(task, {**FACTS, "work_item": "AUDIT-22"})
         self.assertTrue(completed["authorized"], completed)
-        with patch("bridge.llm.check_conformance", return_value=None):
+        with patch("raven.llm.check_conformance", return_value=None):
             canvas.finish_task(self.store, {"task_id": task, "diff": DIFF})
         saved = proof.export(self.store, {"task_id": task})["bundle"]
         historical, pins = self.raw(completed["node_id"]), self.pins(completed["node_id"])

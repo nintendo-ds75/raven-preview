@@ -6,9 +6,9 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 from fixtures import OfflineCase
-from bridge import canvas, ladder, llm
-from bridge.config import Config
-from bridge.graph import Decision
+from raven import canvas, ladder, llm
+from raven.config import Config
+from raven.graph import Decision
 
 
 CFG = Config(model_api="none")
@@ -166,7 +166,7 @@ class RuleCandidateSelectionTests(RuleCandidateFixture):
     def test_opaque_observation_refresh_rejection_prevents_promotion(self):
         source = self.grant()
         unsigned = self.note()
-        with patch("bridge.context_connectors.blocked_decisions", return_value={source}) as guard:
+        with patch("raven.context_connectors.blocked_decisions", return_value={source}) as guard:
             result = self.ask()
         self.assertEqual(result["source_id"], unsigned)
         self.assertFalse(result["authorized"])
@@ -298,7 +298,7 @@ class SelectorGrantPresentationTests(unittest.TestCase):
         store = Mock()
         store.source_review_reason.return_value = ""
         with patch.object(llm.Client, "complete_json", return_value={"pick": "m1"}) as select, \
-                patch("bridge.context_connectors.blocked_decisions", return_value=set()):
+                patch("raven.context_connectors.blocked_decisions", return_value=set()):
             ladder._selector_pick(CFG, QUESTION, {"m1": ("memory", source)}, store=store,
                 repo=REPO, path="queue/audit.py", context="Current audit request", facts=FACTS)
         prompt = select.call_args.args[2]

@@ -6,8 +6,8 @@ A pull that lands a series of commits by one author is a task the way an
 agent would run it: kicked off with a title, a goal and the paths it
 expects to touch, then one node per change, each grown from the previous
 one. The exam replays it at the merge's first parent (nothing after it
-visible), calls bridge_start_task for the verdict, writes every commit as
-a node with bridge_add_node, and scores:
+visible), calls raven_start_task for the verdict, writes every commit as
+a node with raven_add_node, and scores:
 
   per node   who Raven routed to, against the people git says approved
              that commit (the routing bench's labels and metrics);
@@ -39,8 +39,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from bridge import canvas
-from bridge.config import load as load_config
+from raven import canvas
+from raven.config import load as load_config
 
 from . import driver
 from .datasets import (DATASETS, Dataset, RevCache, _dedupe, _person_dict, _since, _stratified, approval_labels,
@@ -191,8 +191,8 @@ def _requester(s: Series) -> str:
 
 def replay_series(ds: Dataset, s: Series, clone: Path, conditions: tuple[str, ...], workdir: Path | None = None) -> dict:
     tmp = Path(tempfile.mkdtemp(prefix=f"tree-{ds.name}-", dir=str(workdir) if workdir else None))
-    os.environ["BRIDGE_SEMANTIC"] = "1" if os.environ.get("BRIDGE_BENCH_MODEL") == "1" else "0"
-    os.environ["BRIDGE_LIVE"] = "0"
+    os.environ["RAVEN_SEMANTIC"] = "1" if os.environ.get("RAVEN_BENCH_MODEL") == "1" else "0"
+    os.environ["RAVEN_LIVE"] = "0"
     result: dict = {"series": {k: v for k, v in asdict(s).items() if k not in ("nodes", "related")},
                     "n_nodes": len(s.nodes), "conditions": {}}
     result["series"]["related_n"] = len(s.related)

@@ -26,11 +26,11 @@ synthetic member's agent bearer token:
 
 1. `initialize`, `notifications/initialized`, and `tools/list` (with the
    negotiated MCP version header and both supported Accept media types)
-2. `bridge_start_task` and `bridge_add_node`
-3. `bridge_wait`, `bridge_get_tree`, and `bridge_get_decision`
-4. A refused `bridge_finish_task` while human authorization is absent
-5. A completed `bridge_finish_task` after the attributed confirmation
-6. `bridge_export_proof`, including after reopening the server and database
+2. `raven_start_task` and `raven_add_node`
+3. `raven_wait`, `raven_get_tree`, and `raven_get_decision`
+4. A refused `raven_finish_task` while human authorization is absent
+5. A completed `raven_finish_task` after the attributed confirmation
+6. `raven_export_proof`, including after reopening the server and database
 
 All incoming human actions are HTTP requests to `/webhooks/slack`. The harness
 signs the exact raw bytes using `v0:{timestamp}:{body}`, HMAC-SHA256, and the
@@ -43,7 +43,7 @@ loopback HTTP server with documented Slack request/response shapes.
 A coding client calls Raven, not the Slack double directly. For example:
 
 ```json
-{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"bridge_get_tree","arguments":{"task_id":"synthetic-task-id"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"raven_get_tree","arguments":{"task_id":"synthetic-task-id"}}}
 ```
 
 Raven's normal tool result has this JSON-RPC/MCP wrapper; the text contains the

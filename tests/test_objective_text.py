@@ -4,7 +4,7 @@ itself, and never an exception for a malformed context."""
 import json
 import unittest
 
-from bridge import objective_text as ot
+from raven import objective_text as ot
 
 GOV = {
     'title': 'Draft the renewal note for Acme',

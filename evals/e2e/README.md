@@ -6,7 +6,7 @@ What is being sold is a loop, not a retrieval score: an agent kicks off a task, 
 | --- | --- |
 | `host-alone` | the agent decides everything itself: each decision's `default` |
 | `routing-only` | every decision goes to whoever the authority map or git names; no memory, no rules, no sign-off gate |
-| `bridge` | the whole protocol over MCP: kickoff, nodes through the ladder, the wait, the finish gate |
+| `raven` | the whole protocol over MCP: kickoff, nodes through the ladder, the wait, the finish gate |
 
 People are simulated from each task's answer key: the owner answers or signs when asked; anyone else says it is not theirs and hands it on to the owner, who then does. That is the pilot's own workflow with the humans replaced by the key, which is what makes the arms comparable and repeatable.
 

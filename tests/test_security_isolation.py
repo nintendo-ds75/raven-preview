@@ -10,12 +10,12 @@ import time
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import briefing, canvas
-from bridge.auth import Auth
-from bridge.authz import Actor, Refused, basis_for
-from bridge.config import Config
-from bridge.delivery import handle_slack_event
-from bridge.store import Invalid, Store
+from raven import briefing, canvas
+from raven.auth import Auth
+from raven.authz import Actor, Refused, basis_for
+from raven.config import Config
+from raven.delivery import handle_slack_event
+from raven.store import Invalid, Store
 from test_auth import BOOTSTRAP, SharedServer
 from test_slack_discovery import DirectorySlack, member
 
@@ -85,9 +85,9 @@ class AuthorityFreshnessTests(DecisionCase):
         self.store.add_authority({"person": self.alice["id"], "scope_kind": "repo", "role": "decides",
             "repo": "acme/service", "effective_to": "2030-01-02T00:00:00+00:00"})
         actor = Actor.person(self.alice, kind="session")
-        with patch("bridge.graph.now_iso", return_value="2030-01-01T00:00:00+00:00"):
+        with patch("raven.graph.now_iso", return_value="2030-01-01T00:00:00+00:00"):
             self.assertEqual(basis_for(self.graph, actor, decision, "answer")[0], "authority")
-        with patch("bridge.graph.now_iso", return_value="2030-01-03T00:00:00+00:00"):
+        with patch("raven.graph.now_iso", return_value="2030-01-03T00:00:00+00:00"):
             self.assertEqual(basis_for(self.graph, actor, decision, "answer")[0], "")
 
     def test_team_removal_on_another_connection_revokes_scope_authority(self):
@@ -106,17 +106,17 @@ class AuthorityFreshnessTests(DecisionCase):
 
 class RouteAuthorityFreshnessTests(DecisionCase):
     def test_expired_authority_is_not_used_to_assign_a_new_owner(self):
-        from bridge.routing import route_ranked
+        from raven.routing import route_ranked
         self.store.add_authority({"person": self.alice["id"], "scope_kind": "repo", "role": "decides",
             "repo": "acme/service", "effective_to": "2030-01-02T00:00:00+00:00"})
-        with patch("bridge.graph.now_iso", return_value="2030-01-01T00:00:00+00:00"):
+        with patch("raven.graph.now_iso", return_value="2030-01-01T00:00:00+00:00"):
             self.assertEqual(route_ranked(self.graph, "acme/service", "Should this policy change?")[0][0], self.alice["name"])
-        with patch("bridge.graph.now_iso", return_value="2030-01-03T00:00:00+00:00"):
+        with patch("raven.graph.now_iso", return_value="2030-01-03T00:00:00+00:00"):
             self.assertEqual(self.graph.authority_rows("acme/service"), [])
             self.assertEqual(route_ranked(self.graph, "acme/service", "Should this policy change?"), [])
 
     def test_external_team_removal_is_visible_to_cached_routing(self):
-        from bridge.routing import route_ranked
+        from raven.routing import route_ranked
         team = self.store.add_team({"name": "Approvers", "members": [self.alice["id"]]})
         self.store.add_authority({"team": team["id"], "scope_kind": "repo", "role": "decides", "repo": "acme/service"})
         self.assertEqual(route_ranked(self.graph, "acme/service", "Should this policy change?")[0][0], self.alice["name"])
@@ -211,36 +211,36 @@ class CredentialIsolationTests(SharedServer):
     def test_demoting_a_person_to_viewer_makes_their_existing_agent_read_only(self):
         person = self.post("/api/people", {"name": "Agent owner"}, token=BOOTSTRAP)
         token = self.post("/api/tokens", {"person_id": person["id"]}, token=BOOTSTRAP)["token"]
-        task = self.mcp("bridge_start_task", {"title": "Existing task", "repo": "acme/service"}, token)["result"]
+        task = self.mcp("raven_start_task", {"title": "Existing task", "repo": "acme/service"}, token)["result"]
         diff = "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-old\n+new\n"
-        self.assertFalse(self.mcp("bridge_finish_task", {"task_id": task["task_id"], "diff": diff}, token)["isError"])
+        self.assertFalse(self.mcp("raven_finish_task", {"task_id": task["task_id"], "diff": diff}, token)["isError"])
         with self.store.graph.transaction():
             self.store.graph.db.execute("UPDATE people SET role='viewer' WHERE id=?", (person["id"],))
-        self.assertFalse(self.mcp("bridge_get_tree", {"task_id": task["task_id"]}, token)["isError"])
-        self.assertFalse(self.mcp("bridge_export_proof", {"task_id": task["task_id"]}, token)["isError"])
+        self.assertFalse(self.mcp("raven_get_tree", {"task_id": task["task_id"]}, token)["isError"])
+        self.assertFalse(self.mcp("raven_export_proof", {"task_id": task["task_id"]}, token)["isError"])
         writes = [("/api/tasks/start", {"title": "New task", "repo": "acme/service"}),
                   ("/api/runs", {"title": "New run"}),
                   (f"/api/tasks/{task['task_id']}/nodes", {"question": "Mutate this task?"}),
                   (f"/api/tasks/{task['task_id']}/finish", {})]
         for path, data in writes:
             self.assertEqual(self.status_of("POST", path, data, token=token), 403, path)
-        for name, arguments in [("bridge_start_task", {"title": "New", "repo": "acme/service"}),
-                                ("bridge_add_node", {"task_id": task["task_id"], "question": "New?"}),
-                                ("bridge_finish_task", {"task_id": task["task_id"]}),
-                                ("bridge_import_record", {"repo": "acme/service", "kind": "note", "ref": "bad"})]:
+        for name, arguments in [("raven_start_task", {"title": "New", "repo": "acme/service"}),
+                                ("raven_add_node", {"task_id": task["task_id"], "question": "New?"}),
+                                ("raven_finish_task", {"task_id": task["task_id"]}),
+                                ("raven_import_record", {"repo": "acme/service", "kind": "note", "ref": "bad"})]:
             self.assertEqual(self.status_of("POST", "/mcp", {"jsonrpc": "2.0", "id": 1,
                 "method": "tools/call", "params": {"name": name, "arguments": arguments}}, token=token), 403, name)
         self.assertEqual(self.store.graph.db.execute("SELECT count(*) n FROM runs").fetchone()["n"], 1)
 
     def test_expired_session_is_refused_even_with_a_valid_signature(self):
         person = self.post("/api/people", {"name": "Alice"}, token=BOOTSTRAP)
-        with patch("bridge.auth.time.time", return_value=time.time() - 15 * 86400):
+        with patch("raven.auth.time.time", return_value=time.time() - 15 * 86400):
             cookie = self.auth.session_cookie(person["id"]).split(";", 1)[0]
         self.assertEqual(self.status_of("GET", "/api/state", cookie=cookie), 401)
 
     def test_malformed_non_ascii_credentials_fail_closed(self):
-        self.assertIsNone(self.auth.identify({"Authorization": "Bearer brg_é"}))
-        self.assertIsNone(self.auth.identify({"Cookie": "bridge_session=person.123.é"}))
+        self.assertIsNone(self.auth.identify({"Authorization": "Bearer rvn_é"}))
+        self.assertIsNone(self.auth.identify({"Cookie": "raven_session=person.123.é"}))
 
     def test_task_link_cannot_be_used_as_a_general_bearer_or_mcp_credential(self):
         person = self.post("/api/people", {"name": "Alice", "email": "alice@example.test"}, token=BOOTSTRAP)
@@ -254,8 +254,8 @@ class CredentialIsolationTests(SharedServer):
     def test_agent_cannot_smuggle_attribution_or_signature_through_mcp(self):
         person = self.post("/api/people", {"name": "Agent owner"}, token=BOOTSTRAP)
         token = self.post("/api/tokens", {"person_id": person["id"]}, token=BOOTSTRAP)["token"]
-        task = self.mcp("bridge_start_task", {"title": "Task", "repo": "acme/service"}, token)["result"]
-        result = self.mcp("bridge_add_node", {"task_id": task["task_id"], "question": "Use the safe default?",
+        task = self.mcp("raven_start_task", {"title": "Task", "repo": "acme/service"}, token)["result"]
+        result = self.mcp("raven_add_node", {"task_id": task["task_id"], "question": "Use the safe default?",
             "signed_by": "Alice Admin", "signoff": "signed"}, token)
         self.assertTrue(result["isError"])
         self.assertIn("Unknown argument", result["result"])
@@ -275,7 +275,7 @@ class SeparateWorkspaceCredentialsTests(OfflineCase):
         store = self.fresh_store("oauth.db")
         auth = Auth(store, enabled=True)
         auth._states["expired"] = time.time() - 601
-        with patch("bridge.auth._http_json") as fetch:
+        with patch("raven.auth._http_json") as fetch:
             with self.assertRaises(Invalid):
                 auth.github_exchange("code", "expired", "http://localhost/auth/github/callback")
             fetch.assert_not_called()

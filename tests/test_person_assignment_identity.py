@@ -6,8 +6,8 @@ import unittest
 
 from fixtures import OfflineCase
 from test_delivery import FakeSlack
-from bridge.authz import Actor, basis_for
-from bridge.store import Invalid
+from raven.authz import Actor, basis_for
+from raven.store import Invalid
 
 
 class PersonAssignmentIdentityTests(OfflineCase):

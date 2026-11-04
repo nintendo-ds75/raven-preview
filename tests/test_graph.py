@@ -8,10 +8,10 @@ from pathlib import Path
 
 from fixtures import OfflineCase
 
-from bridge.config import Config
-from bridge.ladder import ask
-from bridge.mcp import dispatch
-from bridge.store import Invalid, Store
+from raven.config import Config
+from raven.ladder import ask
+from raven.mcp import dispatch
+from raven.store import Invalid, Store
 from test_ladder import seed_changes
 
 
@@ -88,7 +88,7 @@ class MigrationTests(GraphCase):
         takes it down too, so no WAL or shm file outlives the graph and
         a copy over the file reopens clean (the bench reuses one path)."""
         import shutil
-        from bridge.store import Store
+        from raven.store import Store
         base = Path(self.temp.name) / "base.db"
         Store(base).graph.close()
         path = Path(self.temp.name) / "reused.db"
@@ -319,18 +319,18 @@ class AskTests(GraphCase):
         pending = [d for d in self.store.state()["decisions"] if d["status"] == "pending"]
         self.assertEqual(len(pending), 1)
         tree = json.loads(dispatch(self.store, {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-            "name": "bridge_get_tree", "arguments": {"task_id": self.run["id"]}}})["result"]["content"][0]["text"])
+            "name": "raven_get_tree", "arguments": {"task_id": self.run["id"]}}})["result"]["content"][0]["text"])
         self.assertEqual([n["node_id"] for n in tree["nodes"] if n["status"] == "pending"], [first["id"]])
         self.assertEqual([n["duplicate_of"] for n in tree["nodes"] if n["status"] == "duplicate"], [first["id"]])
         self.assertEqual(tree["counts"]["pending"], 1)
 
     def test_mcp_exposes_the_canvas_tools_and_no_approval(self):
         names = [t["name"] for t in dispatch(self.store, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]]
-        for name in ("bridge_add_node", "bridge_get_tree", "bridge_ingest_repo", "bridge_search_decisions"):
+        for name in ("raven_add_node", "raven_get_tree", "raven_ingest_repo", "raven_search_decisions"):
             self.assertIn(name, names)
         self.assertFalse(any("approve" in n for n in names))
         reply = dispatch(self.store, {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
-            "name": "bridge_add_node", "arguments": {"task_id": self.run["id"], "question": "Should we bill customer-run load tests?",
+            "name": "raven_add_node", "arguments": {"task_id": self.run["id"], "question": "Should we bill customer-run load tests?",
                                                      "paths": "billing/usage.py"}}})
         body = json.loads(reply["result"]["content"][0]["text"])
         self.assertEqual(body["kind"], "new")
@@ -338,7 +338,7 @@ class AskTests(GraphCase):
 
     def test_ingest_tool_refuses_a_non_repo(self):
         reply = dispatch(self.store, {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
-            "name": "bridge_ingest_repo", "arguments": {"path": self.temp.name}}})
+            "name": "raven_ingest_repo", "arguments": {"path": self.temp.name}}})
         self.assertTrue(reply["result"]["isError"])
 
 

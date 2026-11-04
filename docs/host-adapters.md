@@ -37,7 +37,7 @@ or reconnect the client so it reads current server instructions.
 client without asking anything, so it runs from scripts as well as terminals;
 without `--client` the wizard asks. Cursor gets MCP configuration only. The
 checkout must have a repository remote, or the operator must set
-`BRIDGE_INGEST_REPO=owner/name` in Raven's private `.env`; until one of those
+`RAVEN_INGEST_REPO=owner/name` in Raven's private `.env`; until one of those
 holds, setup writes nothing into the checkout and says so.
 
 ## Without hooks
@@ -45,18 +45,18 @@ holds, setup writes nothing into the checkout and says so.
 Hooks are the only reliable kickoff: they register the first prompt before the model
 runs. Without them, the kickoff rests on the agent following Raven's instructions, which
 is where every lever Raven has is pointed: the server instructions open with "first call
-on any task: `bridge_start_task`"; every reading tool (`bridge_search_decisions`,
-`bridge_search_context`, `bridge_lookup_record`, `bridge_list_owners`, `bridge_ask_raven`
+on any task: `raven_start_task`"; every reading tool (`raven_search_decisions`,
+`raven_search_context`, `raven_lookup_record`, `raven_list_owners`, `raven_ask`
 and the rest) says in its description that it registers no task; and until a task is live
 for the credential, each of those reads answers with a `kickoff` notice telling the agent to call
-`bridge_start_task` now. Measured on a dry run with `.mcp.json` alone, an agent searched
+`raven_start_task` now. Measured on a dry run with `.mcp.json` alone, an agent searched
 Raven's decisions and records, built for sixteen turns and never registered the task; the
 notice is what reaches an agent in that position. Install the hooks for anything a person
 depends on.
 
 Hooks require Python 3 on the **coding host**. Raven's Docker server does not
 otherwise require a host Python installation. To use instruction-based MCP
-without hooks, set `BRIDGE_HOST_HOOKS=0` in `.env` and reconnect. Setup refuses to
+without hooks, set `RAVEN_HOST_HOOKS=0` in `.env` and reconnect. Setup refuses to
 write a credential into a tracked config file. Adapter files are private and
 added to this checkout's Git exclude list; keep them out of shared archives too.
 
@@ -117,7 +117,7 @@ for it, and the session's other MCP servers, for example:
 ```text
 For acme/billing, Raven reads: history and code owners; Jira BILL; Slack #billing-eng.
 Other MCP servers in this session (linear, sentry) read live as you: their results
-are not durable evidence until imported with bridge_import_record.
+are not durable evidence until imported with raven_import_record.
 ```
 
 The map holds identifiers only (channel names, project keys, site origins,
@@ -133,16 +133,16 @@ decisions block only the code that needs their answers: the agent is told to
 build everything independent first (the mechanism around an open value with the
 value left as a named parameter, the tests, the docs, never the open question
 settled its own way) and, when nothing independent is left, to call
-`bridge_wait` with the task id. The refusal names only the task id and counts;
+`raven_wait` with the task id. The refusal names only the task id and counts;
 question and answer text stays on the tree.
 
-The hold lasts until the people answer, at most `BRIDGE_STOP_HOLD_MINUTES` in
-total (default 480, set where Raven runs): the agent keeps calling `bridge_wait`
+The hold lasts until the people answer, at most `RAVEN_STOP_HOLD_MINUTES` in
+total (default 480, set where Raven runs): the agent keeps calling `raven_wait`
 and continues by itself when an answer lands, with no prompt from the person at
 the keyboard. Each wait result carries `pace` (`idle_waits`, `idle_wait_cap`);
 a host that would rather spend fewer model turns than wait sets
-`BRIDGE_STOP_HOLD_WAITS`, and then the hold also ends after that many
-`bridge_wait` calls in a row that returned nothing new: the refusal says how
+`RAVEN_STOP_HOLD_WAITS`, and then the hold also ends after that many
+`raven_wait` calls in a row that returned nothing new: the refusal says how
 many idle waits remain, and the wait that reaches the cap tells the agent to
 stop and report what it built and what waits on whom. Any other call on the task
 (a node added or settled, a resume, a finish) or a wait that returns a change

@@ -19,7 +19,7 @@ except ImportError:
     # does not need; CI installs httpx==0.28.1 so these tests run there.
     raise unittest.SkipTest("Install httpx (CI pins httpx==0.28.1) to test the review acceptance driver") from None
 
-from bridge import canvas
+from raven import canvas
 from evals import claude_mcp_acceptance as host
 from evals import raven_review_acceptance as a
 from evals.customer_provider_gateway import Gateway
@@ -75,13 +75,13 @@ def source_fixture(root):
     """Use the existing authenticated synthetic harness; never provider inference."""
     scenario = novel_scenario(threshold=162, cohort='pilot_9d4c18d4', staging='staging_20758a99')
     clean = {k: os.environ[k] for k in ('PATH', 'LANG') if k in os.environ}
-    clean.update(BRIDGE_MODEL_API='none', BRIDGE_SEMANTIC='0', BRIDGE_EMBEDDINGS='disabled')
+    clean.update(RAVEN_MODEL_API='none', RAVEN_SEMANTIC='0', RAVEN_EMBEDDINGS='disabled')
     with patch.dict(os.environ, clean, clear=True), \
             patch.object(urllib.request, '_opener', fixture_opener()), host.Fixture(root / 'fixture') as fixture:
         fixture.prepare()
-        task = fixture.call('bridge_start_task', title='Production invoice policy', goal=host.PROMPT,
+        task = fixture.call('raven_start_task', title='Production invoice policy', goal=host.PROMPT,
             repo=host.REPO, client_key='review-source', paths=host.POLICY)['task_id']
-        node = fixture.call('bridge_add_node', task_id=task,
+        node = fixture.call('raven_add_node', task_id=task,
             question='Should internal load-test traffic count on production invoices?', paths=host.POLICY,
             category='policy', facts='environment=production')['node_id']
         fixture.human('/api/decisions/' + node + '/signoff', {
@@ -92,9 +92,9 @@ def source_fixture(root):
                   "    return not is_internal or (cohort == 'pilot_9d4c18d4' and calls > 162)\n")
         (root / 'fixture/checkout' / host.POLICY).write_text(source)
         diff = a.policy_diff(source)
-        fixture.call('bridge_get_tree', task_id=task)
-        fixture.call('bridge_finish_task', task_id=task, diff=diff)
-        proof = fixture.call('bridge_export_proof', task_id=task)
+        fixture.call('raven_get_tree', task_id=task)
+        fixture.call('raven_finish_task', task_id=task, diff=diff)
+        proof = fixture.call('raven_export_proof', task_id=task)
         saved = {'synthetic_people': True, 'synthetic_slack': True, 'task_id': task, 'node_id': node,
                  'actual_patch': diff, 'scenario': scenario, 'proof_integrity_valid': proof['integrity']['valid']}
         (root / 'result.json').write_text(json.dumps(saved))

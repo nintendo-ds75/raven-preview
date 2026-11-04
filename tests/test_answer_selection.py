@@ -8,11 +8,11 @@ import copy
 import json
 from unittest.mock import patch
 
-from bridge import canvas, readback
-from bridge.approval_scope import transport_text
-from bridge.config import Config
-from bridge.delivery import handle_slack_event
-from bridge.human_answers import INLINE_RATIONALE
+from raven import canvas, readback
+from raven.approval_scope import transport_text
+from raven.config import Config
+from raven.delivery import handle_slack_event
+from raven.human_answers import INLINE_RATIONALE
 from test_delivery import DeliveryCase
 
 
@@ -50,7 +50,7 @@ class AnswerSelectionTests(DeliveryCase):
         self.counter = 0
         for replacement in (
             patch.object(Config, 'semantic_retrieval', property(lambda self: True)),
-            patch('bridge.slack_chat.load', return_value=Config(model_api='none')),
+            patch('raven.slack_chat.load', return_value=Config(model_api='none')),
             patch.object(self.delivery.inbox, 'start'),
         ):
             replacement.start()
@@ -98,7 +98,7 @@ class AnswerSelectionTests(DeliveryCase):
             event_id=f'answer-selection-direct-{self.counter}', occurrence=occurrence)
 
     def offer(self, text='Exclude internal load tests for this task only.', action=None, **options):
-        with patch('bridge.slack_chat.Client.complete_json', return_value=copy.deepcopy(
+        with patch('raven.slack_chat.Client.complete_json', return_value=copy.deepcopy(
                 action if action is not None else {'kind': 'answer', 'answer_form': 'complete'})) as model:
             result = self.send(text, **options)
         model.assert_called_once()
@@ -188,8 +188,8 @@ class AnswerSelectionTests(DeliveryCase):
 
     def test_compatibility_answer_is_marked_and_keeps_full_human_text(self):
         text = CAPTURED_MIXED['mixed_reusable_grant']
-        with patch('bridge.slack_chat.respond', return_value=None), \
-                patch('bridge.llm.Client.complete_json', return_value={**CAPTURED_COMPLETE_ACTION, 'confident': True}):
+        with patch('raven.slack_chat.respond', return_value=None), \
+                patch('raven.llm.Client.complete_json', return_value={**CAPTURED_COMPLETE_ACTION, 'confident': True}):
             self.send(text)
             held = self.held()
             self.assert_answer_prompt(held, text)
@@ -264,7 +264,7 @@ class AnswerSelectionTests(DeliveryCase):
     def test_duplicate_callbacks_record_one_selection_and_cannot_replay_into_replacement(self):
         held = self.offer()
         original = copy.deepcopy(self.last_event)
-        with patch('bridge.slack_chat.Client.complete_json') as model:
+        with patch('raven.slack_chat.Client.complete_json') as model:
             handle_slack_event(self.delivery, original)
         model.assert_not_called()
         self.assertEqual(self.held(), held)
@@ -300,7 +300,7 @@ class AnswerSelectionTests(DeliveryCase):
 
     def test_long_answer_falls_back_without_a_truncated_confirmable_hold(self):
         text = 'Preserve the complete customer wording: ' + '<>&' * 3900
-        with patch('bridge.slack_chat.Client.complete_json', return_value={
+        with patch('raven.slack_chat.Client.complete_json', return_value={
                 'kind': 'answer', 'answer_form': 'complete', 'answer': 'Short model summary.'}):
             response = self.send(text)
         self.assertIn('too large', response)
@@ -311,7 +311,7 @@ class AnswerSelectionTests(DeliveryCase):
 
     def test_failed_delivery_and_pre_delivery_confirmation_cannot_select_answer(self):
         self.slack.fail = True
-        with patch('bridge.slack_chat.Client.complete_json', return_value={
+        with patch('raven.slack_chat.Client.complete_json', return_value={
                 'kind': 'answer', 'answer_form': 'complete'}):
             self.send('Exclude internal load tests.', stamp='2000000001.000001')
         held = self.held()
@@ -428,7 +428,7 @@ class AnswerSelectionTests(DeliveryCase):
         self.graph.close()
         readback.migrate(self.graph.db)
         readback.migrate(self.graph.db)
-        with patch('bridge.slack_chat.Client.complete_json', return_value={
+        with patch('raven.slack_chat.Client.complete_json', return_value={
                 'kind': 'answer', 'answer_form': 'complete'}) as model:
             self.assertEqual(self.delivery.inbox.process(), 1)
         model.assert_called_once()
@@ -493,7 +493,7 @@ class AnswerSelectionTests(DeliveryCase):
         self.send('answer: Exclude internal load tests for this task.')
         old = self.held()
         replacement = 'Exclude internal load tests and rejected customer requests for this task.'
-        with patch('bridge.slack_chat.Client.complete_json') as model:
+        with patch('raven.slack_chat.Client.complete_json') as model:
             self.send('answer: ' + replacement)
         model.assert_not_called()
         current = self.held()

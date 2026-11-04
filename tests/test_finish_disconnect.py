@@ -11,8 +11,8 @@ from urllib.request import Request, urlopen
 
 from fixtures import ready_server
 from test_contract import ContractCase
-from bridge import canvas, mcp, proof
-from bridge.store import Invalid, Store
+from raven import canvas, mcp, proof
+from raven.store import Invalid, Store
 
 
 DIFF = ("diff --git a/billing/usage.py b/billing/usage.py\n"
@@ -25,7 +25,7 @@ class FinishDisconnectTests(ContractCase):
         task = self.start()
         node = self.node(task)
         self.answer(node["node_id"], "Bill at two cents per call.")
-        mcp.call_tool(self.store, "bridge_get_tree", {"task_id": task})
+        mcp.call_tool(self.store, "raven_get_tree", {"task_id": task})
         return task
 
     def arguments(self, task):
@@ -34,7 +34,7 @@ class FinishDisconnectTests(ContractCase):
 
     def request(self, task):
         return {"jsonrpc": "2.0", "id": "finish", "method": "tools/call", "params": {
-            "name": "bridge_finish_task", "arguments": self.arguments(task),
+            "name": "raven_finish_task", "arguments": self.arguments(task),
             "_meta": {"progressToken": "finish-progress"}}}
 
     @contextmanager
@@ -62,8 +62,8 @@ class FinishDisconnectTests(ContractCase):
                 coordinator.join(5)
                 self.assertFalse(coordinator.is_alive())
 
-        with patch("bridge.llm.check_conformance", side_effect=slow) as reader, \
-                patch("bridge.canvas._run_review", side_effect=coordinated_review):
+        with patch("raven.llm.check_conformance", side_effect=slow) as reader, \
+                patch("raven.canvas._run_review", side_effect=coordinated_review):
             try:
                 yield reader, entered, finish_reading
             finally:
@@ -89,7 +89,7 @@ class FinishDisconnectTests(ContractCase):
                 # A new connection can recover the proof before the reader finishes.
                 reopened = Store(self.store.path)
                 try:
-                    exported = mcp.call_tool(reopened, "bridge_export_proof", {"task_id": task})
+                    exported = mcp.call_tool(reopened, "raven_export_proof", {"task_id": task})
                     original = exported["bundle"]
                     self.assertEqual(original["id"], finished["proof"]["id"])
                     self.assertEqual(original["payload"]["change"], {
@@ -97,15 +97,15 @@ class FinishDisconnectTests(ContractCase):
                     self.assertEqual(original["payload"]["checks"]["text"], "pytest: 12 passed")
                     self.assertTrue(exported["integrity"]["valid"])
                     self.assertTrue(exported["review_pending"])
-                    self.assertIn("bridge_wait", exported["next"])
+                    self.assertIn("raven_wait", exported["next"])
                     finish_reading()
-                    after = mcp.call_tool(reopened, "bridge_export_proof", {"task_id": task})
+                    after = mcp.call_tool(reopened, "raven_export_proof", {"task_id": task})
                     self.assertEqual(after["bundle"], original, "export must not rewrite the earlier snapshot")
                     self.assertEqual(after["review"]["status"], "done")
                     self.assertEqual(original["payload"]["review"]["status"], "running")
                     self.assertFalse(after["review_snapshot_current"])
-                    refreshed = mcp.call_tool(reopened, "bridge_finish_task", self.arguments(task))
-                    latest = mcp.call_tool(reopened, "bridge_export_proof", {"task_id": task})
+                    refreshed = mcp.call_tool(reopened, "raven_finish_task", self.arguments(task))
+                    latest = mcp.call_tool(reopened, "raven_export_proof", {"task_id": task})
                     self.assertEqual(refreshed["review"]["id"], finished["review"]["id"])
                     self.assertEqual(latest["bundle"]["payload"]["review"]["status"], "done")
                     self.assertNotEqual(latest["bundle"]["id"], original["id"])
@@ -127,10 +127,10 @@ class FinishDisconnectTests(ContractCase):
 
     def test_disconnect_handling_does_not_hide_proof_storage_failure(self):
         task = self.signed_task()
-        with patch("bridge.llm.check_conformance", return_value=None), \
+        with patch("raven.llm.check_conformance", return_value=None), \
                 patch.object(proof, "create", side_effect=ConnectionResetError("storage disconnected")):
             with self.assertRaisesRegex(ConnectionResetError, "storage disconnected"):
-                mcp.call_tool(self.store, "bridge_finish_task", self.arguments(task))
+                mcp.call_tool(self.store, "raven_finish_task", self.arguments(task))
 
     def test_disconnect_handling_does_not_bypass_authorization(self):
         task = self.start()
@@ -198,7 +198,7 @@ class FinishDisconnectTests(ContractCase):
                 request = Request(f"http://127.0.0.1:{server.server_port}/mcp", headers={
                     "Content-Type": "application/json"}, data=json.dumps({
                         "jsonrpc": "2.0", "id": "export", "method": "tools/call", "params": {
-                            "name": "bridge_export_proof", "arguments": {"task_id": task}}}).encode())
+                            "name": "raven_export_proof", "arguments": {"task_id": task}}}).encode())
                 with urlopen(request, timeout=5) as response:
                     result = json.load(response)["result"]
                 self.assertFalse(result["isError"], result)

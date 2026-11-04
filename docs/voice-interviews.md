@@ -14,11 +14,11 @@ A transcript, model proposal, spoken readback, saved draft or microphone result 
 
 ## Adaptive and providerless modes
 
-The adaptive interviewer uses `bridge.llm.Client` and the existing `BRIDGE_MODEL_API`, `BRIDGE_MODEL`, `BRIDGE_FAST_MODEL`, `BRIDGE_SEMANTIC` and provider configuration. It can use the configured Anthropic API or Claude CLI backend. No separate speech/LLM credentials are embedded in this feature.
+The adaptive interviewer uses `raven.llm.Client` and the existing `RAVEN_MODEL_API`, `RAVEN_MODEL`, `RAVEN_FAST_MODEL`, `RAVEN_SEMANTIC` and provider configuration. It can use the configured Anthropic API or Claude CLI backend. No separate speech/LLM credentials are embedded in this feature.
 
 Model output must have a strict JSON shape. Quotes grounding the follow-up and readback must occur in the supplied context/responses; caveats carry exact response quotes. Question-only clarification leaves both proposed answer and proposed rationale empty while retaining grounded caveats. A schema or grounding failure gets at most one repair attempt using the original human evidence and a fixed validation code; rejected text is not promoted into a source. Persistent invalid output, failed inference and missing providers yield an explicitly labelled guided fallback. A valid model proposal remains unapproved and can be wrong; the human must review every condition and caveat. The server ignores any replacement answer sent directly to the confirmation endpoint: it signs only the saved version shown for review.
 
-Without a backend, or with `BRIDGE_MODEL_API=none` / `BRIDGE_SEMANTIC=0`, Raven supplies deterministic guided questions. It does not pretend to conduct an AI conversation or invent a readback. The person writes the final decision. Adaptive turns are bounded to ten; transcripts, responses and request sizes are bounded rather than silently truncated.
+Without a backend, or with `RAVEN_MODEL_API=none` / `RAVEN_SEMANTIC=0`, Raven supplies deterministic guided questions. It does not pretend to conduct an AI conversation or invent a readback. The person writes the final decision. Adaptive turns are bounded to ten; transcripts, responses and request sizes are bounded rather than silently truncated.
 
 ## Identity, scope and task links
 
@@ -65,6 +65,6 @@ The Python suite covers attribution, raw drafts not signing, restart/retry, atom
 
 The UI unit runner uses DOM and audio stubs; it checks both entry surfaces, escaping, delayed response/edit guards, stale launches and audio cancellation. It is not a real browser check.
 
-The browser runner uses an isolated temporary server/database and mocked speech APIs. It is designed to exercise the actual inbox/task-link UI, explicit confirmation, resume, recognition failure, unsupported browsers, Escape/navigation/discard and spoken readback. Set `BRIDGE_BROWSER` if Chromium is installed elsewhere. The initial restricted build environment could not run Chromium's socket sandbox. The suite was subsequently run successfully in Chromium inside a separate Docker-capable test sandbox, including a rerun on runtime `764b1c4`; speech APIs remained mocked. See the dated verification report for source checkpoints.
+The browser runner uses an isolated temporary server/database and mocked speech APIs. It is designed to exercise the actual inbox/task-link UI, explicit confirmation, resume, recognition failure, unsupported browsers, Escape/navigation/discard and spoken readback. Set `RAVEN_BROWSER` if Chromium is installed elsewhere. The initial restricted build environment could not run Chromium's socket sandbox. The suite was subsequently run successfully in Chromium inside a separate Docker-capable test sandbox, including a rerun on runtime `764b1c4`; speech APIs remained mocked. See the dated verification report for source checkpoints.
 
 A bounded live Anthropic acceptance run verified adaptive text follow-up and caveat extraction alongside the synthetic Slack/MCP workflow. Actual microphone permission/recognition, audible speech and native Slack huddles remain unverified. Automated mobile viewport checks do not establish microphone compatibility on physical mobile devices. Raven opens a browser interview from Slack; it does not join or record a Slack huddle. See [verification evidence](verification-2026-10-06.md).

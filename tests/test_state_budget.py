@@ -108,9 +108,9 @@ class StateBudgetTests(OfflineCase):
     def test_state_says_what_the_backend_allows_and_what_today_wants(self):
         """Settings says what Raven can do with the configured backend, as the
         server wrote it, and the state adds up what Today wants from the person."""
-        from bridge import objectives as obj
-        from bridge.auth import Identity
-        with patch.dict(os.environ, {'BRIDGE_MODEL_API': 'none'}):
+        from raven import objectives as obj
+        from raven.auth import Identity
+        with patch.dict(os.environ, {'RAVEN_MODEL_API': 'none'}):
             base = self.serve()
         self.base = base
         state = json.loads(self.get('/api/state')[2])
@@ -160,12 +160,12 @@ class StateBudgetTests(OfflineCase):
         """The internal claude-cli backend serves an explicit Find opportunities
         click and nothing in the background: the page keeps the button and the
         open loops block."""
-        with patch.dict(os.environ, {'BRIDGE_MODEL_API': 'claude-cli', 'BRIDGE_CLAUDE_BIN': '/bin/sh'}):
+        with patch.dict(os.environ, {'RAVEN_MODEL_API': 'claude-cli', 'RAVEN_CLAUDE_BIN': '/bin/sh'}):
             self.base = self.serve()
         model = json.loads(self.get('/api/state')[2])['model']
         self.assertEqual((model['backend'], model['proposals'], model['investigation']), ('claude-cli', False, True))
         self.assertEqual(model['notice'], 'Manual investigation only; automatic suggestions need an API key.')
-        with patch.dict(os.environ, {'BRIDGE_MODEL_API': 'none'}):
+        with patch.dict(os.environ, {'RAVEN_MODEL_API': 'none'}):
             self.base = self.serve()
         model = json.loads(self.get('/api/state')[2])['model']
         self.assertEqual((model['proposals'], model['investigation']), (False, False))

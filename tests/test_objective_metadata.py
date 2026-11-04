@@ -1,8 +1,8 @@
 """Metadata-only disclosure dependencies do not masquerade as full body reads."""
 from fixtures import OfflineCase
-from bridge import objectives as obj, objective_head as head, objective_research as research, canvas
-from bridge.auth import Identity
-from bridge.store import Invalid
+from raven import objectives as obj, objective_head as head, objective_research as research, canvas
+from raven.auth import Identity
+from raven.store import Invalid
 
 
 class ObjectiveMetadataTests(OfflineCase):
@@ -140,7 +140,7 @@ class ObjectiveMetadataTests(OfflineCase):
 
     def test_background_worker_survives_transient_tick_failure(self):
         from unittest.mock import patch
-        from bridge.config import Config
+        from raven.config import Config
         # A workbench means the worker has work, so the loop ticks instead of idling.
         worker = head.Worker(self.store, object(), cfg=Config(model_api='none'))
         calls = []

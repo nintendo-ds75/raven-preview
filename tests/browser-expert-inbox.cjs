@@ -4,20 +4,20 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('nod
 const {spawn,execFileSync}=require('node:child_process'),readline=require('node:readline'),{once}=require('node:events');
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root=path.resolve(__dirname,'..'),temp=fs.mkdtempSync(path.join(os.tmpdir(),'raven-expert-world-'));
-const artifacts=process.env.BRIDGE_TEST_ARTIFACTS||path.join(root,'test-results','expert-inbox');fs.mkdirSync(artifacts,{recursive:true});
+const artifacts=process.env.RAVEN_TEST_ARTIFACTS||path.join(root,'test-results','expert-inbox');fs.mkdirSync(artifacts,{recursive:true});
 const checks=[],failures=[],pageErrors=[];
 let sourceCommit='unknown (archive checkout without Git metadata)', sourceTreeDirty=null;
 try { sourceCommit=execFileSync('git',['-C',root,'rev-parse','--verify','HEAD'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(); sourceTreeDirty=!!execFileSync('git',['-C',root,'status','--porcelain','--untracked-files=no'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(); } catch {}
 const check=async(name,fn)=>{try{await fn();checks.push(name);console.log('PASS '+name);}catch(e){failures.push({name,error:e.message});console.log('FAIL '+name+': '+e.message);}};
 (async()=>{
- let browser;const child=spawn(process.env.BRIDGE_PYTHON||'python3',[path.join(root,'tests/expert_inbox_browser_server.py'),temp],{cwd:root});let stderr='';child.stderr.on('data',d=>stderr+=d);
+ let browser;const child=spawn(process.env.RAVEN_PYTHON||'python3',[path.join(root,'tests/expert_inbox_browser_server.py'),temp],{cwd:root});let stderr='';child.stderr.on('data',d=>stderr+=d);
  try {
   const world=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error(stderr||'Startup timed out')),20000);readline.createInterface({input:child.stdout}).on('line',s=>{try{const j=JSON.parse(s);clearTimeout(timer);resolve(j);}catch{}});child.once('exit',code=>{clearTimeout(timer);reject(Error('Fixture exited '+code+': '+stderr));});});
   const {A,B}=world,deep=A.base+'/#runs/'+A.task+'/'+A.node;
   const ctl=async(action,params={})=>(await fetch(world.control+'/?'+new URLSearchParams({action,...params}))).json();
-  browser=await chromium.launch({...(process.env.BRIDGE_BROWSER?{executablePath:process.env.BRIDGE_BROWSER}:{}),headless:true,chromiumSandbox:true});
+  browser=await chromium.launch({...(process.env.RAVEN_BROWSER?{executablePath:process.env.RAVEN_BROWSER}:{}),headless:true,chromiumSandbox:true});
   const pages=[];async function page(){const p=await browser.newPage({viewport:{width:1365,height:1000}});p.setDefaultTimeout(8000);p.on('pageerror',e=>pageErrors.push(e.message));await p.route('**/*',r=>[A.base,B.base].includes(new URL(r.request().url()).origin)?r.continue():r.abort());pages.push(p);return p;}
-  const api=async(p,url,data)=>p.evaluate(async({url,data})=>{const r=await fetch(url,{method:data?'POST':'GET',headers:data?{'Content-Type':'application/json','X-Bridge-CSRF':state.csrf_token}:{},body:data?JSON.stringify(data):undefined});return {status:r.status,body:await r.json()};},{url,data});
+  const api=async(p,url,data)=>p.evaluate(async({url,data})=>{const r=await fetch(url,{method:data?'POST':'GET',headers:data?{'Content-Type':'application/json','X-Raven-CSRF':state.csrf_token}:{},body:data?JSON.stringify(data):undefined});return {status:r.status,body:await r.json()};},{url,data});
   const login=async(p,who='expert')=>{await p.goto(A.base+'/auth/login');await p.locator('input[name=email]').fill(A[who].email);await p.locator('input[name=password]').fill(A.password);await p.locator('form[action="/auth/password"] button').click();await p.waitForURL(u=>u.pathname==='/');await p.waitForFunction(()=>state?.me);};
   const visitor=await page();
   await check('Signed-out notification link opens login without private task data',async()=>{await visitor.goto(deep);await visitor.waitForURL(/\/auth\/login/);assert.equal(new URL(visitor.url()).hash,'#runs/'+A.task+'/'+A.node);assert(!((await visitor.locator('body').innerText()).includes('SYNTHETIC_TASK_CONTEXT')));for(const endpoint of ['/api/state','/api/tasks/'+A.task+'/tree','/api/decisions/'+A.node,'/api/records/'+A.restricted_node]){const r=await visitor.request.get(A.base+endpoint);assert.equal(r.status(),401);assert(!((await r.text()).includes('TENANT_A_PRIVATE_GOAL')));}});

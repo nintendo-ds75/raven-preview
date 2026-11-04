@@ -13,10 +13,10 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 from fixtures import OfflineCase
-from bridge import canvas, graph as graph_mod, llm
-from bridge.authz import Actor
-from bridge.config import Config
-from bridge.store import Invalid
+from raven import canvas, graph as graph_mod, llm
+from raven.authz import Actor
+from raven.config import Config
+from raven.store import Invalid
 
 REPO = 'synthetic/approval-control'
 QUESTION = 'What is the current maximum retention period for diagnostic records?'
@@ -29,7 +29,7 @@ CFG = Config(model_api='none')
 class SignedProposedMemoryTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        env = patch.dict(os.environ, {'BRIDGE_MODEL_API': 'none', 'BRIDGE_DEEP': '0'})
+        env = patch.dict(os.environ, {'RAVEN_MODEL_API': 'none', 'RAVEN_DEEP': '0'})
         env.start()
         self.addCleanup(env.stop)
         for name in ('complete', 'complete_json'):

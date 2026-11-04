@@ -1,10 +1,10 @@
 """Real durable objective/core contracts; inference and coding agents are doubles."""
 
 from fixtures import OfflineCase
-from bridge import objectives as obj, objective_head as head, canvas
-from bridge.auth import Identity
-from bridge.config import Config
-from bridge.store import Invalid, Store
+from raven import objectives as obj, objective_head as head, canvas
+from raven.auth import Identity
+from raven.config import Config
+from raven.store import Invalid, Store
 
 
 class HeadDouble:
@@ -133,7 +133,7 @@ class ObjectiveTests(OfflineCase):
         self.assertEqual([c['id'] for c in open_loops['checkpoints_due']], [created['id']])
         self.assertEqual(open_loops['new_records'], [{'repository': 'sample/project', 'count': 1}])
         self.assertEqual(open_loops['totals'], {'followups': 1, 'needs_review': 1, 'checkpoints_due': 1, 'new_records': 1})
-        from bridge.store import now
+        from raven.store import now
         with self.store.graph.transaction() as db:
             db.execute("INSERT INTO objective_evaluations(id,objective_id,repository,fingerprint,state,result,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
                        ('eval-1', '', 'sample/project', 'fp-1', 'completed', '{}', now(), now()))
@@ -201,7 +201,7 @@ class ObjectiveTests(OfflineCase):
         """Ingested commits, merges and pull requests are not evidence a person
         recorded, and a re-sync that leaves a record unchanged does not make it
         new again after an investigation."""
-        from bridge.store import now
+        from raven.store import now
         g = self.store.graph
         g.upsert_intent('sample/project', 'commit', 'abc123', 'Fix the CSV example', '', 'dev', now(),
                         metadata={'provider': 'git', 'namespace': 'sample/project', 'external_id': 'abc123', 'object_kind': 'commit'})
@@ -469,7 +469,7 @@ class ObjectiveTests(OfflineCase):
         head.configure_watch(self.store, {'repository': 'sample/project', 'enabled': True}, actor)
         self.store.graph.db.execute("UPDATE people SET role='viewer' WHERE id=?", (person,))
         worker = head.Worker(self.store, cfg=SimpleNamespace(semantic_retrieval=True))
-        with patch('bridge.objective_head.scan') as scan:
+        with patch('raven.objective_head.scan') as scan:
             worker.investigate_watches()
         scan.assert_not_called()
         self.assertEqual(self.store.graph.db.execute('SELECT last_corpus FROM objective_watches').fetchone()['last_corpus'], '')

@@ -8,7 +8,7 @@ is a search box and a page per person:
 - **Decides / Knows about / Has been writing**: the authority map and git.
 - **What Raven has learned**, newest first: what they told Raven (voice
   intro, notes they or an admin added, things they told an agent that the
-  agent kept with `bridge_remember`) and the decisions they answered for
+  agent kept with `raven_remember`) and the decisions they answered for
   agents, each with where and when.
 - The person, or an admin, can add, reword or remove a line. A reworded
   line keeps the quote it came from.
@@ -28,7 +28,7 @@ Ask Raven's quotes open the same way.
 
 Paste or sync the transcript of a call that just ended (a customer check-in,
 a planning sync): `POST /api/meetings/learn` with `{repo, title, transcript}`,
-or `bridge_learn_meeting` from Claude. Raven files it as a meeting record and
+or `raven_learn_meeting` from Claude. Raven files it as a meeting record and
 keeps, on each teammate's page, the asks, numbers and commitments in it, each
 quoted from the transcript and pointing back to it. A line whose quote is not
 in the transcript is dropped. Nothing becomes a decision here; when an agent
@@ -40,7 +40,7 @@ APIs: `GET /api/people/directory?q=`, `GET /api/people/<id>/profile`,
 `POST /api/people/<id>/context` with `{"action": "add"|"edit"|"remove", ...}`.
 
 What people told Raven also answers questions: Ask Raven
-(`POST /api/ask`) and `bridge_ask_raven` read these lines next to prior
+(`POST /api/ask`) and `raven_ask` read these lines next to prior
 decisions and cite who said them.
 
 ## Raven noticed
@@ -64,19 +64,19 @@ person picks the next step:
 - **Ask <person>** starts a Raven task with the finding's question; Raven
   routes it the way it routes an agent's question.
 - **Hand to Claude** copies a ready prompt; Claude can also call
-  `bridge_raven_noticed` to read the findings with their quotes.
+  `raven_noticed` to read the findings with their quotes.
 - **Dismiss**.
 
 It runs on the real model only (`ANTHROPIC_API_KEY`, or
-`BRIDGE_MODEL_API=claude-cli`); with none it refuses rather than showing a
+`RAVEN_MODEL_API=claude-cli`); with none it refuses rather than showing a
 canned list. Ways to start a pass:
 
 - automatically after a voice intro is saved, and after new answers, notes
-  or meetings, at most once every `BRIDGE_MUSE_EVERY` seconds (default 300;
-  `BRIDGE_MUSE=off` turns this off);
+  or meetings, at most once every `RAVEN_MUSE_EVERY` seconds (default 300;
+  `RAVEN_MUSE=off` turns this off);
 - "Look again" on the Ask Raven home, or `POST /api/muse/run`;
-- `python -m bridge --db <db> muse [--repo owner/name]` from a shell;
-- `bridge_raven_noticed` with `run: true` from an agent.
+- `python -m raven --db <db> muse [--repo owner/name]` from a shell;
+- `raven_noticed` with `run: true` from an agent.
 
 `GET /api/muse` lists open findings; `POST /api/muse/<id>/ask|dismiss|done`
 acts on one.
@@ -85,18 +85,18 @@ acts on one.
 
 | Tool | What it's for |
 |---|---|
-| `bridge_ask_raven` | A plain question over decisions, sources and what people said, with citations and who to talk to |
-| `bridge_person_context` | One person's page: what they decide, wrote, said and decided |
-| `bridge_find_people` | Who to talk to about a topic, and what people already said about it |
-| `bridge_remember` | Keep something a person told the agent as part of their context |
-| `bridge_raven_noticed` | Read (or re-run) the background findings, each with a ready agent prompt |
-| `bridge_learn_meeting` | File a meeting transcript and keep what each teammate needs from it |
-| `bridge_pr_summary` | The decisions behind a change, as a PR description |
+| `raven_ask` | A plain question over decisions, sources and what people said, with citations and who to talk to |
+| `raven_person_context` | One person's page: what they decide, wrote, said and decided |
+| `raven_find_people` | Who to talk to about a topic, and what people already said about it |
+| `raven_remember` | Keep something a person told the agent as part of their context |
+| `raven_noticed` | Read (or re-run) the background findings, each with a ready agent prompt |
+| `raven_learn_meeting` | File a meeting transcript and keep what each teammate needs from it |
+| `raven_pr_summary` | The decisions behind a change, as a PR description |
 
 ## The PR summary
 
 Every task page has a **PR summary** tab (`GET /api/tasks/<id>/pr-summary`,
-or `bridge_pr_summary`). One line per decision the change needed:
+or `raven_pr_summary`). One line per decision the change needed:
 
 - **Live reply**: Raven asked a person and they answered for this task, on a
   call, on their task page, in Slack or in Raven. A new judgment.
@@ -106,7 +106,7 @@ or `bridge_pr_summary`). One line per decision the change needed:
 
 Each line carries the answer, the reason, and who signed it off. "Copy as PR
 description" (or the tool's `markdown`) is the body to paste into GitHub.
-`bridge_add_node` and `bridge_get_tree` also return a `raven` line per node
+`raven_add_node` and `raven_get_tree` also return a `raven` line per node
 ("Answered from memory: Marcus Lee decided this in …", "Asking Priya Shah.").
 
 ## Acting user

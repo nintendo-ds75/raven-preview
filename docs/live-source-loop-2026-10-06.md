@@ -91,7 +91,7 @@ immutable proofs. The old proof has not been repaired or replaced for this repor
 ### 2. Cached approvals can require an account, breaking the Slack-first promise
 
 This happened with just one reused decision, not an unusually large task tree.
-`bridge/source_review.py` correctly refuses to truncate a complete source reading,
+`raven/source_review.py` correctly refuses to truncate a complete source reading,
 but its fallback links to an authenticated `/#runs/...` page. The recipient's
 accountless task page has no equivalent complete source-revalidation action.
 We created a synthetic recipient account and finished through the full app.
@@ -109,7 +109,7 @@ stale-form capture, and the final corrected decision/proof.
 The first answer's readback was 6,531 characters. It repeated question/context,
 scope and options and included raw source/dependency JSON. Normal code identifiers
 arrived as `parse\u005fretry\u005fafter\u0028\u0029`. The escaping in
-`bridge/approval_scope.py` prevents markup/mention interpretation but makes an
+`raven/approval_scope.py` prevents markup/mention interpretation but makes an
 ordinary technical question look corrupted.
 
 Keep complete, inspectable evidence and exact binding, but display identifiers
@@ -125,7 +125,7 @@ contained its dependency on A and A's known source revision. This was a new,
 versioned cache hit, not an imported legacy answer.
 
 The gate still tracked and invalidated the dependency correctly. The defect is
-the explanation: `bridge/store.py` classifies provenance from direct edge presence
+the explanation: `raven/store.py` classifies provenance from direct edge presence
 and makes trustworthy inherited evidence sound missing. Distinguish direct,
 inherited and genuinely unknown provenance, and show the chain consistently.
 

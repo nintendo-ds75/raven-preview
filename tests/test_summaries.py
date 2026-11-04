@@ -4,7 +4,7 @@ from one style: the point first, concrete values, no padding, nothing
 about how the text was produced."""
 import unittest
 
-from bridge import inquiry, llm
+from raven import inquiry, llm
 
 
 class SummaryStyleTests(unittest.TestCase):

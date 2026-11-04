@@ -8,8 +8,8 @@ from evals.slack_contract_harness import (
     ACTION_TOKEN, BOT_TOKEN, OWNER, REFERRED, SOURCE_TEXT, SOURCE_URL,
     FastClock, RavenContractHarness, SlackContractServer, eventually, http_json, run_contract,
 )
-from bridge.delivery import SlackTransport
-from bridge.llm import LLMError
+from raven.delivery import SlackTransport
+from raven.llm import LLMError
 
 
 class SlackWireContractTests(unittest.TestCase):
@@ -75,8 +75,8 @@ class SlackCustomerPathTests(unittest.TestCase):
         result = run_contract()
         self.assertEqual(result['status'], 'passed')
         self.assertIn('not shipped', result['buttons'])
-        self.assertTrue({'bridge_start_task', 'bridge_add_node', 'bridge_wait',
-                         'bridge_get_tree', 'bridge_finish_task', 'bridge_export_proof'}
+        self.assertTrue({'raven_start_task', 'raven_add_node', 'raven_wait',
+                         'raven_get_tree', 'raven_finish_task', 'raven_export_proof'}
                         <= set(result['mcp_tools']))
 
     def test_missing_search_scope_is_disclosed_and_does_not_authorize(self):
@@ -86,15 +86,15 @@ class SlackCustomerPathTests(unittest.TestCase):
             _, reply = h.say(message, 'What did the billing team say about internal tests?',
                              expected='Slack search was unavailable', action_token=ACTION_TOKEN)
             self.assertNotIn('Slack source', reply['text'])
-            self.assertFalse(h.call('bridge_get_decision', decision_id=node)['authorized'])
+            self.assertFalse(h.call('raven_get_decision', decision_id=node)['authorized'])
 
     def test_provider_failure_does_not_authorize_or_invent_a_reply(self):
         with RavenContractHarness() as h:
             _, node, message = h.begin()
-            with patch('bridge.llm.Client.complete', side_effect=LLMError('Synthetic provider outage')):
+            with patch('raven.llm.Client.complete', side_effect=LLMError('Synthetic provider outage')):
                 h.say(message, 'Please exclude internal load tests, but still bill real customer traffic.',
                       expected='Nothing was changed')
-            self.assertFalse(h.call('bridge_get_decision', decision_id=node)['authorized'])
+            self.assertFalse(h.call('raven_get_decision', decision_id=node)['authorized'])
 
     def test_wrong_person_cannot_confirm_an_owner_readback(self):
         with RavenContractHarness() as h:
@@ -103,9 +103,9 @@ class SlackCustomerPathTests(unittest.TestCase):
             _, readback = h.say(message, 'Please exclude internal load tests, but still bill real customer traffic.',
                   expected='Use this exact text as the answer only:')
             h.say(message, confirmation_text(readback), user=REFERRED, expected='no read-back')
-            self.assertFalse(h.call('bridge_get_decision', decision_id=node)['authorized'])
+            self.assertFalse(h.call('raven_get_decision', decision_id=node)['authorized'])
             h.say(message, confirmation_text(readback), expected='Recorded')
-            decision = h.call('bridge_get_decision', decision_id=node)
+            decision = h.call('raven_get_decision', decision_id=node)
             self.assertTrue(decision['authorized'])
             self.assertEqual(decision['signed_by'], 'Wes Contract')
 
@@ -127,7 +127,7 @@ class SlackCustomerPathTests(unittest.TestCase):
             self.assertEqual([r['response_status'] for r in calls], [429, 200])
             self.assertGreaterEqual(calls[1]['at'] - calls[0]['at'], 3)
             self.assertEqual(reply['thread_ts'], message['ts'])
-            self.assertFalse(h.call('bridge_get_decision', decision_id=node)['authorized'])
+            self.assertFalse(h.call('raven_get_decision', decision_id=node)['authorized'])
 
     def test_retry_after_applies_to_other_replies_on_the_same_method(self):
         with RavenContractHarness(clock=FastClock()) as h:
@@ -163,7 +163,7 @@ class SlackCustomerPathTests(unittest.TestCase):
             self.assertEqual(h.callback(h.event(message, 'yes', bot_id='B012RAVEN'))[0], 200)
             time.sleep(.3)
             self.assertEqual(len(h.slack.messages), count)
-            self.assertFalse(h.call('bridge_get_decision', decision_id=node)['authorized'])
+            self.assertFalse(h.call('raven_get_decision', decision_id=node)['authorized'])
 
 
 if __name__ == '__main__':

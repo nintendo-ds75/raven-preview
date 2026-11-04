@@ -10,8 +10,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from bridge import identity
-from bridge.graph import is_team_handle
+from raven import identity
+from raven.graph import is_team_handle
 
 SALT = 'raven-eval'
 DOMAIN = 'example.invalid'
@@ -144,7 +144,7 @@ def pseudonymize(graph):
 
     Duplicate engineer spelling rows coalesce; their IDs have no inbound links.
     """
-    from bridge import context_memory as cm
+    from raven import context_memory as cm
     scrub = learn_graph(graph)
     tables = ('engineers', 'change_people', 'blame_lines', 'listings', 'ownership', 'gh_users',
               'gh_pulls', 'intents', 'people', 'changes', 'owners')

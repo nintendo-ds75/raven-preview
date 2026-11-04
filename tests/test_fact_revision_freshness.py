@@ -3,7 +3,7 @@ import json
 import unittest
 from unittest.mock import patch
 from test_fact_revision_boundaries import FactCorrectionBoundaryCase, QUESTION
-from bridge.fact_revisions import correct_node_facts
+from raven.fact_revisions import correct_node_facts
 
 
 class FactCorrectionFreshnessTests(FactCorrectionBoundaryCase):
@@ -24,10 +24,10 @@ class FactCorrectionFreshnessTests(FactCorrectionBoundaryCase):
             self.assertIs(db, self.graph.db)
             self.assertTrue(db.in_transaction)
             return {source, node['node_id']}
-        with patch('bridge.context_connectors.blocked_decisions', side_effect=blocked):
+        with patch('raven.context_connectors.blocked_decisions', side_effect=blocked):
             corrected = correct_node_facts(self.store, request)
         self.assertGreaterEqual(len(checks), 2)
-        with patch('bridge.context_connectors.blocked_decisions', return_value={source, node['node_id']}):
+        with patch('raven.context_connectors.blocked_decisions', return_value={source, node['node_id']}):
             authoritative = self.store.get_decision(node['node_id'])
         self.assertFalse(corrected['authorized'])
         self.assertTrue(corrected['blocking'])
@@ -44,13 +44,13 @@ class FactCorrectionFreshnessTests(FactCorrectionBoundaryCase):
 
     def test_later_guarded_replay_keeps_successful_receipt_historical(self):
         source, node, request = self.setup_rule()
-        with patch('bridge.context_connectors.blocked_decisions', return_value=set()):
+        with patch('raven.context_connectors.blocked_decisions', return_value=set()):
             corrected = correct_node_facts(self.store, request)
         self.assertTrue(corrected['authorized'])
         before = self.receipt(node['node_id'])
         events = self.graph.db.execute('SELECT count(*) FROM events').fetchone()[0]
-        with patch('bridge.context_connectors.blocked_decisions', return_value={source, node['node_id']}), \
-                patch('bridge.ladder.run_task', side_effect=AssertionError('replay must not reevaluate')), \
+        with patch('raven.context_connectors.blocked_decisions', return_value={source, node['node_id']}), \
+                patch('raven.ladder.run_task', side_effect=AssertionError('replay must not reevaluate')), \
                 patch.object(self.store, 'notify', side_effect=AssertionError('replay must not notify')):
             replay = correct_node_facts(self.store, request)
         self.assertFalse(replay['authorized'])
@@ -63,12 +63,12 @@ class FactCorrectionFreshnessTests(FactCorrectionBoundaryCase):
 
     def test_recovery_exposes_current_authority_without_rewriting_blocked_receipt(self):
         source, node, request = self.setup_rule()
-        with patch('bridge.context_connectors.blocked_decisions', return_value={source, node['node_id']}):
+        with patch('raven.context_connectors.blocked_decisions', return_value={source, node['node_id']}):
             corrected = correct_node_facts(self.store, request)
         self.assertFalse(corrected['authorized'])
         before = self.receipt(node['node_id'])
-        with patch('bridge.context_connectors.blocked_decisions', return_value=set()), \
-                patch('bridge.ladder.run_task', side_effect=AssertionError('replay must not reevaluate')), \
+        with patch('raven.context_connectors.blocked_decisions', return_value=set()), \
+                patch('raven.ladder.run_task', side_effect=AssertionError('replay must not reevaluate')), \
                 patch.object(self.store, 'notify', side_effect=AssertionError('replay must not notify')):
             recovered = correct_node_facts(self.store, request)
             authoritative = self.store.get_decision(node['node_id'])

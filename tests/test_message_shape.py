@@ -13,8 +13,8 @@ import unittest
 
 from fixtures import OfflineCase
 
-from bridge.approval_scope import transport_text
-from bridge.delivery import LEAD_CONTEXT, render
+from raven.approval_scope import transport_text
+from raven.delivery import LEAD_CONTEXT, render
 
 LINK = "https://raven.example/brief#rvn_" + "0" * 32
 PROSE = ("The retry path in billing/usage.py currently clamps the computed wait at the configured cap and then adds "

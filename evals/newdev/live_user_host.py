@@ -22,9 +22,9 @@ Investigate the implementation, obtain needed policy decisions through Raven,
 implement a narrow change, and add and run regression tests.
 """
 
-TEAM_INSTRUCTION = """This team uses Raven (the `bridge` MCP server) to route the
+TEAM_INSTRUCTION = """This team uses Raven (the `raven` MCP server) to route the
 judgment calls in a task to the person who owns them. At the start of every task,
-before reading or editing anything, call `bridge_start_task`, then follow what
+before reading or editing anything, call `raven_start_task`, then follow what
 Raven returns for the rest of the task.
 """
 
@@ -44,12 +44,12 @@ def main():
     args.out.mkdir(parents=True, exist_ok=False)
     prompt = TEAM_INSTRUCTION + "\nTask:\n" + task + f"""
 Repository identity: urllib3/urllib3. Use client_key={args.client_key}.
-An actual test owner is using the Bridge web inbox; use bridge_wait when blocked.
-Do not act as a human or bypass a refusal. Finish through Bridge with the actual
+An actual test owner is using the Raven web inbox; use raven_wait when blocked.
+Do not act as a human or bypass a refusal. Finish through Raven with the actual
 diff and the checks you actually ran. The prepared test interpreter is
 {args.python}; run its pytest module against test/test_retry.py.
 Stay in this checkout. Do not use subagents, install packages, access external
-services other than Bridge, commit, or push. Do not inspect evaluation files or
+services other than Raven, commit, or push. Do not inspect evaluation files or
 credentials. Leave a reviewable patch and a concise final summary.
 """
     (args.out / "prompt.txt").write_text(prompt)
@@ -61,7 +61,7 @@ credentials. Leave a reviewable patch and a concise final summary.
                "--max-budget-usd", "4", "--permission-mode", "acceptEdits",
                "--strict-mcp-config", "--mcp-config", str(args.mcp_config),
                "--tools", "Read,Grep,Glob,Edit,Write,Bash", "--allowedTools",
-               "mcp__bridge", "Bash(git diff *)", "Bash(git status *)",
+               "mcp__raven", "Bash(git diff *)", "Bash(git status *)",
                f"Bash({args.python} -m pytest *)"]
     started = time.monotonic()
     with (args.out / "host.jsonl").open("w") as out, (args.out / "host.stderr").open("w") as err:

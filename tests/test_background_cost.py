@@ -11,10 +11,10 @@ from unittest.mock import patch
 from urllib.request import urlopen
 
 from fixtures import OfflineCase, ready_server
-from bridge import meeting_worker as mw, objectives as obj, objective_head as head, workbench_hosts as hosts
-from bridge.auth import Identity
-from bridge.config import Config
-from bridge.store import Invalid, now
+from raven import meeting_worker as mw, objectives as obj, objective_head as head, workbench_hosts as hosts
+from raven.auth import Identity
+from raven.config import Config
+from raven.store import Invalid, now
 
 CODEX_ENV = {'RAVEN_HOST_CODEX_API_KEY': 'fixture', 'RAVEN_HOST_CODEX_MODEL': hosts.CODEX_MODEL,
              'RAVEN_CODEX_BIN': 'fixture-codex'}
@@ -33,9 +33,9 @@ class CapabilityCacheTests(OfflineCase):
         self.addCleanup(hosts.reset_probes)
 
     def test_probe_runs_once_per_ttl_and_refresh_or_expiry_probes_again(self):
-        with patch.dict(os.environ, {**CODEX_ENV, 'BRIDGE_HOST_PROBE_SECONDS': '60'}), \
-                patch('bridge.workbench_hosts.subprocess.run', side_effect=codex_probe) as run, \
-                patch('bridge.workbench_hosts.time.monotonic', return_value=1000.0) as clock:
+        with patch.dict(os.environ, {**CODEX_ENV, 'RAVEN_HOST_PROBE_SECONDS': '60'}), \
+                patch('raven.workbench_hosts.subprocess.run', side_effect=codex_probe) as run, \
+                patch('raven.workbench_hosts.time.monotonic', return_value=1000.0) as clock:
             first = hosts.capability('codex')
             self.assertTrue(first['ready'])
             self.assertEqual(run.call_count, 1)
@@ -52,21 +52,21 @@ class CapabilityCacheTests(OfflineCase):
             self.assertEqual(run.call_count, 3, 'the TTL expired')
 
     def test_zero_ttl_disables_the_cache_and_a_changed_configuration_is_a_miss(self):
-        with patch.dict(os.environ, {**CODEX_ENV, 'BRIDGE_HOST_PROBE_SECONDS': '0'}), \
-                patch('bridge.workbench_hosts.subprocess.run', side_effect=codex_probe) as run:
+        with patch.dict(os.environ, {**CODEX_ENV, 'RAVEN_HOST_PROBE_SECONDS': '0'}), \
+                patch('raven.workbench_hosts.subprocess.run', side_effect=codex_probe) as run:
             hosts.capability('codex')
             hosts.capability('codex')
             self.assertEqual(run.call_count, 2)
-        with patch.dict(os.environ, {**CODEX_ENV, 'BRIDGE_HOST_PROBE_SECONDS': '60'}), \
-                patch('bridge.workbench_hosts.subprocess.run', side_effect=codex_probe) as run:
+        with patch.dict(os.environ, {**CODEX_ENV, 'RAVEN_HOST_PROBE_SECONDS': '60'}), \
+                patch('raven.workbench_hosts.subprocess.run', side_effect=codex_probe) as run:
             hosts.capability('codex')
             with patch.dict(os.environ, {'RAVEN_HOST_CODEX_MODEL': 'other'}):
                 self.assertFalse(hosts.capability('codex')['ready'])
             self.assertEqual(run.call_count, 2, 'a different configuration is probed on its own')
 
     def test_unconfigured_hosts_are_never_probed(self):
-        with patch.dict(os.environ, {**UNCONFIGURED, 'BRIDGE_HOST_PROBE_SECONDS': '0'}), \
-                patch('bridge.workbench_hosts.subprocess.run', side_effect=AssertionError('no binary probe without a credential')):
+        with patch.dict(os.environ, {**UNCONFIGURED, 'RAVEN_HOST_PROBE_SECONDS': '0'}), \
+                patch('raven.workbench_hosts.subprocess.run', side_effect=AssertionError('no binary probe without a credential')):
             for provider in hosts.PROVIDERS:
                 result = hosts.capability(provider)
                 self.assertFalse(result['ready'])
@@ -102,7 +102,7 @@ class StatePollTests(OfflineCase):
     def test_state_without_a_workbench_reports_hosts_unavailable_without_probing(self):
         url = self.serve()
         with patch.dict(os.environ, CODEX_ENV), \
-                patch('bridge.workbench_hosts.subprocess.run', side_effect=AssertionError('a poll must not probe a host')):
+                patch('raven.workbench_hosts.subprocess.run', side_effect=AssertionError('a poll must not probe a host')):
             for _ in range(2):
                 workbench = self.state(url)['workbench']
         self.assertFalse(workbench['enabled'])
@@ -112,13 +112,13 @@ class StatePollTests(OfflineCase):
 
     def test_state_with_a_workbench_probes_once_per_ttl(self):
         from pathlib import Path
-        from bridge.workbench import Workbench
+        from raven.workbench import Workbench
         root = Path(self.temp.name)
         workbench = Workbench(self.store, [{'id': 'sample/project', 'path': str(root / 'missing')}], root / 'copies',
                               cfg=Config(model_api='none'))
         url = self.serve(workbench=workbench)
-        with patch.dict(os.environ, {**CODEX_ENV, 'BRIDGE_HOST_PROBE_SECONDS': '60'}), \
-                patch('bridge.workbench_hosts.subprocess.run', side_effect=codex_probe) as run:
+        with patch.dict(os.environ, {**CODEX_ENV, 'RAVEN_HOST_PROBE_SECONDS': '60'}), \
+                patch('raven.workbench_hosts.subprocess.run', side_effect=codex_probe) as run:
             first = self.state(url)['workbench']
             self.assertTrue(first['enabled'])
             self.assertTrue(next(h for h in first['hosts'] if h['id'] == 'codex')['ready'])
@@ -149,7 +149,7 @@ class ObjectiveCase(OfflineCase):
 
 class WorkerIntervalTests(ObjectiveCase):
     def test_objective_worker_idles_until_there_is_work(self):
-        with patch.dict(os.environ, {'BRIDGE_OBJECTIVE_TICK_SECONDS': ''}):
+        with patch.dict(os.environ, {'RAVEN_OBJECTIVE_TICK_SECONDS': ''}):
             worker = head.Worker(self.store, cfg=Config(model_api='none'))
             self.assertFalse(worker.needs_work())
             self.assertEqual(worker.interval(), head.IDLE_SECONDS)
@@ -158,9 +158,9 @@ class WorkerIntervalTests(ObjectiveCase):
             self.objective()
             self.assertTrue(worker.needs_work(), 'saved objectives are work even without a model or workbench')
             self.assertEqual(worker.interval(), 15.0)
-        with patch.dict(os.environ, {'BRIDGE_OBJECTIVE_TICK_SECONDS': '7'}):
+        with patch.dict(os.environ, {'RAVEN_OBJECTIVE_TICK_SECONDS': '7'}):
             self.assertEqual(worker.interval(), 7.0)
-        with patch.dict(os.environ, {'BRIDGE_OBJECTIVE_TICK_SECONDS': 'soon'}):
+        with patch.dict(os.environ, {'RAVEN_OBJECTIVE_TICK_SECONDS': 'soon'}):
             self.assertEqual(worker.interval(), 15.0)
 
     def test_objective_worker_thread_does_not_tick_while_idle(self):
@@ -173,13 +173,13 @@ class WorkerIntervalTests(ObjectiveCase):
         self.assertEqual(ticks, [head.IDLE_SECONDS])
 
     def test_meeting_worker_idles_without_observers_or_vexa(self):
-        from bridge import meeting_records as mr
+        from raven import meeting_records as mr
         mr.migrate(self.store.graph.db)
         mw.migrate(self.store.graph.db)
         worker = mw.Worker(self.store, client_factory=lambda: None)
         meeting = mr.create(self.store, {'repo': 'acme/app', 'provider': 'vexa', 'namespace': 'selfhost-one',
             'platform': 'google_meet', 'native_meeting_id': 'abc-defg-hij', 'title': 'Planning'})['id']
-        with patch.dict(os.environ, {'BRIDGE_VEXA_URL': '', 'VEXA_API_KEY': '', 'BRIDGE_MEETING_TICK_SECONDS': ''}):
+        with patch.dict(os.environ, {'RAVEN_VEXA_URL': '', 'VEXA_API_KEY': '', 'RAVEN_MEETING_TICK_SECONDS': ''}):
             self.assertFalse(worker.needs_work())
             self.assertEqual(worker.interval(), mw.IDLE_SECONDS)
             self.store.graph.db.execute("INSERT INTO meeting_observers(meeting_id,enabled,workspace_shared,actor_id,actor_name,actor_kind,updated_at) VALUES(?,1,1,'','Operator','operator','now')", (meeting,))
@@ -187,7 +187,7 @@ class WorkerIntervalTests(ObjectiveCase):
             self.assertEqual(worker.interval(), 15.0)
             self.store.graph.db.execute("UPDATE meeting_observers SET enabled=0")
             self.assertFalse(worker.needs_work())
-        with patch.dict(os.environ, {'BRIDGE_VEXA_URL': 'https://vexa.example', 'VEXA_API_KEY': 'k', 'BRIDGE_MEETING_TICK_SECONDS': '5'}):
+        with patch.dict(os.environ, {'RAVEN_VEXA_URL': 'https://vexa.example', 'VEXA_API_KEY': 'k', 'RAVEN_MEETING_TICK_SECONDS': '5'}):
             self.assertTrue(worker.needs_work())
             self.assertEqual(worker.interval(), 5.0)
 
@@ -257,7 +257,7 @@ class EventDrivenScanTests(ObjectiveCase):
 
     def test_corpus_revision_is_computed_once_per_repository_per_tick(self):
         head.configure_watch(self.store, {'repository': 'sample/project', 'enabled': True}, self.actor)
-        from bridge import objective_research
-        with patch('bridge.objective_research.corpus_revision', wraps=objective_research.corpus_revision) as corpus:
+        from raven import objective_research
+        with patch('raven.objective_research.corpus_revision', wraps=objective_research.corpus_revision) as corpus:
             self.scans()
         self.assertEqual(corpus.call_count, 1)

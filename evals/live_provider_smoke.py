@@ -10,10 +10,10 @@ import urllib.request
 from pathlib import Path
 from unittest.mock import patch
 
-from bridge import canvas, interview, llm, slack_chat
-from bridge.authz import Actor
-from bridge.config import Config, load
-from bridge.store import Store
+from raven import canvas, interview, llm, slack_chat
+from raven.authz import Actor
+from raven.config import Config, load
+from raven.store import Store
 
 
 def run():
@@ -36,7 +36,7 @@ def run():
     result = {'status': 'failed', 'provider': 'anthropic', 'model': cfg.fast_model,
               'synthetic_data': True, 'live_slack': False, 'human_approval': False}
     try:
-        with patch('bridge.llm._open_model_request', side_effect=budgeted_open):
+        with patch('raven.llm._open_model_request', side_effect=budgeted_open):
             read = slack_chat.reading(cfg, {'question': 'Which usage is billable?',
                 'message': 'Exclude the 600000 internal load-test calls. Keep real customer traffic billable.',
                 'history': [], 'sources': [], 'pending_readback': None,

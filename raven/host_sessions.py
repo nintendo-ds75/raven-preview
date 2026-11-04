@@ -1,0 +1,545 @@
+"""Authenticated host bindings and a durable, leased resume mailbox.
+
+Raven never executes a callback command. The operator's local supervisor owns
+the host process, working directory and permission mode. Delivery is at least
+once; acknowledgments and task registration are idempotent.
+"""
+import json
+from datetime import datetime, timedelta, timezone
+
+from . import context_memory as cm
+from .store import Invalid
+
+SCHEMA = '''
+CREATE TABLE IF NOT EXISTS host_sessions (
+ id TEXT PRIMARY KEY, principal TEXT NOT NULL, host TEXT NOT NULL, session_id TEXT NOT NULL,
+ project TEXT NOT NULL, repo TEXT NOT NULL, task_id TEXT NOT NULL DEFAULT '',
+ generation INTEGER NOT NULL DEFAULT 1, initial_prompt TEXT NOT NULL DEFAULT '',
+ cursor BIGINT NOT NULL DEFAULT 0, inventory TEXT NOT NULL DEFAULT '[]',
+ created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS host_receipts (
+ binding_id TEXT NOT NULL REFERENCES host_sessions(id), event_key TEXT NOT NULL,
+ PRIMARY KEY(binding_id,event_key));
+CREATE TABLE IF NOT EXISTS host_resumes (
+ id TEXT PRIMARY KEY, binding_id TEXT NOT NULL REFERENCES host_sessions(id), task_id TEXT NOT NULL,
+ through_event BIGINT NOT NULL, state TEXT NOT NULL, worker TEXT NOT NULL DEFAULT '',
+ lease_until TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL,
+ UNIQUE(binding_id,task_id,through_event));
+CREATE TABLE IF NOT EXISTS host_activity (
+ binding_id TEXT PRIMARY KEY REFERENCES host_sessions(id), state TEXT NOT NULL,
+ held_since TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS host_reports (
+ message_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, state TEXT NOT NULL, posted INTEGER NOT NULL DEFAULT 0,
+ created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS agent_waits (
+ task_id TEXT PRIMARY KEY, idle_waits INTEGER NOT NULL DEFAULT 0, waiting_since TEXT NOT NULL DEFAULT '',
+ updated_at TEXT NOT NULL);
+'''
+# Answers the agent may already have read on the tree (raven_wait while its
+# Stop hook held it). Those are not a reason to resume it.
+ANSWER_EVENTS = ('owner_approved', 'answer_corrected', 'signature', 'signoff', 'owner_changed')
+WAKE_EVENTS = ('owner_approved', 'answer_corrected', 'signature', 'signoff', 'owner_changed',
+               'source_review_required', 'followup_added', 'rule_ended', 'rule_made',
+               'dependent_flagged', 'prediction_withdrawn', 'context_evidence_restored', 'conformance_read', 'discovery_reviewed')
+
+
+def migrate(db):
+    db.executescript(SCHEMA)
+    from .host_notifications import migrate as migrate_notifications
+    migrate_notifications(db)
+
+
+def _stop_hold():
+    """How long, in total, a Stop hook keeps an agent waiting on people
+    before it may stop; a person's answer after that resumes it instead."""
+    import os
+    try:
+        return timedelta(minutes=max(0.0, float(os.environ.get('RAVEN_STOP_HOLD_MINUTES', '480'))))
+    except ValueError:
+        return timedelta(minutes=480)
+
+
+def _wait_cap():
+    """How many raven_wait calls in a row may come back with nothing new
+    before the agent is let go, or 0 for no cap (the default): the agent is
+    held while a person it asked has not answered, and the hold's time
+    budget alone ends it. Measured on the Parcelwise take 4 (Nov 2): with a
+    cap of 6, the owners took longer than five minutes, the agent stopped,
+    nothing resumed a plain interactive session, and the requester had to
+    type "everyone has answered". A host that would rather spend fewer
+    model turns than wait sets RAVEN_STOP_HOLD_WAITS."""
+    import os
+    try:
+        return max(0, int(float(os.environ.get('RAVEN_STOP_HOLD_WAITS', '0'))))
+    except ValueError:
+        return 0
+
+
+def note_wait(store, task_id, idle, *, db=None):
+    """One raven_wait finished on the task. An idle wait (timed out with
+    nothing new) counts towards the cap; a wait that returned a change
+    means the agent has something to act on, and the count starts over."""
+    g = store.graph
+    db = g.db if db is None else db
+    at = cm.stamp()
+    row = db.execute('SELECT idle_waits, waiting_since FROM agent_waits WHERE task_id=?', (task_id,)).fetchone()
+    count = (row['idle_waits'] + 1) if (row and idle) else (1 if idle else 0)
+    since = (row['waiting_since'] if row and row['waiting_since'] else at) if idle else ''
+    if row is None:
+        db.execute('INSERT INTO agent_waits(task_id,idle_waits,waiting_since,updated_at) VALUES(?,?,?,?)',
+                   (task_id, count, since, at))
+    else:
+        db.execute('UPDATE agent_waits SET idle_waits=?,waiting_since=?,updated_at=? WHERE task_id=?',
+                   (count, since, at, task_id))
+    return {'idle_waits': count, 'idle_wait_cap': _wait_cap(), 'waiting_since': since}
+
+
+def note_work(store, task_id, *, db=None):
+    """The agent did something other than wait on the task (added or
+    settled a node, resumed, finished): it is building again, so the idle
+    waits start over and the task no longer reads as waiting."""
+    db = store.graph.db if db is None else db
+    db.execute("UPDATE agent_waits SET idle_waits=0,waiting_since='',updated_at=? WHERE task_id=?",
+               (cm.stamp(), task_id))
+
+
+def pace(store, task_id):
+    row = store.graph.db.execute('SELECT idle_waits, waiting_since FROM agent_waits WHERE task_id=?',
+                                 (task_id,)).fetchone()
+    return {'idle_waits': row['idle_waits'] if row else 0, 'idle_wait_cap': _wait_cap(),
+            'waiting_since': row['waiting_since'] if row else ''}
+
+
+def agent_state(db, task_id) -> str:
+    """What the coding agent on a task is doing now, from what Raven can
+    see of it: 'stopped' (its host session's Stop or SessionEnd hook
+    reported it stopped), 'waiting' (held by the Stop hook, or its last
+    raven_wait came back with nothing new) or 'building' (anything else,
+    including an agent Raven has not heard from). Pages say this instead
+    of a fixed phrase. Measured on dry run 10: the For you cards said the
+    agent kept building the parts that did not depend on the call while
+    it had written nothing and was waiting."""
+    rows = db.execute('SELECT a.state FROM host_sessions s JOIN host_activity a ON a.binding_id=s.id '
+                      'WHERE s.task_id=? ORDER BY a.updated_at DESC', (task_id,)).fetchall()
+    states = [r['state'] for r in rows]
+    if states and states[0] in ('stopped', 'ended'):
+        return 'stopped'
+    if 'holding' in states[:1]:
+        return 'waiting'
+    row = db.execute('SELECT idle_waits FROM agent_waits WHERE task_id=?', (task_id,)).fetchone()
+    return 'waiting' if row and row['idle_waits'] > 0 else 'building'
+
+
+def _activity(g, bid, state, at, held_since=None):
+    row = g.db.execute('SELECT held_since FROM host_activity WHERE binding_id=?', (bid,)).fetchone()
+    held = (row['held_since'] if row else '') if held_since is None else held_since
+    if row is None:
+        g.db.execute('INSERT INTO host_activity(binding_id,state,held_since,updated_at) VALUES(?,?,?,?)',
+                     (bid, state, held, at))
+    else:
+        g.db.execute('UPDATE host_activity SET state=?,held_since=?,updated_at=? WHERE binding_id=?',
+                     (state, held, at, bid))
+
+
+def sessions(store, args, principal=None):
+    """The stopped sessions of this credential in this checkout, for a
+    supervisor that watches all of them rather than one exact session.
+    A session that is working, or held waiting on a person, is not listed:
+    it reads its answers itself."""
+    host = args.get('host', '')
+    if host not in ('claude', 'codex'):
+        raise Invalid('Supported hosts are claude and codex')
+    if not isinstance(args.get('project'), str) or not args['project']:
+        raise Invalid('A bounded project is required')
+    who = getattr(principal, 'id', '') or 'local-operator'
+    rows = store.graph.db.execute(
+        "SELECT s.session_id FROM host_sessions s JOIN host_activity a ON a.binding_id=s.id "
+        "WHERE s.principal=? AND s.host=? AND s.project=? AND s.task_id<>'' AND a.state IN ('stopped','ended') "
+        "ORDER BY a.updated_at", (who, host, args['project'])).fetchall()
+    return {'sessions': [r['session_id'] for r in rows]}
+
+
+def _is_question(prompt):
+    from .inquiry import is_question
+    return is_question(prompt)
+
+
+def event(store, args, principal=None):
+    from . import canvas
+    from .config import load
+    from .store import repo_key
+    action = args.get('event')
+    if action == 'sessions':
+        return sessions(store, args, principal)
+    if action not in ('connect', 'prompt', 'new_task', 'poll', 'ack', 'release', 'stop', 'end', 'report'):
+        raise Invalid('Unsupported host lifecycle event')
+    host = args.get('host', '')
+    if host not in ('claude', 'codex'):
+        raise Invalid('Supported hosts are claude and codex')
+    for key, limit in (('session_id', 200), ('project', 2000), ('repo', 300)):
+        if not isinstance(args.get(key), str) or not args[key] or len(args[key]) > limit:
+            raise Invalid(f'A bounded {key} is required')
+    who = getattr(principal, 'id', '') or 'local-operator'
+    # Repo is checked after lookup, not part of the lookup: a moved session
+    # cannot silently acquire a second binding under another repository name.
+    bid = cm.digest([who, host, args['session_id'], args['project']])
+    repo = repo_key(args['repo'])
+    g, at = store.graph, cm.stamp()
+    with g.transaction():
+        row = g.db.execute('SELECT * FROM host_sessions WHERE id=?', (bid,)).fetchone()
+        if row is None:
+            moved = g.db.execute('SELECT 1 FROM host_sessions WHERE principal=? AND host=? AND session_id=? AND project<>?',
+                                 (who, host, args['session_id'], args['project'])).fetchone()
+            if moved:
+                raise Invalid('This host session belongs to another checkout; start a fresh host session here')
+            if action not in ('connect', 'prompt', 'new_task'):
+                raise Invalid('Connect this authenticated host session first')
+            g.db.execute('INSERT INTO host_sessions(id,principal,host,session_id,project,repo,created_at,updated_at) '
+                         'VALUES(?,?,?,?,?,?,?,?)', (bid, who, host, args['session_id'], args['project'], repo, at, at))
+            row = g.db.execute('SELECT * FROM host_sessions WHERE id=?', (bid,)).fetchone()
+        if row['repo'] != repo:
+            raise Invalid('This host session is bound to another repository')
+        inventory = args.get('tools')
+        if inventory is not None:
+            if not isinstance(inventory, list) or len(inventory) > 200 or any(not isinstance(t, str) or len(t) > 200 for t in inventory):
+                raise Invalid('Tool inventory must be at most 200 short tool/server names, never credentials')
+            g.db.execute('UPDATE host_sessions SET inventory=?,updated_at=? WHERE id=?', (cm.encoded(sorted(set(inventory))), at, bid))
+        prompt = args.get('prompt', '')
+        if not isinstance(prompt, str) or len(prompt) > 12000:
+            raise Invalid('Prompt must be text up to 12000 characters; it is not silently shortened')
+        key = args.get('event_key') or cm.digest([action, prompt, inventory])
+        if not isinstance(key, str) or len(key) > 200:
+            raise Invalid('event_key must be a bounded stable host event identifier')
+        seen = g.db.execute('SELECT 1 FROM host_receipts WHERE binding_id=? AND event_key=?', (bid, key)).fetchone()
+        # A question about the code starts no task; the next prompt that asks
+        # for a change does.
+        asking = action == 'prompt' and not row['task_id'] and _is_question(prompt)
+        if action == 'new_task' and not seen:
+            if not prompt.strip():
+                raise Invalid('A new task needs its exact user prompt')
+            g.db.execute("UPDATE host_sessions SET task_id='',initial_prompt='',generation=generation+1,cursor=0 WHERE id=?", (bid,))
+            g.db.execute("UPDATE host_resumes SET state='cancelled' WHERE binding_id=? AND state<>'done'", (bid,))
+            row = g.db.execute('SELECT * FROM host_sessions WHERE id=?', (bid,)).fetchone()
+        if action in ('prompt', 'new_task') and not row['task_id'] and not asking:
+            if not prompt.strip():
+                raise Invalid('The first task prompt must not be empty')
+            if row['initial_prompt'] and row['initial_prompt'] != prompt:
+                raise Invalid('Another first prompt is registering this session; retry after it completes')
+            g.db.execute('UPDATE host_sessions SET initial_prompt=? WHERE id=?', (prompt, bid))
+        if not seen and action in ('connect', 'prompt', 'new_task'):
+            g.db.execute('INSERT INTO host_receipts(binding_id,event_key) VALUES(?,?)', (bid, key))
+        if action in ('connect', 'prompt', 'new_task'):
+            # A person typing starts any Stop hold afresh, idle waits included.
+            _activity(g, bid, 'working', at, '' if action != 'connect' else None)
+            if action != 'connect' and row['task_id']:
+                note_work(store, row['task_id'], db=g.db)
+        elif action == 'end':
+            _activity(g, bid, 'ended', at, '')
+        row = dict(g.db.execute('SELECT * FROM host_sessions WHERE id=?', (bid,)).fetchone())
+
+    recovered_registration = False
+    if action in ('prompt', 'new_task') and not row['task_id'] and not asking:
+        # Network and model work stays outside the binding transaction.
+        # The stable client key makes an interrupted first registration retryable.
+        started = canvas.start_task(store, load(), {'title': prompt.splitlines()[0][:300] or 'Coding task',
+            'goal': prompt, 'repo': repo, 'agent': host, 'requester': getattr(principal, 'name', '') or 'Local operator',
+            'client_key': 'host:' + bid[:40] + ':' + str(row['generation'])})
+        with g.transaction():
+            current = g.db.execute('SELECT generation FROM host_sessions WHERE id=?', (bid,)).fetchone()
+            if current['generation'] != row['generation']:
+                raise Invalid('The host started another task while this kickoff was running')
+            g.db.execute('UPDATE host_sessions SET task_id=?,updated_at=? WHERE id=?', (started['task_id'], at, bid))
+            row['task_id'] = started['task_id']
+            recovered_registration = bool(seen)
+    if (not seen or recovered_registration) and action in ('connect', 'prompt', 'new_task'):
+        with g.transaction():
+            g.append_event('host_task_recovered' if recovered_registration else 'host_' + action, {'task_id': row['task_id'] or None, 'binding_id': bid,
+                'principal': who, 'host': host, 'session_id': args['session_id'], 'prompt': prompt,
+                'reported_tools': inventory or [], 'inventory_verified': False})
+    if action == 'end':
+        return {'ended': True}
+    if action == 'stop':
+        return stop(store, row)
+    if action == 'report':
+        return report(store, row, args)
+    if action in ('poll', 'ack', 'release'):
+        worker = args.get('worker', '')
+        if not isinstance(worker, str) or not worker or len(worker) > 200:
+            raise Invalid('A stable supervisor worker ID is required')
+        if action != 'poll':
+            with g.transaction():
+                message = g.db.execute('SELECT * FROM host_resumes WHERE id=? AND binding_id=?', (args.get('message_id', ''), bid)).fetchone()
+                if not message or message['worker'] != worker or message['task_id'] != row['task_id']:
+                    raise Invalid('This resume message is not leased to this worker and task')
+                if message['state'] == 'done' and action == 'ack':
+                    return {'acknowledged': True, 'duplicate': True}
+                if message['state'] != 'leased' or message['lease_until'] <= at:
+                    raise Invalid('The resume lease expired; poll again before acknowledging')
+                if action == 'ack':
+                    g.db.execute("UPDATE host_resumes SET state='done' WHERE id=?", (message['id'],))
+                    g.db.execute('UPDATE host_sessions SET cursor=? WHERE id=?', (message['through_event'], bid))
+                else:
+                    g.db.execute("UPDATE host_resumes SET state='pending',lease_until='' WHERE id=?", (message['id'],))
+            return {'acknowledged': action == 'ack', 'released': action == 'release'}
+        return poll(store, row, worker)
+    from .sources import agent_map
+    reported = inventory if inventory is not None else json.loads(row['inventory'] or '[]')
+    return {'binding_id': bid, 'task_id': row['task_id'], 'client_key': 'host:' + bid[:40] + ':' + str(row['generation']),
+        'repo': repo, 'task': canvas.get_tree(store, row['task_id']) if row['task_id'] else None,
+        'context': agent_map(store, repo, reported), 'question': bool(asking and not row['task_id']),
+        'next': 'This task is already registered. Use its task_id for every Raven call. Discover paths yourself. '
+                'Read raven_get_tree after resume; do not infer authority from sources. Use Raven new task: for a separate task.'}
+
+
+def poll(store, binding, worker):
+    from . import canvas
+    g, at = store.graph, cm.stamp()
+    if not binding['task_id']:
+        return {'message': None, 'reason': 'No registered task'}
+    with g.transaction():
+        # Refresh the cursor under the same write lock as claims and acknowledgments.
+        binding = dict(g.db.execute('SELECT * FROM host_sessions WHERE id=?', (binding['id'],)).fetchone())
+        task = g.db.execute('SELECT status FROM runs WHERE id=?', (binding['task_id'],)).fetchone()
+        if not task or task['status'] == 'abandoned':
+            return {'message': None, 'reason': 'Task is abandoned or unavailable'}
+        # Completion does not make later corrections disappear. Ignore events
+        # already incorporated at finish, but retain source/human changes after it.
+        floor = binding['cursor']
+        if task['status'] == 'completed':
+            finished = g.db.execute("SELECT max(id) AS id FROM events WHERE run_id=? AND kind='run_updated'", (binding['task_id'],)).fetchone()
+            floor = max(floor, finished['id'] or 0)
+            g.db.execute("UPDATE host_resumes SET state='cancelled' WHERE binding_id=? AND task_id=? "
+                         "AND through_event<=? AND state IN ('pending','leased')", (binding['id'], binding['task_id'], floor))
+        existing = g.db.execute("SELECT * FROM host_resumes WHERE binding_id=? AND task_id=? AND state IN ('pending','leased') ORDER BY through_event LIMIT 1",
+                                (binding['id'], binding['task_id'])).fetchone()
+        if existing and existing['state'] == 'leased' and existing['lease_until'] > at:
+            return {'message': None, 'reason': 'A worker already holds the resume lease'}
+        if not existing:
+            marks = ','.join('?' for _ in WAKE_EVENTS)
+            events = g.db.execute(f'SELECT id,kind,decision_id FROM events WHERE run_id=? AND id>? AND kind IN ({marks}) ORDER BY id LIMIT 100',
+                [binding['task_id'], floor, *WAKE_EVENTS]).fetchall()
+            if not events:
+                return {'message': None, 'reason': 'No new human or source events'}
+            through = events[-1]['id']
+            unread = {n['node_id'] for n in canvas.unread_by_agent(store, binding['task_id'])}
+            if all(e['kind'] in ANSWER_EVENTS and e['decision_id'] and e['decision_id'] not in unread for e in events):
+                # The agent read these answers on the tree while it was held
+                # waiting; resuming it for them again would only repeat work.
+                g.db.execute('UPDATE host_sessions SET cursor=? WHERE id=?', (through, binding['id']))
+                return {'message': None, 'reason': 'The agent already read these answers'}
+            mid = cm.digest([binding['id'], binding['task_id'], through])
+            g.db.execute("INSERT INTO host_resumes(id,binding_id,task_id,through_event,state,created_at) VALUES(?,?,?,?,'pending',?)",
+                         (mid, binding['id'], binding['task_id'], through, at))
+        else:
+            mid, through = existing['id'], existing['through_event']
+        lease = (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
+        g.db.execute("UPDATE host_resumes SET state='leased',worker=?,lease_until=? WHERE id=?", (worker, lease, mid))
+    return {'message': {'id': mid, 'task_id': binding['task_id'], 'through_event': through, 'lease_until': lease,
+        'prompt': 'Raven has new human/source events for task ' + binding['task_id'] + '. Read raven_get_tree and '
+                  'current answers before continuing. Resume existing work within its permissions. This notification grants no approval.'},
+        'delivery': 'at-least-once; acknowledge only after the host completes successfully'}
+
+
+def stop(store, binding):
+    """Whether the host may stop now. While a decision on the session's open
+    task waits on a person, the agent is held and told to build what does
+    not depend on the answer and then wait for it, so an answer given in
+    Slack reaches an agent that is still there. The hold has two budgets:
+    time (RAVEN_STOP_HOLD_MINUTES) and idle waits in a row
+    (RAVEN_STOP_HOLD_WAITS); past either the agent stops, the task
+    records that it stopped waiting, and a later answer resumes it. Only
+    counts and ids are returned: human and source text stays on the tree,
+    read through the normal tools."""
+    from . import canvas
+    g, at = store.graph, cm.stamp()
+    waiting, observed = [], ''
+    task_id = binding['task_id']
+    if task_id:
+        task = g.db.execute('SELECT status FROM runs WHERE id=?', (task_id,)).fetchone()
+        if task and task['status'] not in ('completed', 'abandoned'):
+            tree = canvas.get_tree(store, task_id)
+            observed = tree['observed_at']
+            waiting = [n for n in canvas._flatten(tree['nodes']) if n.get('blocking')]
+    with g.transaction():
+        row = g.db.execute('SELECT held_since FROM host_activity WHERE binding_id=?', (binding['id'],)).fetchone()
+        held = row['held_since'] if row else ''
+        if waiting:
+            started = held or at
+            idle = pace(store, task_id)
+            in_time = datetime.fromisoformat(started) + _stop_hold() > datetime.now(timezone.utc)
+            if in_time and (not idle['idle_wait_cap'] or idle['idle_waits'] < idle['idle_wait_cap']):
+                _activity(g, binding['id'], 'holding', at, started)
+                return {'hold': True, 'task_id': task_id, 'waiting': len(waiting), 'observed_at': observed,
+                        'idle_waits': idle['idle_waits'], 'idle_wait_cap': idle['idle_wait_cap'],
+                        'reason': _hold_reason(task_id, len(waiting), observed, idle)}
+            why = 'hold budget' if not in_time else 'idle wait cap'
+            g.append_event('host_stopped_waiting', {'task_id': task_id, 'binding_id': binding['id'],
+                'waiting': len(waiting), 'idle_waits': idle['idle_waits'], 'why': why})
+        _activity(g, binding['id'], 'stopped', at, held if waiting else '')
+    return {'hold': False, 'task_id': task_id, 'waiting': len(waiting)}
+
+
+def _hold_reason(task_id, waiting, observed, idle):
+    """What the held agent is told. An open decision blocks only the code
+    that needs its answer; the first hold says to build the rest, a later
+    one says how many idle waits remain before it may stop. Measured on
+    dry run 10: told only "do not stop while a decision you need is
+    unanswered", the agent read the hook as a loop it could not leave and
+    waited 29 times without building."""
+    head = f"Raven: {waiting} decision(s) on task {task_id} still wait on a person. "
+    call = f"call raven_wait with task_id={task_id} and since={observed}, act on what changed, and continue"
+    if not idle['idle_waits']:
+        return (head + "They block only the code that needs their answers. If anything independent is left, build "
+                "it now: the mechanism around each open value with the value itself left as a named parameter, "
+                "the tests, the docs; do not settle the open questions yourself. When nothing independent is left, "
+                + call + ".")
+    if not idle['idle_wait_cap']:
+        return (head + f"Your last {idle['idle_waits']} wait(s) in a row returned nothing new. People answer minutes "
+                "or hours later; if independent work is left (the mechanism around an open value, tests, docs), "
+                "build it; otherwise " + call + ". You are held until they answer, so keep waiting rather than "
+                "stopping to report.")
+    left = idle['idle_wait_cap'] - idle['idle_waits']
+    return (head + f"Your last {idle['idle_waits']} wait(s) in a row returned nothing new; {left} more allowed. "
+            "If independent work is left (the mechanism around an open value, tests, docs), build it; otherwise "
+            + call + ". After the last idle wait you may stop: report what you built and what waits on whom; the "
+            "task stays open and a person's answer resumes a supervised session.")
+
+
+def _clean(text, limit):
+    """Agent or person text quoted into Slack: no mentions, no markup that
+    reads as Raven's own, cut to a bound and said so."""
+    import re
+    text = re.sub(r'<[!@#][^>]*>', '', str(text or '')).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    text = text.strip()
+    return text if len(text) <= limit else text[:limit].rstrip() + ' …'
+
+
+def _report_text(store, binding, message, state, summary, changed, denied, base_url):
+    """The Slack line for one resume: the result first, then the answers
+    it used, what changed, what was blocked and how to unblock it, what
+    still waits, and last the agent's own words, quoted and bounded. The
+    agent's claim is never Raven's."""
+    g = store.graph
+    tree_task = g.db.execute('SELECT title, repo FROM runs WHERE id=?', (message['task_id'],)).fetchone()
+    previous = g.db.execute("SELECT max(through_event) AS id FROM host_resumes WHERE binding_id=? AND task_id=? "
+                            "AND state='done' AND through_event<?", (binding['id'], message['task_id'],
+                                                                     message['through_event'])).fetchone()
+    marks = ','.join('?' for _ in ANSWER_EVENTS)
+    decided = [r['decision_id'] for r in g.db.execute(
+        f'SELECT DISTINCT decision_id FROM events WHERE run_id=? AND id>? AND id<=? AND kind IN ({marks}) '
+        'AND decision_id IS NOT NULL', [message['task_id'], previous['id'] or 0, message['through_event'],
+                                        *ANSWER_EVENTS]).fetchall()]
+    used = []
+    for did in decided[:3]:
+        d = g.db.execute('SELECT answer, answered_by, signed_by FROM decisions WHERE id=?', (did,)).fetchone()
+        if d and (d['answer'] or '').strip():
+            used.append(f"{_clean(d['signed_by'] or d['answered_by'] or 'A person', 80)}: “{_clean(d['answer'], 160)}”")
+    from . import canvas
+    still = [n for n in canvas._flatten(canvas.get_tree(store, message['task_id'])['nodes']) if n.get('blocking')]
+    task = (f"{_clean(tree_task['title'], 120)} ({_clean(tree_task['repo'], 80)})" if tree_task
+            else message['task_id'])
+    head = {'done': f'✅ *Agent continued* · {task}',
+            'blocked': f'⚠️ *Agent continued, some actions blocked* · {task}',
+            'failed': f'❌ *Agent could not be resumed* · {task}'}[state]
+    lines = [head]
+    if used:
+        lines.append('*Answers used:* ' + '; '.join(used))
+    if changed:
+        lines.append('*Changed:* ' + ', '.join(_clean(c, 120) for c in changed[:8])
+                     + (f' and {len(changed) - 8} more' if len(changed) > 8 else ''))
+    if denied:
+        lines.append('*Blocked:* ' + '; '.join(_clean(d, 160) for d in denied[:5]))
+        lines.append('*To unblock:* resume it yourself and approve them: '
+                     + (f"`claude --resume {binding['session_id']}`" if binding['host'] == 'claude'
+                        else f"`codex resume {binding['session_id']}`"))
+    if state == 'failed':
+        lines.append('*Next:* the answers are saved on the task; the agent reads them the next time it runs.')
+    if still:
+        lines.append(f"*Still waiting on people:* {len(still)} decision(s)")
+    if summary:
+        lines += ['*Agent said (its own claim):*', '> ' + _clean(summary, 600).replace('\n', '\n> ')]
+    tail = f"_{binding['host']} session {binding['session_id'][:8]}…_"
+    if base_url:
+        tail += f" · <{base_url}/#runs/{message['task_id']}|Open task in Raven>"
+    lines.append(tail)
+    return '\n'.join(lines)
+
+
+def report(store, binding, args):
+    """The supervisor's account of one resume, recorded on the task and
+    posted once to each Slack thread Raven started for that task. The
+    agent's words are its claim, quoted and bounded, never Raven's own."""
+    g, at = store.graph, cm.stamp()
+    mid = args.get('message_id', '')
+    message = g.db.execute('SELECT * FROM host_resumes WHERE id=? AND binding_id=?', (mid, binding['id'])).fetchone()
+    if message is None:
+        raise Invalid('No resume message for this session')
+    exit_code = args.get('exit_code')
+    if not isinstance(exit_code, int):
+        raise Invalid('exit_code must be the resumed process exit status')
+    summary = args.get('summary', '')
+    changed, denied = args.get('changed', []), args.get('denied', [])
+    if not isinstance(summary, str) or len(summary) > 20000:
+        raise Invalid('summary must be text up to 20000 characters')
+    for name, value in (('changed', changed), ('denied', denied)):
+        if not isinstance(value, list) or len(value) > 200 or any(not isinstance(v, str) or len(v) > 500 for v in value):
+            raise Invalid(f'{name} must be at most 200 short strings')
+    state = 'failed' if exit_code != 0 else 'blocked' if denied else 'done'
+    delivery = store.delivery
+    with g.transaction():
+        duplicate = g.db.execute('SELECT 1 FROM host_reports WHERE message_id=?', (mid,)).fetchone() is not None
+        if not duplicate:
+            g.db.execute('INSERT INTO host_reports(message_id,task_id,state,created_at) VALUES(?,?,?,?)',
+                         (mid, message['task_id'], state, at))
+    if duplicate:
+        # The same report again: nothing is recorded twice, and what is
+        # still waiting to be posted is tried again now.
+        return {'reported': True, 'duplicate': True, **_post_report(store, delivery, mid, retry=True)}
+    with g.transaction():
+        g.append_event('host_resume_report', {'task_id': message['task_id'], 'binding_id': binding['id'],
+                                              'message_id': mid, 'state': state, 'exit_code': exit_code,
+                                              'summary': summary[-3000:], 'changed': changed[:50],
+                                              'denied': denied[:20]})
+    if delivery.enabled:
+        # One line in each Slack thread Raven opened for this task, through
+        # the outbox: posted now when Slack answers, retried by the worker
+        # when it does not, and once per thread whatever is replayed.
+        threads = g.db.execute(
+            "SELECT external_ref, decision_id FROM notifications WHERE run_id=? AND external_ref<>'' "
+            "AND state='sent' AND kind NOT IN ('report','brief_link') ORDER BY sent_at, created_at",
+            (message['task_id'],)).fetchall()
+        refs = {}
+        for row in threads:
+            refs.setdefault(row['external_ref'], row['decision_id'])
+        if refs:
+            text = _report_text(store, binding, message, state, summary, changed, denied, delivery.base_url)
+            with g.transaction():
+                for ref, decision_id in sorted(refs.items()):
+                    channel, _, thread = ref.partition(':')
+                    delivery.enqueue_thread_message(run_id=message['task_id'], decision_id=decision_id,
+                                                    destination=channel, thread_ts=thread, text=text,
+                                                    dedupe_key=f'report:{mid}:{ref}')
+    return {'reported': True, 'state': state, **_post_report(store, delivery, mid)}
+
+
+def _post_report(store, delivery, mid, retry=False):
+    """Send what this report has queued and say where it stands: posted
+    is how many threads have the line, queued how many still wait on the
+    worker. A replay (`retry`) asks for the waiting ones now, failed ones
+    included; a transport's own rate-limit cooldown still holds."""
+    g = store.graph
+    rows = g.db.execute("SELECT id, state FROM notifications WHERE kind='report' AND dedupe_key LIKE ?",
+                        (f'report:{mid}:%',)).fetchall()
+    waiting = [r['id'] for r in rows if r['state'] in ('queued', 'failed')]
+    if waiting and retry:
+        marks = ','.join('?' for _ in waiting)
+        with g.transaction():
+            g.db.execute(f"UPDATE notifications SET state='queued', next_attempt=0 WHERE id IN ({marks})", waiting)
+    if waiting:
+        delivery.deliver_now(only=waiting)
+    states = [r['state'] for r in g.db.execute(
+        "SELECT state FROM notifications WHERE kind='report' AND dedupe_key LIKE ?", (f'report:{mid}:%',)).fetchall()]
+    posted = states.count('sent')
+    with g.transaction():
+        g.db.execute('UPDATE host_reports SET posted=? WHERE message_id=?', (posted, mid))
+    return {'posted': posted, 'queued': sum(1 for s in states if s in ('queued', 'failed'))}

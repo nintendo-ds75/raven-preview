@@ -2,7 +2,7 @@
 import json
 from urllib.error import HTTPError
 
-from bridge.authz import Actor
+from raven.authz import Actor
 from test_auth import BOOTSTRAP, SharedServer
 
 
@@ -35,7 +35,7 @@ class AgentRestReadTests(SharedServer):
 
     def test_same_agent_cannot_skip_mcp_read_gate_with_rest_finish(self):
         task, _ = self.task()
-        self.assertTrue(self.mcp('bridge_finish_task', {'task_id': task}, self.agent)['isError'])
+        self.assertTrue(self.mcp('raven_finish_task', {'task_id': task}, self.agent)['isError'])
         self.assert_unread(task, f'/api/tasks/{task}/finish', {})
         read = self.get(f'/api/tasks/{task}/tree', token=self.agent)
         self.assertTrue(read['read_acknowledged'])
@@ -44,11 +44,11 @@ class AgentRestReadTests(SharedServer):
 
     def test_mcp_read_satisfies_rest_finish_and_rest_read_satisfies_mcp(self):
         task, _ = self.task()
-        self.mcp('bridge_get_tree', {'task_id': task}, self.agent)
+        self.mcp('raven_get_tree', {'task_id': task}, self.agent)
         self.assertEqual(self.post(f'/api/tasks/{task}/finish', {}, token=self.agent)['status'], 'completed')
         task, _ = self.task()
         self.get(f'/api/tasks/{task}/tree', token=self.agent)
-        self.assertFalse(self.mcp('bridge_finish_task', {'task_id': task}, self.agent)['isError'])
+        self.assertFalse(self.mcp('raven_finish_task', {'task_id': task}, self.agent)['isError'])
 
     def test_correction_requires_a_new_agent_read_not_an_operator_page_view(self):
         task, node = self.task()
@@ -78,7 +78,7 @@ class AgentRestReadTests(SharedServer):
         self.assertEqual(self.store.graph.get_task(task)['status'], 'working')
 
     def assert_completion_paths_refuse(self, task):
-        self.assertTrue(self.mcp('bridge_finish_task', {'task_id': task}, self.agent)['isError'])
+        self.assertTrue(self.mcp('raven_finish_task', {'task_id': task}, self.agent)['isError'])
         self.assertEqual(self.status_of('POST', f'/api/tasks/{task}/finish', {}, token=self.agent), 400)
         self.assertEqual(self.status_of('POST', f'/api/runs/{task}/status', {'status': 'completed'}, token=self.agent), 400)
         self.assertNotEqual(self.store.graph.get_task(task)['status'], 'completed')

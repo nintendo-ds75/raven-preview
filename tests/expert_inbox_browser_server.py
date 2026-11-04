@@ -10,17 +10,17 @@ from urllib.parse import urlsplit, parse_qs
 from unittest.mock import patch
 sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parent)]
 import fixtures  # noqa: F401,E402
-from bridge import briefing, canvas, source_access  # noqa: E402
-from bridge.accounts import Accounts  # noqa: E402
-from bridge.auth import Auth, Identity  # noqa: E402
-from bridge.config import Config  # noqa: E402
-from bridge.server import make_server  # noqa: E402
-from bridge.store import Store  # noqa: E402
+from raven import briefing, canvas, source_access  # noqa: E402
+from raven.accounts import Accounts  # noqa: E402
+from raven.auth import Auth, Identity  # noqa: E402
+from raven.config import Config  # noqa: E402
+from raven.server import make_server  # noqa: E402
+from raven.store import Store  # noqa: E402
 
-os.environ.update(BRIDGE_MODEL_API='none', BRIDGE_SEMANTIC='0', BRIDGE_LIVE='0')
+os.environ.update(RAVEN_MODEL_API='none', RAVEN_SEMANTIC='0', RAVEN_LIVE='0')
 for key in ('ANTHROPIC_API_KEY', 'RAVEN_HOST_CODEX_API_KEY', 'RAVEN_HOST_CLAUDE_API_KEY'):
     os.environ.pop(key, None)
-for target in ('bridge.llm.Client.complete', 'bridge.llm.Client.complete_json', 'bridge.github.GitHubAPI.get', 'urllib.request.urlopen'):
+for target in ('raven.llm.Client.complete', 'raven.llm.Client.complete_json', 'raven.github.GitHubAPI.get', 'urllib.request.urlopen'):
     patch(target, side_effect=AssertionError('External calls forbidden in synthetic expert QA')).start()
 
 class World:

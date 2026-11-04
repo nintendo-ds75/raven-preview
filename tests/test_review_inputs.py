@@ -3,8 +3,8 @@ import copy
 from unittest.mock import patch
 
 from test_auth import BOOTSTRAP, SharedServer
-from bridge import canvas, proof
-from bridge.config import Config
+from raven import canvas, proof
+from raven.config import Config
 
 
 class ReviewInputTests(SharedServer):
@@ -54,7 +54,7 @@ class ReviewInputTests(SharedServer):
             return {'verdict': 'follows' if question == self.OLD_QUESTION else 'departs',
                     'why': 'Controlled offline reading of ' + question, 'requirements': []}
 
-        with patch('bridge.llm.check_conformance', side_effect=reader):
+        with patch('raven.llm.check_conformance', side_effect=reader):
             first = self.finish()
             saved = copy.deepcopy(proof.export(self.store, {'task_id': self.task})['bundle'])
             self.reframe(self.node, self.NEW_QUESTION)
@@ -87,7 +87,7 @@ class ReviewInputTests(SharedServer):
             calls.append((question, others))
             return {'verdict': 'follows', 'why': 'Controlled offline context reading', 'requirements': []}
 
-        with patch('bridge.llm.check_conformance', side_effect=reader):
+        with patch('raven.llm.check_conformance', side_effect=reader):
             first = self.finish()
             self.assertIn((self.OLD_QUESTION, ((old, 'Yes'),)), calls)
             self.reframe(secondary, new)
@@ -105,7 +105,7 @@ class ReviewInputTests(SharedServer):
 
     def test_cosigning_and_timestamp_touches_keep_completed_reading(self):
         reading = {'verdict': 'follows', 'why': 'Controlled offline reading', 'requirements': []}
-        with patch('bridge.llm.check_conformance', return_value=reading) as reader:
+        with patch('raven.llm.check_conformance', return_value=reading) as reader:
             first = self.finish()
             person = self.post('/api/people', {'name': 'Reviewer', 'role': 'admin'}, token=BOOTSTRAP)
             self.post('/api/authority', {'person': person['id'], 'scope_kind': 'path', 'scope': 'billing/*',
@@ -126,7 +126,7 @@ class ReviewInputTests(SharedServer):
 
     def test_answer_only_legacy_record_stays_visible_until_explicit_refresh(self):
         import hashlib
-        from bridge.store import answer_hash
+        from raven.store import answer_hash
         diff_hash = hashlib.sha256(self.DIFF.encode()).hexdigest()[:16]
         legacy_id = hashlib.sha256('\n'.join([self.task, diff_hash,
                                              self.node + ':' + answer_hash('Yes')]).encode()).hexdigest()[:12]
@@ -137,7 +137,7 @@ class ReviewInputTests(SharedServer):
         self.store.graph.append_event('conformance_read', legacy)
         original = self.store.graph.db.execute("SELECT detail FROM events WHERE run_id=? AND kind='conformance_read'",
                                                (self.task,)).fetchone()['detail']
-        with patch('bridge.llm.check_conformance', return_value={
+        with patch('raven.llm.check_conformance', return_value={
                 'verdict': 'follows', 'why': 'New controlled reading', 'requirements': []}) as reader:
             tree = self.get(f'/api/tasks/{self.task}/tree', token=self.human)
             self.assertEqual((tree['review']['status'], tree['review']['read_status']), ('stale', 'done'))
@@ -163,7 +163,7 @@ class ReviewInputTests(SharedServer):
                                 'question': 'Should synthetic charges appear separately on invoices?',
                                 'parent_id': self.node, 'paths': 'billing/invoice.py'})['node_id']
         self.approve(child)
-        with patch('bridge.llm.check_conformance', return_value={
+        with patch('raven.llm.check_conformance', return_value={
                 'verdict': 'follows', 'why': 'Controlled offline reading', 'requirements': []}) as reader:
             first = self.finish()
             tree = self.get(f'/api/tasks/{self.task}/tree', token=self.human)
@@ -185,7 +185,7 @@ class ReviewInputTests(SharedServer):
             return {'verdict': 'follows', 'why': 'Controlled reading of ' + question, 'requirements': []}
 
         try:
-            with patch('bridge.llm.check_conformance', side_effect=reader), patch.object(canvas, 'FINISH_WAIT', 0.01):
+            with patch('raven.llm.check_conformance', side_effect=reader), patch.object(canvas, 'FINISH_WAIT', 0.01):
                 first = self.finish()
                 self.assertEqual(first['review']['status'], 'running')
                 self.assertTrue(entered.wait(5))
@@ -223,7 +223,7 @@ class ReviewInputTests(SharedServer):
             return {'verdict': 'follows', 'why': 'Controlled reading', 'requirements': []}
 
         before = canvas._review_key(self.task, self.DIFF, signed)
-        with patch('bridge.llm.check_conformance', side_effect=reader):
+        with patch('raven.llm.check_conformance', side_effect=reader):
             canvas._conformance(self.store, self.task, signed, self.DIFF)
         self.assertEqual(len(calls), 8)
         self.assertTrue(all(('Question 8?', 'Yes') in others for _, others in calls))

@@ -8,9 +8,9 @@ decides those files; and the kickoff verdict named the admin, whose infra
 category the word "cost" had matched, as the first contact instead of the
 owners the map names for the task's area."""
 from fixtures import OfflineCase
-from bridge import canvas
-from bridge.config import Config
-from bridge.routing import route_ranked
+from raven import canvas
+from raven.config import Config
+from raven.routing import route_ranked
 
 REPO = "harborline/harborline-app"
 GOAL = ("We want to start charging our Enterprise customers for Pilot based on how much they use it. "

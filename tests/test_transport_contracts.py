@@ -8,9 +8,9 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from test_delivery import DeliveryCase
-from bridge.delivery import SlackTransport, SlackRateLimited
-from bridge.mcp import dispatch
-from bridge.server import make_server
+from raven.delivery import SlackTransport, SlackRateLimited
+from raven.mcp import dispatch
+from raven.server import make_server
 
 
 class RetryAfterTests(DeliveryCase):
@@ -94,8 +94,8 @@ class MCPVersionTests(DeliveryCase):
             {'method': 'initialize', 'params': {'protocolVersion': 17}},
             {'method': 'tools/call', 'params': {'name': [], '_meta': {'progressToken': 1}}},
             {'method': 'tools/call', 'params': {'name': {}, '_meta': {'progressToken': 1}}},
-            {'method': 'tools/call', 'params': {'name': 'bridge_connection_status', 'arguments': []}},
-            {'method': 'tools/call', 'params': {'name': 'bridge_connection_status', 'arguments': None}},
+            {'method': 'tools/call', 'params': {'name': 'raven_connection_status', 'arguments': []}},
+            {'method': 'tools/call', 'params': {'name': 'raven_connection_status', 'arguments': None}},
         ]
 
     def test_malformed_params_preserve_request_id_and_protocol_error(self):

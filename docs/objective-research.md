@@ -1,6 +1,6 @@
 # Read-only objective research
 
-`bridge.objective_research.research` investigates facts before the objective head
+`raven.objective_research.research` investigates facts before the objective head
 asks for a consequential judgment. It is **not another execution harness**.
 
 The configured Raven model chooses up to six actual tool steps:

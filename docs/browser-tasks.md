@@ -61,18 +61,18 @@ or read-only sandboxing. Native questions remain unavailable; use Raven's
 ordinary core judgment/signoff path instead.
 
 Host credentials and model choice are separate from Raven's internal evidence
-reading. Internal inference uses `BRIDGE_MODEL_API=anthropic` with
-`ANTHROPIC_API_KEY`, or `BRIDGE_MODEL_API=openai` with `OPENAI_API_KEY`. Set
-`BRIDGE_MODEL` and `BRIDGE_FAST_MODEL` to models available on that provider.
+reading. Internal inference uses `RAVEN_MODEL_API=anthropic` with
+`ANTHROPIC_API_KEY`, or `RAVEN_MODEL_API=openai` with `OPENAI_API_KEY`. Set
+`RAVEN_MODEL` and `RAVEN_FAST_MODEL` to models available on that provider.
 Missing credentials no longer silently select a local Claude login. Explicit
-`BRIDGE_MODEL_API=claude-cli` remains a local operator choice.
+`RAVEN_MODEL_API=claude-cli` remains a local operator choice.
 
 The browser reports setup blockers for each host without making a provider call.
 A ready configuration is not proof of provider authentication. Selecting an
 unavailable host gives its actual blocker and never runs another host instead.
 
 ```sh
-python -m bridge serve --workbench \
+python -m raven serve --workbench \
   --managed-repo your-org/your-project=/absolute/path/to/checkout
 ```
 
@@ -86,9 +86,9 @@ install dependencies when building that image, not during the agent's task.
 
 ```sh
 docker pull python:3.13-slim-bookworm
-BRIDGE_WORKBENCH_SANDBOX=docker \
-BRIDGE_WORKBENCH_IMAGE=python:3.13-slim-bookworm \
-python -m bridge serve --workbench \
+RAVEN_WORKBENCH_SANDBOX=docker \
+RAVEN_WORKBENCH_IMAGE=python:3.13-slim-bookworm \
+python -m raven serve --workbench \
   --managed-repo your-org/your-project=/absolute/path/to/checkout
 ```
 
@@ -99,12 +99,12 @@ could not be run. It must not label those changes tested.
 
 ## Run in Docker
 
-Set `BRIDGE_WORKBENCH=1`, the host variables above,
-`BRIDGE_REPOS_DIR` to the directory containing your checkouts,
-`BRIDGE_INGEST_REPO_DIR` to the checkout's directory name, and
-`BRIDGE_INGEST_REPO=your-org/your-project` in the existing deployment environment.
+Set `RAVEN_WORKBENCH=1`, the host variables above,
+`RAVEN_REPOS_DIR` to the directory containing your checkouts,
+`RAVEN_INGEST_REPO_DIR` to the checkout's directory name, and
+`RAVEN_INGEST_REPO=your-org/your-project` in the existing deployment environment.
 For example, a checkout at `/srv/repos/project` uses
-`BRIDGE_REPOS_DIR=/srv/repos` and `BRIDGE_INGEST_REPO_DIR=project`.
+`RAVEN_REPOS_DIR=/srv/repos` and `RAVEN_INGEST_REPO_DIR=project`.
 Ingestion and the browser task runner use that same checkout.
 The regular Compose stack supports repository reading and drafting.
 
@@ -128,9 +128,9 @@ bounded CPU/memory/processes and a two-minute limit. Only task files cross into
 and out of that container. Keys, the database and the Docker socket do not.
 
 Task conversations and tool receipts are stored in the existing database;
-private copies live under `/data/workbench` in Compose or `.bridge/workbench`
+private copies live under `/data/workbench` in Compose or `.raven/workbench`
 locally. Back up both when you need to resume browser tasks after moving hosts.
-`BRIDGE_WORKBENCH_DIR` can select another persistent directory. The server runs
+`RAVEN_WORKBENCH_DIR` can select another persistent directory. The server runs
 one host turn at a time. Claude has a per-task dollar budget (default $5), and
 enabled adapters have a tool-call limit and a 15-minute turn timeout. Pi and
 OpenCode provider-reported costs are not a hard spending guarantee; configure

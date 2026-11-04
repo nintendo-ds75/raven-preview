@@ -21,7 +21,7 @@ import unittest
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from bridge.workbench_hosts import CODEX_ROOT, CODEX_VERSION, stop_process_group
+from raven.workbench_hosts import CODEX_ROOT, CODEX_VERSION, stop_process_group
 
 ROOT = Path(__file__).resolve().parents[1]
 BINARY = CODEX_ROOT / 'node_modules' / '.bin' / 'codex'
@@ -146,13 +146,13 @@ class NativeSchemaTests(unittest.TestCase):
                 self.assertTrue({'model', 'modelProvider', 'thread'} <= set(response['required']))
 
 
-@unittest.skipUnless(os.environ.get('BRIDGE_TEST_CODEX') == '1', 'full native Codex transport acceptance is opt-in')
+@unittest.skipUnless(os.environ.get('RAVEN_TEST_CODEX') == '1', 'full native Codex transport acceptance is opt-in')
 class NativeLoopTests(unittest.TestCase):
     def setUp(self):
         self.assertTrue(BINARY.is_file(), 'Run npm ci --prefix hosts/codex --ignore-scripts')
         # Codex intentionally refuses installing helper aliases below /tmp.
         # Keep its private test HOME inside this ignored, operator-owned checkout.
-        fixture_root = ROOT / '.bridge' / 'native-codex-fixtures'
+        fixture_root = ROOT / '.raven' / 'native-codex-fixtures'
         fixture_root.mkdir(parents=True, exist_ok=True)
         self.temp = tempfile.TemporaryDirectory(dir=fixture_root)
         self.addCleanup(self.temp.cleanup)

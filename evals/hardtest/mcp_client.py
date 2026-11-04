@@ -1,4 +1,4 @@
-"""Minimal MCP stdio client that talks to bridge_mcp.py exactly as an agent client would."""
+"""Minimal MCP stdio client that talks to raven_mcp.py exactly as an agent client would."""
 import json
 import subprocess
 import sys
@@ -7,9 +7,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 
 
-class BridgeMCP:
+class RavenMCP:
     def __init__(self, db):
-        self.proc = subprocess.Popen([sys.executable, str(REPO / "bridge_mcp.py"), "--db", db],
+        self.proc = subprocess.Popen([sys.executable, str(REPO / "raven_mcp.py"), "--db", db],
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None, text=True)
         self.n = 0
         init = self.rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "eval", "version": "0"}})

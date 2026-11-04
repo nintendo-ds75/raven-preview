@@ -3,9 +3,9 @@ import json
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas, context_memory as cm, ladder
-from bridge.config import Config
-from bridge.store import Invalid
+from raven import canvas, context_memory as cm, ladder
+from raven.config import Config
+from raven.store import Invalid
 
 
 REPO = 'background/policy'
@@ -21,7 +21,7 @@ class BackgroundMemoryProvenanceTests(OfflineCase):
         self.addCleanup(self.graph.close)
         self.store.add_owner({'name': 'Policy Owner', 'team': 'Policy', 'patterns': 'policy/*'})
         for method in ('complete', 'complete_json'):
-            guard = patch('bridge.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
+            guard = patch('raven.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
             guard.start()
             self.addCleanup(guard.stop)
 
@@ -61,7 +61,7 @@ class BackgroundMemoryProvenanceTests(OfflineCase):
                 after_read()
             return result
 
-        with patch('bridge.ladder.ask', side_effect=read):
+        with patch('raven.ladder.ask', side_effect=read):
             canvas._model_node_pass(self.store, Config(model_api='none'), did, '',
                 ['policy/retention.py'], [], '', current['owner_id'], '', current['updated_at'])
         self.assertEqual(observed['source'], 'memory')

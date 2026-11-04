@@ -2,7 +2,7 @@
 
 After reading the current decision tree, finish a task with its complete unified
 diff and the checks the coding host actually ran. Raven saves a portable evidence
-bundle. Call `bridge_export_proof` with the same `task_id` to retrieve its JSON
+bundle. Call `raven_export_proof` with the same `task_id` to retrieve its JSON
 bundle and Markdown review summary. Attach both beside the actual code change.
 
 The bundle contains:
@@ -38,8 +38,8 @@ supports that. A citation points to evidence; its presence does not establish
 that a summary accurately represents that evidence.
 
 To check a downloaded JSON bundle offline, run
-`python -m bridge.proof proof.json --diff changes.patch`, or call
-`bridge.proof.verify(bundle)` from Python.
+`python -m raven.proof proof.json --diff changes.patch`, or call
+`raven.proof.verify(bundle)` from Python.
 Also compare `payload.change.sha256` with the SHA-256 of the actual patch under
 review. The JSON is content-addressed: changing its diff, decisions, scope or
 checks without updating its digest is detected.

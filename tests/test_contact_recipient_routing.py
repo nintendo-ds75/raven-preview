@@ -8,9 +8,9 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas, mcp
-from bridge.config import Config
-from bridge.routing import rank_for_decision
+from raven import canvas, mcp
+from raven.config import Config
+from raven.routing import rank_for_decision
 
 
 class ContactRecipientRoutingTests(OfflineCase):
@@ -28,8 +28,8 @@ class ContactRecipientRoutingTests(OfflineCase):
         self.people = {name: self.store.add_person({'name': name,
                        'email': name.lower().replace(' ', '.') + '@synthetic.invalid'})['id']
                        for name in ('Synthetic Guide', 'Synthetic Respondent', 'Synthetic Successor')}
-        for target in ('bridge.llm.Client.complete', 'bridge.llm.Client.complete_json',
-                       'bridge.github.GitHubAPI.get', 'bridge.mcp.index_repo',
+        for target in ('raven.llm.Client.complete', 'raven.llm.Client.complete_json',
+                       'raven.github.GitHubAPI.get', 'raven.mcp.index_repo',
                        'socket.socket.connect', 'socket.create_connection'):
             guard = patch(target, side_effect=AssertionError('Provider/network calls forbidden'))
             guard.start()
@@ -48,24 +48,24 @@ class ContactRecipientRoutingTests(OfflineCase):
         return mcp.call_tool(self.store, name, args)
 
     def import_source(self, ref, namespace='synthetic-north', **extra):
-        return self.tool('bridge_import_record', {'repo': self.repo, 'provider': 'jira',
+        return self.tool('raven_import_record', {'repo': self.repo, 'provider': 'jira',
             'kind': 'jira', 'namespace': namespace, 'external_id': 'object-' + ref, 'ref': ref,
             'title': 'Synthetic usage investigation ' + ref, 'body': 'Open investigation; no policy answer.',
             'status': 'Open', 'updated_at': '2026-10-01T08:00:00+00:00', **extra})['source']
 
     def link(self, task, source, role='work_item'):
-        found = self.tool('bridge_lookup_record', {'repo': self.repo, 'provider': source['provider'],
+        found = self.tool('raven_lookup_record', {'repo': self.repo, 'provider': source['provider'],
             'namespace': source['namespace'], 'object_kind': source['kind'], 'external_id': source['external_id']})
-        read = self.tool('bridge_get_record', {'repo': self.repo,
+        read = self.tool('raven_get_record', {'repo': self.repo,
             'record_id': found['source']['record_id']})['source']
-        return self.tool('bridge_link_work_item', {'repo': self.repo, 'task_id': task,
+        return self.tool('raven_link_work_item', {'repo': self.repo, 'task_id': task,
             'record_id': read['record_id'], 'source_version_id': read['source_version_id'],
             'provider': read['provider'], 'namespace': read['namespace'], 'object_kind': read['kind'],
             'external_id': read['external_id'], 'role': role})
 
     def task(self, source=None, facts=None):
         self.serial += 1
-        task = self.tool('bridge_start_task', {'repo': self.repo, 'title': 'Synthetic usage question',
+        task = self.tool('raven_start_task', {'repo': self.repo, 'title': 'Synthetic usage question',
             'client_key': str(self.serial), 'paths': self.path,
             'facts': json.dumps(self.facts if facts is None else facts)})['task_id']
         if source:
@@ -78,7 +78,7 @@ class ContactRecipientRoutingTests(OfflineCase):
         if owner:
             args['owner_id'] = self.graph.owner_id_for_person(self.people[owner])
             return canvas.add_node(self.store, Config(model_api='none'), args)
-        return self.tool('bridge_add_node', args)
+        return self.tool('raven_add_node', args)
 
     def refer(self, node, target, **extra):
         return self.store.refer(node['node_id'], {'person': self.people[target],
@@ -198,7 +198,7 @@ class ContactRecipientRoutingTests(OfflineCase):
     def test_expired_contact_is_not_reactivated_by_the_broad_hint(self):
         self.history()
         future = (datetime.now(timezone.utc) + timedelta(days=181)).isoformat()
-        with patch('bridge.routing_memory.now_iso', return_value=future):
+        with patch('raven.routing_memory.now_iso', return_value=future):
             task = self.task(self.same_namespace)
             self.assertEqual(self.ranked(task), [])
             node = self.node(task)

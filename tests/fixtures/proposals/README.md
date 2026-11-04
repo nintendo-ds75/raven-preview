@@ -7,7 +7,7 @@ names, no real companies and no secrets.
 - `corpus.json`: twenty records for the repository `sample/project` in the
   shapes Raven stores them: pasted customer emails, captured Slack
   messages, one meeting transcript chunk, two notes and one `session`
-  record written the way `bridge/canvas.py` `session_record()` writes one.
+  record written the way `raven/canvas.py` `session_record()` writes one.
   Each record has a fixture `id` (`r01`..`r20`) that the tests map to the
   record id the store assigns.
 - `labels.json`: for each record, whether a person would want it surfaced

@@ -2,7 +2,7 @@
 
 Raven talks with people in two places: the voice intro (`#intro/<person>`)
 and the decision call ("Take a quick call instead" on a task page). Both run
-on `web/voice.js` and `bridge/voice.py`.
+on `web/voice.js` and `raven/voice.py`.
 
 ## What runs where
 
@@ -23,7 +23,7 @@ Pick one per direction; unset means the first one that is configured.
 RAVEN_TTS=elevenlabs|openai|kokoro|off     RAVEN_TTS_VOICE=<voice id or name>   RAVEN_TTS_MODEL=...
 RAVEN_STT=elevenlabs|openai|whisper|off    RAVEN_STT_MODEL=...
 ELEVENLABS_API_KEY=...   or   OPENAI_API_KEY=...
-RAVEN_VOICE_DIR=.bridge/voice              # local models
+RAVEN_VOICE_DIR=.raven/voice              # local models
 ```
 
 Local (nothing leaves the machine, works offline and in a cloud container):
@@ -56,11 +56,11 @@ about 1 s.
   transcribed every 1.4 s so their words appear as they say them.
 - **A time budget on the model.** The intro's follow-up comes from the
   fast model with 400 output tokens. If it takes longer than
-  `BRIDGE_INTRO_TURN_SECONDS` (default 6), Raven asks the next planned
+  `RAVEN_INTRO_TURN_SECONDS` (default 6), Raven asks the next planned
   question instead of leaving the caller in silence. The decision call has
-  the same guard (`BRIDGE_CALL_TURN_SECONDS`, default 10). With an Anthropic
+  the same guard (`RAVEN_CALL_TURN_SECONDS`, default 10). With an Anthropic
   API key the fast model answers well inside both; through `claude -p`
-  (`BRIDGE_MODEL_API=claude-cli`) it usually does not, so expect planned
+  (`RAVEN_MODEL_API=claude-cli`) it usually does not, so expect planned
   questions there unless you raise the budget.
 
 ## The orb

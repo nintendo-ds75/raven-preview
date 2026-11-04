@@ -74,7 +74,7 @@ Use the API or the UI, and record which for each step.
 
 ## Tasks
 
-Run them in this order. Kick off every task with `bridge_start_task` before any other work, passing the full goal
+Run them in this order. Kick off every task with `raven_start_task` before any other work, passing the full goal
 and `facts` where the task states them.
 
 **Task A: seed (real host, full loop).** "Add an opt-in `retry_after_jitter` to `Retry` for Retry-After waits",
@@ -202,7 +202,7 @@ authorized.
   - an optional one can be left;
   - more than 10, or one over 2000 characters, is refused with a reason.
 - **Waiting:**
-  - the host uses `bridge_wait`;
+  - the host uses `raven_wait`;
   - confirm from host logs that waits are streamed with progress notices every 15 seconds and run to their
     timeout;
   - count wait calls per task (the last run needed 28 because each call was cut to 50 seconds);
@@ -220,7 +220,7 @@ authorized.
   - write an independent test for at least one signed rule and compare it with the reading;
   - `verified` stays false and the caveat is kept;
   - time the reading. A finish without progress answers within about 45 seconds; when the reading is still running
-    it says so with `review.status` running, and the result appears on `bridge_get_tree` under `review`. Confirm
+    it says so with `review.status` running, and the result appears on `raven_get_tree` under `review`. Confirm
     the host receives the reading one way or the other, and that a retry with the same diff does not read again;
   - `uncovered` names changed files whose decider was asked nothing on the task. On an engaged task the finish is
     refused for them: record whether the host then writes the decision for that person or gives a one-line reason

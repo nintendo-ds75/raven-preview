@@ -13,7 +13,7 @@ const source = {record_id:'stored-record', source_version_id:'exact-version', pr
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'raven-work-item-render-'));
 let payloads;
 try {
-  payloads = JSON.parse(execFileSync(process.env.BRIDGE_PYTHON || 'python3',
+  payloads = JSON.parse(execFileSync(process.env.RAVEN_PYTHON || 'python3',
     [path.join(__dirname, 'work_item_browser_server.py'), path.join(temp, 'render.db'), '--render-payloads'],
     {encoding:'utf8'}));
 } finally { fs.rmSync(temp, {recursive:true, force:true}); }
@@ -56,7 +56,7 @@ for (const [text, end] of [[app, 'function sourceRevalidationFields('], [brief, 
   const closed = context.workItemContext(payloads.historical_task);
   assert(closed.includes('Historical'));
   assert(closed.includes('start a new task'));
-  assert(!closed.includes('bridge_link_work_item'));
+  assert(!closed.includes('raven_link_work_item'));
 }
 assert(app.includes('${workItemContext(d)}'));
 assert(brief.includes('${workItemContext(f)}'));

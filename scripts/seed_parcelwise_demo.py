@@ -5,8 +5,8 @@ then loads people, teams and the authority map into a Raven database and
 ingests the repository through Raven's ordinary path. Everything the intro
 chat reads afterwards comes from that real ingest, not from fixtures.
 
-    python scripts/seed_parcelwise_demo.py --db .bridge/parcelwise.db --repo /tmp/parcelwise
-    BRIDGE_DB=.bridge/parcelwise.db python -m bridge serve --port 7333
+    python scripts/seed_parcelwise_demo.py --db .raven/parcelwise.db --repo /tmp/parcelwise
+    RAVEN_DB=.raven/parcelwise.db python -m raven serve --port 7333
 
 The Parcelwise data lives in the module-level lists. Another company's demo
 passes its own to seed(): people, teams, authority, records, decisions and
@@ -182,22 +182,22 @@ DECISIONS = [
 
 
 def seed_decisions(store, decisions=None, repo=None):
-    from bridge.authz import Actor
-    from bridge.mcp import call_tool
+    from raven.authz import Actor
+    from raven.mcp import call_tool
     repo = repo or REPO
     people = {p["name"]: p for p in store.graph.people()}
     for row in (DECISIONS if decisions is None else decisions):
         when, who, title, question, paths, category, answer, rationale = row[:8]
         via = row[8] if len(row) > 8 else ""
         scope = row[9] if len(row) > 9 else "any"
-        task = call_tool(store, "bridge_start_task", {"title": title, "goal": question, "repo": repo,
+        task = call_tool(store, "raven_start_task", {"title": title, "goal": question, "repo": repo,
                                                        "client_key": "seed-" + when, **({"paths": paths} if paths else {})})
         node = {"task_id": task["task_id"], "question": question, "client_ref": "seed-" + when}
         if paths:
             node["paths"] = paths
         if category:
             node["category"] = category
-        added = call_tool(store, "bridge_add_node", node)
+        added = call_tool(store, "raven_add_node", node)
         # The call was this person's: the row says so whatever the routing
         # signals of a young repository would have guessed.
         store.graph.update_decision(added["node_id"], owner=who, owner_evidence="seeded: this person made the call")
@@ -217,12 +217,12 @@ def seed_decisions(store, decisions=None, repo=None):
 
 
 # What people said in their intro chat, kept on their page the way the intro
-# saves it: person, text, topic (bridge.intro.TOPICS), quote.
+# saves it: person, text, topic (raven.intro.TOPICS), quote.
 NOTES: list[tuple] = []
 
 
 def seed_notes(store, notes=None):
-    from bridge import people_context
+    from raven import people_context
     people = {p["name"]: p for p in store.graph.people()}
     for who, text, topic, quote in (NOTES if notes is None else notes):
         people_context.remember(store, people[who]["id"], text, "intro chat", topic, quote)
@@ -248,8 +248,8 @@ def seed(db_path: str, repo: Path, *, company=None, repo_name=None, people=None,
          records=None, decisions=None, notes=None):
     """Seed a workspace. Without arguments it is the Parcelwise demo; each
     argument replaces the module-level list of the same name."""
-    from bridge.ingest import index_repo
-    from bridge.store import Store
+    from raven.ingest import index_repo
+    from raven.store import Store
     company = company or COMPANY
     repo_name = repo_name or REPO
     if Path(db_path).exists():
@@ -280,7 +280,7 @@ def seed(db_path: str, repo: Path, *, company=None, repo_name=None, people=None,
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--db", default=".bridge/parcelwise.db")
+    parser.add_argument("--db", default=".raven/parcelwise.db")
     parser.add_argument("--repo", default="/tmp/parcelwise-app")
     parser.add_argument("--existing", action="store_true",
                         help="Ingest the git checkout at --repo as it is instead of building one")

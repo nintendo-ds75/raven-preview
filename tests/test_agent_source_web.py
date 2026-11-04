@@ -10,8 +10,8 @@ import subprocess
 import unittest
 
 from fixtures import OfflineCase, ROOT
-from bridge import canvas, context_memory as cm
-from bridge.store import Invalid
+from raven import canvas, context_memory as cm
+from raven.store import Invalid
 
 
 class HTMLNodes(HTMLParser):

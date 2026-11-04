@@ -1,6 +1,6 @@
 # External record import contract
 
-`POST /api/records` and MCP `bridge_import_record` share these rules:
+`POST /api/records` and MCP `raven_import_record` share these rules:
 
 - `(repo, kind, ref)` is the legacy identity. `ticket`, `jira`, and `issue`
   remain distinct kinds; an existing Jira record is never renamed to ticket.

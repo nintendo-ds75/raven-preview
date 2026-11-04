@@ -6,8 +6,8 @@ import os
 from unittest.mock import PropertyMock, patch
 
 from test_contract import ContractCase
-from bridge import canvas, proof
-from bridge.config import Config
+from raven import canvas, proof
+from raven.config import Config
 
 
 class ReviewConfigIdentityTests(ContractCase):
@@ -31,14 +31,14 @@ class ReviewConfigIdentityTests(ContractCase):
             "SELECT detail FROM events WHERE run_id=? AND kind='conformance_read' ORDER BY id", (self.task,))]
 
     def test_enabling_model_refreshes_same_diff_without_rewriting_signed_proof(self):
-        with patch.dict(os.environ, {'BRIDGE_SEMANTIC': '0', 'BRIDGE_MODEL_API': 'none'}):
+        with patch.dict(os.environ, {'RAVEN_SEMANTIC': '0', 'RAVEN_MODEL_API': 'none'}):
             disabled = self.finish()
             saved = copy.deepcopy(proof.export(self.store, {'task_id': self.task})['bundle'])
         self.assertEqual(disabled['review']['status'], 'done')
         self.assertEqual(disabled['follows'], [])
         original_events = self.review_events()
-        with patch.dict(os.environ, {'BRIDGE_SEMANTIC': '1', 'BRIDGE_MODEL_API': 'anthropic'}), \
-                patch('bridge.llm.check_conformance', return_value=self.READING) as reader:
+        with patch.dict(os.environ, {'RAVEN_SEMANTIC': '1', 'RAVEN_MODEL_API': 'anthropic'}), \
+                patch('raven.llm.check_conformance', return_value=self.READING) as reader:
             enabled = self.finish()
             repeated = self.finish()
             current = proof.export(self.store, {'task_id': self.task})['bundle']
@@ -55,33 +55,33 @@ class ReviewConfigIdentityTests(ContractCase):
         self.assertEqual(len(self.review_events()), 2)
 
     def test_semantic_enabled_state_is_part_of_identity_on_the_same_backend(self):
-        with patch.dict(os.environ, {'BRIDGE_MODEL_API': 'anthropic'}):
+        with patch.dict(os.environ, {'RAVEN_MODEL_API': 'anthropic'}):
             disabled = self.finish()
-            with patch.dict(os.environ, {'BRIDGE_SEMANTIC': '1'}), \
-                    patch('bridge.llm.check_conformance', return_value=self.READING) as reader:
+            with patch.dict(os.environ, {'RAVEN_SEMANTIC': '1'}), \
+                    patch('raven.llm.check_conformance', return_value=self.READING) as reader:
                 enabled = self.finish()
         self.assertEqual(reader.call_count, 1)
         self.assertNotEqual(disabled['review']['id'], enabled['review']['id'])
 
     def test_backend_and_effective_model_changes_refresh_but_unchanged_config_hits_cache(self):
         configurations = [
-            {'BRIDGE_MODEL_API': 'anthropic', 'BRIDGE_MODEL': 'review-a', 'BRIDGE_CONFORMANCE_MODEL': 'main'},
-            {'BRIDGE_MODEL_API': 'anthropic', 'BRIDGE_MODEL': 'review-b', 'BRIDGE_CONFORMANCE_MODEL': 'main'},
-            {'BRIDGE_MODEL_API': 'openai', 'BRIDGE_MODEL': 'review-b', 'BRIDGE_CONFORMANCE_MODEL': 'main'},
-            {'BRIDGE_MODEL_API': 'openai', 'BRIDGE_MODEL': 'review-b', 'BRIDGE_CONFORMANCE_MODEL': 'fast'},
-            {'BRIDGE_MODEL_API': 'openai', 'BRIDGE_MODEL': 'review-b', 'BRIDGE_CONFORMANCE_MODEL': 'fast',
-             'BRIDGE_FAST_MODEL': 'fast-b'},
+            {'RAVEN_MODEL_API': 'anthropic', 'RAVEN_MODEL': 'review-a', 'RAVEN_CONFORMANCE_MODEL': 'main'},
+            {'RAVEN_MODEL_API': 'anthropic', 'RAVEN_MODEL': 'review-b', 'RAVEN_CONFORMANCE_MODEL': 'main'},
+            {'RAVEN_MODEL_API': 'openai', 'RAVEN_MODEL': 'review-b', 'RAVEN_CONFORMANCE_MODEL': 'main'},
+            {'RAVEN_MODEL_API': 'openai', 'RAVEN_MODEL': 'review-b', 'RAVEN_CONFORMANCE_MODEL': 'fast'},
+            {'RAVEN_MODEL_API': 'openai', 'RAVEN_MODEL': 'review-b', 'RAVEN_CONFORMANCE_MODEL': 'fast',
+             'RAVEN_FAST_MODEL': 'fast-b'},
         ]
         identities = []
-        with patch.dict(os.environ, {'BRIDGE_SEMANTIC': '1', 'BRIDGE_FAST_MODEL': 'fast-a'}), \
-                patch('bridge.llm.check_conformance', return_value=self.READING) as reader:
+        with patch.dict(os.environ, {'RAVEN_SEMANTIC': '1', 'RAVEN_FAST_MODEL': 'fast-a'}), \
+                patch('raven.llm.check_conformance', return_value=self.READING) as reader:
             for config in configurations:
                 with self.subTest(config=config), patch.dict(os.environ, config):
                     first = self.finish()
                     repeated = self.finish()
                     self.assertEqual(first['review']['id'], repeated['review']['id'])
-                    selected = (os.environ['BRIDGE_FAST_MODEL'] if config['BRIDGE_CONFORMANCE_MODEL'] == 'fast'
-                                else config['BRIDGE_MODEL'])
+                    selected = (os.environ['RAVEN_FAST_MODEL'] if config['RAVEN_CONFORMANCE_MODEL'] == 'fast'
+                                else config['RAVEN_MODEL'])
                     self.assertEqual(reader.call_args.args[0].model, selected)
                     self.assertEqual(reader.call_args.args[0].fast_model, selected)
                     identities.append(first['review']['id'])
@@ -97,8 +97,8 @@ class ReviewConfigIdentityTests(ContractCase):
                   'status': 'done', 'follows': [], 'revisions': canvas._revisions(signed),
                   'review_inputs': canvas._review_inputs(signed)}
         self.store.graph.append_event('conformance_read', legacy)
-        with patch.dict(os.environ, {'BRIDGE_SEMANTIC': '1'}), \
-                patch('bridge.llm.check_conformance', return_value=self.READING) as reader:
+        with patch.dict(os.environ, {'RAVEN_SEMANTIC': '1'}), \
+                patch('raven.llm.check_conformance', return_value=self.READING) as reader:
             self.assertEqual(canvas.get_tree(self.store, self.task)['review']['id'], legacy_id)
             self.assertEqual(reader.call_count, 0, 'read-only state must not start inference')
             refreshed = self.finish()
@@ -109,15 +109,15 @@ class ReviewConfigIdentityTests(ContractCase):
 
     def test_unused_fast_model_and_secret_values_do_not_change_identity_or_enter_events(self):
         signed = canvas._flatten(canvas.get_tree(self.store, self.task)['nodes'])
-        with patch.dict(os.environ, {'BRIDGE_SEMANTIC': '1', 'BRIDGE_MODEL_API': 'anthropic',
-                                     'BRIDGE_CONFORMANCE_MODEL': 'main', 'BRIDGE_MODEL': 'review-main'}), \
+        with patch.dict(os.environ, {'RAVEN_SEMANTIC': '1', 'RAVEN_MODEL_API': 'anthropic',
+                                     'RAVEN_CONFORMANCE_MODEL': 'main', 'RAVEN_MODEL': 'review-main'}), \
                 patch.object(Config, 'api_key', new_callable=PropertyMock,
                              side_effect=AssertionError('The cache must not read credentials')), \
-                patch('bridge.llm.check_conformance', return_value=self.READING) as reader:
-            with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'synthetic-secret-one', 'BRIDGE_FAST_MODEL': 'unused-a'}):
+                patch('raven.llm.check_conformance', return_value=self.READING) as reader:
+            with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'synthetic-secret-one', 'RAVEN_FAST_MODEL': 'unused-a'}):
                 before = canvas._review_key(self.task, self.DIFF, signed)
                 first = self.finish()
-            with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'synthetic-secret-two', 'BRIDGE_FAST_MODEL': 'unused-b'}):
+            with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'synthetic-secret-two', 'RAVEN_FAST_MODEL': 'unused-b'}):
                 after = canvas._review_key(self.task, self.DIFF, signed)
                 repeated = self.finish()
         self.assertEqual(before, after)

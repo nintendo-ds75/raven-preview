@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge.routing_memory import candidates
-from bridge.routing import route_ranked
+from raven.routing_memory import candidates
+from raven.routing import route_ranked
 
 
 class ContactFixture(OfflineCase):
@@ -53,7 +53,7 @@ class ContactLearningTests(ContactFixture):
         self.answer(did)
         found = {row[0]['name']: row[1] for row in self.contacts()}
         self.assertEqual(found, {'ContactAlpha': 'connector', 'ContactBeta': 'connector', 'ContactGamma': 'answered'})
-        with patch('bridge.signals.signal_route', return_value=[]):
+        with patch('raven.signals.signal_route', return_value=[]):
             ranked = route_ranked(self.graph, self.repo, self.question, path=self.path, facts=self.facts)
         self.assertEqual(ranked[0][0], 'ContactGamma')
         self.assertEqual({r[0] for r in ranked[1:]}, {'ContactAlpha', 'ContactBeta'})
@@ -69,7 +69,7 @@ class ContactLearningTests(ContactFixture):
         did = self.decision()
         self.answer(did)
         future = (datetime.now(timezone.utc) + timedelta(days=181)).isoformat()
-        with patch('bridge.routing_memory.now_iso', return_value=future):
+        with patch('raven.routing_memory.now_iso', return_value=future):
             self.assertEqual(self.contacts(), [])
 
     def test_referrals_have_ordered_structured_contact_events(self):
@@ -117,7 +117,7 @@ class ContactLearningTests(ContactFixture):
         self.answer(did)
         self.assertEqual({r[0]['name']: r[1] for r in self.contacts()},
                          {'ContactAlpha': 'declined', 'ContactBeta': 'answered'})
-        with patch('bridge.signals.signal_route', return_value=[('ContactAlpha', ['inferred fixture'], .5)]):
+        with patch('raven.signals.signal_route', return_value=[('ContactAlpha', ['inferred fixture'], .5)]):
             ranked = route_ranked(self.graph, self.repo, self.question, path=self.path, facts=self.facts)
         self.assertEqual([r[0] for r in ranked], ['ContactBeta'])
 
@@ -156,13 +156,13 @@ class ContactLearningTests(ContactFixture):
         self.assertEqual({r[0]['name'] for r in self.contacts()}, {'ContactGamma', 'ContactDelta'})
 
     def test_duplicate_boundary_does_not_refresh_expired_evidence(self):
-        from bridge.routing_memory import observe
+        from raven.routing_memory import observe
         did = self.decision()
         self.answer(did)
         original = dict(self.graph.db.execute('SELECT * FROM contact_observations WHERE decision_id=?', (did,)).fetchone())
         decision = dict(self.graph.db.execute('SELECT * FROM decisions WHERE id=?', (did,)).fetchone())
         future = (datetime.fromisoformat(original['created_at']) + timedelta(days=181)).isoformat()
-        with patch('bridge.routing_memory.now_iso', return_value=future), self.graph.transaction():
+        with patch('raven.routing_memory.now_iso', return_value=future), self.graph.transaction():
             observe(self.graph, decision, 'answered', to_person_id=self.people['ContactAlpha'],
                     source_revision=original['source_revision'])
             self.assertEqual(self.contacts(), [])
@@ -178,7 +178,7 @@ class ContactLearningTests(ContactFixture):
         self.assertEqual(self.graph.count_events('contact_observed', decision_id=did), 1)
 
     def test_freshness_includes_exact_boundary_and_rejects_future_dates(self):
-        from bridge.routing_memory import CONTACT_FRESH_DAYS
+        from raven.routing_memory import CONTACT_FRESH_DAYS
         self.assertEqual(CONTACT_FRESH_DAYS, 180)
         did = self.decision()
         self.answer(did)
@@ -186,13 +186,13 @@ class ContactLearningTests(ContactFixture):
         stamp = datetime.fromisoformat(row['created_at'])
         for delta, expected in [(timedelta(0), True), (timedelta(days=180), True),
                                 (timedelta(days=180, microseconds=1), False), (timedelta(seconds=-1), False)]:
-            with self.subTest(delta=delta), patch('bridge.routing_memory.now_iso', return_value=(stamp + delta).isoformat()):
+            with self.subTest(delta=delta), patch('raven.routing_memory.now_iso', return_value=(stamp + delta).isoformat()):
                 self.assertEqual(bool(self.contacts()), expected)
         self.graph.db.execute("UPDATE contact_observations SET created_at='not-a-date' WHERE decision_id=?", (did,))
         self.assertEqual(self.contacts(), [])
 
     def test_fresher_equally_similar_connectors_rank_first(self):
-        from bridge.routing_memory import observe
+        from raven.routing_memory import observe
         now = datetime.now(timezone.utc)
         did = self.decision()
         snapshot = dict(self.graph.db.execute('SELECT * FROM decisions WHERE id=?', (did,)).fetchone())
@@ -205,22 +205,22 @@ class ContactLearningTests(ContactFixture):
         self.assertEqual([r[0]['name'] for r in self.contacts()], ['ContactGamma', 'ContactBeta', 'ContactAlpha'])
 
     def test_legacy_is_labeled_and_not_reconstructed_or_refreshed(self):
-        from bridge.routing_memory import record
+        from raven.routing_memory import record
         did = self.decision()
         stamp = (datetime.now(timezone.utc) - timedelta(days=179)).isoformat()
-        with patch('bridge.routing_memory.now_iso', return_value=stamp):
+        with patch('raven.routing_memory.now_iso', return_value=stamp):
             record(self.graph, did, self.people['ContactAlpha'], 'answered')
-        with patch('bridge.signals.signal_route', return_value=[]):
+        with patch('raven.signals.signal_route', return_value=[]):
             ranked = route_ranked(self.graph, self.repo, self.question, path=self.path, facts=self.facts)
         self.assertIn('legacy learned first contact', ranked[0][1][0])
         record(self.graph, did, self.people['ContactAlpha'], 'answered')
         self.assertEqual(self.graph.db.execute('SELECT updated_at FROM routing_feedback WHERE decision_id=?', (did,)).fetchone()['updated_at'], stamp)
         self.assertEqual(self.graph.count_events('contact_observed', decision_id=did), 0)
-        with patch('bridge.routing_memory.now_iso', return_value=(datetime.fromisoformat(stamp) + timedelta(days=181)).isoformat()):
+        with patch('raven.routing_memory.now_iso', return_value=(datetime.fromisoformat(stamp) + timedelta(days=181)).isoformat()):
             self.assertEqual(self.contacts(), [])
 
     def test_legacy_optout_and_review_flags_exclude_contacts(self):
-        from bridge.routing_memory import record
+        from raven.routing_memory import record
         did = self.decision()
         record(self.graph, did, self.people['ContactAlpha'], 'answered')
         self.graph.db.execute('UPDATE decisions SET needs_review=1 WHERE id=?', (did,))
@@ -230,14 +230,14 @@ class ContactLearningTests(ContactFixture):
         self.assertEqual(self.contacts(), [])
 
     def test_scope_clarification_excludes_optout_and_stale_contacts(self):
-        from bridge.routing_memory import clarify
+        from raven.routing_memory import clarify
         did = self.decision()
         self.answer(did)
         task = self.graph.create_task('Scope clarification fixture', repo=self.repo)
         result = clarify(self.graph, task, self.repo, self.question, 'one', path=self.path)
         self.assertEqual(result['scope_clarifications'][0]['missing_keys'], sorted(self.facts))
         future = (datetime.now(timezone.utc) + timedelta(days=181)).isoformat()
-        with patch('bridge.routing_memory.now_iso', return_value=future):
+        with patch('raven.routing_memory.now_iso', return_value=future):
             self.assertIsNone(clarify(self.graph, task, self.repo, self.question, 'two', path=self.path))
         self.graph.append_event('route_learning_optout', {'decision_id': did})
         self.assertIsNone(clarify(self.graph, task, self.repo, self.question, 'three', path=self.path))
@@ -284,7 +284,7 @@ class ContactLearningTests(ContactFixture):
         self.assertEqual(self.graph.count_events('contact_observed', decision_id=did), 3)
 
     def test_observation_retains_typed_work_item_context_and_source_times(self):
-        from bridge.context_memory import add_anchor
+        from raven.context_memory import add_anchor
         did = self.decision()
         task = self.graph.db.execute('SELECT run_id FROM decisions WHERE id=?', (did,)).fetchone()['run_id']
         source = self.graph.upsert_intent(self.repo, 'jira', 'SYN-101', 'Synthetic widget work item', '',
@@ -332,13 +332,13 @@ class ContactLearningTests(ContactFixture):
         self.assertEqual([(r[0]['name'], r[1]) for r in self.contacts()], [('ContactAlpha', 'declined')])
         self.assertEqual(self.contacts(facts={**self.facts, 'org': 'Other-synthetic-org'}), [])
         future = (datetime.now(timezone.utc) + timedelta(days=181)).isoformat()
-        with patch('bridge.routing_memory.now_iso', return_value=future):
+        with patch('raven.routing_memory.now_iso', return_value=future):
             self.assertEqual(self.contacts(), [])
         self.graph.append_event('route_learning_optout', {'decision_id': did})
         self.assertEqual(self.contacts(), [])
 
     def test_source_sequence_orders_tied_positive_and_negative_occurrences(self):
-        from bridge.routing_memory import observe
+        from raven.routing_memory import observe
         did = self.decision()
         snapshot = dict(self.graph.db.execute('SELECT * FROM decisions WHERE id=?', (did,)).fetchone())
         with self.graph.transaction():
@@ -347,12 +347,12 @@ class ContactLearningTests(ContactFixture):
         self.assertEqual([(r[0]['name'], r[1]) for r in self.contacts()], [('ContactAlpha', 'answered')])
 
     def test_mixed_legacy_answer_is_visible_without_fabricating_connector_success(self):
-        from bridge.routing_memory import record
+        from raven.routing_memory import record
         did = self.decision()
         self.refer(did, 'ContactBeta')
         record(self.graph, did, self.people['ContactBeta'], 'answered')
         self.assertEqual([(r[0]['name'], r[1]) for r in self.contacts()], [('ContactBeta', 'answered')])
-        with patch('bridge.signals.signal_route', return_value=[]):
+        with patch('raven.signals.signal_route', return_value=[]):
             ranked = route_ranked(self.graph, self.repo, self.question, path=self.path, facts=self.facts)
         self.assertIn('legacy learned first contact', ranked[0][1][0])
         self.assertEqual(self.graph.count_events('contact_observed', decision_id=did), 1)
@@ -361,15 +361,15 @@ class ContactLearningTests(ContactFixture):
 
     def test_conversation_decline_is_visible_in_readback_and_preserved_to_apply(self):
         from types import SimpleNamespace
-        from bridge.slack_chat import respond, apply
+        from raven.slack_chat import respond, apply
         did = self.decision()
         person = self.graph.get_person(self.people['ContactAlpha'])
         delivery = SimpleNamespace(store=self.store, channel='slack', fallback_channel='',
                                    _reading=lambda *args: None, _stale=lambda *args: None)
         action = {'kind': 'handoff', 'to': 'ContactBeta', 'scope_kind': 'contact', 'contact_outcome': 'declined'}
-        with patch('bridge.slack_chat.load', return_value=SimpleNamespace(semantic_retrieval=True)), \
-                patch('bridge.slack_chat.validated_reading', return_value=action), \
-                patch('bridge.readback.save', side_effect=lambda *args, **kwargs: args[7]) as save:
+        with patch('raven.slack_chat.load', return_value=SimpleNamespace(semantic_retrieval=True)), \
+                patch('raven.slack_chat.validated_reading', return_value=action), \
+                patch('raven.readback.save', side_effect=lambda *args, **kwargs: args[7]) as save:
             result = respond(delivery, {'external_ref': 'SYNTHETIC:1'}, self.store.get_decision(did), person,
                              'I am unsuitable for similar metering questions in this scope; ask ContactBeta.', None)
         self.assertIn('not a suitable first contact for similar questions in this scope', result)
@@ -382,7 +382,7 @@ class ContactLearningTests(ContactFixture):
 
     def test_ordinary_and_temporary_conversation_handoffs_do_not_infer_decline(self):
         from types import SimpleNamespace
-        from bridge.slack_chat import respond, apply
+        from raven.slack_chat import respond, apply
         for temporary in (False, True):
             with self.subTest(temporary=temporary):
                 did = self.decision()
@@ -391,9 +391,9 @@ class ContactLearningTests(ContactFixture):
                                            _reading=lambda *args: None, _stale=lambda *args: None)
                 action = {'kind': 'handoff', 'to': 'ContactBeta', 'contact_outcome': 'declined' if temporary else ''}
                 message = 'I am on vacation this week; ask ContactBeta.' if temporary else 'Please ask ContactBeta.'
-                with patch('bridge.slack_chat.load', return_value=SimpleNamespace(semantic_retrieval=True)), \
-                        patch('bridge.slack_chat.validated_reading', return_value=action), \
-                        patch('bridge.readback.save', side_effect=lambda *args, **kwargs: args[7]) as save:
+                with patch('raven.slack_chat.load', return_value=SimpleNamespace(semantic_retrieval=True)), \
+                        patch('raven.slack_chat.validated_reading', return_value=action), \
+                        patch('raven.readback.save', side_effect=lambda *args, **kwargs: args[7]) as save:
                     result = respond(delivery, {'external_ref': f'SYNTHETIC:{did}'}, self.store.get_decision(did), person, message, None)
                 self.assertNotIn('not a suitable first contact', result)
                 confirmed_action = json.loads(save.call_args.args[6]['answer'])
@@ -402,31 +402,31 @@ class ContactLearningTests(ContactFixture):
                 self.assertEqual(row['outcome'], 'referred')
 
     def test_conversation_contact_outcome_schema_is_bounded(self):
-        from bridge.config import Config
-        from bridge.slack_chat import reading, ReadingShapeError
+        from raven.config import Config
+        from raven.slack_chat import reading, ReadingShapeError
         for value in ('', None, 'referred', 'declined'):
-            with self.subTest(value=value), patch('bridge.slack_chat.Client.complete_json',
+            with self.subTest(value=value), patch('raven.slack_chat.Client.complete_json',
                     return_value={'kind': 'handoff', 'to': 'ContactBeta', 'contact_outcome': value}):
                 self.assertEqual(reading(Config(model_api='none'), {})['contact_outcome'], value or '')
         for action in ({'kind': 'handoff', 'contact_outcome': 'expert'},
                        {'kind': 'handoff', 'contact_outcome': {'private': 'value'}},
                        {'kind': 'chat', 'contact_outcome': 'declined'}):
-            with self.subTest(action=action), patch('bridge.slack_chat.Client.complete_json', return_value=action), \
+            with self.subTest(action=action), patch('raven.slack_chat.Client.complete_json', return_value=action), \
                     self.assertRaises(ReadingShapeError):
                 reading(Config(model_api='none'), {})
 
 
     def test_conversation_self_unsuitability_does_not_attach_to_somebody_else(self):
         from types import SimpleNamespace
-        from bridge.slack_chat import respond
+        from raven.slack_chat import respond
         did = self.decision()
         speaker = self.graph.get_person(self.people['ContactGamma'])
         delivery = SimpleNamespace(store=self.store, channel='slack', fallback_channel='',
                                    _reading=lambda *args: None, _stale=lambda *args: None)
         action = {'kind': 'handoff', 'to': 'ContactBeta', 'contact_outcome': 'declined'}
-        with patch('bridge.slack_chat.load', return_value=SimpleNamespace(semantic_retrieval=True)), \
-                patch('bridge.slack_chat.validated_reading', return_value=action), \
-                patch('bridge.readback.save', side_effect=lambda *args, **kwargs: args[7]) as save:
+        with patch('raven.slack_chat.load', return_value=SimpleNamespace(semantic_retrieval=True)), \
+                patch('raven.slack_chat.validated_reading', return_value=action), \
+                patch('raven.readback.save', side_effect=lambda *args, **kwargs: args[7]) as save:
             result = respond(delivery, {'external_ref': 'SYNTHETIC:other-speaker'}, self.store.get_decision(did),
                              speaker, 'I am unsuitable for similar questions; please ask ContactBeta.', None)
         self.assertNotIn('not a suitable first contact', result)

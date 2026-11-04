@@ -1,6 +1,7 @@
-"""Customer-visible text calls the product Raven. The `bridge` package,
-the `bridge_*` tools and the `BRIDGE_*` settings keep their names on
-purpose; so do the HTTP headers and the registered GitHub App's name."""
+"""Customer-visible text calls the product Raven, which used to be called
+Bridge. Only the registered GitHub App keeps the old name (its slug is
+fixed on GitHub), plus the few compatibility paths that still read a
+setting, data folder or tool name from before the rename."""
 
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ from fixtures import ROOT  # noqa: E402
 
 _WORD = re.compile(r"\bBridge\b")
 # A pattern that also matches the old name in what people and agents write is not customer text.
-_ALLOWED = re.compile(r"X-Bridge-|Bridge Repository Access|\(\?:Bridge\|Raven\)")
+_ALLOWED = re.compile(r"Bridge Repository Access")
 _PROSE = ("README.md", "DOCKER.md", "PILOT.md", "SCALING.md", "setup", "dev", "setup.ps1", ".env.example")
 
 
@@ -30,7 +31,7 @@ def _offenders(text: str) -> list[str]:
 class CustomerTextTests(unittest.TestCase):
     def test_python_string_literals_say_raven(self):
         found: dict[str, list[str]] = {}
-        for path in sorted((ROOT / "bridge").glob("*.py")) + [ROOT / "bridge_mcp.py"]:
+        for path in sorted((ROOT / "raven").glob("*.py")) + [ROOT / "raven_mcp.py"]:
             for t in tokenize.generate_tokens(io.StringIO(path.read_text()).readline):
                 if t.type == tokenize.STRING:
                     hits = _offenders(t.string)
@@ -48,6 +49,14 @@ class CustomerTextTests(unittest.TestCase):
             if hits:
                 found[str(path.relative_to(ROOT))] = hits
         self.assertEqual(found, {}, f"text that still says Bridge: {found}")
+
+    def test_no_file_or_folder_is_named_after_bridge(self):
+        import subprocess
+        try:
+            listed = subprocess.run(["git", "-C", str(ROOT), "ls-files"], capture_output=True, text=True, check=True).stdout
+        except (OSError, subprocess.CalledProcessError):
+            self.skipTest("requires a git checkout")
+        self.assertEqual([p for p in listed.splitlines() if "bridge" in p.lower() and "/results/" not in p], [])
 
     def test_the_slack_app_and_the_agent_rule_are_named_raven(self):
         manifest = json.loads((ROOT / "docs" / "slack-manifest.json").read_text())

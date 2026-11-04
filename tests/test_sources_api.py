@@ -51,10 +51,10 @@ class SourcesAPITests(SharedServer):
         self.assertEqual(set(missing), {'slack', 'jira'})
         self.assertFalse(missing['jira']['credentials_present'])
         self.assertIn('--workspace-shared', missing['slack']['enable'])
-        mcp = self.mcp('bridge_context_sources', {}, self.agent)
+        mcp = self.mcp('raven_context_sources', {}, self.agent)
         self.assertFalse(mcp['isError'])
         self.assertEqual(mcp['result']['sources'][0]['records'], 2)
-        status = self.mcp('bridge_connection_status', {}, self.agent)['result']
+        status = self.mcp('raven_connection_status', {}, self.agent)['result']
         self.assertEqual(status['context_sources']['sources'][0]['id'], source['id'])
         self.assertEqual(self.get('/api/state', token=self.member)['context_sources']['sources'][0]['id'], source['id'])
 
@@ -67,8 +67,8 @@ class SourcesAPITests(SharedServer):
         self.assertTrue(any(r['key'] == 'context_source_' + source['id'] for r in readiness))
 
     def test_the_report_tool_is_read_only_for_agents(self):
-        from bridge.mcp import READ_ONLY_TOOLS
-        self.assertIn('bridge_context_sources', READ_ONLY_TOOLS)
+        from raven.mcp import READ_ONLY_TOOLS
+        self.assertIn('raven_context_sources', READ_ONLY_TOOLS)
 
     def test_only_an_administrator_scans_reads_and_dismisses_suggestions(self):
         # A suggestion can name a project not every reader may see.
@@ -83,4 +83,4 @@ class SourcesAPITests(SharedServer):
                                                        'target': 'https://docs.example.invalid/'}, token=BOOTSTRAP)
         self.assertEqual(self.get('/api/context/suggestions?repo=example/service', token=BOOTSTRAP)['scans'][0]['repo'],
                          'example/service')
-        self.assertNotIn('suggestions', self.mcp('bridge_context_sources', {}, self.agent)['result'])
+        self.assertNotIn('suggestions', self.mcp('raven_context_sources', {}, self.agent)['result'])

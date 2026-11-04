@@ -17,10 +17,10 @@ from unittest.mock import patch
 from fixtures import OfflineCase
 import test_delivery as slack_fixtures
 import test_teams as teams_fixtures
-from bridge import canvas
-from bridge.config import Config
-from bridge.delivery import handle_slack_event
-from bridge.teams import ConnectorAuth, TeamsAuthError, TeamsBotTransport, TeamsConfig, TeamsDelivery
+from raven import canvas
+from raven.config import Config
+from raven.delivery import handle_slack_event
+from raven.teams import ConnectorAuth, TeamsAuthError, TeamsBotTransport, TeamsConfig, TeamsDelivery
 
 
 def interpretation(answer, semantic=False):
@@ -28,9 +28,9 @@ def interpretation(answer, semantic=False):
     stack = ExitStack()
     action = {'kind': 'answer', 'answer': answer, 'rationale': '', 'to': ''}
     stack.enter_context(patch.object(Config, 'semantic_retrieval', property(lambda self: semantic)))
-    stack.enter_context(patch('bridge.slack_chat.load', return_value=Config(model_api='none')))
-    stack.enter_context(patch('bridge.slack_chat.reading', return_value=action))
-    stack.enter_context(patch('bridge.llm.read_reply', return_value=action))
+    stack.enter_context(patch('raven.slack_chat.load', return_value=Config(model_api='none')))
+    stack.enter_context(patch('raven.slack_chat.reading', return_value=action))
+    stack.enter_context(patch('raven.llm.read_reply', return_value=action))
     return stack
 
 
@@ -98,7 +98,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         self.graph.close()
         self.store = self.fresh_store('delivery.db')
         self.graph = self.store.graph
-        self.delivery = self.store.connect_delivery(self.slack, base_url='https://bridge.acme.test')
+        self.delivery = self.store.connect_delivery(self.slack, base_url='https://raven.acme.test')
         self.addCleanup(self.delivery.close)
 
     def test_delayed_yes_for_a_never_authorizes_newer_b(self):
@@ -387,7 +387,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         held = self.offer()
         payload = json.loads(self.graph.db.execute('SELECT payload FROM webhook_receipts WHERE id=?',
                             (held['source_event_id'],)).fetchone()[0])
-        from bridge.store import Invalid
+        from raven.store import Invalid
         with self.assertRaises(Invalid):
             self.delivery.receive(payload['channel'], payload['thread_ts'], payload['user'], payload['text'],
                 event_id=held['source_event_id'], occurrence={**payload['occurrence'], 'timestamp':'1700000010.000001'})
@@ -422,7 +422,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
         w=threading.Thread(target=run,name=name);w.start();return w
     def action_context(self,action):
         stack=interpretation('unused',True)
-        stack.enter_context(patch('bridge.slack_chat.reading',return_value=action))
+        stack.enter_context(patch('raven.slack_chat.reading',return_value=action))
         return stack
     def action_offer(self,action,text):
         with self.action_context(action):self.send(text)
@@ -465,7 +465,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
                 entered.set()
                 if not release.wait(5):raise AssertionError('timeout')
             return {'kind':'answer','answer':'Old answer' if old_thread else 'New answer','rationale':'','to':''}
-        with patch('bridge.llm.read_reply',side_effect=interpret):
+        with patch('raven.llm.read_reply',side_effect=interpret):
             w=self.thread(lambda:handle_slack_event(self.delivery,old),errors,'old-interpreter')
             self.assertTrue(entered.wait(5))
             try:handle_slack_event(self.delivery,newer)
@@ -585,7 +585,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
 
     def test_compatibility_handoff_pins_displayed_person_before_rename(self):
         action={'kind':'handoff','to':'Marisol Vega','answer':'','rationale':''}
-        with interpretation('unused'),patch('bridge.llm.read_reply',return_value=action):
+        with interpretation('unused'),patch('raven.llm.read_reply',return_value=action):
             self.send('Can someone pass this to Marisol Vega?')
         held=self.held()
         self.assertEqual(held['kind'],'handoff')
@@ -611,7 +611,7 @@ class SlackReadbackGenerationTests(slack_fixtures.DeliveryCase):
 
     def compatibility_offer(self):
         action={'kind':'handoff','to':'Marisol Vega','answer':'','rationale':''}
-        with interpretation('unused'),patch('bridge.llm.read_reply',return_value=action):self.send('Could Marisol Vega take this one?')
+        with interpretation('unused'),patch('raven.llm.read_reply',return_value=action):self.send('Could Marisol Vega take this one?')
         return self.held()
 
     def test_compatibility_handoff_normal_uses_bound_stable_identity(self):
@@ -832,7 +832,7 @@ class TeamsReadbackGenerationTests(OfflineCase):
         self.assertTrue(self.decision()['authorized'])
 
     def test_submicrosecond_occurrences_tie_instead_of_inventing_order(self):
-        from bridge.readback import occurrence_time
+        from raven.readback import occurrence_time
         a = {'platform':'teams', 'id':'a', 'timestamp':'2026-10-06T12:00:00.1234561Z'}
         b = {'platform':'teams', 'id':'b', 'timestamp':'2026-10-06T12:00:00.1234569Z'}
         self.assertIsNotNone(occurrence_time(a))

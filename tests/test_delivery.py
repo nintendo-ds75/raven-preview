@@ -1,4 +1,4 @@
-from bridge.approval_scope import transport_text
+from raven.approval_scope import transport_text
 """Reaching the person: the outbox, Slack messages, replies in the
 thread, hand-offs that teach routing, and what the answer teaches.
 
@@ -18,9 +18,9 @@ from urllib.request import Request, urlopen
 
 from fixtures import OfflineCase
 
-from bridge import canvas
-from bridge.config import Config
-from bridge.delivery import handle_slack_event, render, split_evidence, verify_slack_signature
+from raven import canvas
+from raven.config import Config
+from raven.delivery import handle_slack_event, render, split_evidence, verify_slack_signature
 from fixtures import ready_server as make_server
 
 CFG = Config(model_api="none")
@@ -68,7 +68,7 @@ class DeliveryCase(OfflineCase):
         self.reply_occurrences = {}
         self.reply_inputs = {}
         self.reply_counter = 0
-        self.delivery = self.store.connect_delivery(self.slack, base_url="https://bridge.acme.test")
+        self.delivery = self.store.connect_delivery(self.slack, base_url="https://raven.acme.test")
         with self.graph.transaction():
             self.wes = self.graph.add_person("Wes Chen", email="wes@acme.example", slack_id="UWES")
             self.marisol = self.graph.add_person("Marisol Vega", email="marisol@acme.example", slack_id="UMAR")
@@ -90,7 +90,7 @@ class DeliveryCase(OfflineCase):
         Transport-level tests exercise the real queue/delivery proof instead.
         These direct-reader tests simulate a delivered read-back explicitly.
         """
-        from bridge import readback
+        from raven import readback
         self.reply_counter += 1
         event_id = event_id or f'fixture-reply-{self.reply_counter}'
         occurrence = self.reply_occurrences.setdefault(event_id, {
@@ -200,8 +200,8 @@ class QuietTests(DeliveryCase):
 
     def test_tied_invalidation_timestamps_do_not_hide_a_new_review(self):
         parent, child = self.review_pair()
-        with patch('bridge.store.now', return_value='2030-01-01T00:00:00+00:00'), \
-                patch('bridge.graph.now_iso', return_value='2030-01-01T00:00:00+00:00'):
+        with patch('raven.store.now', return_value='2030-01-01T00:00:00+00:00'), \
+                patch('raven.graph.now_iso', return_value='2030-01-01T00:00:00+00:00'):
             self.revise_parent(parent, 'First upstream correction.')
             self.delivery.deliver_now()
             self.revise_parent(parent, 'Second upstream correction.')
@@ -247,7 +247,7 @@ class QuietTests(DeliveryCase):
         self.delivery.deliver_now()
         asked = self.slack.messages[0]
         read = {"kind": "answer", "answer": "Exclude the spike.", "rationale": "it was our own load test", "to": ""}
-        with patch("bridge.llm.read_reply", return_value=read):
+        with patch("raven.llm.read_reply", return_value=read):
             offered = self.reply(asked, "UWES", "just exclude that spike, it was our own load test")
         self.assertIn("Use this exact text as the answer only:", offered)
         self.assertIn("Exclude the spike.", offered)
@@ -263,7 +263,7 @@ class QuietTests(DeliveryCase):
         self.delivery.deliver_now()
         asked = self.slack.messages[0]
         read = {"kind": "answer", "answer": "Bill it in full.", "rationale": "", "to": ""}
-        with patch("bridge.llm.read_reply", return_value=read):
+        with patch("raven.llm.read_reply", return_value=read):
             self.reply(asked, "UWES", "leaning towards billing it but not sure")
         dropped = self.reply(asked, "UWES", "no", event_id="decline-1")
         self.assertIn("Dropped", dropped)
@@ -282,7 +282,7 @@ class QuietTests(DeliveryCase):
         asked = self.slack.messages[-1]
         agreeable = {"kind": "signoff", "answer": "", "rationale": "", "to": ""}
         for ack in ("ok", "okay", "sure", "thanks", "got it", "noted"):
-            with patch("bridge.llm.read_reply", return_value=agreeable) as called:
+            with patch("raven.llm.read_reply", return_value=agreeable) as called:
                 said = self.reply(asked, "UWES", ack, event_id=f"ack-{ack}")
             self.assertEqual(called.call_count, 0, f"{ack!r} should never reach the model")
             self.assertIn("Not recorded", said)
@@ -355,7 +355,7 @@ class QuietTests(DeliveryCase):
         to_marisol = next(m for m in self.slack.messages if m["channel"] == "DUMAR" and "Sign-off wanted" in m["text"])
         to_ola = next(m for m in self.slack.messages if m["channel"] == "DUOLA" and "Sign-off wanted" in m["text"])
         agrees = {"kind": "signoff", "answer": "", "rationale": "", "to": ""}
-        with patch("bridge.llm.read_reply", return_value=agrees):
+        with patch("raven.llm.read_reply", return_value=agrees):
             self.assertIn("Not recorded yet", self.reply(to_marisol, "UMAR", "looks right to me", event_id="m1"))
         self.assertIn("Signed off by Ola Ops", self.reply(to_ola, "UOLA", "sign off", event_id="o1"))
         self.assertIn("Signed off by Marisol Vega", self.reply(to_marisol, "UMAR", "yes", event_id="m2"))
@@ -366,7 +366,7 @@ class QuietTests(DeliveryCase):
     def test_a_record_the_question_names_is_stated_with_its_status(self):
         """Measured live on 63eb671: a question asked "as proposed in
         NET-102", and nothing in its message said NET-102 was cancelled."""
-        from bridge.store import repo_key
+        from raven.store import repo_key
         repo = self.graph.resolve_repo(repo_key("acme/platform"))
         with self.graph.transaction():
             self.graph.upsert_intent(repo, "ticket", "NET-102", "Rejected proposal subtract jitter",
@@ -418,7 +418,7 @@ class OutboxTests(DeliveryCase):
         question_line = lines.index(f"*{n['question']}*")
         task_line = next(i for i, line in enumerate(lines) if line.startswith("Task: "))
         self.assertEqual(task_line, question_line + 1)
-        self.assertIn("https://bridge.acme.test/brief#rvn_", lines[task_line + 1])
+        self.assertIn("https://raven.acme.test/brief#rvn_", lines[task_line + 1])
         self.assertEqual(text.count("Exclude the load test"), 2)
         self.assertNotIn("Why you:", text)
         self.assertNotIn("#inbox", text)
@@ -434,7 +434,7 @@ class OutboxTests(DeliveryCase):
         self.delivery.deliver_now()
         text = self.slack.messages[-1]["text"]
         self.assertIn(transport_text("Why you: verified: Wes Chen decides for billing/*"), text)
-        self.assertIn(f"https://bridge.acme.test/#inbox (decision {n['node_id']})", text)
+        self.assertIn(f"https://raven.acme.test/#inbox (decision {n['node_id']})", text)
         self.assertEqual(text.count("Exclude the load test"), 2)
 
     def test_a_person_with_a_login_gets_the_inbox_beside_the_task_page(self):
@@ -444,7 +444,7 @@ class OutboxTests(DeliveryCase):
         self.delivery.deliver_now()
         text = self.slack.messages[-1]["text"]
         self.assertIn("/brief#rvn_", text)
-        self.assertIn(f"https://bridge.acme.test/#inbox (decision {n['node_id']})", text)
+        self.assertIn(f"https://raven.acme.test/#inbox (decision {n['node_id']})", text)
 
     def test_a_signoff_wanted_and_a_review_reach_the_owner(self):
         t = self.task()
@@ -468,10 +468,10 @@ class OutboxTests(DeliveryCase):
         self.assertIn("no Slack id", failed[0]["last_error"])
         self.assertEqual(self.delivery.deliver_now(), 0)
         # A fallback channel catches it on retry, with a note naming the person.
-        self.store.update_settings({"slack_fallback_channel": "C-BRIDGE"})
+        self.store.update_settings({"slack_fallback_channel": "C-RAVEN"})
         self.delivery.retry(failed[0]["id"])
         self.assertEqual(self.delivery.deliver_now(), 1)
-        self.assertEqual(self.slack.messages[-1]["channel"], "C-BRIDGE")
+        self.assertEqual(self.slack.messages[-1]["channel"], "C-RAVEN")
         self.assertIn("No Slack has no Slack id yet; posted here instead", self.slack.messages[-1]["text"])
 
     def test_a_failed_send_backs_off_and_stays_visible(self):
@@ -499,7 +499,7 @@ class OutboxTests(DeliveryCase):
         self.store = self.fresh_store("delivery.db")
         self.graph = self.store.graph
         after = FakeSlack()
-        delivery = self.store.connect_delivery(after, base_url="https://bridge.acme.test")
+        delivery = self.store.connect_delivery(after, base_url="https://raven.acme.test")
         (row,) = delivery.list()
         self.assertEqual((row["kind"], row["state"], row["attempts"]), ("ask", "queued", 1))
         self.assertIn("ratelimited", row["last_error"])
@@ -535,7 +535,7 @@ class OutboxTests(DeliveryCase):
         other = self.fresh_store("delivery.db")
         self.addCleanup(other.graph.close)
         newcomer = FakeSlack()
-        second = other.connect_delivery(newcomer, base_url="https://bridge.acme.test")
+        second = other.connect_delivery(newcomer, base_url="https://raven.acme.test")
         (row,) = second.list()
         self.assertEqual((row["state"], row["attempts"]), ("queued", 1))
         self.assertGreater(row["next_attempt"], time.time() + self.delivery.IN_FLIGHT_SECONDS - 10)
@@ -595,13 +595,13 @@ class ReplyTests(DeliveryCase):
         message = self.slack.messages[0]
         ack = self.reply(message, "UWES", "Exclude the load test because the accounts share the internal tag", event_id="Ev1")
         self.assertIn("Recorded as Wes Chen's answer", ack)
-        self.assertIn("bridge_get_tree", ack)
+        self.assertIn("raven_get_tree", ack)
         row = self.store.get_decision(n["node_id"])
         self.assertEqual((row["status"], row["answer"], row["rationale"], row["signed_by"]),
                          ("approved", "Exclude the load test", "the accounts share the internal tag", "Wes Chen"))
         self.assertIn("slack: Wes Chen", [e["detail"] for e in row["events"] if e["kind"] == "owner_approved"][0])
         # The same event delivered twice does nothing twice.
-        from bridge.store import Invalid
+        from raven.store import Invalid
         with self.assertRaisesRegex(Invalid, 'reused with different'):
             self.reply(message, "UWES", "Bill it after all", event_id="Ev1")
         self.assertEqual(self.store.get_decision(n["node_id"])["answer"], "Exclude the load test")
@@ -647,7 +647,7 @@ class ReplyTests(DeliveryCase):
         """Measured live: answers were cut at 600 characters with no mark, in
         the message a person replies `sign off` to, and the whole message
         was cut at Slack's section limit."""
-        from bridge.delivery import _sections
+        from raven.delivery import _sections
         row = {"id": "d1", "question": "Q?", "kind": "evidence", "status": "resolved"}
         medium = ("Jitter applies only when the caller opts in. " * 30).strip()
         text = render({**row, "answer": medium}, "signoff", "Ana", "")["text"]
@@ -666,13 +666,13 @@ class ReplyTests(DeliveryCase):
     def test_a_reply_read_back_for_confirmation_is_never_cut(self):
         """The person confirms the reading as their answer; it was cut at 700
         characters."""
-        from bridge import llm
+        from raven import llm
         long = ("Keep jitter off by default and let callers opt in per pool. " * 20).strip()
 
         def complete_json(self, purpose, system, prompt, **kw):
             return {"kind": "answer", "answer_form": "complete", "confident": True,
                     "answer": replies[0], "rationale": "because"}
-        env = patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1", "BRIDGE_CLAUDE_BIN": "/nonexistent/claude"})
+        env = patch.dict(os.environ, {"RAVEN_SEMANTIC": "1", "RAVEN_CLAUDE_BIN": "/nonexistent/claude"})
         env.start()
         self.addCleanup(env.stop)
         with patch.object(llm.Client, "complete_json", complete_json):
@@ -684,8 +684,8 @@ class ReplyTests(DeliveryCase):
                 'kind': 'clarify_answer', 'refusal': {
                     'reason': 'oversized_message', 'answer_form': '', 'conflicting_fields': []}})
 
-    def test_the_message_says_what_bridge_cites_not_how_the_search_went(self):
-        from bridge.delivery import _found_for_owner
+    def test_the_message_says_what_raven_cites_not_how_the_search_went(self):
+        from raven.delivery import _found_for_owner
         noise = ("memory: best match scored 0.28, under the 0.6 floor; records: candidates matched background words "
                  "but not the question's focus terms (may, tls, security); semantic: no candidate truly answers this")
         self.assertEqual(_found_for_owner(noise), "")
@@ -768,7 +768,7 @@ class RenderTests(unittest.TestCase):
         # binds to. Measured with customers: the Slack lead was 400 characters
         # of that JSON. The person reads the scope in words; the task link,
         # options and reply instructions are unchanged.
-        from bridge import objective_text
+        from raven import objective_text
         gov = {"title": "Draft the renewal note for Acme", "outcome": "Acme renews before the 30th.",
                "success_criteria": "A note the account owner can send.", "stop_criteria": "Any pricing change.",
                "guardrails": "Private preparation only; no sending.", "repository": "acme/platform", "provider": "claude",
@@ -839,7 +839,7 @@ class RenderTests(unittest.TestCase):
         self.assertIn("decision 145c6f563eef", found)
 
     def test_a_brief_never_says_nothing_was_provided(self):
-        from bridge.llm import drop_absence
+        from raven.llm import drop_absence
         cases = {
             "A decision is needed about which Retry metrics suffix normal customers should use. No context was "
             "provided to explain why this choice is needed or what options are available.":
@@ -937,19 +937,19 @@ class SlackApiBaseTests(unittest.TestCase):
         def fake(req, timeout=0):
             seen.append(req.full_url)
             return Reply({"ok": True, "ts": "1.0", "channel": {"id": "D1"}})
-        with patch("bridge.delivery.urllib.request.urlopen", side_effect=fake):
+        with patch("raven.delivery.urllib.request.urlopen", side_effect=fake):
             transport.post_message("C1", "hello")
         return seen
 
     def test_the_default_is_slack(self):
-        from bridge.delivery import SlackTransport
+        from raven.delivery import SlackTransport
         with patch.dict("os.environ", {}, clear=False):
             import os
             os.environ.pop("SLACK_API_BASE", None)
             self.assertEqual(self.calls(SlackTransport("xoxb-test")), ["https://slack.com/api/chat.postMessage"])
 
     def test_an_api_base_from_the_environment_is_used(self):
-        from bridge.delivery import SlackTransport
+        from raven.delivery import SlackTransport
         with patch.dict("os.environ", {"SLACK_API_BASE": "http://slack.test:8090/api/"}):
             self.assertEqual(self.calls(SlackTransport("xoxb-test")), ["http://slack.test:8090/api/chat.postMessage"])
 

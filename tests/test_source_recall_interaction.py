@@ -10,10 +10,10 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas, context_memory as cm, llm, proof
-from bridge.authz import Actor
-from bridge.config import Config
-from bridge.store import Invalid
+from raven import canvas, context_memory as cm, llm, proof
+from raven.authz import Actor
+from raven.config import Config
+from raven.store import Invalid
 
 REPO = 'synthetic/source-recall'
 QUESTION = 'What retention policy governs diagnostic records?'
@@ -25,7 +25,7 @@ CONTEXT = 'Northstar staging diagnostic retention under DOC-107'
 class SourceRecallInteractionTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        env = patch.dict(os.environ, {'BRIDGE_MODEL_API': 'none', 'BRIDGE_DEEP': '0'})
+        env = patch.dict(os.environ, {'RAVEN_MODEL_API': 'none', 'RAVEN_DEEP': '0'})
         env.start()
         self.addCleanup(env.stop)
         for method in ('complete', 'complete_json'):
@@ -53,7 +53,7 @@ class SourceRecallInteractionTests(OfflineCase):
         # A current-task source anchor uses the actual current import, never
         # a guessed pin or a link retroactively assigned to an old answer.
         imported = self.store.add_record({**self.payload, 'task_id': task})
-        with patch('bridge.ladder._compose_answer', side_effect=self.compose):
+        with patch('raven.ladder._compose_answer', side_effect=self.compose):
             node = canvas.add_node(self.store, Config(model_api='none'), {'task_id': task, 'question': QUESTION,
                 'context': CONTEXT, 'paths': 'policy/retention.py', 'category': 'data-source',
                 'facts': FACTS if facts is None else facts})

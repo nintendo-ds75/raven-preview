@@ -86,7 +86,7 @@ backend and browser execution, an admin opts each repository into background
 investigation, and it has not been exercised with a live provider or a real
 meeting yet. [Outcomes and its limits](startup-os.md).
 
-At completion, `bridge_export_proof` returns a portable review bundle containing
+At completion, `raven_export_proof` returns a portable review bundle containing
 the exact submitted diff hash, decision revisions, recorded signers, scope,
 citations and host-reported checks. Changed decisions mark the saved proof stale.
 See [change proof and its trust limits](change-proof.md).
@@ -105,7 +105,7 @@ Raven starts without a manually configured ownership map. Ingestion gives it the
 
 People can ask for context, explain or correct an answer, or refer a decision in Raven. Read-only clarification stays separate from a recorded answer and explicit signoff. Raven remembers the answer and referral path; the final respondent becomes a first-contact signal for similar questions, not automatic proof of authority. With the optional conversational Slack transport enabled, these exchanges can also happen in Slack, including a configured triage channel. The default notification-only path keeps the decision in Raven. An unreachable owner remains an unresolved blocker, never permission to finish.
 
-Manual ownership overrides and additional required approvers are available for teams that want them. They are not prerequisites. The host agent can check connection and delivery problems with `bridge_connection_status`, so the browser is optional for everyday work.
+Manual ownership overrides and additional required approvers are available for teams that want them. They are not prerequisites. The host agent can check connection and delivery problems with `raven_connection_status`, so the browser is optional for everyday work.
 
 ## Your instance and your data
 
@@ -134,7 +134,7 @@ Raven proposes candidate decisions from the task, earlier decisions, and ownersh
 
 The task view records what reaches Raven. The finish gate governs Raven's protocol, not your deployment system. Its model review compares a submitted diff with signed decisions; it does not prove the implementation correct or replace tests and code review. This preview is intended for a supervised pilot. See [what we have tested](verification.md) and the latest [context and host validation](context-host-validation-2026-10-06.md).
 
-Slack is an optional notification channel; replies are processed only after an explicit conversational-mode opt-in. Teams incoming webhooks are outbound only; an optional [verified channel-bot reply preview](teams.md) requires a separate bot registration, pinned tenant/channel and explicit identity mapping. Its signed-fixture tests are not a live Teams certification. GitHub sync is built in. Jira records can be ingested through `bridge_import_record` from your host agent’s connectors, or through `POST /api/records`. A Raven-managed Slack transport requires a customer-provisioned bot; host-delegated notifications use the host’s existing employee connector instead. In the conversational transport, public-channel search uses Slack’s Real-time Search API during user interactions; results are transient and are never copied into Raven’s memory. Raven remembers the decisions people explicitly give it and their referrals. By default it does not backfill Slack or poll Jira. An administrator can opt in specific public Slack channels, Jira projects and documentation sites as [native context sources](context-sources.md), each attested as shared with every reader; `bridge_context_sources` reports what Raven can read. An optional customer-managed Airweave connection can supply synchronized ticket and document excerpts under its own source permissions; [setup and limits](context-connectors.md). Browser voice interviews are described below; native Slack calls and telephone integration are not shipped.
+Slack is an optional notification channel; replies are processed only after an explicit conversational-mode opt-in. Teams incoming webhooks are outbound only; an optional [verified channel-bot reply preview](teams.md) requires a separate bot registration, pinned tenant/channel and explicit identity mapping. Its signed-fixture tests are not a live Teams certification. GitHub sync is built in. Jira records can be ingested through `raven_import_record` from your host agent’s connectors, or through `POST /api/records`. A Raven-managed Slack transport requires a customer-provisioned bot; host-delegated notifications use the host’s existing employee connector instead. In the conversational transport, public-channel search uses Slack’s Real-time Search API during user interactions; results are transient and are never copied into Raven’s memory. Raven remembers the decisions people explicitly give it and their referrals. By default it does not backfill Slack or poll Jira. An administrator can opt in specific public Slack channels, Jira projects and documentation sites as [native context sources](context-sources.md), each attested as shared with every reader; `raven_context_sources` reports what Raven can read. An optional customer-managed Airweave connection can supply synchronized ticket and document excerpts under its own source permissions; [setup and limits](context-connectors.md). Browser voice interviews are described below; native Slack calls and telephone integration are not shipped.
 
 Browser voice interviews are available from a decision: spoken or typed answers,
 grounded adaptive follow-ups when inference is configured, an editable readback,
@@ -143,7 +143,7 @@ guided prompts remain available. Browser speech support and permission are
 required for microphone input. This is not a native Slack huddle or telephone
 integration; see [voice interview setup and limitations](voice-interviews.md).
 
-The product is named Raven. The `bridge` Python package, `bridge_*` MCP tools, and `BRIDGE_*` settings retain their existing names for compatibility.
+Raven's code used to carry its earlier name, `bridge`. Everything now uses the Raven name: the `raven` Python package, the `raven_*` MCP tools, the `RAVEN_*` settings and the `.raven/` data folder. For older setups, Raven still reads `BRIDGE_*` settings, a `.bridge/` data folder and `bridge_*` tool names. The tool list only shows the `raven_*` names.
 
 ## For contributors running evaluations
 

@@ -13,10 +13,10 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas, graph as graph_mod, ladder, visibility
-from bridge.config import Config
-from bridge.graph import ScratchCleanupFailed, decision_references, repair_model_pass
-from bridge.store import Store
+from raven import canvas, graph as graph_mod, ladder, visibility
+from raven.config import Config
+from raven.graph import ScratchCleanupFailed, decision_references, repair_model_pass
+from raven.store import Store
 
 
 REPO = 'scratch/policy'
@@ -38,7 +38,7 @@ class ScratchCleanupTests(OfflineCase):
         self.addCleanup(self.graph.close)
         self.store.add_owner({'name': 'Policy Owner', 'team': 'Policy', 'patterns': 'policy/*'})
         for method in ('complete', 'complete_json'):
-            guard = patch('bridge.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
+            guard = patch('raven.llm.Client.' + method, side_effect=AssertionError('Provider calls forbidden'))
             guard.start()
             self.addCleanup(guard.stop)
 
@@ -75,7 +75,7 @@ class ScratchCleanupTests(OfflineCase):
                 during(seen['scratch'])
             return result
 
-        with patch('bridge.ladder.ask', side_effect=read):
+        with patch('raven.ladder.ask', side_effect=read):
             canvas._model_node_pass(self.store, Config(model_api='none'), did, '', ['policy/retention.py'],
                                     [], '', current['owner_id'], '', current['updated_at'])
         return seen['scratch']
@@ -135,7 +135,7 @@ class ScratchCleanupTests(OfflineCase):
         self.source()
         task, did = self.node()
         failure = ScratchCleanupFailed('task_context_reads', sqlite3.IntegrityError('FOREIGN KEY constraint failed'))
-        with patch('bridge.canvas.discard_decision', side_effect=failure):
+        with patch('raven.canvas.discard_decision', side_effect=failure):
             scratch = self.model_pass(did)
         live = self.store.get_decision(did)
         self.assertFalse(live['model_pending'])

@@ -34,7 +34,7 @@ function harness(link = false) {
     speechSynthesis:{cancel(){ctx.cancels++;},speak(){}},cancels:0,isSecureContext:true,
     SpeechSynthesisUtterance:function(text){this.text=text;},
   };
-  if (link) ctx.ravenInterviewBridge = {user:()=>({name:'Ada via task link'}),request:(...args)=>ctx.api(...args),notify:ctx.notify,refresh:ctx.refresh};
+  if (link) ctx.ravenInterviewEmbed = {user:()=>({name:'Ada via task link'}),request:(...args)=>ctx.api(...args),notify:ctx.notify,refresh:ctx.refresh};
   ctx.window = ctx;
   vm.createContext(ctx); vm.runInContext(voice,ctx); vm.runInContext(code,ctx);
   return {ctx,handlers,dialog,calls,notifications,get,run:js=>vm.runInContext(js,ctx)};

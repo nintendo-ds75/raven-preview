@@ -99,7 +99,7 @@ with scripted inference; no actual Ollama/vLLM/model service was contacted.
 Three Dockerfiles stack by local image tag:
 
 1. The root `Dockerfile` builds the Raven application image (Python, the
-   `bridge` package, the `hosts/` manifests). `INSTALL_HOSTS=true` adds the
+   `raven` package, the `hosts/` manifests). `INSTALL_HOSTS=true` adds the
    Claude Agent SDK from `requirements-hosts.txt`; it deliberately installs no
    Node, Pi, OpenCode or Codex package. Tag it as you like; CI and the harness
    image call it `raven-core-base`.
@@ -185,7 +185,7 @@ network tests exercise native shell entrypoints and a local sink, not an invente
 
 ```sh
 python -m pip install zstandard==0.25.0  # fixture decompression only
-BRIDGE_TEST_CODEX=1 python -m unittest discover -s tests -p test_codex_native.py -v
+RAVEN_TEST_CODEX=1 python -m unittest discover -s tests -p test_codex_native.py -v
 ```
 
 ### Evidence and remaining boundary

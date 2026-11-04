@@ -105,7 +105,7 @@ Run it locally only with an available Docker daemon and pre-pulled test image:
 
 ```sh
 docker pull python:3.13-slim-bookworm
-BRIDGE_TEST_DOCKER=1 python -m unittest discover -s tests -p test_artifact_docker.py -v
+RAVEN_TEST_DOCKER=1 python -m unittest discover -s tests -p test_artifact_docker.py -v
 ```
 
 These opt-in tests were added but **not run in the implementation workspace**,

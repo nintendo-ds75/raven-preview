@@ -34,7 +34,7 @@ background through `GET /api/people/:id/context`.
 
 ## Models
 
-With a model backend (`ANTHROPIC_API_KEY`, or `BRIDGE_MODEL_API=claude-cli`)
+With a model backend (`ANTHROPIC_API_KEY`, or `RAVEN_MODEL_API=claude-cli`)
 Raven writes personalized questions, follows up and drafts notes. Without
 one, the questions come from templates filled in from the record, there are
 no follow-ups, and each note is the first sentence of an answer. The

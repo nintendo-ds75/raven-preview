@@ -5,7 +5,7 @@ to the decisions inside them.
     host-alone     the agent decides everything itself (its defaults)
     routing-only   every decision goes to whoever the map or git names;
                    no memory, no rules, no sign-off gate
-    bridge         the ladder, the routing, the rules, the wait, the gate
+    raven         the ladder, the routing, the rules, the wait, the gate
 
 Each task names its decisions with an answer key: who owns each one,
 what the right answer is, and whether the organization had already
@@ -41,13 +41,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bridge import canvas  # noqa: E402
-from bridge.config import Config  # noqa: E402
-from bridge.mcp import dispatch  # noqa: E402
-from bridge.routing import coordinator_route, route  # noqa: E402
-from bridge.store import Invalid, Store  # noqa: E402
+from raven import canvas  # noqa: E402
+from raven.config import Config  # noqa: E402
+from raven.mcp import dispatch  # noqa: E402
+from raven.routing import coordinator_route, route  # noqa: E402
+from raven.store import Invalid, Store  # noqa: E402
 
-ARMS = ("host-alone", "routing-only", "bridge")
+ARMS = ("host-alone", "routing-only", "raven")
 CFG = Config(model_api="none")
 
 
@@ -141,22 +141,22 @@ def _person_answers(store: Store, node: dict, key: dict, tally: dict) -> None:
         canvas.sign_off(store, node["node_id"], {"by": key["owner"], "expected_updated_at": current["updated_at"]})
 
 
-def run_bridge(store: Store, spec: dict, task: dict) -> dict:
+def run_raven(store: Store, spec: dict, task: dict) -> dict:
     repo = spec["org"].get("repo", "acme/platform")
     agent = Agent(store)
     tally = {"discovered": 0, "asks": 0, "interruptions": 0, "first_contact": 0, "authorized": True,
              "adherence": False, "lost": False, "notes": []}
-    kick = agent.call("bridge_start_task", title=task["title"], repo=repo, requester=task.get("requester", ""),
+    kick = agent.call("raven_start_task", title=task["title"], repo=repo, requester=task.get("requester", ""),
                       paths=task.get("paths", ""), client_key=f"eval-{task['id']}")
     tid = kick["task_id"]
     tally["verdict"] = kick["verdict"]
     nodes = []
     for d in task["decisions"]:
-        node = agent.call("bridge_add_node", task_id=tid, question=d["question"], context=d.get("context", ""),
+        node = agent.call("raven_add_node", task_id=tid, question=d["question"], context=d.get("context", ""),
                           paths=d.get("paths", ""), client_ref=d["ref"])
         nodes.append((d, node))
         tally["discovered"] += 1
-    seen = agent.call("bridge_get_tree", task_id=tid)["observed_at"]
+    seen = agent.call("raven_get_tree", task_id=tid)["observed_at"]
     for d, node in nodes:
         if node["authorized"]:
             tally["notes"].append(f"{d['ref']}: authorized without asking ({node['evidence'][:80]})")
@@ -164,8 +164,8 @@ def run_bridge(store: Store, spec: dict, task: dict) -> dict:
         if node["status"] == "duplicate":
             continue
         _person_answers(store, node, d["key"], tally)
-    waited = agent.call("bridge_wait", task_id=tid, timeout="1", since=seen)
-    tree = agent.call("bridge_get_tree", task_id=tid)
+    waited = agent.call("raven_wait", task_id=tid, timeout="1", since=seen)
+    tree = agent.call("raven_get_tree", task_id=tid)
     by_ref = {n["client_ref"]: n for n in canvas._flatten(tree["nodes"])}
     answers = []
     for d, _node in nodes:
@@ -178,7 +178,7 @@ def run_bridge(store: Store, spec: dict, task: dict) -> dict:
     if tally["asks"] and not waited["changed"] and not waited.get("notes"):
         tally["lost"] = True
     try:
-        agent.call("bridge_finish_task", task_id=tid)
+        agent.call("raven_finish_task", task_id=tid)
     except Invalid as error:
         tally["authorized"] = False
         tally["notes"].append(f"finish refused: {str(error)[:120]}")
@@ -221,7 +221,7 @@ def run_host_alone(store: Store, spec: dict, task: dict) -> dict:
             "adherence": action == task["action"]["expected"], "lost": False, "action": action, "notes": []}
 
 
-RUNNERS = {"host-alone": run_host_alone, "routing-only": run_routing_only, "bridge": run_bridge}
+RUNNERS = {"host-alone": run_host_alone, "routing-only": run_routing_only, "raven": run_raven}
 
 
 def run_suite(spec: dict, arms: tuple = ARMS, db_dir: str | Path | None = None) -> dict:

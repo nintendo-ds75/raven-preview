@@ -48,7 +48,7 @@ loader registration alone is not a PostgreSQL pass.
 
 ## Read historical evidence without confusing it with current permission
 
-`bridge_lookup_record` starts its matched response with `linked_decisions`: one
+`raven_lookup_record` starts its matched response with `linked_decisions`: one
 row per decision across the complete union of direct source edges and task
 associations. Repeated historical edges cannot fill this list with copies of
 one decision. The detailed `decision_sources` and `task_decisions` lists retain
@@ -58,7 +58,7 @@ This cursor traverses live links; restart after changes. Neither a task
 association nor a source edge is approval. Read all relevant linked decisions
 and their histories before claiming only one or no prior decision exists.
 
-`bridge_get_decision` now defaults to a compact MCP projection capped at 32 KiB
+`raven_get_decision` now defaults to a compact MCP projection capped at 32 KiB
 of JSON-encoded text. Ordinary current-state fields retain their meanings.
 
 Every MCP decision-read mode (`summary`, `full`, and exact `version_id`) starts
@@ -116,11 +116,11 @@ historical signed revision is not part of `current_authorization`, and its ID
 must not be supplied as a `decision_versions` ID.
 These supported reads retrieve the complete material:
 
-- `bridge_get_decision(decision_id, detail="full")` adds the leading overview
+- `raven_get_decision(decision_id, detail="full")` adds the leading overview
   while preserving every field and complete body from the former MCP response,
   without the compact response cap. It is intentionally potentially large.
   Existing Store and HTTP human-review responses are unchanged and complete.
-- `bridge_get_decision(decision_id, version_id)` returns one complete immutable
+- `raven_get_decision(decision_id, version_id)` returns one complete immutable
   `historical_snapshot`, the leading decision-local overview, and a separately
   labeled `current_authorization` block. The overview covers this decision's
   saved states at read time; it is not part of the requested immutable snapshot.
@@ -134,7 +134,7 @@ These supported reads retrieve the complete material:
 Old calls with only `decision_id` remain valid, but consumers that require raw
 `context_history[].snapshot` or complete event arrays must request full detail.
 
-`bridge_search_decisions` keeps its previous behavior by default. Explicit
+`raven_search_decisions` keeps its previous behavior by default. Explicit
 `mode="history"` searches current and saved question, answer, rationale and
 context text, including needs-review, withdrawn and superseded decisions.
 It returns bounded previews, exact-version pointers, current state separately,

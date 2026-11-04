@@ -5,8 +5,8 @@ from unittest.mock import patch
 from fixtures import OfflineCase
 import test_workbench as base
 from test_workbench import call
-from bridge import workbench_hosts as hosts
-from bridge.store import Invalid
+from raven import workbench_hosts as hosts
+from raven.store import Invalid
 
 
 class IntentTests(OfflineCase):
@@ -203,6 +203,6 @@ class IntentTests(OfflineCase):
     def test_completed_receipt_replay_still_requires_current_source_access(self):
         task = self.submit()
         self.service.step(task)
-        with patch('bridge.visibility.require_task', side_effect=Invalid('Source access revoked')):
+        with patch('raven.visibility.require_task', side_effect=Invalid('Source access revoked')):
             with self.assertRaisesRegex(Invalid, 'Source access revoked'):
                 hosts.execute_once(self.service, task, call('read_file', {'path':'policy.py'}))

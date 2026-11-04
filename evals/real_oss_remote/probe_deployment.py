@@ -24,14 +24,14 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-os.environ.setdefault("BRIDGE_MODEL_API", "none")
-os.environ.setdefault("BRIDGE_SEMANTIC", "0")
-os.environ.setdefault("BRIDGE_LIVE", "0")
+os.environ.setdefault("RAVEN_MODEL_API", "none")
+os.environ.setdefault("RAVEN_SEMANTIC", "0")
+os.environ.setdefault("RAVEN_LIVE", "0")
 
-from bridge.auth import Auth  # noqa: E402
-from bridge.server import make_server  # noqa: E402
-from bridge.setup import align_public_url  # noqa: E402
-from bridge.store import Store  # noqa: E402
+from raven.auth import Auth  # noqa: E402
+from raven.server import make_server  # noqa: E402
+from raven.setup import align_public_url  # noqa: E402
+from raven.store import Store  # noqa: E402
 
 TOKEN = "deployment-probe-admin-token"
 
@@ -47,20 +47,20 @@ def reach(port: int, host: str) -> int:
 
 
 def published_address(work: Path) -> list[dict]:
-    """Docker publishes BRIDGE_PORT and the container binds 7333 whatever
-    is published, so BRIDGE_PUBLIC_URL is the only thing that tells the
+    """Docker publishes RAVEN_PORT and the container binds 7333 whatever
+    is published, so RAVEN_PUBLIC_URL is the only thing that tells the
     server which port people reach it on. Two things have to hold: setup
     must not leave the port and the address disagreeing, and a Raven
     published on loopback must answer to both spellings of it."""
     out = []
-    os.environ["BRIDGE_ADMIN_TOKEN"] = TOKEN
+    os.environ["RAVEN_ADMIN_TOKEN"] = TOKEN
     store = Store(work / "deployment.db")
     auth = Auth(store, enabled=True, public_url="http://localhost:17433")
     server = make_server(store, port=0, auth=auth)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         for host, want in (("localhost:17433", 200), ("127.0.0.1:17433", 200), ("[::1]:17433", 200),
-                           ("localhost:17434", 403), ("bridge.acme.test:17433", 403)):
+                           ("localhost:17434", 403), ("raven.acme.test:17433", 403)):
             got = reach(server.server_port, host)
             out.append({"probe": "published address", "case": host, "expected": want, "got": got,
                         "ok": got == want,
@@ -70,12 +70,12 @@ def published_address(work: Path) -> list[dict]:
         server.shutdown()
         server.server_close()
     for case, settings, want in (
-            ("port set, address left behind", {"BRIDGE_PORT": "17433"}, "http://localhost:17433"),
-            ("both set and agreeing", {"BRIDGE_PORT": "17433",
-                                       "BRIDGE_PUBLIC_URL": "http://localhost:17433"}, "http://localhost:17433"),
-            ("a name in front of the port", {"BRIDGE_PORT": "17433",
-                                             "BRIDGE_PUBLIC_URL": "https://bridge.acme.test"},
-             "https://bridge.acme.test")):
+            ("port set, address left behind", {"RAVEN_PORT": "17433"}, "http://localhost:17433"),
+            ("both set and agreeing", {"RAVEN_PORT": "17433",
+                                       "RAVEN_PUBLIC_URL": "http://localhost:17433"}, "http://localhost:17433"),
+            ("a name in front of the port", {"RAVEN_PORT": "17433",
+                                             "RAVEN_PUBLIC_URL": "https://raven.acme.test"},
+             "https://raven.acme.test")):
         got = align_public_url(settings)
         out.append({"probe": "setup keeps them together", "case": case, "expected": want, "got": got,
                     "ok": got == want})
@@ -128,7 +128,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, help="write the results as JSON")
     args = parser.parse_args()
-    with tempfile.TemporaryDirectory(prefix="bridge-deployment-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="raven-deployment-") as temporary:
         work = Path(temporary)
         results = published_address(work) + effective_authority(work)
     width = max(len(r["case"]) for r in results)

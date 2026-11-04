@@ -10,8 +10,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import run_git
-from bridge import host_client as hc
-from bridge.setup import install_host_hooks
+from raven import host_client as hc
+from raven.setup import install_host_hooks
 from test_auth import SharedServer, BOOTSTRAP
 
 
@@ -45,7 +45,7 @@ class HostWakeTests(SharedServer):
                   'prompt': 'Add usage-based pricing to billing.'}
         hc.hook(self.config, 'claude', prompt)
         self.task = self.store.graph.db.execute('SELECT id FROM runs').fetchone()['id']
-        self.node = self.mcp('bridge_add_node', {'task_id': self.task, 'question': 'Should we bill the usage spike?',
+        self.node = self.mcp('raven_add_node', {'task_id': self.task, 'question': 'Should we bill the usage spike?',
                                                  'paths': 'billing/usage.py'}, self.agent)['result']
         self.assertEqual(self.node['status'], 'pending')
 
@@ -54,7 +54,7 @@ class HostWakeTests(SharedServer):
                                                'cwd': str(self.project), 'stop_hook_active': False})
 
     def stop_for_good(self):
-        with patch.dict(os.environ, {'BRIDGE_STOP_HOLD_MINUTES': '0'}):
+        with patch.dict(os.environ, {'RAVEN_STOP_HOLD_MINUTES': '0'}):
             self.assertEqual(self.stop(), {})
 
     def answer(self, text='Bill it, but cap at 2x the plan limit.'):
@@ -64,39 +64,39 @@ class HostWakeTests(SharedServer):
                          token=self.wes)
 
     def poll(self, worker='w'):
-        return hc.call(self.config, 'bridge_host_event', hc.binding(self.config, 'claude', self.session, 'poll',
+        return hc.call(self.config, 'raven_host_event', hc.binding(self.config, 'claude', self.session, 'poll',
                                                                     worker=worker))
 
     def test_stop_is_held_with_a_wait_while_a_person_has_not_answered(self):
         held = self.stop()
         self.assertEqual(held['decision'], 'block')
-        self.assertIn('bridge_wait', held['reason'])
+        self.assertIn('raven_wait', held['reason'])
         self.assertIn(self.task, held['reason'])
         # Ids and counts only: the question text stays on the tree.
         self.assertNotIn('usage spike', held['reason'])
-        listed = hc.call(self.config, 'bridge_host_event', hc.binding(self.config, 'claude', 'sessions', 'sessions'))
+        listed = hc.call(self.config, 'raven_host_event', hc.binding(self.config, 'claude', 'sessions', 'sessions'))
         self.assertEqual(listed['sessions'], [])  # held: it reads its answers itself
         self.stop_for_good()
-        listed = hc.call(self.config, 'bridge_host_event', hc.binding(self.config, 'claude', 'sessions', 'sessions'))
+        listed = hc.call(self.config, 'raven_host_event', hc.binding(self.config, 'claude', 'sessions', 'sessions'))
         self.assertEqual(listed['sessions'], [self.session])
 
     def wait(self):
-        return self.mcp('bridge_wait', {'task_id': self.task, 'timeout': '0'}, self.agent)['result']
+        return self.mcp('raven_wait', {'task_id': self.task, 'timeout': '0'}, self.agent)['result']
 
     def meanwhile(self):
-        from bridge import attention
-        from bridge.authz import Actor
+        from raven import attention
+        from raven.authz import Actor
         wes = self.store.graph.db.execute("SELECT id FROM people WHERE name='Wes Chen'").fetchone()
         return attention.overview(self.store, Actor(id=wes['id'], name='Wes Chen'))['needs_you'][0]['meanwhile']
 
     def test_the_hold_says_what_the_open_call_blocks_and_lets_go_at_the_wait_cap(self):
         """Dry run 10: held for the whole budget and told not to stop, the
-        agent called bridge_wait 29 times and wrote nothing. The hold now
+        agent called raven_wait 29 times and wrote nothing. The hold now
         says an open call blocks only the code that needs its answer, counts
         the waits that return nothing new, and lets the agent stop at the
         cap with a record on the task; the For you card says what the
         agent is doing, read from that state."""
-        with patch.dict(os.environ, {'BRIDGE_STOP_HOLD_WAITS': '2'}):
+        with patch.dict(os.environ, {'RAVEN_STOP_HOLD_WAITS': '2'}):
             self.assertIn('keeps building', self.meanwhile())
             held = self.stop()
             self.assertEqual(held['decision'], 'block')
@@ -120,22 +120,22 @@ class HostWakeTests(SharedServer):
             second = self.wait()
             self.assertEqual(second['pace']['idle_waits'], 2)
             self.assertTrue(second['next'].startswith('2 waits in a row returned nothing new (the cap). Stop now'))
-            self.assertIn(f'bridge_start_task(task_id={self.task})', second['next'])
+            self.assertIn(f'raven_start_task(task_id={self.task})', second['next'])
             self.assertEqual(self.stop(), {})
             self.assertIn('has stopped and is waiting on this', self.meanwhile())
             recorded = [json.loads(r['detail']) for r in self.store.graph.db.execute(
                 "SELECT detail FROM events WHERE run_id=? AND kind='host_stopped_waiting'", (self.task,))]
             self.assertEqual([(e['waiting'], e['idle_waits'], e['why']) for e in recorded], [(1, 2, 'idle wait cap')])
-            listed = hc.call(self.config, 'bridge_host_event', hc.binding(self.config, 'claude', 'sessions', 'sessions'))
+            listed = hc.call(self.config, 'raven_host_event', hc.binding(self.config, 'claude', 'sessions', 'sessions'))
             self.assertEqual(listed['sessions'], [self.session])  # stopped: an answer resumes it
 
     def test_work_or_an_answer_starts_the_idle_waits_over(self):
-        with patch.dict(os.environ, {'BRIDGE_STOP_HOLD_WAITS': '2'}):
+        with patch.dict(os.environ, {'RAVEN_STOP_HOLD_WAITS': '2'}):
             self.wait()
             self.assertEqual(self.wait()['pace']['idle_waits'], 2)
             self.assertIn('is waiting on this', self.meanwhile())
             # Filing another call is work: the agent is building again.
-            self.mcp('bridge_add_node', {'task_id': self.task, 'question': 'Should the spike charge be capped?',
+            self.mcp('raven_add_node', {'task_id': self.task, 'question': 'Should the spike charge be capped?',
                                          'paths': 'billing/usage.py', 'client_ref': 'cap'}, self.agent)
             self.assertIn('keeps building', self.meanwhile())
             self.assertEqual(self.wait()['pace']['idle_waits'], 1)
@@ -145,13 +145,13 @@ class HostWakeTests(SharedServer):
             since = self.wait()['observed_at']
             self.assertEqual(self.stop(), {})
             self.answer()
-            result = self.mcp('bridge_wait', {'task_id': self.task, 'since': since, 'timeout': '0'}, self.agent)['result']
+            result = self.mcp('raven_wait', {'task_id': self.task, 'since': since, 'timeout': '0'}, self.agent)['result']
             self.assertEqual([c['node_id'] for c in result['changed']], [self.node['node_id']])
             self.assertEqual(result['pace']['idle_waits'], 0)
             self.assertIn('each blocks only the code that needs its answer', result['next'])
 
     def test_a_new_prompt_starts_the_hold_and_the_idle_waits_afresh(self):
-        with patch.dict(os.environ, {'BRIDGE_STOP_HOLD_WAITS': '1'}):
+        with patch.dict(os.environ, {'RAVEN_STOP_HOLD_WAITS': '1'}):
             self.wait()
             self.assertEqual(self.stop(), {})
             hc.hook(self.config, 'claude', {'hook_event_name': 'UserPromptSubmit', 'session_id': self.session,
@@ -184,7 +184,7 @@ class HostWakeTests(SharedServer):
     def test_an_answer_the_agent_already_read_does_not_resume_it(self):
         self.stop()  # held, so it waits on the tree
         self.answer()
-        self.mcp('bridge_get_tree', {'task_id': self.task}, self.agent)
+        self.mcp('raven_get_tree', {'task_id': self.task}, self.agent)
         self.stop_for_good()
         result = self.poll()
         self.assertIsNone(result['message'])

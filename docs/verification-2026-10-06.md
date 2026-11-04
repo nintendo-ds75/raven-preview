@@ -139,8 +139,8 @@ agent-driven transport run is not mislabeled as that CLI execution.
 
 ```sh
 python -m unittest discover -s tests -q
-BRIDGE_TEST_POSTGRES=1 DATABASE_URL="$TEST_DATABASE_URL" python -m unittest discover -s tests -q
-BRIDGE_TEST_POSTGRES=1 DATABASE_URL="$TEST_DATABASE_URL" python -m unittest discover -s tests -p test_postgres.py -q
+RAVEN_TEST_POSTGRES=1 DATABASE_URL="$TEST_DATABASE_URL" python -m unittest discover -s tests -q
+RAVEN_TEST_POSTGRES=1 DATABASE_URL="$TEST_DATABASE_URL" python -m unittest discover -s tests -p test_postgres.py -q
 node tests/browser.cjs
 node tests/browser-agents.cjs
 node tests/brief-browser.cjs

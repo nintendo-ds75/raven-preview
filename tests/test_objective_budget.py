@@ -4,9 +4,9 @@ import threading
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import objective_head as head, objectives as obj
-from bridge.auth import Identity
-from bridge.store import Store, Invalid
+from raven import objective_head as head, objectives as obj
+from raven.auth import Identity
+from raven.store import Store, Invalid
 
 
 class Reader:
@@ -28,7 +28,7 @@ class ObjectiveBudgetTests(OfflineCase):
         self.record(0)
 
     def test_unbounded_cli_backend_never_runs_automatically(self):
-        from bridge.config import Config
+        from raven.config import Config
         result = head.scan(self.store, {'repository': self.repo, 'request_key': 'automatic-cli'},
                            self.actor, cfg=Config(model_api='claude-cli'), client=self.client, automatic=True)
         self.assertEqual(result['status'], 'blocked')
@@ -85,31 +85,31 @@ class ObjectiveBudgetTests(OfflineCase):
                          client=self.client, automatic=True, **kwargs)
 
     def test_new_evidence_is_debounced_then_rolling_budget_survives_restart(self):
-        with patch('bridge.objective_head.time.time', return_value=10000):
+        with patch('raven.objective_head.time.time', return_value=10000):
             self.assertEqual(self.scan()['status'], 'no_change')
             self.record(1)
             self.assertEqual(self.scan()['status'], 'throttled')
             self.assertEqual(self.client.calls, 1)
         for index in range(1, 6):
             self.record(index + 1)
-            with patch('bridge.objective_head.time.time', return_value=10000 + index * 60):
+            with patch('raven.objective_head.time.time', return_value=10000 + index * 60):
                 self.assertEqual(self.scan()['status'], 'no_change')
         self.record(7)
         reopened = Store(self.store.path)
         self.addCleanup(reopened.graph.close)
-        with patch('bridge.objective_head.time.time', return_value=10400):
+        with patch('raven.objective_head.time.time', return_value=10400):
             result = head.scan(reopened, {'repository': self.repo, 'request_key': 'restart'}, self.actor,
                                client=self.client, automatic=True)
             self.assertEqual(result['status'], 'throttled')
             self.assertEqual(result['background_budget']['remaining'], 0)
             self.assertTrue(result['next_retry_at'])
             self.assertEqual(self.client.calls, 6)
-        with patch('bridge.objective_head.time.time', return_value=13600):
+        with patch('raven.objective_head.time.time', return_value=13600):
             self.assertEqual(self.scan()['status'], 'no_change')
             self.assertEqual(self.client.calls, 7)
 
     def test_cached_and_pending_calls_do_not_spend_budget(self):
-        with patch('bridge.objective_head.time.time', return_value=10000):
+        with patch('raven.objective_head.time.time', return_value=10000):
             self.scan()
             self.scan()
             self.assertEqual(head.background_budget(self.store, self.repo)['used'], 1)
@@ -119,7 +119,7 @@ class ObjectiveBudgetTests(OfflineCase):
             self.assertEqual(self.client.calls, 1)
 
     def test_explicit_manual_scan_is_separate_not_an_automatic_budget_reset(self):
-        with patch('bridge.objective_head.time.time', return_value=10000):
+        with patch('raven.objective_head.time.time', return_value=10000):
             self.scan()
             self.record(2)
             self.assertEqual(self.scan()['status'], 'throttled')
@@ -131,7 +131,7 @@ class ObjectiveBudgetTests(OfflineCase):
     def test_manual_scans_spend_a_bounded_budget_unless_an_admin_overrides(self):
         def manual(key, actor=None, **data):
             return head.scan(self.store, {'repository': self.repo, 'request_key': key, **data}, actor or self.actor, client=self.client)
-        with patch('bridge.objective_head.time.time', return_value=10000):
+        with patch('raven.objective_head.time.time', return_value=10000):
             for index in range(1, 7):
                 self.record(index)
                 self.assertEqual(manual('manual-' + str(index))['status'], 'no_change')
@@ -151,7 +151,7 @@ class ObjectiveBudgetTests(OfflineCase):
             self.assertEqual(self.client.calls, 6)
             self.assertEqual(manual('admin-override', override=True)['status'], 'no_change')
             self.assertEqual(self.client.calls, 7)
-        with patch('bridge.objective_head.time.time', return_value=13601):
+        with patch('raven.objective_head.time.time', return_value=13601):
             self.record(8)
             self.assertEqual(manual('manual-8')['status'], 'no_change')
 
@@ -194,7 +194,7 @@ class ObjectiveBudgetTests(OfflineCase):
                 return {'action': 'not-a-tool'}
         self.client = InvalidReader()
         for stamp in (10000, 10100):
-            with patch('bridge.objective_head.time.time', return_value=stamp):
+            with patch('raven.objective_head.time.time', return_value=stamp):
                 with self.assertRaises(Invalid):
                     self.scan()
         self.assertEqual(head.background_budget(self.store, self.repo, at=10100)['used'], 2)

@@ -4,11 +4,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import canvas, proof
-from bridge.authz import Actor
-from bridge.config import Config
-from bridge.mcp import call_tool
-from bridge.store import Invalid, Store
+from raven import canvas, proof
+from raven.authz import Actor
+from raven.config import Config
+from raven.mcp import call_tool
+from raven.store import Invalid, Store
 from evals.billing_contract import invoice
 
 
@@ -108,7 +108,7 @@ class BillingProtocolTests(OfflineCase):
         diff = ('diff --git a/billing/usage.py b/billing/usage.py\nnew file mode 100644\n--- /dev/null\n+++ b/billing/usage.py\n'
                 + f'@@ -0,0 +1,{len(code.splitlines())} @@\n' + ''.join('+' + line + '\n' for line in code.splitlines()))
         canvas.get_tree(store, task)
-        with patch('bridge.llm.check_conformance', return_value=None):
+        with patch('raven.llm.check_conformance', return_value=None):
             done = canvas.finish_task(store, {'task_id': task, 'diff': diff,
                     'checks': 'Independent test_billing_contract.BillingBehaviorTests execute the reference implementation.'})
         self.assertEqual(done['status'], 'completed')
@@ -118,9 +118,9 @@ class BillingProtocolTests(OfflineCase):
         before = graph.db.execute('SELECT count(*) AS n FROM notifications').fetchone()['n']
         second = Store(store.path)
         try:
-            found = call_tool(second, 'bridge_search_decisions', {'query': 'internal load-test calls', 'repo': 'demo/billing'})
+            found = call_tool(second, 'raven_search_decisions', {'query': 'internal load-test calls', 'repo': 'demo/billing'})
             self.assertTrue(found['matches'])
-            original = call_tool(second, 'bridge_get_decision', {'decision_id': nodes[-1]['node_id']})
+            original = call_tool(second, 'raven_get_decision', {'decision_id': nodes[-1]['node_id']})
             self.assertIn('600000', original['answer'])
             self.assertIn('synthetic', original['signed_by'])
             self.assertEqual(before, graph.db.execute('SELECT count(*) AS n FROM notifications').fetchone()['n'])

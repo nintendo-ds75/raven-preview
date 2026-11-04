@@ -12,10 +12,10 @@ from fixtures import OfflineCase
 import test_delivery as slack
 import test_teams as teams
 import test_readback_generations as generations
-from bridge import canvas, context_memory as cm, proof
-from bridge.config import Config
-from bridge.delivery import handle_slack_event
-from bridge.teams import ConnectorAuth, TeamsBotTransport, TeamsConfig, TeamsDelivery
+from raven import canvas, context_memory as cm, proof
+from raven.config import Config
+from raven.delivery import handle_slack_event
+from raven.teams import ConnectorAuth, TeamsBotTransport, TeamsConfig, TeamsDelivery
 
 
 class SourceReviewCases:
@@ -63,7 +63,7 @@ class SourceReviewCases:
         return self.graph.db.execute("SELECT count(*) FROM events WHERE kind='readback_confirmed'").fetchone()[0]
 
     def test_canvas_created_review_displays_exact_structured_scope(self):
-        from bridge import source_review
+        from raven import source_review
         run = self.store.add_run({'title': 'Scoped source review', 'repo': 'acme/platform'})['id']
         facts = {'customer': 'SCOPE_CUSTOMER_928', 'release': 'SCOPE_RELEASE_427'}
         made = canvas.add_node(self.store, Config(model_api='none'), {'task_id': run,
@@ -118,7 +118,7 @@ class SourceReviewCases:
                 self.graph.db.execute(f'UPDATE decisions SET {field}=? WHERE id=?', (before[field], self.node_id))
 
     def test_scope_change_during_preparation_rejects_even_with_unchanged_timestamp(self):
-        from bridge import source_review
+        from raven import source_review
         before = self.decision()
         self.graph.db.execute('UPDATE decisions SET facts=? WHERE id=?',
                              (json.dumps({'customer': 'CHANGED_DURING_REVIEW'}), self.node_id))
@@ -241,7 +241,7 @@ class SourceReviewCases:
                     stack.enter_context(patch.object(self.delivery.transport, method,
                         side_effect=send(getattr(self.delivery.transport, method))))
             stack.enter_context(generations.interpretation(action['answer'], True))
-            stack.enter_context(patch('bridge.slack_chat.reading', side_effect=interpret))
+            stack.enter_context(patch('raven.slack_chat.reading', side_effect=interpret))
             self.chat(action['answer'])
             held = self.held()
             self.assertIsNotNone(held, self.last_text())
@@ -254,7 +254,7 @@ class SourceReviewCases:
             self.assertFalse(self.graph.db.in_transaction)
             self.source(body='Changed while inference was interpreting the answer.')
             return action
-        with generations.interpretation(action['answer'], True), patch('bridge.slack_chat.reading', side_effect=interpret):
+        with generations.interpretation(action['answer'], True), patch('raven.slack_chat.reading', side_effect=interpret):
             self.chat(action['answer'])
         self.assertIsNone(self.held())
         self.assertFalse(self.decision()['authorized'])
@@ -365,7 +365,7 @@ class SourceReviewCases:
                           'source_decision_pins': [{'decision_id': 'forged', 'updated_at': 'forged', 'historical': True}],
                           'source_review': 'forged'}
                 with generations.interpretation(action['answer'], semantic), \
-                     patch('bridge.slack_chat.reading', return_value=action), patch('bridge.llm.read_reply', return_value=action):
+                     patch('raven.slack_chat.reading', return_value=action), patch('raven.llm.read_reply', return_value=action):
                     self.chat(action['answer'])
                     held = self.held()
                     self.assertIsNotNone(held, self.last_text())
@@ -524,7 +524,7 @@ class TeamsSourceReviewTests(SourceReviewCases, OfflineCase):
         self.microsoft = generations.UniqueReplyMicrosoftFixture()
         self.transport = TeamsBotTransport(self.graph, self.config, http=self.microsoft)
         self.auth = ConnectorAuth(self.config, http=self.microsoft)
-        self.delivery = TeamsDelivery(self.store, self.config, self.transport, self.auth, base_url='https://bridge.acme.test')
+        self.delivery = TeamsDelivery(self.store, self.config, self.transport, self.auth, base_url='https://raven.acme.test')
         self.store._delivery = self.delivery
         quiet = patch.object(self.delivery.inbox, 'start')
         quiet.start(); self.addCleanup(quiet.stop)

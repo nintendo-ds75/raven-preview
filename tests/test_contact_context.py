@@ -4,14 +4,14 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from test_contact_learning import ContactFixture
-from bridge.routing import rank_for_decision
-from bridge.routing_memory import candidates, clarify, record
+from raven.routing import rank_for_decision
+from raven.routing_memory import candidates, clarify, record
 
 
 class ContactContextTests(ContactFixture):
     def confirmation_fixture(self):
         """A normal referred owner reviews a sourced agent answer, unchanged."""
-        from bridge.authz import Actor
+        from raven.authz import Actor
         did = self.decision(facts={**self.facts, 'work_item': 'SYN-1'})
         task = self.task_for(did)
         item = self.anchor(task)
@@ -33,8 +33,8 @@ class ContactContextTests(ContactFixture):
 
     def confirm_owner(self, did, channel='ui', **extra):
         from types import SimpleNamespace
-        from bridge import canvas, slack_chat
-        from bridge.authz import Actor
+        from raven import canvas, slack_chat
+        from raven.authz import Actor
         decision = self.store.get_decision(did)
         person = self.graph.get_person(self.people['ContactBeta'])
         actor = Actor.person(person, kind='slack' if channel == 'slack' else 'session')
@@ -52,7 +52,7 @@ class ContactContextTests(ContactFixture):
             facts={**self.facts, 'environment': 'synthetic-staging', 'work_item': 'SYN-2', **facts})
 
     def test_owner_confirmation_retains_typed_contact_provenance_without_authorship(self):
-        from bridge import context_memory as cm
+        from raven import context_memory as cm
         did, support = self.confirmation_fixture()
         before = self.store.get_decision(did)
         pins = [cm.pin(edge, edge['role']) for edge in cm.edges(self.graph.db, did)]
@@ -88,7 +88,7 @@ class ContactContextTests(ContactFixture):
         self.assertEqual({row[0]['name']: row[1] for row in self.confirmed_contacts()},
                          {'ContactBeta': 'owner_confirmed', 'ContactAlpha': 'connector'})
         current = self.current()
-        with patch('bridge.signals.signal_route', return_value=[]):
+        with patch('raven.signals.signal_route', return_value=[]):
             ranked = rank_for_decision(self.graph, self.repo, self.question, [self.path], task_id=current,
                 facts={**self.facts, 'environment': 'synthetic-staging', 'work_item': 'SYN-2'})
         self.assertEqual([row[0] for row in ranked], ['ContactBeta', 'ContactAlpha'])
@@ -118,7 +118,7 @@ class ContactContextTests(ContactFixture):
             'source_sequence': 2})
 
     def test_owner_confirmation_retries_preserve_occurrence_age_and_signatures(self):
-        from bridge.routing_memory import observe_owner_confirmation
+        from raven.routing_memory import observe_owner_confirmation
         did, _ = self.confirmation_fixture()
         self.confirm_owner(did)
         before = self.confirmation_rows(did)
@@ -129,7 +129,7 @@ class ContactContextTests(ContactFixture):
         with self.graph.transaction() as db:
             observe_owner_confirmation(self.graph, db, before[-1]['source_revision'], later)
         for channel in ('ui', 'slack'):
-            with patch('bridge.canvas.now', return_value=later):
+            with patch('raven.canvas.now', return_value=later):
                 self.confirm_owner(did, channel=channel)
         after = self.store.get_decision(did)
         self.assertNotEqual(after['updated_at'], decision['updated_at'])
@@ -137,13 +137,13 @@ class ContactContextTests(ContactFixture):
         self.assertEqual(self.confirmation_rows(did), before)
         self.assertEqual(self.graph.count_events('contact_observed', decision_id=did), 2)
         expired = (datetime.fromisoformat(before[-1]['created_at']) + timedelta(days=181)).isoformat()
-        with patch('bridge.routing_memory.now_iso', return_value=expired):
+        with patch('raven.routing_memory.now_iso', return_value=expired):
             self.assertEqual(self.confirmed_contacts(), [])
 
     def test_owner_confirmation_equal_times_keep_distinct_source_versions(self):
         did, support = self.confirmation_fixture()
         stamp = datetime.now(timezone.utc).isoformat()
-        with patch('bridge.canvas.now', return_value=stamp):
+        with patch('raven.canvas.now', return_value=stamp):
             self.confirm_owner(did)
             changed = self.revise_confirmation_support()
             self.confirm_owner(did)
@@ -166,7 +166,7 @@ class ContactContextTests(ContactFixture):
         self.assertEqual(self.confirmation_rows(did), before)
 
     def test_owner_confirmation_stale_version_callback_preserves_current_contact_trail(self):
-        from bridge.routing_memory import observe_owner_confirmation
+        from raven.routing_memory import observe_owner_confirmation
         did, _ = self.confirmation_fixture()
         self.confirm_owner(did)
         original = self.confirmation_rows(did)[-1]
@@ -197,7 +197,7 @@ class ContactContextTests(ContactFixture):
         stamp = datetime.now(timezone.utc).isoformat()
         scopes = ('synthetic-staging', 'synthetic-production', 'synthetic-staging')
         states = []
-        with patch('bridge.canvas.now', return_value=stamp):
+        with patch('raven.canvas.now', return_value=stamp):
             for environment in scopes:
                 self.graph.db.execute('UPDATE runs SET facts=? WHERE id=?',
                     (json.dumps({'environment': environment}), self.task_for(did)))
@@ -226,14 +226,14 @@ class ContactContextTests(ContactFixture):
         self.assertEqual(self.confirmed_contacts(environment='synthetic-production'), [])
         before = self.confirmation_rows(did)
         later = (datetime.fromisoformat(stamp) + timedelta(days=179)).isoformat()
-        with patch('bridge.canvas.now', return_value=later):
+        with patch('raven.canvas.now', return_value=later):
             self.confirm_owner(did)
         self.assertEqual(self.confirmation_rows(did), before)
 
     def test_owner_confirmation_equal_time_task_anchor_change_keeps_new_context(self):
         did, _ = self.confirmation_fixture()
         stamp = datetime.now(timezone.utc).isoformat()
-        with patch('bridge.canvas.now', return_value=stamp):
+        with patch('raven.canvas.now', return_value=stamp):
             self.confirm_owner(did)
             before = self.store.get_decision(did)
             extra = self.anchor(self.task_for(did), external_id='CTX-2', role='context')
@@ -304,7 +304,7 @@ class ContactContextTests(ContactFixture):
         self.assertEqual(self.confirmation_rows(did), before)
 
     def test_owner_confirmation_stale_review_keeps_no_terminal_observation(self):
-        from bridge.store import Invalid
+        from raven.store import Invalid
         did, _ = self.confirmation_fixture()
         review = self.store.get_decision(did)
         self.revise_confirmation_support()
@@ -363,7 +363,7 @@ class ContactContextTests(ContactFixture):
         return self.graph.db.execute('SELECT run_id FROM decisions WHERE id=?', (did,)).fetchone()['run_id']
 
     def anchor(self, task, namespace='synthetic-north', external_id='SYN-1', provider='jira', role='work_item'):
-        from bridge.context_memory import add_anchor
+        from raven.context_memory import add_anchor
         source = self.graph.upsert_intent(self.repo, provider, f'{namespace}/{external_id}', 'Synthetic scope item', '',
             'Synthetic Reporter', '2026-01-01T00:00:00+00:00', metadata={'provider': provider,
             'namespace': namespace, 'object_kind': 'issue', 'external_id': external_id})
@@ -387,7 +387,7 @@ class ContactContextTests(ContactFixture):
                           task_id=task, **kwargs)
 
     def ranked(self, task='', **kwargs):
-        with patch('bridge.signals.signal_route', return_value=[]):
+        with patch('raven.signals.signal_route', return_value=[]):
             return rank_for_decision(self.graph, self.repo, self.question, [self.path], facts=self.facts,
                                      task_id=task, **kwargs)
 
@@ -499,26 +499,26 @@ class ContactContextTests(ContactFixture):
         did = self.decision()
         self.refer(did, 'ContactBeta', contact_outcome='declined')
         notes = []
-        with patch('bridge.signals.signal_route', return_value=[('ContactAlpha', ['Independent fixture contact'], .2)]):
+        with patch('raven.signals.signal_route', return_value=[('ContactAlpha', ['Independent fixture contact'], .2)]):
             ranked = rank_for_decision(self.graph, self.repo, self.question, [self.path], facts=self.facts,
                                       task_id=self.current(), notes=notes)
         self.assertEqual([r[0] for r in ranked], ['ContactAlpha'])
         self.assertIn('typed_context_unknown', ' '.join(notes))
 
     def test_current_decision_context_edges_reach_the_contact_matcher(self):
-        from bridge.context_memory import attach
+        from raven.context_memory import attach
         self.history()
         did = self.decision(owner='ContactDelta')
         task = self.task_for(did)
         source = self.anchor(task, 'synthetic-south')
         self.graph.db.execute('DELETE FROM task_source_anchors WHERE task_id=?', (task,))
         attach(self.graph.db, did, [{'record_id': source['id'], 'source_version_id': source['version_id'], 'role': 'context'}])
-        with patch('bridge.signals.signal_route', return_value=[]):
+        with patch('raven.signals.signal_route', return_value=[]):
             self.assertEqual(rank_for_decision(self.graph, self.repo, self.question, [self.path], facts=self.facts,
                                               decision_id=did), [])
         source = self.anchor(task)
         attach(self.graph.db, did, [{'record_id': source['id'], 'source_version_id': source['version_id'], 'role': 'context'}], replace=True)
-        with patch('bridge.signals.signal_route', return_value=[]):
+        with patch('raven.signals.signal_route', return_value=[]):
             self.assertEqual(rank_for_decision(self.graph, self.repo, self.question, [self.path], facts=self.facts,
                                               decision_id=did)[0][0], 'ContactAlpha')
 

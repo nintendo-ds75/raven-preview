@@ -17,9 +17,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import ladder, llm
-from bridge.config import Config
-from bridge.judgment import fit_reason
+from raven import ladder, llm
+from raven.config import Config
+from raven.judgment import fit_reason
 
 REPO = "parcelwise/parcelwise-app"
 USE_Q = "What counts as one billable use of the assistant: a question, a completed answer, or tokens?"
@@ -218,7 +218,7 @@ class StructuralGuardTests(OfflineCase):
     when the model said CONFLICT; different figures always do."""
 
     def rule(self, answer, when="2026-06-01T23:40:00+00:00"):
-        from bridge.graph import iso_to_ts
+        from raven.graph import iso_to_ts
         return SimpleNamespace(answer=answer, updated_at=iso_to_ts(when), reusable=1, authorized=True)
 
     def record(self, kind, body, when, title="a record", status=""):

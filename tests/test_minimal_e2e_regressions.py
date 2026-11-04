@@ -1,9 +1,9 @@
 """Real-host workflow regressions and adversarial host protocol inputs."""
 from unittest.mock import patch
 from test_canvas import CanvasCase
-from bridge import canvas
-from bridge.mcp import call_tool
-from bridge.store import Invalid
+from raven import canvas
+from raven.mcp import call_tool
+from raven.store import Invalid
 
 
 class MinimalHostTests(CanvasCase):
@@ -64,10 +64,10 @@ class MinimalHostTests(CanvasCase):
         for value in ('NaN', 'nan', '+nan', '-nan', 'Infinity', '-Infinity', '1e309'):
             with self.subTest(timeout=value), patch('time.sleep', side_effect=AssertionError('invalid timeout started waiting')):
                 with self.assertRaisesRegex(Invalid, 'finite'):
-                    call_tool(self.store, 'bridge_wait', {'task_id': task, 'timeout': value})
+                    call_tool(self.store, 'raven_wait', {'task_id': task, 'timeout': value})
 
     def test_large_finite_wait_still_uses_transport_budget(self):
         task = self.start('Fix one spelling typo in the documentation', paths='docs/about.rst')['task_id']
-        result = call_tool(self.store, 'bridge_wait', {'task_id': task, 'timeout': '9999999999'}, wait_cap=0.1)
+        result = call_tool(self.store, 'raven_wait', {'task_id': task, 'timeout': '9999999999'}, wait_cap=0.1)
         self.assertEqual(result['timeout_applied'], 0.1)
         self.assertIn('timeout capped', result['notice'])

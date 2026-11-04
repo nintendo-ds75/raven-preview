@@ -35,7 +35,7 @@ Raven's MCP server, with an agent credential for Maya, in that clone's `.mcp.jso
 (untracked, never committed), and installs Raven's host hooks there (`.raven/` and
 `.claude/settings.local.json`, untracked too). The hooks register the first prompt as a
 task before Claude Code starts working; without them the kickoff depends on the agent
-calling `bridge_start_task` itself, which a headless run has skipped (see
+calling `raven_start_task` itself, which a headless run has skipped (see
 [host adapters](host-adapters.md)). Run `claude` there and give it a task. Questions it can't
 answer from the record go to the people who own them. Sign in as that person to answer,
 in the browser or on a quick call.
@@ -60,7 +60,7 @@ the area), Raven's best guess when it has one ("Raven would apply this, but isn'
 your call"), what the agent keeps doing meanwhile, and a way to answer in place or take a
 quick call. Below that, "Handled without you": what Raven settled from this person's own
 calls, each naming the call it used and why it fits, with the one-click correction. Then
-"Your calls that changed". `GET /api/attention` (`bridge/attention.py`) scopes all of it
+"Your calls that changed". `GET /api/attention` (`raven/attention.py`) scopes all of it
 to the viewer and the tasks being built now. In the fixture: Priya has a guess to confirm
 (the Bloom & Co overage question, routed through the agent's own path), Ana has one open
 call and one handled from her Jun 2 call, Jordan sees his own correction, Maya sees the
@@ -77,14 +77,14 @@ precedent (one line), the earlier call itself (who, when, how their sign-off arr
 quote, a link), the records the agent read, and one action for the owner: **That's wrong,
 or doesn't apply here**. The correction is recorded under the person's name, retires the
 earlier call (shown as replaced) and becomes the precedent the next similar question uses
-(`bridge/judgment.py`, `POST /api/decisions/<id>/correct`).
+(`raven/judgment.py`, `POST /api/decisions/<id>/correct`).
 
 Under the counts, each card carries **What's been done**: the task's story as a timeline,
 one plain sentence per row with the clock beside it ("Engaged: Alex's prompt read; 14 judgment
 calls identified", "Settled 4 from earlier calls, nobody asked: …", "Flagged 2 to Dana, who
 decides for pricing decisions: …", "Raven's guess on … from Dana's Oct 29 call; Noah confirms",
 "Dana handed … to Elena", "Raj corrected …"). Every row is a stored event rendered by
-`bridge/timeline.py` (`GET /api/tasks/<id>/timeline`, and `timeline` on each live task in
+`raven/timeline.py` (`GET /api/tasks/<id>/timeline`, and `timeline` on each live task in
 `/api/state`); nothing is composed by a model. The card shows the last two rows with **Show all**,
 so the open calls below keep the eye; the task page shows the whole story above its decisions.
 An earlier call or a flagged question in a sentence opens it, a record shows as a pill.

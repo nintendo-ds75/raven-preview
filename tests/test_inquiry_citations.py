@@ -4,11 +4,11 @@ import json
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import inquiry, source_access
-from bridge.auth import Identity
-from bridge.config import Config
-from bridge.llm import Client, LLMError
-from bridge.store import Invalid
+from raven import inquiry, source_access
+from raven.auth import Identity
+from raven.config import Config
+from raven.llm import Client, LLMError
+from raven.store import Invalid
 
 
 class InquiryCitationTests(OfflineCase):
@@ -25,14 +25,14 @@ class InquiryCitationTests(OfflineCase):
         self.bad['citations'][1]['quote'] = 'Signed by: Mira Security; Scope: production'
         self.support = {'claims': [{'claim': self.good['answer'], 'support': 'stated'}]}
         self.enterContext(patch.object(Config, 'has_backend', return_value=True))
-        self.enterContext(patch.dict('os.environ', {'BRIDGE_SEMANTIC': '1'}))
+        self.enterContext(patch.dict('os.environ', {'RAVEN_SEMANTIC': '1'}))
 
     def read(self):
         return inquiry.read_evidence('Who signed the exclusion, and for which scope?', self.evidence, self.cfg)
 
     def test_good_citations_do_not_add_a_generation_call(self):
         with patch.object(Client, 'complete_json', return_value=self.good) as complete, \
-                patch('bridge.llm.check_support', return_value=self.support):
+                patch('raven.llm.check_support', return_value=self.support):
             result = self.read()
         self.assertTrue(result['model_used'])
         self.assertFalse(result['authorized'])
@@ -42,7 +42,7 @@ class InquiryCitationTests(OfflineCase):
 
     def test_original_and_correction_prompts_keep_answers_focused_on_requested_facts(self):
         with patch.object(Client, 'complete_json', side_effect=[self.bad, self.good]) as complete, \
-                patch('bridge.llm.check_support', return_value=self.support):
+                patch('raven.llm.check_support', return_value=self.support):
             self.assertTrue(self.read()['model_used'])
         self.assertEqual(complete.call_count, 2)
         for call in complete.call_args_list:
@@ -61,7 +61,7 @@ class InquiryCitationTests(OfflineCase):
             raw = {**self.good, 'answer': self.good['answer'] + ' ' + extra}
             checked = {'claims': [*self.support['claims'], {'claim': extra, 'support': 'inferred'}]}
             with self.subTest(extra=extra), patch.object(Client, 'complete_json', return_value=raw) as complete, \
-                    patch('bridge.llm.check_support', return_value=checked) as support:
+                    patch('raven.llm.check_support', return_value=checked) as support:
                 result = self.read()
             self.assertEqual(complete.call_count, 2)
             self.assertEqual(support.call_count, 2)
@@ -75,7 +75,7 @@ class InquiryCitationTests(OfflineCase):
     def test_joined_passages_get_one_bounded_copy_only_correction(self):
         self.bad['answer'] = 'Rejected draft must not become evidence.'
         with patch.object(Client, 'complete_json', side_effect=[self.bad, self.good]) as complete, \
-                patch('bridge.llm.check_support', return_value=self.support) as support:
+                patch('raven.llm.check_support', return_value=self.support) as support:
             result = self.read()
         self.assertTrue(result['model_used'])
         self.assertEqual(result['citations'], self.good['citations'])
@@ -98,7 +98,7 @@ class InquiryCitationTests(OfflineCase):
         filler = [{'id': f'other{i}', 'text': 'Unrelated context. ' * 200, 'kind': 'task_decision'} for i in range(3)]
         self.evidence = [*filler, *self.evidence]
         with patch.object(Client, 'complete_json', return_value=self.good), \
-                patch('bridge.llm.check_support', return_value=self.support) as support:
+                patch('raven.llm.check_support', return_value=self.support) as support:
             result = self.read()
         self.assertTrue(result['model_used'])
         support.assert_called_once_with(self.cfg, 'Who signed the exclusion, and for which scope?',
@@ -108,7 +108,7 @@ class InquiryCitationTests(OfflineCase):
         bad = {**self.good, 'answer': self.good['answer'] + ' All real customers receive free service.'}
         rejected = {'claims': [*self.support['claims'], {'claim': 'All real customers receive free service.', 'support': 'inferred'}]}
         with patch.object(Client, 'complete_json', side_effect=[bad, self.good]) as complete, \
-                patch('bridge.llm.check_support', side_effect=[rejected, self.support]) as support:
+                patch('raven.llm.check_support', side_effect=[rejected, self.support]) as support:
             result = self.read()
         self.assertTrue(result['model_used'])
         self.assertFalse(result['authorized'])
@@ -130,7 +130,7 @@ class InquiryCitationTests(OfflineCase):
                 ([self.good, self.good], [rejected, rejected], 2)):
             with self.subTest(candidates=candidates), \
                     patch.object(Client, 'complete_json', side_effect=candidates) as complete, \
-                    patch('bridge.llm.check_support', side_effect=verdicts) as support:
+                    patch('raven.llm.check_support', side_effect=verdicts) as support:
                 result = self.read()
             self.assertEqual(complete.call_count, 2)
             self.assertEqual(support.call_count, expected_checks)
@@ -163,7 +163,7 @@ class InquiryCitationTests(OfflineCase):
             with self.subTest(citation=citation):
                 bad = {**self.bad, 'citations': [citation]}
                 with patch.object(Client, 'complete_json', return_value=bad) as complete, \
-                        patch('bridge.llm.check_support') as support:
+                        patch('raven.llm.check_support') as support:
                     result = self.read()
                 self.assertEqual(complete.call_count, 2)
                 support.assert_not_called()
@@ -177,7 +177,7 @@ class InquiryCitationTests(OfflineCase):
         for checked in (None, {'claims': []}, {'claims': [{'claim': 'Claim', 'support': 'inferred'}]}):
             with self.subTest(checked=checked), \
                     patch.object(Client, 'complete_json', side_effect=[self.bad, self.good]) as complete, \
-                    patch('bridge.llm.check_support', return_value=checked) as support:
+                    patch('raven.llm.check_support', return_value=checked) as support:
                 result = self.read()
             self.assertEqual(complete.call_count, 2)
             support.assert_called_once()
@@ -188,7 +188,7 @@ class InquiryCitationTests(OfflineCase):
         for correction in (LLMError('bounded provider failure'), {}, {**self.good, 'citations': []}):
             with self.subTest(correction=correction), \
                     patch.object(Client, 'complete_json', side_effect=[self.bad, correction]) as complete, \
-                    patch('bridge.llm.check_support') as support:
+                    patch('raven.llm.check_support') as support:
                 result = self.read()
             self.assertEqual(complete.call_count, 2)
             support.assert_not_called()
@@ -200,7 +200,7 @@ class InquiryCitationTests(OfflineCase):
         for response in (LLMError('failure'), {}, {**self.good, 'open': 'wrong type'}):
             with self.subTest(response=response), \
                     patch.object(Client, 'complete_json', side_effect=[response]) as complete, \
-                    patch('bridge.llm.check_support') as support:
+                    patch('raven.llm.check_support') as support:
                 self.assertFalse(self.read()['model_used'])
             complete.assert_called_once()
             support.assert_not_called()
@@ -237,8 +237,8 @@ class InquiryCitationRaceTests(OfflineCase):
             'citations': [{'id': self.node, 'quote': 'Internal test traffic is excluded.'}], 'open': []}
         self.bad = {**self.good, 'citations': [{'id': self.node, 'quote': 'Internal testing is excluded.'}]}
         self.enterContext(patch.object(Config, 'has_backend', return_value=True))
-        self.enterContext(patch.dict('os.environ', {'BRIDGE_SEMANTIC': '1'}))
-        self.enterContext(patch('bridge.llm.check_support', return_value={
+        self.enterContext(patch.dict('os.environ', {'RAVEN_SEMANTIC': '1'}))
+        self.enterContext(patch('raven.llm.check_support', return_value={
             'claims': [{'claim': self.good['answer'], 'support': 'stated'}]}))
 
     def read(self, **kwargs):
@@ -263,7 +263,7 @@ class InquiryCitationRaceTests(OfflineCase):
             self.store.graph.db.execute("UPDATE decisions SET answer='Changed concurrently' WHERE id=?", (self.node,))
             return self.bad
         with patch.object(Client, 'complete_json', side_effect=change) as complete, \
-                patch('bridge.llm.check_support') as support:
+                patch('raven.llm.check_support') as support:
             with self.assertRaisesRegex(Invalid, 'evidence changed'):
                 self.read()
         complete.assert_called_once()
@@ -274,7 +274,7 @@ class InquiryCitationRaceTests(OfflineCase):
             self.store.graph.db.execute("UPDATE decisions SET answer='Changed concurrently' WHERE id=?", (self.node,))
             return {'claims': [{'claim': 'False claim', 'support': 'inferred'}]}
         with patch.object(Client, 'complete_json', return_value=self.good) as complete, \
-                patch('bridge.llm.check_support', side_effect=change) as support:
+                patch('raven.llm.check_support', side_effect=change) as support:
             with self.assertRaisesRegex(Invalid, 'evidence changed'):
                 self.read()
         complete.assert_called_once()
@@ -289,7 +289,7 @@ class InquiryCitationRaceTests(OfflineCase):
             revoked.append(True)
             return {'claims': [{'claim': 'False claim', 'support': 'inferred'}]}
         with patch.object(Client, 'complete_json', return_value=self.good) as complete, \
-                patch('bridge.llm.check_support', side_effect=check) as support:
+                patch('raven.llm.check_support', side_effect=check) as support:
             with self.assertRaisesRegex(Invalid, 'revoked'):
                 self.read(revalidate=revalidate)
         complete.assert_called_once()
@@ -301,7 +301,7 @@ class InquiryCitationRaceTests(OfflineCase):
             self.store.graph.db.execute("UPDATE decisions SET answer='Changed concurrently' WHERE id=?", (self.node,))
             yield {'claims': [{'claim': self.good['answer'], 'support': 'stated'}]}
         with patch.object(Client, 'complete_json', return_value=self.good) as complete, \
-                patch('bridge.llm.check_support', side_effect=checks()) as support:
+                patch('raven.llm.check_support', side_effect=checks()) as support:
             with self.assertRaisesRegex(Invalid, 'evidence changed'):
                 self.read()
         self.assertEqual(complete.call_count, 2)

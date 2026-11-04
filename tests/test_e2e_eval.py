@@ -21,15 +21,15 @@ class EvalTests(OfflineCase):
         spec = load_tasks(EXAMPLE)
         results = run_suite(spec, ARMS, db_dir=self.temp.name)
         by = {(r["task"], r["arm"]): r for r in results["tasks"]}
-        bridge = results["summary"]["bridge"]
-        self.assertEqual(bridge["interruptions"], 0)
-        self.assertEqual(bridge["first_contact_rate"], 1.0)
-        self.assertEqual(bridge["authorized_rate"], 1.0)
-        self.assertEqual(bridge["adherence_rate"], 1.0)
-        self.assertEqual(bridge["lost_rate"], 0.0)
-        self.assertEqual(bridge["discovered"], 3)
-        self.assertEqual(bridge["asks"], 2)
-        self.assertTrue(any("authorized without asking" in n for n in by[("overage-pricing", "bridge")]["notes"]))
+        raven = results["summary"]["raven"]
+        self.assertEqual(raven["interruptions"], 0)
+        self.assertEqual(raven["first_contact_rate"], 1.0)
+        self.assertEqual(raven["authorized_rate"], 1.0)
+        self.assertEqual(raven["adherence_rate"], 1.0)
+        self.assertEqual(raven["lost_rate"], 0.0)
+        self.assertEqual(raven["discovered"], 3)
+        self.assertEqual(raven["asks"], 2)
+        self.assertTrue(any("authorized without asking" in n for n in by[("overage-pricing", "raven")]["notes"]))
         routing = results["summary"]["routing-only"]
         self.assertEqual(routing["interruptions"], 1)
         self.assertEqual(routing["asks"], 3)
@@ -40,9 +40,9 @@ class EvalTests(OfflineCase):
         self.assertEqual(host["adherence_rate"], 0.0)
         with tempfile.TemporaryDirectory() as tmp:
             text = write_report(results, Path(tmp) / "out")
-            self.assertIn("| bridge | 2 | 3 | 2 | 0 | 100% | 100% | 100% | 0% |", text)
+            self.assertIn("| raven | 2 | 3 | 2 | 0 | 100% | 100% | 100% | 0% |", text)
             written = json.loads((Path(tmp) / "out" / "results.json").read_text())
-            self.assertEqual(written["summary"]["bridge"]["asks"], 2)
+            self.assertEqual(written["summary"]["raven"]["asks"], 2)
 
 
 if __name__ == "__main__":

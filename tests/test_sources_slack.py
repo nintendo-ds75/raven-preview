@@ -12,8 +12,8 @@ from unittest.mock import patch
 from urllib.parse import parse_qs
 
 from fixtures import OfflineCase
-from bridge import source_slack, sources
-from bridge.store import Invalid
+from raven import source_slack, sources
+from raven.store import Invalid
 
 TOKEN = 'xoxb-test-token'
 

@@ -6,8 +6,8 @@ import json
 from urllib.error import HTTPError
 
 from fixtures import OfflineCase
-from bridge import briefing, canvas
-from bridge.authz import Actor
+from raven import briefing, canvas
+from raven.authz import Actor
 from test_delivery import DeliveryCase
 from test_portal import CFG
 from test_security_probes import LinkProbes, Workspace
@@ -44,7 +44,7 @@ class CorrectionKeepsThePerson(OfflineCase):
         self.assertEqual((row["person_id"], row["name"]), (wes, "Wes Chen"))
         self.assertEqual((after["actor_id"], after["answered_by"], after["signed_by"]), (wes, "Wes Chen", "Wes Chen"))
         # And Wes still holds the decision as its owner, by id.
-        from bridge.authz import basis_for
+        from raven.authz import basis_for
         self.assertEqual(basis_for(graph, actor, after, "correct")[0], "owner")
 
     def test_routing_binds_the_authority_holder_by_id_when_a_namesake_exists(self):
@@ -52,9 +52,9 @@ class CorrectionKeepsThePerson(OfflineCase):
         # that id (identity.BoundName) from the authority row to the owner
         # binding, so a namesake on the map never leaves the decision on an
         # unbound row that nobody holds.
-        from bridge.authz import basis_for
-        from bridge.identity import person_id_of
-        from bridge.routing import route_ranked
+        from raven.authz import basis_for
+        from raven.identity import person_id_of
+        from raven.routing import route_ranked
         store, graph, wes, task = self.workspace()
         with graph.transaction():
             other = graph.add_person("Wes Chen", email="wes.other@acme.example", merge=False)
@@ -101,9 +101,9 @@ class GitNamesakeHoldsNothing(OfflineCase):
                                       (store.get_decision(node_id)["owner_id"],)).fetchone()
 
     def test_a_git_author_sharing_the_name_is_routed_to_nobodys_row(self):
-        from bridge.authz import basis_for
-        from bridge.identity import person_id_of
-        from bridge.routing import route_ranked
+        from raven.authz import basis_for
+        from raven.identity import person_id_of
+        from raven.routing import route_ranked
         store, graph, wes, other, task = self.workspace("wes.chen@contractor.example")
         ranked = route_ranked(graph, "acme/platform", "Retry failed handlers?", path="api/handlers.py")
         # History names them; no authority row, address or login ties the
@@ -124,8 +124,8 @@ class GitNamesakeHoldsNothing(OfflineCase):
         self.assertNotEqual(bound[0]["id"], decision["owner_id"])
 
     def test_a_git_author_known_by_address_binds_that_person_not_the_namesake_holder(self):
-        from bridge.identity import person_id_of
-        from bridge.routing import route_ranked
+        from raven.identity import person_id_of
+        from raven.routing import route_ranked
         store, graph, wes, other, task = self.workspace("wes.other@acme.example")
         ranked = route_ranked(graph, "acme/platform", "Retry failed handlers?", path="api/handlers.py")
         self.assertEqual((str(ranked[0][0]), person_id_of(ranked[0][0])), ("Wes Chen", other))
@@ -231,14 +231,14 @@ class NamesakeOnTheBrief(LinkProbes):
 class AgentCredentialIdentity(Workspace):
     def test_a_task_and_its_nodes_name_the_credentials_person_as_requester(self):
         other_agent = self.token(self.other, "agent", "codex")
-        task = self.mcp("bridge_start_task", {"title": "Rates", "repo": "acme/platform", "paths": "billing/rates.py"},
+        task = self.mcp("raven_start_task", {"title": "Rates", "repo": "acme/platform", "paths": "billing/rates.py"},
                         other_agent)["result"]
         self.assertEqual(self.store.graph.get_task(task["task_id"])["requester"], "Other Member")
-        node = self.mcp("bridge_add_node", {"task_id": task["task_id"], "question": "Round up?",
+        node = self.mcp("raven_add_node", {"task_id": task["task_id"], "question": "Round up?",
                                             "paths": "billing/rates.py"}, other_agent)["result"]
         self.assertEqual(node["owner"], "Policy Owner")
         # Naming the owner as requester does not route the question away from them.
-        claimed = self.mcp("bridge_add_node", {"task_id": task["task_id"], "question": "Round down?",
+        claimed = self.mcp("raven_add_node", {"task_id": task["task_id"], "question": "Round down?",
                                                "paths": "billing/rates.py", "requester": "Policy Owner"}, other_agent)
         self.assertEqual(claimed["result"]["owner"], "Policy Owner", claimed)
 

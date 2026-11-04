@@ -67,7 +67,7 @@ def collect(prepared, case, out):
     routes = json.loads((source / "first-routes.json").read_text())
     before = [r for r in routes.values() if r["before_any_owner_reply"]]
     actions = json.loads((source / "simulation-actions.json").read_text())
-    with sqlite3.connect(source / "bridge.db") as db:
+    with sqlite3.connect(source / "raven.db") as db:
         rows = db.execute("SELECT status,signoff,parent_id,origin FROM decisions WHERE run_id=?", (summary["task_id"],)).fetchall()
     metrics = {"initial_discovered_nodes": len(before), "initial_owners": [r["owner"] for r in before],
                "referrals": sum(a["event"] == "simulated_referral" for a in actions),

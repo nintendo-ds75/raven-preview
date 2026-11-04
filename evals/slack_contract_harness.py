@@ -299,17 +299,17 @@ class RavenContractHarness:
         self.stack.callback(self.slack.close)
         self.provider = FixtureProvider() if model_mode == 'fixture' else None
         self.stack.enter_context(patch.dict(os.environ, {
-            'BRIDGE_MODEL_API': 'none' if model_mode == 'fixture' else 'anthropic',
-            'BRIDGE_SEMANTIC': '0' if model_mode == 'fixture' else '1',
-            'BRIDGE_LIVE': '0', 'BRIDGE_DEEP': '0', 'BRIDGE_PUBLIC_URL': '', 'GITHUB_TOKEN': ''}))
+            'RAVEN_MODEL_API': 'none' if model_mode == 'fixture' else 'anthropic',
+            'RAVEN_SEMANTIC': '0' if model_mode == 'fixture' else '1',
+            'RAVEN_LIVE': '0', 'RAVEN_DEEP': '0', 'RAVEN_PUBLIC_URL': '', 'GITHUB_TOKEN': ''}))
         if model_mode == 'fixture':
-            from bridge.config import Config
+            from raven.config import Config
             class ChatConfig(Config):
                 @property
                 def semantic_retrieval(self):
                     return True
-            self.stack.enter_context(patch('bridge.slack_chat.load', return_value=ChatConfig(model_api='none')))
-            self.stack.enter_context(patch('bridge.llm.Client.complete', side_effect=self.provider.complete))
+            self.stack.enter_context(patch('raven.slack_chat.load', return_value=ChatConfig(model_api='none')))
+            self.stack.enter_context(patch('raven.llm.Client.complete', side_effect=self.provider.complete))
         self.rpc_id = 0
         self.protocol_version = ''
         self.server = self.store = None
@@ -322,10 +322,10 @@ class RavenContractHarness:
             raise
 
     def start(self, *, workers=True):
-        from bridge.auth import Auth
-        from bridge.delivery import SlackTransport
-        from bridge.server import make_server
-        from bridge.store import Store
+        from raven.auth import Auth
+        from raven.delivery import SlackTransport
+        from raven.server import make_server
+        from raven.store import Store
         self.store = Store(self.database)
         self.store.graph.set_setting('workspace_name', 'Synthetic Slack contract workspace')
         # This harness validates the optional conversational Slack contract.
@@ -353,7 +353,7 @@ class RavenContractHarness:
             delivery.start(interval=.05)
 
     def _seed_repository(self):
-        from bridge.ingest import index_repo
+        from raven.ingest import index_repo
         repo = self.root / 'checkout'
         (repo / 'billing').mkdir(parents=True, exist_ok=True)
         (repo / 'billing/usage.py').write_text('bill_internal = True\n')
@@ -457,13 +457,13 @@ class RavenContractHarness:
         self.protocol_version = initialized['protocolVersion']
         self.notify_initialized()
         tools = self.rpc('tools/list')['tools']
-        assert {'bridge_start_task', 'bridge_add_node', 'bridge_wait', 'bridge_get_tree',
-                'bridge_finish_task', 'bridge_export_proof'} <= {t['name'] for t in tools}
-        kickoff = self.call('bridge_start_task', title='Decide billing behavior for internal load tests',
+        assert {'raven_start_task', 'raven_add_node', 'raven_wait', 'raven_get_tree',
+                'raven_finish_task', 'raven_export_proof'} <= {t['name'] for t in tools}
+        kickoff = self.call('raven_start_task', title='Decide billing behavior for internal load tests',
             goal='Change the invoice meter after the appropriate person decides whether internal load tests count.',
             repo='contract/billing', paths='billing/usage.py', client_key='slack-contract-kickoff')
         task = kickoff['task_id']
-        node = self.call('bridge_add_node', task_id=task, question='Should internal load tests count on customer invoices?',
+        node = self.call('raven_add_node', task_id=task, question='Should internal load tests count on customer invoices?',
                         context='Internal synthetic load test traffic is distinct from real customer usage.',
                         paths='billing/usage.py', category='policy', client_ref='load-test-policy')
         message = eventually(lambda: self.slack.matching_messages(channel='D' + OWNER[1:]), 'owner DM')[0]
@@ -477,17 +477,17 @@ def run_contract():
         status, body, _ = http_json(harness.slack.url + '/api.test', {'foo': 'bar'})
         assert status == 200 and body == {'ok': True, 'args': {'foo': 'bar'}}
         task, node_id, owner_message = harness.begin()
-        owners = harness.call('bridge_list_owners', repo='contract/billing')
+        owners = harness.call('raven_list_owners', repo='contract/billing')
         names = {p['name'] for p in owners['people']}
         assert {'Wes Contract', 'Marisol Contract', 'No Email Contact'} <= names, names
         assert not {'Raven Contract', 'Deleted Contact', 'Foreign Contact'} & names
         pages = [r for r in harness.slack.requests if r['method'] == 'users.list']
         assert {'dXNlcjpDMg==', 'dXNlcjpDNA=='} <= {r['payload'].get('cursor') for r in pages}
         checks.append('api.test/auth.test and three-page directory; filtered bots/deleted/foreign members; optional email')
-        waiting = harness.call('bridge_wait', task_id=task, timeout='0')
+        waiting = harness.call('raven_wait', task_id=task, timeout='0')
         assert waiting['timed_out'] and any(n['node_id'] == node_id for n in waiting['waiting_on'])
-        assert not harness.call('bridge_get_decision', decision_id=node_id)['authorized']
-        blocked = harness.rpc('tools/call', {'name': 'bridge_finish_task', 'arguments': {'task_id': task}})
+        assert not harness.call('raven_get_decision', decision_id=node_id)['authorized']
+        blocked = harness.rpc('tools/call', {'name': 'raven_finish_task', 'arguments': {'task_id': task}})
         assert blocked['isError'], blocked
         checks.append('HTTP MCP initialize/list/kickoff/add-node/wait; finish refused before authorization')
         for kwargs in ({'bad_signature': True}, {'tamper': True}, {'timestamp': int(time.time()) - 301}):
@@ -508,23 +508,23 @@ def run_contract():
         _, referral = harness.say(owner_message, 'Could you ask Marisol Contract instead?', expected='Pass this question to Marisol Contract')
         harness.say(owner_message, confirmation_text(referral), expected='Marisol Contract')
         referred_message = eventually(lambda: harness.slack.matching_messages(channel='D' + REFERRED[1:]), 'referral DM')[0]
-        assert not harness.call('bridge_get_decision', decision_id=node_id)['authorized']
+        assert not harness.call('raven_get_decision', decision_id=node_id)['authorized']
         checks.append('natural referral parsed at mocked provider boundary; confirmed handoff sends a distinct DM')
         _, readback = harness.say(referred_message,
             'Please exclude internal load tests, but still bill real customer traffic.',
             expected='Use this exact text as the answer only:', user=REFERRED)
         assert ANSWER in readback['text']
-        assert not harness.call('bridge_get_decision', decision_id=node_id)['authorized']
+        assert not harness.call('raven_get_decision', decision_id=node_id)['authorized']
         harness.restart(workers=False)
         # Stop only scheduling to reproduce an acknowledged queued callback at shutdown.
         # Receipt insertion/signature/HTTP handling still execute normally.
         confirm = harness.event(referred_message, confirmation_text(readback), user=REFERRED, event_id='EvDurableConfirm')
-        with patch('bridge.slack_events.Inbox.start'):
+        with patch('raven.slack_events.Inbox.start'):
             assert harness.callback(confirm)[0] == 200
         assert harness.store.graph.db.execute('SELECT state FROM slack_ingress WHERE id=?',
                                               ('EvDurableConfirm',)).fetchone()['state'] == 'queued'
         harness.restart()
-        decision = eventually(lambda: (d if (d := harness.call('bridge_get_decision', decision_id=node_id))['authorized'] else None),
+        decision = eventually(lambda: (d if (d := harness.call('raven_get_decision', decision_id=node_id))['authorized'] else None),
                               'replayed owner authorization')
         assert decision['signed_by'] == 'Marisol Contract' and decision['answer'] == ANSWER, decision
         eventually(lambda: harness.slack.matching_messages(channel=referred_message['channel'], contains='Recorded'), 'confirmation acknowledgement')
@@ -532,18 +532,18 @@ def run_contract():
         assert harness.callback(confirm, retry=True)[0] == 200
         time.sleep(.25)
         assert len(harness.slack.messages) == before
-        assert harness.call('bridge_get_decision', decision_id=node_id)['signed_revision'] == decision['signed_revision']
+        assert harness.call('raven_get_decision', decision_id=node_id)['signed_revision'] == decision['signed_revision']
         checks.append('readback and queued callback survive server/store restart; retry event applies and replies once')
-        harness.call('bridge_get_tree', task_id=task)
-        finished = harness.call('bridge_finish_task', task_id=task, diff=DIFF,
+        harness.call('raven_get_tree', task_id=task)
+        finished = harness.call('raven_finish_task', task_id=task, diff=DIFF,
                                 checks='Synthetic Slack contract harness: HTTP callback and MCP assertions passed.')
         assert finished['status'] == 'completed', finished
-        exported = harness.call('bridge_export_proof', task_id=task)
+        exported = harness.call('raven_export_proof', task_id=task)
         assert exported['integrity']['valid'] and not exported['integrity']['authenticity_verified']
         assert exported['bundle']['payload']['change']['diff'] == DIFF
         assert exported['bundle']['payload']['decisions'][0]['signed_by'] == 'Marisol Contract'
         harness.restart()
-        again = harness.call('bridge_export_proof', task_id=task)
+        again = harness.call('raven_export_proof', task_id=task)
         assert again['bundle']['id'] == exported['bundle']['id'] and again['integrity']['valid']
         checks.append('HTTP MCP finish/proof retains exact diff and attributed signed decision across restart')
         assert not harness.slack.violations, harness.slack.violations

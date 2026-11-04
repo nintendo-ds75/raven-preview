@@ -6,10 +6,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from test_execution import FakeAPI
-from bridge.config import Config
-from bridge.execution import ExecutionService
+from raven.config import Config
+from raven.execution import ExecutionService
 from fixtures import ready_server as make_server
-from bridge.store import Store
+from raven.store import Store
 
 
 class BrowserAPI(FakeAPI):

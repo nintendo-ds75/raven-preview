@@ -15,12 +15,12 @@ from unittest.mock import patch
 
 from fixtures import OfflineCase, build_nodelike, build_qemulike
 
-from bridge import llm as llm_mod
-from bridge.config import Config
-from bridge.ingest import index_repo
-from bridge.ladder import ask
-from bridge.routing import route, route_ranked
-from bridge.signals import _scope_signals
+from raven import llm as llm_mod
+from raven.config import Config
+from raven.ingest import index_repo
+from raven.ladder import ask
+from raven.routing import route, route_ranked
+from raven.signals import _scope_signals
 
 
 class MergeWeightTests(OfflineCase):
@@ -255,7 +255,7 @@ class SignalRoutingTests(QemuLikeCase):
         exactly like the warm one, and leaves the touches behind."""
         g = self.graph
         g.set_source("qemulike", "git", str(self.repo))
-        with patch.dict(os.environ, {"BRIDGE_LIVE": "1"}):
+        with patch.dict(os.environ, {"RAVEN_LIVE": "1"}):
             picked = route(g, "qemulike", "Should hw/riscv/virt.c add the imsics compatible string?")
             self.assertIsNotNone(picked)
             self.assertEqual(picked[0], "Oriel Vance")
@@ -333,7 +333,7 @@ class ModelCacheTests(QemuLikeCase):
         """The model's reading of a question is cached per question: the
         second ask costs no call, and a value written with cache_set is
         what is served, with no builder call at all."""
-        from bridge.resolve import model_area_hits, tree_for
+        from raven.resolve import model_area_hits, tree_for
         g = self.warm()
         calls: list[str] = []
 
@@ -345,7 +345,7 @@ class ModelCacheTests(QemuLikeCase):
         p.start()
         self.addCleanup(p.stop)
         q = "Should the virt board advertise the interrupt controller in the device tree?"
-        with patch.dict(os.environ, {"BRIDGE_SEMANTIC": "1"}):
+        with patch.dict(os.environ, {"RAVEN_SEMANTIC": "1"}):
             tree = tree_for(g, "qemulike")
             first = model_area_hits(g, "qemulike", tree, q, "")
             self.assertEqual(list(first), ["hw/riscv/"])
@@ -391,7 +391,7 @@ class LevelBlendTests(OfflineCase):
             g.add_change(repo, f"c{i:04d}", (self.NOW - datetime.timedelta(days=days_ago)).isoformat(), [path], people)
 
     def test_level_weights_fall_from_the_named_path_upwards(self):
-        from bridge.signals import LEVEL_WEIGHTS, THIN_LEVEL_WEIGHT
+        from raven.signals import LEVEL_WEIGHTS, THIN_LEVEL_WEIGHT
         self.assertEqual(LEVEL_WEIGHTS[0], 1.0)
         self.assertTrue(all(a > b for a, b in zip(LEVEL_WEIGHTS, LEVEL_WEIGHTS[1:])), LEVEL_WEIGHTS)
         self.assertLess(THIN_LEVEL_WEIGHT, LEVEL_WEIGHTS[0])
@@ -562,7 +562,7 @@ class RequesterTests(QemuLikeCase):
         is Rich whichever signal is asked about: with Tamsin asking, the
         evidence names the affinity; line ownership of the named file is
         read from the checkout with its own evidence line, the author of
-        most lines still loses to the reviewer, and BRIDGE_BLAME=0 turns
+        most lines still loses to the reviewer, and RAVEN_BLAME=0 turns
         it off; and the reviewer of the very file the question names
         outranks the maintainer of the directory above when the file's
         own history is clear, with the directory still in the ranking."""
@@ -578,7 +578,7 @@ class RequesterTests(QemuLikeCase):
             self.assertEqual(ranked[0][0], "Rich Reviewer")
             joined = " | ".join(ln for r in ranked for ln in r[1])
             self.assertIn("of the human-written lines of util/bufferiszero.c (git blame, bots excluded)", joined)
-            with patch.dict(os.environ, {"BRIDGE_BLAME": "0"}):
+            with patch.dict(os.environ, {"RAVEN_BLAME": "0"}):
                 fresh = self.fresh_store("noblame.db").graph
                 index_repo(fresh, self.repo)
                 joined = " | ".join(ln for r in route_ranked(fresh, "qemulike", q) for ln in r[1])
@@ -604,8 +604,8 @@ class ListingCorrectnessTests(QemuLikeCase):
         hw/riscv/virt.c; the RISC-V section's own maintainer is still
         listed there and still routes (one X: line in a kernel-style
         MAINTAINERS used to hide every maintainer of the path)."""
-        from bridge.ingest import index_maintainers
-        from bridge.signals import listed_for
+        from raven.ingest import index_maintainers
+        from raven.signals import listed_for
         g = self.warm()
         index_maintainers(g, "qemulike", HW_CORE_SECTION)
         listed = listed_for(g, "qemulike", "hw/riscv/virt.c")
@@ -656,9 +656,9 @@ class GenerationTests(QemuLikeCase):
     def test_a_write_through_another_graph_invalidates_the_memo(self):
         """The MCP server writes the same file from its own connection:
         the inbox's graph has bumped nothing, but the memo notices."""
-        from bridge.graph import Graph
-        from bridge.resolve import tree_for
-        from bridge.signals import listed_for
+        from raven.graph import Graph
+        from raven.resolve import tree_for
+        from raven.signals import listed_for
         g = self.warm()
         q = "Should hw/riscv/virt.c add the imsics compatible string?"
         self.assertEqual(route(g, "qemulike", q)[0], "Oriel Vance")
@@ -698,9 +698,9 @@ class DeterminismTests(QemuLikeCase):
     )
     SCRIPT = (
         "import sys\n"
-        "from bridge.graph import Graph\n"
-        "from bridge.resolve import resolve_paths\n"
-        "from bridge.routing import route_ranked\n"
+        "from raven.graph import Graph\n"
+        "from raven.resolve import resolve_paths\n"
+        "from raven.routing import route_ranked\n"
         "g = Graph(sys.argv[1])\n"
         "for q in sys.argv[2:]:\n"
         "    print([(h.path, h.why) for h in resolve_paths(g, 'qemulike', q)],\n"
@@ -708,7 +708,7 @@ class DeterminismTests(QemuLikeCase):
     )
 
     def test_routes_are_the_same_under_two_hash_seeds(self):
-        from bridge.resolve import tree_for
+        from raven.resolve import tree_for
         g = self.warm()
         tree = tree_for(g, "qemulike")
         for bucket in list(tree.dir_by_base.values()) + list(tree.files_by_base.values()):
@@ -717,7 +717,7 @@ class DeterminismTests(QemuLikeCase):
         root = Path(__file__).resolve().parents[1]
         outputs = []
         for seed in ("0", "1"):
-            env = {**os.environ, "PYTHONHASHSEED": seed, "BRIDGE_SEMANTIC": "0", "BRIDGE_LIVE": "0"}
+            env = {**os.environ, "PYTHONHASHSEED": seed, "RAVEN_SEMANTIC": "0", "RAVEN_LIVE": "0"}
             proc = subprocess.run([sys.executable, "-c", self.SCRIPT, str(self.store.path), *self.QUESTIONS],
                                   cwd=root, env=env, capture_output=True, text=True, timeout=120)
             self.assertEqual(proc.returncode, 0, proc.stderr)

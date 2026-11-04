@@ -16,9 +16,9 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import ROOT, OfflineCase  # noqa: E402
 
-from bridge.auth import Auth  # noqa: E402
-from bridge.bootstrap import dev_login  # noqa: E402
-from bridge.setup import configure, install_host_hooks, repository_name  # noqa: E402
+from raven.auth import Auth  # noqa: E402
+from raven.bootstrap import dev_login  # noqa: E402
+from raven.setup import configure, install_host_hooks, repository_name  # noqa: E402
 
 GIT_ENV = {**os.environ, "GIT_AUTHOR_NAME": "A Person", "GIT_AUTHOR_EMAIL": "a@example.test",
            "GIT_COMMITTER_NAME": "A Person", "GIT_COMMITTER_EMAIL": "a@example.test"}
@@ -51,7 +51,7 @@ class SetupCredentialTests(OfflineCase):
         self.token = Auth(self.store, enabled=True).create_token(person, "development", kind="human")["token"]
         path = Path(self.temp.name) / "token"
         path.write_text(self.token)
-        self.env = patch.dict(os.environ, {"BRIDGE_LOGIN_FILE": str(path), "BRIDGE_PUBLIC_URL": "http://localhost:7444/"})
+        self.env = patch.dict(os.environ, {"RAVEN_LOGIN_FILE": str(path), "RAVEN_PUBLIC_URL": "http://localhost:7444/"})
         self.env.start()
         self.addCleanup(self.env.stop)
 
@@ -105,7 +105,7 @@ class ConnectProjectTests(unittest.TestCase):
         with self.assertRaises(ValueError) as stopped:
             install_host_hooks(project, "/Users/dev/code", "http://localhost:7333/mcp", "test-agent-secret", ["claude"])
         message = str(stopped.exception)
-        self.assertIn("BRIDGE_INGEST_REPO='owner/name'", message)
+        self.assertIn("RAVEN_INGEST_REPO='owner/name'", message)
         self.assertIn(".env", message)
         self.assertIn("./setup --configure --project /Users/dev/code", message)
         self.assertFalse((project / ".raven").exists())
@@ -169,11 +169,11 @@ class GettingStartedAgreesWithTheTerminalTests(unittest.TestCase):
 
     def test_the_connect_command_in_the_docs_is_the_one_the_browser_shows(self):
         app = (ROOT / "web" / "app.js").read_text()
-        prefix = "claude mcp add --transport http bridge "
+        prefix = "claude mcp add --transport http raven "
         self.assertIn(prefix, app)
         for rel in ("README.md", "docs/getting-started.md"):
             text = (ROOT / rel).read_text()
-            self.assertIn(prefix + "http://localhost:7333/mcp --header 'Authorization: Bearer brg_", text, rel)
+            self.assertIn(prefix + "http://localhost:7333/mcp --header 'Authorization: Bearer rvn_", text, rel)
         rule = re.search(r"const AGENT_RULE = '(.*?)'\n\s*\+ '(.*?)';", app, re.S)
         self.assertIsNotNone(rule)
         rule_text = (rule.group(1) + rule.group(2)).replace("\\n", "\n")

@@ -43,23 +43,23 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 import fixtures  # noqa: E402,F401  (strips a deployment's environment)
 
-os.environ.update({"BRIDGE_MODEL_API": "none", "BRIDGE_SEMANTIC": "0", "BRIDGE_LIVE": "0",
-                   "BRIDGE_CLAUDE_BIN": "/nonexistent/claude-offline", "BRIDGE_SECRET": "brief-browser-not-a-secret"})
+os.environ.update({"RAVEN_MODEL_API": "none", "RAVEN_SEMANTIC": "0", "RAVEN_LIVE": "0",
+                   "RAVEN_CLAUDE_BIN": "/nonexistent/claude-offline", "RAVEN_SECRET": "brief-browser-not-a-secret"})
 os.environ.pop("ANTHROPIC_API_KEY", None)
 # GitHub sign-in is configured (made-up credentials, never used to reach
 # GitHub), so the account dialog offers it as the other way in.
-os.environ.update({"BRIDGE_GITHUB_CLIENT_ID": "brief-browser-client", "BRIDGE_GITHUB_CLIENT_SECRET": "not-a-secret"})
+os.environ.update({"RAVEN_GITHUB_CLIENT_ID": "brief-browser-client", "RAVEN_GITHUB_CLIENT_SECRET": "not-a-secret"})
 
 import http.server  # noqa: E402
 
 http.server.BaseHTTPRequestHandler.log_message = lambda *args: None
 
-from bridge import briefing, canvas  # noqa: E402
-from bridge.auth import SESSION_COOKIE, Auth  # noqa: E402
-from bridge.authz import Actor  # noqa: E402
-from bridge.config import Config  # noqa: E402
-from bridge.server import make_server  # noqa: E402
-from bridge.store import Store  # noqa: E402
+from raven import briefing, canvas  # noqa: E402
+from raven.auth import SESSION_COOKIE, Auth  # noqa: E402
+from raven.authz import Actor  # noqa: E402
+from raven.config import Config  # noqa: E402
+from raven.server import make_server  # noqa: E402
+from raven.store import Store  # noqa: E402
 
 CFG = Config(model_api="none")
 REPO = "acme/telemetry"

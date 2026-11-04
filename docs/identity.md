@@ -7,23 +7,23 @@ them is by an exact identifier, never by a display name.
 
 | Table | Source | Linked to a person by |
 | --- | --- | --- |
-| `people` (`bridge/graph.py`) | the source of truth: admins, GitHub sign-in, Slack directory, invitations, task-link claims | its own `id`; unique `email`, `github_login`, `github_id`, `slack_id` |
-| `owners` (`bridge/store.py`) + `decisions.owner_id` | routing and seeded owners | `owners.person_id`; an unbound row has only a name |
-| `engineers`, `listings`, `gh_users` | git history, CODEOWNERS, GitHub | candidates only (`bridge/identity.py` matches name/email/handle); never authorize |
+| `people` (`raven/graph.py`) | the source of truth: admins, GitHub sign-in, Slack directory, invitations, task-link claims | its own `id`; unique `email`, `github_login`, `github_id`, `slack_id` |
+| `owners` (`raven/store.py`) + `decisions.owner_id` | routing and seeded owners | `owners.person_id`; an unbound row has only a name |
+| `engineers`, `listings`, `gh_users` | git history, CODEOWNERS, GitHub | candidates only (`raven/identity.py` matches name/email/handle); never authorize |
 | `authority`, `team_members` | the authority map | `person_id` / `team_id` |
 | `account_passwords`, `account_invites`, `api_tokens`, `brief_links` | logins, invitations, agent/human tokens, task links | `person_id` (`account_invites.person_id` names the invitee; email otherwise) |
 
 ## How the sources link
 
-- **Ingest** (`bridge/ingest.py`, `bridge/owner_discovery.py`): git identities become `engineers` and owner rows; `graph.add_person(merge=True)` adopts an unbound owner row only when the name is unique.
-- **Slack directory** (`bridge/slack_directory.py`): by `slack_id`, else exact email; a namesake gets a suffixed name and a new row. Replies resolve by `slack_id` (`bridge/slack_chat.py`, `delivery.slack_person`).
-- **GitHub sign-in** (`bridge/auth.py`): `github_id`, else exact login, else a verified email of a person with no login yet.
-- **Invitations** (`bridge/accounts.py`): exact email, or the person the admin names; name never.
-- **Task links** (`bridge/briefing.py`): the link row's `person_id`; a session for another person refuses writes.
+- **Ingest** (`raven/ingest.py`, `raven/owner_discovery.py`): git identities become `engineers` and owner rows; `graph.add_person(merge=True)` adopts an unbound owner row only when the name is unique.
+- **Slack directory** (`raven/slack_directory.py`): by `slack_id`, else exact email; a namesake gets a suffixed name and a new row. Replies resolve by `slack_id` (`raven/slack_chat.py`, `delivery.slack_person`).
+- **GitHub sign-in** (`raven/auth.py`): `github_id`, else exact login, else a verified email of a person with no login yet.
+- **Invitations** (`raven/accounts.py`): exact email, or the person the admin names; name never.
+- **Task links** (`raven/briefing.py`): the link row's `person_id`; a session for another person refuses writes.
 
 ## Which field each authorization check uses
 
-`bridge/authz.py` compares **person ids**: the owner row's `person_id`,
+`raven/authz.py` compares **person ids**: the owner row's `person_id`,
 authority holders, team members, the coordinator setting. Two legacy
 fallbacks still compare **exact names**: an unbound owner row and
 `decisions.required_signers` (a JSON list of names), each resolved only

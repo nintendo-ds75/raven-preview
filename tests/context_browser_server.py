@@ -5,11 +5,11 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-os.environ.update(BRIDGE_MODEL_API='none', BRIDGE_SEMANTIC='0', BRIDGE_LIVE='0')
-from bridge import canvas, ladder, briefing
-from bridge.graph import ts_to_iso
-from bridge.server import make_server
-from bridge.store import Store
+os.environ.update(RAVEN_MODEL_API='none', RAVEN_SEMANTIC='0', RAVEN_LIVE='0')
+from raven import canvas, ladder, briefing
+from raven.graph import ts_to_iso
+from raven.server import make_server
+from raven.store import Store
 
 store = Store(sys.argv[1])
 store.graph.set_setting('workspace_name', 'Source review browser fixture')

@@ -7,7 +7,7 @@ const nodes = {'#agent-client': {value: 'Cursor'}, '#agent-details': {innerHTML:
   '#agent-connect-prompt': {hidden: false}};
 let request;
 const context = {
-  state: {auth: {enabled: true}, mcp_config: {mcpServers: {bridge: {type: 'http', url: 'http://localhost:7333/mcp'}}}},
+  state: {auth: {enabled: true}, mcp_config: {mcpServers: {raven: {type: 'http', url: 'http://localhost:7333/mcp'}}}},
   $: key => nodes[key], esc: value => String(value), structuredClone,
   pill: (text, color) => `<span class="${color}">${text}</span>`,
   ago: () => 'just now', plural: (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`,
@@ -223,9 +223,9 @@ vm.runInContext(source.slice(source.indexOf('const signedNow'), source.indexOf('
   assert.match(nodes['#agent-details'].innerHTML, /Bearer test-only-credential/);
   assert.match(nodes['#agent-details'].innerHTML, /http:\/\/localhost:7333\/mcp/);
   assert.equal(button.disabled, true);
-  assert.equal(context.state.mcp_config.mcpServers.bridge.headers, undefined);
+  assert.equal(context.state.mcp_config.mcpServers.raven.headers, undefined);
   // Connect shows the exact command the CLI accepts and, for Codex, the entry
-  // the wizard writes: `claude mcp add --transport http bridge <url> --header
+  // the wizard writes: `claude mcp add --transport http raven <url> --header
   // 'Authorization: Bearer …'` was run as printed against a live server and
   // connected; the Codex snippet had lost the `required = true` the wizard
   // writes, so the two paths disagreed.
@@ -233,12 +233,12 @@ vm.runInContext(source.slice(source.indexOf('const signedNow'), source.indexOf('
   vm.runInContext(source.slice(source.indexOf('async function quickAgent('), source.indexOf('async function launchAgent(')), context);
   await context.quickAgent('claude');
   assert.equal(request.data.label, 'Claude Code · quick connect');
-  assert.match(context.modal[2], /<pre id="mcp-config">claude mcp add --transport http bridge 'http:\/\/localhost:7333\/mcp' --header 'Authorization: Bearer test-only-credential'<\/pre>/);
+  assert.match(context.modal[2], /<pre id="mcp-config">claude mcp add --transport http raven 'http:\/\/localhost:7333\/mcp' --header 'Authorization: Bearer test-only-credential'<\/pre>/);
   assert.match(context.modal[2], /CLAUDE\.md/);
   await context.quickAgent('codex');
-  assert.match(context.modal[2], /<pre id="mcp-config">\[mcp_servers\.bridge\]\nurl = "http:\/\/localhost:7333\/mcp"\nrequired = true\nhttp_headers = \{ Authorization = "Bearer test-only-credential" \}<\/pre>/);
+  assert.match(context.modal[2], /<pre id="mcp-config">\[mcp_servers\.raven\]\nurl = "http:\/\/localhost:7333\/mcp"\nrequired = true\nhttp_headers = \{ Authorization = "Bearer test-only-credential" \}<\/pre>/);
   assert.match(context.modal[2], /AGENTS\.md/);
-  assert.equal(context.state.mcp_config.mcpServers.bridge.headers, undefined);
+  assert.equal(context.state.mcp_config.mcpServers.raven.headers, undefined);
   context.state.auth.enabled = false;
   assert.match(context.connections(), /Connect your coding agent/);
   assert.match(context.connections(), /<button class="button primary" data-action="copy">Copy configuration<\/button>/);

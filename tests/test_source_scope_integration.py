@@ -16,13 +16,13 @@ import test_source_review_readbacks as source_fixtures
 import test_teams as teams
 from test_rules import RuleCase
 import test_rule_invalidation as rule_fixtures
-from bridge import canvas, context_memory as cm, proof, source_review
-from bridge.approval_scope import snapshot as approval_scope, review_epoch, transport_text
-from bridge.config import Config
-from bridge.delivery import _sections, complete_chat_text
-from bridge.readback import prompt_budget
-from bridge.store import Invalid
-from bridge.teams import ConnectorAuth, TeamsBotTransport, TeamsConfig, TeamsDelivery
+from raven import canvas, context_memory as cm, proof, source_review
+from raven.approval_scope import snapshot as approval_scope, review_epoch, transport_text
+from raven.config import Config
+from raven.delivery import _sections, complete_chat_text
+from raven.readback import prompt_budget
+from raven.store import Invalid
+from raven.teams import ConnectorAuth, TeamsBotTransport, TeamsConfig, TeamsDelivery
 
 
 class CombinedSourceScopeCases:
@@ -145,7 +145,7 @@ class CombinedSourceScopeCases:
             # preserving every byte. Normal 12 KB prompts need fewer blocks.
             return [text[i:i + 1] for i in range(50)] + [text[50:]]
 
-        with patch('bridge.delivery._sections', side_effect=fifty_one_lossless_sections):
+        with patch('raven.delivery._sections', side_effect=fifty_one_lossless_sections):
             self.chat('answer: BLOCK_BUDGET_ACTION')
         self.assertTrue(any(transport_text('BLOCK_BUDGET_ACTION') in text and 'Current-source review:' in text
                             and 'Billing policy' in text for text in observed))
@@ -356,7 +356,7 @@ class TeamsCombinedSourceScopeTests(CombinedSourceScopeCases, OfflineCase):
         self.transport = TeamsBotTransport(self.graph, self.config, http=self.microsoft)
         self.auth = ConnectorAuth(self.config, http=self.microsoft)
         self.delivery = TeamsDelivery(self.store, self.config, self.transport, self.auth,
-                                      base_url='https://bridge.acme.test')
+                                      base_url='https://raven.acme.test')
         self.store._delivery = self.delivery
         quiet = patch.object(self.delivery.inbox, 'start')
         quiet.start()

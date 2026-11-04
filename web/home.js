@@ -226,7 +226,7 @@ function buildTile(d, j, call) {
 }
 
 // What's been done: the task's story in one sentence per row, from
-// /api/state's `timeline` on each live task (bridge/timeline.py renders
+// /api/state's `timeline` on each live task (raven/timeline.py renders
 // the stored events; nothing here is composed). Folded by default to the
 // last rows so the open calls below keep the eye; "Show all" opens it.
 const buildTimelineOpen = new Set();
@@ -319,7 +319,7 @@ function buildCard(run) {
 // The call in progress on this task, beside its cards: who is talking to
 // Raven, what Raven is asking now, the exchange so far, and how many of
 // their answers this call has recorded. From /api/state's `calls` on the
-// task (bridge/interview.py attach_live); nothing here is composed.
+// task (raven/interview.py attach_live); nothing here is composed.
 function buildLiveCall(call, ds, js) {
   if (!call) return '';
   const who = askFirst(call.person);
@@ -739,7 +739,7 @@ document.addEventListener('click', async event => {
   const action = button.dataset.noticed, id = button.dataset.id;
   const item = (noticed?.insights || []).find(x => x.id === id);
   if (action === 'claude') {
-    const text = `${item.agent_prompt}\n\n(Raven noticed ${id}; bridge_raven_noticed has the quotes.)`;
+    const text = `${item.agent_prompt}\n\n(Raven noticed ${id}; raven_noticed has the quotes.)`;
     try { await navigator.clipboard.writeText(text); notify('Copied for Claude Code. Paste it, or ask Claude "what did Raven notice?"'); }
     catch { notify(item.agent_prompt); }
     return;

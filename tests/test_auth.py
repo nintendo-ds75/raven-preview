@@ -19,9 +19,9 @@ from urllib.request import Request, urlopen
 
 from fixtures import OfflineCase
 
-from bridge.auth import Auth
-from bridge.server import make_server
-from bridge.store import Invalid, Store
+from raven.auth import Auth
+from raven.server import make_server
+from raven.store import Invalid, Store
 
 BOOTSTRAP = "bootstrap-secret-for-tests"
 
@@ -32,7 +32,7 @@ class SharedServer(OfflineCase):
     def setUp(self):
         super().setUp()
         self.store = self.fresh_store("shared.db")
-        env = patch.dict(os.environ, {"BRIDGE_ADMIN_TOKEN": BOOTSTRAP, "BRIDGE_SECRET": "unit-test-secret"})
+        env = patch.dict(os.environ, {"RAVEN_ADMIN_TOKEN": BOOTSTRAP, "RAVEN_SECRET": "unit-test-secret"})
         env.start()
         self.addCleanup(env.stop)
         self.auth = Auth(self.store, enabled=True)
@@ -53,7 +53,7 @@ class SharedServer(OfflineCase):
         if cookie:
             headers["Cookie"] = cookie
         if csrf:
-            headers["X-Bridge-CSRF"] = csrf
+            headers["X-Raven-CSRF"] = csrf
         body = None
         if data is not None:
             headers["Content-Type"] = "application/json"
@@ -118,10 +118,10 @@ class IdentityAndRoleTests(SharedServer):
         status, _, body = self.raw("POST", "/mcp", secure, json.dumps({
             "jsonrpc": "2.0", "id": 2, "method": "tools/list"}).encode())
         self.assertEqual(status, 200)
-        self.assertIn("bridge_start_task", [t["name"] for t in json.loads(body)["result"]["tools"]])
+        self.assertIn("raven_start_task", [t["name"] for t in json.loads(body)["result"]["tools"]])
         status, _, body = self.raw("POST", "/mcp", secure, json.dumps({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
-                "name": "bridge_list_owners", "arguments": {}}}).encode())
+                "name": "raven_list_owners", "arguments": {}}}).encode())
         self.assertEqual(status, 200)
         self.assertFalse(json.loads(body)["result"]["isError"])
         status, _, _ = self.raw("GET", "/mcp", secure)
@@ -129,7 +129,7 @@ class IdentityAndRoleTests(SharedServer):
 
     def test_nothing_without_an_identity(self):
         self.assertEqual(self.status_of("GET", "/api/state"), 401)
-        self.assertEqual(self.status_of("POST", "/api/runs", {"title": "t"}, token="brg_not_a_token"), 401)
+        self.assertEqual(self.status_of("POST", "/api/runs", {"title": "t"}, token="rvn_not_a_token"), 401)
         # The front page sends a browser to sign in.
         status, headers, _ = self.raw("GET", "/")
         self.assertEqual((status, headers.get("Location")), (302, "/auth/login"))
@@ -140,11 +140,11 @@ class IdentityAndRoleTests(SharedServer):
     def test_setup_github_choice_survives_sign_in(self):
         status, headers, _ = self.raw("GET", "/?github_connect=1")
         self.assertEqual((status, headers.get("Location")), (302, "/auth/login"))
-        self.assertIn("bridge_github_connect=1", headers.get("Set-Cookie", ""))
+        self.assertIn("raven_github_connect=1", headers.get("Set-Cookie", ""))
         admin = self.post("/api/people", {"name": "GitHub Admin", "role": "admin"}, token=BOOTSTRAP)
         token = self.post("/api/tokens", {"person_id": admin["id"], "kind": "human"}, token=BOOTSTRAP)["token"]
         status, headers, _ = self.raw("POST", "/auth/token", {
-            "Content-Type": "application/x-www-form-urlencoded", "Cookie": "bridge_github_connect=1"
+            "Content-Type": "application/x-www-form-urlencoded", "Cookie": "raven_github_connect=1"
         }, f"token={token}".encode())
         self.assertEqual((status, headers.get("Location")), (302, "/?github_connect=1#connect"))
         # Both the signed-in session and the one-time setup intent are returned.
@@ -152,14 +152,14 @@ class IdentityAndRoleTests(SharedServer):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
         conn.request("POST", "/auth/token", body=f"token={token}", headers={
             "Host": f"127.0.0.1:{self.port}", "Content-Type": "application/x-www-form-urlencoded",
-            "Cookie": "bridge_github_connect=1"})
+            "Cookie": "raven_github_connect=1"})
         response = conn.getresponse()
         cookies = response.headers.get_all("Set-Cookie")
         response.read()
         conn.close()
         self.assertEqual(len(cookies), 2)
-        self.assertTrue(any("bridge_session=" in cookie for cookie in cookies))
-        self.assertTrue(any("bridge_github_connect=; Max-Age=0" in cookie for cookie in cookies))
+        self.assertTrue(any("raven_session=" in cookie for cookie in cookies))
+        self.assertTrue(any("raven_github_connect=; Max-Age=0" in cookie for cookie in cookies))
 
     def test_task_overview_is_private_and_viewer_cannot_add_context(self):
         run = self.store.add_run({"title": "Private task", "repo": "acme/library"})
@@ -177,11 +177,11 @@ class IdentityAndRoleTests(SharedServer):
         self.assertEqual(state["me"]["role"], "admin")
         self.assertTrue(state["auth"]["enabled"])
         self.assertTrue(state["mcp_config"]["remote"])
-        self.assertTrue(state["mcp_config"]["mcpServers"]["bridge"]["url"].endswith("/mcp"))
+        self.assertTrue(state["mcp_config"]["mcpServers"]["raven"]["url"].endswith("/mcp"))
         wes = self.post("/api/people", {"name": "Wes Chen", "email": "wes@acme.example", "role": "member"}, token=BOOTSTRAP)
         viewer = self.post("/api/people", {"name": "Val Viewer", "email": "val@acme.example", "role": "viewer"}, token=BOOTSTRAP)
         minted = self.post("/api/tokens", {"person_id": wes["id"], "label": "claude-code"}, token=BOOTSTRAP)
-        self.assertTrue(minted["token"].startswith("brg_"))
+        self.assertTrue(minted["token"].startswith("rvn_"))
         listed = self.get(f"/api/tokens?person_id={wes['id']}", token=BOOTSTRAP)["tokens"]
         self.assertEqual([t["label"] for t in listed], ["claude-code"])
         self.assertNotIn("token", listed[0])
@@ -217,12 +217,12 @@ class IdentityAndRoleTests(SharedServer):
         wt = self.post("/api/tokens", {"person_id": wes["id"], "label": "scripts", "kind": "human"}, token=BOOTSTRAP)["token"]
         mt = self.post("/api/tokens", {"person_id": marisol["id"], "label": "codex"}, token=BOOTSTRAP)["token"]
         # Marisol's agent kicks off: she is the requester without saying so.
-        t = self.mcp("bridge_start_task", {
+        t = self.mcp("raven_start_task", {
             "title": "Add usage-based pricing", "repo": "acme/platform", "paths": "billing/usage.py"}, mt)
         self.assertFalse(t["isError"])
         task = t["result"]
         self.assertEqual(self.store.graph.get_task(task["task_id"])["requester"], "Marisol Vega")
-        n = self.mcp("bridge_add_node", {
+        n = self.mcp("raven_add_node", {
             "task_id": task["task_id"], "question": "Should we bill the usage spike?", "context": "enterprise-two",
             "paths": "billing/usage.py"}, mt)["result"]
         self.assertEqual((n["status"], n["owner"]), ("pending", "Wes Chen"))
@@ -249,7 +249,7 @@ class IdentityAndRoleTests(SharedServer):
         self.assertIn("added by Wes Chen", self.store.get_decision(f["nodes"][0]["node_id"])["context"])
         # Agents cannot ingest; only admins can.
         self.assertEqual(self.status_of("POST", "/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                                                          "params": {"name": "bridge_ingest_repo",
+                                                          "params": {"name": "raven_ingest_repo",
                                                                      "arguments": {"path": "/x"}}}, token=mt), 403)
 
     def test_a_token_is_not_ambient_but_a_cookie_needs_the_csrf_token(self):
@@ -268,7 +268,7 @@ class IdentityAndRoleTests(SharedServer):
         cookie = headers.get("Set-Cookie", "")
         self.assertIn("HttpOnly", cookie)
         jar = SimpleCookie(cookie)
-        session = "bridge_session=" + jar["bridge_session"].value
+        session = "raven_session=" + jar["raven_session"].value
         state = self.get("/api/state", cookie=session)
         self.assertEqual(state["me"]["kind"], "session")
         self.assertEqual(self.status_of("POST", "/api/runs", {"title": "t"}, cookie=session), 403)
@@ -282,11 +282,11 @@ class GitHubSignInTests(OfflineCase):
     def setUp(self):
         super().setUp()
         self.store = self.fresh_store("github.db")
-        env = patch.dict(os.environ, {"BRIDGE_GITHUB_CLIENT_ID": "cid", "BRIDGE_GITHUB_CLIENT_SECRET": "csecret",
-                                      "BRIDGE_SECRET": "unit-test-secret"})
+        env = patch.dict(os.environ, {"RAVEN_GITHUB_CLIENT_ID": "cid", "RAVEN_GITHUB_CLIENT_SECRET": "csecret",
+                                      "RAVEN_SECRET": "unit-test-secret"})
         env.start()
         self.addCleanup(env.stop)
-        self.auth = Auth(self.store, enabled=True, public_url="https://bridge.acme.test")
+        self.auth = Auth(self.store, enabled=True, public_url="https://raven.acme.test")
 
     def fake_fetch(self, login, name, emails, orgs=()):
         def fetch(method, url, body, headers):
@@ -302,13 +302,13 @@ class GitHubSignInTests(OfflineCase):
         return fetch
 
     def exchange(self, login, name, emails, orgs=()):
-        url = self.auth.github_authorize_url("https://bridge.acme.test/auth/github/callback")
+        url = self.auth.github_authorize_url("https://raven.acme.test/auth/github/callback")
         state = url.split("state=")[1]
-        return self.auth.github_exchange("code", state, "https://bridge.acme.test/auth/github/callback",
+        return self.auth.github_exchange("code", state, "https://raven.acme.test/auth/github/callback",
                                          fetch=self.fake_fetch(login, name, emails, orgs))
 
     def test_the_first_person_in_is_the_admin_and_later_ones_must_be_known(self):
-        self.assertIn("client_id=cid", self.auth.github_authorize_url("https://bridge.acme.test/auth/github/callback"))
+        self.assertIn("client_id=cid", self.auth.github_authorize_url("https://raven.acme.test/auth/github/callback"))
         first = self.auth.sign_in_github_user(self.exchange("wchen", "Wes Chen", ["wes@acme.example"]))
         self.assertEqual((first["name"], first["role"], first["github_login"]), ("Wes Chen", "admin", "wchen"))
         with self.assertRaises(Invalid):
@@ -327,42 +327,42 @@ class GitHubSignInTests(OfflineCase):
         # A session cookie carries the person and survives a restart of the Auth object.
         cookie = self.auth.session_cookie(first["id"])
         self.assertIn("Secure", cookie)
-        again = Auth(self.store, enabled=True, public_url="https://bridge.acme.test")
+        again = Auth(self.store, enabled=True, public_url="https://raven.acme.test")
         me = again.identify({"Cookie": cookie.split(";")[0]})
         self.assertEqual(me.name, "Wes Chen")
 
     def test_an_organization_can_be_required(self):
-        with patch.dict(os.environ, {"BRIDGE_GITHUB_ORG": "acme", "BRIDGE_AUTH_ALLOW_SIGNUP": "1"}):
+        with patch.dict(os.environ, {"RAVEN_GITHUB_ORG": "acme", "RAVEN_AUTH_ALLOW_SIGNUP": "1"}):
             auth = Auth(self.store, enabled=True)
-            url = auth.github_authorize_url("https://bridge.acme.test/auth/github/callback")
+            url = auth.github_authorize_url("https://raven.acme.test/auth/github/callback")
             state = url.split("state=")[1]
-            gh = auth.github_exchange("code", state, "https://bridge.acme.test/auth/github/callback",
+            gh = auth.github_exchange("code", state, "https://raven.acme.test/auth/github/callback",
                                       fetch=self.fake_fetch("out", "Out Sider", ["o@x"], orgs=["other"]))
             with self.assertRaises(Invalid):
                 auth.sign_in_github_user(gh)
-            state = auth.github_authorize_url("https://bridge.acme.test/auth/github/callback").split("state=")[1]
-            gh = auth.github_exchange("code", state, "https://bridge.acme.test/auth/github/callback",
+            state = auth.github_authorize_url("https://raven.acme.test/auth/github/callback").split("state=")[1]
+            gh = auth.github_exchange("code", state, "https://raven.acme.test/auth/github/callback",
                                       fetch=self.fake_fetch("inside", "In Sider", ["i@acme.example"], orgs=["acme"]))
             self.assertEqual(auth.sign_in_github_user(gh)["name"], "In Sider")
 
 
 class RemoteMcpTests(SharedServer):
-    def test_http_mcp_speaks_to_a_shared_bridge(self):
+    def test_http_mcp_speaks_to_a_shared_raven(self):
         wes = self.post("/api/people", {"name": "Wes Chen", "email": "wes@acme.example"}, token=BOOTSTRAP)
         wt = self.post("/api/tokens", {"person_id": wes["id"], "label": "claude-code"}, token=BOOTSTRAP)["token"]
-        task = self.mcp("bridge_start_task", {
+        task = self.mcp("raven_start_task", {
             "title": "Add usage pricing", "repo": "acme/platform", "client_key": "remote-1"}, wt)["result"]
         self.assertIn("task_id", task)
         self.assertEqual(self.store.graph.get_task(task["task_id"])["requester"], "Wes Chen")
         # The token's label names the agent; it is stored as people know it.
         self.assertEqual(self.store.graph.get_task(task["task_id"])["agent"], "Claude Code")
-        missing = self.mcp("bridge_get_tree", {"task_id": "nope"}, wt)
+        missing = self.mcp("raven_get_tree", {"task_id": "nope"}, wt)
         self.assertTrue(missing["isError"])
         self.assertIn("Task not found", missing["result"])
         self.assertEqual(self.status_of("POST", "/mcp", {
             "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
-                "name": "bridge_start_task", "arguments": {"title": "x", "repo": "acme/platform"}}},
-            token="brg_wrong"), 401)
+                "name": "raven_start_task", "arguments": {"title": "x", "repo": "acme/platform"}}},
+            token="rvn_wrong"), 401)
 
 
 class BindingTests(OfflineCase):
@@ -370,14 +370,14 @@ class BindingTests(OfflineCase):
         store = self.fresh_store("bind.db")
         with self.assertRaises(Invalid):
             make_server(store, port=0, host="0.0.0.0")
-        with patch.dict(os.environ, {"BRIDGE_ADMIN_TOKEN": BOOTSTRAP}):
-            server = make_server(store, port=0, host="0.0.0.0", auth=Auth(store, enabled=True, public_url="http://bridge.acme.test:7333"))
+        with patch.dict(os.environ, {"RAVEN_ADMIN_TOKEN": BOOTSTRAP}):
+            server = make_server(store, port=0, host="0.0.0.0", auth=Auth(store, enabled=True, public_url="http://raven.acme.test:7333"))
             server.server_close()
 
     def serve(self, name, public_url):
         store = Store(Path(self.temp.name) / name)
         store.graph.set_setting('workspace_name', 'Test workspace')
-        with patch.dict(os.environ, {"BRIDGE_ADMIN_TOKEN": BOOTSTRAP}):
+        with patch.dict(os.environ, {"RAVEN_ADMIN_TOKEN": BOOTSTRAP}):
             server = make_server(store, port=0, auth=Auth(store, enabled=True, public_url=public_url))
         thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         thread.start()
@@ -395,8 +395,8 @@ class BindingTests(OfflineCase):
                 self.assertEqual((host, error.code), (host, code))
 
     def test_the_public_host_is_accepted(self):
-        port = self.serve("host.db", "http://bridge.acme.test:7333")
-        self.expect(port, (("bridge.acme.test:7333", 200), ("evil.example", 403)))
+        port = self.serve("host.db", "http://raven.acme.test:7333")
+        self.expect(port, (("raven.acme.test:7333", 200), ("evil.example", 403)))
 
     def test_both_spellings_of_the_published_loopback_address_are_accepted(self):
         """Published through Docker, the container binds 7333 whatever
@@ -408,7 +408,7 @@ class BindingTests(OfflineCase):
         still speaks for nobody."""
         port = self.serve("published.db", "http://localhost:17433")
         self.expect(port, (("localhost:17433", 200), ("127.0.0.1:17433", 200), ("[::1]:17433", 200),
-                           ("localhost:17434", 403), ("bridge.acme.test:17433", 403)))
+                           ("localhost:17434", 403), ("raven.acme.test:17433", 403)))
 
 
 if __name__ == "__main__":

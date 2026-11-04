@@ -15,4 +15,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 \
     && npm ci --prefix /app/hosts/codex --ignore-scripts \
     && npm cache clean --force \
     && chmod -R a+rX /app/hosts
-USER bridge
+USER raven

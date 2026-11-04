@@ -8,11 +8,11 @@ from unittest.mock import patch
 
 from fixtures import OfflineCase
 from test_delivery import DeliveryCase
-from bridge import canvas, llm
-from bridge.auth import Auth
-from bridge.bootstrap import dev_login
-from bridge.config import Config
-from bridge.store import Store, Invalid
+from raven import canvas, llm
+from raven.auth import Auth
+from raven.bootstrap import dev_login
+from raven.config import Config
+from raven.store import Store, Invalid
 
 
 class BackgroundTests(DeliveryCase):
@@ -23,7 +23,7 @@ class BackgroundTests(DeliveryCase):
             entered.set()
             release.wait(5)
             return 'Should the load test be excluded?'
-        with patch.dict(os.environ, BRIDGE_SEMANTIC='1'), patch('bridge.llm.compose_brief', brief):
+        with patch.dict(os.environ, RAVEN_SEMANTIC='1'), patch('raven.llm.compose_brief', brief):
             started = time.monotonic()
             node = canvas.add_node(self.store, Config(model_api='none'), {
                 'task_id':task, 'paths':'billing/usage.py', 'question':'Should billing exclude the load test?',
@@ -49,7 +49,7 @@ class BackgroundTests(DeliveryCase):
         def brief(*args, **kwargs):
             entered.set(); release.wait(5)
             return 'The old question'
-        with patch.dict(os.environ, BRIDGE_SEMANTIC='1'), patch('bridge.llm.compose_brief', brief):
+        with patch.dict(os.environ, RAVEN_SEMANTIC='1'), patch('raven.llm.compose_brief', brief):
             node = canvas.add_node(self.store, Config(model_api='none'), {
                 'task_id':task, 'paths':'billing/usage.py', 'question':'Should billing exclude the load test?'})
             self.assertTrue(entered.wait(3))
@@ -70,7 +70,7 @@ class BackgroundTests(DeliveryCase):
         def triage(*args):
             entered.set(); release.wait(5)
             return {'verdict':'engage','why':'A customer policy decision'}
-        with patch.dict(os.environ, BRIDGE_SEMANTIC='1'), patch('bridge.llm.name_decisions', return_value=[]), patch('bridge.llm.model_triage', triage):
+        with patch.dict(os.environ, RAVEN_SEMANTIC='1'), patch('raven.llm.name_decisions', return_value=[]), patch('raven.llm.model_triage', triage):
             start=time.monotonic()
             task=canvas.start_task(self.store,Config(model_api='none'),{'title':'Adjust a helper','repo':'acme/platform','paths':'billing/usage.py'})
             self.assertLess(time.monotonic()-start,1)
@@ -93,7 +93,7 @@ class BackgroundTests(DeliveryCase):
                 entered.set(); release.wait(5)
                 return {'verdict':'engage', 'why':'Old reading'}
             return {'verdict':'engage', 'why':'Current reading'}
-        with patch.dict(os.environ, BRIDGE_SEMANTIC='1'), patch('bridge.llm.name_decisions', return_value=[]), patch('bridge.llm.model_triage', triage):
+        with patch.dict(os.environ, RAVEN_SEMANTIC='1'), patch('raven.llm.name_decisions', return_value=[]), patch('raven.llm.model_triage', triage):
             cfg = Config(model_api='none')
             task = canvas.start_task(self.store, cfg, {'title':'Adjust billing helper','repo':'acme/platform','paths':'billing/usage.py'})
             self.assertTrue(entered.wait(3))
@@ -133,34 +133,34 @@ class BackgroundTests(DeliveryCase):
         self.delivery.deliver_now()
         self.reply(self.slack.messages[0], 'UWES', 'answer: Exclude it because it is internal')
         run = self.graph.get_task(task)
-        with patch('bridge.routing.rank_for_decision', return_value=[
+        with patch('raven.routing.rank_for_decision', return_value=[
                 ('Marisol Vega', ['authored recent code'], 1.0),
                 ('Wes Chen', ['applicable learned contact'], .5)]):
             ranked = canvas._route_signer(self.graph, run, node['question'], '', ['billing/usage.py'], '', None, '', {}, node['node_id'])
         self.assertEqual(ranked[0][0], 'Wes Chen')
-        with patch('bridge.routing.rank_for_decision', return_value=[
+        with patch('raven.routing.rank_for_decision', return_value=[
                 ('Marisol Vega', ['verified: current authority'], 2.0),
                 ('Wes Chen', ['applicable learned contact'], .5)]):
             ranked = canvas._route_signer(self.graph, run, node['question'], '', ['billing/usage.py'], '', None, '', {}, node['node_id'])
         self.assertEqual(ranked[0][0], 'Marisol Vega')
         # A historical signature does not itself restore a contact omitted
         # by current scoped routing. This asserts nomination only.
-        with patch('bridge.routing.rank_for_decision', return_value=[
+        with patch('raven.routing.rank_for_decision', return_value=[
                 ('Marisol Vega', ['authored recent code'], 1.0)]):
             ranked = canvas._route_signer(self.graph, run, node['question'], '', ['billing/usage.py'], '', None, '', {}, node['node_id'])
         self.assertEqual(ranked[0][0], 'Marisol Vega')
 
     def test_possessive_slack_mention_resolves_to_contact(self):
-        from bridge.slack_chat import recipient
+        from raven.slack_chat import recipient
         self.assertEqual(recipient(self.delivery, "<@UMAR>'s call", speaker=self.wes)['id'], self.marisol)
         self.assertEqual(recipient(self.delivery, 'someone else', "It is <@UMAR|Marisol>’s call", self.wes)['id'], self.marisol)
 
     def test_wait_honors_the_mcp_call_budget(self):
-        from bridge.mcp import call_tool
+        from raven.mcp import call_tool
         task = self.task(); self.node(task)
-        with patch.dict(os.environ, BRIDGE_MCP_CALL_BUDGET='1'):
+        with patch.dict(os.environ, RAVEN_MCP_CALL_BUDGET='1'):
             started = time.monotonic()
-            result = call_tool(self.store, 'bridge_wait', {'task_id':task,'timeout':'300'})
+            result = call_tool(self.store, 'raven_wait', {'task_id':task,'timeout':'300'})
             self.assertLess(time.monotonic()-started, 2.5)
         self.assertTrue(result['timed_out'])
 
@@ -178,7 +178,7 @@ class ExtraConditionTests(OfflineCase):
             if purpose=='counterexample':return {'status': 'complete', 'checks':[]}
             return {'status': 'complete', 'conditions':[condition]} if condition else {'status': 'complete', 'conditions':[]}
         diff='+if enterprise: return 0\n+if pro and override: return 0\n+return overage * 2\n'
-        with patch.dict(os.environ,BRIDGE_SEMANTIC='1'),patch.object(llm.Client,'complete_json',complete):
+        with patch.dict(os.environ,RAVEN_SEMANTIC='1'),patch.object(llm.Client,'complete_json',complete):
             return llm.check_conformance(Config(model_api='none'),'Who is exempt?','Only enterprise is exempt',diff)
 
     def test_located_unsigned_exemption_departs(self):
@@ -202,7 +202,7 @@ class DeveloperLoginTests(OfflineCase):
         token=Auth(store,enabled=True).create_token(person,'development',kind='human')['token']
         path=Path(self.temp.name)/'token';path.write_text(token)
         store.graph.set_setting('workspace_name','Acme')
-        with patch.dict(os.environ,BRIDGE_LOGIN_FILE=str(path)):
+        with patch.dict(os.environ,RAVEN_LOGIN_FILE=str(path)):
             self.assertIn(token,dev_login(store))
             store.graph.db.execute('INSERT INTO account_passwords(person_id,password_hash) VALUES (?,?)',(person,'test-hash'))
             self.assertNotIn(token,dev_login(store))

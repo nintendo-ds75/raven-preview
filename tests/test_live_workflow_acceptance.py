@@ -9,7 +9,7 @@ import unittest
 import urllib.request
 from unittest.mock import patch
 
-from bridge import llm
+from raven import llm
 from evals.live_workflow_acceptance import (
     PROVIDER_URL, AcceptanceFailure, RequestBudget, check_expression, check_guidance,
     human_post, interview_model_observation, novel_scenario, observe_interview_model,
@@ -24,15 +24,15 @@ class Response(io.BytesIO):
 class LiveWorkflowDriverTests(unittest.TestCase):
     def test_default_refuses_even_when_a_key_exists(self):
         with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'fixture-only-not-a-real-key'}), \
-             patch('bridge.llm._open_model_request', side_effect=AssertionError('Network forbidden')) as network:
+             patch('raven.llm._open_model_request', side_effect=AssertionError('Network forbidden')) as network:
             result = run()
         self.assertEqual(result['status'], 'blocked')
         network.assert_not_called()
         self.assertNotIn('fixture-only-not-a-real-key', json.dumps(result))
 
     def test_explicit_flag_without_key_refuses_before_constructing_harness(self):
-        with patch.dict(os.environ, {'ANTHROPIC_API_KEY': '', 'BRIDGE_MODEL_API': 'anthropic', 'BRIDGE_SEMANTIC': '1'}), \
-             patch('bridge.llm._open_model_request', side_effect=AssertionError('Network forbidden')) as network:
+        with patch.dict(os.environ, {'ANTHROPIC_API_KEY': '', 'RAVEN_MODEL_API': 'anthropic', 'RAVEN_SEMANTIC': '1'}), \
+             patch('raven.llm._open_model_request', side_effect=AssertionError('Network forbidden')) as network:
             result = run(run_live=True, harness_factory=lambda **_: self.fail('Harness should not start'))
         self.assertEqual(result['status'], 'blocked')
         network.assert_not_called()
@@ -61,7 +61,7 @@ class LiveWorkflowDriverTests(unittest.TestCase):
         for args, kwargs in (((), {'timeout': 120}), ((), {'timeout': 7}),
                              ((), {}), ((None, 120), {})):
             with self.subTest(args=args, kwargs=kwargs):
-                with patch('bridge.llm._open_model_request', return_value=Response(b'{}')) as opener:
+                with patch('raven.llm._open_model_request', return_value=Response(b'{}')) as opener:
                     budget = RequestBudget(1, opener=opener)
                     with budget.open(request, *args, **kwargs) as response:
                         self.assertEqual(response.read(), b'{}')
@@ -74,7 +74,7 @@ class LiveWorkflowDriverTests(unittest.TestCase):
                 (urllib.error.URLError('private-network-detail'), 'network', None),
                 (urllib.error.HTTPError(PROVIDER_URL, 429, 'private-http-detail', {}, None), 'http', 429)):
             with self.subTest(kind=kind, status=status):
-                with patch('bridge.llm._open_model_request', side_effect=error), \
+                with patch('raven.llm._open_model_request', side_effect=error), \
                      patch('evals.live_workflow_acceptance.time.monotonic', side_effect=[10, 13.5]):
                     budget = RequestBudget(1)
                     with self.assertRaises(type(error)) as caught:
@@ -119,8 +119,8 @@ class LiveWorkflowDriverTests(unittest.TestCase):
                 'content': [{'type': 'text', 'text': '{"fixture_driver":true}'}],
                 'usage': {'input_tokens': 7, 'output_tokens': 5}}).encode())
         with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'fixture-only-not-a-real-key',
-                                    'BRIDGE_MODEL_API': 'anthropic', 'BRIDGE_SEMANTIC': '1'}), \
-             patch('bridge.llm._open_model_request', side_effect=provider_response):
+                                    'RAVEN_MODEL_API': 'anthropic', 'RAVEN_SEMANTIC': '1'}), \
+             patch('raven.llm._open_model_request', side_effect=provider_response):
             result = run(run_live=True, max_calls=2, harness_factory=Harness, workflow=workflow)
         self.assertEqual(result['status'], 'passed', result)
         self.assertEqual(captured['model_mode'], 'live')
@@ -168,9 +168,9 @@ class LiveWorkflowDriverTests(unittest.TestCase):
                 'question': 'What is your name?', 'question_quote': quote,
                 'proposed_answer': secret, 'caveats': [{'text': 'Unresolved staging', 'quote': quote}],
                 'unexpected_header': 'must-not-copy-this-field'}, scenario, report)
-        with patch.dict(os.environ, {'ANTHROPIC_API_KEY': secret, 'BRIDGE_MODEL_API': 'anthropic',
-                                    'BRIDGE_SEMANTIC': '1'}), \
-             patch('bridge.llm._open_model_request', side_effect=AssertionError('Network forbidden')) as network:
+        with patch.dict(os.environ, {'ANTHROPIC_API_KEY': secret, 'RAVEN_MODEL_API': 'anthropic',
+                                    'RAVEN_SEMANTIC': '1'}), \
+             patch('raven.llm._open_model_request', side_effect=AssertionError('Network forbidden')) as network:
             result = run(run_live=True, harness_factory=Harness, workflow=workflow)
         self.assertEqual(result['status'], 'failed')
         self.assertEqual(result['failure_code'], 'interview_question_misses_novel_environment')
@@ -223,7 +223,7 @@ class LiveWorkflowDriverTests(unittest.TestCase):
     def test_interview_only_driver_uses_real_http_and_one_injected_provider_request(self):
         import re
         import urllib.parse
-        from bridge import canvas
+        from raven import canvas
         from evals.slack_contract_harness import REFERRED
         actual_open = urllib.request.urlopen
         provider_requests = []
@@ -256,8 +256,8 @@ class LiveWorkflowDriverTests(unittest.TestCase):
             return result
         previous = {'readback': 'Cohort pilot_e46c6eb4: more than 795 calls is billable; at or below 795 is excluded.'}
         with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'fixture-only-not-a-real-key',
-                                    'BRIDGE_MODEL_API': 'anthropic', 'BRIDGE_SEMANTIC': '1'}), \
-             patch('bridge.llm._open_model_request', side_effect=gateway):
+                                    'RAVEN_MODEL_API': 'anthropic', 'RAVEN_SEMANTIC': '1'}), \
+             patch('raven.llm._open_model_request', side_effect=gateway):
             report = run(run_live=True, interview_only=True, previous_result=previous, workflow=driver)
         self.assertEqual(report['status'], 'passed', report)
         self.assertEqual(report['stage'], 'interview_diagnostic_complete')
@@ -282,7 +282,7 @@ class LiveWorkflowDriverTests(unittest.TestCase):
 
 
     def test_transparent_observer_returns_identical_result_without_extra_inference(self):
-        from bridge.config import Config
+        from raven.config import Config
         raw = {'question': 'Which staging environment?', 'question_quote': 'not retained in supplied input',
                'answer_quotes': ['fixture quote'], 'caveats': [{'text': 'Fixture caveat', 'quote': 'fixture quote'}],
                'wrong_extra_key': 'unexpected-value-not-copied'}
@@ -311,7 +311,7 @@ class LiveWorkflowDriverTests(unittest.TestCase):
         self.assertTrue(observation['values']['question']['truncated'])
         self.assertEqual(len(observation['values']['answer_quotes']['items']), 12)
         self.assertNotIn('never-copy', json.dumps(observation))
-        from bridge.config import Config
+        from raven.config import Config
         report = {}
         with patch.object(llm.Client, 'complete_json', side_effect=llm.LLMError('provider-error-canary')):
             with observe_interview_model(report), self.assertRaises(llm.LLMError):

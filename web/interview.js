@@ -9,10 +9,10 @@ interviewDialog.id = 'interview-modal';
 interviewDialog.setAttribute('aria-labelledby', 'interview-title');
 document.body.append(interviewDialog);
 
-const interviewUser = () => window.ravenInterviewBridge ? window.ravenInterviewBridge.user() : state.me;
-const interviewRequest = (path, body) => window.ravenInterviewBridge ? window.ravenInterviewBridge.request(path, body) : api(path, body);
-const interviewNotify = text => window.ravenInterviewBridge ? window.ravenInterviewBridge.notify(text) : notify(text);
-const interviewRefresh = () => window.ravenInterviewBridge ? window.ravenInterviewBridge.refresh() : refresh();
+const interviewUser = () => window.ravenInterviewEmbed ? window.ravenInterviewEmbed.user() : state.me;
+const interviewRequest = (path, body) => window.ravenInterviewEmbed ? window.ravenInterviewEmbed.request(path, body) : api(path, body);
+const interviewNotify = text => window.ravenInterviewEmbed ? window.ravenInterviewEmbed.notify(text) : notify(text);
+const interviewRefresh = () => window.ravenInterviewEmbed ? window.ravenInterviewEmbed.refresh() : refresh();
 
 function interviewScopeFields(spec) {
   const pairs = obj => Object.entries(obj || {}).map(([k,v]) => `${k}=${v}`).join(', ');
@@ -80,7 +80,7 @@ const interviewCanSpeak = () => RavenVoice.canSpeak();
 // answering turning green as they are recorded. Drawn from /api/state, so a
 // personal task link (no app state) gets the call alone.
 function interviewTower(session) {
-  if (window.ravenInterviewBridge || typeof taskStory !== 'function' || !state?.runs) return '';
+  if (window.ravenInterviewEmbed || typeof taskStory !== 'function' || !state?.runs) return '';
   const run = (state.runs || []).find(r => r.id === session.row.task_id);
   if (!run) return '';
   const {ds, js} = taskStory(run);
@@ -146,7 +146,7 @@ function interviewBody(session, reviewing = false) {
       ${row.rationale ? `<p class="voice-you"><b>Why</b> ${esc(row.rationale)}</p>` : ''}
       ${scope.decision_scope?.reusable ? '<p class="context">Confirming this interview answer retires the existing standing rule. Future automatic reuse needs a fresh explicit make-rule action.</p>' : ''}
       <div class="voice-controls"><button class="voice-btn" data-interview-action="edit">Change it</button><button class="voice-btn" data-interview-action="readback" ${interviewCanSpeak() ? '' : 'disabled'}>Read it again</button><button class="button primary voice-call-btn" data-interview-action="confirm" data-interview-id="${esc(row.id)}" data-interview-version="${row.version}">That's right</button></div>
-      <p class="context voice-fine">Recorded as ${esc(interviewUser().name)} using ${window.ravenInterviewBridge ? 'your personal task link' : 'your signed-in identity'}. Speech recognition does not verify who spoke. ${Object.keys(spec).length ? 'Other tasks must satisfy the boundaries below.' : 'It applies to this decision.'} Anyone else who must approve is still asked.</p>
+      <p class="context voice-fine">Recorded as ${esc(interviewUser().name)} using ${window.ravenInterviewEmbed ? 'your personal task link' : 'your signed-in identity'}. Speech recognition does not verify who spoke. ${Object.keys(spec).length ? 'Other tasks must satisfy the boundaries below.' : 'It applies to this decision.'} Anyone else who must approve is still asked.</p>
       <details class="voice-scope"><summary>Transcript and boundaries</summary><p>${esc(row.transcript || 'No transcript supplied; answer entered directly.')}</p><pre>${esc(JSON.stringify(spec, null, 2))}</pre></details>
       ${scopeBox}</div>`;
   } else {
@@ -235,7 +235,7 @@ async function interviewAskBack(session, question) {
   interviewBody(session);
   let answer = '';
   try {
-    const r = window.ravenInterviewBridge?.inquiry ? await window.ravenInterviewBridge.inquiry(question, session.row.decision_id)
+    const r = window.ravenInterviewEmbed?.inquiry ? await window.ravenInterviewEmbed.inquiry(question, session.row.decision_id)
       : await api(`/api/tasks/${encodeURIComponent(session.row.task_id)}/inquiry`, {question, focus_id: session.row.decision_id});
     // An unverified reading is a list of records to review, not something to say out loud.
     answer = r.model_used === false ? "I couldn't confirm that from this task's records." : interviewShort(r.answer);
@@ -285,7 +285,7 @@ async function interviewNext(session, advance = true) {
 }
 async function openInterview(task, decision) {
   const generation = ++interviewGeneration;
-  if (!window.ravenInterviewBridge && (!state.auth?.enabled || !state.me?.id || !['session', 'token'].includes(state.me.kind))) throw new Error('Sign in as yourself to record an attributed interview.');
+  if (!window.ravenInterviewEmbed && (!state.auth?.enabled || !state.me?.id || !['session', 'token'].includes(state.me.kind))) throw new Error('Sign in as yourself to record an attributed interview.');
   const base = `/api/tasks/${encodeURIComponent(task)}/interviews`;
   const existing = await interviewRequest(base);
   if (generation !== interviewGeneration) return;
@@ -303,7 +303,7 @@ async function openInterview(task, decision) {
 // The next call on the same task that waits on this person: one call covers
 // them all, the way a colleague would ask everything at once.
 function interviewNextDecision(session) {
-  if (window.ravenInterviewBridge || typeof taskStory !== 'function') return null;
+  if (window.ravenInterviewEmbed || typeof taskStory !== 'function') return null;
   const run = (state.runs || []).find(r => r.id === session.row.task_id);
   if (!run) return null;
   const me = interviewUser()?.name || '';

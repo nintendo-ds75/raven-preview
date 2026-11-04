@@ -5,9 +5,9 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from bridge.config import Config
-from bridge.execution import ExecutionService
-from bridge.store import Invalid, Store
+from raven.config import Config
+from raven.execution import ExecutionService
+from raven.store import Invalid, Store
 
 OFFLINE = Config(model_api="none")
 
@@ -327,7 +327,7 @@ class ManagedCanvasTests(unittest.TestCase):
         self.assertIn("task_started", kinds)
 
     def test_a_question_is_a_node_through_the_ladder_and_a_signature_delivers_it(self):
-        from bridge import canvas
+        from raven import canvas
         run = self.launch()
         question = self.question(run)
         node = canvas.node_view(self.store, question["id"])
@@ -374,7 +374,7 @@ class ManagedCanvasTests(unittest.TestCase):
 
     def test_a_configured_checkout_is_packaged_from_what_git_tracks(self):
         import subprocess
-        from bridge.execution import checkout_config, parse_repositories
+        from raven.execution import checkout_config, parse_repositories
         root = Path(self.temp.name) / "checkout"
         root.mkdir()
         env = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_AUTHOR_NAME": "a", "GIT_AUTHOR_EMAIL": "a@x", "GIT_COMMITTER_NAME": "a",

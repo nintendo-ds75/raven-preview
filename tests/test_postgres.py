@@ -1,6 +1,6 @@
 """Run the existing behavior contracts against a real PostgreSQL server.
 
-Opt in with BRIDGE_TEST_POSTGRES=1 and DATABASE_URL. Every SQLite filename
+Opt in with RAVEN_TEST_POSTGRES=1 and DATABASE_URL. Every SQLite filename
 requested by a test is mapped to a unique temporary PG schema, including
 reopens and concurrent connections. Only those test schemas are removed.
 """
@@ -13,14 +13,14 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from bridge import database
-from bridge.store import Store
+from raven import database
+from raven.store import Store
 
 
 class PostgresIsolation:
     def warm_store(self, fixture, name=""):
         from fixtures import BUILDERS
-        from bridge.ingest import index_repo
+        from raven.ingest import index_repo
         store = Store(Path(self.temp.name) / (name or f"{fixture}.db"))
         index_repo(store.graph, BUILDERS[fixture]())
         return store
@@ -46,7 +46,7 @@ class PostgresIsolation:
                 key = str(Path(target).resolve())
                 with lock:
                     if key not in targets:
-                        schema = "bridge_test_" + uuid.uuid4().hex
+                        schema = "raven_test_" + uuid.uuid4().hex
                         admin.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
                         schemas.append(schema)
                         parts = urlsplit(base)
@@ -76,7 +76,7 @@ class PostgresIsolation:
 class PostgresSpecific(PostgresIsolation, unittest.TestCase):
     def setUp(self):
         super().setUp()
-        self.store = Store("/tmp/bridge-pg-test.db")
+        self.store = Store("/tmp/raven-pg-test.db")
 
     def test_seed_restart_and_fulltext(self):
         self.store.seed()
@@ -117,7 +117,7 @@ class PostgresSpecific(PostgresIsolation, unittest.TestCase):
 
     def test_import_preserves_history_and_refuses_nonempty_destination(self):
         import tempfile
-        from bridge.import_sqlite import import_database
+        from raven.import_sqlite import import_database
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "existing.db"
             with patch.object(Store, "__init__", self.sqlite_init):
@@ -141,8 +141,8 @@ class PostgresSpecific(PostgresIsolation, unittest.TestCase):
                 import_database(path, self.store.path)
 
     def test_late_lower_id_commit_on_same_decision_invalidates_read_receipt(self):
-        from bridge import canvas
-        from bridge.mcp import call_tool
+        from raven import canvas
+        from raven.mcp import call_tool
         graph = self.store.graph
         graph.add_person('Receipt Owner')
         task = self.store.add_run({'title': 'Concurrent read receipt', 'repo': 'receipt/test'})['id']
@@ -157,7 +157,7 @@ class PostgresSpecific(PostgresIsolation, unittest.TestCase):
                 'VALUES(%s,%s,%s,%s,%s) RETURNING id',
                 (node, task, 'answer_corrected', '{}', '2026-10-06T10:00:00+00:00')).fetchone()[0]
             graph.append_event('answer_corrected', {'task_id': task, 'decision_id': node})
-            seen = call_tool(self.store, 'bridge_get_tree', {'task_id': task})['observed_revision'][node]
+            seen = call_tool(self.store, 'raven_get_tree', {'task_id': task})['observed_revision'][node]
             self.assertGreater(seen['max_event_id'], low_id)
             lower.raw.commit()
         current = canvas.human_revisions(self.store, task)[node]
@@ -167,7 +167,7 @@ class PostgresSpecific(PostgresIsolation, unittest.TestCase):
 
 
 def load_tests(loader, tests, pattern):
-    if os.environ.get("BRIDGE_TEST_POSTGRES") != "1":
+    if os.environ.get("RAVEN_TEST_POSTGRES") != "1":
         return unittest.TestSuite()
     suite = loader.loadTestsFromTestCase(PostgresSpecific)
     # Advertised host guidance and its actual decision/finish boundaries use

@@ -7,9 +7,9 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase
-from bridge import artifacts, auth, inquiry, mcp, meeting_learn, muse, people_context, pr_summary, voice
-from bridge.config import Config
-from bridge.store import Invalid
+from raven import artifacts, auth, inquiry, mcp, meeting_learn, muse, people_context, pr_summary, voice
+from raven.config import Config
+from raven.store import Invalid
 
 REPO = 'acme/app'
 
@@ -150,8 +150,8 @@ class Summary(OfflineCase):
         self.assertEqual((item['kind'], item['confirmed_by']), ('cache', 'Marcus Lee'))
 
     def test_over_mcp_and_one_line_per_node(self):
-        self.assertIn('bridge_pr_summary', mcp.READ_ONLY_TOOLS)
-        out = mcp.call_tool(self.store, 'bridge_pr_summary', {'task_id': self.task})
+        self.assertIn('raven_pr_summary', mcp.READ_ONLY_TOOLS)
+        out = mcp.call_tool(self.store, 'raven_pr_summary', {'task_id': self.task})
         self.assertIn('## Decisions behind this change', out['markdown'])
         self.assertTrue(pr_summary.node_line(self.store, self.cached).startswith('Answered from memory: Marcus Lee'))
         self.assertEqual(pr_summary.node_line(self.store, self.open), 'Asking Priya Shah.')
@@ -183,7 +183,7 @@ class Questions(OfflineCase):
         store = self.fresh_store('q.db')
         self.addCleanup(store.graph.close)
         with self.assertRaises(Invalid):
-            mcp.call_tool(store, 'bridge_start_task', {'title': 'Explain why the job runner retries',
+            mcp.call_tool(store, 'raven_start_task', {'title': 'Explain why the job runner retries',
                                                        'goal': 'Why does the job runner retry twice?', 'repo': REPO})
 
     def test_sound_tags_are_not_speech(self):
@@ -205,7 +205,7 @@ class Meetings(OfflineCase):
              'quote': 'at our negotiated rate, not list price', 'topic': 'current'},
             {'person': 'Priya Shah', 'text': 'Invented.', 'quote': 'words nobody said', 'topic': 'other'},
             {'person': 'Dana', 'text': 'A customer is not a teammate.', 'quote': 'bulk buying', 'topic': 'other'}]}
-        with patch('bridge.llm.Client', FakeClient), patch.object(Config, 'has_backend', return_value=True):
+        with patch('raven.llm.Client', FakeClient), patch.object(Config, 'has_backend', return_value=True):
             out = meeting_learn.import_and_learn(self.store, {'repo': REPO, 'title': 'Bloom check-in', 'transcript':
                 'Dana (Bloom): The big thing is bulk buying.\nDana (Bloom): Yes, at our negotiated rate, not list price.\n'
                 'Priya Shah: We will carry the negotiated rate over.'}, cfg=Config(model_api='claude-cli'))
@@ -240,7 +240,7 @@ class ActingUser(OfflineCase):
 
     def test_a_task_started_over_mcp_is_requested_by_them(self):
         self.store.update_settings({'act_as': self.maya})
-        out = mcp.call_tool(self.store, 'bridge_start_task', {'title': 'Bulk labels', 'goal': 'Let merchants buy labels in bulk.',
+        out = mcp.call_tool(self.store, 'raven_start_task', {'title': 'Bulk labels', 'goal': 'Let merchants buy labels in bulk.',
                                                               'repo': REPO, 'agent': 'Claude Code'})
         self.assertEqual(self.store.graph.get_task(out['task_id'])['requester'], 'Maya Chen')
 

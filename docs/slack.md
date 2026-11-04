@@ -19,7 +19,7 @@ Start the instance first with `./setup --workspace "Your team"`, then give it a 
 1. Create a Slack app for your workspace using [slack-manifest.json](slack-manifest.json). Replace the example request URL with `https://your-raven-host/webhooks/slack` before saving it. That URL must be reachable by Slack. A local-only `localhost` URL will not receive replies; use an HTTPS deployment or a tunnel you control.
 2. Install the app. Save its Bot User OAuth Token and Signing Secret through `./setup --configure`. The bot needs `chat:write`, `im:write`, `im:history`, `channels:history`, `users:read`, `users:read.email`, `app_mentions:read`, `assistant:write`, and `search:read.public`. The manifest enables the agent view and a writable Messages tab. Reinstall after changing scopes. These are bot scopes, not a token that impersonates you.
 3. Create or choose a public workspace channel for questions Raven cannot route. Invite the bot and set its channel ID as `SLACK_FALLBACK_CHANNEL`. Pick a channel whose membership may see the task context. Raven does not join channels automatically.
-4. Set `BRIDGE_PUBLIC_URL` to the instance's external HTTPS URL. Enable Events API subscriptions to `message.im`, `message.channels`, and `app_mention`. Slack verifies the request URL; Raven validates each event's signing secret.
+4. Set `RAVEN_PUBLIC_URL` to the instance's external HTTPS URL. Enable Events API subscriptions to `message.im`, `message.channels`, and `app_mention`. Slack verifies the request URL; Raven validates each event's signing secret.
 5. Start with `./setup --workspace "Your team" --configure`. The workspace and limited MCP credential can be created without a browser account. Connect your host agent using the wizard. Keep the Raven service running so it can receive replies while an agent waits.
 
 For a local Docker instance, the admin credential is available through `./dev login`; it is for the operator, not the agent. The setup wizard configures agents with the separate limited credential. For a shared deployment, use the authentication guidance in [DOCKER.md](../DOCKER.md).
@@ -28,7 +28,7 @@ For a local Docker instance, the admin credential is available through `./dev lo
 
 Raven imports active full members through Slack's paginated directory API when the delivery worker starts and every 15 minutes. A newly mentioned person is looked up when the referral arrives. Directory entries are contacts, not browser accounts, and Slack workspace admins do not automatically become Raven admins. Existing identities are linked by Slack ID or exact email, never by a name alone.
 
-Connect GitHub or ingest a local clone for CODEOWNERS, commits, blame, and review history. The host agent can also call `bridge_import_record` with a ticket or document it retrieved through its own connected tools. Include the original author, status, permalink, and related paths. A matched record's author can be an inferred first contact. Imported text is evidence, never signoff.
+Connect GitHub or ingest a local clone for CODEOWNERS, commits, blame, and review history. The host agent can also call `raven_import_record` with a ticket or document it retrieved through its own connected tools. Include the original author, status, permalink, and related paths. A matched record's author can be an inferred first contact. Imported text is evidence, never signoff.
 
 Raven captures `record: <decision text>` in channels the bot can already see;
 `remember: <decision text>` works the same way, as does either prefix after
@@ -93,7 +93,7 @@ manifest does not request (see that page).
 
 ## Natural conversations and live search
 
-Configure your inference backend in `./setup --configure`. Docker uses your Anthropic API key with `BRIDGE_MODEL_API=anthropic`. A local installation can use `BRIDGE_MODEL_API=claude-cli`. Without a backend, command shortcuts still work but Raven cannot converse about arbitrary questions.
+Configure your inference backend in `./setup --configure`. Docker uses your Anthropic API key with `RAVEN_MODEL_API=anthropic`. A local installation can use `RAVEN_MODEL_API=claude-cli`. Without a backend, command shortcuts still work but Raven cannot converse about arbitrary questions.
 
 The app belongs to the customer workspace and speaks as Raven. It does not use anyone’s personal Slack account. Its inference request includes the task, evidence, relevant task notes and recent messages in that person’s conversation. The CLI inference adapter has no coding tools or MCP servers and does not save model sessions.
 
@@ -121,9 +121,9 @@ Reply `context: <note>` to put context directly on the task for the coding agent
 
 If no contact matches the available evidence, Raven posts the question in the triage channel. Reply `I'll take this` or `ask @person`. This assigns the question only. The chosen person then answers or signs off; claiming it does not approve it or create broad authority.
 
-The host calls `bridge_wait` and reads the answer through `bridge_get_tree`. It can continue independent work while it waits. `bridge_finish_task` refuses outstanding required answers and signatures. Evidence reuse still requires a signature unless an explicitly enabled, matching standing rule covers it.
+The host calls `raven_wait` and reads the answer through `raven_get_tree`. It can continue independent work while it waits. `raven_finish_task` refuses outstanding required answers and signatures. Evidence reuse still requires a signature unless an explicitly enabled, matching standing rule covers it.
 
-Task notes are always in `bridge_get_tree.notes`. A wait returns notes added while it is running; pass the previous `observed_at` as `since` to also receive notes that arrived between calls. A wait without `since` does not replay existing notes. On an ordinary timeout, the guidance says “no new decision or forwarded task note is observable” and “this does not prove that nobody replied privately.” That is a generic visibility boundary, not a report about any particular private conversation.
+Task notes are always in `raven_get_tree.notes`. A wait returns notes added while it is running; pass the previous `observed_at` as `since` to also receive notes that arrived between calls. A wait without `since` does not replay existing notes. On an ordinary timeout, the guidance says “no new decision or forwarded task note is observable” and “this does not prove that nobody replied privately.” That is a generic visibility boundary, not a report about any particular private conversation.
 
 ### Complete authored answers and corrections
 
@@ -139,9 +139,9 @@ A complete replacement can correct an assumed or unsigned proposal. The ordinary
 
 ## Check it from your host agent
 
-Ask the agent to call `bridge_connection_status`. It reports contact-sync errors, missing Slack configuration, the triage channel, and failed notifications. Node creation returns notification state, so an agent can distinguish “queued” from “sent” and “failed.” A successful MCP write alone is not proof that a message reached Slack.
+Ask the agent to call `raven_connection_status`. It reports contact-sync errors, missing Slack configuration, the triage channel, and failed notifications. Node creation returns notification state, so an agent can distinguish “queued” from “sent” and “failed.” A successful MCP write alone is not proof that a message reached Slack.
 
-An operator can refresh contacts with `POST /api/slack/sync` or Settings. Slack callbacks are acknowledged before inference runs. Incoming messages and replies use durable queues; messages in a conversation are processed in order. Queued sends are retried. `bridge_connection_status` reports failed inbound events and replies as well as questions that could not be delivered. After a process dies, an in-flight event becomes retryable when its two-minute lease expires. A sync also retries messages that previously had no destination. Missing API scopes, ambiguous identities and unreachable people stay visible instead of silently dropping the question.
+An operator can refresh contacts with `POST /api/slack/sync` or Settings. Slack callbacks are acknowledged before inference runs. Incoming messages and replies use durable queues; messages in a conversation are processed in order. Queued sends are retried. `raven_connection_status` reports failed inbound events and replies as well as questions that could not be delivered. After a process dies, an in-flight event becomes retryable when its two-minute lease expires. A sync also retries messages that previously had no destination. Missing API scopes, ambiguous identities and unreachable people stay visible instead of silently dropping the question.
 
 Directory matching and inferred routing can still pick the wrong first person. The reply and referral loop is how Raven corrects this. You do not need to configure owners in advance, and inferred contact evidence does not grant that person permanent authority over unrelated questions.
 

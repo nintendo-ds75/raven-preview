@@ -2,7 +2,7 @@
 one typed reply, without a model."""
 import unittest
 
-from bridge.reply import split_reply
+from raven.reply import split_reply
 
 
 class SplitReplyTests(unittest.TestCase):

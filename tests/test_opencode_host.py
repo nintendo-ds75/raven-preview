@@ -9,23 +9,23 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from unittest.mock import patch
 
-from bridge import opencode_host as host
+from raven import opencode_host as host
 
 
 SPEC = {'name': 'read_file', 'description': 'read', 'input_schema': {'type': 'object'}}
 
 
-class BridgeTests(unittest.TestCase):
+class RavenTests(unittest.TestCase):
     def setUp(self):
         self.events = []
-        self.bridge = host.Bridge([SPEC], self.events.append)
-        self.bridge.session_id = 'ses_test'
+        self.relay = host.ToolRelay([SPEC], self.events.append)
+        self.relay.session_id = 'ses_test'
 
     def tearDown(self):
-        self.bridge.close()
+        self.relay.close()
 
     def test_http_requires_private_token(self):
-        request = Request(self.bridge.url, data=b'{}', headers={'Content-Type': 'application/json'})
+        request = Request(self.relay.url, data=b'{}', headers={'Content-Type': 'application/json'})
         with self.assertRaises(HTTPError) as error:
             urlopen(request)
         self.assertEqual(error.exception.code, 403)
@@ -37,21 +37,21 @@ class BridgeTests(unittest.TestCase):
         def emit(value):
             self.events.append(value)
             event.set()
-        self.bridge.emit = emit
-        worker = threading.Thread(target=lambda: results.append(self.bridge.call(args)))
+        self.relay.emit = emit
+        worker = threading.Thread(target=lambda: results.append(self.relay.call(args)))
         worker.start()
         self.assertTrue(event.wait(2))
         with self.assertRaisesRegex(ValueError, 'duplicate_pending'):
-            self.bridge.call(args)
-        self.bridge.deliver({'id': 'native-1', 'result': {'body': 'source'}})
+            self.relay.call(args)
+        self.relay.deliver({'id': 'native-1', 'result': {'body': 'source'}})
         worker.join(2)
         self.assertEqual(self.events[0]['call']['input'], {'path': 'a.py'})
         self.assertEqual(json.loads(results[0]['content'][0]['text']), {'body': 'source'})
         event.clear()
-        retry = threading.Thread(target=lambda: results.append(self.bridge.call(args)))
+        retry = threading.Thread(target=lambda: results.append(self.relay.call(args)))
         retry.start()
         self.assertTrue(event.wait(2))
-        self.bridge.deliver({'id': 'native-1', 'result': {'body': 'source'}})
+        self.relay.deliver({'id': 'native-1', 'result': {'body': 'source'}})
         retry.join(2)
         self.assertEqual(len(self.events), 2)
         self.assertEqual(self.events[0]['call'], self.events[1]['call'])
@@ -62,13 +62,13 @@ class BridgeTests(unittest.TestCase):
                               ({'session_id': 'ses_test'}, 'read_file'),
                               ({'session_id': 'ses_test', 'call_id': 'x'}, 'bash')]:
             with self.subTest(context=context, name=name), self.assertRaises(ValueError):
-                self.bridge.call({'name': name, 'arguments': {'_raven_context': context}})
+                self.relay.call({'name': name, 'arguments': {'_raven_context': context}})
         self.assertFalse(self.events)
 
     def test_stop_prevents_tools(self):
-        self.bridge.stopped.set()
+        self.relay.stopped.set()
         with self.assertRaises(ValueError):
-            self.bridge.call({'name': 'read_file', 'arguments': {'_raven_context': {'session_id': 'ses_test', 'call_id': 'x'}}})
+            self.relay.call({'name': 'read_file', 'arguments': {'_raven_context': {'session_id': 'ses_test', 'call_id': 'x'}}})
 
 
 class DriverTests(unittest.TestCase):
@@ -97,7 +97,7 @@ class DriverTests(unittest.TestCase):
         events = []
         home = Path(self.temp.name)
         class Server:
-            def __init__(self, config, bridge):
+            def __init__(self, config, relay):
                 self.home = home
             def ready(self):
                 pass

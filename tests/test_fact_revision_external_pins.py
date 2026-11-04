@@ -1,8 +1,8 @@
 """Exact approved-source coverage for retained external correction premises."""
 import unittest
 from test_fact_revision_boundaries import FactCorrectionBoundaryCase, REPO, QUESTION
-from bridge import context_memory as cm
-from bridge.fact_revisions import correct_node_facts
+from raven import context_memory as cm
+from raven.fact_revisions import correct_node_facts
 
 
 class RetainedExternalPinCorrectionTests(FactCorrectionBoundaryCase):

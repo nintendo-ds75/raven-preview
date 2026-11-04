@@ -9,10 +9,10 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase
-from bridge import intro, mcp, muse, people_context, voice
-from bridge.authz import Actor, Refused
-from bridge.config import Config
-from bridge.store import Invalid, Store
+from raven import intro, mcp, muse, people_context, voice
+from raven.authz import Actor, Refused
+from raven.config import Config
+from raven.store import Invalid, Store
 
 OFF = Config(model_api='none')
 ON = Config(model_api='claude-cli')
@@ -65,16 +65,16 @@ class People(OfflineCase):
 
     def test_agents_read_and_add_context_over_mcp(self):
         names = {t['name'] for t in mcp.TOOLS}
-        self.assertTrue({'bridge_ask_raven', 'bridge_person_context', 'bridge_find_people', 'bridge_remember',
-                         'bridge_raven_noticed'} <= names)
-        self.assertNotIn('bridge_remember', mcp.READ_ONLY_TOOLS)
-        kept = mcp.call_tool(self.store, 'bridge_remember', {'person': 'Sam Rivera', 'text': 'Sam needs SKU grouping.',
+        self.assertTrue({'raven_ask', 'raven_person_context', 'raven_find_people', 'raven_remember',
+                         'raven_noticed'} <= names)
+        self.assertNotIn('raven_remember', mcp.READ_ONLY_TOOLS)
+        kept = mcp.call_tool(self.store, 'raven_remember', {'person': 'Sam Rivera', 'text': 'Sam needs SKU grouping.',
                                                              'quote': 'group them by SKU'})
         self.assertEqual(kept['kept']['source'], 'via an agent')
-        page = mcp.call_tool(self.store, 'bridge_person_context', {'person': 'sam@example.test'})
+        page = mcp.call_tool(self.store, 'raven_person_context', {'person': 'sam@example.test'})
         self.assertEqual(page['timeline'][0]['quote'], 'group them by SKU')
         with self.assertRaises(Invalid):
-            mcp.call_tool(self.store, 'bridge_person_context', {'person': 'Nobody Here'})
+            mcp.call_tool(self.store, 'raven_person_context', {'person': 'Nobody Here'})
 
 
 class Voice(unittest.TestCase):
@@ -114,7 +114,7 @@ class Voice(unittest.TestCase):
 
 class Turns(OfflineCase):
     def test_a_slow_model_turn_falls_back_to_the_plan(self):
-        with patch.dict(os.environ, {'BRIDGE_INTRO_TURN_SECONDS': '1'}):
+        with patch.dict(os.environ, {'RAVEN_INTRO_TURN_SECONDS': '1'}):
             started = time.monotonic()
             self.assertIsNone(intro._within(intro._turn_seconds(), lambda: time.sleep(3)))
             self.assertLess(time.monotonic() - started, 2.5)
@@ -169,7 +169,7 @@ class Noticed(OfflineCase):
             {'kind': 'bug', 'title': 'No files', 'body': 'Claims code without reading it.',
              'cites': [{'id': 'n:' + note['id'], 'quote': 'grouped by SKU'}], 'paths': ['made/up.py']},
         ]}
-        with patch('bridge.llm.Client', FakeClient), patch.object(Config, 'has_backend', return_value=True):
+        with patch('raven.llm.Client', FakeClient), patch.object(Config, 'has_backend', return_value=True):
             result = muse.run(self.store, ON)
         self.assertEqual([x['title'] for x in result['added']], ['Labels are not grouped by SKU'])
         found = result['added'][0]
@@ -177,7 +177,7 @@ class Noticed(OfflineCase):
         self.assertEqual(found['person']['name'], 'Sam Rivera')
         self.assertIn('app/labels/print.py', result['read']['files'])
         # The same finding is not raised twice while it is open.
-        with patch('bridge.llm.Client', FakeClient), patch.object(Config, 'has_backend', return_value=True):
+        with patch('raven.llm.Client', FakeClient), patch.object(Config, 'has_backend', return_value=True):
             self.assertEqual(muse.run(self.store, ON)['added'], [])
         self.assertEqual(muse.act(self.store, found['id'], 'dismiss')['status'], 'dismissed')
         self.assertEqual(muse.listing(self.store)['insights'], [])
@@ -186,14 +186,14 @@ class Noticed(OfflineCase):
 
 class CallWording(unittest.TestCase):
     def test_a_negotiated_rate_is_a_pricing_call(self):
-        from bridge.scopes import decision_scopes
+        from raven.scopes import decision_scopes
         self.assertIn('pricing', decision_scopes("Should bulk purchases use Bloom's negotiated rate?"))
         self.assertNotIn('pricing', decision_scopes('Should we raise the API rate limit?'))
 
     def test_the_call_opens_like_a_colleague_and_drops_the_asides(self):
         """Max, Nov 2: no parentheses on a call; the back and forth should
         sound like a person asking."""
-        from bridge.interview import _prompts, spoken_question
+        from raven.interview import _prompts, spoken_question
         self.assertEqual(spoken_question("On the Orders page, do we reuse the earlier selection design (checkbox per row, "
                                          "'select all on this page', 'select all N matching'), or build a new one?"),
                          'On the Orders page, do we reuse the earlier selection design, or build a new one?')
@@ -211,7 +211,7 @@ class CallWording(unittest.TestCase):
         self.assertTrue(prompts[-1].startswith('Last one.'))
 
     def test_spoken_questions_do_not_read_out_paths(self):
-        from bridge.interview import _prompts
+        from raven.interview import _prompts
         prompts = _prompts({'question': 'Which rate?', 'repo': 'acme/app', 'paths': ['app/labels/purchase.py'], 'path': ''})
         self.assertFalse(any('/' in p for p in prompts[1:]))
 

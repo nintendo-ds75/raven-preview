@@ -1,14 +1,14 @@
 # Correcting a node's current facts
 
-`bridge_add_node` retains its existing idempotency contract. An identical
+`raven_add_node` retains its existing idempotency contract. An identical
 `client_ref` returns the existing node. When a retry explicitly supplies changed
 facts, the response includes `facts_applied: false` and `facts_correction` with
 the supported repair tool and current revision. The repeated call changes
 neither the facts nor their decision result.
 
-Use `bridge_correct_node_facts` for an explicit pre-approval repair:
+Use `raven_correct_node_facts` for an explicit pre-approval repair:
 
-1. Read `bridge_get_decision(decision_id=...)` and review the current facts,
+1. Read `raven_get_decision(decision_id=...)` and review the current facts,
    evidence, and eligibility. Copy the opaque `fact_revision` exactly.
 2. Supply `task_id`, `node_id`, `expected_revision`, a task-unique
    `correction_ref`, the complete replacement `facts` snapshot, and `reason`.

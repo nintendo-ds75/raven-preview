@@ -5,12 +5,12 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import fixtures  # noqa: F401
-os.environ.update({'BRIDGE_MODEL_API': 'none', 'BRIDGE_SEMANTIC': '0', 'BRIDGE_LIVE': '0'})
-from bridge.auth import Auth
-from bridge import canvas, briefing
-from bridge.config import Config
-from bridge.server import make_server
-from bridge.store import Store
+os.environ.update({'RAVEN_MODEL_API': 'none', 'RAVEN_SEMANTIC': '0', 'RAVEN_LIVE': '0'})
+from raven.auth import Auth
+from raven import canvas, briefing
+from raven.config import Config
+from raven.server import make_server
+from raven.store import Store
 
 store = Store(sys.argv[1])
 store.graph.set_setting('workspace_name', 'Interview test workspace')

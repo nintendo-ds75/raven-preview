@@ -2,10 +2,10 @@
 import json
 
 from fixtures import OfflineCase
-from bridge import canvas, context_memory as cm, proof
-from bridge.config import Config
-from bridge.graph import rule_status
-from bridge.store import Invalid, Store
+from raven import canvas, context_memory as cm, proof
+from raven.config import Config
+from raven.graph import rule_status
+from raven.store import Invalid, Store
 
 REPO = 'synthetic/legacy-source'
 QUESTION = 'How many days should records remain?'
@@ -291,7 +291,7 @@ class LegacySourceReuseTests(OfflineCase):
         self.assertFalse(rule_status(self.g.get_decision(did), QUESTION)[0])
 
     def test_publication_rechecks_uncertainty_inside_the_rule_write_boundary(self):
-        from bridge.ladder import _as_record
+        from raven.ladder import _as_record
         did, _ = self.rule(source='human')
         selected = _as_record(self.g.get_decision(did))
         scratch = self.g.add_decision(self.task(), QUESTION, 'policy', 'pending', repo=REPO, owner='Ada Example')

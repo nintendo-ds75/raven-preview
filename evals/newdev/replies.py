@@ -14,7 +14,7 @@ every case that is not plainly a decision must end with nothing
 recorded.
 
     python3 -m evals.newdev.replies                 # deterministic only
-    BRIDGE_MODEL_API=claude-cli python3 -m evals.newdev.replies --semantic
+    RAVEN_MODEL_API=claude-cli python3 -m evals.newdev.replies --semantic
 
 Exits non-zero if any case behaves unsafely. The `--semantic` arm needs
 a model backend; without one the model column reads as the
@@ -74,21 +74,21 @@ def outcome(store, delivery, decision_id: str, before: dict, reply: str) -> str:
 
 
 def run(semantic: bool) -> list[dict]:
-    os.environ["BRIDGE_SEMANTIC"] = "1" if semantic else "0"
-    os.environ.setdefault("BRIDGE_LIVE", "0")
+    os.environ["RAVEN_SEMANTIC"] = "1" if semantic else "0"
+    os.environ.setdefault("RAVEN_LIVE", "0")
     if not semantic:
-        os.environ["BRIDGE_MODEL_API"] = "none"
+        os.environ["RAVEN_MODEL_API"] = "none"
     from fixtures import template_db  # noqa: E402
-    from bridge import canvas  # noqa: E402
-    from bridge.config import Config  # noqa: E402
-    from bridge.store import Store  # noqa: E402
+    from raven import canvas  # noqa: E402
+    from raven.config import Config  # noqa: E402
+    from raven.store import Store  # noqa: E402
     from tests.test_delivery import FakeSlack  # noqa: E402
 
     import shutil
     out = []
     template, _ = template_db("qemulike")
     for phrasing, want, why in CASES:
-        with tempfile.TemporaryDirectory(prefix="bridge-replies-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="raven-replies-") as tmp:
             db = Path(tmp) / "replies.db"
             shutil.copyfile(template, db)
             store = Store(db)

@@ -6,7 +6,7 @@ This directory records this run only. Earlier reviews are not acceptance evidenc
 
 - Original remote/default main: `ec5817d31d7a9be9fc8bdd2562b63806c6b11216`.
 - Updated runtime: local commit `485b495` (includes `2920d4a` and `f32c456`). Publication was not confirmed at this checkpoint.
-- `source-manifest.json`: SHA-256 `57e186a9686e03519c17fdea8fb5c4a9ee2373c89fd96a6bfa0c443f575a02b4`; hashes all 91 tracked runtime files under bridge/ and web/.
+- `source-manifest.json`: SHA-256 `57e186a9686e03519c17fdea8fb5c4a9ee2373c89fd96a6bfa0c443f575a02b4`; hashes all 91 tracked runtime files under raven/ and web/.
 - Runtime patch against original main: SHA-256 `2e103ea768851578220f170f3743fec3a683acafb21e85dbdd9e4512213826f9` (171565 bytes).
 - Current tests patch: SHA-256 `6c25f7f359bf62910b370551eb3124956d11caf3f2a84fe7712e64750c22a17b` (36243 bytes). Includes explicit opt-in legacy conversation fixtures and new PostgreSQL coverage.
 
@@ -14,7 +14,7 @@ This directory records this run only. Earlier reviews are not acceptance evidenc
 
 The existing Daytona sandbox was started with its original 15-minute auto-stop setting. Testing uses a new `/root/raven-customer-20261013` checkout, isolated Compose project `raven_customer_20261013`, and fresh project volumes. Existing projects and data were not overwritten. The approved free-credit testing window is two hours; the sandbox must be stopped afterward, not deleted.
 
-Docker server 28.3.3 runs. PostgreSQL 17-bookworm and the rebuilt updated Raven app are healthy. Runtime patch checksum was checked before applying, and all 91 runtime file hashes matched the manifest after transfer. Build used INSTALL_SEMANTIC=false and INSTALL_HOSTS=true. No semantic model weights or real provider credential were configured. The app uses BRIDGE_MODEL_API=none, authentication on, and a private Daytona preview. The login endpoint returned HTTP 200 with its configured public Host; an unrecognized localhost Host returned 403.
+Docker server 28.3.3 runs. PostgreSQL 17-bookworm and the rebuilt updated Raven app are healthy. Runtime patch checksum was checked before applying, and all 91 runtime file hashes matched the manifest after transfer. Build used INSTALL_SEMANTIC=false and INSTALL_HOSTS=true. No semantic model weights or real provider credential were configured. The app uses RAVEN_MODEL_API=none, authentication on, and a private Daytona preview. The login endpoint returned HTTP 200 with its configured public Host; an unrecognized localhost Host returned 403.
 
 The standard fresh Compose bootstrap created isolated development login files; their contents were not retrieved. No real customer or employee was contacted. Existing Slack connector delivery tests are simulated protocol tests, not real Slack delivery.
 

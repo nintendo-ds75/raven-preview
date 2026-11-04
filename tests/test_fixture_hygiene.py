@@ -126,7 +126,7 @@ class PseudonymTests(OfflineCase):
 
     def test_source_versions_and_search_survive_pseudonymization(self):
         import json
-        from bridge import context_memory as cm
+        from raven import context_memory as cm
         store = self.warm_store('qemulike')
         g = store.graph
         source = store.add_record({'repo': 'qemulike', 'kind': 'doc', 'ref': 'pseudonym-policy',
@@ -171,7 +171,7 @@ class PseudonymTests(OfflineCase):
         self.assertEqual(pseudonyms.person("GitHub", "noreply@github.com"), ("GitHub", "noreply@github.com", ""))
 
     def test_the_graph_keeps_no_ingested_name_and_routes_the_same(self):
-        from bridge.routing import route
+        from raven.routing import route
         store = self.warm_store("qemulike")
         g = store.graph
         question = "Should hw/riscv/virt.c add the imsics compatible string?"
@@ -201,8 +201,8 @@ class PseudonymTests(OfflineCase):
         """A CODEOWNERS entry is a bare login. Raven joins it to the person
         whose commits carry that login in a GitHub noreply address; the
         pseudonyms must move both sides of that join together."""
-        from bridge.ingest import index_repo
-        from bridge.routing import route
+        from raven.ingest import index_repo
+        from raven.routing import route
         repo = Path(self.temp.name) / "ownedco"
         (repo / "billing").mkdir(parents=True)
         run_git(repo, "init", "-q", "-b", "main")

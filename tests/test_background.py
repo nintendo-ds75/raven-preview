@@ -6,11 +6,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase
-from bridge.authz import Actor
-from bridge.config import Config
-from bridge.inquiry import _plain_route, ask
-from bridge.mcp import call_tool
-from bridge.store import Store
+from raven.authz import Actor
+from raven.config import Config
+from raven.inquiry import _plain_route, ask
+from raven.mcp import call_tool
+from raven.store import Store
 
 REPO = 'acme/app'
 
@@ -24,9 +24,9 @@ class BackgroundTests(OfflineCase):
                                   'repo': REPO, 'note': 'Label purchasing'})
 
     def answer(self, question, client_key):
-        task = call_tool(self.store, 'bridge_start_task', {'title': question, 'goal': question, 'repo': REPO,
+        task = call_tool(self.store, 'raven_start_task', {'title': question, 'goal': question, 'repo': REPO,
                                                            'client_key': client_key, 'paths': 'app/labels/purchase.py'})
-        node = call_tool(self.store, 'bridge_add_node', {'task_id': task['task_id'], 'question': question,
+        node = call_tool(self.store, 'raven_add_node', {'task_id': task['task_id'], 'question': question,
                                                          'paths': 'app/labels/', 'client_ref': client_key})
         return task['task_id'], node
 

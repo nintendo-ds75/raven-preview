@@ -11,17 +11,17 @@ import threading
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from bridge.auth import Auth
-from bridge.server import make_server
-from bridge.store import Store
+from raven.auth import Auth
+from raven.server import make_server
+from raven.store import Store
 
 
 def run(source, out):
-    os.environ.update(BRIDGE_MODEL_API="none", BRIDGE_SEMANTIC="0", BRIDGE_LIVE="0")
+    os.environ.update(RAVEN_MODEL_API="none", RAVEN_SEMANTIC="0", RAVEN_LIVE="0")
     out.mkdir(parents=True, exist_ok=True)
     if (out / "reuse.db").exists():
         raise RuntimeError("Choose a fresh output directory")
-    with sqlite3.connect(source / "bridge.db") as src, sqlite3.connect(out / "reuse.db") as dst:
+    with sqlite3.connect(source / "raven.db") as src, sqlite3.connect(out / "reuse.db") as dst:
         src.backup(dst)
     store = Store(out / "reuse.db")
     pid = store.graph.add_person("Fresh Replay Host", source="eval")
@@ -49,13 +49,13 @@ def run(source, out):
         routes = json.loads((source / "first-routes.json").read_text())
         nid = next(n for n, r in routes.items() if r["before_any_owner_reply"])
         original = store.get_decision(nid)
-        task = call("bridge_start_task", repo="grafana/grafana", client_key="fresh-host-memory-reuse",
+        task = call("raven_start_task", repo="grafana/grafana", client_key="fresh-host-memory-reuse",
                     title="Revisit restricted-user LIST continuation policy",
                     goal="Prepare another server-side LIST change while preserving the previously agreed pagination contract.",
                     paths=original["path"])["result"]
-        node = call("bridge_add_node", task_id=task["task_id"], client_ref="reuse-first-decision",
+        node = call("raven_add_node", task_id=task["task_id"], client_ref="reuse-first-decision",
                     question=routes[nid]["question"], context=routes[nid]["context"], paths=original["path"])["result"]
-        finish = call("bridge_finish_task", task_id=task["task_id"])
+        finish = call("raven_finish_task", task_id=task["task_id"])
         result = {"source_node": nid, "source_owner": original["owner_name"],
                   "source_answer": original["answer"], "reused_node": node,
                   "finish_refused": bool(finish.get("isError")),

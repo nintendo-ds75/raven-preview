@@ -10,7 +10,7 @@ from fixtures import OfflineCase, ready_server
 class RunAskHTTPTests(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.environment = patch.dict('os.environ', {'BRIDGE_MODEL_API': 'none', 'BRIDGE_SEMANTIC': '0', 'BRIDGE_LIVE': '0'})
+        self.environment = patch.dict('os.environ', {'RAVEN_MODEL_API': 'none', 'RAVEN_SEMANTIC': '0', 'RAVEN_LIVE': '0'})
         self.environment.start()
         self.addCleanup(self.environment.stop)
         self.store = self.fresh_store('run-ask-http.db')
@@ -26,7 +26,7 @@ class RunAskHTTPTests(OfflineCase):
 
     def request(self, method, path, data=None):
         connection = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=10)
-        headers = {'Content-Type': 'application/json', 'X-Bridge-CSRF': getattr(self, 'csrf', '')}
+        headers = {'Content-Type': 'application/json', 'X-Raven-CSRF': getattr(self, 'csrf', '')}
         try:
             connection.request(method, path, body=json.dumps(data) if data is not None else None, headers=headers)
             response = connection.getresponse()
@@ -101,7 +101,7 @@ class RunAskHTTPTests(OfflineCase):
         self.assertEqual(self.g.db.execute('SELECT COUNT(*) FROM executions').fetchone()[0], 0)
 
     def test_scope_clarification_is_a_blocker_not_a_created_question_and_explicit_retry_recovers(self):
-        from bridge.authz import Actor
+        from raven.authz import Actor
         question = 'How long should release audit records remain?'
         old = self.store.add_run({'title': 'Earlier scoped review', 'repo': self.repo})['id']
         prior = self.g.add_decision(old, question, 'policy', 'pending', repo=self.repo,

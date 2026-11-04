@@ -1,9 +1,9 @@
 """Evidence cards show pinned provenance and genuine quotes, not invented excerpts."""
 import json
 from fixtures import OfflineCase
-from bridge import objectives as obj, objective_head as head, canvas
-from bridge.auth import Identity
-from bridge.store import Invalid
+from raven import objectives as obj, objective_head as head, canvas
+from raven.auth import Identity
+from raven.store import Invalid
 
 
 class ObjectiveEvidenceTests(OfflineCase):

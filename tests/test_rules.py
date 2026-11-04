@@ -13,11 +13,11 @@ from urllib.request import Request, urlopen
 
 from fixtures import OfflineCase
 
-from bridge import canvas
-from bridge.config import Config
-from bridge.delivery import handle_slack_event
+from raven import canvas
+from raven.config import Config
+from raven.delivery import handle_slack_event
 from fixtures import ready_server as make_server
-from bridge.store import Invalid
+from raven.store import Invalid
 from test_delivery import FakeSlack
 
 CFG = Config(model_api="none")
@@ -33,7 +33,7 @@ class RuleCase(OfflineCase):
         # Exercise the supported opt-in conversational Slack workflow.
         self.graph.set_setting("slack_interaction_mode", "conversation")
         self.slack = FakeSlack()
-        self.delivery = self.store.connect_delivery(self.slack, base_url="https://bridge.acme.test")
+        self.delivery = self.store.connect_delivery(self.slack, base_url="https://raven.acme.test")
         self.store.add_owner({"name": "Priya Natarajan", "team": "Billing", "patterns": "billing/*"})
         with self.graph.transaction():
             self.priya = self.graph.add_person("Priya Natarajan", email="priya@acme.example", slack_id="UPRI")
@@ -116,7 +116,7 @@ class RuleTests(RuleCase):
         """Measured live on 5e967e4: the question asked about "the enterprise
         plan policy", the context said the customer is not on it, and the rule
         authorized because the question's own mention was not negated."""
-        from bridge.graph import phrase_denied
+        from raven.graph import phrase_denied
         source = self.signed_answer()
         self.rule(source, conditions="enterprise plan")
         mixed = canvas.add_node(self.store, CFG, {
@@ -302,7 +302,7 @@ class RuleChannelTests(RuleCase):
 
         def post(path, body):
             req = Request(url + path, data=json.dumps(body).encode(),
-                          headers={"Content-Type": "application/json", "X-Bridge-CSRF": csrf})
+                          headers={"Content-Type": "application/json", "X-Raven-CSRF": csrf})
             with urlopen(req) as resp:
                 return json.load(resp)
         ended = post(f"/api/decisions/{node['node_id']}/rule", {"end": True, "by": "Priya Natarajan",

@@ -6,8 +6,8 @@ Raven's own and cannot be imported."""
 import json
 
 from test_auth import BOOTSTRAP, SharedServer
-from bridge import mcp
-from bridge.store import Invalid
+from raven import mcp
+from raven.store import Invalid
 
 REPO = "acme/platform"
 
@@ -62,7 +62,7 @@ class RecordAttestationTests(SharedServer):
         self.assertEqual(self.stored(blank)[0]["author"], "Pat Member")
 
     def test_mcp_import_keeps_the_ticket_reporter_and_stamps_the_credential_behind_it(self):
-        result = self.mcp("bridge_import_record", self.body(kind="ticket", ref="PLAT-7", provider="jira",
+        result = self.mcp("raven_import_record", self.body(kind="ticket", ref="PLAT-7", provider="jira",
                                                              namespace="acme.atlassian.net", author="Rae Reporter"), self.pat_agent)
         self.assertFalse(result["isError"], result)
         source, scope = self.stored(result["result"])
@@ -72,9 +72,9 @@ class RecordAttestationTests(SharedServer):
         self.assertEqual((listed["author"], listed["attested_by"]), ("Rae Reporter", self.pat["id"]))
 
     def test_stdio_import_is_the_local_operator_and_in_process_writers_keep_the_source_author(self):
-        over_stdio = mcp.call_tool(self.store, "bridge_import_record", self.body(ref="paste:stdio"))
+        over_stdio = mcp.call_tool(self.store, "raven_import_record", self.body(ref="paste:stdio"))
         self.assertEqual(self.stored(over_stdio)[0]["author"], "Local operator")
-        named = mcp.call_tool(self.store, "bridge_import_record", self.body(ref="paste:stdio-named", author="Rae Reporter"))
+        named = mcp.call_tool(self.store, "raven_import_record", self.body(ref="paste:stdio-named", author="Rae Reporter"))
         source, scope = self.stored(named)
         self.assertEqual((source["author"], scope["basis"], scope["transport"]), ("Rae Reporter", "author", "operator"))
         self.assertEqual(scope["attested_by"], scope["imported_by"])
@@ -85,11 +85,11 @@ class RecordAttestationTests(SharedServer):
     def test_session_records_cannot_be_imported(self):
         self.assertEqual(self.status_of("POST", "/api/records", self.body(kind="session"), token=self.pat_token), 400)
         self.assertEqual(self.status_of("POST", "/api/records", self.body(kind="conversation"), token=self.pat_token), 400)
-        refused = self.mcp("bridge_import_record", self.body(kind="session"), self.pat_agent)
+        refused = self.mcp("raven_import_record", self.body(kind="session"), self.pat_agent)
         self.assertTrue(refused["isError"])
         self.assertIn("written by Raven, not imported", refused["result"])
         with self.assertRaisesRegex(Invalid, "written by Raven"):
-            mcp.call_tool(self.store, "bridge_import_record", self.body(kind="session"))
+            mcp.call_tool(self.store, "raven_import_record", self.body(kind="session"))
         self.assertEqual(self.store.graph.db.execute("SELECT count(*) c FROM intents WHERE kind IN ('session','conversation')").fetchone()["c"], 0)
 
     def test_viewer_and_agent_credentials_cannot_paste_evidence(self):

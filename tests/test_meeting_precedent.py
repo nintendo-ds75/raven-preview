@@ -10,10 +10,10 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase  # noqa: E402
 
-from bridge import attention, canvas, meeting_precedent, meeting_records as mr, people_context, timeline  # noqa: E402
-from bridge.authz import Actor  # noqa: E402
-from bridge.config import Config  # noqa: E402
-from bridge.llm import LLMError  # noqa: E402
+from raven import attention, canvas, meeting_precedent, meeting_records as mr, people_context, timeline  # noqa: E402
+from raven.authz import Actor  # noqa: E402
+from raven.config import Config  # noqa: E402
+from raven.llm import LLMError  # noqa: E402
 
 REPO = "qemulike"
 QUOTE = "Agreed. Northwind stays on their contract terms, no public rate for them until Noah clears it."
@@ -84,10 +84,10 @@ class MeetingCase(OfflineCase):
             if purpose != "meeting_precedent":
                 raise LLMError("offline")
             return reading(json.loads(prompt)) if callable(reading) else reading
-        patcher = patch("bridge.llm.Client.complete_json", autospec=True, side_effect=read)
+        patcher = patch("raven.llm.Client.complete_json", autospec=True, side_effect=read)
         mock = patcher.start()
         self.addCleanup(patcher.stop)
-        quiet = patch("bridge.canvas._start_background", lambda *a, **k: None)
+        quiet = patch("raven.canvas._start_background", lambda *a, **k: None)
         quiet.start()
         self.addCleanup(quiet.stop)
         return mock
@@ -132,8 +132,8 @@ class SettleTests(MeetingCase):
         # ("An earlier call this leaned on was replaced since") because the
         # legacy-provenance pass did not know a meeting as an origin and
         # withdrew Priya's standing, plus the assumption derived from it.
-        from bridge import context_memory as cm
-        from bridge.store import Store
+        from raven import context_memory as cm
+        from raven.store import Store
         self.learned()
         self.model(SETTLES)
         n = self.node(ModelOn(model_api="claude-cli"))
@@ -356,10 +356,10 @@ class DeciderTests(OfflineCase):
             if purpose != "meeting_precedent":
                 raise LLMError("offline")
             return reading(json.loads(prompt)) if callable(reading) else reading
-        patcher = patch("bridge.llm.Client.complete_json", autospec=True, side_effect=read)
+        patcher = patch("raven.llm.Client.complete_json", autospec=True, side_effect=read)
         mock = patcher.start()
         self.addCleanup(patcher.stop)
-        quiet = patch("bridge.canvas._start_background", lambda *a, **k: None)
+        quiet = patch("raven.canvas._start_background", lambda *a, **k: None)
         quiet.start()
         self.addCleanup(quiet.stop)
         return mock
@@ -386,7 +386,7 @@ class DeciderTests(OfflineCase):
         self.assertFalse(priya["needs_you"][0].get("guess"))
         marcus = attention.overview(self.store, Actor(id=self.marcus, name="Marcus Lee"))
         self.assertEqual(marcus["needs_you"], [])
-        from bridge.delivery import _found_for_owner
+        from raven.delivery import _found_for_owner
         self.assertIn(MARCUS_QUOTE, _found_for_owner(row["evidence"]))
         rows = timeline.rows(self.store, self.task)
         self.assertTrue(any(r["kind"] == "flagged" and "to Priya, who decides for pricing decisions" in r["text"] for r in rows), rows)
@@ -468,7 +468,7 @@ class DeciderTests(OfflineCase):
         self.assertFalse(item["guess"])
         self.assertEqual(item["why"], "Nothing on record settles this; Priya Shah said in the Oct 29 Assistant pricing sync "
                                       f"(founders): “{OPEN_QUOTE}”. You decide for pricing decisions.")
-        from bridge.delivery import _found_for_owner
+        from raven.delivery import _found_for_owner
         self.assertIn(OPEN_QUOTE, _found_for_owner(row["evidence"]))
         rows = timeline.rows(self.store, self.task)
         self.assertFalse(any(r["kind"] == "guess" for r in rows), rows)
@@ -547,7 +547,7 @@ class HelperTests(OfflineCase):
         self.assertEqual(meeting_precedent.carry_context("memory: nothing", "x"), "x")
         self.assertEqual(meeting_precedent.carry_context(before, ""), line)
         # Delivery shows it to the owner first, ahead of a record excerpt.
-        from bridge.delivery import _found_for_owner
+        from raven.delivery import _found_for_owner
         plain = "meeting: Marcus Lee said in the Oct 29 sync: “Nothing charges when the merchant asks”; Priya Shah decides pricing"
         self.assertEqual(_found_for_owner("memory: best match scored 0.32, under the 0.6 floor; records: retrieved pr 220: x; " + plain),
                          plain + "; records: retrieved pr 220: x")

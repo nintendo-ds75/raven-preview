@@ -3,7 +3,7 @@
 import re
 from unittest.mock import Mock, patch
 
-from bridge import context_memory as cm, graph as graph_mod, ladder, llm
+from raven import context_memory as cm, graph as graph_mod, ladder, llm
 import test_rule_candidates as fixtures
 from test_rule_candidates import ANSWER, CFG, FACTS, QUESTION, REPO
 
@@ -154,7 +154,7 @@ class ReservedGrantCandidateTests(fixtures.RuleCandidateFixture):
         unsigned = [self.note() for _ in range(40)]
         old = {node: self.raw(node) for node in [source, *unsigned]}
         for guard in (patch.object(self.graph, "source_review_reason", return_value="source changed"),
-                      patch("bridge.context_connectors.blocked_decisions", return_value={source})):
+                      patch("raven.context_connectors.blocked_decisions", return_value={source})):
             with guard:
                 self.assertIn(source, {row.id for _, row in self.candidates()})
                 result = self.ask()

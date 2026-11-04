@@ -23,10 +23,10 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
-from bridge import canvas, llm
-from bridge.auth import Auth
-from bridge.server import make_server
-from bridge.store import Store
+from raven import canvas, llm
+from raven.auth import Auth
+from raven.server import make_server
+from raven.store import Store
 from evals.claude_mcp_acceptance import exception_diagnostic
 from evals.live_workflow_acceptance import AcceptanceFailure
 
@@ -78,9 +78,9 @@ class ReasoningFixture:
         self.server = self.store = None
         self.bootstrap = 'synthetic-bootstrap-' + secrets.token_hex(16)
         clean = {k: v for k, v in os.environ.items() if k in ('PATH', 'LANG', 'HOME')}
-        clean.update(BRIDGE_ADMIN_TOKEN=self.bootstrap, BRIDGE_SECRET=secrets.token_hex(32),
-                     BRIDGE_MODEL_API='anthropic', BRIDGE_MODEL=MODEL, BRIDGE_FAST_MODEL=MODEL,
-                     BRIDGE_SEMANTIC='0', BRIDGE_DEEP='0', BRIDGE_LIVE='0', BRIDGE_EMBEDDINGS='disabled',
+        clean.update(RAVEN_ADMIN_TOKEN=self.bootstrap, RAVEN_SECRET=secrets.token_hex(32),
+                     RAVEN_MODEL_API='anthropic', RAVEN_MODEL=MODEL, RAVEN_FAST_MODEL=MODEL,
+                     RAVEN_SEMANTIC='0', RAVEN_DEEP='0', RAVEN_LIVE='0', RAVEN_EMBEDDINGS='disabled',
                      ANTHROPIC_API_KEY=gateway.placeholder if gateway else 'offline-model-double')
         self.stack.enter_context(patch.dict(os.environ, clean, clear=True))
         if gateway is not None:
@@ -88,9 +88,9 @@ class ReasoningFixture:
                 remaining = self.remaining()
                 kwargs['timeout'] = min(float(kwargs.get('timeout', 120)), remaining)
                 return gateway.urllib_open(request, *args, **kwargs)
-            self.stack.enter_context(patch('bridge.llm._open_model_request', new=bounded_transport))
+            self.stack.enter_context(patch('raven.llm._open_model_request', new=bounded_transport))
         else:
-            self.stack.enter_context(patch('bridge.llm._open_model_request', side_effect=AssertionError('No live transport')))
+            self.stack.enter_context(patch('raven.llm._open_model_request', side_effect=AssertionError('No live transport')))
         original = llm.Client.complete
         def observe(client, purpose, system, prompt, *args, **kwargs):
             self.remaining()
@@ -168,12 +168,12 @@ class ReasoningFixture:
         return json.loads(envelope['content'][0]['text'])
 
     def full(self, node):
-        return self.tool('bridge_get_decision', decision_id=node, detail='full')
+        return self.tool('raven_get_decision', decision_id=node, detail='full')
 
     def wait_ready(self, task, node=None):
         while time.monotonic() < self.deadline:
             require(not usage(self.gateway).get('halted'), 'provider_halted')
-            tree = self.tool('bridge_get_tree', task_id=task)
+            tree = self.tool('raven_get_tree', task_id=task)
             if not tree.get('model_pending'):
                 if node is None:
                     return tree
@@ -186,12 +186,12 @@ class ReasoningFixture:
     @contextmanager
     def inference(self, stage):
         self.stage = stage
-        with patch.dict(os.environ, {'BRIDGE_SEMANTIC': '1'}):
+        with patch.dict(os.environ, {'RAVEN_SEMANTIC': '1'}):
             yield
             require(canvas.wait_for_background(self.remaining()), 'background_not_quiescent')
 
     def import_record(self, ref, body, author, *, kind='doc', resolved=False, **extra):
-        return self.tool('bridge_import_record', repo=self.repo, kind=kind, ref=ref, title=extra.pop('title', ref),
+        return self.tool('raven_import_record', repo=self.repo, kind=kind, ref=ref, title=extra.pop('title', ref),
                          body=body, author=author, status='Approved' if resolved else 'Open', resolved=resolved,
                          paths=[self.path], **extra)
 
@@ -199,20 +199,20 @@ class ReasoningFixture:
         current_facts = dict(FACTS if facts is None else facts)
         if work_item:
             current_facts['work_item'] = key
-        task = self.tool('bridge_start_task', title=question, goal=question, repo=self.repo,
+        task = self.tool('raven_start_task', title=question, goal=question, repo=self.repo,
                          paths=self.path, facts=json.dumps(current_facts), client_key=key)['task_id']
         if work_item:
             source = self.import_record(key, question + ' No policy answer has been recorded for this request.',
                 '', kind='jira', provider='jira', namespace='synthetic-north', external_id=key)['source']
-            self.tool('bridge_get_record', repo=self.repo, record_id=source['record_id'])
-            self.tool('bridge_link_work_item', task_id=task, repo=self.repo,
+            self.tool('raven_get_record', repo=self.repo, record_id=source['record_id'])
+            self.tool('raven_link_work_item', task_id=task, repo=self.repo,
                 record_id=source['record_id'], source_version_id=source['source_version_id'], provider=source['provider'],
                 namespace=source['namespace'], object_kind=source['kind'], external_id=source['external_id'], role='work_item')
         self.wait_ready(task)
         return task
 
     def node(self, task, question):
-        row = self.tool('bridge_add_node', task_id=task, question=question, paths=self.path,
+        row = self.tool('raven_add_node', task_id=task, question=question, paths=self.path,
                         category='policy', client_ref='policy-question')
         return self.wait_ready(task, row['node_id'])
 
@@ -272,8 +272,8 @@ def build_owner_history(fixture):
         'GIT_COMMITTER_NAME': PEOPLE[1], 'GIT_COMMITTER_EMAIL': 'bela.stone@synthetic.invalid'})
     # The supported operator CLI performs installation ingestion. An authenticated
     # agent token intentionally cannot read arbitrary server-side checkout paths.
-    subprocess.run([sys.executable, '-m', 'bridge', 'ingest', str(checkout), '--db', str(fixture.root / 'raven.db'),
-                    '--repo', fixture.repo], env={**os.environ, 'BRIDGE_MODEL_API': 'none', 'BRIDGE_SEMANTIC': '0'},
+    subprocess.run([sys.executable, '-m', 'raven', 'ingest', str(checkout), '--db', str(fixture.root / 'raven.db'),
+                    '--repo', fixture.repo], env={**os.environ, 'RAVEN_MODEL_API': 'none', 'RAVEN_SEMANTIC': '0'},
                    capture_output=True, check=True, timeout=30)
     for ref, author, title, body in (
         ('INVESTIGATION-1', PEOPLE[2], 'Internal batch invoiced usage compatibility review',

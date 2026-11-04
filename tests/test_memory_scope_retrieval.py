@@ -7,7 +7,7 @@ import json
 from unittest.mock import Mock, patch
 
 from fixtures import OfflineCase
-from bridge import graph as graph_mod, llm
+from raven import graph as graph_mod, llm
 
 REPO = 'synthetic/solaris'
 OTHER_REPO = 'other/solaris'

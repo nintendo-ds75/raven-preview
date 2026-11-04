@@ -22,9 +22,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bridge import graph as graph_mod  # noqa: E402
-from bridge.llm import embed  # noqa: E402
-from bridge.store import Store  # noqa: E402
+from raven import graph as graph_mod  # noqa: E402
+from raven.llm import embed  # noqa: E402
+from raven.store import Store  # noqa: E402
 
 AREAS = ["billing", "pricing", "auth", "metering", "exports", "invoices", "refunds", "quota", "tiers", "webhooks",
          "retention", "rollout", "schema", "alerts", "onboarding", "partners", "contracts", "credits", "tax", "audit"]

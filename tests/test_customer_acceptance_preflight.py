@@ -95,7 +95,7 @@ class CustomerAcceptancePreflightTests(unittest.TestCase):
         env = preflight.fixture_environment(NamesOnlyCredentials(), Path('/fixture/home'))
         self.assertEqual(env['PATH'], '/usr/bin:/bin')
         self.assertEqual(env['HOME'], '/fixture/home')
-        self.assertEqual(env['BRIDGE_MODEL_API'], 'none')
+        self.assertEqual(env['RAVEN_MODEL_API'], 'none')
         self.assertEqual(env['PYTHONHASHSEED'], '0')
         self.assertEqual(env['PYTHONPATH'], str(ROOT / 'tests') + preflight.os.pathsep + str(ROOT))
         self.assertFalse(any(marker in name.upper() for name in env
@@ -188,7 +188,7 @@ class CustomerAcceptancePreflightTests(unittest.TestCase):
                 '    def test_ok(self):\n'
                 '        self.assertNotIn("ANTHROPIC_API_KEY", os.environ)\n'
                 '        self.assertNotIn("CLAUDE_CODE_OAUTH_TOKEN", os.environ)\n'
-                '        self.assertEqual(os.environ["BRIDGE_MODEL_API"], "none")\n')
+                '        self.assertEqual(os.environ["RAVEN_MODEL_API"], "none")\n')
             checks = (preflight.Check('pass', 'Fixture', ('test_probe.Probe',)),
                       preflight.Check('missing', 'Fixture', ('test_nonexistent_preflight_module',)))
             report = preflight.run_preflight(checks, root=root, environ=NamesOnlyCredentials())

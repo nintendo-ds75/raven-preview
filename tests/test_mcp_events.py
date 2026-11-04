@@ -7,9 +7,9 @@ import time
 from unittest.mock import patch
 
 from fixtures import OfflineCase
-from bridge import mcp_events as events
-from bridge.auth import Auth
-from bridge.store import Invalid
+from raven import mcp_events as events
+from raven.auth import Auth
+from raven.store import Invalid
 from test_auth import SharedServer, BOOTSTRAP
 
 
@@ -149,7 +149,7 @@ class EventHTTPTests(SharedServer):
         super().setUp()
         person = self.post('/api/people', {'name': 'Ari Example'}, token=BOOTSTRAP)
         self.token = self.post('/api/tokens', {'person_id': person['id']}, token=BOOTSTRAP)['token']
-        self.task = self.mcp('bridge_start_task', {'title': 'Bound retries', 'repo': 'example/service'}, self.token)['result']['task_id']
+        self.task = self.mcp('raven_start_task', {'title': 'Bound retries', 'repo': 'example/service'}, self.token)['result']['task_id']
 
     def rpc(self, method, params):
         return self.post('/mcp', {'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params}, token=self.token)
@@ -165,17 +165,17 @@ class EventHTTPTests(SharedServer):
             self.assertEqual(result['cacheScope'], 'private')
             self.assertIn('io.modelcontextprotocol/serverInfo', result['_meta'])
             if method == 'tools/list':
-                self.assertIn('bridge_get_tree', [t['name'] for t in result['tools']])
+                self.assertIn('raven_get_tree', [t['name'] for t in result['tools']])
             if method == 'server/discover':
                 self.assertTrue(result['instructions'])
         for task, failed in ((self.task, False), ('missing-task', True)):
-            result = self.rpc('tools/call', {'_meta': meta, 'name': 'bridge_get_tree',
+            result = self.rpc('tools/call', {'_meta': meta, 'name': 'raven_get_tree',
                                            'arguments': {'task_id': task}})['result']
             self.assertEqual(result['resultType'], 'complete')
             self.assertEqual(result['isError'], failed)
             self.assertTrue(result['content'])
         self.assertNotIn('resultType', self.rpc('tools/list', {})['result'])
-        self.assertNotIn('resultType', self.rpc('tools/call', {'name': 'bridge_get_tree',
+        self.assertNotIn('resultType', self.rpc('tools/call', {'name': 'raven_get_tree',
                          'arguments': {'task_id': self.task}})['result'])
 
     def test_discover_subscribe_callback_and_unsubscribe_over_authenticated_http(self):
@@ -191,7 +191,7 @@ class EventHTTPTests(SharedServer):
         params = {'name': events.NAME, 'arguments': {'task_id': self.task}, 'delivery': {
             'mode': 'webhook', 'url': 'https://receiver.example/events',
             'secret': 'whsec_' + base64.b64encode(b'h' * 32).decode()}}
-        with patch('bridge.mcp_events.post', side_effect=receiver):
+        with patch('raven.mcp_events.post', side_effect=receiver):
             result = self.rpc('events/subscribe', params)['result']
             self.store.graph.append_event('discovery_reviewed', {'task_id': self.task})
             self.assertEqual(events.deliver(self.store), 1)
@@ -205,7 +205,7 @@ class EventHTTPTests(SharedServer):
         params = {'name': events.NAME, 'arguments': {'task_id': self.task}, 'delivery': {
             'mode': 'webhook', 'url': 'https://receiver.example/events',
             'secret': 'whsec_' + base64.b64encode(b'h' * 32).decode()}}
-        with patch('bridge.mcp_events.post', return_value=(200, b'{"challenge":"wrong"}')):
+        with patch('raven.mcp_events.post', return_value=(200, b'{"challenge":"wrong"}')):
             result = self.rpc('events/subscribe', params)
         self.assertEqual(result['error']['code'], -32015)
         self.assertEqual(result['error']['data']['reason'], 'challenge_failed')

@@ -3,10 +3,10 @@ import json
 import os
 from unittest.mock import patch
 
-from bridge import briefing, canvas
-from bridge.authz import Actor
-from bridge.config import Config
-from bridge.store import Invalid
+from raven import briefing, canvas
+from raven.authz import Actor
+from raven.config import Config
+from raven.store import Invalid
 from test_auth import BOOTSTRAP, SharedServer
 from test_delivery import DeliveryCase
 from test_security_isolation import DecisionCase
@@ -72,7 +72,7 @@ class CompletedCorrectionTests(DecisionCase):
 
 class HumanParticipationTests(DecisionCase):
     def test_human_context_and_interview_drafts_prevent_abandonment(self):
-        from bridge import interview
+        from raven import interview
         actor = Actor.person(self.alice, kind="session")
         for action in ("note", "interview"):
             node = self.decision(self.alice, title="Task with " + action)
@@ -125,7 +125,7 @@ class DelayedWorkerTests(DeliveryCase):
     def scheduled_node(self):
         task = self.task()
         pending = []
-        with patch.dict(os.environ, BRIDGE_SEMANTIC="1"), patch("bridge.canvas._start_background",
+        with patch.dict(os.environ, RAVEN_SEMANTIC="1"), patch("raven.canvas._start_background",
                 side_effect=lambda *args: pending.append(args)):
             node = canvas.add_node(self.store, Config(model_api="none"), {"task_id": task,
                 "question": "Should billing exclude the internal load test?", "paths": "billing/usage.py"})
@@ -134,7 +134,7 @@ class DelayedWorkerTests(DeliveryCase):
 
     def assert_preserved_after_start(self, node, scheduled):
         before = self.store.get_decision(node["node_id"])
-        with patch("bridge.ladder.ask", side_effect=AssertionError("Stale inference must not begin")) as ask:
+        with patch("raven.ladder.ask", side_effect=AssertionError("Stale inference must not begin")) as ask:
             scheduled[1](*scheduled[2:])
             ask.assert_not_called()
         after = self.store.get_decision(node["node_id"])
@@ -165,7 +165,7 @@ class TemporarySignerTests(DeliveryCase):
         self.store.answer(node["node_id"], {"answer": "Keep the existing policy", "rationale": "Temporary cover",
             "expected_updated_at": node["updated_at"]}, actor=Actor.person(self.graph.get_person(self.wes)))
         row = self.store.get_decision(node["node_id"])
-        with patch("bridge.routing.rank_for_decision", return_value=[("Marisol Vega", ["authored current code"], 1.0)]):
+        with patch("raven.routing.rank_for_decision", return_value=[("Marisol Vega", ["authored current code"], 1.0)]):
             ranked = canvas._route_signer(self.graph, self.graph.get_task(task), row["question"], row["context"],
                 [row["path"]], "", None, row["category"], json.loads(row["facts"] or "{}"), node["node_id"])
         self.assertEqual(ranked[0][0], "Marisol Vega")

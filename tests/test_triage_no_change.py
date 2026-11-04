@@ -3,8 +3,8 @@ unplaced task that sends the agent to find files; a change or a decision
 named without an area is still unplaced."""
 from fixtures import OfflineCase
 
-from bridge import canvas
-from bridge.config import Config
+from raven import canvas
+from raven.config import Config
 
 
 class NoChangeTriageTests(OfflineCase):

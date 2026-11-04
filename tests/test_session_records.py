@@ -7,8 +7,8 @@ import json
 from unittest.mock import patch
 
 from test_contract import ContractCase
-from bridge import canvas
-from bridge.mcp import call_tool
+from raven import canvas
+from raven.mcp import call_tool
 
 DIFF = ("diff --git a/billing/usage.py b/billing/usage.py\n"
         "--- a/billing/usage.py\n+++ b/billing/usage.py\n"
@@ -22,7 +22,7 @@ class SessionRecordTests(ContractCase):
         node = self.node(task)
         self.answer(node["node_id"], "Bill at two cents per call.")
         self.sign(node["node_id"])
-        call_tool(self.store, "bridge_get_tree", {"task_id": task})
+        call_tool(self.store, "raven_get_tree", {"task_id": task})
         self.seed_secrets(task, node["node_id"])
         return task, node["node_id"]
 
@@ -39,8 +39,8 @@ class SessionRecordTests(ContractCase):
                        "VALUES(?,?,?,'ask','slack','Wes',?,'SECRET_PAYLOAD_TOKEN','sent',1,'2026-01-01')", ("n-" + task, decision_id, task, "dedupe-" + task))
 
     def finish(self, task, **args):
-        with patch("bridge.llm.check_conformance", return_value=None):
-            return call_tool(self.store, "bridge_finish_task", {"task_id": task, "diff": DIFF, **args})
+        with patch("raven.llm.check_conformance", return_value=None):
+            return call_tool(self.store, "raven_finish_task", {"task_id": task, "diff": DIFF, **args})
 
     def session_rows(self):
         return [dict(r) for r in self.store.graph.db.execute(
@@ -120,7 +120,7 @@ class SessionRecordTests(ContractCase):
 
     def test_long_summaries_are_clipped_and_say_so(self):
         task, _node = self.signed_task()
-        with patch("bridge.canvas.SESSION_RECORD_LIMIT", 160):
+        with patch("raven.canvas.SESSION_RECORD_LIMIT", 160):
             body = canvas.session_summary(self.store, task, DIFF)
         self.assertLessEqual(len(body), 160)
         self.assertTrue(body.endswith("\n[clipped]"))

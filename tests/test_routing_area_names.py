@@ -7,9 +7,9 @@ from pathlib import Path
 
 from fixtures import OfflineCase
 
-from bridge.resolve import DIR_NAMED_WEIGHT, DIR_WORD_WEIGHT, Tree, dir_name_hits, resolve_paths
-from bridge.routing import route
-from bridge.store import Store
+from raven.resolve import DIR_NAMED_WEIGHT, DIR_WORD_WEIGHT, Tree, dir_name_hits, resolve_paths
+from raven.routing import route
+from raven.store import Store
 
 NOW = "2026-06-20T00:00:00+00:00"
 PATHS = ["src/urllib3/contrib/emscripten/fetch.py", "src/urllib3/contrib/emscripten/connection.py",

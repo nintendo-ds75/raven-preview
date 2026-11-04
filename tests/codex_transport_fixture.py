@@ -11,12 +11,12 @@ import sys
 import tomllib
 from urllib.parse import urlsplit
 
-from bridge.harness_worker import codex, emit
+from raven.harness_worker import codex, emit
 
 
 def main():
     home = Path(os.environ['HOME']).resolve()
-    root = Path(__file__).resolve().parents[1] / '.bridge/native-codex-fixtures'
+    root = Path(__file__).resolve().parents[1] / '.raven/native-codex-fixtures'
     if not home.is_relative_to(root) or os.environ.get('OPENAI_API_KEY') != 'offline-scripted-fixture':
         raise RuntimeError('fixture_only')
     config_home = Path(os.environ['CODEX_HOME']).resolve()

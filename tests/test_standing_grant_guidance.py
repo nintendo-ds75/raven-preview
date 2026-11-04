@@ -2,7 +2,7 @@
 import copy
 import unittest
 
-from bridge.reuse_guidance import standing_grant_view
+from raven.reuse_guidance import standing_grant_view
 from test_rules import RuleCase, QUESTION, REPO
 
 

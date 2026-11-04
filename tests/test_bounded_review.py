@@ -9,8 +9,8 @@ import os
 import unittest
 from unittest.mock import patch
 
-from bridge import llm
-from bridge.config import Config
+from raven import llm
+from raven.config import Config
 
 
 DIFF = ('diff --git a/processor.py b/processor.py\n--- a/processor.py\n+++ b/processor.py\n'
@@ -90,7 +90,7 @@ class BoundedTransportTests(unittest.TestCase):
 
     def test_cli_malformed_json_uses_the_same_single_attempt_contract(self):
         client = llm.Client(Config(model_api='claude-cli'))
-        with patch('bridge.llm._claude_cli', return_value='{"checks": [') as cli:
+        with patch('raven.llm._claude_cli', return_value='{"checks": [') as cli:
             with self.assertRaises(llm.LLMError):
                 client.complete_json('counterexample', 's', 'p', max_tokens=1200, bounded=True)
         self.assertEqual(cli.call_count, 1)

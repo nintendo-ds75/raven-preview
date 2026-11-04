@@ -4,9 +4,9 @@ from unittest.mock import patch
 
 from test_delivery import DeliveryCase
 from test_slack_conversation import ConversationTests
-from bridge import canvas
-from bridge.authz import Actor
-from bridge.delivery import _handon_scope
+from raven import canvas
+from raven.authz import Actor
+from raven.delivery import _handon_scope
 
 
 class TemporaryCoverTests(ConversationTests):
@@ -44,7 +44,7 @@ class EscalationTests(DeliveryCase):
         self.graph.db.execute('UPDATE decisions SET created_at=? WHERE id=?', (old, node['node_id']))
         self.store.update_settings({'overdue_hours': 2})
         before = self.store.get_decision(node['node_id'])
-        with patch('bridge.routing.rank_for_decision', return_value=[('Wes Chen', ['primary'], 3),
+        with patch('raven.routing.rank_for_decision', return_value=[('Wes Chen', ['primary'], 3),
                                                                    ('Marisol Vega', ['review history'], 2)]):
             self.delivery.remind_overdue()
             self.delivery.remind_overdue()

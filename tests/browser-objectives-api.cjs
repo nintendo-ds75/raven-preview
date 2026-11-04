@@ -5,15 +5,15 @@ const {spawn}=require('node:child_process'),readline=require('node:readline');
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 (async()=>{
   const root=path.resolve(__dirname,'..'),temp=fs.mkdtempSync(path.join(os.tmpdir(),'raven-objectives-browser-'));
-  const child=spawn(process.env.BRIDGE_PYTHON||'python3',[path.join(root,'tests/objectives_browser_server.py'),path.join(temp,'ui.db')],{cwd:root});
+  const child=spawn(process.env.RAVEN_PYTHON||'python3',[path.join(root,'tests/objectives_browser_server.py'),path.join(temp,'ui.db')],{cwd:root});
   let stderr='',browser;child.stderr.on('data',chunk=>stderr+=chunk);
   try {
     const fixture=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Fixture timeout: '+stderr)),30000);const lines=readline.createInterface({input:child.stdout});lines.on('line',line=>{try{const result=JSON.parse(line);clearTimeout(timer);resolve(result);}catch{}});child.once('exit',code=>{clearTimeout(timer);reject(Error('Fixture exited '+code+': '+stderr));});});
     const base=fixture.url.split('/#')[0];
-    browser=await chromium.launch({headless:true,...(process.env.BRIDGE_BROWSER?{executablePath:process.env.BRIDGE_BROWSER}:{})});
+    browser=await chromium.launch({headless:true,...(process.env.RAVEN_BROWSER?{executablePath:process.env.RAVEN_BROWSER}:{})});
     const page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[];
     page.on('pageerror',error=>errors.push(error.message));page.setDefaultTimeout(15000);
-    const artifacts=process.env.BRIDGE_TEST_ARTIFACTS||path.join(root,'test-results');fs.mkdirSync(artifacts,{recursive:true});
+    const artifacts=process.env.RAVEN_TEST_ARTIFACTS||path.join(root,'test-results');fs.mkdirSync(artifacts,{recursive:true});
     await page.goto(fixture.url);await page.getByRole('heading',{name:'Outcomes',exact:true}).waitFor();
     await page.getByRole('button',{name:/^Review and accept/}).waitFor();
     assert.equal(await page.locator('#page-actions').getByRole('button',{name:'Track an outcome',exact:true}).count(),1);

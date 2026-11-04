@@ -7,10 +7,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase  # noqa: E402
 
-from bridge import attention, canvas  # noqa: E402
-from bridge.agent_names import display_name  # noqa: E402
-from bridge.authz import Actor  # noqa: E402
-from bridge.config import Config  # noqa: E402
+from raven import attention, canvas  # noqa: E402
+from raven.agent_names import display_name  # noqa: E402
+from raven.authz import Actor  # noqa: E402
+from raven.config import Config  # noqa: E402
 
 PROMPT = ("We want to start charging our Enterprise customers for Pilot based on how much they use it. "
           "Right now we eat the cost. Plan the feature, then implement it.")
@@ -44,7 +44,7 @@ class TitleTests(OfflineCase):
 
 
 class TaskCardTests(OfflineCase):
-    """What bridge_start_task stores, as Being built and For you read it."""
+    """What raven_start_task stores, as Being built and For you read it."""
 
     def setUp(self):
         super().setUp()

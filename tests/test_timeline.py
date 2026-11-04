@@ -11,8 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase, ready_server  # noqa: E402
 
-from bridge import canvas, timeline  # noqa: E402
-from bridge.config import Config  # noqa: E402
+from raven import canvas, timeline  # noqa: E402
+from raven.config import Config  # noqa: E402
 
 RUN = {"id": "task1", "title": "Start charging for Pilot", "agent": "claude", "requester": "Alex Moreno", "status": "needs_judgment"}
 T = "2026-11-02T11:5{}:{:02d}+00:00"
