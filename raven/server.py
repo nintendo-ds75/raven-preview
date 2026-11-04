@@ -517,10 +517,10 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     from . import people_context
                     self.require("member")
                     return self.send(200, people_context.profile(store, parts[2]))
-                if url.path == "/api/muse":
-                    from . import muse
+                if url.path == "/api/noticed":
+                    from . import noticed
                     self.require("member")
-                    return self.send(200, muse.listing(store, parse_qs(url.query).get("status", ["open"])[0][:20]))
+                    return self.send(200, noticed.listing(store, parse_qs(url.query).get("status", ["open"])[0][:20]))
                 if len(parts) == 4 and parts[:2] == ["api", "people"] and parts[3] == "context":
                     from . import intro
                     self.require("member")
@@ -821,7 +821,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                 return self.send(200, result)
             if path == "/api/brief/answer":
                 self.send(200, briefing.act(store, link, data))
-                return __import__("raven.muse", fromlist=["nudge"]).nudge(store)
+                return __import__("raven.noticed", fromlist=["nudge"]).nudge(store)
             if path == "/api/brief/refer":
                 return self.send(200, briefing.refer(store, link, data))
             if path == "/api/brief/note":
@@ -1020,12 +1020,12 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     self.require("viewer" if own_recording else "member")
                 if path.startswith('/api/voice/'):
                     return self.voice_post(path.rsplit('/', 1)[1], data)
-                if path == '/api/muse/run':
-                    from . import muse
-                    return self.send(200, muse.run(store, repo=field(data, 'repo', limit=200) if data.get('repo') else ''))
-                if len(inquiry_parts) == 4 and inquiry_parts[:2] == ['api', 'muse']:
-                    from . import muse
-                    return self.send(200, muse.act(store, inquiry_parts[2], inquiry_parts[3], self.actor()))
+                if path == '/api/noticed/run':
+                    from . import noticed
+                    return self.send(200, noticed.run(store, repo=field(data, 'repo', limit=200) if data.get('repo') else ''))
+                if len(inquiry_parts) == 4 and inquiry_parts[:2] == ['api', 'noticed']:
+                    from . import noticed
+                    return self.send(200, noticed.act(store, inquiry_parts[2], inquiry_parts[3], self.actor()))
                 if len(inquiry_parts) == 4 and inquiry_parts[:2] == ['api', 'people'] and inquiry_parts[3] == 'context':
                     from . import people_context
                     return self.send(200, people_context.edit(store, inquiry_parts[2], data, self.actor()))
@@ -1067,7 +1067,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                     self.require('member')
                     from .meeting_learn import import_and_learn
                     result = import_and_learn(store, data, self.me.name or 'Local operator')
-                    __import__("raven.muse", fromlist=["nudge"]).nudge(store)
+                    __import__("raven.noticed", fromlist=["nudge"]).nudge(store)
                 elif path == '/api/meetings':
                     self.require('admin')
                     from . import meeting_records
@@ -1281,7 +1281,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                             result = getattr(intro, parts[3])(store, parts[2], data, self.actor())
                             if parts[3] in ("answer", "finish", "save") and isinstance(result, dict) and result.get("status") == "saved":
                                 # New context from a person: let Raven look for what it changes.
-                                __import__("raven.muse", fromlist=["run_in_background"]).run_in_background(store)
+                                __import__("raven.noticed", fromlist=["run_in_background"]).run_in_background(store)
                         else:
                             return self.send(404, {"error": "Unknown intro chat action"})
                     elif len(parts) in (4, 6) and parts[:2] == ["api", "tasks"] and parts[3] == "interviews":
@@ -1405,7 +1405,7 @@ def make_server(store, port=7331, executions=None, host="127.0.0.1", auth=None, 
                 self.send(200, result)
                 if re.fullmatch(r"/api/(?:decisions/[^/]+/(?:answer|signoff|correct)|people/[^/]+/context|meetings/[^/]+/learn)", path):
                     # New context from a person: Raven looks again in the background.
-                    __import__("raven.muse", fromlist=["nudge"]).nudge(store)
+                    __import__("raven.noticed", fromlist=["nudge"]).nudge(store)
             except Forbidden as error:
                 self.send(error.code, {"error": str(error)})
             except Refused as error:

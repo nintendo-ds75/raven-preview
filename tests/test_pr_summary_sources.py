@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase
-from raven import artifacts, auth, inquiry, mcp, meeting_learn, muse, people_context, pr_summary, voice
+from raven import artifacts, auth, inquiry, mcp, meeting_learn, noticed, people_context, pr_summary, voice
 from raven.config import Config
 from raven.store import Invalid
 
@@ -245,7 +245,7 @@ class ActingUser(OfflineCase):
         self.assertEqual(self.store.graph.get_task(out['task_id'])['requester'], 'Maya Chen')
 
 
-class Muse(unittest.TestCase):
+class Noticed(unittest.TestCase):
     def test_connect_needs_two_people(self):
         items = [{'id': 'n:1', 'who': 'Sam Rivera', 'person_id': 's', 'said': 'Bloom wants SKU grouping', 'at': ''},
                  {'id': 'n:2', 'who': 'Priya Shah', 'person_id': 'p', 'said': 'Bloom pays a negotiated rate', 'at': ''}]
@@ -254,20 +254,20 @@ class Muse(unittest.TestCase):
         two = {**one, 'cites': [{'id': 'n:1', 'quote': 'SKU grouping'}, {'id': 'n:2', 'quote': 'negotiated rate'}]}
         idea = {'kind': 'idea', 'title': 'Bulk buy at the negotiated rate', 'body': 'Bloom asked. It is worth it.',
                 'cites': [{'id': 'n:2', 'quote': 'negotiated rate'}]}
-        kept = muse._valid({'findings': [one, two, idea]}, items, set(), {})
+        kept = noticed._valid({'findings': [one, two, idea]}, items, set(), {})
         self.assertEqual([k['kind'] for k in kept], ['connect', 'idea'])
 
     def test_the_same_finding_in_new_words_is_one(self):
         a = {'kind': 'bug', 'ids': {'d1'}, 'paths': {'app/orders/fulfil.py'}, 'person': 'p'}
-        self.assertTrue(muse._same_finding({**a, 'ids': {'d1', 'n2'}}, a))
-        self.assertTrue(muse._same_finding({**a, 'ids': {'n9'}}, a))
-        self.assertFalse(muse._same_finding({**a, 'ids': {'n9'}, 'paths': {'app/labels/print.py'}}, a))
+        self.assertTrue(noticed._same_finding({**a, 'ids': {'d1', 'n2'}}, a))
+        self.assertTrue(noticed._same_finding({**a, 'ids': {'n9'}}, a))
+        self.assertFalse(noticed._same_finding({**a, 'ids': {'n9'}, 'paths': {'app/labels/print.py'}}, a))
 
     def test_nudges_are_spaced(self):
-        with patch.object(muse, 'run_in_background') as ran:
-            muse._last_nudge[0] = float('-inf')
-            self.assertTrue(muse.nudge(None, every=3600))
-            self.assertFalse(muse.nudge(None, every=3600))
+        with patch.object(noticed, 'run_in_background') as ran:
+            noticed._last_nudge[0] = float('-inf')
+            self.assertTrue(noticed.nudge(None, every=3600))
+            self.assertFalse(noticed.nudge(None, every=3600))
         self.assertEqual(ran.call_count, 1)
 
 

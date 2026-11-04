@@ -553,7 +553,7 @@ def workspace_context(store, repo, actor):
             items.append({'id': 'mine', 'title': f'Waiting on {me}',
                           'text': '\n'.join(f"Waiting on {me}: {r['question'][:200]}" for r in mine)})
     try:
-        noticed = db.execute("SELECT id, title, body FROM muse_insights WHERE status='open' ORDER BY created_at DESC LIMIT 3").fetchall()
+        noticed = db.execute("SELECT id, title, body FROM noticed_findings WHERE status='open' ORDER BY created_at DESC LIMIT 3").fetchall()
     except Exception:
         noticed = []
     for n in noticed:

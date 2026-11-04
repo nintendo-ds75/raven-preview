@@ -379,9 +379,9 @@ def _remember(store, args, principal=None):
 
 
 def _noticed(store, args):
-    from . import muse
-    ran = muse.run(store, repo=args.get("repo", "")) if args.get("run") else None
-    out = muse.listing(store)
+    from . import noticed
+    ran = noticed.run(store, repo=args.get("repo", "")) if args.get("run") else None
+    out = noticed.listing(store)
     if ran:
         out["this_pass"] = {"added": len(ran["added"]), "read": ran["read"]}
     return out

@@ -72,13 +72,13 @@ It runs on the real model only (`ANTHROPIC_API_KEY`, or
 canned list. Ways to start a pass:
 
 - automatically after a voice intro is saved, and after new answers, notes
-  or meetings, at most once every `RAVEN_MUSE_EVERY` seconds (default 300;
-  `RAVEN_MUSE=off` turns this off);
-- "Look again" on the Ask Raven home, or `POST /api/muse/run`;
-- `python -m raven --db <db> muse [--repo owner/name]` from a shell;
+  or meetings, at most once every `RAVEN_NOTICED_EVERY` seconds (default 300;
+  `RAVEN_NOTICED=off` turns this off);
+- "Look again" on the Ask Raven home, or `POST /api/noticed/run`;
+- `python -m raven --db <db> noticed [--repo owner/name]` from a shell;
 - `raven_noticed` with `run: true` from an agent.
 
-`GET /api/muse` lists open findings; `POST /api/muse/<id>/ask|dismiss|done`
+`GET /api/noticed` lists open findings; `POST /api/noticed/<id>/ask|dismiss|done`
 acts on one.
 
 ## New MCP tools

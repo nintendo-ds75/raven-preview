@@ -247,14 +247,14 @@ class Store:
                     run_id TEXT, kind TEXT NOT NULL, detail TEXT NOT NULL,
                     created_at TEXT NOT NULL);
             """)
-            from . import briefing, delivery, execution_store, graph, interview, intro, muse
+            from . import briefing, delivery, execution_store, graph, interview, intro, noticed
             execution_store.migrate(db)
             graph.migrate(db)
             delivery.migrate(db)
             briefing.migrate(db)
             interview.migrate(db)
             intro.migrate(db)
-            muse.migrate(db)
+            noticed.migrate(db)
             # executescript commits as it goes; the statements that read
             # the schema and write rows run in one transaction so two
             # processes opening at once (the inbox and an MCP server)

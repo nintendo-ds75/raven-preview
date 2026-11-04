@@ -584,7 +584,7 @@ const noticedOpen = new Set();
 function loadNoticed(force) {
   if (!force && Date.now() - noticedAt < 8000) return;
   noticedAt = Date.now();
-  api('/api/muse').then(r => { const before = JSON.stringify(noticed); noticed = r; if (JSON.stringify(r) !== before) { askKey = ''; if (view === 'ask') render(); } })
+  api('/api/noticed').then(r => { const before = JSON.stringify(noticed); noticed = r; if (JSON.stringify(r) !== before) { askKey = ''; if (view === 'ask') render(); } })
     .catch(() => { noticed = noticed || {insights: []}; });
 }
 function noticedCard(x) {
@@ -747,10 +747,10 @@ document.addEventListener('click', async event => {
   noticedBusy = action; askKey = ''; render();
   try {
     if (action === 'run') {
-      const result = await api('/api/muse/run', {});
+      const result = await api('/api/noticed/run', {});
       notify(result.added.length ? `Raven noticed ${plural(result.added.length, 'thing')} worth a look.` : 'Nothing new since the last look.');
     } else {
-      const result = await api(`/api/muse/${encodeURIComponent(id)}/${action}`, {});
+      const result = await api(`/api/noticed/${encodeURIComponent(id)}/${action}`, {});
       if (action === 'ask' && result.task_id) notify(`Raven asked ${result.node?.owner || 'the right person'}.`);
     }
   } catch (error) { notify(error.message); }

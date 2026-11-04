@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fixtures import OfflineCase
-from raven import intro, mcp, muse, people_context, voice
+from raven import intro, mcp, noticed, people_context, voice
 from raven.authz import Actor, Refused
 from raven.config import Config
 from raven.store import Invalid, Store
@@ -141,7 +141,7 @@ class FakeClient:
 class Noticed(OfflineCase):
     def setUp(self):
         super().setUp()
-        self.store = Store(Path(self.temp.name) / 'muse.db')
+        self.store = Store(Path(self.temp.name) / 'noticed.db')
         self.sam = self.store.add_person({'name': 'Sam Rivera', 'email': 'sam@example.test'})['id']
         repo = Path(self.temp.name) / 'app'
         (repo / 'app' / 'labels').mkdir(parents=True)
@@ -155,7 +155,7 @@ class Noticed(OfflineCase):
     def test_no_model_no_findings(self):
         people_context.remember(self.store, self.sam, 'Sam says labels print grouped by SKU.')
         with self.assertRaises(Invalid):
-            muse.run(self.store, OFF)
+            noticed.run(self.store, OFF)
 
     def test_findings_must_quote_a_person_and_name_real_files(self):
         note = people_context.remember(self.store, self.sam, 'Sam says Bloom needs labels grouped by SKU.',
@@ -170,7 +170,7 @@ class Noticed(OfflineCase):
              'cites': [{'id': 'n:' + note['id'], 'quote': 'grouped by SKU'}], 'paths': ['made/up.py']},
         ]}
         with patch('raven.llm.Client', FakeClient), patch.object(Config, 'has_backend', return_value=True):
-            result = muse.run(self.store, ON)
+            result = noticed.run(self.store, ON)
         self.assertEqual([x['title'] for x in result['added']], ['Labels are not grouped by SKU'])
         found = result['added'][0]
         self.assertEqual(found['evidence'][0]['who'], 'Sam Rivera')
@@ -178,9 +178,9 @@ class Noticed(OfflineCase):
         self.assertIn('app/labels/print.py', result['read']['files'])
         # The same finding is not raised twice while it is open.
         with patch('raven.llm.Client', FakeClient), patch.object(Config, 'has_backend', return_value=True):
-            self.assertEqual(muse.run(self.store, ON)['added'], [])
-        self.assertEqual(muse.act(self.store, found['id'], 'dismiss')['status'], 'dismissed')
-        self.assertEqual(muse.listing(self.store)['insights'], [])
+            self.assertEqual(noticed.run(self.store, ON)['added'], [])
+        self.assertEqual(noticed.act(self.store, found['id'], 'dismiss')['status'], 'dismissed')
+        self.assertEqual(noticed.listing(self.store)['insights'], [])
 
 
 
@@ -218,3 +218,24 @@ class CallWording(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class NoticedRename(OfflineCase):
+    def test_a_database_from_before_the_rename_keeps_its_findings(self):
+        import sqlite3
+        path = Path(self.temp.name) / 'old.db'
+        Store(path).graph.close()
+        db = sqlite3.connect(path)
+        db.executescript("ALTER TABLE noticed_findings RENAME TO muse_insights;"
+                         "CREATE INDEX muse_insights_status ON muse_insights(status, created_at);"
+                         "INSERT INTO muse_insights(id, kind, title, body, fingerprint, created_at, updated_at) "
+                         "VALUES ('f1', 'gap', 'Labels skip the price check', 'body', 'fp1', '2026-11-01', '2026-11-01');"
+                         "INSERT INTO events(kind, detail, created_at) VALUES ('muse_pass', '{}', '2026-11-01');")
+        db.commit()
+        db.close()
+        store = Store(path)
+        self.addCleanup(store.graph.close)
+        self.assertEqual([i['title'] for i in noticed.listing(store)['insights']], ['Labels skip the price check'])
+        kinds = {r['kind'] for r in store.graph.db.execute("SELECT kind FROM events")}
+        self.assertIn('noticed_pass', kinds)
+        self.assertNotIn('muse_pass', kinds)

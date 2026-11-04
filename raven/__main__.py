@@ -35,7 +35,7 @@ def _default_db() -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="Raven: human judgment for coding agents")
-    parser.add_argument("command", nargs="?", choices=["serve", "mcp", "ingest", "ask", "muse", "sync", "backup", "dev-login"], default="serve")
+    parser.add_argument("command", nargs="?", choices=["serve", "mcp", "ingest", "ask", "noticed", "sync", "backup", "dev-login"], default="serve")
     parser.add_argument("target", nargs="?", help="ingest: path to a git checkout; ask: the question; sync: owner/name on GitHub; "
                                                   "backup: the file to write")
     parser.add_argument("--db", default=os.environ.get("DATABASE_URL") or _default_db(),
@@ -105,10 +105,10 @@ def main():
         if not cfg.semantic_retrieval:
             print("(deterministic rungs only: no ANTHROPIC_API_KEY or claude CLI, or RAVEN_SEMANTIC=0)")
         return
-    if args.command == "muse":
+    if args.command == "noticed":
         # One "Raven noticed" pass on the real model: what people said
         # against the indexed code. Findings show on the Ask Raven home.
-        from .muse import run
+        from .noticed import run
         print(json.dumps(run(store, repo=args.repo), indent=1))
         return
     executions, client, webhook, workbench = None, None, None, None
